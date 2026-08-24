@@ -1,14 +1,30 @@
 import { Controller, Get } from "@nestjs/common";
-import type { ServiceHealth } from "@mazetto/types";
+import { Public } from "./common/decorators/public.decorator";
+import { PrismaService } from "./prisma/prisma.service";
 
+type BackendHealth = {
+  success: true;
+  service: "mazetto-backend";
+  status: "ok";
+  database: {
+    status: "ok";
+  };
+};
+
+@Public()
 @Controller("health")
 export class HealthController {
+  constructor(private readonly prisma: PrismaService) {}
+
   @Get()
-  getHealth(): ServiceHealth {
+  async getHealth(): Promise<BackendHealth> {
+    const database = await this.prisma.checkHealth();
+
     return {
       success: true,
       service: "mazetto-backend",
       status: "ok",
+      database,
     };
   }
 }

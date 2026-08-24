@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { CartProvider } from "../lib/cart";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MAZETTO FOOD Customer Web",
-  description: "MAZETTO FOOD customer web foundation",
+  title: "MAZETTO FOOD",
+  description: "Order fresh MAZETTO FOOD online for delivery or pickup.",
 };
 
 export default function RootLayout({
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <CartProvider>{children}</CartProvider>
+      </body>
     </html>
   );
 }

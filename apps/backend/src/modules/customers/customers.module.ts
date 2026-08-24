@@ -1,0 +1,14 @@
+import { Module } from "@nestjs/common";
+import { JwtModule } from "@nestjs/jwt";
+import { PrismaModule } from "../../prisma/prisma.module";
+import { KitchenModule } from "../kitchen/kitchen.module";
+import { OrdersModule } from "../orders/orders.module";
+import { CustomerPublicController, CustomersAdminController } from "./customers.controller";
+import { CustomersService } from "./customers.service";
+
+@Module({
+  imports: [JwtModule.register({}), PrismaModule, KitchenModule, OrdersModule],
+  controllers: [CustomerPublicController, CustomersAdminController],
+  providers: [CustomersService],
+})
+export class CustomersModule {}

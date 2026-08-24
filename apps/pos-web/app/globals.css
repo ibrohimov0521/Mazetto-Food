@@ -11,6 +11,10 @@ body {
 
 body {
   margin: 0;
-  background: #f4f7f6;
+  background: #ffffff;
   color: #171717;
+}
+
+* {
+  box-sizing: border-box;
 }
