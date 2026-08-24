@@ -1,8 +1,17 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { Pool } from "pg";
 import { PERMISSIONS } from "../src/common/auth/permissions";
 import { seedMenu } from "./seeds/menu";
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error("DATABASE_URL is required to run the Prisma seed");
+}
+
+const pool = new Pool({ connectionString });
+const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 const roleDefinitions = [
   {
@@ -269,4 +278,5 @@ void main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });

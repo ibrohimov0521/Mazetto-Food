@@ -17,7 +17,7 @@ FROM base AS builder
 
 COPY --from=deps /app ./
 
-RUN pnpm --filter backend prisma:generate
+RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" pnpm --filter backend prisma:generate
 RUN pnpm --filter backend build
 
 FROM base AS runner
