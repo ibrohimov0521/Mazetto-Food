@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "MAZETTO FOOD",
-  description: "Order fresh MAZETTO FOOD online for delivery or pickup.",
+  description: "MAZETTO FOOD'dan issiq fast-fud buyurtma qiling.",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="uz">
       <body>
         <CartProvider>{children}</CartProvider>
       </body>

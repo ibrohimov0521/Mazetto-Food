@@ -21,6 +21,19 @@ type Dashboard = {
   }[];
   favorites: { product: { id: string; name: string; imageUrl?: string | null; sellingPrice: string } }[];
 };
+const statusLabels: Record<string, string> = {
+  NEW: "Yangi",
+  CONFIRMED: "Tasdiqlandi",
+  PREPARING: "Tayyorlanmoqda",
+  COOKING: "Tayyorlanmoqda",
+  READY: "Tayyor",
+  COMPLETED: "Yakunlandi",
+  CANCELLED: "Bekor qilindi",
+};
+const typeLabels: Record<string, string> = {
+  DELIVERY: "Yetkazib berish",
+  PICKUP: "Olib ketish",
+};
 
 export default function ProfilePage() {
   return (
@@ -59,9 +72,9 @@ function Profile() {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10 text-center">
         <div className="rounded-xl bg-white p-8 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <h1 className="text-3xl font-black text-neutral-950">Verify your phone</h1>
-          <p className="mt-3 text-neutral-500">Use the Telegram verification code flow from the home page to see favorites, orders, and bonus balance.</p>
-          <Link className="mt-5 inline-flex rounded-xl bg-[#16A34A] px-5 py-3 font-black text-white" href="/">Go home</Link>
+          <h1 className="text-3xl font-black text-neutral-950">Telefonni tasdiqlang</h1>
+          <p className="mt-3 text-neutral-500">Sevimlilar, buyurtmalar va bonus balansini ko'rish uchun bosh sahifadagi Telegram kodni tasdiqlang.</p>
+          <Link className="pressable mt-5 inline-flex rounded-xl bg-[#16A34A] px-5 py-3 font-black text-white" href="/">Bosh sahifa</Link>
         </div>
       </section>
     );
@@ -71,42 +84,42 @@ function Profile() {
     <section className="mx-auto max-w-6xl px-4 py-6">
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
         <div className="rounded-xl bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <p className="text-sm font-black uppercase text-emerald-700">Customer profile</p>
+          <p className="text-sm font-black uppercase text-emerald-700">Mijoz profili</p>
           <h1 className="mt-2 text-4xl font-black text-neutral-950">{dashboard?.name ?? customer.name}</h1>
           <p className="mt-2 text-lg font-bold text-neutral-600">{dashboard?.phone ?? customer.phone}</p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <Stat label="Orders" value={`${dashboard?.customerOrders.length ?? 0}`} />
-            <Stat label="Favorites" value={`${dashboard?.favorites.length ?? favoriteIds.length}`} />
+            <Stat label="Buyurtmalar" value={`${dashboard?.customerOrders.length ?? 0}`} />
+            <Stat label="Sevimlilar" value={`${dashboard?.favorites.length ?? favoriteIds.length}`} />
             <Stat label="Bonus" value={formatMoney(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} />
           </div>
         </div>
 
         <div className="rounded-xl bg-[#16A34A] p-5 text-white shadow-[0_18px_50px_rgba(22,163,74,0.22)]">
-          <p className="text-sm font-black uppercase text-emerald-100">Bonus balance</p>
+          <p className="text-sm font-black uppercase text-emerald-100">Bonus balansi</p>
           <p className="mt-3 text-4xl font-black">{formatMoney(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)}</p>
-          <p className="mt-3 text-sm font-semibold text-emerald-50">Use your phone profile to keep order history and saved products ready for the next checkout.</p>
+          <p className="mt-3 text-sm font-semibold text-emerald-50">Telefon profilingiz buyurtmalar tarixi va sevimli mahsulotlarni keyingi safar uchun saqlaydi.</p>
         </div>
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <Panel title="Recent orders">
+        <Panel title="So'nggi buyurtmalar">
           <div className="grid gap-3">
             {dashboard?.customerOrders.slice(0, 5).map((order) => (
               <article className="rounded-xl border border-neutral-100 p-4" key={order.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-black text-neutral-950">{order.order.orderNumber}</p>
-                    <p className="mt-1 text-sm font-semibold text-neutral-500">{order.status} · {order.type}</p>
+                    <p className="mt-1 text-sm font-semibold text-neutral-500">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
                   </div>
                   <span className="font-black text-emerald-700">{formatMoney(order.order.total)}</span>
                 </div>
               </article>
-            )) ?? <p className="text-sm font-semibold text-neutral-500">Orders will appear after checkout.</p>}
+            )) ?? <p className="text-sm font-semibold text-neutral-500">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>}
           </div>
         </Panel>
 
-        <Panel title="Favorites">
+        <Panel title="Sevimlilar">
           <div className="grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
               <Link className="grid grid-cols-[72px_1fr] gap-3 rounded-xl bg-neutral-50 p-2 transition hover:bg-emerald-50" href={`/product/${product.id}`} key={product.id}>
@@ -116,20 +129,24 @@ function Profile() {
                   <p className="mt-1 text-sm font-bold text-emerald-700">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm font-semibold text-neutral-500">Tap the heart on product cards to save favorites.</p>}
+            )) : <p className="text-sm font-semibold text-neutral-500">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
           </div>
         </Panel>
       </div>
 
-      <Panel title="Saved addresses">
+      <Panel title="Saqlangan manzillar">
         <div className="flex flex-wrap gap-3">
           {addresses.length ? addresses.map((address) => (
             <span className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800" key={address}>{address}</span>
-          )) : <span className="rounded-xl bg-neutral-50 px-4 py-3 text-sm font-semibold text-neutral-500">Delivery addresses will be saved from completed checkouts.</span>}
+          )) : <span className="rounded-xl bg-neutral-50 px-4 py-3 text-sm font-semibold text-neutral-500">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
         </div>
       </Panel>
     </section>
   );
+}
+
+function statusLabel(status: string): string {
+  return statusLabels[status] ?? status;
 }
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {

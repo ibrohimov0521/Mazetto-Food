@@ -33,6 +33,8 @@ type CartContextValue = {
   customer: CustomerSession | null;
   items: CartItem[];
   favoriteIds: string[];
+  toastMessage: string | null;
+  cartPulseId: number;
   setCustomer: (customer: CustomerSession | null) => void;
   addItem: (item: Omit<CartItem, "key">) => void;
   updateQuantity: (key: string, quantity: number) => void;
@@ -40,6 +42,7 @@ type CartContextValue = {
   clearCart: () => void;
   toggleFavorite: (productId: string) => void;
   isFavorite: (productId: string) => boolean;
+  showToast: (message: string) => void;
   subtotal: number;
 };
 
@@ -52,6 +55,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [customer, setCustomerState] = useState<CustomerSession | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [cartPulseId, setCartPulseId] = useState(0);
 
   useEffect(() => {
     const storedItems = window.localStorage.getItem(storageKey);
@@ -69,6 +74,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     window.localStorage.setItem(favoritesKey, JSON.stringify(favoriteIds));
   }, [favoriteIds]);
+
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setToastMessage(null), 2400);
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
 
   function setCustomer(customer: CustomerSession | null) {
     setCustomerState(customer);
@@ -93,6 +107,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     customer,
     items,
     favoriteIds,
+    toastMessage,
+    cartPulseId,
     setCustomer,
     addItem(item) {
       const key = `${item.productId}-${item.variantId ?? "base"}-${item.modifiers.map((modifier) => modifier.modifierId).join(".")}-${item.notes ?? ""}`;
@@ -105,6 +121,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
         return [...current, { ...item, key }];
       });
+      setCartPulseId((current) => current + 1);
+      setToastMessage(`${item.productName} savatga qo'shildi`);
     },
     updateQuantity(key, quantity) {
       setItems((current) => current.map((item) => (item.key === key ? { ...item, quantity } : item)).filter((item) => item.quantity > 0));
@@ -116,10 +134,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setItems([]);
     },
     toggleFavorite(productId) {
-      setFavoriteIds((current) => (current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]));
+      setFavoriteIds((current) => {
+        const saved = !current.includes(productId);
+        setToastMessage(saved ? "Sevimlilarga qo'shildi" : "Sevimlilardan olib tashlandi");
+        return saved ? [...current, productId] : current.filter((id) => id !== productId);
+      });
     },
     isFavorite(productId) {
       return favoriteIds.includes(productId);
+    },
+    showToast(message) {
+      setToastMessage(message);
     },
     subtotal,
   };

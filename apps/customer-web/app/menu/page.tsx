@@ -19,14 +19,17 @@ function MenuCatalog() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categoryId, setCategoryId] = useState<string>("all");
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    setLoading(true);
     const [nextCategories, nextProducts] = await Promise.all([
       apiFetch<Category[]>("/customer/menu/categories"),
       apiFetch<Product[]>("/customer/menu/products"),
     ]);
     setCategories(nextCategories);
     setProducts(nextProducts);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -55,20 +58,20 @@ function MenuCatalog() {
       <div className="rounded-xl border border-emerald-100 bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.10)]">
         <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-end">
           <div>
-            <p className="text-sm font-black uppercase text-emerald-700">MAZETTO FOOD catalog</p>
-            <h1 className="mt-2 text-4xl font-black text-neutral-950">Choose something fresh</h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-500">Browse lavash, burgers, chicken favorites, combos, sauces, and drinks prepared by the selected branch.</p>
+            <p className="text-sm font-black uppercase text-emerald-700">MAZETTO FOOD menyusi</p>
+            <h1 className="mt-2 text-4xl font-black text-neutral-950">Bugun nima buyurtma qilamiz?</h1>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">Lavash, burger, tovuqli taomlar, setlar, souslar va ichimliklarni tez toping.</p>
           </div>
           <input
             className="rounded-xl border border-neutral-200 px-4 py-3 font-semibold outline-none focus:border-emerald-500"
-            placeholder="Search menu"
+            placeholder="Menyudan qidirish"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
 
         <div className="mt-5 flex gap-2 overflow-auto pb-1">
-          <button className={tabClass(categoryId === "all")} onClick={() => setCategoryId("all")} type="button">All</button>
+          <button className={tabClass(categoryId === "all")} onClick={() => setCategoryId("all")} type="button">Barchasi</button>
           {categories.map((category) => (
             <button className={tabClass(categoryId === category.id)} key={category.id} onClick={() => setCategoryId(category.id)} type="button">
               {category.name}
@@ -78,12 +81,14 @@ function MenuCatalog() {
       </div>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
+        {loading
+          ? Array.from({ length: 6 }, (_, index) => <ProductSkeleton key={index} />)
+          : visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
       </div>
 
-      {!visibleProducts.length ? (
+      {!loading && !visibleProducts.length ? (
         <div className="mt-5 rounded-xl bg-white p-8 text-center text-sm font-bold text-neutral-500 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
-          No products found for this selection.
+          Bu tanlov bo'yicha mahsulot topilmadi.
         </div>
       ) : null}
     </section>
@@ -91,5 +96,22 @@ function MenuCatalog() {
 }
 
 function tabClass(active: boolean): string {
-  return `shrink-0 rounded-xl px-4 py-3 text-sm font-black transition ${active ? "bg-[#16A34A] text-white shadow-[0_10px_24px_rgba(22,163,74,0.20)]" : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"}`;
+  return `pressable shrink-0 rounded-xl px-4 py-3 text-sm font-black ${active ? "bg-[#16A34A] text-white shadow-[0_10px_24px_rgba(22,163,74,0.20)]" : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"}`;
+}
+
+function ProductSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-xl border border-neutral-100 bg-white shadow-[0_14px_42px_rgba(17,24,39,0.08)]">
+      <div className="skeleton h-48 w-full" />
+      <div className="grid gap-3 p-4">
+        <div className="skeleton h-5 w-3/4 rounded-full" />
+        <div className="skeleton h-4 w-full rounded-full" />
+        <div className="skeleton h-4 w-2/3 rounded-full" />
+        <div className="flex items-center justify-between">
+          <div className="skeleton h-6 w-24 rounded-full" />
+          <div className="skeleton h-11 w-24 rounded-xl" />
+        </div>
+      </div>
+    </div>
+  );
 }
