@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
+import { MotionDiv, AnimatedNumber, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch, getApiBaseUrl } from "../../lib/api";
 import { formatMoney, productImage, useCart } from "../../lib/cart";
@@ -93,85 +94,85 @@ function OrdersDashboard() {
   if (!customer?.accessToken) {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10 text-center">
-        <div className="rounded-[2rem] bg-white p-8 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <h1 className="text-3xl font-black text-neutral-950">Telefonni tasdiqlang</h1>
-          <p className="mt-3 text-neutral-500">Buyurtmalar tarixi va bonuslarni ko'rish uchun bosh sahifadagi Telegram tasdiqlashdan o'ting.</p>
-          <Link className="pressable mt-5 inline-flex rounded-2xl bg-emerald-600 px-5 py-3 font-bold text-white" href="/">Bosh sahifa</Link>
+        <div className="mf-card p-8">
+          <h1 className="text-3xl font-black text-white">Telefonni tasdiqlang</h1>
+          <p className="mt-3 text-white/60">Buyurtmalar tarixi va bonuslarni ko'rish uchun bosh sahifadagi Telegram tasdiqlashdan o'ting.</p>
+          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-bold" href="/">Bosh sahifa</Link>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[1fr_360px]">
+    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[1fr_360px]">
       <div className="grid gap-5">
-        <div className="rounded-xl bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <p className="text-sm font-black uppercase text-emerald-700">Buyurtmani kuzatish</p>
-          <h1 className="mt-1 text-3xl font-black text-neutral-950">Buyurtmalarim</h1>
+        <div className="mf-card p-5">
+          <p className="text-sm font-black uppercase text-[#67E8F9]">Buyurtmani kuzatish</p>
+          <h1 className="mt-1 text-3xl font-black text-white">Buyurtmalarim</h1>
           {activeOrder ? (
-            <div className="mt-5 rounded-xl bg-emerald-50 p-5">
-              <p className="text-sm font-bold uppercase text-emerald-700">Faol buyurtma</p>
+            <div className="mf-card-soft mt-5 p-5">
+              <p className="text-sm font-bold uppercase text-[#67E8F9]">Faol buyurtma</p>
               <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-2xl font-black text-neutral-950">{activeOrder.order.orderNumber}</h2>
-                  <p className="mt-1 text-sm font-semibold text-neutral-600">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
+                  <h2 className="text-2xl font-black text-white">{activeOrder.order.orderNumber}</h2>
+                  <p className="mt-1 text-sm font-semibold text-white/60">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
                 </div>
-                <span className="rounded-full bg-white px-4 py-2 text-sm font-black text-emerald-700">{formatMoney(activeOrder.order.total)}</span>
+                <span className="rounded-full bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9]">{formatMoney(activeOrder.order.total)}</span>
               </div>
               <StatusTracker status={activeOrder.order.status ?? activeOrder.status} />
               <div className="mt-5 grid gap-2">
                 {activeOrder.order.items.map((item) => (
-                  <div className="flex justify-between rounded-xl bg-white px-4 py-3 text-sm font-bold" key={item.id}>
+                  <div className="flex justify-between rounded-xl bg-white/8 px-4 py-3 text-sm font-bold text-white" key={item.id}>
                     <span>{Number(item.quantity)}x {item.productName}</span>
-                    <span className="text-emerald-700">{formatMoney(item.totalPrice)}</span>
+                    <span className="text-[#67E8F9]">{formatMoney(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="mt-5 rounded-xl bg-neutral-50 p-6 text-sm font-semibold text-neutral-500">Hozir faol buyurtma yo'q.</div>
+            <div className="mf-card-soft mt-5 p-6 text-sm font-semibold text-white/56">Hozir faol buyurtma yo'q.</div>
           )}
         </div>
 
-        <div className="rounded-xl bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <h2 className="text-2xl font-black text-neutral-950">Buyurtmalar tarixi</h2>
+        <MotionDiv {...sectionMotion} className="mf-card p-5">
+          <h2 className="text-2xl font-black text-white">Buyurtmalar tarixi</h2>
           <div className="mt-4 grid gap-3">
             {history.length ? history.map((order) => (
-              <article className="rounded-xl border border-neutral-100 p-4" key={order.id}>
+              <article className="mf-card-soft p-4" key={order.id}>
                 <div className="flex justify-between gap-3">
                   <div>
-                    <p className="font-black text-neutral-950">{order.order.orderNumber}</p>
-                    <p className="mt-1 text-sm text-neutral-500">{new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}</p>
+                    <p className="font-black text-white">{order.order.orderNumber}</p>
+                    <p className="mt-1 text-sm text-white/52">{new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}</p>
                   </div>
-                  <span className="font-black text-emerald-700">{formatMoney(order.order.total)}</span>
+                  <span className="font-black text-[#67E8F9]">{formatMoney(order.order.total)}</span>
                 </div>
               </article>
-            )) : <p className="rounded-xl bg-neutral-50 p-6 text-sm font-semibold text-neutral-500">Buyurtmalar tarixi shu yerda ko'rinadi.</p>}
+            )) : <p className="mf-card-soft p-6 text-sm font-semibold text-white/56">Buyurtmalar tarixi shu yerda ko'rinadi.</p>}
           </div>
-        </div>
+        </MotionDiv>
       </div>
 
       <aside className="grid content-start gap-5">
-        <div className="rounded-xl bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <p className="text-sm font-bold text-emerald-700">Bonuslar</p>
-          <p className="mt-2 text-4xl font-black text-neutral-950">{formatMoney(dashboard?.bonusBalance ?? 0)}</p>
+        <div className="mf-card p-5">
+          <p className="text-sm font-bold text-[#67E8F9]">Bonuslar</p>
+          <p className="mt-2 text-4xl font-black text-white"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> UZS</p>
         </div>
-        <div className="rounded-xl bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <h2 className="text-xl font-black text-neutral-950">Sevimlilar</h2>
+        <div className="mf-card p-5">
+          <h2 className="text-xl font-black text-white">Sevimlilar</h2>
           <div className="mt-4 grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
-              <Link className="grid grid-cols-[64px_1fr] gap-3 rounded-2xl bg-neutral-50 p-2" href={`/product/${product.id}`} key={product.id}>
+              <Link className="pressable grid grid-cols-[64px_1fr] gap-3 rounded-2xl bg-white/8 p-2" href={`/product/${product.id}`} key={product.id}>
                 <img alt={product.name} className="h-16 w-16 rounded-xl object-cover" src={productImage(product.imageUrl)} />
                 <div>
-                  <p className="font-bold text-neutral-950">{product.name}</p>
-                  <p className="text-sm text-emerald-700">{formatMoney(product.sellingPrice)}</p>
+                  <p className="font-bold text-white">{product.name}</p>
+                  <p className="text-sm text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm text-neutral-500">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
+            )) : <p className="text-sm text-white/56">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
           </div>
         </div>
       </aside>
-    </section>
+    </MotionDiv>
   );
 }
 
@@ -185,8 +186,8 @@ function StatusTracker({ status }: { status: string }) {
         const active = index <= activeIndex;
         return (
           <div className="grid gap-2" key={step}>
-            <div className={`h-2 rounded-full ${active ? "bg-[#16A34A]" : "bg-emerald-100"}`} />
-            <p className={`text-[10px] font-black sm:text-xs ${active ? "text-emerald-700" : "text-neutral-400"}`}>{statusLabel(step)}</p>
+            <div className={`h-2 rounded-full ${active ? "bg-[#22C55E]" : "bg-white/12"}`} />
+            <p className={`text-[10px] font-black sm:text-xs ${active ? "text-[#67E8F9]" : "text-white/35"}`}>{statusLabel(step)}</p>
           </div>
         );
       })}

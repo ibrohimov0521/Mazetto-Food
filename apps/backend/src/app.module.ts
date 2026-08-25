@@ -24,6 +24,7 @@ import { RolesModule } from "./modules/roles/roles.module";
 import { ShiftsModule } from "./modules/shifts/shifts.module";
 import { SuppliersModule } from "./modules/suppliers/suppliers.module";
 import { TablesModule } from "./modules/tables/tables.module";
+import { TelegramModule } from "./modules/telegram/telegram.module";
 import { UsersModule } from "./modules/users/users.module";
 import { PrismaModule } from "./prisma/prisma.module";
 
@@ -51,6 +52,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     RecipesModule,
     SuppliersModule,
     TablesModule,
+    TelegramModule,
   ],
   controllers: [HealthController],
   providers: [

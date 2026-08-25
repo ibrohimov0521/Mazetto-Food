@@ -26,6 +26,7 @@ import {
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { OrdersService } from "../orders/orders.service";
+import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import type {
   CreateOnlineOrderDto,
   CustomerLogoutDto,
@@ -67,6 +68,7 @@ export class CustomersService {
     private readonly kitchenService: KitchenService,
     private readonly jwtService: JwtService,
     private readonly ordersService: OrdersService,
+    private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
   ) {}
 
   async requestCode(dto: CustomerRequestCodeDto) {
@@ -399,6 +401,10 @@ export class CustomersService {
 
     if (kitchenTicket) {
       this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
+    }
+
+    if (result.order?.id) {
+      void this.telegramOrderNotificationService.notifyNewOrder(result.order.id);
     }
 
     return result;

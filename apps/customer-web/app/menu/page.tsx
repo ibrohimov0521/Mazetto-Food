@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { ProductCard } from "../../components/product-card";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
@@ -54,16 +55,16 @@ function MenuCatalog() {
   }, [categoryId, products, query]);
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-6">
-      <div className="rounded-xl border border-emerald-100 bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.10)]">
+    <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-6">
+      <div className="mf-card p-5">
         <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-end">
           <div>
-            <p className="text-sm font-black uppercase text-emerald-700">MAZETTO FOOD menyusi</p>
-            <h1 className="mt-2 text-4xl font-black text-neutral-950">Bugun nima buyurtma qilamiz?</h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-500">Lavash, burger, tovuqli taomlar, setlar, souslar va ichimliklarni tez toping.</p>
+            <p className="text-sm font-black uppercase text-[#67E8F9]">MAZETTO FOOD menyusi</p>
+            <h1 className="mt-2 text-4xl font-black text-white">Bugun nima buyurtma qilamiz?</h1>
+            <p className="mt-2 text-sm leading-6 text-white/60">Lavash, burger, tovuqli taomlar, setlar, souslar va ichimliklarni tez toping.</p>
           </div>
           <input
-            className="rounded-xl border border-neutral-200 px-4 py-3 font-semibold outline-none focus:border-emerald-500"
+            className="mf-input px-4 py-3 font-semibold"
             placeholder="Menyudan qidirish"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -80,28 +81,28 @@ function MenuCatalog() {
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <MotionDiv {...sectionMotion} className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading
           ? Array.from({ length: 6 }, (_, index) => <ProductSkeleton key={index} />)
           : visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
-      </div>
+      </MotionDiv>
 
       {!loading && !visibleProducts.length ? (
-        <div className="mt-5 rounded-xl bg-white p-8 text-center text-sm font-bold text-neutral-500 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
+        <div className="mf-card mt-5 p-8 text-center text-sm font-bold text-white/60">
           Bu tanlov bo'yicha mahsulot topilmadi.
         </div>
       ) : null}
-    </section>
+    </MotionDiv>
   );
 }
 
 function tabClass(active: boolean): string {
-  return `pressable shrink-0 rounded-xl px-4 py-3 text-sm font-black ${active ? "bg-[#16A34A] text-white shadow-[0_10px_24px_rgba(22,163,74,0.20)]" : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"}`;
+  return `pressable ripple shrink-0 rounded-2xl px-4 py-3 text-sm font-black ${active ? "mf-button-primary" : "bg-white/10 text-white/76 hover:bg-white/16 hover:text-white"}`;
 }
 
 function ProductSkeleton() {
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-100 bg-white shadow-[0_14px_42px_rgba(17,24,39,0.08)]">
+    <div className="mf-card overflow-hidden">
       <div className="skeleton h-48 w-full" />
       <div className="grid gap-3 p-4">
         <div className="skeleton h-5 w-3/4 rounded-full" />

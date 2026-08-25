@@ -29,12 +29,23 @@ export type CartItem = {
   modifiers: CartModifier[];
   notes?: string;
 };
+export type CartFlight = {
+  id: number;
+  imageUrl: string;
+  source: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+};
 type CartContextValue = {
   customer: CustomerSession | null;
   items: CartItem[];
   favoriteIds: string[];
   toastMessage: string | null;
   cartPulseId: number;
+  cartFlight: CartFlight | null;
   setCustomer: (customer: CustomerSession | null) => void;
   addItem: (item: Omit<CartItem, "key">) => void;
   updateQuantity: (key: string, quantity: number) => void;
@@ -43,6 +54,8 @@ type CartContextValue = {
   toggleFavorite: (productId: string) => void;
   isFavorite: (productId: string) => boolean;
   showToast: (message: string) => void;
+  triggerCartFlight: (imageUrl: string | null | undefined, source: DOMRect) => void;
+  finishCartFlight: () => void;
   subtotal: number;
 };
 
@@ -57,6 +70,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [cartPulseId, setCartPulseId] = useState(0);
+  const [cartFlight, setCartFlight] = useState<CartFlight | null>(null);
 
   useEffect(() => {
     const storedItems = window.localStorage.getItem(storageKey);
@@ -109,6 +123,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     favoriteIds,
     toastMessage,
     cartPulseId,
+    cartFlight,
     setCustomer,
     addItem(item) {
       const key = `${item.productId}-${item.variantId ?? "base"}-${item.modifiers.map((modifier) => modifier.modifierId).join(".")}-${item.notes ?? ""}`;
@@ -145,6 +160,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     },
     showToast(message) {
       setToastMessage(message);
+    },
+    triggerCartFlight(imageUrl, source) {
+      setCartFlight({
+        id: Date.now(),
+        imageUrl: productImage(imageUrl),
+        source: {
+          left: source.left,
+          top: source.top,
+          width: source.width,
+          height: source.height,
+        },
+      });
+    },
+    finishCartFlight() {
+      setCartFlight(null);
     },
     subtotal,
   };

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatedNumber, MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
 import { formatMoney, productImage, useCart } from "../../lib/cart";
@@ -71,22 +72,22 @@ function Profile() {
   if (!customer?.accessToken) {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10 text-center">
-        <div className="rounded-xl bg-white p-8 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <h1 className="text-3xl font-black text-neutral-950">Telefonni tasdiqlang</h1>
-          <p className="mt-3 text-neutral-500">Sevimlilar, buyurtmalar va bonus balansini ko'rish uchun bosh sahifadagi Telegram kodni tasdiqlang.</p>
-          <Link className="pressable mt-5 inline-flex rounded-xl bg-[#16A34A] px-5 py-3 font-black text-white" href="/">Bosh sahifa</Link>
+        <div className="mf-card p-8">
+          <h1 className="text-3xl font-black text-white">Telefonni tasdiqlang</h1>
+          <p className="mt-3 text-white/60">Sevimlilar, buyurtmalar va bonus balansini ko'rish uchun bosh sahifadagi Telegram kodni tasdiqlang.</p>
+          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/">Bosh sahifa</Link>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-6">
+    <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-6">
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-        <div className="rounded-xl bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.12)]">
-          <p className="text-sm font-black uppercase text-emerald-700">Mijoz profili</p>
-          <h1 className="mt-2 text-4xl font-black text-neutral-950">{dashboard?.name ?? customer.name}</h1>
-          <p className="mt-2 text-lg font-bold text-neutral-600">{dashboard?.phone ?? customer.phone}</p>
+        <div className="mf-card p-5">
+          <p className="text-sm font-black uppercase text-[#67E8F9]">Mijoz profili</p>
+          <h1 className="mt-2 text-4xl font-black text-white">{dashboard?.name ?? customer.name}</h1>
+          <p className="mt-2 text-lg font-bold text-white/60">{dashboard?.phone ?? customer.phone}</p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <Stat label="Buyurtmalar" value={`${dashboard?.customerOrders.length ?? 0}`} />
@@ -95,53 +96,53 @@ function Profile() {
           </div>
         </div>
 
-        <div className="rounded-xl bg-[#16A34A] p-5 text-white shadow-[0_18px_50px_rgba(22,163,74,0.22)]">
-          <p className="text-sm font-black uppercase text-emerald-100">Bonus balansi</p>
-          <p className="mt-3 text-4xl font-black">{formatMoney(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)}</p>
-          <p className="mt-3 text-sm font-semibold text-emerald-50">Telefon profilingiz buyurtmalar tarixi va sevimli mahsulotlarni keyingi safar uchun saqlaydi.</p>
+        <div className="rounded-[var(--mf-radius)] bg-gradient-to-br from-[#22C55E] to-[#67E8F9] p-5 text-[#04130B] shadow-[0_18px_50px_rgba(34,197,94,0.24)]">
+          <p className="text-sm font-black uppercase text-[#052012]/70">Bonus balansi</p>
+          <p className="mt-3 text-4xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> UZS</p>
+          <p className="mt-3 text-sm font-semibold text-[#052012]/70">Telefon profilingiz buyurtmalar tarixi va sevimli mahsulotlarni keyingi safar uchun saqlaydi.</p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <MotionDiv {...sectionMotion} className="mt-5 grid gap-5 lg:grid-cols-2">
         <Panel title="So'nggi buyurtmalar">
           <div className="grid gap-3">
             {dashboard?.customerOrders.slice(0, 5).map((order) => (
-              <article className="rounded-xl border border-neutral-100 p-4" key={order.id}>
+              <article className="mf-card-soft p-4" key={order.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-black text-neutral-950">{order.order.orderNumber}</p>
-                    <p className="mt-1 text-sm font-semibold text-neutral-500">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
+                    <p className="font-black text-white">{order.order.orderNumber}</p>
+                    <p className="mt-1 text-sm font-semibold text-white/52">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
                   </div>
-                  <span className="font-black text-emerald-700">{formatMoney(order.order.total)}</span>
+                  <span className="font-black text-[#67E8F9]">{formatMoney(order.order.total)}</span>
                 </div>
               </article>
-            )) ?? <p className="text-sm font-semibold text-neutral-500">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>}
+            )) ?? <p className="text-sm font-semibold text-white/56">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>}
           </div>
         </Panel>
 
         <Panel title="Sevimlilar">
           <div className="grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
-              <Link className="grid grid-cols-[72px_1fr] gap-3 rounded-xl bg-neutral-50 p-2 transition hover:bg-emerald-50" href={`/product/${product.id}`} key={product.id}>
+              <Link className="pressable grid grid-cols-[72px_1fr] gap-3 rounded-xl bg-white/8 p-2 transition hover:bg-white/12" href={`/product/${product.id}`} key={product.id}>
                 <img alt={product.name} className="h-18 w-18 rounded-xl object-cover" src={productImage(product.imageUrl)} />
                 <div>
-                  <p className="font-black text-neutral-950">{product.name}</p>
-                  <p className="mt-1 text-sm font-bold text-emerald-700">{formatMoney(product.sellingPrice)}</p>
+                  <p className="font-black text-white">{product.name}</p>
+                  <p className="mt-1 text-sm font-bold text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm font-semibold text-neutral-500">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
+            )) : <p className="text-sm font-semibold text-white/56">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
           </div>
         </Panel>
-      </div>
+      </MotionDiv>
 
       <Panel title="Saqlangan manzillar">
         <div className="flex flex-wrap gap-3">
           {addresses.length ? addresses.map((address) => (
-            <span className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800" key={address}>{address}</span>
-          )) : <span className="rounded-xl bg-neutral-50 px-4 py-3 text-sm font-semibold text-neutral-500">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
+            <span className="rounded-2xl bg-[#22C55E]/16 px-4 py-3 text-sm font-bold text-[#67E8F9]" key={address}>{address}</span>
+          )) : <span className="rounded-2xl bg-white/8 px-4 py-3 text-sm font-semibold text-white/56">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
         </div>
       </Panel>
-    </section>
+    </MotionDiv>
   );
 }
 
@@ -151,8 +152,8 @@ function statusLabel(status: string): string {
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="mt-5 rounded-xl bg-white p-5 shadow-[0_16px_55px_rgba(15,118,110,0.10)]">
-      <h2 className="mb-4 text-2xl font-black text-neutral-950">{title}</h2>
+    <section className="mf-card mt-5 p-5">
+      <h2 className="mb-4 text-2xl font-black text-white">{title}</h2>
       {children}
     </section>
   );
@@ -160,9 +161,9 @@ function Panel({ children, title }: { children: React.ReactNode; title: string }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-emerald-50 p-4">
-      <p className="text-xs font-black uppercase text-emerald-700">{label}</p>
-      <p className="mt-2 text-2xl font-black text-neutral-950">{value}</p>
+    <div className="mf-card-soft p-4">
+      <p className="text-xs font-black uppercase text-[#67E8F9]">{label}</p>
+      <p className="mt-2 text-2xl font-black text-white">{value}</p>
     </div>
   );
 }
