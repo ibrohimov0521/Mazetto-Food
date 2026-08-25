@@ -1,0 +1,14 @@
+services:
+  mazetto-food-media:
+    image: mazetto-food-media:latest
+    build:
+      context: ../..
+      dockerfile: apps/media/Dockerfile
+    ports:
+      - "8080:80"
+    volumes:
+      - mazetto-media:/media
+    restart: unless-stopped
+
+volumes:
+  mazetto-media:

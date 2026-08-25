@@ -142,5 +142,21 @@ export function formatMoney(value: string | number): string {
 }
 
 export function productImage(imageUrl?: string | null): string {
-  return imageUrl || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80";
+  const fallbackImage =
+    "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80";
+
+  if (!imageUrl) {
+    return fallbackImage;
+  }
+
+  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+    return imageUrl;
+  }
+
+  if (imageUrl.startsWith("/")) {
+    const mediaUrl = process.env.NEXT_PUBLIC_MEDIA_URL?.replace(/\/$/, "");
+    return mediaUrl ? `${mediaUrl}${imageUrl}` : imageUrl;
+  }
+
+  return imageUrl;
 }
