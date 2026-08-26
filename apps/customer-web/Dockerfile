@@ -17,6 +17,12 @@ FROM base AS builder
 
 COPY --from=deps /app ./
 
+ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_MEDIA_URL
+
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_MEDIA_URL=$NEXT_PUBLIC_MEDIA_URL
+
 RUN pnpm exec turbo run build --filter=customer-web
 
 FROM node:24-alpine AS runner
