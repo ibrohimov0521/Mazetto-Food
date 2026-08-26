@@ -11,6 +11,11 @@ import { formatMoney, useCart, type CustomerSession } from "../lib/cart";
 import type { Branch, Category, CustomerHome, Product } from "../lib/types";
 
 const branchStorageKey = "mazetto.customer.branchId";
+type CustomerAuthDelivery = {
+  status: "SENT" | "TELEGRAM_LINK_REQUIRED" | "PENDING_INTEGRATION" | string;
+  message: string;
+  botUrl?: string;
+};
 
 export default function Home() {
   const { customer, setCustomer } = useCart();
@@ -19,6 +24,7 @@ export default function Home() {
   const [code, setCode] = useState("");
   const [pendingVerification, setPendingVerification] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [telegramBotUrl, setTelegramBotUrl] = useState<string | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -58,12 +64,19 @@ export default function Home() {
   const popular = useMemo(() => products.filter((product) => !product.isCombo).slice(0, 6), [products]);
 
   async function requestCode() {
-    await apiFetch<{ challenge: { phone: string; expiresAt: string }; delivery: { status: string; message: string } }>("/customer/auth/request-code", {
+    const result = await apiFetch<{ challenge: { phone: string; expiresAt: string }; delivery: CustomerAuthDelivery }>("/customer/auth/request-code", {
       method: "POST",
       body: JSON.stringify({ phone }),
     });
     setPendingVerification(true);
-    setMessage("Tasdiqlash kodi yaratildi. Kod Telegram bot orqali kelganda shu yerga kiriting.");
+    setTelegramBotUrl(result.delivery.botUrl ?? null);
+
+    if (result.delivery.status === "TELEGRAM_LINK_REQUIRED") {
+      setMessage("Telefon raqamingiz Telegram bilan bog'lanmagan. Botga o'tib /start bosing va telefon raqamingizni yuboring.");
+      return;
+    }
+
+    setMessage(result.delivery.message || "Tasdiqlash kodi Telegram orqali yuborildi. Kodni shu yerga kiriting.");
   }
 
   async function verifyCode() {
@@ -74,6 +87,7 @@ export default function Home() {
     setCustomer({ ...result.customer, ...result.tokens });
     setPendingVerification(false);
     setCode("");
+    setTelegramBotUrl(null);
     setMessage("Profil tasdiqlandi. Savat, sevimlilar va buyurtmalar profilingizga ulandi.");
   }
 
@@ -184,6 +198,11 @@ export default function Home() {
                 <button className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50" disabled={!phone || !code} onClick={() => void verifyCode()} type="button">
                   Kodni tasdiqlash
                 </button>
+                {telegramBotUrl ? (
+                  <Link className="pressable ripple mazetto-glass-chip rounded-2xl px-5 py-4 text-center font-black text-[#67E8F9]" href={telegramBotUrl} target="_blank">
+                    Telegram botga o'tish
+                  </Link>
+                ) : null}
               </>
             ) : (
               <button className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50" disabled={!phone} onClick={() => void requestCode()} type="button">

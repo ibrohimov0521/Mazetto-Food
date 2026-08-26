@@ -28,6 +28,7 @@ import {
 import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
+import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
 import { OrdersService } from "../orders/orders.service";
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import type {
@@ -72,6 +73,8 @@ type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
 };
 const CUSTOMER_CODE_TTL_MS = 10 * 60 * 1000;
 const CUSTOMER_CODE_ATTEMPT_LIMIT = 5;
+const CUSTOMER_CODE_REQUEST_WINDOW_MS = 60 * 1000;
+const CUSTOMER_CODE_REQUEST_LIMIT = 3;
 const CUSTOMER_ORDER_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_ORDER_ATTEMPT_WAIT_MS = 15000;
 
@@ -83,34 +86,43 @@ export class CustomersService {
     private readonly kitchenService: KitchenService,
     private readonly jwtService: JwtService,
     private readonly ordersService: OrdersService,
+    private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
   ) {}
 
   async requestCode(dto: CustomerRequestCodeDto) {
     const phone = this.normalizePhone(dto.phone);
     const code = this.generateVerificationCode();
-    const existingCustomer = await this.prisma.customer.findUnique({
-      where: { phone },
-      select: { id: true },
+    const codeHash = await bcrypt.hash(code, 12);
+    const challenge = await this.prisma.$transaction(async (tx) => {
+      await this.assertCanRequestCode(tx, phone);
+      const existingCustomer = await tx.customer.findUnique({
+        where: { phone },
+        select: { id: true },
+      });
+
+      await this.expireActiveCustomerChallenges(tx, phone);
+
+      return tx.customerVerificationChallenge.create({
+        data: {
+          customerId: existingCustomer?.id ?? null,
+          phone,
+          codeHash,
+          expiresAt: new Date(Date.now() + CUSTOMER_CODE_TTL_MS),
+        },
+        select: { id: true, phone: true, expiresAt: true, createdAt: true },
+      });
     });
-    const challenge = await this.prisma.customerVerificationChallenge.create({
-      data: {
-        customerId: existingCustomer?.id ?? null,
+
+    const delivery =
+      await this.telegramCustomerAuthService.deliverVerificationCode({
         phone,
-        codeHash: await bcrypt.hash(code, 12),
-        expiresAt: new Date(Date.now() + CUSTOMER_CODE_TTL_MS),
-      },
-      select: { id: true, phone: true, expiresAt: true, createdAt: true },
-    });
+        code,
+      });
 
     return {
       challenge,
-      delivery: {
-        channel: "TELEGRAM",
-        status: "PENDING_INTEGRATION",
-        message:
-          "Verification code delivery is reserved for the MAZETTO Telegram bot integration.",
-      },
+      delivery,
     };
   }
 
@@ -658,6 +670,42 @@ export class CustomersService {
       refreshToken,
       tokenType: "Bearer",
     };
+  }
+
+  private async assertCanRequestCode(
+    tx: TransactionClient,
+    phone: string,
+  ): Promise<void> {
+    const recentRequests = await tx.customerVerificationChallenge.count({
+      where: {
+        phone,
+        createdAt: {
+          gte: new Date(Date.now() - CUSTOMER_CODE_REQUEST_WINDOW_MS),
+        },
+      },
+    });
+
+    if (recentRequests >= CUSTOMER_CODE_REQUEST_LIMIT) {
+      throw new BadRequestException(
+        "Too many verification code requests. Please wait before trying again.",
+      );
+    }
+  }
+
+  private async expireActiveCustomerChallenges(
+    tx: TransactionClient,
+    phone: string,
+  ): Promise<void> {
+    const now = new Date();
+
+    await tx.customerVerificationChallenge.updateMany({
+      where: {
+        phone,
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: { consumedAt: now },
+    });
   }
 
   private async verifyCustomerRefreshToken(

@@ -241,14 +241,17 @@ model ProductBranchAvailability {
 }
 
 model Customer {
-  id           String   @id @default(cuid())
-  name         String
-  phone        String   @unique
-  email        String?  @unique
-  passwordHash String?
-  bonusBalance Decimal  @default(0) @db.Decimal(12, 2)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String    @id @default(cuid())
+  name             String
+  phone            String    @unique
+  email            String?   @unique
+  passwordHash     String?
+  telegramUserId   String?   @unique
+  telegramChatId   String?
+  telegramLinkedAt DateTime?
+  bonusBalance     Decimal   @default(0) @db.Decimal(12, 2)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   carts          Cart[]
   favorites      CustomerFavorite[]
@@ -257,6 +260,7 @@ model Customer {
   sessions       CustomerSession[]
   challenges     CustomerVerificationChallenge[]
 
+  @@index([telegramChatId])
   @@index([createdAt])
   @@map("customers")
 }

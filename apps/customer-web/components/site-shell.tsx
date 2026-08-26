@@ -23,9 +23,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <main className="mf-shell mf-app-shell min-h-screen overflow-x-clip">
+    <main className="mf-shell mf-app-shell min-h-screen">
         <BrandSplash enabled={pathname === "/"} />
-        <header className="mf-topbar sticky top-0 z-20 border-b pt-[env(safe-area-inset-top)]">
+        <header className="mf-topbar fixed inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)]">
           <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
             <Link className="pressable shrink-0 whitespace-nowrap text-lg font-black tracking-normal text-[#67E8F9] sm:text-xl" href="/">
               MAZETTO FOOD
@@ -59,6 +59,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
+        <div aria-hidden="true" className="h-24" />
         <LayoutGroup id="customer-page-content">
           <AnimatePresence initial={false} mode="wait">
             <motion.div

@@ -138,6 +138,78 @@ Media Service
   - Telegram side effects stayed safe when Telegram ENV values were missing and did not create duplicate notifications on idempotent retries
   - Customer Web responsive smoke checks passed for 360, 375, 390, 430, 768, 1024, and 1440px widths with no horizontal overflow
   - authenticated browser checkout remains a manual QA item because the local browser session could not safely inject a customer auth token
+- Phase 6B controlled production release was completed:
+  - release commit `f6650b92a13a011b1bdbf7eac1d975e04a0c97e8` was pushed to `origin/main`
+  - backend auto-deploy was disabled before push and restored after smoke tests
+  - production migrations were applied successfully; production now has 14 applied Prisma migrations and 0 failed migrations
+  - production seed was run once successfully after migration
+  - backend service was manually updated to release image tag `f6650b9`
+  - customer-web service was manually updated to release image tag `f6650b9`
+  - backend smoke tests passed for health, customer branches, customer menu categories, customer home, and unauthenticated admin rejection
+  - customer-web production smoke checks passed for 360, 430, 768, and 1440px widths with no horizontal overflow and no broken image icons
+- Phase 6C real production branch configuration was completed:
+  - production branch `MAZETTO Sergeli` was created with code `SERGELI`
+  - address is `Sergeli 7/3`
+  - phone is intentionally empty because the owner has not provided a number and the schema allows null
+  - coordinates were resolved from the supplied Google Maps link as `41.1970731, 69.2038921`
+  - timezone is `Asia/Tashkent`
+  - working hours are 10:00-23:00 every day, Monday through Sunday
+  - branch is active, accepts orders, is not temporarily closed, and supports delivery and pickup
+  - production customer branch API returns the branch once with `isOpen: true` during the verified Tashkent business-hours check
+  - no orders, customer orders, product prices, seed data, migrations, deployments, Telegram, or Cloudflare settings were changed
+- Phase 6C.1 customer-web production build-time environment fix was completed:
+  - root cause was that the deployed Next.js bundle was built without `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_MEDIA_URL`, so customer-web used the local development fallback `http://localhost:4000/api/v1`
+  - customer-web Dockerfile now passes the public API and media values into the builder stage before `next build`
+  - Dokploy customer-web build arguments were configured for the same public values
+  - release commit `b479a78fb0f96155f28fcfb0e556c391240f9028` was pushed to `origin/main`
+  - backend and media auto-deploy were temporarily disabled before push and restored after verification
+  - customer-web service was manually updated to image tag `b479a78`
+  - actual served production JavaScript no longer contains `localhost:4000` and contains `api.mazettofood.uz` and `media.mazettofood.uz`
+  - real browser QA verified `MAZETTO Sergeli` appears in the production branch selector and menu loads with the selected branch
+  - no backend code, database data, migrations, seed, Cloudflare, Telegram, or media files were changed
+- Phase 6D authenticated production checkout E2E was blocked before order creation:
+  - production health, migration status, Sergeli branch state, menu, cart, upsell, media fallback, and responsive customer-web smoke checks passed
+  - production auth flow requires `POST /api/v1/customer/auth/request-code` then `verify-code`
+  - request-code currently returns `delivery.status: PENDING_INTEGRATION` because verification code delivery is reserved for Telegram integration
+  - production Telegram ENV values are intentionally missing, so there is no supported way to receive the customer verification code
+  - no customer, order, customer order, kitchen ticket, or customer order attempt was created
+  - one clearly marked test verification challenge was created for phone `+998000006666` while confirming the blocker; it remains unconsumed and expires automatically
+  - browser cart-only QA used `Big Lavash` plus one upsell item and did not submit checkout
+  - hero fallback audit confirmed `/customer/home` returns product-based fallback slides when DB hero slides are empty; promotions remain empty
+  - no migrations, seed, deploy, Cloudflare, Telegram, media, product price, branch config, or backend/frontend code changes were made
+- Customer Telegram phone verification flow was implemented locally:
+  - `Customer` now supports optional Telegram link fields: `telegramUserId`, `telegramChatId`, and `telegramLinkedAt`
+  - `request-code` keeps the existing response shape and now returns Telegram delivery status: `SENT`, `TELEGRAM_LINK_REQUIRED`, or `PENDING_INTEGRATION`
+  - linked customers receive the 6 digit code through Telegram
+  - unlinked customers are told to open the MAZETTO Telegram bot, press `/start`, and share their phone contact
+  - Telegram contact sharing binds `phone ↔ telegramUserId` and sends a fresh verification code
+  - `verify-code` remains the canonical JWT login step
+  - implementation is local only; production migration, ENV, webhook setup, and deploy are still pending approval
+- Phase 7A.1 Telegram customer auth validation gate was completed locally except isolated database migration apply:
+  - Telegram contact ownership is validated by requiring `contact.user_id` to match `message.from.id`
+  - `telegramUserId` is unique and cannot be linked to multiple customers
+  - phone normalization reuses the existing MAZETTO customer auth normalization path
+  - verification codes are stored only as bcrypt hashes and are not logged
+  - resend now expires previous active challenges so old codes cannot be reused after rotation
+  - request-code now has a local DB-backed short-window rate limit
+  - focused automated validation covers missing bot token, unlinked request-code, `/start`, foreign contact rejection, self contact linking, code delivery, verify-code, wrong code, expired code, reused code, old code after resend, excessive verify attempts, request-code rate limit, wrong webhook secret, and staff callback routing regression
+  - Prisma format, validate, generate, backend/customer-web typecheck, lint, build, and root typecheck/lint/build passed
+  - isolated fresh PostgreSQL migration apply is still pending because local Docker was unavailable and local PostgreSQL required credentials; production database was not touched
+- Phase 7A.2 Telegram auth final migration gate and responsive QA was completed:
+  - an isolated temporary PostgreSQL 18 container was created on the Ubuntu server with a separate temporary volume and localhost-only port binding
+  - the production PostgreSQL service and production database were not used
+  - the complete migration chain from zero applied successfully, including `20260826120000_customer_telegram_auth`
+  - 15 migrations were applied and Prisma reported the database schema as up to date
+  - the seed ran successfully against the temporary database: 0 users, 0 customers, 6 roles, 39 permissions, 66 role-permission links, 7 payment methods, 10 categories, 35 products, 44 variants, and 8 modifiers
+  - DB-backed Telegram auth integration tests passed for unlinked request-code, self contact linking, real unique `telegramUserId` enforcement, duplicate Telegram identity prevention, linked request-code, resend invalidation, verify-code, reused code rejection, expired code rejection, excessive attempt rejection, persisted request-code rate limit, wrong webhook secret, `/start`, and staff callback routing regression
+  - production migration safety was confirmed read-only: production currently has `customers = 0`, and the new migration is additive with nullable columns plus a safe unique index
+  - customer-web responsive QA passed for Telegram auth states at 360, 390, 430, 768, and 1440px
+  - `TELEGRAM_LINK_REQUIRED` shows the Telegram bot CTA, `PENDING_INTEGRATION` stays graceful, and verification-code input state works
+  - no bot token reaches the DOM/client UI; only the public bot URL is surfaced
+  - a sticky-header issue discovered during QA was fixed by making the customer header fixed with a matching spacer; no horizontal overflow was observed and mobile bottom nav stayed fixed
+  - the temporary PostgreSQL container and temporary volume were removed after validation
+  - Prisma format, validate, generate, backend/customer-web typecheck, lint, build, and root typecheck/lint/build passed
+  - Telegram customer auth local implementation is READY FOR PRODUCTION ACTIVATION, but production activation itself is not complete
 
 ## Current Blockers
 
@@ -160,7 +232,7 @@ Verification:
 - restored counts matched current production baseline: 10 categories, 35 products, 0 branches, 0 orders, 0 customer orders
 - temporary restore database was removed afterward
 
-Production currently has 11 applied Prisma migrations. The local codebase has 14 migrations, so these are pending in production:
+Production now has 14 applied Prisma migrations:
 
 ```text
 20260826090000_homepage_promotions
@@ -168,9 +240,7 @@ Production currently has 11 applied Prisma migrations. The local codebase has 14
 20260826110000_customer_order_idempotency
 ```
 
-Required next action:
-
-Before pushing the release, control backend auto-deploy so new backend code cannot start before the pending migrations are applied.
+These release migrations were applied successfully during Phase 6B.
 
 ### 1. Media Files Missing
 
@@ -206,15 +276,15 @@ TELEGRAM_WEBHOOK_SECRET
 
 Required next action:
 
-Add these ENV values in Dokploy, redeploy/restart only the backend after user confirmation, then set Telegram webhook.
+Deploy the local customer Telegram verification implementation after approval, apply the pending migration, configure Telegram ENV values in Dokploy, redeploy/restart only the backend, then set Telegram webhook.
 
-### 3. Production Branch Data Missing
+### 3. Customer Verification Delivery
 
-Branch schema/API readiness is implemented, but production branch records still need to be created deliberately.
+Customer verification delivery has been implemented and validated locally, including fresh migration and DB-backed integration tests, but is not yet deployed to production.
 
 Required next action:
 
-Create real MAZETTO branch records with address, phone, delivery/pickup status, and working hours after user confirmation.
+After explicit approval, push/deploy the validated implementation, apply the pending production migration, configure Telegram production ENV values, set the Telegram webhook, then run authenticated production checkout QA.
 
 ## Roadmap
 
@@ -277,21 +347,23 @@ Status: Done
 
 ### Phase 6 - Customer Checkout / Order E2E
 
-Status: Done locally, production smoke pending
+Status: Production release deployed, real Sergeli branch configured
 
 - Basic checkout implementation exists.
 - Branch readiness and delivery/pickup validation are implemented.
 - Customer order idempotency and duplicate-submit protection are implemented.
 - Local isolated database/API validation passed for fresh migrations, seed, valid orders, retry idempotency, concurrent idempotency, rollback behavior, branch validation, and server-authoritative pricing.
-- Remaining: real production branch data, real address/delivery operations, payment confirmation flow, authenticated browser checkout QA, deployed production smoke test, and full production E2E test.
+- Controlled production release, migrations, seed, backend deploy, customer-web deploy, and smoke tests passed.
+- Remaining: customer verification delivery, real media files, real delivery operations, payment confirmation flow, authenticated production checkout QA, and full production E2E test.
 
 ### Phase 7 - Branch System
 
-Status: Partially done
+Status: Real Sergeli branch configured, admin UI still pending
 
 - Branch name, code, address, phone, GPS coordinates, working hours, active status, temporary closure, order acceptance, delivery/pickup status, and product availability foundation exist.
+- Production now has one real branch: `MAZETTO Sergeli`.
 - Branch is already related to orders, employees, devices, printers, warehouses, shifts, reports, and customer orders.
-- Remaining: real production branch records, full admin UI, delivery zone/routing, future Desktop/POS device assignment workflows.
+- Remaining: phone number from owner, full admin UI, delivery zone/routing, future Desktop/POS device assignment workflows.
 
 ### Phase 8 - Telegram Staff Integration
 
@@ -303,9 +375,12 @@ Status: In progress
 
 ### Phase 9 - Customer Telegram Bot
 
-Status: Not started
+Status: Ready for production activation
 
-- `/start`, Telegram auth, phone binding, web login code, Menu, Cart, Orders, Addresses, status notifications.
+- `/start`, Telegram auth contact request, phone binding, and web login code delivery are implemented locally in the backend Telegram webhook.
+- Fresh migration and DB-backed integration validation passed.
+- Remaining production work: release push/deploy, production migration deploy, Telegram ENV, webhook setup, and production E2E.
+- Remaining future bot features: Menu, Cart, Orders, Addresses, and status notifications.
 - It should use Mazetto API and PostgreSQL, not a separate menu database.
 
 ### Phase 10 - MAZETTO Desktop
@@ -569,8 +644,8 @@ products/set-kids.webp
 2. Bottom nav + Liquid Glass UI. Status: Done.
 3. Hero slider / Discount slider / Upsell UI. Status: Done.
 4. Real menu and 45 media images. Status: In progress, files missing.
-5. Branch system. Status: Partially done, customer/checkout readiness complete.
-6. Customer order E2E. Status: Done locally, production smoke pending.
+5. Branch system. Status: Sergeli production branch configured, admin UI pending.
+6. Customer order E2E. Status: Blocked until validated Telegram verification implementation is deployed and configured.
 7. Telegram Staff production. Status: In progress.
 8. MAZETTO Desktop architecture. Status: Not started.
 9. Desktop Local DB. Status: Not started.
