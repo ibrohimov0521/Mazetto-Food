@@ -210,6 +210,27 @@ Media Service
   - the temporary PostgreSQL container and temporary volume were removed after validation
   - Prisma format, validate, generate, backend/customer-web typecheck, lint, build, and root typecheck/lint/build passed
   - Telegram customer auth local implementation is READY FOR PRODUCTION ACTIVATION, but production activation itself is not complete
+- Phase 7B Telegram customer auth production activation was started but stopped before production migration/deploy:
+  - release commit `1a92a01d6d929cdd45f1cd626efca3cb7dd9a52a` was pushed to `origin/main`
+  - production services were healthy before activation: backend, customer-web, PostgreSQL, and media were all `1/1`
+  - `GET /api/v1/health` returned 200
+  - production pre-activation counts were recorded: 0 customers, 1 verification challenge, 0 orders, and 0 customer orders
+  - a fresh pre-Telegram-auth PostgreSQL backup was created and verified with `pg_restore --list`:
+    `/home/javohir/backups/mazetto/postgres/mazetto-pre-telegram-auth-20260826-194808.dump`
+  - backend auto-deploy was already disabled before push; customer-web auto-deploy was disabled; media auto-deploy remained enabled
+  - final local validation passed before commit and push
+  - backend release image `mazetto-food-backend-pdslpm:1a92a01` was built successfully on the server, but not deployed
+  - activation stopped because Dokploy backend application ENV and MAZETTO project environment did not contain `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, or `TELEGRAM_CUSTOMER_BOT_URL`
+  - no production migration, backend deploy, customer-web deploy, Telegram webhook setup, or real customer login test was performed
+- Phase 7B was resumed from production migration and stopped after backend ENV verification:
+  - production migration `20260826120000_customer_telegram_auth` was applied successfully
+  - production now has 15 applied Prisma migrations and 0 failed migrations
+  - `Customer.telegramUserId`, `Customer.telegramChatId`, `Customer.telegramLinkedAt`, `customers_telegramUserId_key`, and `customers_telegramChatId_idx` were verified in production
+  - backend service was manually updated to image `mazetto-food-backend-pdslpm:1a92a01`
+  - backend converged to `1/1` and health returned 200
+  - an earlier check suggested the new backend container did not contain `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, or `TELEGRAM_CUSTOMER_BOT_URL`
+  - a later read-only service/container inspection found those ENV names present in the backend service and current backend container; secret values were not printed
+  - customer-web was not redeployed, Telegram webhook was not configured, and no real customer login or order test was performed
 
 ## Current Blockers
 
@@ -266,7 +287,7 @@ Upload real `.webp` images with exact filenames into the `mazetto-media` volume.
 
 ### 2. Telegram Staff Notification Not Enabled
 
-Backend code is ready, but production ENV is missing:
+Backend code is ready. Production backend was later verified read-only to contain these ENV names:
 
 ```text
 TELEGRAM_BOT_TOKEN
@@ -276,15 +297,15 @@ TELEGRAM_WEBHOOK_SECRET
 
 Required next action:
 
-Deploy the local customer Telegram verification implementation after approval, apply the pending migration, configure Telegram ENV values in Dokploy, redeploy/restart only the backend, then set Telegram webhook.
+Confirm the values in Dokploy UI if needed, configure Telegram webhook after approval, then complete real bot login testing.
 
 ### 3. Customer Verification Delivery
 
-Customer verification delivery has been implemented and validated locally, including fresh migration and DB-backed integration tests, but is not yet deployed to production.
+Customer verification delivery has been implemented and validated locally, including fresh migration and DB-backed integration tests. Backend image `1a92a01` is running in production; customer-web is still known to be on an older image.
 
 Required next action:
 
-After explicit approval, push/deploy the validated implementation, apply the pending production migration, configure Telegram production ENV values, set the Telegram webhook, then run authenticated production checkout QA.
+Deploy customer-web from the approved release commit, configure Telegram webhook after approval, and complete real `@mazettofoodbot` login verification. Telegram auth is not considered activated until webhook and real login verification pass.
 
 ## Roadmap
 
@@ -639,6 +660,69 @@ products/set-kids.webp
 ```
 
 ## Preferred Next Order
+
+## Autonomous Night Shift - Customer Experience, Auth, History
+
+Status: Completed locally, ready for controlled deployment review
+
+Date: 2026-08-27
+
+Safety boundary:
+
+- No production deployment was performed.
+- No production database write, migration, seed, or real order was performed.
+- No production ENV, Cloudflare, Dokploy, BotFather, or Telegram webhook mutation was performed during this local-first night-shift pass.
+- No secrets were printed or committed.
+- No push to `origin/main` was performed.
+
+Completed locally:
+
+- Customer-web horizontal overflow pass across home, menu, product detail, cart, checkout, orders, order detail, and profile.
+- Cart, checkout, menu, home, profile, product cards, homepage sliders, and upsell layouts were tightened with `minmax(0, 1fr)`, `min-w-0`, bounded carousel widths, and safer mobile grids.
+- Light theme readability was strengthened without redesigning the dark premium theme.
+- Telegram request-code UI now handles loading, invalid/error responses, rate limits, `TELEGRAM_LINK_REQUIRED`, `PENDING_INTEGRATION`, bot CTA, resend, and logged-in states more clearly in Uzbek.
+- Customer session refresh was added to the shared cart/customer context so private pages can retry once on an expired access token.
+- Customer order history now loads from the authenticated `/customer/me/orders` endpoint and opens individual order details.
+- A new authenticated order detail route was added at `/orders/[id]`.
+- Backend customer order detail endpoint was added as `/api/v1/customer/me/orders/:id`, scoped by authenticated `customer.id`.
+- Backend customer order/dashboard responses were narrowed to customer-safe selected fields instead of exposing full related records.
+- Profile now links to order history, supports logout, and shows a real empty state for no orders.
+- API fetch parsing now handles network and non-JSON backend errors with Uzbek customer-friendly messages.
+- Media fallback path remains centralized and image layouts keep stable aspect boxes.
+
+Focused validation:
+
+- `pnpm --filter customer-web typecheck`: passed.
+- `pnpm --filter customer-web lint`: passed.
+- `pnpm --filter customer-web build`: passed.
+- `pnpm --filter backend typecheck`: passed.
+- `pnpm --filter backend lint`: passed.
+- `pnpm --filter backend build`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-customer-order-history.ts`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-auth.ts`: passed.
+- Prisma `format`, `validate`, and `generate` passed locally with a safe placeholder `DATABASE_URL`.
+
+Browser QA:
+
+- Local production build was checked against a mock customer API at widths: 360, 375, 390, 430, 768, 1024, 1280, 1440, and 1920.
+- Paths checked: `/`, `/menu`, `/product/prod-lavash`, `/cart`, `/checkout`, `/orders`, `/orders/order-a`, and `/profile`.
+- Dark theme matrix: 72 checks passed with no document horizontal overflow and no offscreen controls.
+- Light theme sample matrix: 20 checks passed with no document horizontal overflow and no offscreen controls.
+- Header and bottom navigation remained fixed in the checked mobile states.
+
+Production notes:
+
+- Current production backend image was previously verified at commit `1a92a01`.
+- Current production customer-web was previously known to still be older than `1a92a01`.
+- Remaining production validation is required after a controlled customer-web deploy.
+- Real media files are still missing from the media volume; customer-web falls back safely, but final food images must still be uploaded.
+
+Remaining blockers:
+
+- Real customer Telegram login must be tested end-to-end in production by a human using `@mazettofoodbot`.
+- Production customer-web must be deployed from the approved commit after review.
+- 45 real media assets are still missing.
+- No production order E2E was created during this night-shift pass.
 
 1. Customer Web header/theme buglarini tugatish. Status: Done.
 2. Bottom nav + Liquid Glass UI. Status: Done.

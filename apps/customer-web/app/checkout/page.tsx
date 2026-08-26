@@ -209,8 +209,8 @@ function CheckoutFlow() {
   }
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[1fr_390px] lg:pb-8">
-      <div className="grid gap-5">
+    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,390px)] lg:pb-8">
+      <div className="grid min-w-0 gap-5">
         <div className="mf-card p-5">
           <p className="text-sm font-black uppercase text-[#67E8F9]">Rasmiylashtirish</p>
           <h1 className="mt-1 text-3xl font-black text-white">Yetkazish ma'lumotlari</h1>
@@ -244,7 +244,7 @@ function CheckoutFlow() {
               {selectedBranch?.address ? <p className="text-xs font-bold text-white/48">{selectedBranch.address}</p> : null}
             </label>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid min-w-0 grid-cols-2 gap-2">
             <button className={choiceClass(type === "DELIVERY")} onClick={() => selectType("DELIVERY")} type="button">Yetkazib berish</button>
             <button className={choiceClass(type === "PICKUP")} onClick={() => selectType("PICKUP")} type="button">Olib ketish</button>
             </div>
@@ -277,7 +277,7 @@ function CheckoutFlow() {
         </MotionDiv>
       </div>
 
-      <aside className="mf-card h-fit p-5">
+      <aside className="mf-card min-w-0 h-fit p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-black uppercase text-[#67E8F9]">Buyurtma</p>
@@ -288,7 +288,7 @@ function CheckoutFlow() {
 
         <div className="mt-4 grid gap-3">
           {items.length ? items.map((item) => (
-            <div className="mf-card-soft grid grid-cols-[58px_1fr] gap-3 p-2" key={item.key}>
+            <div className="mf-card-soft grid min-w-0 grid-cols-[58px_minmax(0,1fr)] gap-3 p-2" key={item.key}>
               <MediaImage
                 alt={item.productName}
                 aspectClassName="h-14 w-14"
@@ -296,8 +296,8 @@ function CheckoutFlow() {
                 sizes="56px"
                 src={item.imageUrl}
               />
-              <div>
-                <p className="font-black text-white">{item.quantity}x {item.productName}</p>
+              <div className="min-w-0">
+                <p className="truncate font-black text-white">{item.quantity}x {item.productName}</p>
                 <p className="text-xs font-semibold text-white/52">{item.variantName ?? "Oddiy"}</p>
               </div>
             </div>
@@ -305,18 +305,18 @@ function CheckoutFlow() {
         </div>
 
         <div className="mf-card-soft mt-5 grid gap-3 p-4">
-          <div className="flex justify-between text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
             <span>Mahsulotlar</span>
-            <span><AnimatedMoney value={subtotal} /></span>
+            <span className="min-w-0 break-words text-right"><AnimatedMoney value={subtotal} /></span>
           </div>
-          <div className="flex justify-between text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
             <span>Yetkazib berish</span>
-            <span>{deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
+            <span className="min-w-0 break-words text-right">{deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
           </div>
           <div className="h-px bg-white/10" />
-          <div className="flex justify-between text-lg font-black text-white">
+          <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-white">
             <span>Jami</span>
-            <span><AnimatedMoney value={total} /></span>
+            <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>
           </div>
         </div>
 

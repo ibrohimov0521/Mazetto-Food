@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MotionDiv, hapticTap, pageMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
@@ -42,9 +42,10 @@ export default function OrderSuccessPage() {
 
 function OrderSuccess() {
   const params = useParams<{ id: string }>();
-  const { customer } = useCart();
-  const [orders, setOrders] = useState<CustomerOrder[]>([]);
+  const { customer, refreshCustomer } = useCart();
+  const [order, setOrder] = useState<CustomerOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
   const load = useCallback(async () => {
     if (!customer?.accessToken) {
@@ -53,18 +54,30 @@ function OrderSuccess() {
     }
 
     setLoading(true);
+    setNotFound(false);
     try {
-      setOrders(await apiFetch<CustomerOrder[]>("/customer/me/orders", { accessToken: customer.accessToken }));
+      setOrder(await apiFetch<CustomerOrder>(`/customer/me/orders/${params.id}`, { accessToken: customer.accessToken }));
+    } catch {
+      const refreshed = await refreshCustomer();
+      if (!refreshed) {
+        setNotFound(true);
+        return;
+      }
+
+      try {
+        setOrder(await apiFetch<CustomerOrder>(`/customer/me/orders/${params.id}`, { accessToken: refreshed.accessToken }));
+      } catch {
+        setNotFound(true);
+      }
     } finally {
       setLoading(false);
     }
-  }, [customer]);
+  }, [customer, params.id, refreshCustomer]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const order = useMemo(() => orders.find((candidate) => candidate.id === params.id) ?? orders[0] ?? null, [orders, params.id]);
   const itemCount = order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 1;
   const estimate = `${Math.min(35, 15 + itemCount * 5)}-${Math.min(45, 25 + itemCount * 5)} daqiqa`;
 
@@ -98,7 +111,7 @@ function OrderSuccess() {
     );
   }
 
-  if (!order) {
+  if (notFound || !order) {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10 text-center">
         <div className="mf-card p-8">

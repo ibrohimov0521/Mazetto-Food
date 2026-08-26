@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export type CustomerSession = {
   id: string;
@@ -47,6 +47,7 @@ type CartContextValue = {
   cartPulseId: number;
   cartFlight: CartFlight | null;
   setCustomer: (customer: CustomerSession | null) => void;
+  refreshCustomer: () => Promise<CustomerSession | null>;
   addItem: (item: Omit<CartItem, "key">) => void;
   updateQuantity: (key: string, quantity: number) => void;
   removeItem: (key: string) => void;
@@ -98,7 +99,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(timeout);
   }, [toastMessage]);
 
-  function setCustomer(customer: CustomerSession | null) {
+  const setCustomer = useCallback(function setCustomer(customer: CustomerSession | null) {
     setCustomerState(customer);
 
     if (customer) {
@@ -106,7 +107,42 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } else {
       window.localStorage.removeItem(customerKey);
     }
-  }
+  }, []);
+
+  const refreshCustomer = useCallback(async () => {
+    if (!customer?.refreshToken) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${getCustomerApiBaseUrl()}/customer/auth/refresh`, {
+        body: JSON.stringify({ refreshToken: customer.refreshToken }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: {
+          customer: Omit<CustomerSession, "accessToken" | "refreshToken" | "tokenType">;
+          tokens: Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType">;
+        };
+      };
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error("Customer refresh failed");
+      }
+
+      const nextCustomer = {
+        ...payload.data.customer,
+        ...payload.data.tokens,
+      };
+      setCustomer(nextCustomer);
+      return nextCustomer;
+    } catch {
+      setCustomer(null);
+      return null;
+    }
+  }, [customer?.refreshToken, setCustomer]);
 
   const subtotal = useMemo(
     () =>
@@ -125,6 +161,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     cartPulseId,
     cartFlight,
     setCustomer,
+    refreshCustomer,
     addItem(item) {
       const key = `${item.productId}-${item.variantId ?? "base"}-${item.modifiers.map((modifier) => modifier.modifierId).join(".")}-${item.notes ?? ""}`;
       setItems((current) => {
@@ -211,4 +248,8 @@ export function productImage(imageUrl?: string | null): string {
   }
 
   return imageUrl;
+}
+
+function getCustomerApiBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
 }

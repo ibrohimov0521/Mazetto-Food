@@ -64,7 +64,7 @@ export function CartUpsell() {
     return (
       <section className="mt-5">
         <div className="skeleton h-6 w-56 rounded-full" />
-        <div className="no-scrollbar mt-3 flex gap-3 overflow-x-auto pb-1">
+        <div className="no-scrollbar mt-3 flex max-w-full gap-3 overflow-x-auto pb-1">
           {Array.from({ length: 3 }, (_, index) => (
             <div className="skeleton h-36 min-w-[13rem] rounded-[1.5rem]" key={index} />
           ))}
@@ -86,7 +86,7 @@ export function CartUpsell() {
         </div>
         <Link className="hidden text-sm font-black text-[#67E8F9] sm:inline" href="/menu">Menyu</Link>
       </div>
-      <div className="no-scrollbar flex snap-x gap-3 overflow-x-auto pb-2">
+      <div className="no-scrollbar flex max-w-full snap-x gap-3 overflow-x-auto pb-2">
         {recommended.map((product) => (
           <UpsellCard addItem={addItem} key={product.id} product={product} triggerCartFlight={triggerCartFlight} />
         ))}
@@ -109,7 +109,7 @@ function UpsellCard({
   const price = variant?.sellingPrice ?? product.sellingPrice;
 
   return (
-    <article className="mazetto-liquid-surface grid min-w-[13.5rem] snap-start overflow-hidden rounded-[1.5rem]">
+    <article className="mazetto-liquid-surface grid w-[min(13.5rem,78vw)] shrink-0 snap-start overflow-hidden rounded-[1.5rem]">
       <MediaImage
         alt={product.name}
         aspectClassName="h-28"
@@ -118,9 +118,9 @@ function UpsellCard({
         sizes="216px"
         src={product.imageUrl}
       />
-      <div className="grid gap-2 p-3">
+      <div className="grid min-w-0 gap-2 p-3">
         <h3 className="line-clamp-1 font-black text-white">{product.name}</h3>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center justify-between gap-2">
           <span className="text-sm font-black text-[#67E8F9]">{formatMoney(price)}</span>
           <MotionButton
             {...buttonMotion}

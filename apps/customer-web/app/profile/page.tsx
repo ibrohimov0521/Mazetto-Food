@@ -46,7 +46,7 @@ export default function ProfilePage() {
 }
 
 function Profile() {
-  const { customer, favoriteIds } = useCart();
+  const { customer, favoriteIds, setCustomer, showToast } = useCart();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
 
   const load = useCallback(async () => {
@@ -84,8 +84,8 @@ function Profile() {
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-6">
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-        <div className="mf-card p-5">
+      <div className="grid w-full gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,360px)]">
+        <div className="mf-card min-w-0 p-5">
           <p className="text-sm font-black uppercase text-[#67E8F9]">Mijoz profili</p>
           <h1 className="mt-2 text-4xl font-black text-white">{dashboard?.name ?? customer.name}</h1>
           <p className="mt-2 text-lg font-bold text-white/60">{dashboard?.phone ?? customer.phone}</p>
@@ -101,30 +101,49 @@ function Profile() {
           <p className="text-sm font-black uppercase text-[#052012]/70">Bonus balansi</p>
           <p className="mt-3 text-4xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> UZS</p>
           <p className="mt-3 text-sm font-semibold text-[#052012]/70">Telefon profilingiz buyurtmalar tarixi va sevimli mahsulotlarni keyingi safar uchun saqlaydi.</p>
+          <div className="mt-5 grid gap-2">
+            <Link className="pressable ripple rounded-2xl bg-[#04130B] px-4 py-3 text-center text-sm font-black text-white" href="/orders">
+              Buyurtmalarim
+            </Link>
+            <button
+              className="pressable ripple rounded-2xl bg-white/32 px-4 py-3 text-sm font-black text-[#04130B]"
+              onClick={() => {
+                setCustomer(null);
+                showToast("Profilingizdan chiqdingiz");
+              }}
+              type="button"
+            >
+              Chiqish
+            </button>
+          </div>
         </div>
       </div>
 
       <MotionDiv {...sectionMotion} className="mt-5 grid gap-5 lg:grid-cols-2">
         <Panel title="So'nggi buyurtmalar">
           <div className="grid gap-3">
-            {dashboard?.customerOrders.slice(0, 5).map((order) => (
-              <article className="mf-card-soft p-4" key={order.id}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-black text-white">{order.order.orderNumber}</p>
-                    <p className="mt-1 text-sm font-semibold text-white/52">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
+            {dashboard?.customerOrders.length ? (
+              dashboard.customerOrders.slice(0, 5).map((order) => (
+                <Link className="pressable mf-card-soft block p-4 transition hover:border-[#22C55E]/36" href={`/orders/${order.id}`} key={order.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-black text-white">{order.order.orderNumber}</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-white/52">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
+                    </div>
+                    <span className="shrink-0 font-black text-[#67E8F9]">{formatMoney(order.order.total)}</span>
                   </div>
-                  <span className="font-black text-[#67E8F9]">{formatMoney(order.order.total)}</span>
-                </div>
-              </article>
-            )) ?? <p className="text-sm font-semibold text-white/56">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>}
+                </Link>
+              ))
+            ) : (
+              <p className="text-sm font-semibold text-white/56">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>
+            )}
           </div>
         </Panel>
 
         <Panel title="Sevimlilar">
           <div className="grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
-              <Link className="pressable grid grid-cols-[72px_1fr] gap-3 rounded-xl bg-white/8 p-2 transition hover:bg-white/12" href={`/product/${product.id}`} key={product.id}>
+              <Link className="pressable grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl bg-white/8 p-2 transition hover:bg-white/12" href={`/product/${product.id}`} key={product.id}>
                 <MediaImage
                   alt={product.name}
                   aspectClassName="h-[72px] w-[72px]"
@@ -132,8 +151,8 @@ function Profile() {
                   sizes="72px"
                   src={product.imageUrl}
                 />
-                <div>
-                  <p className="font-black text-white">{product.name}</p>
+                <div className="min-w-0">
+                  <p className="truncate font-black text-white">{product.name}</p>
                   <p className="mt-1 text-sm font-bold text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>

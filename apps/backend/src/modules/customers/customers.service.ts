@@ -736,9 +736,20 @@ export class CustomersService {
         customerOrders: {
           orderBy: { createdAt: "desc" },
           take: 20,
-          include: { branch: true, order: { include: { items: true } } },
+          include: this.customerOrderInclude(),
         },
-        favorites: { include: { product: true } },
+        favorites: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+                sellingPrice: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -754,17 +765,28 @@ export class CustomersService {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: { customerId },
       orderBy: { createdAt: "desc" },
-      include: {
-        branch: true,
-        order: {
-          include: { items: true, payments: { include: { method: true } } },
-        },
-      },
+      include: this.customerOrderInclude({ includePayments: true }),
     });
 
     return customerOrders.map((customerOrder) =>
       this.withDerivedCustomerOrderStatus(customerOrder),
     );
+  }
+
+  async getCustomerOrder(customerId: string, customerOrderId: string) {
+    const customerOrder = await this.prisma.customerOrder.findFirst({
+      where: {
+        id: customerOrderId,
+        customerId,
+      },
+      include: this.customerOrderInclude({ includePayments: true }),
+    });
+
+    if (!customerOrder) {
+      throw new NotFoundException("Customer order not found");
+    }
+
+    return this.withDerivedCustomerOrderStatus(customerOrder);
   }
 
   listCustomers(user: AuthenticatedUser) {
@@ -976,6 +998,47 @@ export class CustomersService {
         include: { modifier: true },
       },
     } satisfies Prisma.ProductInclude;
+  }
+
+  private customerOrderInclude(options?: { includePayments?: boolean }) {
+    return {
+      branch: { select: { id: true, name: true, address: true } },
+      order: {
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          total: true,
+          items: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              productName: true,
+              variantName: true,
+              quantity: true,
+              unitPrice: true,
+              totalPrice: true,
+              modifierSnapshot: true,
+              notes: true,
+            },
+          },
+          ...(options?.includePayments
+            ? {
+                payments: {
+                  orderBy: { createdAt: "asc" },
+                  select: {
+                    id: true,
+                    amount: true,
+                    status: true,
+                    methodCode: true,
+                    method: { select: { code: true, name: true } },
+                  },
+                },
+              }
+            : {}),
+        },
+      },
+    } satisfies Prisma.CustomerOrderInclude;
   }
 
   private createOrderNumber(): string {

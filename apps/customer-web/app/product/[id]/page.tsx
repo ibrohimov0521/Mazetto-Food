@@ -27,12 +27,18 @@ function ProductDetails({ id }: { id: string }) {
   const [modifierIds, setModifierIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const nextProduct = await apiFetch<Product>(`/customer/menu/products/${id}`);
-      setProduct(nextProduct);
-      setVariantId(nextProduct.variants.find((variant) => variant.isDefault)?.id ?? nextProduct.variants[0]?.id);
+      setError(null);
+      try {
+        const nextProduct = await apiFetch<Product>(`/customer/menu/products/${id}`);
+        setProduct(nextProduct);
+        setVariantId(nextProduct.variants.find((variant) => variant.isDefault)?.id ?? nextProduct.variants[0]?.id);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Mahsulot topilmadi.");
+      }
     }
 
     void load();
@@ -57,9 +63,23 @@ function ProductDetails({ id }: { id: string }) {
       selectedModifiers.reduce((sum, link) => sum + Number(link.modifier.price), 0)) *
       quantity);
 
+  if (error) {
+    return (
+      <section className="mx-auto max-w-3xl px-4 py-10 text-center">
+        <div className="mf-card p-8">
+          <h1 className="text-3xl font-black text-white">Mahsulot ochilmadi</h1>
+          <p className="mt-3 text-white/60">{error}</p>
+          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/menu">
+            Menyuga qaytish
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   if (!product) {
     return (
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[0.9fr_1.1fr]">
+      <main className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="mf-card overflow-hidden">
           <div className="skeleton h-96 w-full" />
           <div className="grid gap-3 p-5 sm:grid-cols-3">
@@ -79,8 +99,8 @@ function ProductDetails({ id }: { id: string }) {
   }
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[0.9fr_1.1fr]">
-      <MotionDiv {...cardMotion} className="mf-card overflow-hidden">
+    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <MotionDiv {...cardMotion} className="mf-card min-w-0 overflow-hidden">
         <MediaImage
           alt={product.name}
           aspectClassName="aspect-[4/3] min-h-[18rem] sm:aspect-[16/11] lg:min-h-[24rem]"
@@ -100,7 +120,7 @@ function ProductDetails({ id }: { id: string }) {
           <Metric label="Narx" value={formatMoney(product.sellingPrice)} />
         </div>
       </MotionDiv>
-      <div className="mf-card p-5">
+      <div className="mf-card min-w-0 p-5">
         <div className="flex items-center justify-between gap-3">
           <Link className="pressable text-sm font-bold text-[#67E8F9]" href="/menu">Menyuga qaytish</Link>
           <button
@@ -115,7 +135,7 @@ function ProductDetails({ id }: { id: string }) {
             ♥
           </button>
         </div>
-        <h1 className="mt-3 text-4xl font-black text-white">{product.name}</h1>
+        <h1 className="mt-3 break-words text-4xl font-black text-white">{product.name}</h1>
         <p className="mt-3 text-base leading-7 text-white/64">{product.description ?? "Buyurtmadan keyin issiq tayyorlanadi."}</p>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -127,7 +147,7 @@ function ProductDetails({ id }: { id: string }) {
         <div className="mt-6 grid gap-5">
           <div>
             <h2 className="text-sm font-black uppercase text-white/50">Turini tanlang</h2>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex min-w-0 flex-wrap gap-2">
               {product.variants.map((item) => (
                 <button className={pillClass(variantId === item.id)} key={item.id} onClick={() => setVariantId(item.id)} type="button">
                   {item.name} · {formatMoney(item.sellingPrice)}
@@ -140,9 +160,9 @@ function ProductDetails({ id }: { id: string }) {
             <h2 className="text-sm font-black uppercase text-white/50">Qo'shimchalar</h2>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {product.modifiers.map(({ modifier }) => (
-                <label className="pressable mf-card-soft flex items-center justify-between px-4 py-3 text-sm font-semibold text-white" key={modifier.id}>
-                  <span>{modifier.name}</span>
-                  <span className="flex items-center gap-2 text-[#67E8F9]">
+                <label className="pressable mf-card-soft flex min-w-0 items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white" key={modifier.id}>
+                  <span className="min-w-0 break-words">{modifier.name}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-[#67E8F9]">
                     {formatMoney(modifier.price)}
                     <input checked={modifierIds.includes(modifier.id)} onChange={(event) => setModifierIds((current) => event.target.checked ? [...current, modifier.id] : current.filter((value) => value !== modifier.id))} type="checkbox" />
                   </span>
@@ -153,15 +173,15 @@ function ProductDetails({ id }: { id: string }) {
 
           <textarea className="mf-input min-h-24 px-4 py-3" placeholder="Oshxonaga izoh" value={notes} onChange={(event) => setNotes(event.target.value)} />
 
-          <div className="sticky bottom-3 z-10 flex items-center justify-between gap-3 rounded-[1.6rem] border border-[#22C55E]/24 bg-[#181818]/92 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.34)] backdrop-blur">
-            <div className="flex items-center gap-2">
+          <div className="sticky bottom-3 z-10 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-[1.6rem] border border-[#22C55E]/24 bg-[#181818]/92 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.34)] backdrop-blur">
+            <div className="flex shrink-0 items-center gap-2">
               <button className="pressable h-11 w-11 rounded-full bg-white/10 text-xl font-bold text-white" onClick={() => setQuantity(Math.max(1, quantity - 1))} type="button">-</button>
               <span className="w-10 text-center text-lg font-black text-white">{quantity}</span>
               <button className="pressable h-11 w-11 rounded-full bg-white/10 text-xl font-bold text-white" onClick={() => setQuantity(quantity + 1)} type="button">+</button>
             </div>
             <MotionButton
               {...buttonMotion}
-              className="pressable ripple mf-button-primary rounded-2xl px-5 py-4 font-bold"
+              className="pressable ripple mf-button-primary min-w-0 rounded-2xl px-5 py-4 text-sm font-bold sm:text-base"
               onClick={() => {
                 const rect = imageRef.current?.getBoundingClientRect();
                 if (rect) {

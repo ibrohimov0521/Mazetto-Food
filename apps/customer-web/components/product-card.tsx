@@ -17,7 +17,7 @@ export function ProductCard({ product }: { product: Product }) {
   return (
     <MotionArticle
       {...cardMotion}
-      className="mf-card group overflow-hidden shadow-[0_22px_70px_rgba(34,197,94,0.14)] [transform-style:preserve-3d]"
+      className="mf-card group min-w-0 overflow-hidden shadow-[0_22px_70px_rgba(34,197,94,0.14)] [transform-style:preserve-3d]"
       initial={{ opacity: 0, y: 18 }}
       viewport={{ once: true, margin: "-48px" }}
       whileInView={{ opacity: 1, y: 0 }}
@@ -56,8 +56,8 @@ export function ProductCard({ product }: { product: Product }) {
         ) : null}
       </div>
       <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <Link className="text-lg font-black text-white transition hover:text-[#67E8F9]" href={`/product/${product.id}`}>
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <Link className="min-w-0 break-words text-lg font-black text-white transition hover:text-[#67E8F9]" href={`/product/${product.id}`}>
             {product.name}
           </Link>
           <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-black text-[#67E8F9]">
@@ -67,7 +67,7 @@ export function ProductCard({ product }: { product: Product }) {
         <p className="mt-2 line-clamp-2 min-h-11 text-sm leading-5 text-white/58">
           {product.description ?? "Buyurtmadan keyin issiq tayyorlanadi."}
         </p>
-        <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="mt-4 flex min-w-0 items-center justify-between gap-3">
           <motion.span
             className="text-lg font-black text-white"
             layout
@@ -77,7 +77,7 @@ export function ProductCard({ product }: { product: Product }) {
           </motion.span>
           <MotionButton
             {...buttonMotion}
-            className="pressable ripple mf-button-primary px-4 py-3 text-sm font-black"
+            className="pressable ripple mf-button-primary shrink-0 px-4 py-3 text-sm font-black"
             onClick={() => {
               const rect = imageRef.current?.getBoundingClientRect();
               if (rect) {

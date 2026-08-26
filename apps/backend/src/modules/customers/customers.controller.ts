@@ -109,6 +109,16 @@ export class CustomerPublicController {
   listOrders(@CurrentCustomer() customer: AuthenticatedCustomer) {
     return this.customersService.listCustomerOrders(customer.id);
   }
+
+  @UseGuards(CustomerAuthGuard)
+  @Public()
+  @Get("me/orders/:id")
+  getOrder(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Param("id") id: string,
+  ) {
+    return this.customersService.getCustomerOrder(customer.id, id);
+  }
 }
 
 @Controller()

@@ -37,8 +37,8 @@ export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) 
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
-      <div className="mazetto-liquid-surface grid min-h-[33rem] overflow-hidden rounded-[2rem] lg:min-h-[30rem] lg:grid-cols-[0.92fr_1.08fr]">
-        <div className="relative z-10 flex flex-col justify-between gap-8 p-5 sm:p-7 lg:p-9">
+      <div className="mazetto-liquid-surface grid min-h-[33rem] min-w-0 overflow-hidden rounded-[2rem] lg:min-h-[30rem] lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+        <div className="relative z-10 flex min-w-0 flex-col justify-between gap-8 p-5 sm:p-7 lg:p-9">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={activeSlide.id}
@@ -52,7 +52,7 @@ export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) 
                   {activeSlide.badge}
                 </span>
               ) : null}
-              <h1 className="mt-5 text-4xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
+              <h1 className="mt-5 break-words text-4xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
                 {activeSlide.title}
               </h1>
               <p className="mt-4 max-w-xl text-base leading-7 text-white/64 sm:text-lg">
@@ -73,7 +73,7 @@ export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) 
             </motion.div>
           </AnimatePresence>
 
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center justify-between gap-4">
             <div className="flex gap-2">
               {safeSlides.map((slide, index) => (
                 <button
@@ -147,12 +147,12 @@ export function PromotionSlider({ promotions }: { promotions: HomepagePromotion[
         </div>
         <Link className="pressable text-sm font-black text-[#67E8F9]" href="/menu">Menyuga o'tish</Link>
       </div>
-      <div className="no-scrollbar flex snap-x gap-3 overflow-x-auto pb-2">
+      <div className="no-scrollbar flex max-w-full snap-x gap-3 overflow-x-auto pb-2">
         {promotions.map((promotion) => {
           const href = promotion.targetUrl ?? (promotion.product ? `/product/${promotion.product.id}` : promotion.category ? `/menu?category=${promotion.category.id}` : "/menu");
           return (
-            <Link className="mazetto-liquid-surface grid min-w-[19rem] snap-start overflow-hidden rounded-[1.6rem] sm:min-w-[24rem] sm:grid-cols-[1fr_9rem]" href={href} key={promotion.id}>
-              <div className="p-4">
+            <Link className="mazetto-liquid-surface grid w-[min(19rem,82vw)] shrink-0 snap-start overflow-hidden rounded-[1.6rem] sm:w-[24rem] sm:grid-cols-[minmax(0,1fr)_9rem]" href={href} key={promotion.id}>
+              <div className="min-w-0 p-4">
                 {promotion.badge ?? promotion.discountPercent ? (
                   <span className="mazetto-glass-chip inline-flex rounded-full px-3 py-1.5 text-xs font-black text-[#67E8F9]">
                     {promotion.badge ?? `${Number(promotion.discountPercent)}% chegirma`}

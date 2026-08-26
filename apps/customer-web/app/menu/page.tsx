@@ -23,22 +23,29 @@ function MenuCatalog() {
   const [categoryId, setCategoryId] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams(window.location.search);
-    const nextBranchId = params.get("branchId") ?? window.localStorage.getItem(branchStorageKey) ?? "";
-    const branchQuery = nextBranchId ? `?branchId=${encodeURIComponent(nextBranchId)}` : "";
-    const [nextCategories, nextProducts] = await Promise.all([
-      apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
-      apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
-    ]);
-    if (nextBranchId) {
-      window.localStorage.setItem(branchStorageKey, nextBranchId);
+    setError(null);
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const nextBranchId = params.get("branchId") ?? window.localStorage.getItem(branchStorageKey) ?? "";
+      const branchQuery = nextBranchId ? `?branchId=${encodeURIComponent(nextBranchId)}` : "";
+      const [nextCategories, nextProducts] = await Promise.all([
+        apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
+        apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
+      ]);
+      if (nextBranchId) {
+        window.localStorage.setItem(branchStorageKey, nextBranchId);
+      }
+      setCategories(sortSetsFirst(nextCategories));
+      setProducts(nextProducts);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Menyuni yuklab bo'lmadi.");
+    } finally {
+      setLoading(false);
     }
-    setCategories(sortSetsFirst(nextCategories));
-    setProducts(nextProducts);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -63,10 +70,10 @@ function MenuCatalog() {
   }, [categoryId, products, query]);
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-6">
+    <MotionDiv {...pageMotion} className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="mf-card mazetto-liquid-surface p-5">
-        <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-end">
-          <div>
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,360px)] lg:items-end">
+          <div className="min-w-0">
             <p className="text-sm font-black uppercase text-[#67E8F9]">MAZETTO FOOD menyusi</p>
             <h1 className="mt-2 text-4xl font-black text-white">Bugun nima buyurtma qilamiz?</h1>
             <p className="mt-2 text-sm leading-6 text-white/60">Lavash, burger, tovuqli taomlar, setlar, souslar va ichimliklarni tez toping.</p>
@@ -79,7 +86,7 @@ function MenuCatalog() {
           />
         </div>
 
-        <div className="no-scrollbar mt-5 flex gap-2 overflow-x-auto overflow-y-hidden pb-1">
+        <div className="no-scrollbar mt-5 flex max-w-full gap-2 overflow-x-auto overflow-y-hidden pb-1">
           <button className={tabClass(categoryId === "all")} onClick={() => setCategoryId("all")} type="button">Barchasi</button>
           {categories.map((category) => (
             <button className={tabClass(categoryId === category.id)} key={category.id} onClick={() => setCategoryId(category.id)} type="button">
@@ -89,13 +96,23 @@ function MenuCatalog() {
         </div>
       </div>
 
-      <MotionDiv {...sectionMotion} className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {error ? (
+        <div className="mf-card mt-5 p-8 text-center">
+          <h2 className="text-2xl font-black text-white">Menyu yuklanmadi</h2>
+          <p className="mt-2 text-sm font-semibold text-white/60">{error}</p>
+          <button className="pressable ripple mf-button-primary mt-5 px-5 py-3 font-black" onClick={() => void load()} type="button">
+            Qayta urinish
+          </button>
+        </div>
+      ) : null}
+
+      <MotionDiv {...sectionMotion} className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {loading
           ? Array.from({ length: 6 }, (_, index) => <ProductSkeleton key={index} />)
-          : visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
+          : !error && visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
       </MotionDiv>
 
-      {!loading && !visibleProducts.length ? (
+      {!loading && !error && !visibleProducts.length ? (
         <div className="mf-card mt-5 p-8 text-center text-sm font-bold text-white/60">
           Bu tanlov bo'yicha mahsulot topilmadi.
         </div>

@@ -27,10 +27,10 @@
   --mf-bg: #ffffff;
   --mf-surface: #f8fafc;
   --mf-card: #ffffff;
-  --mf-card-soft: rgba(15, 23, 42, 0.045);
-  --mf-border: rgba(15, 23, 42, 0.08);
+  --mf-card-soft: rgba(15, 23, 42, 0.07);
+  --mf-border: rgba(15, 23, 42, 0.14);
   --mf-text: #0f172a;
-  --mf-muted: rgba(15, 23, 42, 0.62);
+  --mf-muted: rgba(15, 23, 42, 0.76);
   --mf-orange: #22c55e;
   --mf-gold: #0ea5e9;
   --mf-shadow: 0 22px 70px rgba(15, 23, 42, 0.12);
@@ -314,8 +314,8 @@ img {
 }
 
 :root[data-theme="light"] .mf-bottom-nav {
-  border-color: rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
 }
 
@@ -346,8 +346,8 @@ img {
 }
 
 :root[data-theme="light"] .mf-card-soft {
-  border-color: rgba(15, 23, 42, 0.08);
-  background: rgba(15, 23, 42, 0.045);
+  border-color: rgba(15, 23, 42, 0.13);
+  background: rgba(15, 23, 42, 0.065);
 }
 
 :root[data-theme="light"] .mf-button-secondary {
@@ -357,29 +357,47 @@ img {
 }
 
 :root[data-theme="light"] .mf-input {
-  border-color: rgba(15, 23, 42, 0.1);
+  border-color: rgba(15, 23, 42, 0.18);
   background: #ffffff;
   color: #0f172a;
 }
 
 :root[data-theme="light"] .mf-input::placeholder {
-  color: rgba(15, 23, 42, 0.42);
+  color: rgba(15, 23, 42, 0.56);
 }
 
-:root[data-theme="light"] .mf-shell .text-white,
+:root[data-theme="light"] .mf-shell .text-white {
+  color: #0f172a;
+}
+
 :root[data-theme="light"] .mf-shell .text-white\/76,
 :root[data-theme="light"] .mf-shell .text-white\/72,
 :root[data-theme="light"] .mf-shell .text-white\/68,
 :root[data-theme="light"] .mf-shell .text-white\/64,
-:root[data-theme="light"] .mf-shell .text-white\/60,
+:root[data-theme="light"] .mf-shell .text-white\/60 {
+  color: rgba(15, 23, 42, 0.78);
+}
+
 :root[data-theme="light"] .mf-shell .text-white\/58,
 :root[data-theme="light"] .mf-shell .text-white\/56,
 :root[data-theme="light"] .mf-shell .text-white\/54,
 :root[data-theme="light"] .mf-shell .text-white\/52,
-:root[data-theme="light"] .mf-shell .text-white\/50,
+:root[data-theme="light"] .mf-shell .text-white\/50 {
+  color: rgba(15, 23, 42, 0.68);
+}
+
+:root[data-theme="light"] .mf-shell .text-white\/45,
 :root[data-theme="light"] .mf-shell .text-white\/40,
 :root[data-theme="light"] .mf-shell .text-white\/35 {
-  color: #0f172a;
+  color: rgba(15, 23, 42, 0.58);
+}
+
+:root[data-theme="light"] .mf-shell .text-\[\#67E8F9\] {
+  color: #0369a1;
+}
+
+:root[data-theme="light"] .mf-shell .text-\[\#22C55E\] {
+  color: #15803d;
 }
 
 :root[data-theme="light"] .mf-shell .bg-white\/20,
@@ -389,6 +407,12 @@ img {
 :root[data-theme="light"] .mf-shell .bg-white\/8,
 :root[data-theme="light"] .mf-shell .bg-white\/6 {
   background-color: rgba(15, 23, 42, 0.055);
+}
+
+:root[data-theme="light"] .mf-shell .border-white\/10,
+:root[data-theme="light"] .mf-shell .border-white\/12,
+:root[data-theme="light"] .mf-shell .border-white\/16 {
+  border-color: rgba(15, 23, 42, 0.13);
 }
 
 :root[data-theme="light"] .skeleton {

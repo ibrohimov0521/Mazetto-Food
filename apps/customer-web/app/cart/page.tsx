@@ -22,20 +22,20 @@ function CartReview() {
   const total = subtotal + deliveryFee;
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[1fr_380px] lg:pb-6">
-      <div className="mf-card p-5">
+    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
+      <div className="mf-card min-w-0 p-5">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-sm font-black uppercase text-[#67E8F9]">Savat</p>
             <h1 className="mt-1 text-3xl font-black text-white">Buyurtmangiz</h1>
           </div>
-          <span className="rounded-2xl bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9]">{items.length} ta mahsulot</span>
+          <span className="shrink-0 rounded-2xl bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9]">{items.length} ta mahsulot</span>
         </div>
 
         {items.length ? (
           <MotionDiv {...sectionMotion} className="mt-5 grid gap-3">
             {items.map((item) => (
-              <div className="mf-card-soft grid grid-cols-[86px_1fr] gap-3 p-3" key={item.key}>
+              <div className="mf-card-soft grid min-w-0 grid-cols-[96px_minmax(0,1fr)] gap-3 p-3" key={item.key}>
                 <MediaImage
                   alt={item.productName}
                   aspectClassName="h-24 w-24"
@@ -43,25 +43,25 @@ function CartReview() {
                   sizes="96px"
                   src={item.imageUrl}
                 />
-                <div>
-                  <div className="flex justify-between gap-3">
-                    <div>
-                      <h2 className="font-bold text-white">{item.productName}</h2>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="truncate font-bold text-white">{item.productName}</h2>
                       <p className="text-sm text-white/52">{item.variantName ?? "Oddiy"}</p>
                     </div>
-                    <button className="pressable text-sm font-bold text-red-400" onClick={() => removeItem(item.key)} type="button">
+                    <button className="pressable shrink-0 text-sm font-bold text-red-400" onClick={() => removeItem(item.key)} type="button">
                       O'chirish
                     </button>
                   </div>
-                  {item.modifiers.length ? <p className="mt-1 text-sm font-semibold text-[#67E8F9]">{item.modifiers.map((modifier) => modifier.name).join(", ")}</p> : null}
-                  {item.notes ? <p className="mt-1 text-xs font-semibold text-white/50">Izoh: {item.notes}</p> : null}
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                  {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#67E8F9]">{item.modifiers.map((modifier) => modifier.name).join(", ")}</p> : null}
+                  {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-white/50">Izoh: {item.notes}</p> : null}
+                  <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
+                    <div className="flex shrink-0 items-center gap-2">
                       <button className="pressable h-9 w-9 rounded-full bg-white/10 font-bold text-white" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity - 1); }} type="button">-</button>
                       <motion.span animate={{ scale: [1, 1.22, 1] }} className="w-8 text-center font-bold text-white" key={item.quantity} transition={{ duration: 0.28, ease: "easeOut" }}>{item.quantity}</motion.span>
                       <button className="pressable h-9 w-9 rounded-full bg-white/10 font-bold text-white" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity + 1); }} type="button">+</button>
                     </div>
-                    <span className="font-black text-[#67E8F9]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
+                    <span className="min-w-0 break-words text-right font-black text-[#67E8F9]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
                   </div>
                 </div>
               </div>
@@ -79,7 +79,7 @@ function CartReview() {
         <CartUpsell />
       </div>
 
-      <aside className="mf-card h-fit p-5">
+      <aside className="mf-card min-w-0 h-fit p-5">
         <h2 className="text-2xl font-black text-white">Xulosa</h2>
         {!customer?.accessToken ? (
           <div className="mt-4 rounded-2xl bg-[#67E8F9]/14 px-4 py-3 text-sm font-bold text-[#67E8F9]">
@@ -87,18 +87,18 @@ function CartReview() {
           </div>
         ) : null}
         <div className="mf-card-soft mt-5 grid gap-3 p-4">
-          <div className="flex justify-between text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
             <span>Mahsulotlar</span>
-            <span><AnimatedMoney value={subtotal} /></span>
+            <span className="min-w-0 break-words text-right"><AnimatedMoney value={subtotal} /></span>
           </div>
-          <div className="flex justify-between text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
             <span>Taxminiy yetkazish</span>
-            <span>{deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
+            <span className="min-w-0 break-words text-right">{deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
           </div>
           <div className="h-px bg-white/10" />
-          <div className="flex justify-between text-lg font-black text-white">
+          <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-white">
             <span>Jami</span>
-            <span><AnimatedMoney value={total} /></span>
+            <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>
           </div>
         </div>
         {customer?.accessToken ? (
