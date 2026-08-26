@@ -397,6 +397,7 @@ export class OrdersService {
         id: dto.productId,
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
+        ...this.unavailableProductWhere(branchId),
       },
       include: {
         variants: true,
@@ -710,6 +711,19 @@ export class OrdersService {
     };
 
     return statusMap[status];
+  }
+
+  private unavailableProductWhere(branchId: string): Prisma.ProductWhereInput {
+    return {
+      NOT: {
+        branchAvailabilities: {
+          some: {
+            branchId,
+            status: { in: ["OUT_OF_STOCK", "UNAVAILABLE"] },
+          },
+        },
+      },
+    };
   }
 
   private createOrderNumber(): string {

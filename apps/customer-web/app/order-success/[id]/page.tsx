@@ -13,6 +13,7 @@ type CustomerOrder = {
   status: string;
   type: string;
   createdAt: string;
+  branch?: { name: string; address?: string | null } | null;
   order: {
     orderNumber: string;
     total: string;
@@ -127,6 +128,14 @@ function OrderSuccess() {
             <Metric label="Taxminiy vaqt" value={estimate} />
             <Metric label="Jami" value={formatMoney(order.order.total)} />
           </div>
+
+          {order.branch ? (
+            <div className="mf-card-soft p-4">
+              <p className="text-xs font-black uppercase text-[#67E8F9]">Filial</p>
+              <p className="mt-2 text-lg font-black text-white">{order.branch.name}</p>
+              {order.branch.address ? <p className="mt-1 text-sm font-semibold text-white/52">{order.branch.address}</p> : null}
+            </div>
+          ) : null}
 
           <div className="mf-card-soft p-4">
             <h2 className="text-lg font-black text-white">Mahsulotlar</h2>

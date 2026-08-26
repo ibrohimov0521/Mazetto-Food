@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { CartUpsell } from "../../components/cart-upsell";
 import { AnimatedMoney, MotionDiv, hapticTap, pageMotion, sectionMotion } from "../../components/motion-primitives";
+import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
-import { productImage, useCart } from "../../lib/cart";
+import { useCart } from "../../lib/cart";
 
 export default function CartPage() {
   return (
@@ -20,7 +22,7 @@ function CartReview() {
   const total = subtotal + deliveryFee;
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 pb-28 pt-6 lg:grid-cols-[1fr_380px] lg:pb-6">
+    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[1fr_380px] lg:pb-6">
       <div className="mf-card p-5">
         <div className="flex items-end justify-between gap-3">
           <div>
@@ -34,7 +36,13 @@ function CartReview() {
           <MotionDiv {...sectionMotion} className="mt-5 grid gap-3">
             {items.map((item) => (
               <div className="mf-card-soft grid grid-cols-[86px_1fr] gap-3 p-3" key={item.key}>
-                <img alt={item.productName} className="h-24 w-24 rounded-2xl object-cover" src={productImage(item.imageUrl)} />
+                <MediaImage
+                  alt={item.productName}
+                  aspectClassName="h-24 w-24"
+                  className="rounded-2xl"
+                  sizes="96px"
+                  src={item.imageUrl}
+                />
                 <div>
                   <div className="flex justify-between gap-3">
                     <div>
@@ -67,6 +75,8 @@ function CartReview() {
             </Link>
           </div>
         )}
+
+        <CartUpsell />
       </div>
 
       <aside className="mf-card h-fit p-5">
@@ -102,7 +112,7 @@ function CartReview() {
         )}
       </aside>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-[#0B0B0B]/92 p-3 shadow-[0_-12px_30px_rgba(0,0,0,0.35)] backdrop-blur lg:hidden">
+      <div className="mf-mobile-action-bar mazetto-glass fixed inset-x-3 z-30 rounded-[1.5rem] p-3 lg:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div>
             <p className="text-xs font-black uppercase text-white/50">Jami</p>

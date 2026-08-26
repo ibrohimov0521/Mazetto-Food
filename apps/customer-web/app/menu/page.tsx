@@ -7,6 +7,8 @@ import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
 import type { Category, Product } from "../../lib/types";
 
+const branchStorageKey = "mazetto.customer.branchId";
+
 export default function MenuPage() {
   return (
     <SiteShell>
@@ -24,11 +26,17 @@ function MenuCatalog() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const params = new URLSearchParams(window.location.search);
+    const nextBranchId = params.get("branchId") ?? window.localStorage.getItem(branchStorageKey) ?? "";
+    const branchQuery = nextBranchId ? `?branchId=${encodeURIComponent(nextBranchId)}` : "";
     const [nextCategories, nextProducts] = await Promise.all([
-      apiFetch<Category[]>("/customer/menu/categories"),
-      apiFetch<Product[]>("/customer/menu/products"),
+      apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
+      apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
     ]);
-    setCategories(nextCategories);
+    if (nextBranchId) {
+      window.localStorage.setItem(branchStorageKey, nextBranchId);
+    }
+    setCategories(sortSetsFirst(nextCategories));
     setProducts(nextProducts);
     setLoading(false);
   }, []);
@@ -56,7 +64,7 @@ function MenuCatalog() {
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-6">
-      <div className="mf-card p-5">
+      <div className="mf-card mazetto-liquid-surface p-5">
         <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-end">
           <div>
             <p className="text-sm font-black uppercase text-[#67E8F9]">MAZETTO FOOD menyusi</p>
@@ -71,7 +79,7 @@ function MenuCatalog() {
           />
         </div>
 
-        <div className="mt-5 flex gap-2 overflow-auto pb-1">
+        <div className="no-scrollbar mt-5 flex gap-2 overflow-x-auto overflow-y-hidden pb-1">
           <button className={tabClass(categoryId === "all")} onClick={() => setCategoryId("all")} type="button">Barchasi</button>
           {categories.map((category) => (
             <button className={tabClass(categoryId === category.id)} key={category.id} onClick={() => setCategoryId(category.id)} type="button">
@@ -96,8 +104,16 @@ function MenuCatalog() {
   );
 }
 
+function sortSetsFirst(categories: Category[]): Category[] {
+  return [...categories].sort((a, b) => getCategoryRank(a) - getCategoryRank(b));
+}
+
+function getCategoryRank(category: Category): number {
+  return category.code?.toUpperCase() === "SETS" ? -1 : 0;
+}
+
 function tabClass(active: boolean): string {
-  return `pressable ripple shrink-0 rounded-2xl px-4 py-3 text-sm font-black ${active ? "mf-button-primary" : "bg-white/10 text-white/76 hover:bg-white/16 hover:text-white"}`;
+  return `pressable ripple shrink-0 rounded-2xl px-4 py-3 text-sm font-black ${active ? "mf-button-primary" : "mazetto-glass-chip text-white/76 hover:text-white"}`;
 }
 
 function ProductSkeleton() {

@@ -60,6 +60,27 @@ enum CustomerOrderType {
   PICKUP
 }
 
+enum CustomerOrderAttemptStatus {
+  PENDING
+  COMPLETED
+}
+
+enum BranchDayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum ProductBranchAvailabilityStatus {
+  AVAILABLE
+  OUT_OF_STOCK
+  UNAVAILABLE
+}
+
 enum OrderStatus {
   NEW
   CONFIRMED
@@ -140,38 +161,83 @@ enum KitchenTicketStatus {
 }
 
 model Branch {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  address   String?
-  phone     String?
-  isActive  Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  code                String   @unique
+  name                String
+  address             String?
+  phone               String?
+  latitude            Decimal? @db.Decimal(10, 7)
+  longitude           Decimal? @db.Decimal(10, 7)
+  timezone            String   @default("Asia/Tashkent")
+  isActive            Boolean  @default(true)
+  isTemporarilyClosed Boolean  @default(false)
+  acceptsOrders       Boolean  @default(true)
+  deliveryEnabled     Boolean  @default(true)
+  pickupEnabled       Boolean  @default(true)
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  categories       Category[]
-  cashTransactions CashTransaction[]
-  devices          Device[]
-  employees        Employee[]
-  expenses         Expense[]
-  halls            Hall[]
-  orders           Order[]
-  paymentMethods   PaymentMethod[]
-  priceHistory     PriceHistory[]
-  printers         Printer[]
-  receipts         Receipt[]
-  products         Product[]
-  revenueRecords   RevenueRecord[]
-  customerOrders   CustomerOrder[]
-  shifts           Shift[]
-  suppliers        Supplier[]
-  tables           RestaurantTable[]
-  warehouses       Warehouse[]
+  categories            Category[]
+  cashTransactions      CashTransaction[]
+  devices               Device[]
+  employees             Employee[]
+  expenses              Expense[]
+  halls                 Hall[]
+  orders                Order[]
+  paymentMethods        PaymentMethod[]
+  priceHistory          PriceHistory[]
+  printers              Printer[]
+  receipts              Receipt[]
+  products              Product[]
+  productAvailabilities ProductBranchAvailability[]
+  revenueRecords        RevenueRecord[]
+  customerOrders        CustomerOrder[]
+  shifts                Shift[]
+  suppliers             Supplier[]
+  tables                RestaurantTable[]
+  warehouses            Warehouse[]
+  workingHours          BranchWorkingHour[]
 
   @@index([isActive])
+  @@index([isActive, acceptsOrders])
   @@index([sortOrder])
   @@map("branches")
+}
+
+model BranchWorkingHour {
+  id        String          @id @default(cuid())
+  branchId  String
+  dayOfWeek BranchDayOfWeek
+  opensAt   String?
+  closesAt  String?
+  isClosed  Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, dayOfWeek])
+  @@index([branchId, isClosed])
+  @@map("branch_working_hours")
+}
+
+model ProductBranchAvailability {
+  id        String                          @id @default(cuid())
+  branchId  String
+  productId String
+  status    ProductBranchAvailabilityStatus @default(AVAILABLE)
+  reason    String?
+  createdAt DateTime                        @default(now())
+  updatedAt DateTime                        @updatedAt
+
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, productId])
+  @@index([branchId, status])
+  @@index([productId, status])
+  @@map("product_branch_availabilities")
 }
 
 model Customer {
@@ -187,6 +253,7 @@ model Customer {
   carts          Cart[]
   favorites      CustomerFavorite[]
   customerOrders CustomerOrder[]
+  orderAttempts  CustomerOrderAttempt[]
   sessions       CustomerSession[]
   challenges     CustomerVerificationChallenge[]
 
@@ -533,10 +600,11 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  branch   Branch?    @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children Category[] @relation("CategoryTree")
-  products Product[]
+  branch     Branch?     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  parent     Category?   @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Category[]  @relation("CategoryTree")
+  products   Product[]
+  promotions Promotion[]
 
   @@unique([branchId, code])
   @@index([branchId, isActive])
@@ -565,15 +633,18 @@ model Product {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
-  branch       Branch?            @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  category     Category           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  printer      Printer?           @relation(fields: [printerId], references: [id], onDelete: SetNull)
-  modifiers    ProductModifier[]
-  cartItems    CartItem[]
-  orderItems   OrderItem[]
-  favorites    CustomerFavorite[]
-  priceHistory PriceHistory[]
-  variants     ProductVariant[]
+  branch               Branch?                     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  category             Category                    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  printer              Printer?                    @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  branchAvailabilities ProductBranchAvailability[]
+  modifiers            ProductModifier[]
+  cartItems            CartItem[]
+  orderItems           OrderItem[]
+  favorites            CustomerFavorite[]
+  heroSlides           HomepageHeroSlide[]
+  promotions           Promotion[]
+  priceHistory         PriceHistory[]
+  variants             ProductVariant[]
 
   @@unique([branchId, code])
   @@index([categoryId, isAvailable])
@@ -581,6 +652,63 @@ model Product {
   @@index([isRecommended])
   @@index([sortOrder])
   @@map("products")
+}
+
+model HomepageHeroSlide {
+  id        String    @id @default(cuid())
+  productId String?
+  title     String
+  subtitle  String?
+  imageUrl  String?
+  ctaLabel  String?
+  targetUrl String?
+  badge     String?
+  accent    Json?
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  startAt   DateTime?
+  endAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([isActive, sortOrder])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([productId])
+  @@map("homepage_hero_slides")
+}
+
+model Promotion {
+  id               String    @id @default(cuid())
+  productId        String?
+  categoryId       String?
+  title            String
+  description      String?
+  imageUrl         String?
+  ctaLabel         String?
+  targetUrl        String?
+  badge            String?
+  discountPercent  Decimal?  @db.Decimal(5, 2)
+  promotionalPrice Decimal?  @db.Decimal(12, 2)
+  accent           Json?
+  sortOrder        Int       @default(0)
+  isActive         Boolean   @default(true)
+  startAt          DateTime?
+  endAt            DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([isActive, sortOrder])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([productId])
+  @@index([categoryId])
+  @@map("promotions")
 }
 
 model ProductVariant {
@@ -1051,13 +1179,35 @@ model CustomerOrder {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  branch   Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branch   Branch                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  customer Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order    Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  attempt  CustomerOrderAttempt?
 
   @@index([customerId, createdAt])
   @@index([branchId, createdAt])
   @@map("customer_orders")
+}
+
+model CustomerOrderAttempt {
+  id              String                     @id @default(cuid())
+  customerId      String
+  idempotencyKey  String
+  status          CustomerOrderAttemptStatus @default(PENDING)
+  requestHash     String
+  customerOrderId String?                    @unique
+  expiresAt       DateTime
+  completedAt     DateTime?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customerOrder CustomerOrder? @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+
+  @@unique([customerId, idempotencyKey])
+  @@index([customerId, status])
+  @@index([expiresAt])
+  @@map("customer_order_attempts")
 }
 
 model CustomerFavorite {

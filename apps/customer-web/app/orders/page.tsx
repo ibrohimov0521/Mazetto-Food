@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 import { MotionDiv, AnimatedNumber, pageMotion, sectionMotion } from "../../components/motion-primitives";
+import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch, getApiBaseUrl } from "../../lib/api";
-import { formatMoney, productImage, useCart } from "../../lib/cart";
+import { formatMoney, useCart } from "../../lib/cart";
 
 type Dashboard = {
   id: string;
@@ -22,6 +23,7 @@ type CustomerOrder = {
   type: string;
   paymentMethod?: string | null;
   createdAt: string;
+  branch?: { name: string; address?: string | null } | null;
   order: {
     orderNumber: string;
     total: string;
@@ -116,6 +118,7 @@ function OrdersDashboard() {
                 <div>
                   <h2 className="text-2xl font-black text-white">{activeOrder.order.orderNumber}</h2>
                   <p className="mt-1 text-sm font-semibold text-white/60">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
+                  {activeOrder.branch ? <p className="mt-1 text-sm font-semibold text-white/45">{activeOrder.branch.name}</p> : null}
                 </div>
                 <span className="rounded-full bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9]">{formatMoney(activeOrder.order.total)}</span>
               </div>
@@ -142,7 +145,10 @@ function OrdersDashboard() {
                 <div className="flex justify-between gap-3">
                   <div>
                     <p className="font-black text-white">{order.order.orderNumber}</p>
-                    <p className="mt-1 text-sm text-white/52">{new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}</p>
+                    <p className="mt-1 text-sm text-white/52">
+                      {new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}
+                      {order.branch ? ` · ${order.branch.name}` : ""}
+                    </p>
                   </div>
                   <span className="font-black text-[#67E8F9]">{formatMoney(order.order.total)}</span>
                 </div>
@@ -162,7 +168,13 @@ function OrdersDashboard() {
           <div className="mt-4 grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
               <Link className="pressable grid grid-cols-[64px_1fr] gap-3 rounded-2xl bg-white/8 p-2" href={`/product/${product.id}`} key={product.id}>
-                <img alt={product.name} className="h-16 w-16 rounded-xl object-cover" src={productImage(product.imageUrl)} />
+                <MediaImage
+                  alt={product.name}
+                  aspectClassName="h-16 w-16"
+                  className="rounded-xl"
+                  sizes="64px"
+                  src={product.imageUrl}
+                />
                 <div>
                   <p className="font-bold text-white">{product.name}</p>
                   <p className="text-sm text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>

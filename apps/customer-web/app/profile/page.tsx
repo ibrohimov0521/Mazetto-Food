@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatedNumber, MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
+import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
-import { formatMoney, productImage, useCart } from "../../lib/cart";
+import { formatMoney, useCart } from "../../lib/cart";
 
 type Dashboard = {
   id: string;
@@ -124,7 +125,13 @@ function Profile() {
           <div className="grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
               <Link className="pressable grid grid-cols-[72px_1fr] gap-3 rounded-xl bg-white/8 p-2 transition hover:bg-white/12" href={`/product/${product.id}`} key={product.id}>
-                <img alt={product.name} className="h-18 w-18 rounded-xl object-cover" src={productImage(product.imageUrl)} />
+                <MediaImage
+                  alt={product.name}
+                  aspectClassName="h-[72px] w-[72px]"
+                  className="rounded-xl"
+                  sizes="72px"
+                  src={product.imageUrl}
+                />
                 <div>
                   <p className="font-black text-white">{product.name}</p>
                   <p className="mt-1 text-sm font-bold text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>

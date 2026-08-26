@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useRef } from "react";
 import { motion } from "framer-motion";
+import { MediaImage } from "./media-image";
 import { MotionArticle, MotionButton, buttonMotion, cardMotion, hapticTap, imageMotion } from "./motion-primitives";
-import { formatMoney, productImage, useCart } from "../lib/cart";
+import { formatMoney, useCart } from "../lib/cart";
 import type { Product } from "../lib/types";
 
 export function ProductCard({ product }: { product: Product }) {
-  const imageRef = useRef<HTMLImageElement | null>(null);
+  const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, toggleFavorite, triggerCartFlight } = useCart();
   const variant = product.variants.find((candidate) => candidate.isDefault) ?? product.variants[0];
   const price = variant?.sellingPrice ?? product.sellingPrice;
@@ -23,13 +24,18 @@ export function ProductCard({ product }: { product: Product }) {
     >
       <div className="relative">
         <Link href={`/product/${product.id}`}>
-          <motion.img
-            {...imageMotion}
+          <MediaImage
             alt={product.name}
-            className="h-44 w-full object-cover will-change-transform sm:h-48"
-            layoutId={`product-image-${product.id}`}
+            aspectClassName="aspect-[4/3]"
+            className="will-change-transform"
+            imageClassName="group-hover:scale-[1.03]"
+            motionProps={{
+              ...imageMotion,
+              layoutId: `product-image-${product.id}`,
+            }}
             ref={imageRef}
-            src={productImage(product.imageUrl)}
+            src={product.imageUrl}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           />
         </Link>
         <button

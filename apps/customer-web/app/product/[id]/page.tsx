@@ -1,24 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { use, useEffect, useMemo, useRef, useState } from "react";
+import { MediaImage } from "../../../components/media-image";
 import { MotionButton, MotionDiv, buttonMotion, cardMotion, hapticTap, imageMotion, pageMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
-import { formatMoney, productImage, useCart } from "../../../lib/cart";
+import { formatMoney, useCart } from "../../../lib/cart";
 import type { Product } from "../../../lib/types";
 
-export default function ProductPage({ params }: { params: { id: string } }) {
+export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+
   return (
     <SiteShell>
-      <ProductDetails id={params.id} />
+      <ProductDetails id={id} />
     </SiteShell>
   );
 }
 
 function ProductDetails({ id }: { id: string }) {
-  const imageRef = useRef<HTMLImageElement | null>(null);
+  const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, toggleFavorite, triggerCartFlight } = useCart();
   const [product, setProduct] = useState<Product | null>(null);
   const [variantId, setVariantId] = useState<string | undefined>();
@@ -79,13 +81,18 @@ function ProductDetails({ id }: { id: string }) {
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[0.9fr_1.1fr]">
       <MotionDiv {...cardMotion} className="mf-card overflow-hidden">
-        <motion.img
-          {...imageMotion}
+        <MediaImage
           alt={product.name}
-          className="floating-image h-96 w-full object-cover will-change-transform"
-          layoutId={`product-image-${product.id}`}
+          aspectClassName="aspect-[4/3] min-h-[18rem] sm:aspect-[16/11] lg:min-h-[24rem]"
+          className="floating-image will-change-transform"
+          motionProps={{
+            ...imageMotion,
+            layoutId: `product-image-${product.id}`,
+          }}
+          priority
           ref={imageRef}
-          src={productImage(product.imageUrl)}
+          sizes="(max-width: 1024px) 100vw, 45vw"
+          src={product.imageUrl}
         />
         <div className="grid gap-3 p-5 sm:grid-cols-3">
           <Metric label="Tayyorlanish" value={`${product.preparationTime ?? 10} daq`} />

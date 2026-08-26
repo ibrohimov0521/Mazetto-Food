@@ -5,15 +5,19 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { AnimatedMoney, MotionDiv, hapticTap, pageMotion, sectionMotion } from "../../components/motion-primitives";
+import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
-import { productImage, useCart } from "../../lib/cart";
+import { useCart } from "../../lib/cart";
+import type { Branch } from "../../lib/types";
 
-type Branch = { id: string; name: string; address?: string | null };
 type OrderResult = { customerOrder: { id: string }; order: { orderNumber: string; id?: string } | null };
 type OrderType = "DELIVERY" | "PICKUP";
 type PaymentMethod = "CASH" | "CLICK" | "PAYME" | "CARD";
 type FormErrors = Partial<Record<"name" | "phone" | "address" | "branchId" | "items" | "customer", string>>;
+const branchStorageKey = "mazetto.customer.branchId";
+const checkoutAttemptKey = "mazetto.customer.checkoutAttemptId";
+const checkoutAttemptPayloadKey = "mazetto.customer.checkoutAttemptPayload";
 
 const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] = [
   { value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" },
@@ -47,17 +51,27 @@ function CheckoutFlow() {
   const deliveryFee = type === "DELIVERY" && subtotal > 0 ? 12000 : 0;
   const total = subtotal + deliveryFee;
   const estimatedTime = useMemo(() => `${Math.min(35, 15 + items.length * 5)}-${Math.min(45, 25 + items.length * 5)} daqiqa`, [items.length]);
+  const selectedBranch = branches.find((branch) => branch.id === branchId);
 
   const loadBranches = useCallback(async () => {
     setLoadingBranches(true);
     try {
       const nextBranches = await apiFetch<Branch[]>("/customer/branches");
+      const storedBranchId = window.localStorage.getItem(branchStorageKey);
+      const nextBranchId =
+        nextBranches.find((branch) => branch.id === storedBranchId && canUseBranchForType(branch, type))?.id ??
+        nextBranches.find((branch) => canUseBranchForType(branch, type))?.id ??
+        nextBranches[0]?.id ??
+        "";
       setBranches(nextBranches);
-      setBranchId((current) => current || nextBranches[0]?.id || "");
+      setBranchId((current) => current || nextBranchId);
+      if (nextBranchId) {
+        window.localStorage.setItem(branchStorageKey, nextBranchId);
+      }
     } finally {
       setLoadingBranches(false);
     }
-  }, []);
+  }, [type]);
 
   useEffect(() => {
     void loadBranches();
@@ -85,6 +99,22 @@ function CheckoutFlow() {
       nextErrors.branchId = "Filialni tanlang.";
     }
 
+    if (branchId && !selectedBranch) {
+      nextErrors.branchId = "Tanlangan filial topilmadi. Qaytadan tanlang.";
+    }
+
+    if (selectedBranch && !selectedBranch.acceptsOrders) {
+      nextErrors.branchId = "Bu filial hozir buyurtma qabul qilmayapti.";
+    }
+
+    if (selectedBranch && type === "DELIVERY" && !selectedBranch.deliveryEnabled) {
+      nextErrors.branchId = "Bu filialda yetkazib berish mavjud emas.";
+    }
+
+    if (selectedBranch && type === "PICKUP" && !selectedBranch.pickupEnabled) {
+      nextErrors.branchId = "Bu filialdan olib ketish mavjud emas.";
+    }
+
     if (!name.trim()) {
       nextErrors.name = "Ismingizni kiriting.";
     }
@@ -101,6 +131,23 @@ function CheckoutFlow() {
     return !Object.keys(nextErrors).length;
   }
 
+  function selectBranch(nextBranchId: string) {
+    setBranchId(nextBranchId);
+    window.localStorage.setItem(branchStorageKey, nextBranchId);
+  }
+
+  function selectType(nextType: OrderType) {
+    setType(nextType);
+    const firstAllowed = branches.find((branch) => canUseBranchForType(branch, nextType));
+    if (branchId && selectedBranch && canUseBranchForType(selectedBranch, nextType)) {
+      return;
+    }
+
+    if (firstAllowed) {
+      selectBranch(firstAllowed.id);
+    }
+  }
+
   async function submitOrder() {
     if (!validate() || !customer?.accessToken) {
       showToast("Ma'lumotlarni tekshirib chiqing");
@@ -109,27 +156,33 @@ function CheckoutFlow() {
 
     setSubmitting(true);
     try {
+      const orderPayload = {
+        branchId,
+        name: name.trim(),
+        phone: phone.trim(),
+        type,
+        address: type === "DELIVERY" ? address.trim() : undefined,
+        paymentMethod,
+        notes: comment.trim() || undefined,
+        items: items.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          notes: item.notes,
+          modifiers: item.modifiers.map((modifier) => ({ modifierId: modifier.modifierId, quantity: 1 })),
+        })),
+      };
+      const idempotencyKey = getCheckoutAttemptId(JSON.stringify(orderPayload));
       const result = await apiFetch<OrderResult>("/customer/orders", {
         method: "POST",
         accessToken: customer.accessToken,
         body: JSON.stringify({
-          branchId,
-          name: name.trim(),
-          phone: phone.trim(),
-          type,
-          address: type === "DELIVERY" ? address.trim() : undefined,
-          paymentMethod,
-          notes: comment.trim() || undefined,
-          items: items.map((item) => ({
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: item.quantity,
-            notes: item.notes,
-            modifiers: item.modifiers.map((modifier) => ({ modifierId: modifier.modifierId, quantity: 1 })),
-          })),
+          idempotencyKey,
+          ...orderPayload,
         }),
       });
       clearCart();
+      clearCheckoutAttempt();
       hapticTap([18, 36, 18]);
       showToast("Buyurtma muvaffaqiyatli yuborildi");
       router.push(`/order-success/${result.customerOrder.id}`);
@@ -156,7 +209,7 @@ function CheckoutFlow() {
   }
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 pb-28 pt-6 lg:grid-cols-[1fr_390px] lg:pb-8">
+    <MotionDiv {...pageMotion} className="mx-auto grid max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[1fr_390px] lg:pb-8">
       <div className="grid gap-5">
         <div className="mf-card p-5">
           <p className="text-sm font-black uppercase text-[#67E8F9]">Rasmiylashtirish</p>
@@ -179,16 +232,21 @@ function CheckoutFlow() {
               {loadingBranches ? (
                 <div className="skeleton h-12 rounded-2xl" />
               ) : (
-                <motion.select className={inputClass(Boolean(errors.branchId))} value={branchId} onChange={(event) => setBranchId(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }}>
-                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                <motion.select className={inputClass(Boolean(errors.branchId))} value={branchId} onChange={(event) => selectBranch(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }}>
+                  {branches.map((branch) => (
+                    <option disabled={!canUseBranchForType(branch, type)} key={branch.id} value={branch.id}>
+                      {branch.name}{branchLabelSuffix(branch, type)}
+                    </option>
+                  ))}
                 </motion.select>
               )}
               <FieldError message={errors.branchId} />
+              {selectedBranch?.address ? <p className="text-xs font-bold text-white/48">{selectedBranch.address}</p> : null}
             </label>
 
             <div className="grid grid-cols-2 gap-2">
-              <button className={choiceClass(type === "DELIVERY")} onClick={() => setType("DELIVERY")} type="button">Yetkazib berish</button>
-              <button className={choiceClass(type === "PICKUP")} onClick={() => setType("PICKUP")} type="button">Olib ketish</button>
+            <button className={choiceClass(type === "DELIVERY")} onClick={() => selectType("DELIVERY")} type="button">Yetkazib berish</button>
+            <button className={choiceClass(type === "PICKUP")} onClick={() => selectType("PICKUP")} type="button">Olib ketish</button>
             </div>
 
             {type === "DELIVERY" ? (
@@ -210,7 +268,7 @@ function CheckoutFlow() {
           <h2 className="text-2xl font-black text-white">To'lov turi</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {paymentOptions.map((option) => (
-              <motion.button className={`pressable ripple rounded-2xl border px-4 py-4 text-left ${paymentMethod === option.value ? "border-[#22C55E]/70 bg-[#22C55E]/16 shadow-[0_12px_28px_rgba(34,197,94,0.18)]" : "border-white/10 bg-white/6 hover:border-[#22C55E]/36"}`} key={option.value} layout onClick={() => { hapticTap(8); setPaymentMethod(option.value); }} type="button" whileTap={{ scale: 0.97 }}>
+              <motion.button className={`pressable ripple rounded-2xl px-4 py-4 text-left ${paymentMethod === option.value ? "mazetto-liquid-active" : "mazetto-glass-button hover:border-[#22C55E]/36"}`} key={option.value} layout onClick={() => { hapticTap(8); setPaymentMethod(option.value); }} type="button" whileTap={{ scale: 0.97 }}>
                 <span className="block font-black text-white">{option.label}</span>
                 <span className="mt-1 block text-xs font-bold text-white/52">{option.hint}</span>
               </motion.button>
@@ -231,7 +289,13 @@ function CheckoutFlow() {
         <div className="mt-4 grid gap-3">
           {items.length ? items.map((item) => (
             <div className="mf-card-soft grid grid-cols-[58px_1fr] gap-3 p-2" key={item.key}>
-              <img alt={item.productName} className="h-14 w-14 rounded-xl object-cover" src={productImage(item.imageUrl)} />
+              <MediaImage
+                alt={item.productName}
+                aspectClassName="h-14 w-14"
+                className="rounded-xl"
+                sizes="56px"
+                src={item.imageUrl}
+              />
               <div>
                 <p className="font-black text-white">{item.quantity}x {item.productName}</p>
                 <p className="text-xs font-semibold text-white/52">{item.variantName ?? "Oddiy"}</p>
@@ -261,7 +325,7 @@ function CheckoutFlow() {
         </button>
       </aside>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-[#0B0B0B]/92 p-3 shadow-[0_-12px_30px_rgba(0,0,0,0.35)] backdrop-blur lg:hidden">
+      <div className="mf-mobile-action-bar mazetto-glass fixed inset-x-3 z-30 rounded-[1.5rem] p-3 lg:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div>
             <p className="text-xs font-black uppercase text-white/50">Jami</p>
@@ -281,9 +345,60 @@ function inputClass(error: boolean): string {
 }
 
 function choiceClass(active: boolean): string {
-  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "bg-white/10 text-white/76"}`;
+  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "mazetto-glass-button text-white/76"}`;
 }
 
 function FieldError({ message }: { message: string | undefined }) {
   return message ? <p className="text-xs font-bold text-red-600">{message}</p> : null;
+}
+
+function canUseBranchForType(branch: Branch, type: OrderType): boolean {
+  if (branch.acceptsOrders === false) {
+    return false;
+  }
+
+  return type === "DELIVERY" ? branch.deliveryEnabled !== false : branch.pickupEnabled !== false;
+}
+
+function branchLabelSuffix(branch: Branch, type: OrderType): string {
+  if (!branch.acceptsOrders) {
+    return " - hozir yopiq";
+  }
+
+  if (type === "DELIVERY" && !branch.deliveryEnabled) {
+    return " - yetkazish yo'q";
+  }
+
+  if (type === "PICKUP" && !branch.pickupEnabled) {
+    return " - olib ketish yo'q";
+  }
+
+  return "";
+}
+
+function getCheckoutAttemptId(payloadSignature: string): string {
+  const storedSignature = window.localStorage.getItem(checkoutAttemptPayloadKey);
+  const storedAttemptId = window.localStorage.getItem(checkoutAttemptKey);
+
+  if (storedAttemptId && storedSignature === payloadSignature) {
+    return storedAttemptId;
+  }
+
+  const nextAttemptId = createClientId();
+  window.localStorage.setItem(checkoutAttemptKey, nextAttemptId);
+  window.localStorage.setItem(checkoutAttemptPayloadKey, payloadSignature);
+  return nextAttemptId;
+}
+
+function clearCheckoutAttempt() {
+  window.localStorage.removeItem(checkoutAttemptKey);
+  window.localStorage.removeItem(checkoutAttemptPayloadKey);
+}
+
+function createClientId(): string {
+  if (typeof window.crypto?.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

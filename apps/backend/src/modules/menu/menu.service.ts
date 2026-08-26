@@ -39,6 +39,7 @@ export class MenuService {
       where: {
         isAvailable: true,
         ...(query.branchId ? { OR: [{ branchId: query.branchId }, { branchId: null }] } : {}),
+        ...this.unavailableProductWhere(query.branchId),
         ...(query.categoryId ? { categoryId: query.categoryId } : {}),
         ...(query.recommended === "true" ? { isRecommended: true } : {}),
       },
@@ -307,5 +308,22 @@ export class MenuService {
       .replace(/^_+|_+$/g, "");
 
     return `${slug || "ITEM"}_${Date.now().toString(36).toUpperCase()}`;
+  }
+
+  private unavailableProductWhere(branchId?: string): Prisma.ProductWhereInput {
+    if (!branchId) {
+      return {};
+    }
+
+    return {
+      NOT: {
+        branchAvailabilities: {
+          some: {
+            branchId,
+            status: { in: ["OUT_OF_STOCK", "UNAVAILABLE"] },
+          },
+        },
+      },
+    };
   }
 }

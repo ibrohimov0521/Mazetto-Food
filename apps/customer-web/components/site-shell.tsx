@@ -5,11 +5,12 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { BrandSplash } from "./brand-splash";
+import { ThemeToggle } from "./theme-toggle";
 import { useCart, type CartFlight } from "../lib/cart";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { cartFlight, cartPulseId, customer, finishCartFlight, items, subtotal, toastMessage } = useCart();
+  const { cartFlight, customer, finishCartFlight, items, subtotal, toastMessage } = useCart();
   const navItems = useMemo(
     () => [
       { href: "/", label: "Bosh sahifa", icon: HomeIcon },
@@ -22,79 +23,93 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <LayoutGroup>
-      <main className="mf-shell min-h-screen pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:pb-0">
+    <main className="mf-shell mf-app-shell min-h-screen overflow-x-clip">
         <BrandSplash enabled={pathname === "/"} />
         <header className="mf-topbar sticky top-0 z-20 border-b pt-[env(safe-area-inset-top)]">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-            <Link className="pressable min-w-0 truncate text-lg font-black tracking-normal text-[#67E8F9] sm:text-xl" href="/">
+          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
+            <Link className="pressable shrink-0 whitespace-nowrap text-lg font-black tracking-normal text-[#67E8F9] sm:text-xl" href="/">
               MAZETTO FOOD
             </Link>
-            <nav className="hidden items-center gap-1 overflow-x-auto text-xs font-black text-white/72 sm:flex sm:gap-2 sm:text-sm">
-              <Link className="pressable rounded-full px-3 py-2 hover:bg-white/10 hover:text-white" href="/menu">Menyu</Link>
-              <Link className="pressable rounded-full px-3 py-2 hover:bg-white/10 hover:text-white" href="/orders">Buyurtmalar</Link>
-              <Link className="pressable rounded-full px-3 py-2 hover:bg-white/10 hover:text-white" href="/profile">Profil</Link>
-              <Link data-cart-target="true" key={cartPulseId} className="pressable ripple cart-pop rounded-full bg-[#22C55E] px-4 py-2 text-[#04130B] shadow-[0_10px_24px_rgba(34,197,94,0.28)]" href="/cart">
-                Savat {items.length ? `· ${formatCompact(subtotal)}` : ""}
+            <nav className="hidden min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden text-xs font-black text-white/72 md:flex md:gap-2 md:text-sm">
+              <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">Menyu</Link>
+              <Link aria-current={isNavActive(pathname, "/orders") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/orders"))} href="/orders">Buyurtmalar</Link>
+              <Link aria-current={isNavActive(pathname, "/profile") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/profile"))} href="/profile">Profil</Link>
+              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} data-cart-target="true" className="pressable ripple mf-button-primary flex min-w-[9.5rem] shrink-0 justify-center whitespace-nowrap px-4 py-2" href="/cart">
+                <span>Savat</span>
+                <span className="ml-1 inline-block min-w-[5.75rem] text-center">{items.length ? `· ${formatCompact(subtotal)}` : ""}</span>
               </Link>
             </nav>
-            <div className="flex shrink-0 items-center gap-2 sm:hidden">
-              <Link aria-label="Profil" className="pressable grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/8 text-white/76" href="/profile">
+            <div className="hidden shrink-0 md:block">
+              <ThemeToggle />
+            </div>
+            <div className="flex h-10 shrink-0 items-center gap-2 md:hidden">
+              <ThemeToggle />
+              <Link aria-current={isNavActive(pathname, "/profile") ? "page" : undefined} aria-label="Profil" className="pressable mazetto-glass-button grid h-10 w-10 place-items-center rounded-full text-white/76" href="/profile">
                 <ProfileIcon />
               </Link>
-              <Link data-cart-target="true" key={cartPulseId} aria-label="Savat" className="pressable ripple cart-pop relative grid h-10 w-10 place-items-center rounded-full bg-[#22C55E] text-[#04130B] shadow-[0_10px_24px_rgba(34,197,94,0.28)]" href="/cart">
+              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} data-cart-target="true" aria-label="Savat" className="pressable ripple mf-button-primary relative grid h-10 w-10 place-items-center rounded-full" href="/cart">
                 <CartIcon />
-                {items.length ? <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#67E8F9] px-1 text-[10px] font-black text-[#04130B]">{items.length}</span> : null}
+                {items.length ? <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#67E8F9] px-1 text-[10px] font-black text-[#04130B]">{formatCartCount(items.length)}</span> : null}
               </Link>
             </div>
           </div>
-          {customer ? (
-            <div className="border-t border-white/10 bg-white/6 px-4 py-2 text-center text-xs font-semibold text-[#67E8F9]">
-              {customer.name} · bonus {formatCompact(Number(customer.bonusBalance ?? 0))}
+          <div className={`h-8 overflow-hidden border-t px-4 transition-colors duration-200 ${customer ? "border-white/10 bg-white/6" : "border-transparent bg-transparent"}`}>
+            <div className={`flex h-full items-center justify-center text-center text-xs font-semibold text-[#67E8F9] transition-opacity duration-200 ${customer ? "opacity-100" : "opacity-0"}`} aria-hidden={!customer}>
+              {customer ? `${customer.name} · bonus ${formatCompact(Number(customer.bonusBalance ?? 0))}` : "\u00a0"}
             </div>
-          ) : null}
-        </header>
-        <AnimatePresence mode="wait">
-          <motion.div
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            initial={{ opacity: 0, y: 10 }}
-            key={pathname}
-            transition={{ duration: 0.24, ease: "easeOut" }}
-          >
-            {children}
-          </motion.div>
-        </AnimatePresence>
-        <nav className="mf-bottom-nav fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 rounded-[1.7rem] px-2 py-2 sm:hidden">
-          <div className="grid grid-cols-5 gap-1">
-            {navItems.map((item) => {
-              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-              const Icon = item.icon;
-
-              return (
-                <Link className="pressable relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1.5 py-2 text-[9px] font-black leading-tight text-white/54" data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
-                  {active ? (
-                    <motion.span
-                      className="absolute inset-0 rounded-2xl bg-[#22C55E]/16 shadow-[0_0_24px_rgba(34,197,94,0.25)]"
-                      layoutId="bottom-nav-active"
-                      transition={{ type: "spring", stiffness: 520, damping: 34 }}
-                    />
-                  ) : null}
-                  <motion.span animate={{ y: active ? -1 : 0, scale: active ? 1.08 : 1 }} className={`relative ${active ? "text-[#67E8F9]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
-                    <Icon />
-                  </motion.span>
-                  <span className={`relative max-w-full truncate ${active ? "text-[#67E8F9]" : ""}`}>{item.label}</span>
-                </Link>
-              );
-            })}
           </div>
-        </nav>
+        </header>
+        <LayoutGroup id="customer-page-content">
+          <AnimatePresence initial={false} mode="wait">
+            <motion.div
+              animate={{ opacity: 1, y: 0 }}
+              className="overflow-x-clip"
+              exit={{ opacity: 0, y: -6 }}
+              initial={{ opacity: 0, y: 6 }}
+              key={pathname}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
+        </LayoutGroup>
+        <LayoutGroup id="customer-bottom-nav">
+          <nav className="mf-bottom-nav mazetto-glass-nav fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-gap)+env(safe-area-inset-bottom))] z-40 h-[var(--mf-bottom-nav-height)] rounded-[1.7rem] px-2 py-2 sm:hidden">
+            <div className="grid h-full grid-cols-5 gap-1">
+              {navItems.map((item) => {
+                const active = isNavActive(pathname, item.href);
+                const Icon = item.icon;
+
+                return (
+                  <Link aria-current={active ? "page" : undefined} className="pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[9px] font-black leading-tight text-white/54" data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
+                    {active ? (
+                      <motion.span
+                        className="mazetto-liquid-active absolute inset-0 rounded-2xl"
+                        layoutId="bottom-nav-active"
+                        transition={{ type: "spring", stiffness: 520, damping: 34 }}
+                      />
+                    ) : null}
+                    <motion.span animate={{ y: active ? -1 : 0, scale: active ? 1.08 : 1 }} className={`relative ${active ? "text-[#67E8F9]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
+                      <Icon />
+                    </motion.span>
+                    <span className={`relative max-w-full truncate ${active ? "text-[#67E8F9]" : ""}`}>{item.label}</span>
+                    {item.href === "/cart" && items.length ? (
+                      <span className="absolute right-1.5 top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#67E8F9] px-1 text-[10px] font-black leading-none text-[#04130B] shadow-[0_8px_18px_rgba(103,232,249,0.24)]">
+                        {formatCartCount(items.length)}
+                      </span>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        </LayoutGroup>
         <CartFlightOverlay flight={cartFlight} onDone={finishCartFlight} />
         <AnimatePresence>
           {toastMessage ? (
             <motion.div
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="fixed inset-x-4 bottom-[calc(6.4rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-sm rounded-2xl border border-[#22C55E]/30 bg-[#181818] px-4 py-3 text-sm font-black text-[#67E8F9] shadow-[0_18px_55px_rgba(34,197,94,0.20)] sm:bottom-5"
+              className="mazetto-glass fixed inset-x-4 bottom-[calc(var(--mf-bottom-nav-space)+env(safe-area-inset-bottom)+0.5rem)] z-50 mx-auto max-w-sm rounded-2xl px-4 py-3 text-sm font-black text-[#67E8F9] sm:bottom-5"
               exit={{ opacity: 0, y: 16, scale: 0.96 }}
               initial={{ opacity: 0, y: 16, scale: 0.96 }}
               transition={{ duration: 0.22 }}
@@ -104,12 +119,39 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
           ) : null}
         </AnimatePresence>
       </main>
-    </LayoutGroup>
   );
 }
 
 function formatCompact(value: number): string {
   return `${value.toLocaleString("uz-UZ")} UZS`;
+}
+
+function formatCartCount(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/";
+  }
+
+  if (href === "/menu") {
+    return pathname.startsWith("/menu") || pathname.startsWith("/product");
+  }
+
+  if (href === "/orders") {
+    return pathname.startsWith("/orders") || pathname.startsWith("/order-success");
+  }
+
+  if (href === "/cart") {
+    return pathname.startsWith("/cart") || pathname.startsWith("/checkout");
+  }
+
+  return pathname.startsWith(href);
+}
+
+function topNavClass(active: boolean): string {
+  return `pressable mazetto-glass-button shrink-0 whitespace-nowrap rounded-full px-3 py-2 transition-colors ${active ? "mazetto-liquid-active text-[#67E8F9]" : "hover:text-white"}`;
 }
 
 function CartFlightOverlay({ flight, onDone }: { flight: CartFlight | null; onDone: () => void }) {

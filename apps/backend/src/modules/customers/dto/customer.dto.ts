@@ -89,6 +89,11 @@ export class OnlineOrderItemDto {
 }
 
 export class CreateOnlineOrderDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  idempotencyKey?: string;
+
   @IsString()
   branchId!: string;
 

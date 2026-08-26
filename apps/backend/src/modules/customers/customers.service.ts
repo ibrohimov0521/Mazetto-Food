@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -7,6 +8,7 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import {
   CustomerOrderType,
+  CustomerOrderAttemptStatus,
   OrderItemStatus,
   OrderSource,
   OrderStatus,
@@ -14,7 +16,7 @@ import {
   Prisma,
 } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
-import { randomInt } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -24,6 +26,7 @@ import {
   getCustomerJwtRefreshSecret,
 } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
+import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { OrdersService } from "../orders/orders.service";
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
@@ -58,13 +61,25 @@ type CustomerRefreshPayload = {
   sessionId: string;
   tokenUse: "customer_refresh";
 };
+type CustomerOrderAttemptRecord = {
+  id: string;
+  status: CustomerOrderAttemptStatus;
+  requestHash: string;
+  customerOrderId: string | null;
+};
+type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
+  created: boolean;
+};
 const CUSTOMER_CODE_TTL_MS = 10 * 60 * 1000;
 const CUSTOMER_CODE_ATTEMPT_LIMIT = 5;
+const CUSTOMER_ORDER_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
+const CUSTOMER_ORDER_ATTEMPT_WAIT_MS = 15000;
 
 @Injectable()
 export class CustomersService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly branchesService: BranchesService,
     private readonly kitchenService: KitchenService,
     private readonly jwtService: JwtService,
     private readonly ordersService: OrdersService,
@@ -230,6 +245,7 @@ export class CustomersService {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
         id: true,
+        code: true,
         name: true,
         description: true,
         imageUrl: true,
@@ -239,11 +255,7 @@ export class CustomersService {
   }
 
   listBranches() {
-    return this.prisma.branch.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, address: true, phone: true },
-    });
+    return this.branchesService.listCustomerBranches();
   }
 
   listProducts(branchId?: string, categoryId?: string) {
@@ -251,6 +263,7 @@ export class CustomersService {
       where: {
         isAvailable: true,
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
+        ...this.branchesService.getUnavailableProductWhere(branchId),
         ...(categoryId ? { categoryId } : {}),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -289,125 +302,308 @@ export class CustomersService {
     let kitchenTicket: Awaited<
       ReturnType<KitchenService["createTicketForOrder"]>
     > | null = null;
-    const result = await this.prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.findUnique({
-        where: { id: customerId },
-      });
+    const requestHash = this.hashCheckoutRequest(dto);
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+    });
 
-      if (!customer) {
-        throw new NotFoundException("Customer not found");
-      }
+    if (!customer) {
+      throw new NotFoundException("Customer not found");
+    }
 
-      const branch = await tx.branch.findFirst({
-        where: { id: dto.branchId, isActive: true },
-      });
+    const attempt = dto.idempotencyKey
+      ? await this.reserveCustomerOrderAttempt(
+          customerId,
+          dto.idempotencyKey,
+          requestHash,
+        )
+      : null;
 
-      if (!branch) {
-        throw new NotFoundException("Branch not found");
-      }
+    if (attempt?.customerOrderId) {
+      return this.getCustomerOrderResult(this.prisma, attempt.customerOrderId);
+    }
+
+    try {
+      await this.branchesService.assertCustomerBranchAcceptsOrder(
+        dto.branchId,
+        dto.type,
+      );
 
       if (dto.type === OnlineOrderTypeDto.DELIVERY && !dto.address) {
         throw new BadRequestException("Delivery address is required");
       }
 
-      const order = await tx.order.create({
-        data: {
-          branchId: dto.branchId,
-          orderNumber: this.createOrderNumber(),
-          source: OrderSource.WEB,
-          type:
-            dto.type === OnlineOrderTypeDto.DELIVERY
-              ? OrderType.DELIVERY
-              : OrderType.TAKEAWAY,
-          status: OrderStatus.NEW,
-          customerName: dto.name ?? customer.name,
-          customerPhone: customer.phone,
-          deliveryAddress: dto.address ?? null,
-          notes: dto.notes ?? null,
-          kitchenComment:
-            dto.type === OnlineOrderTypeDto.DELIVERY
-              ? `Delivery: ${dto.address}`
-              : "Pickup order",
-        },
-      });
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          const order = await tx.order.create({
+            data: {
+              branchId: dto.branchId,
+              orderNumber: this.createOrderNumber(),
+              source: OrderSource.WEB,
+              type:
+                dto.type === OnlineOrderTypeDto.DELIVERY
+                  ? OrderType.DELIVERY
+                  : OrderType.TAKEAWAY,
+              status: OrderStatus.NEW,
+              customerName: dto.name ?? customer.name,
+              customerPhone: customer.phone,
+              deliveryAddress: dto.address ?? null,
+              notes: dto.notes ?? null,
+              kitchenComment:
+                dto.type === OnlineOrderTypeDto.DELIVERY
+                  ? `Delivery: ${dto.address}`
+                  : "Pickup order",
+            },
+          });
 
-      for (const item of dto.items) {
-        const snapshot = await this.createItemSnapshot(tx, dto.branchId, item);
-        await tx.orderItem.create({
-          data: {
-            orderId: order.id,
-            productId: item.productId,
-            variantId: item.variantId ?? null,
-            productName: snapshot.productName,
-            variantName: snapshot.variantName ?? null,
-            quantity: snapshot.quantity,
-            unitPrice: snapshot.unitPrice,
-            totalPrice: snapshot.totalPrice,
-            modifierSnapshot: snapshot.modifiers,
-            notes: item.notes ?? null,
-          },
-        });
-      }
+          for (const item of dto.items) {
+            const snapshot = await this.createItemSnapshot(
+              tx,
+              dto.branchId,
+              item,
+            );
+            await tx.orderItem.create({
+              data: {
+                orderId: order.id,
+                productId: item.productId,
+                variantId: item.variantId ?? null,
+                productName: snapshot.productName,
+                variantName: snapshot.variantName ?? null,
+                quantity: snapshot.quantity,
+                unitPrice: snapshot.unitPrice,
+                totalPrice: snapshot.totalPrice,
+                modifierSnapshot: snapshot.modifiers,
+                notes: item.notes ?? null,
+              },
+            });
+          }
 
-      await this.recalculateOrderTotals(tx, order.id);
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          toStatus: OrderStatus.NEW,
-          reason: "Online order created",
-        },
-      });
+          await this.recalculateOrderTotals(tx, order.id);
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              toStatus: OrderStatus.NEW,
+              reason: "Online order created",
+            },
+          });
 
-      const confirmed = await this.ordersService.confirmOrderForPreparation(
-        tx,
-        {
-          orderId: order.id,
-          reason: "Online order accepted for preparation",
+          const confirmed = await this.ordersService.confirmOrderForPreparation(
+            tx,
+            {
+              orderId: order.id,
+              reason: "Online order accepted for preparation",
+            },
+          );
+
+          const customerOrder = await tx.customerOrder.create({
+            data: {
+              customerId,
+              branchId: dto.branchId,
+              orderId: order.id,
+              type:
+                dto.type === OnlineOrderTypeDto.DELIVERY
+                  ? CustomerOrderType.DELIVERY
+                  : CustomerOrderType.PICKUP,
+              paymentMethod: dto.paymentMethod,
+              deliveryAddress: dto.address ?? null,
+              notes: dto.notes ?? null,
+            },
+          });
+
+          if (attempt) {
+            await tx.customerOrderAttempt.update({
+              where: { id: attempt.id },
+              data: {
+                status: CustomerOrderAttemptStatus.COMPLETED,
+                customerOrderId: customerOrder.id,
+                completedAt: new Date(),
+              },
+            });
+          }
+
+          kitchenTicket = confirmed.kitchenTicket;
+          const operationalOrder = await tx.order.findUnique({
+            where: { id: order.id },
+            include: { items: true, kitchenTickets: true },
+          });
+
+          return {
+            customerOrder: this.withDerivedCustomerOrderStatus({
+              ...customerOrder,
+              order: operationalOrder,
+            }),
+            order: operationalOrder,
+          };
         },
+        { timeout: 15000 },
       );
 
-      const customerOrder = await tx.customerOrder.create({
+      this.kitchenService.emitOrderCreated(result.order);
+      this.kitchenService.emitOrderConfirmed(result.order);
+
+      if (kitchenTicket) {
+        this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
+      }
+
+      if (result.order?.id) {
+        void this.telegramOrderNotificationService.notifyNewOrder(
+          result.order.id,
+        );
+      }
+
+      return result;
+    } catch (error) {
+      if (attempt?.created) {
+        await this.releaseCustomerOrderAttempt(attempt.id);
+      }
+
+      throw error;
+    }
+  }
+
+  private async reserveCustomerOrderAttempt(
+    customerId: string,
+    idempotencyKey: string,
+    requestHash: string,
+  ): Promise<CustomerOrderAttemptReservation> {
+    const expiresAt = new Date(Date.now() + CUSTOMER_ORDER_ATTEMPT_TTL_MS);
+
+    try {
+      const attempt = await this.prisma.customerOrderAttempt.create({
         data: {
           customerId,
-          branchId: dto.branchId,
-          orderId: order.id,
-          type:
-            dto.type === OnlineOrderTypeDto.DELIVERY
-              ? CustomerOrderType.DELIVERY
-              : CustomerOrderType.PICKUP,
-          paymentMethod: dto.paymentMethod,
-          deliveryAddress: dto.address ?? null,
-          notes: dto.notes ?? null,
+          idempotencyKey,
+          requestHash,
+          expiresAt,
         },
+        select: this.customerOrderAttemptSelect(),
       });
 
-      kitchenTicket = confirmed.kitchenTicket;
-      const operationalOrder = await tx.order.findUnique({
-        where: { id: order.id },
-        include: { items: true, kitchenTickets: true },
+      return { ...attempt, created: true };
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) {
+        throw error;
+      }
+    }
+
+    const existing = await this.waitForCustomerOrderAttempt(
+      customerId,
+      idempotencyKey,
+      requestHash,
+    );
+
+    return { ...existing, created: false };
+  }
+
+  private async waitForCustomerOrderAttempt(
+    customerId: string,
+    idempotencyKey: string,
+    requestHash: string,
+  ): Promise<CustomerOrderAttemptRecord> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < CUSTOMER_ORDER_ATTEMPT_WAIT_MS) {
+      const existing = await this.prisma.customerOrderAttempt.findUnique({
+        where: {
+          customerId_idempotencyKey: {
+            customerId,
+            idempotencyKey,
+          },
+        },
+        select: this.customerOrderAttemptSelect(),
       });
 
-      return {
-        customerOrder: this.withDerivedCustomerOrderStatus({
-          ...customerOrder,
-          order: operationalOrder,
-        }),
-        order: operationalOrder,
-      };
+      if (!existing) {
+        await this.sleep(100);
+        continue;
+      }
+
+      if (existing.requestHash !== requestHash) {
+        throw new BadRequestException(
+          "Checkout attempt payload does not match the original request",
+        );
+      }
+
+      if (
+        existing.status === CustomerOrderAttemptStatus.COMPLETED &&
+        existing.customerOrderId
+      ) {
+        return existing;
+      }
+
+      await this.sleep(100);
+    }
+
+    throw new ConflictException("Checkout attempt is already being processed");
+  }
+
+  private async releaseCustomerOrderAttempt(attemptId: string): Promise<void> {
+    await this.prisma.customerOrderAttempt
+      .delete({ where: { id: attemptId } })
+      .catch(() => undefined);
+  }
+
+  private customerOrderAttemptSelect() {
+    return {
+      id: true,
+      status: true,
+      requestHash: true,
+      customerOrderId: true,
+    } satisfies Prisma.CustomerOrderAttemptSelect;
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    );
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async getCustomerOrderResult(
+    client: Pick<PrismaService, "customerOrder"> | TransactionClient,
+    customerOrderId: string,
+  ) {
+    const customerOrder = await client.customerOrder.findUniqueOrThrow({
+      where: { id: customerOrderId },
+      include: {
+        order: { include: { items: true, kitchenTickets: true } },
+      },
     });
 
-    this.kitchenService.emitOrderCreated(result.order);
-    this.kitchenService.emitOrderConfirmed(result.order);
+    return {
+      customerOrder: this.withDerivedCustomerOrderStatus(customerOrder),
+      order: customerOrder.order,
+    };
+  }
 
-    if (kitchenTicket) {
-      this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
-    }
+  private hashCheckoutRequest(dto: CreateOnlineOrderDto): string {
+    const payload = {
+      branchId: dto.branchId,
+      name: dto.name?.trim() ?? null,
+      phone: dto.phone?.trim() ?? null,
+      type: dto.type,
+      address: dto.address?.trim() ?? null,
+      paymentMethod: dto.paymentMethod,
+      notes: dto.notes?.trim() ?? null,
+      items: dto.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        quantity: item.quantity,
+        notes: item.notes?.trim() ?? null,
+        modifiers: (item.modifiers ?? []).map((modifier) => ({
+          modifierId: modifier.modifierId,
+          quantity: modifier.quantity ?? 1,
+        })),
+      })),
+    };
 
-    if (result.order?.id) {
-      void this.telegramOrderNotificationService.notifyNewOrder(result.order.id);
-    }
-
-    return result;
+    return createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex");
   }
 
   private async issueCustomerTokens(
@@ -492,7 +688,7 @@ export class CustomersService {
         customerOrders: {
           orderBy: { createdAt: "desc" },
           take: 20,
-          include: { order: { include: { items: true } } },
+          include: { branch: true, order: { include: { items: true } } },
         },
         favorites: { include: { product: true } },
       },
@@ -511,6 +707,7 @@ export class CustomersService {
       where: { customerId },
       orderBy: { createdAt: "desc" },
       include: {
+        branch: true,
         order: {
           include: { items: true, payments: { include: { method: true } } },
         },
@@ -587,6 +784,7 @@ export class CustomersService {
         id: dto.productId,
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
+        ...this.branchesService.getUnavailableProductWhere(branchId),
       },
       include: { variants: true },
     });
@@ -719,7 +917,7 @@ export class CustomersService {
 
   private productInclude() {
     return {
-      category: { select: { id: true, name: true } },
+      category: { select: { id: true, code: true, name: true } },
       variants: {
         where: { isAvailable: true },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
