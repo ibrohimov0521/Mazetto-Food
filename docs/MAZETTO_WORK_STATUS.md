@@ -249,7 +249,15 @@ Media Service
   - mobile product cards render in a compact two-column layout
   - local customer-web typecheck, lint, and build passed
   - local browser QA over 360, 375, 390, 430, 768, 1024, and 1440px found no horizontal overflow after fixes
-  - remaining before production: root/backend validation, commit, push, controlled customer-web deploy, production responsive QA, then Telegram webhook and real login verification
+  - root/backend validation passed after implementation
+  - release commits `e8e3a2d`, `2c6072b`, and `366dc5b` were pushed to `origin/main`
+  - customer-web was manually deployed to production from image tag `366dc5b`
+  - production health checks passed for backend and customer-web after deployment
+  - production bundle contains `api.mazettofood.uz` and `media.mazettofood.uz`, and does not contain the `localhost:4000` fallback
+  - production browser smoke checks over 360, 390, 430, 768, and 1440px found no horizontal overflow
+  - Telegram webhook was configured for `api.mazettofood.uz` and `getWebhookInfo` shows pending updates `0` with no current Telegram error
+  - no production order was created; production counts remain `customers = 0`, `orders = 0`, and `customer_orders = 0`
+  - remaining: real `@mazettofoodbot` `/start -> contact -> request-code -> verify-code` login test requires the user/customer to perform the Telegram contact step
 
 ## Current Blockers
 
@@ -324,7 +332,7 @@ Customer verification delivery has been implemented and validated locally, inclu
 
 Required next action:
 
-After the current customer-web UI/menu-scroll release passes validation and production QA, configure Telegram webhook and complete real `@mazettofoodbot` login verification. Telegram auth is not considered activated until webhook and real login verification pass.
+Telegram webhook is configured and healthy. Complete real `@mazettofoodbot` login verification with an authorized customer phone/contact. Telegram auth is not considered fully activated until real login verification passes.
 
 ## Roadmap
 
@@ -353,9 +361,9 @@ Status: In progress
 - Header/theme stability is done.
 - Bottom navigation and Liquid Glass navigation polish are done.
 - Dynamic homepage and pre-checkout upsell foundation are done.
-- Day-mode customer redesign and continuous menu scroll system are in local validation.
+- Day-mode customer redesign and continuous menu scroll system are deployed to production.
 - Needs real media files for final visual quality.
-- Remaining: production deploy of current customer UI polish, Telegram login E2E, admin UI for homepage/promotion management, real promotion content, real media files, full E2E test.
+- Remaining: Telegram login E2E, admin UI for homepage/promotion management, real promotion content, real media files, full E2E test.
 
 ### Phase 3 - Customer Homepage
 
@@ -416,12 +424,13 @@ Status: In progress
 
 ### Phase 9 - Customer Telegram Bot
 
-Status: Production activation pending webhook and real login
+Status: Production activation pending real login
 
 - `/start`, Telegram auth contact request, phone binding, and web login code delivery are implemented locally in the backend Telegram webhook.
 - Fresh migration and DB-backed integration validation passed.
 - Production migration is applied, backend is deployed, and required Telegram ENV names are present in the running backend container.
-- Remaining production work: webhook setup and real production `@mazettofoodbot` login E2E.
+- Telegram webhook is configured to the production backend and reports no current Telegram delivery error.
+- Remaining production work: real production `@mazettofoodbot` login E2E with an authorized user contact.
 - Remaining future bot features: Menu, Cart, Orders, Addresses, and status notifications.
 - It should use Mazetto API and PostgreSQL, not a separate menu database.
 
