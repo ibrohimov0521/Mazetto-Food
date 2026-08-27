@@ -56,10 +56,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
         <LayoutGroup id="customer-page-content">
           <AnimatePresence initial={false} mode="wait">
             <motion.div
-              animate={{ opacity: 1, y: 0 }}
-              className="overflow-x-clip"
-              exit={{ opacity: 0, y: -6 }}
-              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }}
               key={pathname}
               transition={{ duration: 0.22, ease: "easeOut" }}
             >
