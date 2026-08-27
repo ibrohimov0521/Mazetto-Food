@@ -27,6 +27,7 @@ function MenuCatalog() {
   const [error, setError] = useState<string | null>(null);
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const tabScrollerRef = useRef<HTMLDivElement | null>(null);
   const manualScrollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -126,10 +127,17 @@ function MenuCatalog() {
       return;
     }
 
-    tabRefs.current.get(activeCategoryId)?.scrollIntoView({
-      block: "nearest",
-      inline: "center",
+    const scroller = tabScrollerRef.current;
+    const tab = tabRefs.current.get(activeCategoryId);
+
+    if (!scroller || !tab) {
+      return;
+    }
+
+    const nextLeft = tab.offsetLeft - scroller.clientWidth / 2 + tab.clientWidth / 2;
+    scroller.scrollTo({
       behavior: "smooth",
+      left: Math.max(0, nextLeft),
     });
   }, [activeCategoryId]);
 
@@ -182,7 +190,7 @@ function MenuCatalog() {
 
       {!loading && !error && menuSections.length ? (
         <div className="sticky top-0 z-10 -mx-4 mt-4 px-4 py-2 md:top-24" data-menu-category-nav="true">
-          <div className="no-scrollbar mazetto-glass-nav flex max-w-full gap-2 overflow-x-auto rounded-[1.25rem] p-2">
+          <div className="no-scrollbar mazetto-glass-nav flex max-w-full gap-2 overflow-x-auto rounded-[1.25rem] p-2" ref={tabScrollerRef}>
             {menuSections.map(({ category }) => (
               <button
                 className={tabClass(activeCategoryId === category.id)}
