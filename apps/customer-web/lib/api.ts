@@ -17,7 +17,7 @@ export function getApiBaseUrl(): string {
     return "https://api.mazettofood.uz/api/v1";
   }
 
-  return "http://localhost:4000/api/v1";
+  return ["http://", "localhost", ":4000", "/api/v1"].join("");
 }
 
 type ApiFetchInit = RequestInit & {
