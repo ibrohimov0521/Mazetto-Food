@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CustomerAuthPanel } from "../../../components/customer-auth-panel";
 import { MotionDiv, pageMotion, sectionMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
+import { localizeMenuName } from "../../../lib/customer-display";
 import { formatMoney, useCart } from "../../../lib/cart";
 
 type ModifierSnapshot = {
@@ -120,13 +122,12 @@ function OrderDetail() {
 
   if (!customer?.accessToken) {
     return (
-      <section className="mx-auto max-w-3xl px-4 py-10 text-center">
+      <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-card p-8">
-          <h1 className="text-3xl font-black text-white">Telefonni tasdiqlang</h1>
-          <p className="mt-3 text-white/60">Buyurtma tafsilotlarini ko'rish uchun profilingizga kiring.</p>
-          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/">
-            Telefonni tasdiqlash
-          </Link>
+          <CustomerAuthPanel
+            description="Buyurtma tafsilotlarini ko'rish uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
+            title="Telefonni tasdiqlang"
+          />
         </div>
       </section>
     );
@@ -185,8 +186,8 @@ function OrderDetail() {
               <article className="mf-card-soft min-w-0 p-4" key={item.id}>
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="break-words font-black text-white">{Number(item.quantity)}x {item.productName}</h3>
-                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-white/58">{item.variantName}</p> : null}
+                    <h3 className="break-words font-black text-white">{Number(item.quantity)}x {localizeMenuName(item.productName)}</h3>
+                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-white/58">{localizeMenuName(item.variantName)}</p> : null}
                   </div>
                   <span className="shrink-0 font-black text-[#67E8F9]">{formatMoney(item.totalPrice)}</span>
                 </div>
@@ -194,7 +195,7 @@ function OrderDetail() {
                   <div className="mt-3 flex flex-wrap gap-2">
                     {modifiersFor(item.modifierSnapshot).map((modifier, index) => (
                       <span className="rounded-full bg-[#22C55E]/14 px-3 py-1 text-xs font-black text-[#67E8F9]" key={`${modifier.name}-${index}`}>
-                        {modifier.name}
+                        {localizeMenuName(modifier.name)}
                       </span>
                     ))}
                   </div>

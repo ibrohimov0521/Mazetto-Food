@@ -9,8 +9,8 @@ export const menuCombos: ComboSeed[] = [
   {
     code: "FAMILY_SET",
     categoryCode: "SETS",
-    name: "Family Set",
-    description: "Big Lavash, Classic Burger, French Fries, and two cold drinks.",
+    name: "Oilaviy set",
+    description: "Katta lavash, klassik burger, fri va ikkita sovuq ichimlik.",
     basePrice: 119000,
     imageUrl: "/products/set-family.webp",
     preparationTime: 18,
@@ -21,8 +21,8 @@ export const menuCombos: ComboSeed[] = [
   {
     code: "LAVASH_SET",
     categoryCode: "SETS",
-    name: "Lavash Set",
-    description: "Chicken Lavash with fries, sauce, and drink.",
+    name: "Lavash set",
+    description: "Tovuqli lavash, fri, sous va ichimlik.",
     basePrice: 54000,
     imageUrl: "/products/set-lavash.webp",
     preparationTime: 13,
@@ -33,8 +33,8 @@ export const menuCombos: ComboSeed[] = [
   {
     code: "BURGER_SET",
     categoryCode: "SETS",
-    name: "Burger Set",
-    description: "Classic Burger with fries and drink.",
+    name: "Burger set",
+    description: "Klassik burger, fri va ichimlik.",
     basePrice: 49000,
     imageUrl: "/products/set-burger.webp",
     preparationTime: 12,
@@ -44,8 +44,8 @@ export const menuCombos: ComboSeed[] = [
   {
     code: "KIDS_SET",
     categoryCode: "SETS",
-    name: "Kids Set",
-    description: "Nuggets with fries, cheese sauce, and water.",
+    name: "Bolalar seti",
+    description: "Naggets, fri, pishloqli sous va suv.",
     basePrice: 39000,
     imageUrl: "/products/set-kids.webp",
     preparationTime: 10,
@@ -57,7 +57,7 @@ export const menuCombos: ComboSeed[] = [
 export const comboVariants: MenuVariantSeed[] = menuCombos.map((combo) => ({
   productCode: combo.code,
   code: "STANDARD",
-  name: "Standard",
+  name: "Standart",
   price: combo.basePrice,
   isDefault: true,
   sortOrder: 10,

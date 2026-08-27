@@ -1,13 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { BranchPicker } from "../../components/branch-picker";
+import { CustomerAuthPanel } from "../../components/customer-auth-panel";
 import { AnimatedMoney, MotionDiv, hapticTap, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
+import { localizeMenuName } from "../../lib/customer-display";
 import { useCart } from "../../lib/cart";
 import type { Branch } from "../../lib/types";
 
@@ -195,14 +197,13 @@ function CheckoutFlow() {
 
   if (!customer?.accessToken) {
     return (
-      <section className="mx-auto max-w-3xl px-4 py-10 text-center">
+      <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-card p-8">
           <p className="text-sm font-black uppercase text-[#67E8F9]">Rasmiylashtirish</p>
-          <h1 className="mt-2 text-3xl font-black text-white">Telefonni tasdiqlang</h1>
-          <p className="mt-3 text-white/60">Buyurtmani rasmiylashtirish uchun avval telefon raqamingizni tasdiqlang.</p>
-          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-bold" href="/">
-            Telefonni tasdiqlash
-          </Link>
+          <CustomerAuthPanel
+            description="Buyurtmani yakunlash uchun telefon raqamingizni shu yerda tasdiqlang. Tasdiqlangandan keyin checkout sahifasi saqlanib qoladi."
+            title="Telefonni tasdiqlang"
+          />
         </div>
       </section>
     );
@@ -232,16 +233,10 @@ function CheckoutFlow() {
               {loadingBranches ? (
                 <div className="skeleton h-12 rounded-2xl" />
               ) : (
-                <motion.select className={inputClass(Boolean(errors.branchId))} value={branchId} onChange={(event) => selectBranch(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }}>
-                  {branches.map((branch) => (
-                    <option disabled={!canUseBranchForType(branch, type)} key={branch.id} value={branch.id}>
-                      {branch.name}{branchLabelSuffix(branch, type)}
-                    </option>
-                  ))}
-                </motion.select>
+                <BranchPicker branches={branches} onChange={selectBranch} orderType={type} value={branchId} />
               )}
               <FieldError message={errors.branchId} />
-              {selectedBranch?.address ? <p className="text-xs font-bold text-white/48">{selectedBranch.address}</p> : null}
+              {selectedBranch?.address ? <p className="text-xs font-bold text-white/48">{selectedBranch.address}{branchLabelSuffix(selectedBranch, type)}</p> : null}
             </label>
 
             <div className="grid min-w-0 grid-cols-2 gap-2">
@@ -297,8 +292,8 @@ function CheckoutFlow() {
                 src={item.imageUrl}
               />
               <div className="min-w-0">
-                <p className="truncate font-black text-white">{item.quantity}x {item.productName}</p>
-                <p className="text-xs font-semibold text-white/52">{item.variantName ?? "Oddiy"}</p>
+                <p className="truncate font-black text-white">{item.quantity}x {localizeMenuName(item.productName)}</p>
+                <p className="text-xs font-semibold text-white/52">{localizeMenuName(item.variantName) || "Oddiy"}</p>
               </div>
             </div>
           )) : <FieldError message={errors.items ?? "Savat bo'sh."} />}

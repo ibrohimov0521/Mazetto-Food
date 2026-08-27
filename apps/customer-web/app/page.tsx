@@ -2,31 +2,21 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BranchPicker } from "../components/branch-picker";
+import { CustomerAuthPanel } from "../components/customer-auth-panel";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
 import { MotionDiv, cardMotion, pageMotion, sectionMotion } from "../components/motion-primitives";
 import { ProductCard } from "../components/product-card";
 import { SiteShell } from "../components/site-shell";
 import { apiFetch } from "../lib/api";
-import { formatMoney, useCart, type CustomerSession } from "../lib/cart";
+import { displayCategory, displayCustomerHome, displayProducts } from "../lib/customer-display";
+import { formatMoney, useCart } from "../lib/cart";
 import type { Branch, Category, CustomerHome, Product } from "../lib/types";
 
 const branchStorageKey = "mazetto.customer.branchId";
-type CustomerAuthDelivery = {
-  status: "SENT" | "TELEGRAM_LINK_REQUIRED" | "PENDING_INTEGRATION" | string;
-  message: string;
-  botUrl?: string;
-};
 
 export default function Home() {
-  const { customer, setCustomer, showToast } = useCart();
-  const [name, setName] = useState(customer?.name ?? "");
-  const [phone, setPhone] = useState(customer?.phone ?? "");
-  const [code, setCode] = useState("");
-  const [pendingVerification, setPendingVerification] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [telegramBotUrl, setTelegramBotUrl] = useState<string | null>(null);
-  const [requestingCode, setRequestingCode] = useState(false);
-  const [verifyingCode, setVerifyingCode] = useState(false);
+  const { customer } = useCart();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -53,9 +43,9 @@ export default function Home() {
         apiFetch<CustomerHome>(`/customer/home${branchQuery}`),
       ]);
       setBranches(nextBranches);
-      setCategories(sortSetsFirst(nextCategories));
-      setProducts(nextProducts);
-      setHome(nextHome);
+      setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
+      setProducts(displayProducts(nextProducts));
+      setHome(displayCustomerHome(nextHome));
       setBranchId((current) => current || nextBranchId);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Ma'lumotlarni yuklab bo'lmadi.");
@@ -72,61 +62,6 @@ export default function Home() {
   const combos = useMemo(() => products.filter((product) => product.isCombo).slice(0, 3), [products]);
   const popular = useMemo(() => products.filter((product) => !product.isCombo).slice(0, 6), [products]);
 
-  async function requestCode() {
-    setRequestingCode(true);
-    setMessage(null);
-    try {
-      const result = await apiFetch<{ challenge: { phone: string; expiresAt: string }; delivery: CustomerAuthDelivery }>("/customer/auth/request-code", {
-        method: "POST",
-        body: JSON.stringify({ phone }),
-      });
-      setPendingVerification(true);
-      setCode("");
-      setTelegramBotUrl(result.delivery.botUrl ?? null);
-
-      if (result.delivery.status === "TELEGRAM_LINK_REQUIRED") {
-        setMessage("Telefon raqamingizni Telegram orqali bir marta tasdiqlashingiz kerak. Botda telefon raqamingizni yuboring va bu yerga qayting.");
-        return;
-      }
-
-      if (result.delivery.status === "PENDING_INTEGRATION") {
-        setMessage("Telegram orqali kod yuborish hozircha sozlanmagan. Keyinroq qayta urinib ko'ring.");
-        return;
-      }
-
-      setMessage(result.delivery.message || "Tasdiqlash kodi Telegram orqali yuborildi. Kodni shu yerga kiriting.");
-    } catch (error) {
-      const text = error instanceof Error ? error.message : "Kod yuborib bo'lmadi";
-      setMessage(text.includes("Too many") ? "Juda ko'p urinish bo'ldi. Bir oz kutib qayta urinib ko'ring." : text);
-      showToast("Kod yuborilmadi");
-    } finally {
-      setRequestingCode(false);
-    }
-  }
-
-  async function verifyCode() {
-    setVerifyingCode(true);
-    setMessage(null);
-    try {
-      const result = await apiFetch<{ customer: Omit<CustomerSession, "accessToken" | "refreshToken" | "tokenType">; tokens: { accessToken: string; refreshToken: string; tokenType: "Bearer" } }>("/customer/auth/verify-code", {
-        method: "POST",
-        body: JSON.stringify({ name, phone, code }),
-      });
-      setCustomer({ ...result.customer, ...result.tokens });
-      setPendingVerification(false);
-      setCode("");
-      setTelegramBotUrl(null);
-      setMessage("Profil tasdiqlandi. Savat, sevimlilar va buyurtmalar profilingizga ulandi.");
-      showToast("Telefon tasdiqlandi");
-    } catch (error) {
-      const text = error instanceof Error ? error.message : "Kodni tasdiqlab bo'lmadi";
-      setMessage(text.includes("expired") || text.includes("Invalid") ? "Kod noto'g'ri yoki muddati tugagan. Qayta kod oling." : text);
-      showToast("Kod tasdiqlanmadi");
-    } finally {
-      setVerifyingCode(false);
-    }
-  }
-
   function selectBranch(nextBranchId: string) {
     setBranchId(nextBranchId);
     window.localStorage.setItem(branchStorageKey, nextBranchId);
@@ -142,9 +77,9 @@ export default function Home() {
         apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
         apiFetch<CustomerHome>(`/customer/home${branchQuery}`),
       ]);
-      setCategories(sortSetsFirst(nextCategories));
-      setProducts(nextProducts);
-      setHome(nextHome);
+      setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
+      setProducts(displayProducts(nextProducts));
+      setHome(displayCustomerHome(nextHome));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Filial ma'lumotlari yuklanmadi.");
     }
@@ -163,17 +98,7 @@ export default function Home() {
           </p>
 
           <div className="mf-card mazetto-liquid-surface mt-6 grid max-w-xl min-w-0 gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <select
-              className="mf-input px-4 py-3 font-bold"
-              value={branchId}
-              onChange={(event) => selectBranch(event.target.value)}
-            >
-              {branches.map((branch) => (
-                <option disabled={branch.acceptsOrders === false} key={branch.id} value={branch.id}>
-                  {branch.name}{branch.acceptsOrders === false ? " - hozir yopiq" : ""}
-                </option>
-              ))}
-            </select>
+            <BranchPicker branches={branches} disabled={loading} onChange={selectBranch} value={branchId} />
             <Link className="pressable ripple mf-button-primary px-6 py-3 text-center font-black" href={branchId ? `/menu?branchId=${branchId}` : "/menu"}>
               Buyurtma berish
             </Link>
@@ -244,40 +169,10 @@ export default function Home() {
           </div>
           <div className="grid min-w-0 gap-3">
             {customer ? (
-              <div className="mf-card-soft p-4">
-                <p className="text-sm font-black text-white">Profil ulangan</p>
-                <p className="mt-1 text-sm font-semibold text-white/60">{customer.name} · {customer.phone}</p>
-                <Link className="pressable ripple mf-button-secondary mt-4 inline-flex px-4 py-3 text-sm font-black" href="/orders">
-                  Buyurtmalarim
-                </Link>
-              </div>
+              <CustomerAuthPanel />
             ) : (
-              <>
-                <input className="mf-input px-4 py-3" placeholder="Ismingiz" value={name} onChange={(event) => setName(event.target.value)} />
-                <input className="mf-input px-4 py-3" placeholder="+998 telefon raqam" value={phone} onChange={(event) => setPhone(event.target.value)} />
-                {pendingVerification ? (
-                  <>
-                    <input className="mf-input px-4 py-3" inputMode="numeric" placeholder="Telegram tasdiqlash kodi" value={code} onChange={(event) => setCode(event.target.value)} />
-                    <button className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50" disabled={!phone || !code || verifyingCode} onClick={() => void verifyCode()} type="button">
-                      {verifyingCode ? "Tekshirilmoqda..." : "Kodni tasdiqlash"}
-                    </button>
-                    {telegramBotUrl ? (
-                      <Link className="pressable ripple mazetto-glass-chip rounded-2xl px-5 py-4 text-center font-black text-[#67E8F9]" href={telegramBotUrl} target="_blank">
-                        Telegram botga o'tish
-                      </Link>
-                    ) : null}
-                    <button className="pressable ripple mf-button-secondary px-5 py-3 text-sm font-black disabled:opacity-50" disabled={!phone || requestingCode} onClick={() => void requestCode()} type="button">
-                      {requestingCode ? "Yuborilmoqda..." : "Kodni qayta yuborish"}
-                    </button>
-                  </>
-                ) : (
-                  <button className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50" disabled={!phone || requestingCode} onClick={() => void requestCode()} type="button">
-                    {requestingCode ? "Yuborilmoqda..." : "Kod olish"}
-                  </button>
-                )}
-              </>
+              <CustomerAuthPanel />
             )}
-            {message ? <p className="rounded-2xl bg-[#22C55E]/14 px-4 py-3 text-sm font-bold text-[#67E8F9]">{message}</p> : null}
           </div>
         </div>
       </MotionDiv>

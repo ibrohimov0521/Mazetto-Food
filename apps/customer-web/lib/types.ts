@@ -28,6 +28,7 @@ export type Category = {
 
 export type ProductVariant = {
   id: string;
+  code?: string;
   name: string;
   sellingPrice: string;
   isDefault: boolean;
@@ -36,6 +37,7 @@ export type ProductVariant = {
 export type ModifierLink = {
   modifier: {
     id: string;
+    code?: string;
     name: string;
     description?: string | null;
     price: string;
@@ -44,6 +46,7 @@ export type ModifierLink = {
 
 export type Product = {
   id: string;
+  code?: string;
   categoryId: string;
   name: string;
   description?: string | null;

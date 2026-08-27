@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { getApiBaseUrl } from "./api";
 
 export type CustomerSession = {
   id: string;
@@ -74,12 +75,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartFlight, setCartFlight] = useState<CartFlight | null>(null);
 
   useEffect(() => {
-    const storedItems = window.localStorage.getItem(storageKey);
-    const storedCustomer = window.localStorage.getItem(customerKey);
-    const storedFavorites = window.localStorage.getItem(favoritesKey);
-    setItems(storedItems ? (JSON.parse(storedItems) as CartItem[]) : []);
-    setCustomerState(storedCustomer ? (JSON.parse(storedCustomer) as CustomerSession) : null);
-    setFavoriteIds(storedFavorites ? (JSON.parse(storedFavorites) as string[]) : []);
+    setItems(readStoredValue<CartItem[]>(storageKey, []));
+    setCustomerState(readStoredValue<CustomerSession | null>(customerKey, null));
+    setFavoriteIds(readStoredValue<string[]>(favoritesKey, []));
   }, []);
 
   useEffect(() => {
@@ -117,6 +115,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch(`${getCustomerApiBaseUrl()}/customer/auth/refresh`, {
         body: JSON.stringify({ refreshToken: customer.refreshToken }),
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -230,7 +229,7 @@ export function useCart() {
 }
 
 export function formatMoney(value: string | number): string {
-  return `${Number(value || 0).toLocaleString("uz-UZ")} UZS`;
+  return `${Number(value || 0).toLocaleString("uz-UZ")} so'm`;
 }
 
 export function productImage(imageUrl?: string | null): string {
@@ -251,5 +250,15 @@ export function productImage(imageUrl?: string | null): string {
 }
 
 function getCustomerApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
+  return getApiBaseUrl();
+}
+
+function readStoredValue<T>(key: string, fallback: T): T {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value ? (JSON.parse(value) as T) : fallback;
+  } catch {
+    window.localStorage.removeItem(key);
+    return fallback;
+  }
 }

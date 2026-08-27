@@ -6,6 +6,7 @@ import { MediaImage } from "../../../components/media-image";
 import { MotionButton, MotionDiv, buttonMotion, cardMotion, hapticTap, imageMotion, pageMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
+import { displayProduct } from "../../../lib/customer-display";
 import { formatMoney, useCart } from "../../../lib/cart";
 import type { Product } from "../../../lib/types";
 
@@ -34,7 +35,7 @@ function ProductDetails({ id }: { id: string }) {
       setError(null);
       try {
         const nextProduct = await apiFetch<Product>(`/customer/menu/products/${id}`);
-        setProduct(nextProduct);
+        setProduct(displayProduct(nextProduct));
         setVariantId(nextProduct.variants.find((variant) => variant.isDefault)?.id ?? nextProduct.variants[0]?.id);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Mahsulot topilmadi.");

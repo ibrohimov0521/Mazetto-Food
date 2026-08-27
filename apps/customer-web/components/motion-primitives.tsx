@@ -53,7 +53,7 @@ export function AnimatedNumber({ value }: { value: number }) {
 export function AnimatedMoney({ value }: { value: number }) {
   return (
     <>
-      <AnimatedNumber value={value} /> UZS
+      <AnimatedNumber value={value} /> so'm
     </>
   );
 }

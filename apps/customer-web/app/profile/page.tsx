@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CustomerAuthPanel } from "../../components/customer-auth-panel";
 import { AnimatedNumber, MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
+import { localizeMenuName } from "../../lib/customer-display";
 import { formatMoney, useCart } from "../../lib/cart";
 
 type Dashboard = {
@@ -72,11 +74,12 @@ function Profile() {
 
   if (!customer?.accessToken) {
     return (
-      <section className="mx-auto max-w-3xl px-4 py-10 text-center">
+      <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-card p-8">
-          <h1 className="text-3xl font-black text-white">Telefonni tasdiqlang</h1>
-          <p className="mt-3 text-white/60">Sevimlilar, buyurtmalar va bonus balansini ko'rish uchun bosh sahifadagi Telegram kodni tasdiqlang.</p>
-          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/">Bosh sahifa</Link>
+          <CustomerAuthPanel
+            description="Sevimlilar, buyurtmalar va bonus balansini ko'rish uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
+            title="Telefonni tasdiqlang"
+          />
         </div>
       </section>
     );
@@ -99,7 +102,7 @@ function Profile() {
 
         <div className="rounded-[var(--mf-radius)] bg-gradient-to-br from-[#22C55E] to-[#67E8F9] p-5 text-[#04130B] shadow-[0_18px_50px_rgba(34,197,94,0.24)]">
           <p className="text-sm font-black uppercase text-[#052012]/70">Bonus balansi</p>
-          <p className="mt-3 text-4xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> UZS</p>
+          <p className="mt-3 text-4xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> so'm</p>
           <p className="mt-3 text-sm font-semibold text-[#052012]/70">Telefon profilingiz buyurtmalar tarixi va sevimli mahsulotlarni keyingi safar uchun saqlaydi.</p>
           <div className="mt-5 grid gap-2">
             <Link className="pressable ripple rounded-2xl bg-[#04130B] px-4 py-3 text-center text-sm font-black text-white" href="/orders">
@@ -152,7 +155,7 @@ function Profile() {
                   src={product.imageUrl}
                 />
                 <div className="min-w-0">
-                  <p className="truncate font-black text-white">{product.name}</p>
+                  <p className="truncate font-black text-white">{localizeMenuName(product.name)}</p>
                   <p className="mt-1 text-sm font-bold text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>

@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
+import { CustomerAuthPanel } from "../../components/customer-auth-panel";
 import { MotionDiv, AnimatedNumber, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch, getApiBaseUrl } from "../../lib/api";
+import { localizeMenuName } from "../../lib/customer-display";
 import { formatMoney, useCart } from "../../lib/cart";
 
 type Dashboard = {
@@ -136,11 +138,12 @@ function OrdersDashboard() {
 
   if (!customer?.accessToken) {
     return (
-      <section className="mx-auto max-w-3xl px-4 py-10 text-center">
+      <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-card p-8">
-          <h1 className="text-3xl font-black text-white">Telefonni tasdiqlang</h1>
-          <p className="mt-3 text-white/60">Buyurtmalar tarixi va bonuslarni ko'rish uchun bosh sahifadagi Telegram tasdiqlashdan o'ting.</p>
-          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-bold" href="/">Bosh sahifa</Link>
+          <CustomerAuthPanel
+            description="Buyurtmalar tarixi va bonuslarni ko'rish uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
+            title="Telefonni tasdiqlang"
+          />
         </div>
       </section>
     );
@@ -167,7 +170,7 @@ function OrdersDashboard() {
               <div className="mt-5 grid gap-2">
                 {activeOrder.order.items.map((item) => (
                   <div className="flex min-w-0 justify-between gap-3 rounded-xl bg-white/8 px-4 py-3 text-sm font-bold text-white" key={item.id}>
-                    <span className="min-w-0 truncate">{Number(item.quantity)}x {item.productName}</span>
+                    <span className="min-w-0 truncate">{Number(item.quantity)}x {localizeMenuName(item.productName)}</span>
                     <span className="text-[#67E8F9]">{formatMoney(item.totalPrice)}</span>
                   </div>
                 ))}
@@ -221,7 +224,7 @@ function OrdersDashboard() {
       <aside className="grid min-w-0 content-start gap-5">
         <div className="mf-card p-5">
           <p className="text-sm font-bold text-[#67E8F9]">Bonuslar</p>
-          <p className="mt-2 text-4xl font-black text-white"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> UZS</p>
+          <p className="mt-2 text-4xl font-black text-white"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> so'm</p>
         </div>
         <div className="mf-card p-5">
           <h2 className="text-xl font-black text-white">Sevimlilar</h2>
@@ -236,7 +239,7 @@ function OrdersDashboard() {
                   src={product.imageUrl}
                 />
                 <div>
-                  <p className="truncate font-bold text-white">{product.name}</p>
+                  <p className="truncate font-bold text-white">{localizeMenuName(product.name)}</p>
                   <p className="text-sm text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
@@ -251,7 +254,7 @@ function OrdersDashboard() {
 function orderSummary(order: CustomerOrder): string {
   return order.order.items
     .slice(0, 3)
-    .map((item) => `${Number(item.quantity)}x ${item.productName}`)
+    .map((item) => `${Number(item.quantity)}x ${localizeMenuName(item.productName)}`)
     .join(", ");
 }
 

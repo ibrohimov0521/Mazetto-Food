@@ -6,6 +6,7 @@ import { CartUpsell } from "../../components/cart-upsell";
 import { AnimatedMoney, MotionDiv, hapticTap, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
+import { localizeMenuName } from "../../lib/customer-display";
 import { useCart } from "../../lib/cart";
 
 export default function CartPage() {
@@ -46,14 +47,14 @@ function CartReview() {
                 <div className="min-w-0">
                   <div className="flex min-w-0 justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="truncate font-bold text-white">{item.productName}</h2>
-                      <p className="text-sm text-white/52">{item.variantName ?? "Oddiy"}</p>
+                      <h2 className="truncate font-bold text-white">{localizeMenuName(item.productName)}</h2>
+                      <p className="text-sm text-white/52">{localizeMenuName(item.variantName) || "Oddiy"}</p>
                     </div>
                     <button className="pressable shrink-0 text-sm font-bold text-red-400" onClick={() => removeItem(item.key)} type="button">
                       O'chirish
                     </button>
                   </div>
-                  {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#67E8F9]">{item.modifiers.map((modifier) => modifier.name).join(", ")}</p> : null}
+                  {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#67E8F9]">{item.modifiers.map((modifier) => localizeMenuName(modifier.name)).join(", ")}</p> : null}
                   {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-white/50">Izoh: {item.notes}</p> : null}
                   <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
                     <div className="flex shrink-0 items-center gap-2">
@@ -106,7 +107,7 @@ function CartReview() {
             Rasmiylashtirish
           </Link>
         ) : (
-          <Link className="pressable ripple mf-button-primary mt-4 flex w-full justify-center px-5 py-4 font-black" href="/">
+          <Link className="pressable ripple mf-button-primary mt-4 flex w-full justify-center px-5 py-4 font-black" href="/checkout?auth=1">
             Telefonni tasdiqlash
           </Link>
         )}
@@ -118,7 +119,7 @@ function CartReview() {
             <p className="text-xs font-black uppercase text-white/50">Jami</p>
             <p className="text-lg font-black text-white"><AnimatedMoney value={total} /></p>
           </div>
-          <Link className={`pressable ripple rounded-2xl px-5 py-4 font-black ${items.length && customer?.accessToken ? "mf-button-primary" : "pointer-events-none bg-white/10 text-white/40"}`} href={customer?.accessToken ? "/checkout" : "/"}>
+          <Link className={`pressable ripple rounded-2xl px-5 py-4 font-black ${items.length ? "mf-button-primary" : "pointer-events-none bg-white/10 text-white/40"}`} href={customer?.accessToken ? "/checkout" : "/checkout?auth=1"}>
             {customer?.accessToken ? "Davom etish" : "Tasdiqlash"}
           </Link>
         </div>

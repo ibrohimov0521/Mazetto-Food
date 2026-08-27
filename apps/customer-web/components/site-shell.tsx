@@ -34,9 +34,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
               <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">Menyu</Link>
               <Link aria-current={isNavActive(pathname, "/orders") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/orders"))} href="/orders">Buyurtmalar</Link>
               <Link aria-current={isNavActive(pathname, "/profile") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/profile"))} href="/profile">Profil</Link>
-              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} data-cart-target="true" className="pressable ripple mf-button-primary flex min-w-[9.5rem] shrink-0 justify-center whitespace-nowrap px-4 py-2" href="/cart">
-                <span>Savat</span>
-                <span className="ml-1 inline-block min-w-[5.75rem] text-center">{items.length ? `· ${formatCompact(subtotal)}` : ""}</span>
+              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} data-cart-target="true" className="pressable ripple mf-button-primary grid min-w-[9.75rem] shrink-0 grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 whitespace-nowrap px-4 py-2" href="/cart">
+                <CartIcon />
+                <span className="block min-w-0 text-center">{items.length ? formatCompact(subtotal) : "Savat"}</span>
               </Link>
             </nav>
             <div className="hidden shrink-0 md:block">
@@ -85,7 +85,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                     <motion.span animate={{ y: active ? -1 : 0, scale: item.href === "/cart" ? (active ? 1.16 : 1.08) : active ? 1.08 : 1 }} className={`relative ${item.href === "/cart" ? "grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-[#22C55E] to-[#67E8F9] text-[#04130B] shadow-[0_10px_24px_rgba(34,197,94,0.28)]" : active ? "text-[#67E8F9]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
                       <Icon />
                     </motion.span>
-                    <span className={`relative max-w-full truncate ${active ? "text-[#67E8F9]" : ""}`}>{mobileNavLabel(item.href)}</span>
+                    <span className={`relative max-w-full truncate ${active ? "text-[#67E8F9]" : ""}`}>{item.href === "/cart" && items.length ? formatCompact(subtotal) : mobileNavLabel(item.href)}</span>
                     {item.href === "/cart" && items.length ? (
                       <span className="absolute right-1.5 top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#67E8F9] px-1 text-[10px] font-black leading-none text-[#04130B] shadow-[0_8px_18px_rgba(103,232,249,0.24)]">
                         {formatCartCount(items.length)}
@@ -116,7 +116,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
 }
 
 function formatCompact(value: number): string {
-  return `${value.toLocaleString("uz-UZ")} UZS`;
+  return `${value.toLocaleString("uz-UZ")} so'm`;
 }
 
 function formatCartCount(count: number): string {

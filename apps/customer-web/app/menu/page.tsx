@@ -5,6 +5,7 @@ import { MotionDiv, pageMotion, sectionMotion } from "../../components/motion-pr
 import { ProductCard } from "../../components/product-card";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
+import { displayCategory, displayProducts } from "../../lib/customer-display";
 import type { Category, Product } from "../../lib/types";
 
 const branchStorageKey = "mazetto.customer.branchId";
@@ -42,9 +43,10 @@ function MenuCatalog() {
       if (nextBranchId) {
         window.localStorage.setItem(branchStorageKey, nextBranchId);
       }
-      setCategories(sortSetsFirst(nextCategories));
-      setProducts(nextProducts);
-      setActiveCategoryId((current) => current || sortSetsFirst(nextCategories)[0]?.id || "");
+      const localizedCategories = sortSetsFirst(nextCategories.map(displayCategory));
+      setCategories(localizedCategories);
+      setProducts(displayProducts(nextProducts));
+      setActiveCategoryId((current) => current || localizedCategories[0]?.id || "");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Menyuni yuklab bo'lmadi.");
     } finally {

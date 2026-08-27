@@ -691,6 +691,42 @@ products/set-kids.webp
 
 ## Preferred Next Order
 
+## Customer Experience Stabilization - Telegram Auth, Mobile API, Uzbek Menu
+
+Status: Production data updated, customer-web code ready for controlled deploy
+
+Date: 2026-08-27
+
+Completed in this pass:
+
+- Telegram webhook was restored after bot token/webhook secret rotation without exposing secret values.
+- Production backend runtime was verified to contain Telegram ENV names.
+- Mobile User-Agent API checks for customer branches, menu categories, menu products, and homepage returned 200 with MAZETTO CORS.
+- Customer-web API fallback was hardened so production browsers use `https://api.mazettofood.uz/api/v1` when build-time public API ENV is missing.
+- Customer localStorage reads were hardened so corrupted cart/session/favorites storage cannot break page load.
+- Checkout, cart, orders, order detail, and profile no longer force customers to go to the home page for phone verification; the Telegram auth panel works in context.
+- Customer cart navigation now shows a cart icon plus `Savat` when empty and cart icon plus the current total when non-empty, while keeping stable width.
+- Customer-facing money display now uses `so'm`.
+- Customer-facing menu names, descriptions, variants, modifiers, and combos were localized to Uzbek in the seed source.
+- Production PostgreSQL customer-visible menu text was updated by a targeted transaction after a verified backup; no seed was run in production.
+- A modern customer branch picker replaced the native branch select on home and checkout.
+- Local validation passed for Prisma validate/format, backend/customer-web typecheck, lint, build, existing customer order history validation, existing Telegram customer auth validation, root typecheck, root lint, and diff check.
+
+Production backup before menu text update:
+
+```text
+/home/javohir/backups/mazetto/postgres/mazetto-pre-menu-uzbek-20260827-201814.dump
+```
+
+Remaining:
+
+- Commit and push the customer-web/seed source changes.
+- Controlled customer-web deploy from the new commit.
+- Production visual/mobile QA after customer-web deploy.
+- Real `@mazettofoodbot` `/start -> contact -> request-code -> verify-code` test with the user/customer.
+- Real 45 media assets are still missing from the media volume.
+- First authenticated production order E2E remains pending; do not create it without explicit approval.
+
 ## Autonomous Night Shift - Customer Experience, Auth, History
 
 Status: Completed locally, ready for controlled deployment review

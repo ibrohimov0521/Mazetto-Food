@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MediaImage } from "./media-image";
 import { MotionButton, MotionDiv, buttonMotion, hapticTap, sectionMotion } from "./motion-primitives";
 import { apiFetch } from "../lib/api";
+import { displayCategory, displayProducts } from "../lib/customer-display";
 import { formatMoney, useCart } from "../lib/cart";
 import type { Category, Product } from "../lib/types";
 
@@ -29,8 +30,8 @@ export function CartUpsell() {
         apiFetch<Category[]>("/customer/menu/categories"),
         apiFetch<Product[]>("/customer/menu/products"),
       ]);
-      setCategories(nextCategories);
-      setProducts(nextProducts);
+      setCategories(nextCategories.map(displayCategory));
+      setProducts(displayProducts(nextProducts));
     } catch {
       setProducts([]);
       setCategories([]);

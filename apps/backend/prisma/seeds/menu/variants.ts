@@ -38,7 +38,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "BIG_LAVASH",
     code: "STANDARD",
-    name: "Standard",
+    name: "Standart",
     price: 36000,
     costPrice: 23000,
     isDefault: true,
@@ -47,7 +47,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "BIG_LAVASH",
     code: "CHEESE",
-    name: "Cheese",
+    name: "Pishloqli",
     price: 41000,
     costPrice: 25500,
     sortOrder: 20,
@@ -55,7 +55,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "BIG_LAVASH",
     code: "SPICY",
-    name: "Spicy",
+    name: "Achchiq",
     price: 38000,
     costPrice: 23500,
     sortOrder: 30,
@@ -63,7 +63,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "CHICKEN_CHEESE_LAVASH",
     code: "STANDARD",
-    name: "Standard",
+    name: "Standart",
     price: 35000,
     costPrice: 22000,
     isDefault: true,
@@ -72,7 +72,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "CHICKEN_CHEESE_LAVASH",
     code: "SPICY",
-    name: "Spicy",
+    name: "Achchiq",
     price: 37000,
     costPrice: 22500,
     sortOrder: 20,
@@ -80,7 +80,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "CHICKEN_SPICY_LAVASH",
     code: "STANDARD",
-    name: "Standard",
+    name: "Standart",
     price: 33000,
     costPrice: 21000,
     isDefault: true,
@@ -89,7 +89,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "CHICKEN_SPICY_LAVASH",
     code: "CHEESE",
-    name: "Cheese",
+    name: "Pishloqli",
     price: 38000,
     costPrice: 23500,
     sortOrder: 20,
@@ -97,7 +97,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "BIG_BURGER",
     code: "STANDARD",
-    name: "Standard",
+    name: "Standart",
     price: 39000,
     costPrice: 25000,
     isDefault: true,
@@ -106,7 +106,7 @@ export const menuVariants: MenuVariantSeed[] = [
   {
     productCode: "BIG_BURGER",
     code: "DOUBLE_CHEESE",
-    name: "Double cheese",
+    name: "Double pishloq",
     price: 46000,
     costPrice: 29000,
     sortOrder: 20,
@@ -182,7 +182,7 @@ export const menuVariants: MenuVariantSeed[] = [
   ...standardVariantProducts.map((productCode) => ({
     productCode,
     code: "STANDARD",
-    name: "Standard",
+    name: "Standart",
     price: 0,
     isDefault: true,
     sortOrder: 10,

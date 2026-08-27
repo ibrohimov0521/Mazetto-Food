@@ -7,7 +7,17 @@ export type ApiEnvelope<T> = {
 };
 
 export function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
+  const configuredUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "");
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  if (typeof window !== "undefined" && window.location.hostname.endsWith("mazettofood.uz")) {
+    return "https://api.mazettofood.uz/api/v1";
+  }
+
+  return "http://localhost:4000/api/v1";
 }
 
 type ApiFetchInit = RequestInit & {
@@ -21,6 +31,7 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
   try {
     response = await fetch(`${getApiBaseUrl()}${path}`, {
       ...requestInit,
+      cache: requestInit.cache ?? "no-store",
       headers: {
         "Content-Type": "application/json",
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -34,10 +45,40 @@ export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T>
   const payload = await parseEnvelope<T>(response);
 
   if (!response.ok || !payload.success || payload.data === undefined) {
-    throw new Error(Array.isArray(payload.error?.message) ? payload.error.message.join(", ") : payload.error?.message ?? "Request failed");
+    throw new Error(getCustomerErrorMessage(response, payload));
   }
 
   return payload.data;
+}
+
+function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>): string {
+  const backendMessage = Array.isArray(payload.error?.message) ? payload.error.message.join(", ") : payload.error?.message;
+
+  if (backendMessage) {
+    if (backendMessage.includes("Too many")) {
+      return "Juda ko'p urinish bo'ldi. Bir oz kutib qayta urinib ko'ring.";
+    }
+
+    if (backendMessage.includes("Unauthorized")) {
+      return "Sessiya muddati tugagan. Telefon raqamingizni qayta tasdiqlang.";
+    }
+
+    return backendMessage;
+  }
+
+  if (response.status === 401) {
+    return "Sessiya muddati tugagan. Telefon raqamingizni qayta tasdiqlang.";
+  }
+
+  if (response.status === 404) {
+    return "So'ralgan ma'lumot topilmadi.";
+  }
+
+  if (response.status >= 500) {
+    return "Serverda vaqtinchalik muammo bor. Bir ozdan keyin urinib ko'ring.";
+  }
+
+  return "So'rov bajarilmadi. Qayta urinib ko'ring.";
 }
 
 async function parseEnvelope<T>(response: Response): Promise<ApiEnvelope<T>> {
