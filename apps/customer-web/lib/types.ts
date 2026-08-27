@@ -35,6 +35,9 @@ export type ProductVariant = {
 };
 
 export type ModifierLink = {
+  isRequired?: boolean;
+  minSelect?: number;
+  maxSelect?: number | null;
   modifier: {
     id: string;
     code?: string;

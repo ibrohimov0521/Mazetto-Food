@@ -86,30 +86,30 @@ function Profile() {
   }
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-6">
-      <div className="grid w-full gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,360px)]">
-        <div className="mf-card min-w-0 p-5">
-          <p className="text-sm font-black uppercase text-[#67E8F9]">Mijoz profili</p>
-          <h1 className="mt-2 text-4xl font-black text-white">{dashboard?.name ?? customer.name}</h1>
-          <p className="mt-2 text-lg font-bold text-white/60">{dashboard?.phone ?? customer.phone}</p>
+    <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-5">
+      <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
+        <div className="mf-card min-w-0 p-4">
+          <p className="text-xs font-black uppercase text-[#67E8F9]">Mijoz profili</p>
+          <h1 className="mt-1 text-3xl font-black text-white">{dashboard?.name ?? customer.name}</h1>
+          <p className="mt-1 text-sm font-bold text-white/60">{dashboard?.phone ?? customer.phone}</p>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid grid-cols-3 gap-2">
             <Stat label="Buyurtmalar" value={`${dashboard?.customerOrders.length ?? 0}`} />
             <Stat label="Sevimlilar" value={`${dashboard?.favorites.length ?? favoriteIds.length}`} />
             <Stat label="Bonus" value={formatMoney(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} />
           </div>
         </div>
 
-        <div className="rounded-[var(--mf-radius)] bg-gradient-to-br from-[#22C55E] to-[#67E8F9] p-5 text-[#04130B] shadow-[0_18px_50px_rgba(34,197,94,0.24)]">
-          <p className="text-sm font-black uppercase text-[#052012]/70">Bonus balansi</p>
-          <p className="mt-3 text-4xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> so'm</p>
-          <p className="mt-3 text-sm font-semibold text-[#052012]/70">Telefon profilingiz buyurtmalar tarixi va sevimli mahsulotlarni keyingi safar uchun saqlaydi.</p>
-          <div className="mt-5 grid gap-2">
-            <Link className="pressable ripple rounded-2xl bg-[#04130B] px-4 py-3 text-center text-sm font-black text-white" href="/orders">
+        <div className="rounded-[1.35rem] bg-gradient-to-br from-[#22C55E] to-[#67E8F9] p-4 text-[#04130B] shadow-[0_14px_36px_rgba(34,197,94,0.22)]">
+          <p className="text-xs font-black uppercase text-[#052012]/70">Bonus balansi</p>
+          <p className="mt-2 text-3xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> so'm</p>
+          <p className="mt-2 text-xs font-semibold leading-5 text-[#052012]/70">Profil buyurtmalar va sevimli mahsulotlarni saqlaydi.</p>
+          <div className="mt-4 grid gap-2">
+            <Link className="pressable ripple rounded-2xl bg-[#04130B] px-4 py-2.5 text-center text-sm font-black text-white shadow-[0_10px_24px_rgba(4,19,11,0.22)]" href="/orders">
               Buyurtmalarim
             </Link>
             <button
-              className="pressable ripple rounded-2xl bg-white/32 px-4 py-3 text-sm font-black text-[#04130B]"
+              className="pressable ripple rounded-2xl bg-white/42 px-4 py-2.5 text-sm font-black text-[#04130B]"
               onClick={() => {
                 setCustomer(null);
                 showToast("Profilingizdan chiqdingiz");
@@ -122,7 +122,7 @@ function Profile() {
         </div>
       </div>
 
-      <MotionDiv {...sectionMotion} className="mt-5 grid gap-5 lg:grid-cols-2">
+      <MotionDiv {...sectionMotion} className="mt-4 grid gap-4 lg:grid-cols-2">
         <Panel title="So'nggi buyurtmalar">
           <div className="grid gap-3">
             {dashboard?.customerOrders.length ? (
@@ -181,8 +181,8 @@ function statusLabel(status: string): string {
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="mf-card mt-5 p-5">
-      <h2 className="mb-4 text-2xl font-black text-white">{title}</h2>
+    <section className="mf-card mt-4 p-4">
+      <h2 className="mb-3 text-xl font-black text-white">{title}</h2>
       {children}
     </section>
   );
@@ -190,9 +190,9 @@ function Panel({ children, title }: { children: React.ReactNode; title: string }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-card-soft p-4">
-      <p className="text-xs font-black uppercase text-[#67E8F9]">{label}</p>
-      <p className="mt-2 text-2xl font-black text-white">{value}</p>
+    <div className="mf-card-soft min-w-0 p-2.5">
+      <p className="truncate text-[10px] font-black uppercase text-[#67E8F9]">{label}</p>
+      <p className="mt-1 truncate text-sm font-black text-white sm:text-base">{value}</p>
     </div>
   );
 }

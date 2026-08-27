@@ -162,7 +162,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCustomer,
     refreshCustomer,
     addItem(item) {
-      const key = `${item.productId}-${item.variantId ?? "base"}-${item.modifiers.map((modifier) => modifier.modifierId).join(".")}-${item.notes ?? ""}`;
+      const key = cartItemKey(item);
       setItems((current) => {
         const existing = current.find((candidate) => candidate.key === key);
 
@@ -230,6 +230,15 @@ export function useCart() {
 
 export function formatMoney(value: string | number): string {
   return `${Number(value || 0).toLocaleString("uz-UZ")} so'm`;
+}
+
+export function cartItemKey(item: {
+  productId: string;
+  variantId?: string | undefined;
+  modifiers?: { modifierId: string }[];
+  notes?: string;
+}): string {
+  return `${item.productId}-${item.variantId ?? "base"}-${(item.modifiers ?? []).map((modifier) => modifier.modifierId).join(".")}-${item.notes ?? ""}`;
 }
 
 export function productImage(imageUrl?: string | null): string {

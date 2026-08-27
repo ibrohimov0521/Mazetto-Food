@@ -311,10 +311,15 @@ async function expectRejects(
 }
 
 function latestCode(): string {
-  const text = sentTelegramPayloads.at(-1)?.text ?? "";
-  const match = text.match(/\b\d{6}\b/);
-  assert.ok(match?.[0], "telegram message must include a 6 digit code");
-  return match[0];
+  for (const payload of sentTelegramPayloads.toReversed()) {
+    const match = (payload.text ?? "").match(/\b\d{6}\b/);
+
+    if (match?.[0]) {
+      return match[0];
+    }
+  }
+
+  assert.fail("telegram message must include a 6 digit code");
 }
 
 function createServices(prisma = new InMemoryPrisma()) {

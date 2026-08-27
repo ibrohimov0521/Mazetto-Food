@@ -790,6 +790,48 @@ Remaining blockers:
 - 45 real media assets are still missing.
 - No production order E2E was created during this night-shift pass.
 
+## Master Implementation Phase - Pixel-Locked Brand + Telegram Ordering
+
+Status: Started locally, partially blocked by missing approved visual assets
+
+Date: 2026-08-27
+
+Preserved from Phase 8:
+
+- reusable CustomerMenuSections
+- product detail followed by full menu
+- compact product cards
+- inline + to - 1 + cart controls
+- search clear X
+- compact profile/home/topbar/branch UI
+- checkout retry/error handling
+- menu scroll jump mitigation
+- linked Telegram /start main menu
+- Telegram categories/products/orders/profile/branches skeleton
+- Telegram auth validation changes
+
+Completed in this pass:
+
+- Created `docs/design/MAZETTO_DESIGN_LOCK.md` as the permanent visual source of truth for the approved petrol-teal, warm-yellow, ivory, lavender-logo MAZETTO direction.
+- Audited the task attachment and repository for approved logo/reference assets.
+- Confirmed no actual logo image, approved screenshots, PNG, SVG, WebP, JPG, or JPEG brand asset exists in the current attachment or repository.
+- Updated customer-web global design tokens away from the old generic green/cyan mint direction toward the approved deep teal, warm yellow, ivory, aqua, and lavender brand system.
+- Updated the shared media fallback to use the new petrol/yellow brand direction while preserving the existing media resolver and missing-image resilience.
+
+Current blockers:
+
+- Pixel-locked logo integration is blocked until the approved transparent MAZETTO FOOD logo asset is supplied.
+- Pixel-locked screenshot comparison QA is blocked until the approved reference screenshots are attached as actual image files.
+- Complete Telegram customer ordering must be implemented through a small shared order application layer or facade. Directly injecting `CustomersService` into `TelegramModule` would create a module dependency cycle because `CustomersModule` already imports `TelegramModule` for verification-code delivery.
+
+Still remaining in this master phase:
+
+- Integrate the real approved logo asset.
+- Complete page-by-page redesign against actual reference images.
+- Add persistent Telegram customer cart/order flow without duplicating the order engine.
+- Prove checkout and order E2E with exactly one controlled production test order after deployment approval.
+- Update production only after local visual QA, validation, backup, commit, and controlled deploy.
+
 1. Customer Web header/theme buglarini tugatish. Status: Done.
 2. Bottom nav + Liquid Glass UI. Status: Done.
 3. Hero slider / Discount slider / Upsell UI. Status: Done.

@@ -1,28 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
-  --mf-bg: #0b0b0b;
-  --mf-surface: #111111;
-  --mf-card: #181818;
-  --mf-card-soft: rgba(255, 255, 255, 0.06);
-  --mf-border: rgba(255, 255, 255, 0.1);
-  --mf-text: #ffffff;
-  --mf-muted: rgba(255, 255, 255, 0.68);
-  --mf-text-soft: rgba(255, 255, 255, 0.56);
-  --mf-orange: #22C55E;
-  --mf-gold: #67E8F9;
-  --mf-green: #22c55e;
-  --mf-blue: #0ea5e9;
-  --mf-glass: rgba(17, 17, 17, 0.74);
-  --mf-glass-border: rgba(255, 255, 255, 0.13);
-  --mf-control-bg: rgba(255, 255, 255, 0.09);
-  --mf-control-hover: rgba(255, 255, 255, 0.14);
-  --mf-input-bg: rgba(255, 255, 255, 0.08);
-  --mf-divider: rgba(255, 255, 255, 0.1);
-  --mf-radius: 28px;
-  --mf-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
-  --mf-glow: 0 18px 42px rgba(34, 197, 94, 0.28);
+  color-scheme: light;
+  --mf-bg: #004f55;
+  --mf-surface: #08686a;
+  --mf-card: #f5f5ef;
+  --mf-card-soft: rgba(255, 255, 248, 0.72);
+  --mf-border: rgba(0, 79, 85, 0.16);
+  --mf-text: #07373a;
+  --mf-muted: rgba(7, 55, 58, 0.72);
+  --mf-text-soft: rgba(7, 55, 58, 0.58);
+  --mf-orange: #f5cf00;
+  --mf-gold: #f9d928;
+  --mf-green: #3f9f68;
+  --mf-blue: #23958d;
+  --mf-aqua: #23958d;
+  --mf-lavender: #b9b8f0;
+  --mf-ivory: #f5f5ef;
+  --mf-glass: rgba(245, 245, 239, 0.86);
+  --mf-glass-border: rgba(255, 255, 248, 0.48);
+  --mf-control-bg: rgba(255, 255, 248, 0.74);
+  --mf-control-hover: rgba(255, 255, 248, 0.92);
+  --mf-input-bg: rgba(255, 255, 248, 0.9);
+  --mf-divider: rgba(0, 79, 85, 0.12);
+  --mf-radius: 24px;
+  --mf-shadow: 0 20px 56px rgba(0, 79, 85, 0.18);
+  --mf-glow: 0 16px 36px rgba(245, 207, 0, 0.32);
   --mf-bottom-nav-gap: 0.45rem;
   --mf-bottom-nav-height: 4rem;
   --mf-bottom-nav-space: calc(var(--mf-bottom-nav-height) + var(--mf-bottom-nav-gap) + 0.5rem);
@@ -31,24 +34,24 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --mf-bg: #ecfff6;
-  --mf-surface: #e5fbf3;
-  --mf-card: rgba(250, 255, 252, 0.84);
-  --mf-card-soft: rgba(13, 82, 61, 0.08);
-  --mf-border: rgba(10, 91, 68, 0.16);
-  --mf-text: #09251d;
-  --mf-muted: rgba(9, 37, 29, 0.76);
-  --mf-text-soft: rgba(9, 37, 29, 0.62);
-  --mf-orange: #22c55e;
-  --mf-gold: #0ea5e9;
-  --mf-glass: rgba(250, 255, 252, 0.72);
-  --mf-glass-border: rgba(10, 91, 68, 0.14);
-  --mf-control-bg: rgba(6, 95, 70, 0.08);
-  --mf-control-hover: rgba(6, 95, 70, 0.13);
-  --mf-input-bg: rgba(250, 255, 252, 0.86);
-  --mf-divider: rgba(10, 91, 68, 0.13);
-  --mf-shadow: 0 22px 70px rgba(8, 81, 63, 0.13);
-  --mf-glow: 0 18px 42px rgba(34, 197, 94, 0.22);
+  --mf-bg: #004f55;
+  --mf-surface: #08686a;
+  --mf-card: #f5f5ef;
+  --mf-card-soft: rgba(255, 255, 248, 0.72);
+  --mf-border: rgba(0, 79, 85, 0.16);
+  --mf-text: #07373a;
+  --mf-muted: rgba(7, 55, 58, 0.72);
+  --mf-text-soft: rgba(7, 55, 58, 0.58);
+  --mf-orange: #f5cf00;
+  --mf-gold: #f9d928;
+  --mf-glass: rgba(245, 245, 239, 0.86);
+  --mf-glass-border: rgba(255, 255, 248, 0.48);
+  --mf-control-bg: rgba(255, 255, 248, 0.74);
+  --mf-control-hover: rgba(255, 255, 248, 0.92);
+  --mf-input-bg: rgba(255, 255, 248, 0.9);
+  --mf-divider: rgba(0, 79, 85, 0.12);
+  --mf-shadow: 0 20px 56px rgba(0, 79, 85, 0.18);
+  --mf-glow: 0 16px 36px rgba(245, 207, 0, 0.32);
 }
 
 *,
@@ -74,8 +77,9 @@ body {
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 16% 0%, rgba(34, 197, 94, 0.18), transparent 28rem),
-    linear-gradient(180deg, #0b0b0b 0%, #111111 48%, #0b0b0b 100%);
+    radial-gradient(circle at 12% 0%, rgba(245, 207, 0, 0.18), transparent 25rem),
+    radial-gradient(circle at 86% 16%, rgba(185, 184, 240, 0.16), transparent 22rem),
+    linear-gradient(180deg, #004f55 0%, #08686a 44%, #004f55 100%);
   color: var(--mf-text);
   font-family: Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -83,10 +87,10 @@ body {
 
 :root[data-theme="light"] body {
   background:
-    radial-gradient(circle at 12% 0%, rgba(34, 197, 94, 0.18), transparent 28rem),
-    radial-gradient(circle at 88% 18%, rgba(14, 165, 233, 0.15), transparent 26rem),
-    radial-gradient(circle at 40% 80%, rgba(167, 243, 208, 0.34), transparent 32rem),
-    linear-gradient(180deg, #effff7 0%, #e8fbf7 46%, #f6fffb 100%);
+    radial-gradient(circle at 12% 0%, rgba(245, 207, 0, 0.18), transparent 25rem),
+    radial-gradient(circle at 88% 18%, rgba(35, 149, 141, 0.16), transparent 24rem),
+    radial-gradient(circle at 40% 80%, rgba(185, 184, 240, 0.18), transparent 28rem),
+    linear-gradient(180deg, #f5f5ef 0%, #fffdf1 46%, #f2f5ea 100%);
 }
 
 button,
@@ -103,8 +107,8 @@ img {
 
 .mf-shell {
   background:
-    radial-gradient(circle at 85% 8%, rgba(14, 165, 233, 0.14), transparent 22rem),
-    radial-gradient(circle at 10% 28%, rgba(34, 197, 94, 0.08), transparent 18rem),
+    radial-gradient(circle at 85% 8%, rgba(245, 207, 0, 0.16), transparent 22rem),
+    radial-gradient(circle at 10% 28%, rgba(185, 184, 240, 0.12), transparent 18rem),
     var(--mf-bg);
   color: var(--mf-text);
 }
@@ -132,6 +136,9 @@ img {
   bottom: calc(var(--mf-bottom-nav-gap) + env(safe-area-inset-bottom));
   min-height: var(--mf-bottom-nav-height);
   height: var(--mf-bottom-nav-height);
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
 }
 
 .mf-mobile-action-bar {
@@ -162,7 +169,7 @@ img {
 }
 
 .mf-card-light {
-  border: 1px solid rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(0, 79, 85, 0.14);
   border-radius: var(--mf-radius);
   background: #ffffff;
   color: #0f172a;
@@ -177,7 +184,7 @@ img {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 34%),
     linear-gradient(135deg, var(--mf-orange), var(--mf-gold));
-  color: #04130b;
+  color: #07373a;
   box-shadow: var(--mf-glow);
   transform: translateZ(0);
 }
@@ -228,7 +235,7 @@ img {
 .mf-input:focus {
   border-color: var(--mf-orange);
   outline: none;
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+  box-shadow: 0 0 0 4px rgba(245, 207, 0, 0.22);
 }
 
 .mazetto-glass,
@@ -241,12 +248,12 @@ img {
   overflow: hidden;
   border: 1px solid var(--mf-glass-border);
   background:
-    linear-gradient(135deg, rgba(34, 197, 94, 0.12), transparent 42%),
-    linear-gradient(165deg, rgba(103, 232, 249, 0.1), transparent 46%),
+    linear-gradient(135deg, rgba(245, 207, 0, 0.14), transparent 42%),
+    linear-gradient(165deg, rgba(185, 184, 240, 0.12), transparent 46%),
     var(--mf-glass);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(34, 197, 94, 0.08),
+    inset 0 -1px 0 rgba(245, 207, 0, 0.14),
     0 18px 46px rgba(0, 0, 0, 0.34);
   backdrop-filter: blur(22px) saturate(1.38);
 }
@@ -277,17 +284,17 @@ img {
   z-index: -1;
   content: "";
   border-radius: inherit;
-  box-shadow: inset 0 0 22px rgba(103, 232, 249, 0.08);
+  box-shadow: inset 0 0 22px rgba(185, 184, 240, 0.1);
   pointer-events: none;
 }
 
 .mazetto-glass-nav {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.035)),
-    linear-gradient(120deg, rgba(34, 197, 94, 0.13), rgba(103, 232, 249, 0.08) 48%, rgba(17, 17, 17, 0.82));
+    linear-gradient(120deg, rgba(245, 207, 0, 0.16), rgba(185, 184, 240, 0.1) 48%, rgba(0, 79, 85, 0.86));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -10px 28px rgba(34, 197, 94, 0.06),
+    inset 0 -10px 28px rgba(245, 207, 0, 0.08),
     0 18px 54px rgba(0, 0, 0, 0.44);
 }
 
@@ -300,10 +307,10 @@ img {
 }
 
 .mazetto-glass-button:hover {
-  border-color: rgba(103, 232, 249, 0.28);
+  border-color: rgba(245, 207, 0, 0.38);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 16px 36px rgba(34, 197, 94, 0.16);
+    0 16px 36px rgba(245, 207, 0, 0.18);
 }
 
 .mazetto-glass-chip {
@@ -318,11 +325,11 @@ img {
 
 .mazetto-liquid-active {
   background:
-    linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(103, 232, 249, 0.16)),
+    linear-gradient(135deg, rgba(245, 207, 0, 0.42), rgba(185, 184, 240, 0.18)),
     rgba(255, 255, 255, 0.06);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 0 22px rgba(34, 197, 94, 0.24);
+    0 0 22px rgba(245, 207, 0, 0.26);
 }
 
 .mf-bottom-nav.mazetto-glass-nav {
@@ -342,25 +349,25 @@ img {
 
 :root[data-theme="light"] .mf-shell {
   background:
-    radial-gradient(circle at 80% 6%, rgba(14, 165, 233, 0.16), transparent 24rem),
-    radial-gradient(circle at 9% 22%, rgba(34, 197, 94, 0.16), transparent 20rem),
-    radial-gradient(circle at 50% 78%, rgba(187, 247, 208, 0.28), transparent 28rem),
-    linear-gradient(180deg, #effff7 0%, #e9fbf8 46%, #f8fffc 100%);
+    radial-gradient(circle at 80% 6%, rgba(245, 207, 0, 0.18), transparent 24rem),
+    radial-gradient(circle at 9% 22%, rgba(35, 149, 141, 0.16), transparent 20rem),
+    radial-gradient(circle at 50% 78%, rgba(185, 184, 240, 0.15), transparent 28rem),
+    linear-gradient(180deg, #004f55 0%, #08686a 46%, #004f55 100%);
   color: var(--mf-text);
 }
 
 :root[data-theme="light"] .mf-topbar {
-  border-color: rgba(15, 23, 42, 0.08);
+  border-color: rgba(255, 255, 248, 0.18);
   background:
-    linear-gradient(135deg, rgba(34, 197, 94, 0.1), transparent 40%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(236, 253, 245, 0.78));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 12px 34px rgba(15, 23, 42, 0.08);
+    linear-gradient(135deg, rgba(245, 207, 0, 0.14), transparent 40%),
+    linear-gradient(180deg, rgba(0, 79, 85, 0.96), rgba(8, 104, 106, 0.88));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 248, 0.18), 0 12px 34px rgba(0, 79, 85, 0.18);
 }
 
 :root[data-theme="light"] .mf-bottom-nav {
-  border-color: rgba(15, 23, 42, 0.14);
-  background: rgba(249, 255, 252, 0.9);
-  box-shadow: 0 14px 38px rgba(8, 81, 63, 0.16);
+  border-color: rgba(255, 255, 248, 0.42);
+  background: rgba(245, 245, 239, 0.93);
+  box-shadow: 0 14px 38px rgba(0, 79, 85, 0.18);
 }
 
 :root[data-theme="light"] .mazetto-glass,
@@ -370,18 +377,18 @@ img {
 :root[data-theme="light"] .mazetto-glass-nav {
   border-color: rgba(15, 23, 42, 0.08);
   background:
-    linear-gradient(135deg, rgba(34, 197, 94, 0.1), transparent 42%),
-    linear-gradient(165deg, rgba(14, 165, 233, 0.1), transparent 46%),
+    linear-gradient(135deg, rgba(245, 207, 0, 0.16), transparent 42%),
+    linear-gradient(165deg, rgba(35, 149, 141, 0.12), transparent 46%),
     var(--mf-glass);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 -1px 0 rgba(14, 165, 233, 0.1),
-    0 16px 44px rgba(15, 23, 42, 0.12);
+    inset 0 -1px 0 rgba(245, 207, 0, 0.12),
+    0 16px 44px rgba(0, 79, 85, 0.16);
 }
 
 :root[data-theme="light"] .mazetto-liquid-active {
   background:
-    linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(14, 165, 233, 0.14)),
+    linear-gradient(135deg, rgba(245, 207, 0, 0.52), rgba(185, 184, 240, 0.22)),
     rgba(255, 255, 255, 0.62);
 }
 

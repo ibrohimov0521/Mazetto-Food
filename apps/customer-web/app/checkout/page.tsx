@@ -38,7 +38,7 @@ export default function CheckoutPage() {
 
 function CheckoutFlow() {
   const router = useRouter();
-  const { clearCart, customer, items, showToast, subtotal } = useCart();
+  const { clearCart, customer, items, refreshCustomer, showToast, subtotal } = useCart();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState("");
   const [name, setName] = useState(customer?.name ?? "");
@@ -48,6 +48,7 @@ function CheckoutFlow() {
   const [type, setType] = useState<OrderType>("DELIVERY");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [errors, setErrors] = useState<FormErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [loadingBranches, setLoadingBranches] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const deliveryFee = type === "DELIVERY" && subtotal > 0 ? 12000 : 0;
@@ -157,6 +158,7 @@ function CheckoutFlow() {
     }
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const orderPayload = {
         branchId,
@@ -175,21 +177,40 @@ function CheckoutFlow() {
         })),
       };
       const idempotencyKey = getCheckoutAttemptId(JSON.stringify(orderPayload));
-      const result = await apiFetch<OrderResult>("/customer/orders", {
+      const request = {
         method: "POST",
         accessToken: customer.accessToken,
         body: JSON.stringify({
           idempotencyKey,
           ...orderPayload,
         }),
-      });
+      } as const;
+      let result: OrderResult;
+
+      try {
+        result = await apiFetch<OrderResult>("/customer/orders", request);
+      } catch (error) {
+        const refreshed = await refreshCustomer();
+
+        if (!refreshed) {
+          throw error;
+        }
+
+        result = await apiFetch<OrderResult>("/customer/orders", {
+          ...request,
+          accessToken: refreshed.accessToken,
+        });
+      }
+
       clearCart();
       clearCheckoutAttempt();
       hapticTap([18, 36, 18]);
       showToast("Buyurtma muvaffaqiyatli yuborildi");
       router.push(`/order-success/${result.customerOrder.id}`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Buyurtmani yuborib bo'lmadi");
+      const message = error instanceof Error ? error.message : "Buyurtmani yuborib bo'lmadi";
+      setSubmitError(message);
+      showToast(message);
     } finally {
       setSubmitting(false);
     }
@@ -314,6 +335,8 @@ function CheckoutFlow() {
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>
           </div>
         </div>
+
+        {submitError ? <p className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-300">{submitError}</p> : null}
 
         <button className="pressable ripple mf-button-primary mt-4 w-full px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches} onClick={() => void submitOrder()} type="button">
           {submitting ? "Yuborilmoqda..." : "Buyurtmani tasdiqlash"}

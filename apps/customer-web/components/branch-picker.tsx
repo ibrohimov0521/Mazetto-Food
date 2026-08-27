@@ -63,17 +63,17 @@ export function BranchPicker({
     <div className="relative min-w-0" ref={wrapperRef}>
       <button
         aria-expanded={open}
-        className="pressable ripple mf-input flex w-full min-w-0 items-center justify-between gap-3 px-4 py-3 text-left font-bold disabled:opacity-60"
+        className="pressable ripple mf-input flex w-full min-w-0 items-center justify-between gap-2 px-3 py-2.5 text-left font-bold disabled:opacity-60"
         disabled={disabled || !branches.length}
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
         <span className="min-w-0">
-          <span className="block text-[10px] font-black uppercase text-white/42">{label}</span>
+          <span className="block text-[9px] font-black uppercase text-white/42">{label}</span>
           <span className="mt-0.5 block truncate text-white">{selectedBranch?.name ?? "Filial tanlang"}</span>
-          {selectedBranch?.address ? <span className="mt-0.5 block truncate text-xs text-white/48">{selectedBranch.address}</span> : null}
+          {selectedBranch?.address ? <span className="mt-0.5 block truncate text-[11px] text-white/48">{selectedBranch.address}</span> : null}
         </span>
-        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-[#67E8F9] transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/10 text-[#67E8F9] transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
       </button>
 
       <AnimatePresence>

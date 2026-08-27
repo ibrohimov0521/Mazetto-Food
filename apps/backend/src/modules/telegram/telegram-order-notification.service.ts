@@ -403,7 +403,7 @@ export class TelegramOrderNotificationService {
   }
 
   private formatMoney(value: Prisma.Decimal): string {
-    return `${Number(value).toLocaleString("uz-UZ")} UZS`;
+    return `${Number(value).toLocaleString("uz-UZ")} so'm`;
   }
 
   private escapeHtml(value: string): string {

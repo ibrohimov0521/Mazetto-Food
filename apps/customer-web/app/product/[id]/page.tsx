@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
+import { CustomerMenuSections } from "../../../components/customer-menu-sections";
 import { MediaImage } from "../../../components/media-image";
 import { MotionButton, MotionDiv, buttonMotion, cardMotion, hapticTap, imageMotion, pageMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
@@ -100,28 +101,29 @@ function ProductDetails({ id }: { id: string }) {
   }
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-      <MotionDiv {...cardMotion} className="mf-card min-w-0 overflow-hidden">
-        <MediaImage
-          alt={product.name}
-          aspectClassName="aspect-[16/10] sm:aspect-[16/11]"
-          className="floating-image will-change-transform"
-          motionProps={{
-            ...imageMotion,
-            layoutId: `product-image-${product.id}`,
-          }}
-          priority
-          ref={imageRef}
-          sizes="(max-width: 1024px) 100vw, 45vw"
-          src={product.imageUrl}
-        />
-        <div className="grid grid-cols-3 gap-2 p-3 sm:gap-3 sm:p-5">
-          <Metric label="Tayyorlanish" value={`${product.preparationTime ?? 10} daq`} />
-          <Metric label="Bo'lim" value={product.category?.name ?? "Menyu"} />
-          <Metric label="Narx" value={formatMoney(product.sellingPrice)} />
-        </div>
-      </MotionDiv>
-      <div className="mf-card min-w-0 p-5">
+    <>
+      <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <MotionDiv {...cardMotion} className="mf-card min-w-0 overflow-hidden">
+          <MediaImage
+            alt={product.name}
+            aspectClassName="aspect-[16/10] sm:aspect-[16/9]"
+            className="floating-image will-change-transform"
+            motionProps={{
+              ...imageMotion,
+              layoutId: `product-image-${product.id}`,
+            }}
+            priority
+            ref={imageRef}
+            sizes="(max-width: 1024px) 100vw, 45vw"
+            src={product.imageUrl}
+          />
+          <div className="grid grid-cols-3 gap-2 p-2.5 sm:p-3">
+            <Metric label="Tayyorlanish" value={`${product.preparationTime ?? 10} daq`} />
+            <Metric label="Bo'lim" value={product.category?.name ?? "Menyu"} />
+            <Metric label="Narx" value={formatMoney(product.sellingPrice)} />
+          </div>
+        </MotionDiv>
+      <div className="mf-card min-w-0 p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <Link className="pressable text-sm font-bold text-[#67E8F9]" href="/menu">Menyuga qaytish</Link>
           <button
@@ -145,7 +147,7 @@ function ProductDetails({ id }: { id: string }) {
           ))}
         </div>
 
-        <div className="mt-6 grid gap-5">
+        <div className="mt-5 grid gap-4">
           <div>
             <h2 className="text-sm font-black uppercase text-white/50">Turini tanlang</h2>
             <div className="mt-2 flex min-w-0 flex-wrap gap-2">
@@ -161,7 +163,7 @@ function ProductDetails({ id }: { id: string }) {
             <h2 className="text-sm font-black uppercase text-white/50">Qo'shimchalar</h2>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {product.modifiers.map(({ modifier }) => (
-                <label className="pressable mf-card-soft flex min-w-0 items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white" key={modifier.id}>
+                <label className="pressable mf-card-soft flex min-w-0 items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold text-white" key={modifier.id}>
                   <span className="min-w-0 break-words">{modifier.name}</span>
                   <span className="flex shrink-0 items-center gap-2 text-[#67E8F9]">
                     {formatMoney(modifier.price)}
@@ -213,12 +215,14 @@ function ProductDetails({ id }: { id: string }) {
           </div>
         </div>
       </div>
-    </MotionDiv>
+      </MotionDiv>
+      <CustomerMenuSections intro={false} title="Yana nimalar buyurtma qilamiz?" />
+    </>
   );
 }
 
 function pillClass(active: boolean): string {
-  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "mazetto-glass-chip text-white/76"}`;
+  return `pressable ripple rounded-2xl px-3 py-2 text-sm font-bold ${active ? "mf-button-primary" : "mazetto-glass-chip text-white/76"}`;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

@@ -66,6 +66,30 @@ function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>)
       return "Sessiya muddati tugagan. Telefon raqamingizni qayta tasdiqlang.";
     }
 
+    if (backendMessage === "Branch is not accepting orders now") {
+      return "Tanlangan filial hozir buyurtma qabul qilmayapti. Iltimos, boshqa filial yoki vaqtni tanlang.";
+    }
+
+    if (backendMessage === "Delivery is not available for this branch") {
+      return "Tanlangan filialda yetkazib berish mavjud emas.";
+    }
+
+    if (backendMessage === "Pickup is not available for this branch") {
+      return "Tanlangan filialdan olib ketish hozir mavjud emas.";
+    }
+
+    if (backendMessage === "Product not found or unavailable") {
+      return "Savatdagi mahsulotlardan biri hozir mavjud emas. Savatni yangilab ko'ring.";
+    }
+
+    if (backendMessage === "Modifier is not available for this product") {
+      return "Tanlangan qo'shimchalardan biri bu mahsulot uchun mavjud emas.";
+    }
+
+    if (backendMessage === "Checkout attempt is already being processed") {
+      return "Buyurtma allaqachon yuborilmoqda. Iltimos, bir necha soniya kuting.";
+    }
+
     return backendMessage;
   }
 

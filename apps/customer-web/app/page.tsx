@@ -87,8 +87,8 @@ export default function Home() {
 
   return (
     <SiteShell>
-      <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-8 px-4 pb-3 pt-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:pt-10">
-        <div className="min-w-0 py-4">
+      <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-4 pb-3 pt-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:pt-7">
+        <div className="min-w-0 py-2">
           <p className="text-sm font-black uppercase tracking-[0.16em] text-[#67E8F9]">Issiq fast-fud yetkazib berish</p>
           <h1 className="mt-3 max-w-3xl text-5xl font-black leading-tight text-white sm:text-6xl">
             MAZETTO FOOD
@@ -97,21 +97,21 @@ export default function Home() {
             Issiq lavash, burger, xrustik garnirlar, foydali setlar va ichimliklarni eng yaqin filialdan tez buyurtma qiling.
           </p>
 
-          <div className="mf-card mazetto-liquid-surface mt-6 grid max-w-xl min-w-0 gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="mf-card mazetto-liquid-surface mt-4 grid max-w-xl min-w-0 gap-2 p-2.5 sm:grid-cols-[minmax(0,1fr)_auto]">
             <BranchPicker branches={branches} disabled={loading} onChange={selectBranch} value={branchId} />
-            <Link className="pressable ripple mf-button-primary px-6 py-3 text-center font-black" href={branchId ? `/menu?branchId=${branchId}` : "/menu"}>
+            <Link className="pressable ripple mf-button-primary px-5 py-3 text-center font-black" href={branchId ? `/menu?branchId=${branchId}` : "/menu"}>
               Buyurtma berish
             </Link>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3 text-sm font-bold text-white/76">
-            <span className="mazetto-glass-chip rounded-full px-4 py-2 text-[#67E8F9]">Tez oshxona jarayoni</span>
-            <span className="mazetto-glass-chip rounded-full px-4 py-2">Yetkazib berish yoki olib ketish</span>
-            <span className="mazetto-glass-chip rounded-full px-4 py-2">Bonusli profil</span>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-white/76 sm:text-sm">
+            <span className="mazetto-glass-chip rounded-full px-3 py-2 text-[#67E8F9]">Tez oshxona jarayoni</span>
+            <span className="mazetto-glass-chip rounded-full px-3 py-2">Yetkazib berish yoki olib ketish</span>
+            <span className="mazetto-glass-chip rounded-full px-3 py-2">Bonusli profil</span>
           </div>
         </div>
 
-        <MotionDiv {...cardMotion} className="mf-card mazetto-liquid-surface min-w-0 p-5">
+        <MotionDiv {...cardMotion} className="mf-card mazetto-liquid-surface min-w-0 p-4">
           <p className="text-sm font-black uppercase text-[#67E8F9]">Bugungi ritm</p>
           <h2 className="mt-2 text-3xl font-black text-white">Tez, issiq, qulay.</h2>
           <p className="mt-3 text-sm leading-6 text-white/60">Menyudan tanlang, savatga qo'shing va buyurtmani bir necha bosishda yuboring.</p>
