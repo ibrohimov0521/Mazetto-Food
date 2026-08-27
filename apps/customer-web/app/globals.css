@@ -107,7 +107,6 @@ img {
     radial-gradient(circle at 10% 28%, rgba(34, 197, 94, 0.08), transparent 18rem),
     var(--mf-bg);
   color: var(--mf-text);
-  overflow-x: clip;
 }
 
 .mf-app-shell {
