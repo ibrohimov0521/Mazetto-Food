@@ -334,8 +334,8 @@ function ProductSection({ products, title }: { products: Product[]; title: strin
         <h2 className="text-2xl font-black text-white">{title}</h2>
         <Link className="pressable text-sm font-black text-[#67E8F9]" href="/menu">Menyuni ko'rish</Link>
       </div>
-      <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {products.map((product) => <ProductCard key={product.id} product={product} />)}
+      <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
+        {products.map((product) => <ProductCard compact key={product.id} product={product} />)}
       </div>
     </MotionDiv>
   );
@@ -348,17 +348,17 @@ function SkeletonProductSection({ title }: { title: string }) {
         <h2 className="text-2xl font-black text-white">{title}</h2>
         <div className="skeleton h-5 w-24 rounded-full" />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
         {Array.from({ length: 3 }, (_, index) => (
           <div className="mf-card overflow-hidden" key={index}>
-            <div className="skeleton h-48 w-full" />
-            <div className="grid gap-3 p-4">
+            <div className="skeleton aspect-square w-full" />
+            <div className="grid gap-2 p-3">
               <div className="skeleton h-5 w-3/4 rounded-full" />
-              <div className="skeleton h-4 w-full rounded-full" />
-              <div className="skeleton h-4 w-2/3 rounded-full" />
+              <div className="skeleton h-3 w-full rounded-full" />
+              <div className="skeleton h-3 w-2/3 rounded-full" />
               <div className="flex items-center justify-between">
-                <div className="skeleton h-6 w-24 rounded-full" />
-                <div className="skeleton h-11 w-24 rounded-xl" />
+                <div className="skeleton h-5 w-20 rounded-full" />
+                <div className="skeleton h-10 w-10 rounded-full" />
               </div>
             </div>
           </div>

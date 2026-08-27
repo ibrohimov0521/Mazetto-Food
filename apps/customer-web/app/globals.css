@@ -9,31 +9,45 @@
   --mf-border: rgba(255, 255, 255, 0.1);
   --mf-text: #ffffff;
   --mf-muted: rgba(255, 255, 255, 0.68);
+  --mf-text-soft: rgba(255, 255, 255, 0.56);
   --mf-orange: #22C55E;
   --mf-gold: #67E8F9;
   --mf-green: #22c55e;
   --mf-blue: #0ea5e9;
+  --mf-glass: rgba(17, 17, 17, 0.74);
+  --mf-glass-border: rgba(255, 255, 255, 0.13);
+  --mf-control-bg: rgba(255, 255, 255, 0.09);
+  --mf-control-hover: rgba(255, 255, 255, 0.14);
+  --mf-input-bg: rgba(255, 255, 255, 0.08);
+  --mf-divider: rgba(255, 255, 255, 0.1);
   --mf-radius: 28px;
   --mf-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
   --mf-glow: 0 18px 42px rgba(34, 197, 94, 0.28);
-  --mf-bottom-nav-gap: 0.75rem;
-  --mf-bottom-nav-height: 4.75rem;
-  --mf-bottom-nav-space: calc(var(--mf-bottom-nav-height) + var(--mf-bottom-nav-gap) + 0.75rem);
-  --mf-mobile-action-height: 4.75rem;
+  --mf-bottom-nav-gap: 0.45rem;
+  --mf-bottom-nav-height: 4rem;
+  --mf-bottom-nav-space: calc(var(--mf-bottom-nav-height) + var(--mf-bottom-nav-gap) + 0.5rem);
+  --mf-mobile-action-height: 4.25rem;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --mf-bg: #ffffff;
-  --mf-surface: #f8fafc;
-  --mf-card: #ffffff;
-  --mf-card-soft: rgba(15, 23, 42, 0.07);
-  --mf-border: rgba(15, 23, 42, 0.14);
-  --mf-text: #0f172a;
-  --mf-muted: rgba(15, 23, 42, 0.76);
+  --mf-bg: #ecfff6;
+  --mf-surface: #e5fbf3;
+  --mf-card: rgba(250, 255, 252, 0.84);
+  --mf-card-soft: rgba(13, 82, 61, 0.08);
+  --mf-border: rgba(10, 91, 68, 0.16);
+  --mf-text: #09251d;
+  --mf-muted: rgba(9, 37, 29, 0.76);
+  --mf-text-soft: rgba(9, 37, 29, 0.62);
   --mf-orange: #22c55e;
   --mf-gold: #0ea5e9;
-  --mf-shadow: 0 22px 70px rgba(15, 23, 42, 0.12);
+  --mf-glass: rgba(250, 255, 252, 0.72);
+  --mf-glass-border: rgba(10, 91, 68, 0.14);
+  --mf-control-bg: rgba(6, 95, 70, 0.08);
+  --mf-control-hover: rgba(6, 95, 70, 0.13);
+  --mf-input-bg: rgba(250, 255, 252, 0.86);
+  --mf-divider: rgba(10, 91, 68, 0.13);
+  --mf-shadow: 0 22px 70px rgba(8, 81, 63, 0.13);
   --mf-glow: 0 18px 42px rgba(34, 197, 94, 0.22);
 }
 
@@ -69,8 +83,10 @@ body {
 
 :root[data-theme="light"] body {
   background:
-    radial-gradient(circle at 16% 0%, rgba(34, 197, 94, 0.12), transparent 26rem),
-    linear-gradient(180deg, #ffffff 0%, #f8fafc 54%, #ffffff 100%);
+    radial-gradient(circle at 12% 0%, rgba(34, 197, 94, 0.18), transparent 28rem),
+    radial-gradient(circle at 88% 18%, rgba(14, 165, 233, 0.15), transparent 26rem),
+    radial-gradient(circle at 40% 80%, rgba(167, 243, 208, 0.34), transparent 32rem),
+    linear-gradient(180deg, #effff7 0%, #e8fbf7 46%, #f6fffb 100%);
 }
 
 button,
@@ -91,6 +107,7 @@ img {
     radial-gradient(circle at 10% 28%, rgba(34, 197, 94, 0.08), transparent 18rem),
     var(--mf-bg);
   color: var(--mf-text);
+  overflow-x: clip;
 }
 
 .mf-app-shell {
@@ -134,15 +151,15 @@ img {
 .mf-card {
   border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)), var(--mf-card);
   box-shadow: var(--mf-shadow);
   backdrop-filter: blur(14px);
 }
 
 .mf-card-soft {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--mf-border);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--mf-card-soft);
 }
 
 .mf-card-light {
@@ -154,6 +171,9 @@ img {
 }
 
 .mf-button-primary {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   border-radius: 20px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 34%),
@@ -163,19 +183,43 @@ img {
   transform: translateZ(0);
 }
 
+.mf-button-primary::before {
+  position: absolute;
+  inset: -30% -12%;
+  z-index: -1;
+  content: "";
+  background:
+    radial-gradient(ellipse at 18% 42%, rgba(255, 255, 255, 0.28) 0 12%, transparent 13%),
+    radial-gradient(ellipse at 84% 64%, rgba(4, 19, 11, 0.14) 0 10%, transparent 11%),
+    linear-gradient(115deg, transparent 22%, rgba(255, 255, 255, 0.18) 45%, transparent 67%);
+  transform: rotate(-7deg);
+  pointer-events: none;
+}
+
 .mf-button-secondary {
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--mf-glass-border);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--mf-control-bg);
+  color: var(--mf-text);
   transform: translateZ(0);
 }
 
+.mf-quantity-button {
+  border: 1px solid var(--mf-glass-border);
+  background: var(--mf-control-bg);
+  color: var(--mf-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 22px rgba(34, 197, 94, 0.12);
+}
+
+.mf-quantity-button:hover {
+  background: var(--mf-control-hover);
+}
+
 .mf-input {
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--mf-border);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--mf-input-bg);
+  color: var(--mf-text);
 }
 
 .mf-input::placeholder {
@@ -196,11 +240,11 @@ img {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid var(--mf-glass-border);
   background:
     linear-gradient(135deg, rgba(34, 197, 94, 0.12), transparent 42%),
     linear-gradient(165deg, rgba(103, 232, 249, 0.1), transparent 46%),
-    rgba(17, 17, 17, 0.74);
+    var(--mf-glass);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     inset 0 -1px 0 rgba(34, 197, 94, 0.08),
@@ -299,10 +343,11 @@ img {
 
 :root[data-theme="light"] .mf-shell {
   background:
-    radial-gradient(circle at 85% 8%, rgba(14, 165, 233, 0.12), transparent 22rem),
-    radial-gradient(circle at 10% 28%, rgba(34, 197, 94, 0.1), transparent 18rem),
-    #ffffff;
-  color: #0f172a;
+    radial-gradient(circle at 80% 6%, rgba(14, 165, 233, 0.16), transparent 24rem),
+    radial-gradient(circle at 9% 22%, rgba(34, 197, 94, 0.16), transparent 20rem),
+    radial-gradient(circle at 50% 78%, rgba(187, 247, 208, 0.28), transparent 28rem),
+    linear-gradient(180deg, #effff7 0%, #e9fbf8 46%, #f8fffc 100%);
+  color: var(--mf-text);
 }
 
 :root[data-theme="light"] .mf-topbar {
@@ -315,8 +360,8 @@ img {
 
 :root[data-theme="light"] .mf-bottom-nav {
   border-color: rgba(15, 23, 42, 0.14);
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
+  background: rgba(249, 255, 252, 0.9);
+  box-shadow: 0 14px 38px rgba(8, 81, 63, 0.16);
 }
 
 :root[data-theme="light"] .mazetto-glass,
@@ -328,7 +373,7 @@ img {
   background:
     linear-gradient(135deg, rgba(34, 197, 94, 0.1), transparent 42%),
     linear-gradient(165deg, rgba(14, 165, 233, 0.1), transparent 46%),
-    rgba(255, 255, 255, 0.78);
+    var(--mf-glass);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     inset 0 -1px 0 rgba(14, 165, 233, 0.1),
@@ -342,28 +387,34 @@ img {
 }
 
 :root[data-theme="light"] .mf-card {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.88));
+  background:
+    radial-gradient(circle at 92% 4%, rgba(14, 165, 233, 0.09), transparent 14rem),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(232, 255, 246, 0.78));
 }
 
 :root[data-theme="light"] .mf-card-soft {
   border-color: rgba(15, 23, 42, 0.13);
-  background: rgba(15, 23, 42, 0.065);
+  background: var(--mf-card-soft);
 }
 
 :root[data-theme="light"] .mf-button-secondary {
   border-color: rgba(15, 23, 42, 0.08);
-  background: rgba(15, 23, 42, 0.045);
-  color: #0f172a;
+  background: var(--mf-control-bg);
+  color: var(--mf-text);
 }
 
 :root[data-theme="light"] .mf-input {
   border-color: rgba(15, 23, 42, 0.18);
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--mf-input-bg);
+  color: var(--mf-text);
 }
 
 :root[data-theme="light"] .mf-input::placeholder {
   color: rgba(15, 23, 42, 0.56);
+}
+
+:root[data-theme="light"] .mf-button-primary {
+  color: #042015;
 }
 
 :root[data-theme="light"] .mf-shell .text-white {
@@ -407,6 +458,68 @@ img {
 :root[data-theme="light"] .mf-shell .bg-white\/8,
 :root[data-theme="light"] .mf-shell .bg-white\/6 {
   background-color: rgba(15, 23, 42, 0.055);
+}
+
+:root[data-theme="light"] .mf-shell .bg-black\/45,
+:root[data-theme="light"] .mf-shell .bg-black\/40,
+:root[data-theme="light"] .mf-shell .bg-black\/30 {
+  background-color: rgba(250, 255, 252, 0.84);
+  color: var(--mf-text);
+  border: 1px solid var(--mf-border);
+}
+
+.mf-organic {
+  position: relative;
+  isolation: isolate;
+}
+
+.mf-organic::before,
+.mf-organic::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+  opacity: 0.42;
+  filter: blur(0.2px);
+}
+
+.mf-organic::before {
+  right: -1.5rem;
+  top: -1.4rem;
+  width: 8rem;
+  height: 8rem;
+  border-radius: 70% 30% 68% 32% / 42% 58% 42% 58%;
+  background: radial-gradient(ellipse at 35% 45%, rgba(34, 197, 94, 0.22), transparent 64%);
+  transform: rotate(-18deg);
+}
+
+.mf-organic::after {
+  left: -1.2rem;
+  bottom: -1.2rem;
+  width: 6.5rem;
+  height: 6.5rem;
+  border-radius: 30% 70% 34% 66% / 58% 42% 58% 42%;
+  background: radial-gradient(ellipse at 58% 38%, rgba(14, 165, 233, 0.18), transparent 62%);
+  transform: rotate(16deg);
+}
+
+.mf-leaf-corner {
+  position: relative;
+  isolation: isolate;
+}
+
+.mf-leaf-corner::after {
+  position: absolute;
+  right: 0.65rem;
+  top: 0.55rem;
+  z-index: -1;
+  width: 2.4rem;
+  height: 1.3rem;
+  content: "";
+  border-radius: 100% 0 100% 0;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.24), rgba(14, 165, 233, 0.14));
+  transform: rotate(-24deg);
+  pointer-events: none;
 }
 
 :root[data-theme="light"] .mf-shell .border-white\/10,

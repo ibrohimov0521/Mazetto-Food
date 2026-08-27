@@ -9,7 +9,7 @@ const themeKey = "mazetto-theme";
 
 function resolveInitialTheme(): ThemeMode {
   if (typeof window === "undefined") {
-    return "dark";
+    return "light";
   }
 
   try {
@@ -21,7 +21,7 @@ function resolveInitialTheme(): ThemeMode {
     return document.documentElement.dataset.theme === "light" ? "light" : "dark";
   }
 
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return "light";
 }
 
 function applyTheme(theme: ThemeMode) {
@@ -30,7 +30,7 @@ function applyTheme(theme: ThemeMode) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [theme, setTheme] = useState<ThemeMode>("light");
 
   useEffect(() => {
     const initialTheme = resolveInitialTheme();

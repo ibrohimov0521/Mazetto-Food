@@ -15,9 +15,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
     () => [
       { href: "/", label: "Bosh sahifa", icon: HomeIcon },
       { href: "/menu", label: "Menyu", icon: MenuIcon },
+      { href: "/cart", label: "Savat", icon: CartIcon },
       { href: "/orders", label: "Buyurtmalar", icon: OrdersIcon },
       { href: "/profile", label: "Profil", icon: ProfileIcon },
-      { href: "/cart", label: "Savat", icon: CartIcon },
     ],
     [],
   );
@@ -25,7 +25,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="mf-shell mf-app-shell min-h-screen">
         <BrandSplash enabled={pathname === "/"} />
-        <header className="mf-topbar fixed inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)]">
+        <header className="mf-topbar inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)] md:fixed">
           <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
             <Link className="pressable shrink-0 whitespace-nowrap text-lg font-black tracking-normal text-[#67E8F9] sm:text-xl" href="/">
               MAZETTO FOOD
@@ -44,22 +44,15 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex h-10 shrink-0 items-center gap-2 md:hidden">
               <ThemeToggle />
-              <Link aria-current={isNavActive(pathname, "/profile") ? "page" : undefined} aria-label="Profil" className="pressable mazetto-glass-button grid h-10 w-10 place-items-center rounded-full text-white/76" href="/profile">
-                <ProfileIcon />
-              </Link>
-              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} data-cart-target="true" aria-label="Savat" className="pressable ripple mf-button-primary relative grid h-10 w-10 place-items-center rounded-full" href="/cart">
-                <CartIcon />
-                {items.length ? <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#67E8F9] px-1 text-[10px] font-black text-[#04130B]">{formatCartCount(items.length)}</span> : null}
-              </Link>
             </div>
           </div>
-          <div className={`h-8 overflow-hidden border-t px-4 transition-colors duration-200 ${customer ? "border-white/10 bg-white/6" : "border-transparent bg-transparent"}`}>
+          <div className={`hidden h-8 overflow-hidden border-t px-4 transition-colors duration-200 md:block ${customer ? "border-white/10 bg-white/6" : "border-transparent bg-transparent"}`}>
             <div className={`flex h-full items-center justify-center text-center text-xs font-semibold text-[#67E8F9] transition-opacity duration-200 ${customer ? "opacity-100" : "opacity-0"}`} aria-hidden={!customer}>
               {customer ? `${customer.name} · bonus ${formatCompact(Number(customer.bonusBalance ?? 0))}` : "\u00a0"}
             </div>
           </div>
         </header>
-        <div aria-hidden="true" className="h-24" />
+        <div aria-hidden="true" className="hidden h-24 md:block" />
         <LayoutGroup id="customer-page-content">
           <AnimatePresence initial={false} mode="wait">
             <motion.div
@@ -75,25 +68,25 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
           </AnimatePresence>
         </LayoutGroup>
         <LayoutGroup id="customer-bottom-nav">
-          <nav className="mf-bottom-nav mazetto-glass-nav fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-gap)+env(safe-area-inset-bottom))] z-40 h-[var(--mf-bottom-nav-height)] rounded-[1.7rem] px-2 py-2 sm:hidden">
+          <nav className="mf-bottom-nav mazetto-glass-nav fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-gap)+env(safe-area-inset-bottom))] z-40 h-[var(--mf-bottom-nav-height)] rounded-[1.45rem] px-1.5 py-1.5 sm:hidden">
             <div className="grid h-full grid-cols-5 gap-1">
               {navItems.map((item) => {
                 const active = isNavActive(pathname, item.href);
                 const Icon = item.icon;
 
                 return (
-                  <Link aria-current={active ? "page" : undefined} className="pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[9px] font-black leading-tight text-white/54" data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
+                  <Link aria-current={active ? "page" : undefined} className={`pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1.15rem] px-1 text-[9px] font-black leading-tight text-white/58 ${item.href === "/cart" ? "mf-nav-cart" : ""}`} data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
                     {active ? (
                       <motion.span
-                        className="mazetto-liquid-active absolute inset-0 rounded-2xl"
+                        className="mazetto-liquid-active absolute inset-0 rounded-[1.15rem]"
                         layoutId="bottom-nav-active"
                         transition={{ type: "spring", stiffness: 520, damping: 34 }}
                       />
                     ) : null}
-                    <motion.span animate={{ y: active ? -1 : 0, scale: active ? 1.08 : 1 }} className={`relative ${active ? "text-[#67E8F9]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
+                    <motion.span animate={{ y: active ? -1 : 0, scale: item.href === "/cart" ? (active ? 1.16 : 1.08) : active ? 1.08 : 1 }} className={`relative ${item.href === "/cart" ? "grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-[#22C55E] to-[#67E8F9] text-[#04130B] shadow-[0_10px_24px_rgba(34,197,94,0.28)]" : active ? "text-[#67E8F9]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
                       <Icon />
                     </motion.span>
-                    <span className={`relative max-w-full truncate ${active ? "text-[#67E8F9]" : ""}`}>{item.label}</span>
+                    <span className={`relative max-w-full truncate ${active ? "text-[#67E8F9]" : ""}`}>{mobileNavLabel(item.href)}</span>
                     {item.href === "/cart" && items.length ? (
                       <span className="absolute right-1.5 top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#67E8F9] px-1 text-[10px] font-black leading-none text-[#04130B] shadow-[0_8px_18px_rgba(103,232,249,0.24)]">
                         {formatCartCount(items.length)}
@@ -129,6 +122,18 @@ function formatCompact(value: number): string {
 
 function formatCartCount(count: number): string {
   return count > 99 ? "99+" : String(count);
+}
+
+function mobileNavLabel(href: string): string {
+  const labels: Record<string, string> = {
+    "/": "Bosh",
+    "/menu": "Menyu",
+    "/cart": "Savat",
+    "/orders": "Buyurtma",
+    "/profile": "Profil",
+  };
+
+  return labels[href] ?? href;
 }
 
 function isNavActive(pathname: string, href: string): boolean {

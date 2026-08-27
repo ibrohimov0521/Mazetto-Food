@@ -81,8 +81,8 @@ function ProductDetails({ id }: { id: string }) {
     return (
       <main className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="mf-card overflow-hidden">
-          <div className="skeleton h-96 w-full" />
-          <div className="grid gap-3 p-5 sm:grid-cols-3">
+          <div className="skeleton aspect-[4/3] w-full" />
+          <div className="grid grid-cols-3 gap-2 p-3 sm:gap-3 sm:p-5">
             <div className="skeleton h-20 rounded-xl" />
             <div className="skeleton h-20 rounded-xl" />
             <div className="skeleton h-20 rounded-xl" />
@@ -103,7 +103,7 @@ function ProductDetails({ id }: { id: string }) {
       <MotionDiv {...cardMotion} className="mf-card min-w-0 overflow-hidden">
         <MediaImage
           alt={product.name}
-          aspectClassName="aspect-[4/3] min-h-[18rem] sm:aspect-[16/11] lg:min-h-[24rem]"
+          aspectClassName="aspect-[16/10] sm:aspect-[16/11]"
           className="floating-image will-change-transform"
           motionProps={{
             ...imageMotion,
@@ -114,7 +114,7 @@ function ProductDetails({ id }: { id: string }) {
           sizes="(max-width: 1024px) 100vw, 45vw"
           src={product.imageUrl}
         />
-        <div className="grid gap-3 p-5 sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-2 p-3 sm:gap-3 sm:p-5">
           <Metric label="Tayyorlanish" value={`${product.preparationTime ?? 10} daq`} />
           <Metric label="Bo'lim" value={product.category?.name ?? "Menyu"} />
           <Metric label="Narx" value={formatMoney(product.sellingPrice)} />
@@ -135,7 +135,7 @@ function ProductDetails({ id }: { id: string }) {
             ♥
           </button>
         </div>
-        <h1 className="mt-3 break-words text-4xl font-black text-white">{product.name}</h1>
+        <h1 className="mt-3 break-words text-3xl font-black text-white sm:text-4xl">{product.name}</h1>
         <p className="mt-3 text-base leading-7 text-white/64">{product.description ?? "Buyurtmadan keyin issiq tayyorlanadi."}</p>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -173,11 +173,11 @@ function ProductDetails({ id }: { id: string }) {
 
           <textarea className="mf-input min-h-24 px-4 py-3" placeholder="Oshxonaga izoh" value={notes} onChange={(event) => setNotes(event.target.value)} />
 
-          <div className="sticky bottom-3 z-10 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-[1.6rem] border border-[#22C55E]/24 bg-[#181818]/92 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.34)] backdrop-blur">
+          <div className="mf-card-soft sticky bottom-[calc(var(--mf-bottom-nav-space)+0.75rem)] z-10 flex min-w-0 flex-wrap items-center justify-between gap-3 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.18)] backdrop-blur md:bottom-3">
             <div className="flex shrink-0 items-center gap-2">
-              <button className="pressable h-11 w-11 rounded-full bg-white/10 text-xl font-bold text-white" onClick={() => setQuantity(Math.max(1, quantity - 1))} type="button">-</button>
+              <button className="pressable mf-quantity-button h-11 w-11 rounded-full text-xl font-bold" onClick={() => setQuantity(Math.max(1, quantity - 1))} type="button">-</button>
               <span className="w-10 text-center text-lg font-black text-white">{quantity}</span>
-              <button className="pressable h-11 w-11 rounded-full bg-white/10 text-xl font-bold text-white" onClick={() => setQuantity(quantity + 1)} type="button">+</button>
+              <button className="pressable mf-quantity-button h-11 w-11 rounded-full text-xl font-bold" onClick={() => setQuantity(quantity + 1)} type="button">+</button>
             </div>
             <MotionButton
               {...buttonMotion}
@@ -217,14 +217,14 @@ function ProductDetails({ id }: { id: string }) {
 }
 
 function pillClass(active: boolean): string {
-  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "bg-white/10 text-white/76"}`;
+  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "mazetto-glass-chip text-white/76"}`;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-card-soft p-3">
-      <p className="text-xs font-black uppercase text-[#67E8F9]">{label}</p>
-      <p className="mt-1 font-black text-white">{value}</p>
+    <div className="mf-card-soft min-w-0 p-2 sm:p-3">
+      <p className="truncate text-[10px] font-black uppercase text-[#67E8F9] sm:text-xs">{label}</p>
+      <p className="mt-1 truncate text-sm font-black text-white sm:text-base">{value}</p>
     </div>
   );
 }

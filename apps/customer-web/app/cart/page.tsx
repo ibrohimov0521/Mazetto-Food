@@ -24,12 +24,12 @@ function CartReview() {
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
       <div className="mf-card min-w-0 p-5">
-        <div className="flex items-end justify-between gap-3">
-          <div>
+        <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-black uppercase text-[#67E8F9]">Savat</p>
             <h1 className="mt-1 text-3xl font-black text-white">Buyurtmangiz</h1>
           </div>
-          <span className="shrink-0 rounded-2xl bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9]">{items.length} ta mahsulot</span>
+          <span className="basis-full rounded-2xl bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9] sm:basis-auto">{items.length} ta mahsulot</span>
         </div>
 
         {items.length ? (
@@ -57,9 +57,9 @@ function CartReview() {
                   {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-white/50">Izoh: {item.notes}</p> : null}
                   <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
                     <div className="flex shrink-0 items-center gap-2">
-                      <button className="pressable h-9 w-9 rounded-full bg-white/10 font-bold text-white" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity - 1); }} type="button">-</button>
+                      <button className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity - 1); }} type="button">-</button>
                       <motion.span animate={{ scale: [1, 1.22, 1] }} className="w-8 text-center font-bold text-white" key={item.quantity} transition={{ duration: 0.28, ease: "easeOut" }}>{item.quantity}</motion.span>
-                      <button className="pressable h-9 w-9 rounded-full bg-white/10 font-bold text-white" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity + 1); }} type="button">+</button>
+                      <button className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity + 1); }} type="button">+</button>
                     </div>
                     <span className="min-w-0 break-words text-right font-black text-[#67E8F9]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
                   </div>
