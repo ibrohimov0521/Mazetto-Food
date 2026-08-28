@@ -65,6 +65,44 @@ const storageKey = "mazetto.customer.cart";
 const customerKey = "mazetto.customer.session";
 const favoritesKey = "mazetto.customer.favorites";
 const CartContext = createContext<CartContextValue | null>(null);
+const sourceMenuMediaPaths = new Set([
+  "/categories/burger.webp",
+  "/categories/chicken-burger.webp",
+  "/categories/chicken-lavash.webp",
+  "/categories/doner.webp",
+  "/categories/drinks.webp",
+  "/categories/fast-food.webp",
+  "/categories/hot-dog.webp",
+  "/categories/lavash.webp",
+  "/categories/sauces.webp",
+  "/categories/sets.webp",
+  "/products/burger-big.webp",
+  "/products/burger-classic.webp",
+  "/products/burger-double.webp",
+  "/products/cheese-sauce.webp",
+  "/products/cheeseburger.webp",
+  "/products/chicken-burger.webp",
+  "/products/chicken-cheese-lavash.webp",
+  "/products/chicken-cheeseburger.webp",
+  "/products/chicken-doner.webp",
+  "/products/chicken-lavash.webp",
+  "/products/chicken-spicy-lavash.webp",
+  "/products/crispy-chicken-burger.webp",
+  "/products/doner-plate.webp",
+  "/products/doner-wrap.webp",
+  "/products/fries.webp",
+  "/products/hot-dog-cheese.webp",
+  "/products/hot-dog-classic.webp",
+  "/products/hot-dog-double.webp",
+  "/products/lavash-beef.webp",
+  "/products/lavash-big.webp",
+  "/products/lavash-classic.webp",
+  "/products/lavash-mini.webp",
+  "/products/nuggets.webp",
+  "/products/set-burger.webp",
+  "/products/set-family.webp",
+  "/products/set-lavash.webp",
+]);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -256,6 +294,18 @@ export function productImage(imageUrl?: string | null): string {
   }
 
   return imageUrl;
+}
+
+export function sourceMenuImage(imageUrl?: string | null): string {
+  if (!imageUrl || imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+    return "";
+  }
+
+  if (sourceMenuMediaPaths.has(imageUrl)) {
+    return `/menu-media/source${imageUrl}`;
+  }
+
+  return "";
 }
 
 function getCustomerApiBaseUrl(): string {

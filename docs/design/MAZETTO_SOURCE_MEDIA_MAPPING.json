@@ -1,0 +1,893 @@
+{
+  "sourceFiles": {
+    "pdf": "docs/design/source-media/menu mazetto.pdf",
+    "cdr": "docs/design/source-media/menu mazetto.cdr"
+  },
+  "cdrExtraction": {
+    "status": "not_available",
+    "reason": "No local CorelDRAW/compatible CDR extraction CLI was available; PDF export was used."
+  },
+  "categories": [
+    {
+      "categoryId": "LAVASH",
+      "databaseName": "Lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Big Lavash category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/lavash.webp",
+      "sourcePixelDimensions": [
+        423,
+        220
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "CHICKEN_LAVASH",
+      "databaseName": "Tovuqli lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Chicken lavash category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/chicken-lavash.webp",
+      "sourcePixelDimensions": [
+        179,
+        100
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "BURGER",
+      "databaseName": "Burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Burger category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/burger.webp",
+      "sourcePixelDimensions": [
+        267,
+        200
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "CHICKEN_BURGER",
+      "databaseName": "Tovuqli burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Chicken burger category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/chicken-burger.webp",
+      "sourcePixelDimensions": [
+        215,
+        159
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "HOT_DOG",
+      "databaseName": "Hot Dog",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Hot dog category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/hot-dog.webp",
+      "sourcePixelDimensions": [
+        151,
+        127
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "DONER",
+      "databaseName": "Doner",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Doner plate category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/doner.webp",
+      "sourcePixelDimensions": [
+        159,
+        144
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "FAST_FOOD",
+      "databaseName": "Gazaklar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Fast food fries category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/fast-food.webp",
+      "sourcePixelDimensions": [
+        151,
+        209
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "DRINKS",
+      "databaseName": "Ichimliklar",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Moxito drink category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/drinks.webp",
+      "sourcePixelDimensions": [
+        195,
+        205
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "SAUCES",
+      "databaseName": "Souslar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Cheese sauce category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/sauces.webp",
+      "sourcePixelDimensions": [
+        164,
+        138
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    },
+    {
+      "categoryId": "SETS",
+      "databaseName": "Setlar",
+      "sourcePage": 3,
+      "sourceMenuLabel": "Family set category hero",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/categories/sets.webp",
+      "sourcePixelDimensions": [
+        1684,
+        1191
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Category representative sourced from the printed menu."
+    }
+  ],
+  "products": [
+    {
+      "productId": "BIG_LAVASH",
+      "databaseName": "Katta lavash",
+      "category": "Lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Big Lavash",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/lavash-big.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-024-x44.webp",
+      "sourcePixelDimensions": [
+        423,
+        220
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Large grilled lavash roll with meat filling."
+    },
+    {
+      "productId": "CLASSIC_LAVASH",
+      "databaseName": "Klassik lavash",
+      "category": "Lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Lavash",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/lavash-classic.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-012-x32.webp",
+      "sourcePixelDimensions": [
+        189,
+        98
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Classic grilled lavash roll with meat filling."
+    },
+    {
+      "productId": "MINI_LAVASH",
+      "databaseName": "Mini lavash",
+      "category": "Lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Lavash",
+      "matchConfidence": "manual-review",
+      "extractionMethod": "PDF embedded image with SMask reused",
+      "outputFile": "/menu-media/source/products/lavash-mini.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-006-x26.webp",
+      "sourcePixelDimensions": [
+        179,
+        111
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Smaller lavash visual reused because the printed menu has no Mini Lavash label."
+    },
+    {
+      "productId": "BEEF_LAVASH",
+      "databaseName": "Mol go'shtli lavash",
+      "category": "Lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Lavash",
+      "matchConfidence": "manual-review",
+      "extractionMethod": "PDF embedded image with SMask reused",
+      "outputFile": "/menu-media/source/products/lavash-beef.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-012-x32.webp",
+      "sourcePixelDimensions": [
+        189,
+        98
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Classic lavash source reused for current beef lavash naming."
+    },
+    {
+      "productId": "CHICKEN_LAVASH",
+      "databaseName": "Tovuqli lavash",
+      "category": "Tovuqli lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Kurinniy Lavash",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/chicken-lavash.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-014-x34.webp",
+      "sourcePixelDimensions": [
+        179,
+        100
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Chicken lavash roll."
+    },
+    {
+      "productId": "CHICKEN_CHEESE_LAVASH",
+      "databaseName": "Tovuqli pishloqli lavash",
+      "category": "Tovuqli lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Kurinniy Lavash Pishloqli",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/chicken-cheese-lavash.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-016-x36.webp",
+      "sourcePixelDimensions": [
+        205,
+        105
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Chicken cheese lavash roll."
+    },
+    {
+      "productId": "CHICKEN_SPICY_LAVASH",
+      "databaseName": "Tovuqli achchiq lavash",
+      "category": "Tovuqli lavash",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Achchiq Kurinniy Lavash",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/chicken-spicy-lavash.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-018-x38.webp",
+      "sourcePixelDimensions": [
+        223,
+        156
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Spicy chicken lavash roll."
+    },
+    {
+      "productId": "CLASSIC_BURGER",
+      "databaseName": "Klassik burger",
+      "category": "Burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Burger",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/burger-classic.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-010-x159.webp",
+      "sourcePixelDimensions": [
+        267,
+        200
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Classic beef burger."
+    },
+    {
+      "productId": "BIG_BURGER",
+      "databaseName": "Katta burger",
+      "category": "Burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Double Burger",
+      "matchConfidence": "manual-review",
+      "extractionMethod": "PDF embedded image with SMask reused",
+      "outputFile": "/menu-media/source/products/burger-big.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-014-x163.webp",
+      "sourcePixelDimensions": [
+        267,
+        200
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Double burger source reused for current Katta burger."
+    },
+    {
+      "productId": "CHEESEBURGER",
+      "databaseName": "Chizburger",
+      "category": "Burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Chizburger",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/cheeseburger.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-012-x161.webp",
+      "sourcePixelDimensions": [
+        267,
+        200
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Cheeseburger."
+    },
+    {
+      "productId": "DOUBLE_BURGER",
+      "databaseName": "Double burger",
+      "category": "Burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Double Burger",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/burger-double.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-014-x163.webp",
+      "sourcePixelDimensions": [
+        267,
+        200
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Double beef burger."
+    },
+    {
+      "productId": "CHICKEN_BURGER",
+      "databaseName": "Tovuqli burger",
+      "category": "Tovuqli burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Chicken Burger",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/chicken-burger.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-020-x169.webp",
+      "sourcePixelDimensions": [
+        215,
+        159
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Chicken burger."
+    },
+    {
+      "productId": "CRISPY_CHICKEN_BURGER",
+      "databaseName": "Qarsildoq tovuqli burger",
+      "category": "Tovuqli burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Chicken Burger",
+      "matchConfidence": "manual-review",
+      "extractionMethod": "PDF embedded image with SMask reused",
+      "outputFile": "/menu-media/source/products/crispy-chicken-burger.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-020-x169.webp",
+      "sourcePixelDimensions": [
+        215,
+        159
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Chicken burger visual reused; current crispy naming needs a dedicated photo later."
+    },
+    {
+      "productId": "CHICKEN_CHEESEBURGER",
+      "databaseName": "Tovuqli chizburger",
+      "category": "Tovuqli burgerlar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Chicken Chizburger",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/chicken-cheeseburger.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-024-x173.webp",
+      "sourcePixelDimensions": [
+        194,
+        158
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Chicken cheeseburger."
+    },
+    {
+      "productId": "CLASSIC_HOT_DOG",
+      "databaseName": "Klassik hot-dog",
+      "category": "Hot Dog",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Salatli hot dog",
+      "matchConfidence": "high",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/hot-dog-classic.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-034-x183.webp",
+      "sourcePixelDimensions": [
+        151,
+        127
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Classic salad hot dog style source."
+    },
+    {
+      "productId": "CHEESE_HOT_DOG",
+      "databaseName": "Pishloqli hot-dog",
+      "category": "Hot Dog",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Salatli hot dog katta",
+      "matchConfidence": "manual-review",
+      "extractionMethod": "PDF embedded image with SMask reused",
+      "outputFile": "/menu-media/source/products/hot-dog-cheese.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-036-x185.webp",
+      "sourcePixelDimensions": [
+        173,
+        119
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Hot dog source reused; printed menu has no pishloqli hot-dog match."
+    },
+    {
+      "productId": "DOUBLE_HOT_DOG",
+      "databaseName": "Double hot-dog",
+      "category": "Hot Dog",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Shashlikli Hod Dog",
+      "matchConfidence": "manual-review",
+      "extractionMethod": "PDF embedded image with SMask reused",
+      "outputFile": "/menu-media/source/products/hot-dog-double.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-030-x179.webp",
+      "sourcePixelDimensions": [
+        174,
+        132
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Large hot dog source reused; printed menu has no double hot-dog match."
+    },
+    {
+      "productId": "DONER_WRAP",
+      "databaseName": "Doner lavash",
+      "category": "Doner",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Doner",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/doner-wrap.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-054-x114.webp",
+      "sourcePixelDimensions": [
+        183,
+        112
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Doner wrap."
+    },
+    {
+      "productId": "DONER_PLATE",
+      "databaseName": "Doner tarelka",
+      "category": "Doner",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Doner Blyuda",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/doner-plate.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-050-x110.webp",
+      "sourcePixelDimensions": [
+        159,
+        144
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Doner plate with fries and salad."
+    },
+    {
+      "productId": "CHICKEN_DONER",
+      "databaseName": "Tovuqli doner",
+      "category": "Doner",
+      "sourcePage": 1,
+      "sourceMenuLabel": "Kurinniy Doner",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/chicken-doner.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p01-056-x116.webp",
+      "sourcePixelDimensions": [
+        180,
+        115
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Chicken doner wrap."
+    },
+    {
+      "productId": "FRIES",
+      "databaseName": "Fri kartoshka",
+      "category": "Gazaklar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Kartoshka fri",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/fries.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-026-x175.webp",
+      "sourcePixelDimensions": [
+        151,
+        209
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Fries in MAZETTO branded pack."
+    },
+    {
+      "productId": "CHEESE_FRIES",
+      "databaseName": "Pishloqli fri",
+      "category": "Gazaklar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "No printed pishloqli fri image was available as a separate food asset.",
+      "visualDescriptionFromMenu": "Fries topped or served with cheese sauce."
+    },
+    {
+      "productId": "CHICKEN_STRIPS",
+      "databaseName": "Tovuqli strips",
+      "category": "Gazaklar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "Printed menu has chicken balls and nuggets, but no clear strips product.",
+      "visualDescriptionFromMenu": "Crispy chicken strips with sauce."
+    },
+    {
+      "productId": "NUGGETS",
+      "databaseName": "Naggets",
+      "category": "Gazaklar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Naggets 5 dona",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/nuggets.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-018-x167.webp",
+      "sourcePixelDimensions": [
+        165,
+        104
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Chicken nuggets."
+    },
+    {
+      "productId": "COCA_COLA",
+      "databaseName": "Coca-Cola",
+      "category": "Ichimliklar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "Printed menu set pages show Pepsi bottles, not Coca-Cola.",
+      "visualDescriptionFromMenu": "Coca-Cola bottle/can matching current variants."
+    },
+    {
+      "productId": "FANTA",
+      "databaseName": "Fanta",
+      "category": "Ichimliklar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "No Fanta product image appears in the supplied menu source.",
+      "visualDescriptionFromMenu": "Fanta bottle/can matching current variants."
+    },
+    {
+      "productId": "SPRITE",
+      "databaseName": "Sprite",
+      "category": "Ichimliklar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "No Sprite product image appears in the supplied menu source.",
+      "visualDescriptionFromMenu": "Sprite bottle/can matching current variants."
+    },
+    {
+      "productId": "WATER",
+      "databaseName": "Suv",
+      "category": "Ichimliklar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "No still water product image appears in the supplied menu source.",
+      "visualDescriptionFromMenu": "Water bottle matching current variants."
+    },
+    {
+      "productId": "HOUSE_SAUCE",
+      "databaseName": "Maxsus sous",
+      "category": "Souslar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "Printed menu includes ketchup, cheese sauce, and garlic sauce, but not MAZETTO house sauce.",
+      "visualDescriptionFromMenu": "MAZETTO branded sauce cup."
+    },
+    {
+      "productId": "CHEESE_SAUCE",
+      "databaseName": "Pishloqli sous",
+      "category": "Souslar",
+      "sourcePage": 2,
+      "sourceMenuLabel": "Pishloqli sous",
+      "matchConfidence": "exact",
+      "extractionMethod": "PDF embedded image with SMask",
+      "outputFile": "/menu-media/source/products/cheese-sauce.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-006-x153.webp",
+      "sourcePixelDimensions": [
+        164,
+        138
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Cheese sauce pack and cup."
+    },
+    {
+      "productId": "SPICY_SAUCE",
+      "databaseName": "Achchiq sous",
+      "category": "Souslar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "No dedicated spicy sauce image appears in the supplied source.",
+      "visualDescriptionFromMenu": "Spicy red sauce cup."
+    },
+    {
+      "productId": "FAMILY_SET",
+      "databaseName": "Oilaviy set",
+      "category": "Setlar",
+      "sourcePage": 3,
+      "sourceMenuLabel": "Oilaviy set",
+      "matchConfidence": "exact",
+      "extractionMethod": "High-resolution PDF page crop",
+      "outputFile": "/menu-media/source/products/set-family.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "Oilaviy set page crop",
+      "sourcePixelDimensions": [
+        1684,
+        1191
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "GOOD",
+      "notes": "Family set composition from page 3."
+    },
+    {
+      "productId": "LAVASH_SET",
+      "databaseName": "Lavash set",
+      "category": "Setlar",
+      "sourcePage": 3,
+      "sourceMenuLabel": "Lavash seti",
+      "matchConfidence": "exact",
+      "extractionMethod": "High-resolution PDF page crop",
+      "outputFile": "/menu-media/source/products/set-lavash.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "Lavash seti page crop",
+      "sourcePixelDimensions": [
+        1684,
+        1191
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Lavash set composition from page 3."
+    },
+    {
+      "productId": "BURGER_SET",
+      "databaseName": "Burger set",
+      "category": "Setlar",
+      "sourcePage": 3,
+      "sourceMenuLabel": "Chizburger seti",
+      "matchConfidence": "high",
+      "extractionMethod": "High-resolution PDF page crop",
+      "outputFile": "/menu-media/source/products/set-burger.webp",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "Chizburger seti page crop",
+      "sourcePixelDimensions": [
+        1684,
+        1191
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Burger set composition source; closest to current Burger set."
+    },
+    {
+      "productId": "KIDS_SET",
+      "databaseName": "Bolalar seti",
+      "category": "Setlar",
+      "sourcePage": null,
+      "sourceMenuLabel": null,
+      "matchConfidence": "missing",
+      "extractionMethod": "generation-needed",
+      "outputFile": null,
+      "qualityStatus": "NEEDS GENERATION",
+      "notes": "No current Bolalar seti composition appears in page 3.",
+      "visualDescriptionFromMenu": "Kids set with nuggets, fries, cheese sauce, and water."
+    }
+  ]
+}

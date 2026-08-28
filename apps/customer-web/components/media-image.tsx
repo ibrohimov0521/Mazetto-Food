@@ -1,9 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { forwardRef, useMemo, useState } from "react";
+import { forwardRef, useEffect, useMemo, useState } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
-import { productImage } from "../lib/cart";
+import { productImage, sourceMenuImage } from "../lib/cart";
 
 type MediaImageProps = {
   alt: string;
@@ -34,8 +34,27 @@ export const MediaImage = forwardRef<HTMLDivElement, MediaImageProps>(function M
 }: MediaImageProps, ref) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [useSourceFallback, setUseSourceFallback] = useState(false);
   const resolvedSrc = useMemo(() => productImage(src), [src]);
-  const canUseNextImage = isNextImageCompatible(resolvedSrc);
+  const sourceFallbackSrc = useMemo(() => sourceMenuImage(src), [src]);
+  const activeSrc = useSourceFallback && sourceFallbackSrc ? sourceFallbackSrc : resolvedSrc;
+  const canUseNextImage = isNextImageCompatible(activeSrc);
+
+  useEffect(() => {
+    setLoaded(false);
+    setFailed(false);
+    setUseSourceFallback(false);
+  }, [resolvedSrc, sourceFallbackSrc]);
+
+  function handleImageError() {
+    if (!useSourceFallback && sourceFallbackSrc) {
+      setLoaded(false);
+      setUseSourceFallback(true);
+      return;
+    }
+
+    setFailed(true);
+  }
 
   return (
     <motion.div
@@ -44,27 +63,27 @@ export const MediaImage = forwardRef<HTMLDivElement, MediaImageProps>(function M
       ref={ref}
     >
       {!loaded && !failed ? <div className="skeleton absolute inset-0" /> : null}
-      {failed || !resolvedSrc ? (
+      {failed || !activeSrc ? (
         <MediaFallback label={fallbackLabel} />
       ) : canUseNextImage ? (
         <Image
           alt={alt}
           className={`transition-opacity duration-300 ease-out ${fit === "cover" ? "object-cover" : "object-contain"} ${loaded ? "opacity-100" : "opacity-0"} ${imageClassName}`}
           fill
-          onError={() => setFailed(true)}
+          onError={handleImageError}
           onLoad={() => setLoaded(true)}
           priority={priority}
           sizes={sizes}
-          src={resolvedSrc}
+          src={activeSrc}
         />
       ) : (
         <img
           alt={alt}
           className={`h-full w-full transition-opacity duration-300 ease-out ${fit === "cover" ? "object-cover" : "object-contain"} ${loaded ? "opacity-100" : "opacity-0"} ${imageClassName}`}
           loading={priority ? "eager" : "lazy"}
-          onError={() => setFailed(true)}
+          onError={handleImageError}
           onLoad={() => setLoaded(true)}
-          src={resolvedSrc}
+          src={activeSrc}
         />
       )}
     </motion.div>
