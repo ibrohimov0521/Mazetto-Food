@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { useState } from "react";
 
 type BrandLogoProps = {
   className?: string;
@@ -13,12 +13,27 @@ export function BrandLogo({
   priority = false,
   sizes = "180px",
 }: BrandLogoProps) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <span
+        aria-label="MAZETTO FOOD"
+        className={`inline-flex items-center font-black uppercase leading-none text-[#F5CF00] drop-shadow-[0_8px_18px_rgba(0,0,0,0.32)] ${className}`}
+      >
+        MAZETTO FOOD
+      </span>
+    );
+  }
+
   return (
-    <Image
+    <img
       alt="MAZETTO FOOD"
       className={`object-contain ${className}`}
+      decoding={priority ? "sync" : "async"}
+      fetchPriority={priority ? "high" : "auto"}
       height={895}
-      priority={priority}
+      onError={() => setFailed(true)}
       sizes={sizes}
       src="/brand/mazetto-food-logo.webp"
       width={2048}

@@ -1,0 +1,762 @@
+{
+  "generatedFrom": "apps/backend/prisma/seeds/menu",
+  "generatedAt": "2026-08-28",
+  "categories": [
+    {
+      "id": "LAVASH",
+      "name": "Lavash",
+      "code": "LAVASH",
+      "description": "Yangi sabzavot va maxsus sousli MAZETTO lavashlari.",
+      "currentMediaPath": "/categories/lavash.webp",
+      "recommendedFilename": "lavash.webp"
+    },
+    {
+      "id": "CHICKEN_LAVASH",
+      "name": "Tovuqli lavash",
+      "code": "CHICKEN_LAVASH",
+      "description": "Klassik, pishloqli va achchiq tovuqli lavashlar.",
+      "currentMediaPath": "/categories/chicken-lavash.webp",
+      "recommendedFilename": "chicken-lavash.webp"
+    },
+    {
+      "id": "BURGER",
+      "name": "Burgerlar",
+      "code": "BURGER",
+      "description": "Mol go'shtli burgerlar: zalda, olib ketish yoki yetkazish uchun.",
+      "currentMediaPath": "/categories/burger.webp",
+      "recommendedFilename": "burger.webp"
+    },
+    {
+      "id": "CHICKEN_BURGER",
+      "name": "Tovuqli burgerlar",
+      "code": "CHICKEN_BURGER",
+      "description": "Qarsildoq va shirali tovuqli burgerlar.",
+      "currentMediaPath": "/categories/chicken-burger.webp",
+      "recommendedFilename": "chicken-burger.webp"
+    },
+    {
+      "id": "HOT_DOG",
+      "name": "Hot Dog",
+      "code": "HOT_DOG",
+      "description": "Tez tayyorlanadigan klassik va to'yimli hot-doglar.",
+      "currentMediaPath": "/categories/hot-dog.webp",
+      "recommendedFilename": "hot-dog.webp"
+    },
+    {
+      "id": "DONER",
+      "name": "Doner",
+      "code": "DONER",
+      "description": "Yangi garnirli doner lavash va tarelkalar.",
+      "currentMediaPath": "/categories/doner.webp",
+      "recommendedFilename": "doner.webp"
+    },
+    {
+      "id": "FAST_FOOD",
+      "name": "Gazaklar",
+      "code": "FAST_FOOD",
+      "description": "Fri, strips, naggets va yengil gazaklar.",
+      "currentMediaPath": "/categories/fast-food.webp",
+      "recommendedFilename": "fast-food.webp"
+    },
+    {
+      "id": "DRINKS",
+      "name": "Ichimliklar",
+      "code": "DRINKS",
+      "description": "Taom va setlar uchun sovuq ichimliklar.",
+      "currentMediaPath": "/categories/drinks.webp",
+      "recommendedFilename": "drinks.webp"
+    },
+    {
+      "id": "SAUCES",
+      "name": "Souslar",
+      "code": "SAUCES",
+      "description": "Souslar va qo'shimchalar.",
+      "currentMediaPath": "/categories/sauces.webp",
+      "recommendedFilename": "sauces.webp"
+    },
+    {
+      "id": "SETS",
+      "name": "Setlar",
+      "code": "SETS",
+      "description": "Foydali setlar va oilaviy to'plamlar.",
+      "currentMediaPath": "/categories/sets.webp",
+      "recommendedFilename": "sets.webp"
+    }
+  ],
+  "products": [
+    {
+      "id": "BIG_LAVASH",
+      "name": "Katta lavash",
+      "code": "BIG_LAVASH",
+      "category": "Lavash",
+      "categoryCode": "LAVASH",
+      "description": "Katta lavash: go'sht, sabzavot, fri va MAZETTO maxsus sousi.",
+      "variantNames": [
+        "Standart",
+        "Pishloqli",
+        "Achchiq"
+      ],
+      "priceRange": {
+        "min": 36000,
+        "max": 41000
+      },
+      "currentMediaPath": "/products/lavash-big.webp",
+      "recommendedFilename": "lavash-big.webp",
+      "isCombo": false,
+      "preparationTime": 10
+    },
+    {
+      "id": "CLASSIC_LAVASH",
+      "name": "Klassik lavash",
+      "code": "CLASSIC_LAVASH",
+      "category": "Lavash",
+      "categoryCode": "LAVASH",
+      "description": "Klassik lavash: go'sht, yangi sabzavot va maxsus sous.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 31000,
+        "max": 31000
+      },
+      "currentMediaPath": "/products/lavash-classic.webp",
+      "recommendedFilename": "lavash-classic.webp",
+      "isCombo": false,
+      "preparationTime": 9
+    },
+    {
+      "id": "MINI_LAVASH",
+      "name": "Mini lavash",
+      "code": "MINI_LAVASH",
+      "category": "Lavash",
+      "categoryCode": "LAVASH",
+      "description": "Yengil porsiyali mini lavash.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 24000,
+        "max": 24000
+      },
+      "currentMediaPath": "/products/lavash-mini.webp",
+      "recommendedFilename": "lavash-mini.webp",
+      "isCombo": false,
+      "preparationTime": 8
+    },
+    {
+      "id": "BEEF_LAVASH",
+      "name": "Mol go'shtli lavash",
+      "code": "BEEF_LAVASH",
+      "category": "Lavash",
+      "categoryCode": "LAVASH",
+      "description": "Mol go'shti, sabzavot, fri va maxsus sousli lavash.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 34000,
+        "max": 34000
+      },
+      "currentMediaPath": "/products/lavash-beef.webp",
+      "recommendedFilename": "lavash-beef.webp",
+      "isCombo": false,
+      "preparationTime": 10
+    },
+    {
+      "id": "CHICKEN_LAVASH",
+      "name": "Tovuqli lavash",
+      "code": "CHICKEN_LAVASH",
+      "category": "Tovuqli lavash",
+      "categoryCode": "CHICKEN_LAVASH",
+      "description": "Tovuq go'shti, yangi sabzavot va MAZETTO sousli lavash.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 30000,
+        "max": 30000
+      },
+      "currentMediaPath": "/products/chicken-lavash.webp",
+      "recommendedFilename": "chicken-lavash.webp",
+      "isCombo": false,
+      "preparationTime": 9
+    },
+    {
+      "id": "CHICKEN_CHEESE_LAVASH",
+      "name": "Tovuqli pishloqli lavash",
+      "code": "CHICKEN_CHEESE_LAVASH",
+      "category": "Tovuqli lavash",
+      "categoryCode": "CHICKEN_LAVASH",
+      "description": "Tovuq go'shti, qo'shimcha pishloq va qaymoqli sousli lavash.",
+      "variantNames": [
+        "Standart",
+        "Achchiq"
+      ],
+      "priceRange": {
+        "min": 35000,
+        "max": 37000
+      },
+      "currentMediaPath": "/products/chicken-cheese-lavash.webp",
+      "recommendedFilename": "chicken-cheese-lavash.webp",
+      "isCombo": false,
+      "preparationTime": 10
+    },
+    {
+      "id": "CHICKEN_SPICY_LAVASH",
+      "name": "Tovuqli achchiq lavash",
+      "code": "CHICKEN_SPICY_LAVASH",
+      "category": "Tovuqli lavash",
+      "categoryCode": "CHICKEN_LAVASH",
+      "description": "Jalapeno va maxsus sousli achchiq tovuqli lavash.",
+      "variantNames": [
+        "Standart",
+        "Pishloqli"
+      ],
+      "priceRange": {
+        "min": 33000,
+        "max": 38000
+      },
+      "currentMediaPath": "/products/chicken-spicy-lavash.webp",
+      "recommendedFilename": "chicken-spicy-lavash.webp",
+      "isCombo": false,
+      "preparationTime": 10
+    },
+    {
+      "id": "CLASSIC_BURGER",
+      "name": "Klassik burger",
+      "code": "CLASSIC_BURGER",
+      "category": "Burgerlar",
+      "categoryCode": "BURGER",
+      "description": "Mol go'shtli kotlet, sabzavot, pishloq va MAZETTO sousli burger.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 29000,
+        "max": 29000
+      },
+      "currentMediaPath": "/products/burger-classic.webp",
+      "recommendedFilename": "burger-classic.webp",
+      "isCombo": false,
+      "preparationTime": 9
+    },
+    {
+      "id": "BIG_BURGER",
+      "name": "Katta burger",
+      "code": "BIG_BURGER",
+      "category": "Burgerlar",
+      "categoryCode": "BURGER",
+      "description": "Ikki baravar to'yimli katta mol go'shtli burger.",
+      "variantNames": [
+        "Standart",
+        "Double pishloq"
+      ],
+      "priceRange": {
+        "min": 39000,
+        "max": 46000
+      },
+      "currentMediaPath": "/products/burger-big.webp",
+      "recommendedFilename": "burger-big.webp",
+      "isCombo": false,
+      "preparationTime": 12
+    },
+    {
+      "id": "CHEESEBURGER",
+      "name": "Chizburger",
+      "code": "CHEESEBURGER",
+      "category": "Burgerlar",
+      "categoryCode": "BURGER",
+      "description": "Mol go'shti, pishloq, marinadlangan bodring va sousli burger.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 32000,
+        "max": 32000
+      },
+      "currentMediaPath": "/products/cheeseburger.webp",
+      "recommendedFilename": "cheeseburger.webp",
+      "isCombo": false,
+      "preparationTime": 9
+    },
+    {
+      "id": "DOUBLE_BURGER",
+      "name": "Double burger",
+      "code": "DOUBLE_BURGER",
+      "category": "Burgerlar",
+      "categoryCode": "BURGER",
+      "description": "Ikki kotlet, pishloq va MAZETTO sousli burger.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 45000,
+        "max": 45000
+      },
+      "currentMediaPath": "/products/burger-double.webp",
+      "recommendedFilename": "burger-double.webp",
+      "isCombo": false,
+      "preparationTime": 13
+    },
+    {
+      "id": "CHICKEN_BURGER",
+      "name": "Tovuqli burger",
+      "code": "CHICKEN_BURGER",
+      "category": "Tovuqli burgerlar",
+      "categoryCode": "CHICKEN_BURGER",
+      "description": "Tovuq go'shti, sabzavot va maxsus sousli burger.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 28000,
+        "max": 28000
+      },
+      "currentMediaPath": "/products/chicken-burger.webp",
+      "recommendedFilename": "chicken-burger.webp",
+      "isCombo": false,
+      "preparationTime": 9
+    },
+    {
+      "id": "CRISPY_CHICKEN_BURGER",
+      "name": "Qarsildoq tovuqli burger",
+      "code": "CRISPY_CHICKEN_BURGER",
+      "category": "Tovuqli burgerlar",
+      "categoryCode": "CHICKEN_BURGER",
+      "description": "Qarsildoq tovuq filesi va qaymoqli sousli burger.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 33000,
+        "max": 33000
+      },
+      "currentMediaPath": "/products/crispy-chicken-burger.webp",
+      "recommendedFilename": "crispy-chicken-burger.webp",
+      "isCombo": false,
+      "preparationTime": 11
+    },
+    {
+      "id": "CHICKEN_CHEESEBURGER",
+      "name": "Tovuqli chizburger",
+      "code": "CHICKEN_CHEESEBURGER",
+      "category": "Tovuqli burgerlar",
+      "categoryCode": "CHICKEN_BURGER",
+      "description": "Tovuq go'shti, pishloq va MAZETTO sousli burger.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 31000,
+        "max": 31000
+      },
+      "currentMediaPath": "/products/chicken-cheeseburger.webp",
+      "recommendedFilename": "chicken-cheeseburger.webp",
+      "isCombo": false,
+      "preparationTime": 10
+    },
+    {
+      "id": "CLASSIC_HOT_DOG",
+      "name": "Klassik hot-dog",
+      "code": "CLASSIC_HOT_DOG",
+      "category": "Hot Dog",
+      "categoryCode": "HOT_DOG",
+      "description": "Sosiska, sabzavot, ketchup va mayonezli hot-dog.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 19000,
+        "max": 19000
+      },
+      "currentMediaPath": "/products/hot-dog-classic.webp",
+      "recommendedFilename": "hot-dog-classic.webp",
+      "isCombo": false,
+      "preparationTime": 6
+    },
+    {
+      "id": "CHEESE_HOT_DOG",
+      "name": "Pishloqli hot-dog",
+      "code": "CHEESE_HOT_DOG",
+      "category": "Hot Dog",
+      "categoryCode": "HOT_DOG",
+      "description": "Pishloq va sousli issiq hot-dog.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 23000,
+        "max": 23000
+      },
+      "currentMediaPath": "/products/hot-dog-cheese.webp",
+      "recommendedFilename": "hot-dog-cheese.webp",
+      "isCombo": false,
+      "preparationTime": 7
+    },
+    {
+      "id": "DOUBLE_HOT_DOG",
+      "name": "Double hot-dog",
+      "code": "DOUBLE_HOT_DOG",
+      "category": "Hot Dog",
+      "categoryCode": "HOT_DOG",
+      "description": "Ikki sosiska bilan yanada to'yimli hot-dog.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 27000,
+        "max": 27000
+      },
+      "currentMediaPath": "/products/hot-dog-double.webp",
+      "recommendedFilename": "hot-dog-double.webp",
+      "isCombo": false,
+      "preparationTime": 8
+    },
+    {
+      "id": "DONER_WRAP",
+      "name": "Doner lavash",
+      "code": "DONER_WRAP",
+      "category": "Doner",
+      "categoryCode": "DONER",
+      "description": "Doner go'shti, sabzavot va sousli o'ralma.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 32000,
+        "max": 32000
+      },
+      "currentMediaPath": "/products/doner-wrap.webp",
+      "recommendedFilename": "doner-wrap.webp",
+      "isCombo": false,
+      "preparationTime": 10
+    },
+    {
+      "id": "DONER_PLATE",
+      "name": "Doner tarelka",
+      "code": "DONER_PLATE",
+      "category": "Doner",
+      "categoryCode": "DONER",
+      "description": "Doner go'shti, fri, salat va sous bilan.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 42000,
+        "max": 42000
+      },
+      "currentMediaPath": "/products/doner-plate.webp",
+      "recommendedFilename": "doner-plate.webp",
+      "isCombo": false,
+      "preparationTime": 12
+    },
+    {
+      "id": "CHICKEN_DONER",
+      "name": "Tovuqli doner",
+      "code": "CHICKEN_DONER",
+      "category": "Doner",
+      "categoryCode": "DONER",
+      "description": "Tovuqli doner, garnir va sous bilan.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 30000,
+        "max": 30000
+      },
+      "currentMediaPath": "/products/chicken-doner.webp",
+      "recommendedFilename": "chicken-doner.webp",
+      "isCombo": false,
+      "preparationTime": 10
+    },
+    {
+      "id": "FRIES",
+      "name": "Fri kartoshka",
+      "code": "FRIES",
+      "category": "Gazaklar",
+      "categoryCode": "FAST_FOOD",
+      "description": "Qarsildoq fri kartoshka.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 15000,
+        "max": 15000
+      },
+      "currentMediaPath": "/products/fries.webp",
+      "recommendedFilename": "fries.webp",
+      "isCombo": false,
+      "preparationTime": 6
+    },
+    {
+      "id": "CHEESE_FRIES",
+      "name": "Pishloqli fri",
+      "code": "CHEESE_FRIES",
+      "category": "Gazaklar",
+      "categoryCode": "FAST_FOOD",
+      "description": "Pishloqli sous bilan fri kartoshka.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 22000,
+        "max": 22000
+      },
+      "currentMediaPath": "/products/cheese-fries.webp",
+      "recommendedFilename": "cheese-fries.webp",
+      "isCombo": false,
+      "preparationTime": 7
+    },
+    {
+      "id": "CHICKEN_STRIPS",
+      "name": "Tovuqli strips",
+      "code": "CHICKEN_STRIPS",
+      "category": "Gazaklar",
+      "categoryCode": "FAST_FOOD",
+      "description": "Sous bilan beriladigan qarsildoq tovuq stripslari.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 28000,
+        "max": 28000
+      },
+      "currentMediaPath": "/products/chicken-strips.webp",
+      "recommendedFilename": "chicken-strips.webp",
+      "isCombo": false,
+      "preparationTime": 9
+    },
+    {
+      "id": "NUGGETS",
+      "name": "Naggets",
+      "code": "NUGGETS",
+      "category": "Gazaklar",
+      "categoryCode": "FAST_FOOD",
+      "description": "Sous bilan beriladigan tovuqli naggetslar.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 24000,
+        "max": 24000
+      },
+      "currentMediaPath": "/products/nuggets.webp",
+      "recommendedFilename": "nuggets.webp",
+      "isCombo": false,
+      "preparationTime": 8
+    },
+    {
+      "id": "COCA_COLA",
+      "name": "Coca-Cola",
+      "code": "COCA_COLA",
+      "category": "Ichimliklar",
+      "categoryCode": "DRINKS",
+      "description": "Sovutilgan Coca-Cola ichimligi.",
+      "variantNames": [
+        "500 ml",
+        "1 L"
+      ],
+      "priceRange": {
+        "min": 9000,
+        "max": 14000
+      },
+      "currentMediaPath": "/products/coca-cola.webp",
+      "recommendedFilename": "coca-cola.webp",
+      "isCombo": false,
+      "preparationTime": 1
+    },
+    {
+      "id": "FANTA",
+      "name": "Fanta",
+      "code": "FANTA",
+      "category": "Ichimliklar",
+      "categoryCode": "DRINKS",
+      "description": "Sovutilgan Fanta ichimligi.",
+      "variantNames": [
+        "500 ml",
+        "1 L"
+      ],
+      "priceRange": {
+        "min": 9000,
+        "max": 14000
+      },
+      "currentMediaPath": "/products/fanta.webp",
+      "recommendedFilename": "fanta.webp",
+      "isCombo": false,
+      "preparationTime": 1
+    },
+    {
+      "id": "SPRITE",
+      "name": "Sprite",
+      "code": "SPRITE",
+      "category": "Ichimliklar",
+      "categoryCode": "DRINKS",
+      "description": "Sovutilgan Sprite ichimligi.",
+      "variantNames": [
+        "500 ml",
+        "1 L"
+      ],
+      "priceRange": {
+        "min": 9000,
+        "max": 14000
+      },
+      "currentMediaPath": "/products/sprite.webp",
+      "recommendedFilename": "sprite.webp",
+      "isCombo": false,
+      "preparationTime": 1
+    },
+    {
+      "id": "WATER",
+      "name": "Suv",
+      "code": "WATER",
+      "category": "Ichimliklar",
+      "categoryCode": "DRINKS",
+      "description": "Gazsiz ichimlik suvi.",
+      "variantNames": [
+        "500 ml",
+        "1 L"
+      ],
+      "priceRange": {
+        "min": 5000,
+        "max": 8000
+      },
+      "currentMediaPath": "/products/water.webp",
+      "recommendedFilename": "water.webp",
+      "isCombo": false,
+      "preparationTime": 1
+    },
+    {
+      "id": "HOUSE_SAUCE",
+      "name": "Maxsus sous",
+      "code": "HOUSE_SAUCE",
+      "category": "Souslar",
+      "categoryCode": "SAUCES",
+      "description": "MAZETTO maxsus sousi.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 3000,
+        "max": 3000
+      },
+      "currentMediaPath": "/products/house-sauce.webp",
+      "recommendedFilename": "house-sauce.webp",
+      "isCombo": false,
+      "preparationTime": 1
+    },
+    {
+      "id": "CHEESE_SAUCE",
+      "name": "Pishloqli sous",
+      "code": "CHEESE_SAUCE",
+      "category": "Souslar",
+      "categoryCode": "SAUCES",
+      "description": "Pishloqli sous.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 4000,
+        "max": 4000
+      },
+      "currentMediaPath": "/products/cheese-sauce.webp",
+      "recommendedFilename": "cheese-sauce.webp",
+      "isCombo": false,
+      "preparationTime": 1
+    },
+    {
+      "id": "SPICY_SAUCE",
+      "name": "Achchiq sous",
+      "code": "SPICY_SAUCE",
+      "category": "Souslar",
+      "categoryCode": "SAUCES",
+      "description": "Achchiq sous.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 3000,
+        "max": 3000
+      },
+      "currentMediaPath": "/products/spicy-sauce.webp",
+      "recommendedFilename": "spicy-sauce.webp",
+      "isCombo": false,
+      "preparationTime": 1
+    },
+    {
+      "id": "FAMILY_SET",
+      "name": "Oilaviy set",
+      "code": "FAMILY_SET",
+      "category": "Setlar",
+      "categoryCode": "SETS",
+      "description": "Katta lavash, klassik burger, fri va ikkita sovuq ichimlik.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 119000,
+        "max": 119000
+      },
+      "currentMediaPath": "/products/set-family.webp",
+      "recommendedFilename": "set-family.webp",
+      "isCombo": true,
+      "preparationTime": 18
+    },
+    {
+      "id": "LAVASH_SET",
+      "name": "Lavash set",
+      "code": "LAVASH_SET",
+      "category": "Setlar",
+      "categoryCode": "SETS",
+      "description": "Tovuqli lavash, fri, sous va ichimlik.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 54000,
+        "max": 54000
+      },
+      "currentMediaPath": "/products/set-lavash.webp",
+      "recommendedFilename": "set-lavash.webp",
+      "isCombo": true,
+      "preparationTime": 13
+    },
+    {
+      "id": "BURGER_SET",
+      "name": "Burger set",
+      "code": "BURGER_SET",
+      "category": "Setlar",
+      "categoryCode": "SETS",
+      "description": "Klassik burger, fri va ichimlik.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 49000,
+        "max": 49000
+      },
+      "currentMediaPath": "/products/set-burger.webp",
+      "recommendedFilename": "set-burger.webp",
+      "isCombo": true,
+      "preparationTime": 12
+    },
+    {
+      "id": "KIDS_SET",
+      "name": "Bolalar seti",
+      "code": "KIDS_SET",
+      "category": "Setlar",
+      "categoryCode": "SETS",
+      "description": "Naggets, fri, pishloqli sous va suv.",
+      "variantNames": [
+        "Standart"
+      ],
+      "priceRange": {
+        "min": 39000,
+        "max": 39000
+      },
+      "currentMediaPath": "/products/set-kids.webp",
+      "recommendedFilename": "set-kids.webp",
+      "isCombo": true,
+      "preparationTime": 10
+    }
+  ]
+}

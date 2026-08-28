@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ProductCard } from "./product-card";
 import { MotionDiv, pageMotion } from "./motion-primitives";
+import { BrandLogo } from "./brand-logo";
 import { apiFetch } from "../lib/api";
 import { displayCategory, displayProducts } from "../lib/customer-display";
 import type { Category, Product } from "../lib/types";
@@ -182,14 +183,17 @@ export function CustomerMenuSections({
   }
 
   return (
-    <div className={`mx-auto w-full max-w-6xl px-4 pb-8 ${compactTop ? "pt-1" : "pt-4 md:pt-5"}`}>
+    <div className={`mx-auto w-full max-w-6xl px-4 pb-8 ${compactTop ? "pt-1" : "pt-3 md:pt-5"}`}>
       {intro ? (
-        <MotionDiv {...pageMotion} className="mf-menu-intro mf-organic p-4 sm:p-5">
-          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,320px)] lg:items-end">
+        <MotionDiv {...pageMotion} className="mf-menu-intro mf-organic px-4 pb-4 pt-3 sm:p-5">
+          <div className="mx-auto mb-2 flex max-w-[20rem] justify-center md:hidden">
+            <BrandLogo className="h-auto w-full drop-shadow-[0_18px_34px_rgba(0,0,0,0.26)]" priority sizes="320px" />
+          </div>
+          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,360px)] lg:items-end">
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase text-[#F5CF00]">MAZETTO FOOD menyusi</p>
-              <h1 className="mt-1 text-3xl font-black text-white sm:text-4xl">{title}</h1>
-              <p className="mt-2 text-sm font-semibold leading-6 text-white/68">Lavash, burger, tovuqli taomlar, setlar, souslar va ichimliklarni tez toping.</p>
+              <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">MAZETTO FOOD menyusi</p>
+              <h1 className="mt-1 text-[1.65rem] font-black leading-[1.02] text-white sm:text-4xl">{title}</h1>
+              <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-white/70">Lavash, burger, setlar va ichimliklar. Tez tanlang, issiq holda buyurtma qiling.</p>
             </div>
             <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
           </div>
@@ -205,8 +209,8 @@ export function CustomerMenuSections({
       )}
 
       {!loading && !error && menuSections.length ? (
-        <div className="sticky top-[env(safe-area-inset-top)] z-20 -mx-4 mt-4 min-w-0 px-4 py-2 md:top-24" data-menu-category-nav="true">
-          <div className="no-scrollbar mf-category-strip flex w-full min-w-0 max-w-full gap-2 overflow-x-auto rounded-[1.15rem] p-1.5" ref={tabScrollerRef}>
+        <div className="sticky top-[env(safe-area-inset-top)] z-20 -mx-4 mt-3 min-w-0 px-4 py-2 md:top-24" data-menu-category-nav="true">
+          <div className="no-scrollbar mf-category-strip flex w-full min-w-0 max-w-full gap-2 overflow-x-auto rounded-[1.25rem] p-1.5" ref={tabScrollerRef}>
             {menuSections.map(({ category }) => (
               <button
                 className={tabClass(activeCategoryId === category.id)}
@@ -234,7 +238,11 @@ export function CustomerMenuSections({
 
       <div className="mt-4 grid min-w-0 gap-5">
         {loading
-          ? Array.from({ length: 6 }, (_, index) => <ProductSkeleton key={index} />)
+          ? (
+              <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: 8 }, (_, index) => <ProductSkeleton key={index} />)}
+              </div>
+            )
           : !error && menuSections.map(({ category, products }) => (
               <section
                 className="scroll-mt-20 md:scroll-mt-32"
@@ -244,10 +252,10 @@ export function CustomerMenuSections({
               >
                 <div className="mb-3 flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-xs font-black uppercase text-[#F5CF00]">{products.length} ta mahsulot</p>
-                    <h2 className="text-2xl font-black text-white">{categoryLabel(category)}</h2>
+                    <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">{products.length} ta mahsulot</p>
+                    <h2 className="mf-menu-section-heading text-2xl font-black text-white">{categoryLabel(category)}</h2>
                   </div>
-                  {category.description ? <p className="hidden max-w-md text-right text-sm font-semibold text-white/56 md:block">{category.description}</p> : null}
+                  {category.description ? <p className="mf-menu-section-description hidden max-w-md text-right text-sm font-semibold text-white/56 md:block">{category.description}</p> : null}
                 </div>
                 <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
                   {products.map((product) => <ProductCard compact key={product.id} product={product} />)}
@@ -279,16 +287,19 @@ function SearchBox({
   return (
     <div className="relative min-w-0">
       <input
-        className="mf-input w-full px-4 py-3 pr-12 font-semibold"
-        placeholder="Menyudan qidirish"
+        className="mf-input w-full px-12 py-3.5 font-semibold"
+        placeholder="Taom yoki ichimlik qidiring..."
         ref={inputRef}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
+      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-2xl leading-none text-white/70">
+        ⌕
+      </span>
       {query ? (
         <button
           aria-label="Qidiruvni tozalash"
-          className="pressable absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/10 text-lg font-black text-[#67E8F9]"
+          className="pressable absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/10 text-lg font-black text-[#F5CF00]"
           onClick={onClear}
           type="button"
         >
@@ -316,20 +327,19 @@ function categoryLabel(category: Category): string {
 }
 
 function tabClass(active: boolean): string {
-  return `pressable ripple shrink-0 rounded-2xl px-3.5 py-2 text-sm font-black ${active ? "mf-button-primary" : "mf-category-tab text-white/82 hover:text-white"}`;
+  return `pressable ripple shrink-0 rounded-full px-4 py-2 text-sm font-black ${active ? "mf-button-primary" : "mf-category-tab text-white/82 hover:text-white"}`;
 }
 
 function ProductSkeleton() {
   return (
-    <div className="mf-card overflow-hidden">
-      <div className="skeleton aspect-[4/3] w-full" />
-      <div className="grid gap-2 p-3">
+    <div className="mf-product-card mf-product-card-locked is-compact overflow-hidden">
+      <div className="skeleton aspect-[1.22/1] w-full" />
+      <div className="grid grid-rows-[2.35rem_2.35rem_2.75rem] gap-1.5 p-2.5">
         <div className="skeleton h-5 w-3/4 rounded-full" />
         <div className="skeleton h-3 w-full rounded-full" />
-        <div className="skeleton h-3 w-2/3 rounded-full" />
         <div className="flex items-center justify-between">
           <div className="skeleton h-5 w-20 rounded-full" />
-          <div className="skeleton h-9 w-9 rounded-full" />
+          <div className="skeleton h-10 w-[5.65rem] rounded-full" />
         </div>
       </div>
     </div>

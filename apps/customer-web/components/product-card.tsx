@@ -29,17 +29,17 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
     <MotionArticle
       {...cardMotion}
       data-product-card="true"
-      className="mf-product-card mf-leaf-corner group min-w-0 overflow-hidden [transform-style:preserve-3d]"
+      className={`mf-product-card mf-product-card-locked mf-leaf-corner group min-w-0 overflow-hidden [transform-style:preserve-3d] ${compact ? "is-compact" : ""}`}
       initial={{ opacity: 0, y: 18 }}
       viewport={{ once: true, margin: "-48px" }}
       whileInView={{ opacity: 1, y: 0 }}
     >
-      <div className="relative">
+      <div className="mf-product-media-shell relative">
         <Link href={`/product/${product.id}`}>
           <MediaImage
             alt={product.name}
-            aspectClassName={compact ? "aspect-[4/3]" : "aspect-[4/3]"}
-            className="will-change-transform"
+            aspectClassName={compact ? "aspect-[1.22/1]" : "aspect-[4/3]"}
+            className="mf-product-media will-change-transform"
             imageClassName="group-hover:scale-[1.03]"
             motionProps={{
               ...imageMotion,
@@ -62,69 +62,71 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
           ♥
         </button>
         {product.isCombo ? (
-          <span className="absolute left-3 top-3 rounded-full bg-[#F5CF00] px-3 py-1 text-xs font-black uppercase text-[#07373A] shadow-[0_10px_22px_rgba(245,207,0,0.28)]">
+          <span className="absolute left-2.5 top-2.5 rounded-full bg-[#F5CF00] px-2.5 py-1 text-[10px] font-black uppercase text-[#07373A] shadow-[0_10px_22px_rgba(245,207,0,0.28)]">
             Set
           </span>
         ) : null}
       </div>
-      <div className={compact ? "p-2.5" : "p-4"}>
+      <div className={compact ? "grid min-h-0 grid-rows-[2.35rem_2.35rem_2.75rem] gap-1.5 p-2.5" : "grid gap-2 p-4"}>
         <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
-          <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} min-w-0 break-words font-black leading-tight text-white transition hover:text-[#F5CF00]`} href={`/product/${product.id}`}>
+          <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} mf-product-title min-w-0 break-words font-black leading-tight text-white transition hover:text-[#F5CF00]`} href={`/product/${product.id}`}>
             {product.name}
           </Link>
-          <span className={`${compact ? "hidden min-[390px]:inline-flex" : "inline-flex"} shrink-0 rounded-full bg-white/12 px-2 py-1 text-[10px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
+          <span className={`${compact ? "hidden min-[390px]:inline-flex" : "inline-flex"} mf-product-badge shrink-0 rounded-full bg-white/12 px-2 py-1 text-[10px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
             {product.preparationTime ?? 10} daq
           </span>
         </div>
-        <p className={`${compact ? "mt-1 line-clamp-2 min-h-8 text-[10px] leading-4 sm:text-[11px]" : "mt-2 line-clamp-2 min-h-11 text-sm leading-5"} text-white/64`}>
+        <p className={`${compact ? "line-clamp-2 text-[10px] leading-4 sm:text-[11px]" : "line-clamp-2 min-h-11 text-sm leading-5"} mf-product-description text-white/64`}>
           {product.description ?? "Buyurtmadan keyin issiq tayyorlanadi."}
         </p>
-        <div className={`${compact ? "mt-3" : "mt-4"} flex min-w-0 items-center justify-between gap-2 sm:gap-3`}>
+        <div className="mf-product-price-row flex min-w-0 items-center justify-between gap-2 sm:gap-3">
           <motion.span
-            className={`${compact ? "text-[15px] sm:text-base" : "text-lg"} min-w-0 break-words font-black text-[#F5CF00]`}
+            className={`${compact ? "text-[14px] min-[390px]:text-[15px] sm:text-base" : "text-lg"} mf-product-price min-w-0 font-black text-[#F5CF00]`}
             layout
             transition={{ type: "spring", stiffness: 520, damping: 34 }}
           >
             {formatMoney(price)}
           </motion.span>
-          {cartLine && !requiresConfiguration ? (
-            <div className="mf-button-primary grid h-9 shrink-0 grid-cols-3 items-center overflow-hidden rounded-full text-sm font-black">
-              <button aria-label={`${product.name} kamaytirish`} className="pressable h-9 w-8" onClick={() => { hapticTap(8); updateQuantity(cartLine.key, cartLine.quantity - 1); }} type="button">-</button>
-              <motion.span animate={{ scale: [1, 1.16, 1] }} className="w-7 text-center" key={cartLine.quantity} transition={{ duration: 0.22 }}>{cartLine.quantity}</motion.span>
-              <button aria-label={`${product.name} qo'shish`} className="pressable h-9 w-8" onClick={() => { hapticTap(8); updateQuantity(cartLine.key, cartLine.quantity + 1); }} type="button">+</button>
-            </div>
-          ) : requiresConfiguration ? (
-            <Link className={`${compact ? "grid h-9 w-9 place-items-center rounded-full px-0 py-0 text-lg" : "px-4 py-3 text-sm"} pressable ripple mf-button-primary shrink-0 text-center font-black`} href={`/product/${product.id}`}>
-              {compact ? "+" : "Tanlash"}
-            </Link>
-          ) : (
-            <MotionButton
-              {...buttonMotion}
-              aria-label={`${product.name} savatga qo'shish`}
-              className={`${compact ? "grid h-9 w-9 place-items-center rounded-full px-0 py-0 text-lg" : "px-4 py-3 text-sm"} pressable ripple mf-button-primary shrink-0 font-black`}
-              onClick={() => {
-                const rect = imageRef.current?.getBoundingClientRect();
-                if (rect) {
-                  triggerCartFlight(product.imageUrl, rect);
-                }
+          <div className="mf-product-action-slot">
+            {cartLine && !requiresConfiguration ? (
+              <div className="mf-product-stepper mf-button-primary grid grid-cols-3 items-center overflow-hidden rounded-full text-sm font-black">
+                <button aria-label={`${product.name} kamaytirish`} className="pressable h-full w-full" onClick={() => { hapticTap(8); updateQuantity(cartLine.key, cartLine.quantity - 1); }} type="button">-</button>
+                <motion.span animate={{ scale: [1, 1.16, 1] }} className="text-center" key={cartLine.quantity} transition={{ duration: 0.22 }}>{cartLine.quantity}</motion.span>
+                <button aria-label={`${product.name} qo'shish`} className="pressable h-full w-full" onClick={() => { hapticTap(8); updateQuantity(cartLine.key, cartLine.quantity + 1); }} type="button">+</button>
+              </div>
+            ) : requiresConfiguration ? (
+              <Link className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
+                {compact ? "+" : "Tanlash"}
+              </Link>
+            ) : (
+              <MotionButton
+                {...buttonMotion}
+                aria-label={`${product.name} savatga qo'shish`}
+                className="pressable ripple mf-button-primary mf-product-plus justify-self-end font-black"
+                onClick={() => {
+                  const rect = imageRef.current?.getBoundingClientRect();
+                  if (rect) {
+                    triggerCartFlight(product.imageUrl, rect);
+                  }
 
-                hapticTap([10, 24, 10]);
-                addItem({
-                  productId: product.id,
-                  productName: product.name,
-                  imageUrl: product.imageUrl,
-                  variantId: variant?.id,
-                  variantName: variant?.name,
-                  unitPrice: price,
-                  quantity: 1,
-                  modifiers: [],
-                });
-              }}
-              type="button"
-            >
-              {compact ? "+" : "Qo'shish"}
-            </MotionButton>
-          )}
+                  hapticTap([10, 24, 10]);
+                  addItem({
+                    productId: product.id,
+                    productName: product.name,
+                    imageUrl: product.imageUrl,
+                    variantId: variant?.id,
+                    variantName: variant?.name,
+                    unitPrice: price,
+                    quantity: 1,
+                    modifiers: [],
+                  });
+                }}
+                type="button"
+              >
+                {compact ? "+" : "Qo'shish"}
+              </MotionButton>
+            )}
+          </div>
         </div>
       </div>
     </MotionArticle>

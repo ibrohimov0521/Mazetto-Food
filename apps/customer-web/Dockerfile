@@ -38,6 +38,7 @@ RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder --chown=nextjs:nodejs /app/apps/customer-web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/customer-web/.next/static ./apps/customer-web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/customer-web/public ./apps/customer-web/public
 
 USER nextjs
 

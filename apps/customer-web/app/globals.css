@@ -183,6 +183,125 @@ img {
     0 16px 38px rgba(0, 32, 35, 0.32);
 }
 
+.mf-menu-intro {
+  overflow: hidden;
+  border-radius: 1.6rem;
+  background:
+    radial-gradient(ellipse at 88% 8%, rgba(245, 207, 0, 0.18), transparent 12rem),
+    radial-gradient(ellipse at 16% 18%, rgba(185, 184, 240, 0.18), transparent 11rem),
+    linear-gradient(145deg, rgba(0, 123, 119, 0.92), rgba(0, 76, 82, 0.96));
+}
+
+.mf-menu-intro::after {
+  position: absolute;
+  right: -1.4rem;
+  top: -1.7rem;
+  width: 9rem;
+  height: 11rem;
+  content: "";
+  border-radius: 58% 42% 68% 32% / 42% 58% 42% 58%;
+  background:
+    radial-gradient(ellipse at 42% 35%, rgba(104, 202, 118, 0.24), transparent 56%),
+    radial-gradient(ellipse at 64% 70%, rgba(245, 207, 0, 0.12), transparent 54%);
+  opacity: 0.82;
+  transform: rotate(-18deg);
+  pointer-events: none;
+}
+
+.mf-product-card-locked {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+  min-height: 18rem;
+  border-radius: 1.35rem;
+  contain: layout paint;
+}
+
+.mf-product-card-locked.is-compact {
+  min-height: 16.9rem;
+}
+
+.mf-product-media-shell,
+.mf-product-media {
+  min-width: 0;
+}
+
+.mf-product-card-locked.is-compact .mf-product-media {
+  height: auto;
+}
+
+.mf-product-title {
+  min-height: 2.1em;
+  line-height: 1.05;
+}
+
+.mf-product-description {
+  min-height: 2rem;
+}
+
+.mf-product-price-row {
+  min-height: 2.5rem;
+}
+
+.mf-product-price {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.mf-product-action-slot {
+  display: grid;
+  flex: 0 0 5.65rem;
+  width: 5.65rem;
+  height: 2.45rem;
+  min-width: 5.65rem;
+  place-items: center end;
+}
+
+.mf-product-plus,
+.mf-product-stepper {
+  height: 2.45rem;
+}
+
+.mf-product-plus {
+  display: grid;
+  width: 2.45rem;
+  place-items: center;
+  border-radius: 0.8rem;
+  font-size: 1.2rem;
+}
+
+.mf-product-stepper {
+  width: 5.65rem;
+  border-radius: 999px;
+}
+
+.mf-product-badge {
+  min-height: 1.45rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 389px) {
+  .mf-product-card-locked.is-compact {
+    min-height: 16.2rem;
+  }
+
+  .mf-product-action-slot,
+  .mf-product-plus,
+  .mf-product-stepper {
+    height: 2.35rem;
+  }
+
+  .mf-product-action-slot,
+  .mf-product-stepper {
+    width: 5rem;
+    min-width: 5rem;
+  }
+
+  .mf-product-plus {
+    width: 2.35rem;
+  }
+}
+
 .mf-home-feature {
   min-height: 26rem;
   border: 1px solid rgba(210, 255, 244, 0.2);
@@ -418,8 +537,8 @@ img {
 
 .mazetto-glass-nav {
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.035)),
-    linear-gradient(120deg, rgba(245, 207, 0, 0.16), rgba(185, 184, 240, 0.1) 48%, rgba(0, 79, 85, 0.86));
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+    linear-gradient(120deg, rgba(245, 207, 0, 0.14), rgba(185, 184, 240, 0.09) 45%, rgba(0, 79, 85, 0.9));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
     inset 0 -10px 28px rgba(245, 207, 0, 0.08),
@@ -453,8 +572,8 @@ img {
 
 .mazetto-liquid-active {
   background:
-    linear-gradient(135deg, rgba(245, 207, 0, 0.42), rgba(185, 184, 240, 0.18)),
-    rgba(255, 255, 255, 0.06);
+    linear-gradient(135deg, rgba(245, 207, 0, 0.3), rgba(185, 184, 240, 0.12)),
+    rgba(255, 255, 255, 0.05);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
     0 0 22px rgba(245, 207, 0, 0.26);
@@ -575,6 +694,25 @@ img {
 :root[data-theme="light"] .mf-shell .text-white\/40,
 :root[data-theme="light"] .mf-shell .text-white\/35 {
   color: rgba(15, 23, 42, 0.58);
+}
+
+:root[data-theme="light"] .mf-menu-intro .text-white,
+:root[data-theme="light"] .mf-product-card .text-white,
+:root[data-theme="light"] .mf-category-strip .text-white,
+:root[data-theme="light"] .mf-menu-section-heading,
+:root[data-theme="light"] .mf-bottom-nav .text-white {
+  color: #f5f5ef !important;
+}
+
+:root[data-theme="light"] .mf-menu-intro .text-white\/70,
+:root[data-theme="light"] .mf-menu-intro .text-white\/68,
+:root[data-theme="light"] .mf-menu-intro .text-white\/64,
+:root[data-theme="light"] .mf-product-card .text-white\/70,
+:root[data-theme="light"] .mf-product-card .text-white\/68,
+:root[data-theme="light"] .mf-product-card .text-white\/64,
+:root[data-theme="light"] .mf-menu-section-description,
+:root[data-theme="light"] .mf-category-strip .text-white\/82 {
+  color: rgba(245, 245, 239, 0.72) !important;
 }
 
 :root[data-theme="light"] .mf-shell .text-\[\#67E8F9\] {

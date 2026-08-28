@@ -29,7 +29,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
         <header className="mf-topbar inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)] md:fixed">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
             <Link aria-label="MAZETTO FOOD bosh sahifa" className="pressable shrink-0" href="/">
-              <BrandLogo className="h-11 w-[10.5rem] sm:h-12 sm:w-[11.5rem]" priority sizes="190px" />
+              <BrandLogo className="h-10 w-[10rem] sm:h-11 sm:w-[11rem]" priority sizes="180px" />
             </Link>
             <nav className="hidden min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden text-xs font-black text-white/72 md:flex md:gap-2 md:text-sm">
               <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">Menyu</Link>
@@ -83,12 +83,12 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                         transition={{ type: "spring", stiffness: 520, damping: 34 }}
                       />
                     ) : null}
-                    <motion.span animate={{ y: active ? -1 : 0, scale: item.href === "/cart" ? (active ? 1.16 : 1.08) : active ? 1.08 : 1 }} className={`relative ${item.href === "/cart" ? "grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-[#22C55E] to-[#67E8F9] text-[#04130B] shadow-[0_10px_24px_rgba(34,197,94,0.28)]" : active ? "text-[#67E8F9]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
+                    <motion.span animate={{ y: active ? -1 : 0, scale: item.href === "/cart" ? (active ? 1.16 : 1.08) : active ? 1.08 : 1 }} className={`relative ${item.href === "/cart" ? "grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-[#F5CF00] to-[#FFD83D] text-[#07373A] shadow-[0_10px_24px_rgba(245,207,0,0.3)]" : active ? "text-[#F5CF00]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
                       <Icon />
                     </motion.span>
-                    <span className={`relative max-w-full truncate ${active ? "text-[#67E8F9]" : ""}`}>{item.href === "/cart" && items.length ? formatCompact(subtotal) : mobileNavLabel(item.href)}</span>
+                    <span className={`relative max-w-full truncate ${active ? "text-[#F5CF00]" : ""}`}>{item.href === "/cart" && items.length ? formatCompact(subtotal) : mobileNavLabel(item.href)}</span>
                     {item.href === "/cart" && items.length ? (
-                      <span className="absolute right-1.5 top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#67E8F9] px-1 text-[10px] font-black leading-none text-[#04130B] shadow-[0_8px_18px_rgba(103,232,249,0.24)]">
+                      <span className="absolute right-1.5 top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#F5CF00] px-1 text-[10px] font-black leading-none text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.24)]">
                         {formatCartCount(items.length)}
                       </span>
                     ) : null}
@@ -103,7 +103,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
           {toastMessage ? (
             <motion.div
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="mazetto-glass fixed inset-x-4 bottom-[calc(var(--mf-bottom-nav-space)+env(safe-area-inset-bottom)+0.5rem)] z-50 mx-auto max-w-sm rounded-2xl px-4 py-3 text-sm font-black text-[#67E8F9] sm:bottom-5"
+              className="mazetto-glass fixed inset-x-4 bottom-[calc(var(--mf-bottom-nav-space)+env(safe-area-inset-bottom)+0.5rem)] z-50 mx-auto max-w-sm rounded-2xl px-4 py-3 text-sm font-black text-[#F5CF00] sm:bottom-5"
               exit={{ opacity: 0, y: 16, scale: 0.96 }}
               initial={{ opacity: 0, y: 16, scale: 0.96 }}
               transition={{ duration: 0.22 }}
@@ -157,7 +157,7 @@ function isNavActive(pathname: string, href: string): boolean {
 }
 
 function topNavClass(active: boolean): string {
-  return `pressable mazetto-glass-button shrink-0 whitespace-nowrap rounded-full px-3 py-2 transition-colors ${active ? "mazetto-liquid-active text-[#67E8F9]" : "hover:text-white"}`;
+  return `pressable mazetto-glass-button shrink-0 whitespace-nowrap rounded-full px-3 py-2 transition-colors ${active ? "mazetto-liquid-active text-[#F5CF00]" : "hover:text-white"}`;
 }
 
 function CartFlightOverlay({ flight, onDone }: { flight: CartFlight | null; onDone: () => void }) {
@@ -197,7 +197,7 @@ function CartFlightOverlay({ flight, onDone }: { flight: CartFlight | null; onDo
         x: targetCenterX - sourceCenterX,
         y: targetCenterY - sourceCenterY,
       }}
-      className="pointer-events-none fixed z-[60] rounded-2xl object-cover shadow-[0_18px_45px_rgba(34,197,94,0.28)] will-change-transform"
+      className="pointer-events-none fixed z-[60] rounded-2xl object-cover shadow-[0_18px_45px_rgba(245,207,0,0.28)] will-change-transform"
       initial={{ opacity: 0.92, scale: 1, x: 0, y: 0 }}
       onAnimationComplete={onDone}
       src={flight.imageUrl}
