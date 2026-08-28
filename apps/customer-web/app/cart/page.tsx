@@ -58,9 +58,9 @@ function CartReview() {
                   {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-[#17314A]/50">Izoh: {item.notes}</p> : null}
                   <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
                     <div className="flex shrink-0 items-center gap-2">
-                      <button className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity - 1); }} type="button">-</button>
+                      <button aria-label={`${item.productName} kamaytirish`} className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity - 1); }} type="button">-</button>
                       <motion.span animate={{ scale: [1, 1.22, 1] }} className="w-8 text-center font-bold text-[#17314A]" key={item.quantity} transition={{ duration: 0.28, ease: "easeOut" }}>{item.quantity}</motion.span>
-                      <button className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity + 1); }} type="button">+</button>
+                      <button aria-label={`${item.productName} qo'shish`} className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity + 1); }} type="button">+</button>
                     </div>
                     <span className="min-w-0 break-words text-right font-black text-[#0B7F75]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
                   </div>

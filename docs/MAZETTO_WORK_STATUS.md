@@ -185,6 +185,16 @@ Media Service
   - Menu regression QA still showed 35 real product cards, sticky category navigation, no horizontal overflow, and stable bottom navigation at 390, 430, 768, and 1440px
   - Screenshot evidence is stored under `.qa-screenshots/step3-*`; those QA files are local artifacts and are not intended for commit
   - No backend, API, database, Telegram, order, payment, Dokploy, Cloudflare, production deploy, push, or media upload changes were made
+- Customer Web Step 5 final visual and functional regression gate was completed locally:
+  - route matrix covered `/`, `/menu`, `/product/[id]`, `/cart`, `/checkout`, `/orders`, `/orders/[id]`, `/profile`, and `/order-success/[id]`
+  - real production customer menu APIs returned 35 products and 10 categories during QA
+  - cart add, increment, decrement, remove, page total, and header total stayed synchronized
+  - menu search filtered and cleared correctly, from 35 products to 10 matching results and back to 35
+  - configurable product QA confirmed variants and modifiers are rendered without auto-selecting paid additions
+  - checkout authentication remained inside the checkout route and did not redirect the customer to Home
+  - sticky menu navigation, fixed bottom navigation, Uzbek language scan, and no-horizontal-overflow checks passed across the final matrix
+  - one safe accessibility fix was added for cart quantity buttons
+  - no backend, API, database, Telegram, payment, Dokploy, Cloudflare, production deploy, push, or media upload changes were made
 - Customer Telegram phone verification flow was implemented locally:
   - `Customer` now supports optional Telegram link fields: `telegramUserId`, `telegramChatId`, and `telegramLinkedAt`
   - `request-code` keeps the existing response shape and now returns Telegram delivery status: `SENT`, `TELEGRAM_LINK_REQUIRED`, or `PENDING_INTEGRATION`
