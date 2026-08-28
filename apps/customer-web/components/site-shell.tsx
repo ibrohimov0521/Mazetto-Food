@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { BrandSplash } from "./brand-splash";
 import { BrandLogo } from "./brand-logo";
-import { ThemeToggle } from "./theme-toggle";
 import { useCart, type CartFlight } from "../lib/cart";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
@@ -40,12 +39,6 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                 <span className="block min-w-0 text-center">{items.length ? formatCompact(subtotal) : "Savat"}</span>
               </Link>
             </nav>
-            <div className="hidden shrink-0 md:block">
-              <ThemeToggle />
-            </div>
-            <div className="flex h-10 shrink-0 items-center gap-2 md:hidden">
-              <ThemeToggle />
-            </div>
           </div>
           <div className={`hidden h-6 overflow-hidden border-t px-4 transition-colors duration-200 md:block ${customer ? "border-white/10 bg-white/6" : "border-transparent bg-transparent"}`}>
             <div className={`flex h-full items-center justify-center text-center text-xs font-semibold text-[#67E8F9] transition-opacity duration-200 ${customer ? "opacity-100" : "opacity-0"}`} aria-hidden={!customer}>
