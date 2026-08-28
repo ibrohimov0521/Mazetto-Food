@@ -100,6 +100,19 @@ Local screenshot QA evidence is stored under `.qa-screenshots/` with `pixel-lock
 
 Known visual limitation: real product/category media files are still missing from `media.mazettofood.uz`, so product imagery currently uses the branded fallback instead of real food photos.
 
+## Step 3 Shell/Home/Product Rules
+
+The Step 3 local pass tightened only the shared customer shell, Home, and Product Detail. The locked implementation rules are:
+
+- Home uses one primary hero composition fed by real customer-home/product/menu API data. If extra hero slides exist, they may continue below as a secondary real-data feature section.
+- Home category navigation is compact, horizontal, image-backed, and does not reserve empty promotion space when active promotions are absent.
+- Product Detail keeps the teal shell, an ivory configuration surface, compact variants/modifiers, a stable `- 1 +` quantity control, and the yellow `Savatchaga qo'shish` CTA.
+- Product Detail must continue into the full `CustomerMenuSections` menu below the configuration block; do not replace it with recommendation-only cards.
+- The shared header and bottom nav are outside page transition animation wrappers. Page transitions apply only to route content.
+- Product/category images keep the centralized resolver chain: production media URL, then local extracted source media when known, then branded fallback.
+
+Step 3 screenshot evidence uses `.qa-screenshots/step3-*` filenames for Home, Product Detail, and Menu regression at 390, 430, 768, and 1440px.
+
 ## Forbidden Drift
 
 Do not introduce:

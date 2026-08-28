@@ -177,6 +177,14 @@ Media Service
   - browser cart-only QA used `Big Lavash` plus one upsell item and did not submit checkout
   - hero fallback audit confirmed `/customer/home` returns product-based fallback slides when DB hero slides are empty; promotions remain empty
   - no migrations, seed, deploy, Cloudflare, Telegram, media, product price, branch config, or backend/frontend code changes were made
+- Customer Web Step 3 shell/home/product pixel-lock pass was completed locally:
+  - shared customer shell remained fixed-brand only; theme switching was not reintroduced
+  - Home primary hero now uses real customer-home/product/menu API data with the approved petrol-teal, ivory, yellow CTA, real logo, and compact branch selector language
+  - Home category navigation now uses compact image-backed category cards fed by real category data
+  - Product Detail now has a tighter teal media panel, ivory configuration surface, compact variants/modifiers, stable quantity control, yellow `Savatchaga qo'shish` CTA, and the required full menu continuation
+  - Menu regression QA still showed 35 real product cards, sticky category navigation, no horizontal overflow, and stable bottom navigation at 390, 430, 768, and 1440px
+  - Screenshot evidence is stored under `.qa-screenshots/step3-*`; those QA files are local artifacts and are not intended for commit
+  - No backend, API, database, Telegram, order, payment, Dokploy, Cloudflare, production deploy, push, or media upload changes were made
 - Customer Telegram phone verification flow was implemented locally:
   - `Customer` now supports optional Telegram link fields: `telegramUserId`, `telegramChatId`, and `telegramLinkedAt`
   - `request-code` keeps the existing response shape and now returns Telegram delivery status: `SENT`, `TELEGRAM_LINK_REQUIRED`, or `PENDING_INTEGRATION`

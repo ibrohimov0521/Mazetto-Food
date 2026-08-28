@@ -6,6 +6,7 @@ import { BrandLogo } from "../components/brand-logo";
 import { BranchPicker } from "../components/branch-picker";
 import { CustomerAuthPanel } from "../components/customer-auth-panel";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
+import { MediaImage } from "../components/media-image";
 import { MotionDiv, cardMotion, pageMotion, sectionMotion } from "../components/motion-primitives";
 import { ProductCard } from "../components/product-card";
 import { SiteShell } from "../components/site-shell";
@@ -62,6 +63,15 @@ export default function Home() {
   const featured = useMemo(() => products.filter((product) => product.isRecommended).slice(0, 3), [products]);
   const combos = useMemo(() => products.filter((product) => product.isCombo).slice(0, 3), [products]);
   const popular = useMemo(() => products.filter((product) => !product.isCombo).slice(0, 6), [products]);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId), [branchId, branches]);
+  const primaryHero = home.heroSlides[0];
+  const heroProduct = products.find((product) => product.id === primaryHero?.product?.id) ?? featured[0] ?? popular[0] ?? products[0];
+  const heroImageUrl = primaryHero?.imageUrl ?? primaryHero?.product?.imageUrl ?? heroProduct?.imageUrl;
+  const heroTitle = primaryHero?.title ?? "Mazali taom, qulay buyurtma!";
+  const heroSubtitle =
+    primaryHero?.subtitle ??
+    heroProduct?.description ??
+    "Lavash, burger, setlar va ichimliklarni eng yaqin filialdan tez buyurtma qiling.";
 
   function selectBranch(nextBranchId: string) {
     setBranchId(nextBranchId);
@@ -88,46 +98,56 @@ export default function Home() {
 
   return (
     <SiteShell>
-      <MotionDiv {...pageMotion} className="mx-auto w-full max-w-6xl px-4 pb-3 pt-5 lg:pt-7">
-        <section className="mf-hero-shell mf-organic grid min-w-0 overflow-hidden rounded-[2rem] border border-white/14 bg-[linear-gradient(135deg,rgba(245,245,239,0.96),rgba(245,245,239,0.86))] shadow-[0_24px_70px_rgba(0,0,0,0.26)] lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center">
-          <div className="min-w-0 p-5 py-7 sm:p-8 lg:p-10">
-            <div className="mb-4 w-[min(15rem,70vw)] lg:hidden">
-              <BrandLogo className="h-auto w-full" priority sizes="240px" />
+      <MotionDiv {...pageMotion} className="mx-auto w-full max-w-6xl px-3 pb-3 pt-4 sm:px-4 lg:pt-7">
+        <section className="mf-hero-shell mf-home-hero mf-organic grid min-w-0 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-stretch">
+          <div className="min-w-0 px-4 pb-4 pt-5 sm:p-7 lg:p-9">
+            <div className="mx-auto mb-3 w-[min(18rem,78vw)] lg:hidden">
+              <BrandLogo className="h-auto w-full drop-shadow-[0_18px_42px_rgba(0,0,0,0.24)]" priority sizes="288px" />
             </div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#0B7F75]">Issiq fast-fud yetkazib berish</p>
-            <h1 className="mt-3 max-w-2xl text-4xl font-black leading-tight text-[#17314A] sm:text-5xl lg:text-6xl">
-              Mazali taom,
-              <span className="block text-[#0B8F83]">qulay buyurtma!</span>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#0B7F75]">MAZETTO FOOD</p>
+            <h1 className="mt-2 max-w-2xl text-[2.45rem] font-black leading-[0.98] text-[#17314A] sm:text-5xl lg:text-6xl">
+              {heroTitle}
             </h1>
-            <p className="mt-4 max-w-xl text-base font-semibold leading-7 text-[#17314A]/70 sm:text-lg">
-              Lavash, burger, setlar va ichimliklarni eng yaqin filialdan tez buyurtma qiling.
+            <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-[#17314A]/72 sm:text-base sm:leading-7">
+              {heroSubtitle}
             </p>
 
-            <div className="mt-6 grid max-w-xl min-w-0 gap-2 rounded-[1.6rem] border border-[#0B7F75]/12 bg-white/78 p-2.5 shadow-[0_18px_45px_rgba(0,79,85,0.14)] sm:grid-cols-[minmax(0,1fr)_auto]">
-            <BranchPicker branches={branches} disabled={loading} onChange={selectBranch} value={branchId} />
-            <Link className="pressable ripple mf-button-primary px-5 py-3 text-center font-black" href={branchId ? `/menu?branchId=${branchId}` : "/menu"}>
-              Buyurtma berish
-            </Link>
+            <div className="mt-5 grid max-w-xl min-w-0 gap-2 rounded-[1.45rem] border border-[#0B7F75]/12 bg-white/82 p-2 shadow-[0_16px_42px_rgba(0,79,85,0.14)] sm:grid-cols-[minmax(0,1fr)_auto]">
+              <BranchPicker branches={branches} disabled={loading} onChange={selectBranch} value={branchId} />
+              <Link className="pressable ripple mf-button-primary grid min-h-12 place-items-center px-5 py-3 text-center font-black" href={branchId ? `/menu?branchId=${branchId}` : "/menu"}>
+                Buyurtma berish
+              </Link>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-[#17314A]/76 sm:text-sm">
-              <span className="rounded-full bg-[#0B8F83]/10 px-3 py-2 text-[#0B7F75]">Tez oshxona jarayoni</span>
-              <span className="rounded-full bg-[#F5CF00]/24 px-3 py-2">Yetkazib berish yoki olib ketish</span>
-              <span className="rounded-full bg-[#B9B8F0]/24 px-3 py-2">Bonusli profil</span>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-black text-[#17314A]/76 sm:text-xs">
+              <span className="rounded-full bg-[#0B8F83]/10 px-3 py-2 text-[#0B7F75]">{selectedBranch?.name ?? "MAZETTO filial"}</span>
+              {selectedBranch?.address ? <span className="rounded-full bg-[#F5CF00]/24 px-3 py-2">{selectedBranch.address}</span> : null}
+              <span className="rounded-full bg-[#B9B8F0]/24 px-3 py-2">Yetkazib berish yoki olib ketish</span>
             </div>
           </div>
-          <MotionDiv {...cardMotion} className="relative min-h-[19rem] overflow-hidden bg-[radial-gradient(circle_at_50%_32%,rgba(245,207,0,0.22),transparent_17rem),linear-gradient(135deg,rgba(8,104,106,0.92),rgba(11,143,131,0.72))] p-5 lg:min-h-[28rem]">
-            <div className="absolute right-5 top-5 hidden w-[min(22rem,44vw)] lg:block">
-              <BrandLogo className="h-auto w-full drop-shadow-[0_18px_42px_rgba(0,0,0,0.24)]" priority sizes="360px" />
+          <MotionDiv {...cardMotion} className="mf-home-hero-media relative min-h-[17rem] overflow-hidden p-4 sm:min-h-[20rem] lg:min-h-[28rem]">
+            <div className="absolute right-5 top-5 hidden w-[min(20rem,38vw)] lg:block">
+              <BrandLogo className="h-auto w-full drop-shadow-[0_18px_42px_rgba(0,0,0,0.26)]" priority sizes="340px" />
             </div>
-            <div className="absolute inset-x-6 bottom-6 rounded-[1.6rem] border border-white/16 bg-white/14 p-4 text-white shadow-[0_20px_54px_rgba(0,0,0,0.18)] backdrop-blur-md">
-              <p className="text-sm font-black uppercase text-[#F5CF00]">Bugungi ritm</p>
-              <h2 className="mt-2 text-3xl font-black">Tez, issiq, qulay.</h2>
-              <p className="mt-2 text-sm font-semibold leading-6 text-white/74">Menyudan tanlang, savatga qo'shing va buyurtmani bir necha bosishda yuboring.</p>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <Metric value={formatMoney(featured[0]?.sellingPrice ?? popular[0]?.sellingPrice ?? 0)} label="Boshlang'ich narx" />
-                <Metric value={`${featured[0]?.preparationTime ?? popular[0]?.preparationTime ?? 10} daq`} label="Tayyorlanish" />
-              </div>
+            <div className="absolute inset-x-6 top-5 hidden rounded-full border border-white/12 bg-white/12 px-4 py-2 text-center text-xs font-black uppercase tracking-[0.18em] text-[#F5CF00] backdrop-blur lg:block">
+              est. 2025
+            </div>
+            <div className="mx-auto mt-1 w-[min(19rem,84vw)] lg:absolute lg:bottom-8 lg:left-7 lg:w-[min(27rem,46vw)]">
+              <MediaImage
+                alt={heroProduct?.name ?? "MAZETTO FOOD taomi"}
+                aspectClassName="aspect-[1.18/1]"
+                className="floating-image rounded-[2rem] shadow-[0_24px_64px_rgba(0,0,0,0.28)]"
+                fit="cover"
+                imageClassName="scale-[1.18]"
+                priority
+                sizes="(max-width: 1024px) 84vw, 42vw"
+                src={heroImageUrl}
+              />
+            </div>
+            <div className="absolute bottom-5 right-5 rounded-[1.35rem] border border-white/18 bg-white/18 px-4 py-3 text-white shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-md">
+              <p className="text-[11px] font-black uppercase text-[#F5CF00]">Bugungi tanlov</p>
+              <p className="mt-1 max-w-36 truncate text-sm font-black">{heroProduct?.name ?? "Issiq menyu"}</p>
+              <p className="mt-1 text-sm font-black text-[#F5CF00]">{formatMoney(heroProduct?.sellingPrice ?? 0)}</p>
             </div>
           </MotionDiv>
         </section>
@@ -145,14 +165,22 @@ export default function Home() {
         </section>
       ) : null}
 
-      {loading ? <HeroSkeleton /> : <HomepageHeroSlider slides={home.heroSlides} />}
+      {loading ? <HeroSkeleton /> : home.heroSlides.length > 1 ? <HomepageHeroSlider slides={home.heroSlides.slice(1)} /> : null}
       <PromotionSlider promotions={home.promotions} />
 
       <MotionDiv {...sectionMotion} className="mx-auto w-full max-w-6xl px-4 pb-8">
-        <div className="no-scrollbar flex max-w-full gap-3 overflow-x-auto pb-2">
-          {loading ? Array.from({ length: 5 }, (_, index) => <div className="skeleton h-14 w-32 shrink-0 rounded-xl" key={index} />) : categories.map((category) => (
-            <Link className="pressable ripple mazetto-glass-chip shrink-0 rounded-2xl px-5 py-4 font-black text-white hover:border-[#22C55E]/60 hover:text-[#67E8F9]" href={`/menu?category=${category.id}`} key={category.id}>
-              {category.name}
+        <div className="no-scrollbar mf-home-category-row flex max-w-full gap-2.5 overflow-x-auto pb-2 sm:gap-3">
+          {loading ? Array.from({ length: 5 }, (_, index) => <div className="skeleton h-24 w-24 shrink-0 rounded-[1.35rem]" key={index} />) : categories.map((category) => (
+            <Link className="pressable ripple mf-home-category-card shrink-0" href={`/menu?category=${category.id}`} key={category.id}>
+              <MediaImage
+                alt={category.name}
+                aspectClassName="h-14 w-14"
+                className="rounded-full"
+                fallbackLabel={category.name}
+                sizes="56px"
+                src={category.imageUrl}
+              />
+              <span>{category.name}</span>
             </Link>
           ))}
         </div>
@@ -201,15 +229,6 @@ function getCategoryRank(category: Category): number {
   }
 
   return 0;
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="mazetto-glass-chip rounded-2xl p-3">
-      <p className="text-xs font-black uppercase text-white/50">{label}</p>
-      <p className="mt-1 font-black text-[#67E8F9]">{value}</p>
-    </div>
-  );
 }
 
 function HeroSkeleton() {
