@@ -10,16 +10,20 @@ MAZETTO FOOD should feel like a premium Uzbek fast-food ordering product: compac
 
 ## Reference Status
 
-The current master prompt describes approved reference images, but no actual image or logo asset files were present in the task attachment or repository during this audit. Until those files are supplied, implementation must follow the written reference description and clearly report that pixel-locked logo integration is blocked by the missing approved asset.
+The approved reference pack is present in `docs/design/references/` and is now the visual source of truth for customer-web work.
 
-Expected production logo asset:
+Verified reference assets:
 
-- Transparent high-resolution MAZETTO FOOD logo.
-- "MAZETTO" in 3D lavender, light violet, or periwinkle letters.
-- "FOOD" in 3D bright golden yellow letters.
-- Small "est. 2025" text.
+- `00_mazetto-food-logo-4k-transparent.png` - 4096x1791 RGBA master logo.
+- `00_mazetto-food-logo-web-2048.webp` - 2048x895 RGBA practical website logo.
+- `00_mazetto-food-logo-web-1024.webp` - 1024x448 RGBA small website logo.
+- `01_home-reference.png` - 941x1672 home visual reference.
+- `02_menu-reference.png` - 941x1672 menu visual reference.
+- `03_product-detail-reference.png` - 941x1672 product detail visual reference.
+- `04_cart-checkout-reference.png` - 941x1672 cart/checkout/success visual reference.
+- `05_profile-orders-telegram-reference.png` - 941x1672 profile/orders/Telegram concept reference.
 
-Do not rebuild the logo in HTML text and call it final. A text fallback may only be temporary while the real logo asset is missing.
+The website uses the practical logo copy at `apps/customer-web/public/brand/mazetto-food-logo.webp`. Do not recreate the brand as plain HTML text where the actual logo should appear.
 
 ## Palette
 
@@ -83,6 +87,19 @@ Fresh green leaves and subtle botanical patterns are allowed when they support t
 | Orders | compact real order cards and detail pages, no fake status tabs |
 | Profile | compact customer data, readable actions, no giant bonus card |
 
+## Current Pixel-Lock Pass
+
+The first local pass integrated the approved logo and moved Home, Menu, Product Detail, Cart, Checkout, Success, Profile, and Orders toward the locked teal/yellow/ivory visual system while preserving existing customer-web routes, API integration, cart state, auth flow, checkout submission, and order history behavior.
+
+Local screenshot QA evidence is stored under `.qa-screenshots/` with `pixel-lock-*` filenames. The QA pass confirmed:
+
+- 390px Menu has 35 real product cards, sticky category navigation, fixed bottom nav, and no document/body horizontal overflow after the category-strip fix.
+- 390px Product Detail loads a real product from the production customer API and keeps full menu continuation below the product configuration.
+- 390px Cart, Checkout, and Orders have no horizontal overflow and keep the bottom nav stable.
+- 1440px Home, Menu, Cart, and Profile have no horizontal overflow.
+
+Known visual limitation: real product/category media files are still missing from `media.mazettofood.uz`, so product imagery currently uses the branded fallback instead of real food photos.
+
 ## Forbidden Drift
 
 Do not introduce:
@@ -110,4 +127,3 @@ The visual redesign must not duplicate or replace:
 - CustomerOrder / Order / KitchenTicket flow
 - payment architecture
 - PostgreSQL schema unless an additive migration is explicitly needed
-

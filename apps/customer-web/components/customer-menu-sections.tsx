@@ -10,9 +10,11 @@ import type { Category, Product } from "../lib/types";
 const branchStorageKey = "mazetto.customer.branchId";
 
 export function CustomerMenuSections({
+  compactTop = false,
   intro = true,
   title = "Bugun nima buyurtma qilamiz?",
 }: {
+  compactTop?: boolean;
   intro?: boolean;
   title?: string;
 }) {
@@ -180,22 +182,22 @@ export function CustomerMenuSections({
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pb-8 pt-4 md:pt-5">
+    <div className={`mx-auto w-full max-w-6xl px-4 pb-8 ${compactTop ? "pt-1" : "pt-4 md:pt-5"}`}>
       {intro ? (
-        <MotionDiv {...pageMotion} className="mf-card mazetto-liquid-surface mf-organic p-4 sm:p-5">
+        <MotionDiv {...pageMotion} className="mf-menu-intro mf-organic p-4 sm:p-5">
           <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,320px)] lg:items-end">
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase text-[#67E8F9]">MAZETTO FOOD menyusi</p>
+              <p className="text-xs font-black uppercase text-[#F5CF00]">MAZETTO FOOD menyusi</p>
               <h1 className="mt-1 text-3xl font-black text-white sm:text-4xl">{title}</h1>
-              <p className="mt-2 text-sm leading-6 text-white/60">Lavash, burger, tovuqli taomlar, setlar, souslar va ichimliklarni tez toping.</p>
+              <p className="mt-2 text-sm font-semibold leading-6 text-white/68">Lavash, burger, tovuqli taomlar, setlar, souslar va ichimliklarni tez toping.</p>
             </div>
             <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
           </div>
         </MotionDiv>
       ) : (
-        <div className="mb-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,320px)] sm:items-end">
+        <div className={`${compactTop ? "mb-3" : "mb-4"} grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,320px)] sm:items-end`}>
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase text-[#67E8F9]">To'liq menyu</p>
+            <p className="text-xs font-black uppercase text-[#F5CF00]">To'liq menyu</p>
             <h2 className="mt-1 text-2xl font-black text-white">{title}</h2>
           </div>
           <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
@@ -203,8 +205,8 @@ export function CustomerMenuSections({
       )}
 
       {!loading && !error && menuSections.length ? (
-        <div className="sticky top-[env(safe-area-inset-top)] z-20 -mx-4 mt-4 px-4 py-2 md:top-24" data-menu-category-nav="true">
-          <div className="no-scrollbar mazetto-glass-nav flex max-w-full gap-2 overflow-x-auto rounded-[1.15rem] p-1.5" ref={tabScrollerRef}>
+        <div className="sticky top-[env(safe-area-inset-top)] z-20 -mx-4 mt-4 min-w-0 px-4 py-2 md:top-24" data-menu-category-nav="true">
+          <div className="no-scrollbar mf-category-strip flex w-full min-w-0 max-w-full gap-2 overflow-x-auto rounded-[1.15rem] p-1.5" ref={tabScrollerRef}>
             {menuSections.map(({ category }) => (
               <button
                 className={tabClass(activeCategoryId === category.id)}
@@ -242,12 +244,12 @@ export function CustomerMenuSections({
               >
                 <div className="mb-3 flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-xs font-black uppercase text-[#67E8F9]">{products.length} ta mahsulot</p>
+                    <p className="text-xs font-black uppercase text-[#F5CF00]">{products.length} ta mahsulot</p>
                     <h2 className="text-2xl font-black text-white">{categoryLabel(category)}</h2>
                   </div>
                   {category.description ? <p className="hidden max-w-md text-right text-sm font-semibold text-white/56 md:block">{category.description}</p> : null}
                 </div>
-                <div className="grid min-w-0 grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
+                <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
                   {products.map((product) => <ProductCard compact key={product.id} product={product} />)}
                 </div>
               </section>
@@ -314,7 +316,7 @@ function categoryLabel(category: Category): string {
 }
 
 function tabClass(active: boolean): string {
-  return `pressable ripple shrink-0 rounded-2xl px-3.5 py-2 text-sm font-black ${active ? "mf-button-primary" : "mazetto-glass-chip text-white/76 hover:text-white"}`;
+  return `pressable ripple shrink-0 rounded-2xl px-3.5 py-2 text-sm font-black ${active ? "mf-button-primary" : "mf-category-tab text-white/82 hover:text-white"}`;
 }
 
 function ProductSkeleton() {

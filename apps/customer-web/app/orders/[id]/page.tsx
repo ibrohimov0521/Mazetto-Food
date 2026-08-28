@@ -166,10 +166,10 @@ function OrderDetail() {
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid min-w-0 gap-5">
-        <section className="mf-card p-5">
-          <p className="text-sm font-black uppercase text-[#67E8F9]">Buyurtma tafsiloti</p>
-          <h1 className="mt-2 break-words text-3xl font-black text-white">{order.order.orderNumber}</h1>
-          <p className="mt-2 text-sm font-semibold text-white/60">
+        <section className="mf-checkout-card p-5">
+          <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma tafsiloti</p>
+          <h1 className="mt-2 break-words text-3xl font-black text-[#17314A]">{order.order.orderNumber}</h1>
+          <p className="mt-2 text-sm font-semibold text-[#17314A]/60">
             {new Date(order.createdAt).toLocaleString("uz-UZ")} · {typeLabels[order.type] ?? order.type}
           </p>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -179,17 +179,17 @@ function OrderDetail() {
           </div>
         </section>
 
-        <MotionDiv {...sectionMotion} className="mf-card p-5">
-          <h2 className="text-2xl font-black text-white">Mahsulotlar</h2>
+        <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
+          <h2 className="text-2xl font-black text-[#17314A]">Mahsulotlar</h2>
           <div className="mt-4 grid gap-3">
             {order.order.items.map((item) => (
-              <article className="mf-card-soft min-w-0 p-4" key={item.id}>
+              <article className="mf-cart-row min-w-0 p-4" key={item.id}>
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="break-words font-black text-white">{Number(item.quantity)}x {localizeMenuName(item.productName)}</h3>
-                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-white/58">{localizeMenuName(item.variantName)}</p> : null}
+                    <h3 className="break-words font-black text-[#17314A]">{Number(item.quantity)}x {localizeMenuName(item.productName)}</h3>
+                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-[#17314A]/58">{localizeMenuName(item.variantName)}</p> : null}
                   </div>
-                  <span className="shrink-0 font-black text-[#67E8F9]">{formatMoney(item.totalPrice)}</span>
+                  <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
                 </div>
                 {modifiersFor(item.modifierSnapshot).length ? (
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -208,9 +208,9 @@ function OrderDetail() {
       </div>
 
       <aside className="grid min-w-0 content-start gap-5">
-        <section className="mf-card p-5">
-          <h2 className="text-2xl font-black text-white">Xulosa</h2>
-          <div className="mt-4 grid gap-3 text-sm font-bold text-white/68">
+        <section className="mf-checkout-card p-5">
+          <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
+          <div className="mt-4 grid gap-3 text-sm font-bold text-[#17314A]/68">
             <SummaryRow label="Filial" value={order.branch?.name ?? "Ko'rsatilmagan"} />
             {order.branch?.address ? <SummaryRow label="Manzil" value={order.branch.address} /> : null}
             <SummaryRow label="Turi" value={typeLabels[order.type] ?? order.type} />
@@ -219,8 +219,8 @@ function OrderDetail() {
           </div>
         </section>
 
-        <section className="mf-card p-5">
-          <h2 className="text-xl font-black text-white">To'lov holati</h2>
+        <section className="mf-checkout-card p-5">
+          <h2 className="text-xl font-black text-[#17314A]">To'lov holati</h2>
           <div className="mt-4 grid gap-2">
             {order.order.payments?.length ? order.order.payments.map((payment) => (
               <div className="mf-card-soft p-3 text-sm font-bold text-white" key={payment.id}>
@@ -240,9 +240,9 @@ function OrderDetail() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-card-soft min-w-0 p-4">
-      <p className="text-xs font-black uppercase text-[#67E8F9]">{label}</p>
-      <p className="mt-2 break-words text-lg font-black text-white">{value}</p>
+    <div className="mf-cart-row min-w-0 p-4">
+      <p className="text-xs font-black uppercase text-[#0B7F75]">{label}</p>
+      <p className="mt-2 break-words text-lg font-black text-[#17314A]">{value}</p>
     </div>
   );
 }
@@ -250,8 +250,8 @@ function Metric({ label, value }: { label: string; value: string }) {
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 justify-between gap-3 border-b border-white/10 pb-3 last:border-b-0 last:pb-0">
-      <span className="shrink-0 text-white/52">{label}</span>
-      <span className="min-w-0 break-words text-right text-white">{value}</span>
+      <span className="shrink-0 text-[#17314A]/52">{label}</span>
+      <span className="min-w-0 break-words text-right text-[#17314A]">{value}</span>
     </div>
   );
 }

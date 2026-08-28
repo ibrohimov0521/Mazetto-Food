@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { BrandSplash } from "./brand-splash";
+import { BrandLogo } from "./brand-logo";
 import { ThemeToggle } from "./theme-toggle";
 import { useCart, type CartFlight } from "../lib/cart";
 
@@ -27,8 +28,8 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
         <BrandSplash enabled={pathname === "/"} />
         <header className="mf-topbar inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)] md:fixed">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
-            <Link className="pressable shrink-0 whitespace-nowrap text-lg font-black tracking-normal text-[#67E8F9] sm:text-xl" href="/">
-              MAZETTO FOOD
+            <Link aria-label="MAZETTO FOOD bosh sahifa" className="pressable shrink-0" href="/">
+              <BrandLogo className="h-11 w-[10.5rem] sm:h-12 sm:w-[11.5rem]" priority sizes="190px" />
             </Link>
             <nav className="hidden min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden text-xs font-black text-white/72 md:flex md:gap-2 md:text-sm">
               <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">Menyu</Link>

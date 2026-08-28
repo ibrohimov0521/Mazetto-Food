@@ -36,9 +36,9 @@ export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) 
   const href = activeSlide.targetUrl ?? (activeSlide.product ? `/product/${activeSlide.product.id}` : "/menu");
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
-      <div className="mazetto-liquid-surface grid min-h-[33rem] min-w-0 overflow-hidden rounded-[2rem] lg:min-h-[30rem] lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <div className="relative z-10 flex min-w-0 flex-col justify-between gap-8 p-5 sm:p-7 lg:p-9">
+    <section className="mx-auto max-w-6xl px-4 py-5 lg:py-8">
+      <div className="mf-home-feature grid min-w-0 overflow-hidden rounded-[1.75rem] lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+        <div className="relative z-10 flex min-w-0 flex-col justify-between gap-5 p-5 sm:p-7 lg:p-8">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={activeSlide.id}
@@ -52,15 +52,15 @@ export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) 
                   {activeSlide.badge}
                 </span>
               ) : null}
-              <h1 className="mt-5 break-words text-4xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
+              <h1 className="mt-4 break-words text-3xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
                 {activeSlide.title}
               </h1>
-              <p className="mt-4 max-w-xl text-base leading-7 text-white/64 sm:text-lg">
+              <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-white/68 sm:text-lg sm:leading-7">
                 {activeSlide.subtitle ?? "MAZETTO FOOD menyusidan issiq va tez tayyorlanadigan taom."}
               </p>
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <motion.div {...buttonMotion}>
-                  <Link className="pressable ripple mf-button-primary inline-flex px-6 py-4 text-sm font-black" href={href}>
+                  <Link className="pressable ripple mf-button-primary inline-flex px-5 py-3 text-sm font-black sm:px-6 sm:py-4" href={href}>
                     {activeSlide.ctaLabel ?? "Buyurtma berish"}
                   </Link>
                 </motion.div>
@@ -98,7 +98,7 @@ export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) 
           </div>
         </div>
 
-        <div className="relative min-h-[19rem] overflow-hidden lg:min-h-full">
+        <div className="relative min-h-[15rem] overflow-hidden sm:min-h-[18rem] lg:min-h-full">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               drag="x"
@@ -117,7 +117,7 @@ export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) 
             >
               <MediaImage
                 alt={activeSlide.title}
-                aspectClassName="min-h-[19rem] lg:min-h-[30rem]"
+                aspectClassName="min-h-[15rem] sm:min-h-[18rem] lg:min-h-[26rem]"
                 className="h-full"
                 imageClassName="scale-[1.02]"
                 priority

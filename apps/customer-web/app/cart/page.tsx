@@ -24,19 +24,19 @@ function CartReview() {
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
-      <div className="mf-card min-w-0 p-5">
+      <div className="mf-checkout-card min-w-0 p-5">
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black uppercase text-[#67E8F9]">Savat</p>
-            <h1 className="mt-1 text-3xl font-black text-white">Buyurtmangiz</h1>
+            <p className="text-sm font-black uppercase text-[#0B7F75]">Savat</p>
+            <h1 className="mt-1 text-3xl font-black text-[#17314A]">Buyurtmangiz</h1>
           </div>
-          <span className="basis-full rounded-2xl bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9] sm:basis-auto">{items.length} ta mahsulot</span>
+          <span className="basis-full rounded-2xl bg-[#F5CF00]/26 px-4 py-2 text-sm font-black text-[#0A4F55] sm:basis-auto">{items.length} ta mahsulot</span>
         </div>
 
         {items.length ? (
           <MotionDiv {...sectionMotion} className="mt-5 grid gap-3">
             {items.map((item) => (
-              <div className="mf-card-soft grid min-w-0 grid-cols-[96px_minmax(0,1fr)] gap-3 p-3" key={item.key}>
+              <div className="mf-cart-row grid min-w-0 grid-cols-[86px_minmax(0,1fr)] gap-3 p-3 sm:grid-cols-[96px_minmax(0,1fr)]" key={item.key}>
                 <MediaImage
                   alt={item.productName}
                   aspectClassName="h-24 w-24"
@@ -47,22 +47,22 @@ function CartReview() {
                 <div className="min-w-0">
                   <div className="flex min-w-0 justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="truncate font-bold text-white">{localizeMenuName(item.productName)}</h2>
-                      <p className="text-sm text-white/52">{localizeMenuName(item.variantName) || "Oddiy"}</p>
+                      <h2 className="truncate font-bold text-[#17314A]">{localizeMenuName(item.productName)}</h2>
+                      <p className="text-sm text-[#17314A]/52">{localizeMenuName(item.variantName) || "Oddiy"}</p>
                     </div>
                     <button className="pressable shrink-0 text-sm font-bold text-red-400" onClick={() => removeItem(item.key)} type="button">
                       O'chirish
                     </button>
                   </div>
-                  {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#67E8F9]">{item.modifiers.map((modifier) => localizeMenuName(modifier.name)).join(", ")}</p> : null}
-                  {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-white/50">Izoh: {item.notes}</p> : null}
+                  {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#0B7F75]">{item.modifiers.map((modifier) => localizeMenuName(modifier.name)).join(", ")}</p> : null}
+                  {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-[#17314A]/50">Izoh: {item.notes}</p> : null}
                   <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
                     <div className="flex shrink-0 items-center gap-2">
                       <button className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity - 1); }} type="button">-</button>
-                      <motion.span animate={{ scale: [1, 1.22, 1] }} className="w-8 text-center font-bold text-white" key={item.quantity} transition={{ duration: 0.28, ease: "easeOut" }}>{item.quantity}</motion.span>
+                      <motion.span animate={{ scale: [1, 1.22, 1] }} className="w-8 text-center font-bold text-[#17314A]" key={item.quantity} transition={{ duration: 0.28, ease: "easeOut" }}>{item.quantity}</motion.span>
                       <button className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity + 1); }} type="button">+</button>
                     </div>
-                    <span className="min-w-0 break-words text-right font-black text-[#67E8F9]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
+                    <span className="min-w-0 break-words text-right font-black text-[#0B7F75]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
                   </div>
                 </div>
               </div>
@@ -80,8 +80,8 @@ function CartReview() {
         <CartUpsell />
       </div>
 
-      <aside className="mf-card min-w-0 h-fit p-5">
-        <h2 className="text-2xl font-black text-white">Xulosa</h2>
+      <aside className="mf-checkout-card min-w-0 h-fit p-5">
+        <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
         {!customer?.accessToken ? (
           <div className="mt-4 rounded-2xl bg-[#67E8F9]/14 px-4 py-3 text-sm font-bold text-[#67E8F9]">
             Buyurtma berish uchun telefon raqamingizni tasdiqlang.

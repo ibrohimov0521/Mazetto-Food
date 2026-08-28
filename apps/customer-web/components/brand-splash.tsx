@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { BrandLogo } from "./brand-logo";
 
 const splashKey = "mazetto.customer.splash.seen";
 
@@ -36,23 +37,16 @@ export function BrandSplash({ enabled }: { enabled: boolean }) {
             transition={{ delay: 0.16, duration: 0.62, type: "spring", stiffness: 220, damping: 24 }}
           >
             <motion.div
-              animate={{ boxShadow: ["0 0 0 rgba(34,197,94,0)", "0 0 70px rgba(34,197,94,0.36)", "0 0 28px rgba(34,197,94,0.22)"] }}
-              className="mx-auto grid h-24 w-24 place-items-center rounded-[2rem] bg-gradient-to-br from-[#22C55E] to-[#67E8F9] text-4xl font-black text-[#04130B]"
-              transition={{ duration: 1.2, ease: "easeOut" }}
-            >
-              M
-            </motion.div>
-            <motion.h1
               animate={{ opacity: 1, y: 0 }}
-              className="mt-6 text-3xl font-black tracking-normal text-white"
+              className="mx-auto w-[min(20rem,82vw)]"
               initial={{ opacity: 0, y: 10 }}
-              transition={{ delay: 0.38, duration: 0.38 }}
+              transition={{ delay: 0.26, duration: 0.46 }}
             >
-              MAZETTO FOOD
-            </motion.h1>
+              <BrandLogo className="h-auto w-full drop-shadow-[0_22px_48px_rgba(245,207,0,0.22)]" priority sizes="320px" />
+            </motion.div>
             <motion.div
               animate={{ scaleX: 1 }}
-              className="mx-auto mt-4 h-1 w-32 origin-left rounded-full bg-gradient-to-r from-[#22C55E] to-[#67E8F9]"
+              className="mx-auto mt-5 h-1.5 w-32 origin-left rounded-full bg-gradient-to-r from-[#F5CF00] to-[#B9B8F0]"
               initial={{ scaleX: 0 }}
               transition={{ delay: 0.58, duration: 0.52, ease: [0.22, 1, 0.36, 1] }}
             />

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { BrandLogo } from "../../../components/brand-logo";
 import { MotionDiv, hapticTap, pageMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
@@ -126,16 +127,17 @@ function OrderSuccess() {
   }
 
   return (
-    <section className="mx-auto max-w-3xl px-4 py-8">
-      <MotionDiv {...pageMotion} className="mf-card overflow-hidden">
-        <div className="bg-gradient-to-br from-[#22C55E] to-[#67E8F9] px-6 py-8 text-center text-[#04130B]">
-          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-white/20 text-4xl font-black">✓</div>
-          <p className="mt-5 text-sm font-black uppercase text-[#052012]/70">Buyurtma qabul qilindi</p>
+      <section className="mx-auto max-w-3xl px-4 py-8">
+      <MotionDiv {...pageMotion} className="overflow-hidden rounded-[2rem] border border-white/14 bg-[#005B5E] shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+        <div className="px-6 py-8 text-center text-white">
+          <BrandLogo className="mx-auto h-auto w-[min(17rem,72vw)]" priority sizes="280px" />
+          <div className="mx-auto mt-6 grid h-20 w-20 place-items-center rounded-full bg-[#F5CF00] text-4xl font-black text-[#07373A] shadow-[0_18px_48px_rgba(245,207,0,0.32)]">✓</div>
+          <p className="mt-5 text-sm font-black uppercase text-[#F5CF00]">Buyurtma qabul qilindi</p>
           <h1 className="mt-2 text-3xl font-black">{order.order.orderNumber}</h1>
-          <p className="mt-2 text-sm font-semibold text-[#052012]/70">Oshxonaga yuborildi, holatini real vaqtda kuzatishingiz mumkin.</p>
+          <p className="mt-2 text-sm font-semibold text-white/74">Oshxonaga yuborildi, holatini real vaqtda kuzatishingiz mumkin.</p>
         </div>
 
-        <div className="grid gap-4 p-5">
+        <div className="grid gap-4 rounded-t-[2rem] bg-[#F5F5EF] p-5">
           <div className="grid gap-3 sm:grid-cols-3">
             <Metric label="Holat" value={statusLabel(order.order.status ?? order.status)} />
             <Metric label="Taxminiy vaqt" value={estimate} />
@@ -178,9 +180,9 @@ function OrderSuccess() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-card-soft p-4">
-      <p className="text-xs font-black uppercase text-[#67E8F9]">{label}</p>
-      <p className="mt-2 text-lg font-black text-white">{value}</p>
+    <div className="mf-cart-row p-4">
+      <p className="text-xs font-black uppercase text-[#0B7F75]">{label}</p>
+      <p className="mt-2 text-lg font-black text-[#17314A]">{value}</p>
     </div>
   );
 }

@@ -98,7 +98,7 @@ function MediaFallback({ label }: { label: string }) {
             <path d="M15.5 8.5h.01" stroke="currentColor" strokeLinecap="round" strokeWidth="3" />
           </svg>
         </div>
-        <p className="mt-3 text-xs font-black text-[#F5F5EF]/78">{label}</p>
+        <p className="mt-3 line-clamp-2 text-xs font-black leading-4 text-[#F5F5EF]/78">{label}</p>
       </div>
     </div>
   );

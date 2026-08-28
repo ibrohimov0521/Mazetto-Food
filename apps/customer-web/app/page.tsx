@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BrandLogo } from "../components/brand-logo";
 import { BranchPicker } from "../components/branch-picker";
 import { CustomerAuthPanel } from "../components/customer-auth-panel";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
@@ -87,39 +88,49 @@ export default function Home() {
 
   return (
     <SiteShell>
-      <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-4 pb-3 pt-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:pt-7">
-        <div className="min-w-0 py-2">
-          <p className="text-sm font-black uppercase tracking-[0.16em] text-[#67E8F9]">Issiq fast-fud yetkazib berish</p>
-          <h1 className="mt-3 max-w-3xl text-5xl font-black leading-tight text-white sm:text-6xl">
-            MAZETTO FOOD
-          </h1>
-          <p className="mt-4 max-w-xl text-lg leading-8 text-white/68">
-            Issiq lavash, burger, xrustik garnirlar, foydali setlar va ichimliklarni eng yaqin filialdan tez buyurtma qiling.
-          </p>
+      <MotionDiv {...pageMotion} className="mx-auto w-full max-w-6xl px-4 pb-3 pt-5 lg:pt-7">
+        <section className="mf-hero-shell mf-organic grid min-w-0 overflow-hidden rounded-[2rem] border border-white/14 bg-[linear-gradient(135deg,rgba(245,245,239,0.96),rgba(245,245,239,0.86))] shadow-[0_24px_70px_rgba(0,0,0,0.26)] lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center">
+          <div className="min-w-0 p-5 py-7 sm:p-8 lg:p-10">
+            <div className="mb-4 w-[min(15rem,70vw)] lg:hidden">
+              <BrandLogo className="h-auto w-full" priority sizes="240px" />
+            </div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#0B7F75]">Issiq fast-fud yetkazib berish</p>
+            <h1 className="mt-3 max-w-2xl text-4xl font-black leading-tight text-[#17314A] sm:text-5xl lg:text-6xl">
+              Mazali taom,
+              <span className="block text-[#0B8F83]">qulay buyurtma!</span>
+            </h1>
+            <p className="mt-4 max-w-xl text-base font-semibold leading-7 text-[#17314A]/70 sm:text-lg">
+              Lavash, burger, setlar va ichimliklarni eng yaqin filialdan tez buyurtma qiling.
+            </p>
 
-          <div className="mf-card mazetto-liquid-surface mt-4 grid max-w-xl min-w-0 gap-2 p-2.5 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="mt-6 grid max-w-xl min-w-0 gap-2 rounded-[1.6rem] border border-[#0B7F75]/12 bg-white/78 p-2.5 shadow-[0_18px_45px_rgba(0,79,85,0.14)] sm:grid-cols-[minmax(0,1fr)_auto]">
             <BranchPicker branches={branches} disabled={loading} onChange={selectBranch} value={branchId} />
             <Link className="pressable ripple mf-button-primary px-5 py-3 text-center font-black" href={branchId ? `/menu?branchId=${branchId}` : "/menu"}>
               Buyurtma berish
             </Link>
-          </div>
+            </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-white/76 sm:text-sm">
-            <span className="mazetto-glass-chip rounded-full px-3 py-2 text-[#67E8F9]">Tez oshxona jarayoni</span>
-            <span className="mazetto-glass-chip rounded-full px-3 py-2">Yetkazib berish yoki olib ketish</span>
-            <span className="mazetto-glass-chip rounded-full px-3 py-2">Bonusli profil</span>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-[#17314A]/76 sm:text-sm">
+              <span className="rounded-full bg-[#0B8F83]/10 px-3 py-2 text-[#0B7F75]">Tez oshxona jarayoni</span>
+              <span className="rounded-full bg-[#F5CF00]/24 px-3 py-2">Yetkazib berish yoki olib ketish</span>
+              <span className="rounded-full bg-[#B9B8F0]/24 px-3 py-2">Bonusli profil</span>
+            </div>
           </div>
-        </div>
-
-        <MotionDiv {...cardMotion} className="mf-card mazetto-liquid-surface min-w-0 p-4">
-          <p className="text-sm font-black uppercase text-[#67E8F9]">Bugungi ritm</p>
-          <h2 className="mt-2 text-3xl font-black text-white">Tez, issiq, qulay.</h2>
-          <p className="mt-3 text-sm leading-6 text-white/60">Menyudan tanlang, savatga qo'shing va buyurtmani bir necha bosishda yuboring.</p>
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <Metric value={formatMoney(featured[0]?.sellingPrice ?? popular[0]?.sellingPrice ?? 0)} label="Boshlang'ich narx" />
-            <Metric value={`${featured[0]?.preparationTime ?? popular[0]?.preparationTime ?? 10} daq`} label="Tayyorlanish" />
-          </div>
-        </MotionDiv>
+          <MotionDiv {...cardMotion} className="relative min-h-[19rem] overflow-hidden bg-[radial-gradient(circle_at_50%_32%,rgba(245,207,0,0.22),transparent_17rem),linear-gradient(135deg,rgba(8,104,106,0.92),rgba(11,143,131,0.72))] p-5 lg:min-h-[28rem]">
+            <div className="absolute right-5 top-5 hidden w-[min(22rem,44vw)] lg:block">
+              <BrandLogo className="h-auto w-full drop-shadow-[0_18px_42px_rgba(0,0,0,0.24)]" priority sizes="360px" />
+            </div>
+            <div className="absolute inset-x-6 bottom-6 rounded-[1.6rem] border border-white/16 bg-white/14 p-4 text-white shadow-[0_20px_54px_rgba(0,0,0,0.18)] backdrop-blur-md">
+              <p className="text-sm font-black uppercase text-[#F5CF00]">Bugungi ritm</p>
+              <h2 className="mt-2 text-3xl font-black">Tez, issiq, qulay.</h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-white/74">Menyudan tanlang, savatga qo'shing va buyurtmani bir necha bosishda yuboring.</p>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <Metric value={formatMoney(featured[0]?.sellingPrice ?? popular[0]?.sellingPrice ?? 0)} label="Boshlang'ich narx" />
+                <Metric value={`${featured[0]?.preparationTime ?? popular[0]?.preparationTime ?? 10} daq`} label="Tayyorlanish" />
+              </div>
+            </div>
+          </MotionDiv>
+        </section>
       </MotionDiv>
 
       {loadError ? (

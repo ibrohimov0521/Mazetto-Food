@@ -152,17 +152,17 @@ function OrdersDashboard() {
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid min-w-0 gap-5">
-        <div className="mf-card p-5">
-          <p className="text-sm font-black uppercase text-[#67E8F9]">Buyurtmani kuzatish</p>
-          <h1 className="mt-1 text-3xl font-black text-white">Buyurtmalarim</h1>
+        <div className="mf-checkout-card p-5">
+          <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtmani kuzatish</p>
+          <h1 className="mt-1 text-3xl font-black text-[#17314A]">Buyurtmalarim</h1>
           {activeOrder ? (
-            <div className="mf-card-soft mt-5 p-5">
-              <p className="text-sm font-bold uppercase text-[#67E8F9]">Faol buyurtma</p>
+            <div className="mf-cart-row mt-5 p-5">
+              <p className="text-sm font-bold uppercase text-[#0B7F75]">Faol buyurtma</p>
               <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <Link className="text-2xl font-black text-white transition hover:text-[#67E8F9]" href={`/orders/${activeOrder.id}`}>{activeOrder.order.orderNumber}</Link>
-                  <p className="mt-1 text-sm font-semibold text-white/60">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
-                  {activeOrder.branch ? <p className="mt-1 text-sm font-semibold text-white/45">{activeOrder.branch.name}</p> : null}
+                  <Link className="text-2xl font-black text-[#17314A] transition hover:text-[#0B7F75]" href={`/orders/${activeOrder.id}`}>{activeOrder.order.orderNumber}</Link>
+                  <p className="mt-1 text-sm font-semibold text-[#17314A]/60">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
+                  {activeOrder.branch ? <p className="mt-1 text-sm font-semibold text-[#17314A]/45">{activeOrder.branch.name}</p> : null}
                 </div>
                 <span className="rounded-full bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9]">{formatMoney(activeOrder.order.total)}</span>
               </div>
@@ -177,12 +177,12 @@ function OrdersDashboard() {
               </div>
             </div>
           ) : (
-            <div className="mf-card-soft mt-5 p-6 text-sm font-semibold text-white/56">Hozir faol buyurtma yo'q.</div>
+            <div className="mf-cart-row mt-5 p-6 text-sm font-semibold text-[#17314A]/56">Hozir faol buyurtma yo'q.</div>
           )}
         </div>
 
-        <MotionDiv {...sectionMotion} className="mf-card p-5">
-          <h2 className="text-2xl font-black text-white">Buyurtmalar tarixi</h2>
+        <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
+          <h2 className="text-2xl font-black text-[#17314A]">Buyurtmalar tarixi</h2>
           <div className="mt-4 grid gap-3">
             {error ? (
               <div className="mf-card-soft p-8 text-center">
@@ -195,17 +195,17 @@ function OrdersDashboard() {
             ) : loading ? (
               Array.from({ length: 3 }, (_, index) => <div className="skeleton h-24 rounded-2xl" key={index} />)
             ) : history.length ? history.map((order) => (
-              <Link className="pressable mf-card-soft block p-4 transition hover:border-[#22C55E]/36" href={`/orders/${order.id}`} key={order.id}>
+              <Link className="pressable mf-cart-row block p-4 transition hover:border-[#0B8F83]/36" href={`/orders/${order.id}`} key={order.id}>
                 <div className="flex min-w-0 justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-black text-white">{order.order.orderNumber}</p>
-                    <p className="mt-1 truncate text-sm text-white/52">
+                    <p className="font-black text-[#17314A]">{order.order.orderNumber}</p>
+                    <p className="mt-1 truncate text-sm text-[#17314A]/52">
                       {new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}
                       {order.branch ? ` · ${order.branch.name}` : ""}
                     </p>
-                    <p className="mt-2 text-sm font-semibold text-white/60">{orderSummary(order)}</p>
+                    <p className="mt-2 text-sm font-semibold text-[#17314A]/60">{orderSummary(order)}</p>
                   </div>
-                  <span className="shrink-0 font-black text-[#67E8F9]">{formatMoney(order.order.total)}</span>
+                  <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>
                 </div>
               </Link>
             )) : (
@@ -222,12 +222,12 @@ function OrdersDashboard() {
       </div>
 
       <aside className="grid min-w-0 content-start gap-5">
-        <div className="mf-card p-5">
-          <p className="text-sm font-bold text-[#67E8F9]">Bonuslar</p>
-          <p className="mt-2 text-4xl font-black text-white"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> so'm</p>
+        <div className="mf-checkout-card p-5">
+          <p className="text-sm font-bold text-[#0B7F75]">Bonuslar</p>
+          <p className="mt-2 text-4xl font-black text-[#17314A]"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> so'm</p>
         </div>
-        <div className="mf-card p-5">
-          <h2 className="text-xl font-black text-white">Sevimlilar</h2>
+        <div className="mf-checkout-card p-5">
+          <h2 className="text-xl font-black text-[#17314A]">Sevimlilar</h2>
           <div className="mt-4 grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
               <Link className="pressable grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-2xl bg-white/8 p-2" href={`/product/${product.id}`} key={product.id}>

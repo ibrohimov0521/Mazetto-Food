@@ -29,7 +29,7 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
     <MotionArticle
       {...cardMotion}
       data-product-card="true"
-      className="mf-card mf-leaf-corner group min-w-0 overflow-hidden shadow-[0_14px_34px_rgba(34,197,94,0.12)] [transform-style:preserve-3d]"
+      className="mf-product-card mf-leaf-corner group min-w-0 overflow-hidden [transform-style:preserve-3d]"
       initial={{ opacity: 0, y: 18 }}
       viewport={{ once: true, margin: "-48px" }}
       whileInView={{ opacity: 1, y: 0 }}
@@ -62,17 +62,17 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
           ♥
         </button>
         {product.isCombo ? (
-          <span className="absolute left-3 top-3 rounded-full bg-[#22C55E] px-3 py-1 text-xs font-black uppercase text-[#04130B]">
+          <span className="absolute left-3 top-3 rounded-full bg-[#F5CF00] px-3 py-1 text-xs font-black uppercase text-[#07373A] shadow-[0_10px_22px_rgba(245,207,0,0.28)]">
             Set
           </span>
         ) : null}
       </div>
       <div className={compact ? "p-2.5" : "p-4"}>
         <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
-          <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} min-w-0 break-words font-black leading-tight text-white transition hover:text-[#67E8F9]`} href={`/product/${product.id}`}>
+          <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} min-w-0 break-words font-black leading-tight text-white transition hover:text-[#F5CF00]`} href={`/product/${product.id}`}>
             {product.name}
           </Link>
-          <span className={`${compact ? "hidden min-[390px]:inline-flex" : "inline-flex"} shrink-0 rounded-full bg-white/10 px-2 py-1 text-[10px] font-black text-[#67E8F9] sm:px-3 sm:text-xs`}>
+          <span className={`${compact ? "hidden min-[390px]:inline-flex" : "inline-flex"} shrink-0 rounded-full bg-white/12 px-2 py-1 text-[10px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
             {product.preparationTime ?? 10} daq
           </span>
         </div>
@@ -81,7 +81,7 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
         </p>
         <div className={`${compact ? "mt-3" : "mt-4"} flex min-w-0 items-center justify-between gap-2 sm:gap-3`}>
           <motion.span
-            className={`${compact ? "text-[13px] sm:text-sm" : "text-lg"} min-w-0 break-words font-black text-white`}
+            className={`${compact ? "text-[15px] sm:text-base" : "text-lg"} min-w-0 break-words font-black text-[#F5CF00]`}
             layout
             transition={{ type: "spring", stiffness: 520, damping: 34 }}
           >

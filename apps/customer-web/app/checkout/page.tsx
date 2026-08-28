@@ -219,7 +219,7 @@ function CheckoutFlow() {
   if (!customer?.accessToken) {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10">
-        <div className="mf-card p-8">
+        <div className="mf-checkout-card p-8">
           <p className="text-sm font-black uppercase text-[#67E8F9]">Rasmiylashtirish</p>
           <CustomerAuthPanel
             description="Buyurtmani yakunlash uchun telefon raqamingizni shu yerda tasdiqlang. Tasdiqlangandan keyin checkout sahifasi saqlanib qoladi."
@@ -233,9 +233,9 @@ function CheckoutFlow() {
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,390px)] lg:pb-8">
       <div className="grid min-w-0 gap-5">
-        <div className="mf-card p-5">
-          <p className="text-sm font-black uppercase text-[#67E8F9]">Rasmiylashtirish</p>
-          <h1 className="mt-1 text-3xl font-black text-white">Yetkazish ma'lumotlari</h1>
+        <div className="mf-checkout-card p-5">
+          <p className="text-sm font-black uppercase text-[#0B7F75]">Rasmiylashtirish</p>
+          <h1 className="mt-1 text-3xl font-black text-[#17314A]">Yetkazish ma'lumotlari</h1>
 
           <div className="mt-5 grid gap-3">
             <FieldError message={errors.customer} />
@@ -280,8 +280,8 @@ function CheckoutFlow() {
           </div>
         </div>
 
-        <MotionDiv {...sectionMotion} className="mf-card p-5">
-          <h2 className="text-2xl font-black text-white">To'lov turi</h2>
+        <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
+          <h2 className="text-2xl font-black text-[#17314A]">To'lov turi</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {paymentOptions.map((option) => (
               <motion.button className={`pressable ripple rounded-2xl px-4 py-4 text-left ${paymentMethod === option.value ? "mazetto-liquid-active" : "mazetto-glass-button hover:border-[#22C55E]/36"}`} key={option.value} layout onClick={() => { hapticTap(8); setPaymentMethod(option.value); }} type="button" whileTap={{ scale: 0.97 }}>
@@ -293,18 +293,18 @@ function CheckoutFlow() {
         </MotionDiv>
       </div>
 
-      <aside className="mf-card min-w-0 h-fit p-5">
+      <aside className="mf-checkout-card min-w-0 h-fit p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-black uppercase text-[#67E8F9]">Buyurtma</p>
-            <h2 className="mt-1 text-2xl font-black text-white">Xulosa</h2>
+            <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma</p>
+            <h2 className="mt-1 text-2xl font-black text-[#17314A]">Xulosa</h2>
           </div>
           <span className="rounded-full bg-[#22C55E]/16 px-3 py-2 text-xs font-black text-[#67E8F9]">{estimatedTime}</span>
         </div>
 
         <div className="mt-4 grid gap-3">
           {items.length ? items.map((item) => (
-            <div className="mf-card-soft grid min-w-0 grid-cols-[58px_minmax(0,1fr)] gap-3 p-2" key={item.key}>
+            <div className="mf-cart-row grid min-w-0 grid-cols-[58px_minmax(0,1fr)] gap-3 p-2" key={item.key}>
               <MediaImage
                 alt={item.productName}
                 aspectClassName="h-14 w-14"

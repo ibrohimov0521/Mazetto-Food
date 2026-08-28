@@ -88,10 +88,10 @@ function Profile() {
   return (
     <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-5">
       <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
-        <div className="mf-card min-w-0 p-4">
-          <p className="text-xs font-black uppercase text-[#67E8F9]">Mijoz profili</p>
-          <h1 className="mt-1 text-3xl font-black text-white">{dashboard?.name ?? customer.name}</h1>
-          <p className="mt-1 text-sm font-bold text-white/60">{dashboard?.phone ?? customer.phone}</p>
+        <div className="mf-checkout-card min-w-0 p-4">
+          <p className="text-xs font-black uppercase text-[#0B7F75]">Mijoz profili</p>
+          <h1 className="mt-1 text-3xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
+          <p className="mt-1 text-sm font-bold text-[#17314A]/60">{dashboard?.phone ?? customer.phone}</p>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
             <Stat label="Buyurtmalar" value={`${dashboard?.customerOrders.length ?? 0}`} />
@@ -100,7 +100,7 @@ function Profile() {
           </div>
         </div>
 
-        <div className="rounded-[1.35rem] bg-gradient-to-br from-[#22C55E] to-[#67E8F9] p-4 text-[#04130B] shadow-[0_14px_36px_rgba(34,197,94,0.22)]">
+        <div className="rounded-[1.35rem] bg-gradient-to-br from-[#F5CF00] via-[#FFD83D] to-[#B9B8F0] p-4 text-[#07373A] shadow-[0_14px_36px_rgba(245,207,0,0.24)]">
           <p className="text-xs font-black uppercase text-[#052012]/70">Bonus balansi</p>
           <p className="mt-2 text-3xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> so'm</p>
           <p className="mt-2 text-xs font-semibold leading-5 text-[#052012]/70">Profil buyurtmalar va sevimli mahsulotlarni saqlaydi.</p>
@@ -181,8 +181,8 @@ function statusLabel(status: string): string {
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="mf-card mt-4 p-4">
-      <h2 className="mb-3 text-xl font-black text-white">{title}</h2>
+    <section className="mf-checkout-card mt-4 p-4">
+      <h2 className="mb-3 text-xl font-black text-[#17314A]">{title}</h2>
       {children}
     </section>
   );
@@ -190,9 +190,9 @@ function Panel({ children, title }: { children: React.ReactNode; title: string }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-card-soft min-w-0 p-2.5">
-      <p className="truncate text-[10px] font-black uppercase text-[#67E8F9]">{label}</p>
-      <p className="mt-1 truncate text-sm font-black text-white sm:text-base">{value}</p>
+    <div className="mf-cart-row min-w-0 p-2.5">
+      <p className="truncate text-[10px] font-black uppercase text-[#0B7F75]">{label}</p>
+      <p className="mt-1 truncate text-sm font-black text-[#17314A] sm:text-base">{value}</p>
     </div>
   );
 }
