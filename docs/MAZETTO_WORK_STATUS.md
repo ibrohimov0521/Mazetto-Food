@@ -852,6 +852,14 @@ Completed in this pass:
 - Added Telegram customer ordering support using persistent `Cart`/`CartItem` storage and the shared order engine.
 - Telegram customer ordering now supports category/product browsing, variant add, modifier toggle, quantity changes, cart view, checkout summary, CASH pickup confirmation, idempotent stale-confirm protection, and shared website/Telegram order history identity.
 - Added `scripts/validate-telegram-customer-ordering.ts` for the Telegram cart/order regression path.
+- Completed the Telegram delivery/address checkout gap locally:
+  - added durable `TelegramCheckoutSession` storage for order type, branch, address, note, and checkout step
+  - Telegram checkout now supports branch-aware PICKUP and DELIVERY selection
+  - delivery checkout collects and validates Telegram-native address text
+  - optional courier note is supported through the existing order notes field
+  - final Telegram confirmation reuses `CustomerOrderEngineService` with `OrderSource.TELEGRAM`
+  - confirmed Telegram pickup remains cash-only and does not expose fake Click/Payme success
+  - duplicate/stale confirm remains idempotent and does not create a second order
 
 Local validation:
 
@@ -863,7 +871,7 @@ Local validation:
 - `pnpm --filter backend build`: passed.
 - `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-auth.ts`: passed.
 - `pnpm --dir apps/backend exec tsx scripts/validate-customer-order-history.ts`: passed.
-- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-ordering.ts`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-ordering.ts`: passed, including delivery address, pickup regression, duplicate confirm, and delivery-disabled branch coverage.
 - `pnpm --dir apps/backend exec prisma format`: passed with safe placeholder `DATABASE_URL`.
 - `pnpm --dir apps/backend exec prisma validate`: passed with safe placeholder `DATABASE_URL`.
 - `pnpm --dir apps/backend exec prisma generate`: passed with safe placeholder `DATABASE_URL`.
@@ -884,13 +892,14 @@ Known limitations:
 
 - Real product/category media assets are still missing from the media service, so food images render through the branded fallback.
 - The pass is a first implementation pass, not final pixel-perfect signoff. Further side-by-side iteration against each reference is still needed.
-- Telegram delivery/address entry is intentionally not exposed yet in Telegram because no durable Telegram conversation-state table exists; Telegram checkout currently uses pickup + cash only and does not fake Click/Payme success.
+- Telegram delivery/address checkout is implemented locally with durable conversation state, but it has not been migrated, deployed, or verified in production yet.
 - Staff Telegram notification activation remains separate and was not configured in this pass.
 
 Still remaining in this master phase:
 
 - Continue side-by-side polish against actual reference images where visual deviations remain.
-- Add durable Telegram delivery address/payment provider flows only after a conversation-state design is approved.
+- Apply and verify the new Telegram checkout-session migration only during an approved controlled production release.
+- Add real Click/Payme Telegram payment flows only after provider integration is implemented; do not fake online payment success.
 - Prove checkout and order E2E with exactly one controlled production test order after deployment approval.
 - Update production only after local visual QA, validation, backup, commit, and controlled deploy.
 
@@ -916,7 +925,7 @@ Still remaining in this master phase:
 20. Kirim / Chiqim. Status: Not started.
 21. Daily Closing. Status: Not started.
 22. Reports. Status: Not started.
-23. Customer Telegram Bot. Status: Partial locally, auth/history/menu/cart/pickup cash checkout implemented; production verification pending.
+23. Customer Telegram Bot. Status: Partial locally, auth/history/menu/cart/pickup and delivery cash checkout implemented; production migration/deploy/verification pending.
 24. Click / Payme. Status: Not started; no fake success flow exposed in Telegram.
 25. Security. Status: Not started.
 26. Backup / Monitoring. Status: Not started.

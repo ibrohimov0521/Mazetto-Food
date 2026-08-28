@@ -178,26 +178,27 @@ model Branch {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  categories            Category[]
-  cashTransactions      CashTransaction[]
-  devices               Device[]
-  employees             Employee[]
-  expenses              Expense[]
-  halls                 Hall[]
-  orders                Order[]
-  paymentMethods        PaymentMethod[]
-  priceHistory          PriceHistory[]
-  printers              Printer[]
-  receipts              Receipt[]
-  products              Product[]
-  productAvailabilities ProductBranchAvailability[]
-  revenueRecords        RevenueRecord[]
-  customerOrders        CustomerOrder[]
-  shifts                Shift[]
-  suppliers             Supplier[]
-  tables                RestaurantTable[]
-  warehouses            Warehouse[]
-  workingHours          BranchWorkingHour[]
+  categories               Category[]
+  cashTransactions         CashTransaction[]
+  devices                  Device[]
+  employees                Employee[]
+  expenses                 Expense[]
+  halls                    Hall[]
+  orders                   Order[]
+  paymentMethods           PaymentMethod[]
+  priceHistory             PriceHistory[]
+  printers                 Printer[]
+  receipts                 Receipt[]
+  products                 Product[]
+  productAvailabilities    ProductBranchAvailability[]
+  revenueRecords           RevenueRecord[]
+  customerOrders           CustomerOrder[]
+  telegramCheckoutSessions TelegramCheckoutSession[]
+  shifts                   Shift[]
+  suppliers                Supplier[]
+  tables                   RestaurantTable[]
+  warehouses               Warehouse[]
+  workingHours             BranchWorkingHour[]
 
   @@index([isActive])
   @@index([isActive, acceptsOrders])
@@ -253,16 +254,40 @@ model Customer {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  carts          Cart[]
-  favorites      CustomerFavorite[]
-  customerOrders CustomerOrder[]
-  orderAttempts  CustomerOrderAttempt[]
-  sessions       CustomerSession[]
-  challenges     CustomerVerificationChallenge[]
+  carts            Cart[]
+  favorites        CustomerFavorite[]
+  customerOrders   CustomerOrder[]
+  orderAttempts    CustomerOrderAttempt[]
+  sessions         CustomerSession[]
+  challenges       CustomerVerificationChallenge[]
+  checkoutSessions TelegramCheckoutSession[]
 
   @@index([telegramChatId])
   @@index([createdAt])
   @@map("customers")
+}
+
+model TelegramCheckoutSession {
+  id         String             @id @default(cuid())
+  customerId String
+  chatId     String
+  step       String             @default("ORDER_TYPE")
+  branchId   String?
+  orderType  CustomerOrderType?
+  address    String?
+  note       String?
+  expiresAt  DateTime
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  branch   Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@unique([customerId, chatId])
+  @@index([chatId])
+  @@index([expiresAt])
+  @@index([branchId])
+  @@map("telegram_checkout_sessions")
 }
 
 model CustomerVerificationChallenge {

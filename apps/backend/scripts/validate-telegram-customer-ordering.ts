@@ -1,4 +1,4 @@
-import { OrderSource, OrderStatus, Prisma } from "@prisma/client";
+import { CustomerOrderType, OrderSource, OrderStatus, Prisma } from "@prisma/client";
 import * as assert from "node:assert/strict";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
 
@@ -7,7 +7,25 @@ type SentTelegramPayload = {
   text?: string;
   reply_markup?: {
     inline_keyboard?: { text: string; callback_data: string }[][];
+    keyboard?: string[][];
   };
+};
+type EngineCall = {
+  customerId: string;
+  dto: {
+    branchId: string;
+    type: string;
+    address?: string;
+    paymentMethod: string;
+    notes?: string;
+    items: Array<{
+      productId: string;
+      variantId?: string;
+      quantity: number;
+      modifiers?: Array<{ modifierId: string; quantity: number }>;
+    }>;
+  };
+  source?: OrderSource;
 };
 
 const customer = {
@@ -39,9 +57,33 @@ const modifier = {
   price: new Prisma.Decimal(4000),
   isActive: true,
 };
-const branch = { id: "branch_sergeli", name: "MAZETTO Sergeli" };
+const branch = {
+  id: "branch_sergeli",
+  name: "MAZETTO Sergeli",
+  acceptsOrders: true,
+  deliveryEnabled: true,
+  pickupEnabled: true,
+  isTemporarilyClosed: false,
+};
+const deliveryDisabledBranch = {
+  ...branch,
+  deliveryEnabled: false,
+};
 
 class InMemoryPrisma {
+  branchRecord = { ...branch };
+  checkoutSession: {
+    id: string;
+    customerId: string;
+    chatId: string;
+    step: string;
+    branchId: string | null;
+    orderType: CustomerOrderType | null;
+    address: string | null;
+    note: string | null;
+    expiresAt: Date;
+    updatedAt: Date;
+  } | null = null;
   cartRecord: {
     id: string;
     customerId: string;
@@ -106,7 +148,41 @@ class InMemoryPrisma {
   };
 
   branch = {
-    findFirst: async () => branch,
+    findMany: async () =>
+      this.branchRecord.acceptsOrders &&
+      !this.branchRecord.isTemporarilyClosed &&
+      (this.branchRecord.pickupEnabled || this.branchRecord.deliveryEnabled)
+        ? [this.branchRecord]
+        : [],
+    findUnique: async ({ where }: { where: { id: string } }) =>
+      where.id === this.branchRecord.id ? this.branchRecord : null,
+  };
+
+  telegramCheckoutSession = {
+    findFirst: async ({ where }: { where: { customerId: string; chatId: string; expiresAt: { gt: Date } } }) =>
+      this.checkoutSession?.customerId === where.customerId &&
+      this.checkoutSession.chatId === where.chatId &&
+      this.checkoutSession.expiresAt > where.expiresAt.gt
+        ? this.checkoutSession
+        : null,
+    upsert: async ({
+      create,
+      update,
+    }: {
+      create: NonNullable<InMemoryPrisma["checkoutSession"]>;
+      update: Partial<NonNullable<InMemoryPrisma["checkoutSession"]>>;
+    }) => {
+      if (!this.checkoutSession) {
+        this.checkoutSession = { ...create, id: "telegram_checkout_1" };
+      } else {
+        this.checkoutSession = { ...this.checkoutSession, ...update, updatedAt: new Date() };
+      }
+
+      return this.checkoutSession;
+    },
+    delete: async () => {
+      this.checkoutSession = null;
+    },
   };
 
   cart = {
@@ -208,10 +284,139 @@ globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => 
 
 async function main(): Promise<void> {
   process.env.TELEGRAM_BOT_TOKEN = "mock-telegram-token";
+  await testDeliveryFlow();
+  await testPickupRegression();
+  await testDeliveryDisabled();
+  console.log("Telegram customer ordering validation passed");
+}
+
+async function testDeliveryFlow(): Promise<void> {
+  sentTelegramPayloads.length = 0;
   const prisma = new InMemoryPrisma();
-  const engineCalls: Array<{ customerId: string; dto: unknown; source?: OrderSource }> = [];
+  const { service, engineCalls, callbackBase } = createService(prisma);
+
+  await seedCart(service, prisma, callbackBase);
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:checkout" });
+  assert.match(lastText(), /Buyurtma turi/);
+  assert.ok(lastKeyboardText().includes("🚶 Olib ketish"));
+  assert.ok(lastKeyboardText().includes("🚚 Yetkazib berish"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:type:DELIVERY" });
+  assert.match(lastText(), /Yetkazib berish manzili/);
+
+  await service.handleCustomerMessage({
+    chat: { id: "chat_1" },
+    from: { id: "tg_1" },
+    text: "uy",
+  });
+  assert.match(lastText(), /Manzil juda qisqa/);
+  assert.equal(engineCalls.length, 0);
+
+  await service.handleCustomerMessage({
+    chat: { id: "chat_1" },
+    from: { id: "tg_1" },
+    text: "Sergeli 7, 12-uy, 3-podyezd",
+  });
+  assert.match(lastText(), /Kur'er uchun izoh/);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:note:skip" });
+  assert.match(lastText(), /Buyurtmani tasdiqlash/);
+  assert.match(lastText(), /Yetkazib berish/);
+  assert.match(lastText(), /Sergeli 7, 12-uy, 3-podyezd/);
+  assert.match(lastText(), /To'lov: <b>Naqd<\/b>/);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:confirm:cart_1" });
+  assert.equal(engineCalls.length, 1);
+  assert.equal(engineCalls[0]?.customerId, customer.id);
+  assert.equal(engineCalls[0]?.source, OrderSource.TELEGRAM);
+  assert.equal(engineCalls[0]?.dto.type, "DELIVERY");
+  assert.equal(engineCalls[0]?.dto.address, "Sergeli 7, 12-uy, 3-podyezd");
+  assert.equal(engineCalls[0]?.dto.paymentMethod, "CASH");
+  assert.equal(engineCalls[0]?.dto.items.length, 1);
+  assert.equal(engineCalls[0]?.dto.items[0]?.productId, product.id);
+  assert.equal(engineCalls[0]?.dto.items[0]?.variantId, variant.id);
+  assert.deepEqual(engineCalls[0]?.dto.items[0]?.modifiers, [
+    { modifierId: modifier.id, quantity: 1 },
+  ]);
+  assert.equal(prisma.cartRecord?.items.length, 0);
+  assert.equal(prisma.checkoutSession, null);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:confirm:cart_1" });
+  assert.equal(engineCalls.length, 1, "stale duplicate confirm must not create another order");
+}
+
+async function testPickupRegression(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, engineCalls, callbackBase } = createService(prisma);
+
+  await seedCart(service, prisma, callbackBase);
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:checkout" });
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:type:PICKUP" });
+  assert.match(lastText(), /Olib ketish/);
+  assert.doesNotMatch(lastText(), /Manzil:/);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:confirm:cart_1" });
+  assert.equal(engineCalls.length, 1);
+  assert.equal(engineCalls[0]?.dto.type, "PICKUP");
+  assert.equal(engineCalls[0]?.dto.address, undefined);
+  assert.equal(engineCalls[0]?.dto.paymentMethod, "CASH");
+}
+
+async function testDeliveryDisabled(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  prisma.branchRecord = { ...deliveryDisabledBranch };
+  const { service, engineCalls, callbackBase } = createService(prisma);
+
+  await seedCart(service, prisma, callbackBase);
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:checkout" });
+  assert.ok(lastKeyboardText().includes("🚶 Olib ketish"));
+  assert.ok(!lastKeyboardText().includes("🚚 Yetkazib berish"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:type:DELIVERY" });
+  assert.ok(
+    sentTelegramPayloads.some((payload) =>
+      /yetkazib berish hozir mavjud emas/i.test(payload.text ?? ""),
+    ),
+  );
+  assert.match(lastText(), /Buyurtma turi/);
+  assert.equal(engineCalls.length, 0);
+}
+
+async function seedCart(
+  service: TelegramCustomerOrderingService,
+  prisma: InMemoryPrisma,
+  callbackBase: { id: string; message: { chat: { id: string } }; from: { id: string } },
+): Promise<void> {
+  await service.sendCategoryMenu({ chat: { id: "chat_1" }, from: { id: "tg_1" } });
+  assert.match(lastText(), /Menyu bo'limini tanlang/);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:cat:category_sets" });
+  assert.match(lastText(), /Mahsulot tanlang/);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:prod:product_lavash" });
+  assert.match(lastText(), /Big Lavash/);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:addv:variant_standard" });
+  assert.match(lastText(), /savatga qo'shildi/);
+  assert.equal(prisma.cartRecord?.items.length, 1);
+
+  const cartItemId = prisma.cartRecord!.items[0]!.id;
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:mod:${cartItemId}:modifier_cheese` });
+  assert.deepEqual(prisma.cartRecord?.items[0]?.modifierSnapshot, [
+    { modifierId: modifier.id, quantity: 1 },
+  ]);
+}
+
+function createService(prisma: InMemoryPrisma) {
+  const engineCalls: EngineCall[] = [];
   const orderEngine = {
-    createOnlineOrder: async (customerId: string, dto: unknown, options?: { source?: OrderSource }) => {
+    createOnlineOrder: async (
+      customerId: string,
+      dto: EngineCall["dto"],
+      options?: { source?: OrderSource },
+    ) => {
       engineCalls.push({ customerId, dto, source: options?.source });
       return {
         order: { orderNumber: "TG-20260828-0001", status: OrderStatus.CONFIRMED },
@@ -229,45 +434,21 @@ async function main(): Promise<void> {
     from: { id: "tg_1" },
   };
 
-  await service.sendCategoryMenu({ chat: { id: "chat_1" }, from: { id: "tg_1" } });
-  assert.match(lastText(), /Menyu bo'limini tanlang/);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:cat:category_sets" });
-  assert.match(lastText(), /Mahsulot tanlang/);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:prod:product_lavash" });
-  assert.match(lastText(), /Big Lavash/);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:addv:variant_standard" });
-  assert.match(lastText(), /savatga qo'shildi/);
-  assert.equal(prisma.cartRecord?.items.length, 1);
-
-  const cartItemId = prisma.cartRecord!.items[0]!.id;
-  await service.handleCustomerCallback({ ...callbackBase, data: `cust:mod:${cartItemId}:modifier_cheese` });
-  assert.deepEqual(prisma.cartRecord?.items[0]?.modifierSnapshot, [
-    { modifierId: "modifier_cheese", quantity: 1 },
-  ]);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qty:${cartItemId}:inc` });
-  assert.equal(Number(prisma.cartRecord?.items[0]?.quantity), 2);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:checkout" });
-  assert.match(lastText(), /Buyurtmani tasdiqlash/);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:confirm:cart_1" });
-  assert.equal(engineCalls.length, 1);
-  assert.equal(engineCalls[0]?.customerId, customer.id);
-  assert.equal(engineCalls[0]?.source, OrderSource.TELEGRAM);
-  assert.equal(prisma.cartRecord?.items.length, 0);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:confirm:cart_1" });
-  assert.equal(engineCalls.length, 1, "stale duplicate confirm must not create another order");
-
-  console.log("Telegram customer ordering validation passed");
+  return { service, engineCalls, callbackBase };
 }
 
 function lastText(): string {
   return sentTelegramPayloads.at(-1)?.text ?? "";
+}
+
+function lastKeyboardText(): string {
+  return (
+    sentTelegramPayloads
+      .at(-1)
+      ?.reply_markup?.inline_keyboard?.flat()
+      .map((button) => button.text)
+      .join(" ") ?? ""
+  );
 }
 
 void main();

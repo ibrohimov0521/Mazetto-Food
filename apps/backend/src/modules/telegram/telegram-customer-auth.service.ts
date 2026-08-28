@@ -162,6 +162,10 @@ export class TelegramCustomerAuthService {
         await this.telegramCustomerOrderingService.sendCartFromMessage(message);
         return { ok: true, handled: true };
       }
+
+      if (await this.telegramCustomerOrderingService.handleCustomerMessage(message)) {
+        return { ok: true, handled: true };
+      }
     } catch (error) {
       if (error instanceof BadRequestException) {
         this.logger.warn(error.message);
