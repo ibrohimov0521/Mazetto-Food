@@ -394,6 +394,61 @@ img {
   background: rgba(245, 245, 239, 0.88);
 }
 
+.mf-checkout-step {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 1.45rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(10, 79, 85, 0.1);
+  border-radius: 999px;
+  background: rgba(0, 91, 94, 0.06);
+  padding: 0.35rem 0.5rem;
+  color: rgba(23, 49, 74, 0.58);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.mf-checkout-step span {
+  display: grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(0, 91, 94, 0.08);
+}
+
+.mf-checkout-step p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-checkout-step.is-active {
+  border-color: rgba(245, 207, 0, 0.38);
+  background: rgba(245, 207, 0, 0.16);
+  color: #07373a;
+}
+
+.mf-checkout-step.is-active span {
+  background: #f5cf00;
+  color: #07373a;
+}
+
+.mf-payment-option {
+  border: 1px solid rgba(10, 79, 85, 0.12);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 10px 24px rgba(0, 79, 85, 0.08);
+}
+
+.mf-payment-option.is-active {
+  border-color: rgba(245, 207, 0, 0.5);
+  background:
+    linear-gradient(135deg, rgba(245, 207, 0, 0.22), rgba(185, 184, 240, 0.1)),
+    rgba(255, 255, 255, 0.86);
+  box-shadow: 0 16px 34px rgba(245, 207, 0, 0.2);
+}
+
 .mf-checkout-card {
   border: 1px solid rgba(245, 245, 239, 0.72);
   border-radius: 1.8rem;
@@ -440,6 +495,21 @@ img {
   border-radius: 1.25rem;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: 0 12px 28px rgba(0, 79, 85, 0.08);
+}
+
+.mf-cart-upsell-card {
+  border: 1px solid rgba(10, 79, 85, 0.1);
+  background:
+    radial-gradient(circle at 84% 12%, rgba(245, 207, 0, 0.12), transparent 8rem),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(245, 245, 239, 0.88));
+  box-shadow: 0 14px 34px rgba(0, 79, 85, 0.12);
+}
+
+.mf-profile-bonus-panel {
+  border: 1px solid rgba(245, 245, 239, 0.42);
+  background:
+    radial-gradient(circle at 86% 0%, rgba(185, 184, 240, 0.28), transparent 9rem),
+    linear-gradient(135deg, #f5cf00, #ffd83d 58%, #b9b8f0);
 }
 
 .mf-card-soft {

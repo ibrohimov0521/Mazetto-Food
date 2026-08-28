@@ -100,7 +100,7 @@ function Profile() {
           </div>
         </div>
 
-        <div className="rounded-[1.35rem] bg-gradient-to-br from-[#F5CF00] via-[#FFD83D] to-[#B9B8F0] p-4 text-[#07373A] shadow-[0_14px_36px_rgba(245,207,0,0.24)]">
+        <div className="mf-profile-bonus-panel rounded-[1.35rem] p-4 text-[#07373A] shadow-[0_14px_36px_rgba(245,207,0,0.24)]">
           <p className="text-xs font-black uppercase text-[#052012]/70">Bonus balansi</p>
           <p className="mt-2 text-3xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> so'm</p>
           <p className="mt-2 text-xs font-semibold leading-5 text-[#052012]/70">Profil buyurtmalar va sevimli mahsulotlarni saqlaydi.</p>
@@ -127,18 +127,18 @@ function Profile() {
           <div className="grid gap-3">
             {dashboard?.customerOrders.length ? (
               dashboard.customerOrders.slice(0, 5).map((order) => (
-                <Link className="pressable mf-card-soft block p-4 transition hover:border-[#22C55E]/36" href={`/orders/${order.id}`} key={order.id}>
+                <Link className="pressable mf-cart-row block p-4 transition hover:border-[#22C55E]/36" href={`/orders/${order.id}`} key={order.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-black text-white">{order.order.orderNumber}</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-white/52">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
+                      <p className="font-black text-[#17314A]">{order.order.orderNumber}</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-[#17314A]/56">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
                     </div>
-                    <span className="shrink-0 font-black text-[#67E8F9]">{formatMoney(order.order.total)}</span>
+                    <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>
                   </div>
                 </Link>
               ))
             ) : (
-              <p className="text-sm font-semibold text-white/56">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>
+              <p className="text-sm font-semibold text-[#17314A]/56">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>
             )}
           </div>
         </Panel>
@@ -146,7 +146,7 @@ function Profile() {
         <Panel title="Sevimlilar">
           <div className="grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
-              <Link className="pressable grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl bg-white/8 p-2 transition hover:bg-white/12" href={`/product/${product.id}`} key={product.id}>
+              <Link className="pressable grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl bg-[#0B7F75]/7 p-2 transition hover:bg-[#0B7F75]/10" href={`/product/${product.id}`} key={product.id}>
                 <MediaImage
                   alt={product.name}
                   aspectClassName="h-[72px] w-[72px]"
@@ -155,11 +155,11 @@ function Profile() {
                   src={product.imageUrl}
                 />
                 <div className="min-w-0">
-                  <p className="truncate font-black text-white">{localizeMenuName(product.name)}</p>
-                  <p className="mt-1 text-sm font-bold text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>
+                  <p className="truncate font-black text-[#17314A]">{localizeMenuName(product.name)}</p>
+                  <p className="mt-1 text-sm font-bold text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm font-semibold text-white/56">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
+            )) : <p className="text-sm font-semibold text-[#17314A]/56">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
           </div>
         </Panel>
       </MotionDiv>
@@ -168,7 +168,7 @@ function Profile() {
         <div className="flex flex-wrap gap-3">
           {addresses.length ? addresses.map((address) => (
             <span className="rounded-2xl bg-[#22C55E]/16 px-4 py-3 text-sm font-bold text-[#67E8F9]" key={address}>{address}</span>
-          )) : <span className="rounded-2xl bg-white/8 px-4 py-3 text-sm font-semibold text-white/56">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
+          )) : <span className="rounded-2xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-semibold text-[#17314A]/56">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
         </div>
       </Panel>
     </MotionDiv>

@@ -82,10 +82,10 @@ export function CartUpsell() {
     <MotionDiv {...sectionMotion} className="mt-6">
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-black text-white">Hech narsa qolib ketmadimi?</h2>
-          <p className="mt-1 text-sm font-semibold text-white/56">Sous yoki ichimlik qo'shamizmi?</p>
+          <h2 className="text-2xl font-black text-[#17314A]">Hech narsa qolib ketmadimi?</h2>
+          <p className="mt-1 text-sm font-semibold text-[#17314A]/58">Sous yoki ichimlik qo'shamizmi?</p>
         </div>
-        <Link className="hidden text-sm font-black text-[#67E8F9] sm:inline" href="/menu">Menyu</Link>
+        <Link className="hidden text-sm font-black text-[#0B7F75] sm:inline" href="/menu">Menyu</Link>
       </div>
       <div className="no-scrollbar flex max-w-full snap-x gap-3 overflow-x-auto pb-2">
         {recommended.map((product) => (
@@ -110,7 +110,7 @@ function UpsellCard({
   const price = variant?.sellingPrice ?? product.sellingPrice;
 
   return (
-    <article className="mazetto-liquid-surface grid w-[min(13.5rem,78vw)] shrink-0 snap-start overflow-hidden rounded-[1.5rem]">
+    <article className="mf-cart-upsell-card grid w-[min(13.5rem,78vw)] shrink-0 snap-start overflow-hidden rounded-[1.35rem]">
       <MediaImage
         alt={product.name}
         aspectClassName="h-28"
@@ -120,9 +120,9 @@ function UpsellCard({
         src={product.imageUrl}
       />
       <div className="grid min-w-0 gap-2 p-3">
-        <h3 className="line-clamp-1 font-black text-white">{product.name}</h3>
+        <h3 className="line-clamp-1 font-black text-[#17314A]">{product.name}</h3>
         <div className="flex min-w-0 items-center justify-between gap-2">
-          <span className="text-sm font-black text-[#67E8F9]">{formatMoney(price)}</span>
+          <span className="text-sm font-black text-[#0B7F75]">{formatMoney(price)}</span>
           <MotionButton
             {...buttonMotion}
             className="pressable ripple mf-button-primary rounded-xl px-3 py-2 text-xs font-black"

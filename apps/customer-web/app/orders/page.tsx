@@ -169,9 +169,9 @@ function OrdersDashboard() {
               <StatusTracker status={activeOrder.order.status ?? activeOrder.status} />
               <div className="mt-5 grid gap-2">
                 {activeOrder.order.items.map((item) => (
-                  <div className="flex min-w-0 justify-between gap-3 rounded-xl bg-white/8 px-4 py-3 text-sm font-bold text-white" key={item.id}>
+                  <div className="flex min-w-0 justify-between gap-3 rounded-xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-bold text-[#17314A]" key={item.id}>
                     <span className="min-w-0 truncate">{Number(item.quantity)}x {localizeMenuName(item.productName)}</span>
-                    <span className="text-[#67E8F9]">{formatMoney(item.totalPrice)}</span>
+                    <span className="text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
@@ -230,7 +230,7 @@ function OrdersDashboard() {
           <h2 className="text-xl font-black text-[#17314A]">Sevimlilar</h2>
           <div className="mt-4 grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
-              <Link className="pressable grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-2xl bg-white/8 p-2" href={`/product/${product.id}`} key={product.id}>
+              <Link className="pressable grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-2xl bg-[#0B7F75]/7 p-2" href={`/product/${product.id}`} key={product.id}>
                 <MediaImage
                   alt={product.name}
                   aspectClassName="h-16 w-16"
@@ -239,11 +239,11 @@ function OrdersDashboard() {
                   src={product.imageUrl}
                 />
                 <div>
-                  <p className="truncate font-bold text-white">{localizeMenuName(product.name)}</p>
-                  <p className="text-sm text-[#67E8F9]">{formatMoney(product.sellingPrice)}</p>
+                  <p className="truncate font-bold text-[#17314A]">{localizeMenuName(product.name)}</p>
+                  <p className="text-sm text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm text-white/56">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
+            )) : <p className="text-sm text-[#17314A]/56">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
           </div>
         </div>
       </aside>

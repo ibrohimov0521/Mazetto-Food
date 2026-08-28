@@ -200,7 +200,7 @@ function OrderDetail() {
                     ))}
                   </div>
                 ) : null}
-                {item.notes ? <p className="mt-3 text-sm font-semibold text-white/56">Izoh: {item.notes}</p> : null}
+                {item.notes ? <p className="mt-3 text-sm font-semibold text-[#17314A]/56">Izoh: {item.notes}</p> : null}
               </article>
             ))}
           </div>
@@ -223,14 +223,14 @@ function OrderDetail() {
           <h2 className="text-xl font-black text-[#17314A]">To'lov holati</h2>
           <div className="mt-4 grid gap-2">
             {order.order.payments?.length ? order.order.payments.map((payment) => (
-              <div className="mf-card-soft p-3 text-sm font-bold text-white" key={payment.id}>
+              <div className="mf-cart-row p-3 text-sm font-bold text-[#17314A]" key={payment.id}>
                 <div className="flex justify-between gap-3">
                   <span>{payment.method?.name ?? payment.methodCode ?? "To'lov"}</span>
-                  <span className="text-[#67E8F9]">{formatMoney(payment.amount)}</span>
+                  <span className="text-[#0B7F75]">{formatMoney(payment.amount)}</span>
                 </div>
-                <p className="mt-1 text-xs text-white/52">{payment.status}</p>
+                <p className="mt-1 text-xs text-[#17314A]/52">{payment.status}</p>
               </div>
-            )) : <p className="text-sm font-semibold text-white/56">To'lov ma'lumoti hali biriktirilmagan.</p>}
+            )) : <p className="text-sm font-semibold text-[#17314A]/56">To'lov ma'lumoti hali biriktirilmagan.</p>}
           </div>
         </section>
       </aside>
@@ -249,7 +249,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 justify-between gap-3 border-b border-white/10 pb-3 last:border-b-0 last:pb-0">
+    <div className="flex min-w-0 justify-between gap-3 border-b border-[#0B7F75]/12 pb-3 last:border-b-0 last:pb-0">
       <span className="shrink-0 text-[#17314A]/52">{label}</span>
       <span className="min-w-0 break-words text-right text-[#17314A]">{value}</span>
     </div>

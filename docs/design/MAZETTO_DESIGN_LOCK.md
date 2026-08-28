@@ -113,6 +113,21 @@ The Step 3 local pass tightened only the shared customer shell, Home, and Produc
 
 Step 3 screenshot evidence uses `.qa-screenshots/step3-*` filenames for Home, Product Detail, and Menu regression at 390, 430, 768, and 1440px.
 
+## Step 4 Cart/Checkout/Profile/Orders Rules
+
+The Step 4 local pass extends the locked customer visual system to the rest of the core customer flow. The locked implementation rules are:
+
+- Cart uses compact ivory rows, stable thumbnails, stable `- 1 +` quantity controls, real line totals, and a golden checkout CTA. The global header cart amount must remain synchronized with the real cart total and must not jitter when switching between empty and priced states.
+- Empty cart states stay branded and compact, with a clear Uzbek `Menyuga o'tish` action and no fake products.
+- Cart upsell may use only real menu products, prioritized from trustworthy side/drink/sauce categories. Do not invent recommendation records.
+- Checkout stays as a compact single-flow experience unless a future approved task changes the architecture. Branch, order type, address, Telegram auth, payment selection, and submit state must remain in the checkout context.
+- Checkout branch selection must use the existing custom branch picker behavior. Opening the picker must not increase page height or cause parent layout shift.
+- Payment UI may show only backend-supported payment method values and must not imply that Click/Payme are completed online provider integrations until that work is explicitly implemented.
+- Order success shows only real order response data: order number, status, item count, branch when available, item snapshot rows, and total. Do not invent preparation ETA.
+- Profile and Orders use compact ivory cards and rows, show only actual customer/order API data, and must never expose internal ids, tokens, Telegram chat ids, or implementation metadata.
+- Order detail must use immutable order snapshot fields for product names, quantities, variants, modifiers, prices, and totals. Do not replace historical order prices with current product prices.
+- Bottom navigation remains fixed and stable on Cart, Checkout, Profile, Orders, Order Detail, and Success according to the existing shell rules.
+
 ## Forbidden Drift
 
 Do not introduce:

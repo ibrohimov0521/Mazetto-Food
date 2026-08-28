@@ -23,8 +23,8 @@ const checkoutAttemptPayloadKey = "mazetto.customer.checkoutAttemptPayload";
 
 const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] = [
   { value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" },
-  { value: "CLICK", label: "Click", hint: "Masofadan to'lov" },
-  { value: "PAYME", label: "Payme", hint: "Masofadan to'lov" },
+  { value: "CLICK", label: "Click", hint: "To'lov turi sifatida belgilanadi" },
+  { value: "PAYME", label: "Payme", hint: "To'lov turi sifatida belgilanadi" },
   { value: "CARD", label: "Karta", hint: "Terminal orqali" },
 ];
 
@@ -232,10 +232,15 @@ function CheckoutFlow() {
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,390px)] lg:pb-8">
-      <div className="grid min-w-0 gap-5">
+      <div className="grid min-w-0 gap-4">
         <div className="mf-checkout-card p-5">
           <p className="text-sm font-black uppercase text-[#0B7F75]">Rasmiylashtirish</p>
-          <h1 className="mt-1 text-3xl font-black text-[#17314A]">Yetkazish ma'lumotlari</h1>
+          <h1 className="mt-1 text-3xl font-black text-[#17314A]">Buyurtmani yakunlash</h1>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <StepBadge number="1" label="Filial" active />
+            <StepBadge number="2" label="Manzil" active={type === "DELIVERY"} />
+            <StepBadge number="3" label="To'lov" active />
+          </div>
 
           <div className="mt-5 grid gap-3">
             <FieldError message={errors.customer} />
@@ -261,8 +266,8 @@ function CheckoutFlow() {
             </label>
 
             <div className="grid min-w-0 grid-cols-2 gap-2">
-            <button className={choiceClass(type === "DELIVERY")} onClick={() => selectType("DELIVERY")} type="button">Yetkazib berish</button>
-            <button className={choiceClass(type === "PICKUP")} onClick={() => selectType("PICKUP")} type="button">Olib ketish</button>
+              <button className={choiceClass(type === "DELIVERY")} onClick={() => selectType("DELIVERY")} type="button">Yetkazib berish</button>
+              <button className={choiceClass(type === "PICKUP")} onClick={() => selectType("PICKUP")} type="button">Olib ketish</button>
             </div>
 
             {type === "DELIVERY" ? (
@@ -284,9 +289,9 @@ function CheckoutFlow() {
           <h2 className="text-2xl font-black text-[#17314A]">To'lov turi</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {paymentOptions.map((option) => (
-              <motion.button className={`pressable ripple rounded-2xl px-4 py-4 text-left ${paymentMethod === option.value ? "mazetto-liquid-active" : "mazetto-glass-button hover:border-[#22C55E]/36"}`} key={option.value} layout onClick={() => { hapticTap(8); setPaymentMethod(option.value); }} type="button" whileTap={{ scale: 0.97 }}>
-                <span className="block font-black text-white">{option.label}</span>
-                <span className="mt-1 block text-xs font-bold text-white/52">{option.hint}</span>
+              <motion.button className={`pressable ripple mf-payment-option rounded-2xl px-4 py-4 text-left ${paymentMethod === option.value ? "is-active" : ""}`} key={option.value} layout onClick={() => { hapticTap(8); setPaymentMethod(option.value); }} type="button" whileTap={{ scale: 0.97 }}>
+                <span className="block font-black text-[#17314A]">{option.label}</span>
+                <span className="mt-1 block text-xs font-bold text-[#17314A]/58">{option.hint}</span>
               </motion.button>
             ))}
           </div>
@@ -368,6 +373,15 @@ function choiceClass(active: boolean): string {
 
 function FieldError({ message }: { message: string | undefined }) {
   return message ? <p className="text-xs font-bold text-red-600">{message}</p> : null;
+}
+
+function StepBadge({ active, label, number }: { active: boolean; label: string; number: string }) {
+  return (
+    <div className={`mf-checkout-step ${active ? "is-active" : ""}`}>
+      <span>{number}</span>
+      <p>{label}</p>
+    </div>
+  );
 }
 
 function canUseBranchForType(branch: Branch, type: OrderType): boolean {

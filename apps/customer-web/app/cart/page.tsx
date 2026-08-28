@@ -23,12 +23,12 @@ function CartReview() {
   const total = subtotal + deliveryFee;
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
+    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-3 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-5 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
       <div className="mf-checkout-card min-w-0 p-5">
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-black uppercase text-[#0B7F75]">Savat</p>
-            <h1 className="mt-1 text-3xl font-black text-[#17314A]">Buyurtmangiz</h1>
+            <h1 className="mt-1 text-3xl font-black text-[#17314A]">Savatcha</h1>
           </div>
           <span className="basis-full rounded-2xl bg-[#F5CF00]/26 px-4 py-2 text-sm font-black text-[#0A4F55] sm:basis-auto">{items.length} ta mahsulot</span>
         </div>
@@ -36,10 +36,10 @@ function CartReview() {
         {items.length ? (
           <MotionDiv {...sectionMotion} className="mt-5 grid gap-3">
             {items.map((item) => (
-              <div className="mf-cart-row grid min-w-0 grid-cols-[86px_minmax(0,1fr)] gap-3 p-3 sm:grid-cols-[96px_minmax(0,1fr)]" key={item.key}>
+              <div className="mf-cart-row grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-3 p-3 sm:grid-cols-[96px_minmax(0,1fr)]" key={item.key}>
                 <MediaImage
                   alt={item.productName}
-                  aspectClassName="h-24 w-24"
+                  aspectClassName="h-20 w-20 sm:h-24 sm:w-24"
                   className="rounded-2xl"
                   sizes="96px"
                   src={item.imageUrl}
@@ -70,9 +70,9 @@ function CartReview() {
           </MotionDiv>
         ) : (
           <div className="mf-card-soft mt-5 p-8 text-center">
-            <p className="font-bold text-white">Savatingiz hozircha bo'sh.</p>
+            <p className="font-bold text-white">Savatchangiz hozircha bo'sh.</p>
             <Link className="pressable ripple mf-button-primary mt-4 inline-flex px-5 py-3 font-bold" href="/menu">
-              Menyuni ochish
+              Menyuga o'tish
             </Link>
           </div>
         )}

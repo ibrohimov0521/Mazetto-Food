@@ -895,11 +895,18 @@ Local browser QA:
 - 390px Cart, Checkout, Orders: no horizontal overflow, bottom nav stable.
 - 1440px Home, Menu, Cart, Profile: no horizontal overflow.
 - Screenshot evidence is stored under `.qa-screenshots/pixel-lock-*` and `.qa-screenshots/pass2-*`.
+- Completed Step 4 local customer-flow pixel-lock:
+  - Cart now uses compact ivory rows, stable quantity controls, real totals, and a golden checkout CTA.
+  - Cart upsell uses real menu products only, with no fake recommendations.
+  - Checkout keeps the existing order logic, branch state, Telegram auth-in-checkout flow, idempotency key, and Uzbek error handling while adding a compact step visual hierarchy.
+  - Order success, Profile, Orders, and Order Detail now use the locked teal/yellow/ivory visual system and real customer/order API shapes.
+  - Order success no longer invents an estimated preparation time; it shows real order status, item count, total, branch, and item snapshot data.
+  - Step 4 browser QA covered Cart, Checkout, Profile, Orders, Order Detail, and Success at 390, 430, 768, and 1440px.
 
 Known limitations:
 
 - Real product/category media assets are still missing from the media service, so food images render through the branded fallback.
-- The pass is a first implementation pass, not final pixel-perfect signoff. Further side-by-side iteration against each reference is still needed.
+- The customer core flow is visually aligned through Step 4, but final pixel-level refinements may continue in later controlled visual passes.
 - Telegram delivery/address checkout is implemented locally with durable conversation state, but it has not been migrated, deployed, or verified in production yet.
 - Staff Telegram notification activation remains separate and was not configured in this pass.
 

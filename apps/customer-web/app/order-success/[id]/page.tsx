@@ -79,8 +79,7 @@ function OrderSuccess() {
     void load();
   }, [load]);
 
-  const itemCount = order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 1;
-  const estimate = `${Math.min(35, 15 + itemCount * 5)}-${Math.min(45, 25 + itemCount * 5)} daqiqa`;
+  const itemCount = order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 0;
 
   if (!customer?.accessToken) {
     return (
@@ -133,32 +132,33 @@ function OrderSuccess() {
           <BrandLogo className="mx-auto h-auto w-[min(17rem,72vw)]" priority sizes="280px" />
           <div className="mx-auto mt-6 grid h-20 w-20 place-items-center rounded-full bg-[#F5CF00] text-4xl font-black text-[#07373A] shadow-[0_18px_48px_rgba(245,207,0,0.32)]">✓</div>
           <p className="mt-5 text-sm font-black uppercase text-[#F5CF00]">Buyurtma qabul qilindi</p>
-          <h1 className="mt-2 text-3xl font-black">{order.order.orderNumber}</h1>
+          <h1 className="mt-2 text-3xl font-black sm:text-4xl">Buyurtmangiz qabul qilindi!</h1>
+          <p className="mt-2 text-sm font-bold text-white/70">{order.order.orderNumber}</p>
           <p className="mt-2 text-sm font-semibold text-white/74">Oshxonaga yuborildi, holatini real vaqtda kuzatishingiz mumkin.</p>
         </div>
 
-        <div className="grid gap-4 rounded-t-[2rem] bg-[#F5F5EF] p-5">
+        <div className="mf-success-content grid gap-4 rounded-t-[2rem] bg-[#F5F5EF] p-5">
           <div className="grid gap-3 sm:grid-cols-3">
             <Metric label="Holat" value={statusLabel(order.order.status ?? order.status)} />
-            <Metric label="Taxminiy vaqt" value={estimate} />
+            <Metric label="Mahsulot" value={`${itemCount} dona`} />
             <Metric label="Jami" value={formatMoney(order.order.total)} />
           </div>
 
           {order.branch ? (
-            <div className="mf-card-soft p-4">
-              <p className="text-xs font-black uppercase text-[#67E8F9]">Filial</p>
-              <p className="mt-2 text-lg font-black text-white">{order.branch.name}</p>
-              {order.branch.address ? <p className="mt-1 text-sm font-semibold text-white/52">{order.branch.address}</p> : null}
+            <div className="mf-cart-row p-4">
+              <p className="text-xs font-black uppercase text-[#0B7F75]">Filial</p>
+              <p className="mt-2 text-lg font-black text-[#17314A]">{order.branch.name}</p>
+              {order.branch.address ? <p className="mt-1 text-sm font-semibold text-[#17314A]/56">{order.branch.address}</p> : null}
             </div>
           ) : null}
 
-          <div className="mf-card-soft p-4">
-            <h2 className="text-lg font-black text-white">Mahsulotlar</h2>
+          <div className="mf-cart-row p-4">
+            <h2 className="text-lg font-black text-[#17314A]">Mahsulotlar</h2>
             <div className="mt-3 grid gap-2">
               {order.order.items.map((item) => (
-                <div className="flex justify-between rounded-xl bg-white/8 px-4 py-3 text-sm font-bold text-white" key={item.id}>
+                <div className="flex justify-between rounded-xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-bold text-[#17314A]" key={item.id}>
                   <span>{Number(item.quantity)}x {item.productName}</span>
-                  <span className="text-[#67E8F9]">{formatMoney(item.totalPrice)}</span>
+                  <span className="text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
                 </div>
               ))}
             </div>
