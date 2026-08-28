@@ -824,11 +824,73 @@ Current blockers:
 - Pixel-locked screenshot comparison QA is blocked until the approved reference screenshots are attached as actual image files.
 - Complete Telegram customer ordering must be implemented through a small shared order application layer or facade. Directly injecting `CustomersService` into `TelegramModule` would create a module dependency cycle because `CustomersModule` already imports `TelegramModule` for verification-code delivery.
 
+## Master Pixel-Lock Customer-Web Pass
+
+Status: In progress locally, Pass 2 visual and Telegram ordering code validated locally
+
+Date: 2026-08-28
+
+Completed in this pass:
+
+- Verified the approved reference pack now exists in `docs/design/references/`.
+- Verified reference dimensions:
+  - logo master: 4096x1791 RGBA
+  - logo web 2048: 2048x895 RGBA
+  - logo web 1024: 1024x448 RGBA
+  - Home/Menu/Product/Cart-Checkout/Profile-Orders references: 941x1672 RGB each
+- Copied the approved web logo into `apps/customer-web/public/brand/mazetto-food-logo.webp`.
+- Added a reusable customer-web `BrandLogo` component using the real transparent logo asset.
+- Replaced customer header and first-visit splash plain text branding with the approved logo image.
+- Moved Home toward the reference structure: ivory hero panel, petrol-teal visual shell, yellow CTA, compact branch block, and real-data sections.
+- Moved Menu/product cards toward the reference structure: teal compact cards, yellow price/action emphasis, 2-column mobile grid, sticky category strip, and real product data.
+- Moved Product Detail toward the reference structure: branded top, ivory configuration surface, compact variants/modifiers, yellow add-to-cart CTA, and full menu continuation.
+- Moved Cart/Checkout/Success toward the reference structure: ivory cart/checkout cards, compact rows, teal/yellow accents, and branded success surface.
+- Moved Profile/Orders toward the reference structure: compact ivory profile/order cards with teal status and real customer/order API data.
+- Fixed a 390px menu horizontal overflow regression caused by category-strip sizing.
+- Completed Pass 2 interaction hardening for sticky category navigation, inline cart controls, search clear behavior, and fixed bottom navigation stability.
+- Extracted the authoritative customer order creation path into `CustomerOrderEngineService`.
+- Added Telegram customer ordering support using persistent `Cart`/`CartItem` storage and the shared order engine.
+- Telegram customer ordering now supports category/product browsing, variant add, modifier toggle, quantity changes, cart view, checkout summary, CASH pickup confirmation, idempotent stale-confirm protection, and shared website/Telegram order history identity.
+- Added `scripts/validate-telegram-customer-ordering.ts` for the Telegram cart/order regression path.
+
+Local validation:
+
+- `pnpm --filter customer-web typecheck`: passed.
+- `pnpm --filter customer-web lint`: passed.
+- `pnpm --filter customer-web build`: passed repeatedly after each section pass.
+- `pnpm --filter backend typecheck`: passed.
+- `pnpm --filter backend lint`: passed.
+- `pnpm --filter backend build`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-auth.ts`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-customer-order-history.ts`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-ordering.ts`: passed.
+- `pnpm --dir apps/backend exec prisma format`: passed with safe placeholder `DATABASE_URL`.
+- `pnpm --dir apps/backend exec prisma validate`: passed with safe placeholder `DATABASE_URL`.
+- `pnpm --dir apps/backend exec prisma generate`: passed with safe placeholder `DATABASE_URL`.
+- `pnpm typecheck`: passed.
+- `pnpm lint`: passed.
+- `pnpm build`: app tasks completed successfully (`9 successful, 9 total`); the shell session did not exit cleanly and was stopped after successful task output.
+- `git diff --check`: passed with line-ending warnings only.
+
+Local browser QA:
+
+- 390px Menu: 35 product cards, sticky category nav present, fixed bottom nav stable, no document horizontal overflow; actual horizontal page scroll stays at 0.
+- 390px Product Detail: real production product route loaded, no horizontal overflow, full menu continuation present with 35 product cards.
+- 390px Cart, Checkout, Orders: no horizontal overflow, bottom nav stable.
+- 1440px Home, Menu, Cart, Profile: no horizontal overflow.
+- Screenshot evidence is stored under `.qa-screenshots/pixel-lock-*` and `.qa-screenshots/pass2-*`.
+
+Known limitations:
+
+- Real product/category media assets are still missing from the media service, so food images render through the branded fallback.
+- The pass is a first implementation pass, not final pixel-perfect signoff. Further side-by-side iteration against each reference is still needed.
+- Telegram delivery/address entry is intentionally not exposed yet in Telegram because no durable Telegram conversation-state table exists; Telegram checkout currently uses pickup + cash only and does not fake Click/Payme success.
+- Staff Telegram notification activation remains separate and was not configured in this pass.
+
 Still remaining in this master phase:
 
-- Integrate the real approved logo asset.
-- Complete page-by-page redesign against actual reference images.
-- Add persistent Telegram customer cart/order flow without duplicating the order engine.
+- Continue side-by-side polish against actual reference images where visual deviations remain.
+- Add durable Telegram delivery address/payment provider flows only after a conversation-state design is approved.
 - Prove checkout and order E2E with exactly one controlled production test order after deployment approval.
 - Update production only after local visual QA, validation, backup, commit, and controlled deploy.
 
@@ -854,8 +916,8 @@ Still remaining in this master phase:
 20. Kirim / Chiqim. Status: Not started.
 21. Daily Closing. Status: Not started.
 22. Reports. Status: Not started.
-23. Customer Telegram Bot. Status: Not started.
-24. Click / Payme. Status: Not started.
+23. Customer Telegram Bot. Status: Partial locally, auth/history/menu/cart/pickup cash checkout implemented; production verification pending.
+24. Click / Payme. Status: Not started; no fake success flow exposed in Telegram.
 25. Security. Status: Not started.
 26. Backup / Monitoring. Status: Not started.
 27. Full E2E / Production QA. Status: Not started.
