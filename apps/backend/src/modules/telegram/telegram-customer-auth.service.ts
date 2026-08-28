@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
@@ -63,7 +64,10 @@ const customerCallbackPrefix = "cust";
 export class TelegramCustomerAuthService {
   private readonly logger = new Logger(TelegramCustomerAuthService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telegramCustomerOrderingService: TelegramCustomerOrderingService,
+  ) {}
 
   async deliverVerificationCode(params: {
     phone: string;
@@ -135,7 +139,7 @@ export class TelegramCustomerAuthService {
       const text = message.text?.trim();
 
       if (text === "🍽 Menyu") {
-        await this.sendCategoryMenu(message);
+        await this.telegramCustomerOrderingService.sendCategoryMenu(message);
         return { ok: true, handled: true };
       }
 
@@ -150,12 +154,12 @@ export class TelegramCustomerAuthService {
       }
 
       if (text === "📍 Filial") {
-        await this.sendBranches(message);
+        await this.telegramCustomerOrderingService.sendBranches(message);
         return { ok: true, handled: true };
       }
 
       if (text === "🛒 Savat") {
-        await this.sendCartPlaceholder(message);
+        await this.telegramCustomerOrderingService.sendCartFromMessage(message);
         return { ok: true, handled: true };
       }
     } catch (error) {
@@ -276,36 +280,7 @@ export class TelegramCustomerAuthService {
   }
 
   private async handleCustomerCallback(callback: TelegramCallbackQuery): Promise<void> {
-    const chatId = callback.message?.chat?.id;
-    const data = callback.data ?? "";
-
-    if (callback.id) {
-      await this.telegramRequest("answerCallbackQuery", {
-        callback_query_id: callback.id,
-      }).catch(() => undefined);
-    }
-
-    if (!chatId) {
-      return;
-    }
-
-    const [, action, value] = data.split(":");
-
-    if (action === "cat" && value) {
-      await this.sendProductsForCategory(String(chatId), value);
-      return;
-    }
-
-    if (action === "home") {
-      const customer = await this.findLinkedCustomer(callback.from?.id);
-      await this.sendMainMenu(String(chatId), customer?.name);
-      return;
-    }
-
-    await this.telegramRequest("sendMessage", {
-      chat_id: String(chatId),
-      text: "Bu tugma eskirgan bo'lishi mumkin. Iltimos, bosh menyudan qayta tanlang.",
-    });
+    await this.telegramCustomerOrderingService.handleCustomerCallback(callback);
   }
 
   private async sendMainMenu(chatId: string, name?: string | null): Promise<void> {

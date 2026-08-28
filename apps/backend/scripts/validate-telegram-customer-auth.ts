@@ -323,12 +323,18 @@ function latestCode(): string {
 }
 
 function createServices(prisma = new InMemoryPrisma()) {
+  const telegramCustomerOrderingService = {
+    handleCustomerCallback: async () => true,
+    sendCategoryMenu: async () => undefined,
+    sendCartFromMessage: async () => undefined,
+    sendBranches: async () => undefined,
+  };
   const telegramCustomerAuthService = new TelegramCustomerAuthService(
     prisma as never,
+    telegramCustomerOrderingService as never,
   );
   const customersService = new CustomersService(
     prisma as never,
-    {} as never,
     {} as never,
     new JwtService(),
     {} as never,
