@@ -78,6 +78,7 @@ async function run(): Promise<void> {
 function createServices(prisma: PrismaClient) {
   const telegramCustomerOrderingService = {
     handleCustomerCallback: async () => true,
+    handleCustomerMessage: async () => false,
     sendCategoryMenu: async () => undefined,
     sendCartFromMessage: async () => undefined,
     sendBranches: async () => undefined,
@@ -343,8 +344,10 @@ async function expectRejects(
 }
 
 function latestCode(): string {
-  const text = sentTelegramPayloads.at(-1)?.text ?? "";
-  const match = text.match(/\b\d{6}\b/);
+  const match = sentTelegramPayloads
+    .map((payload) => payload.text ?? "")
+    .findLast((text) => /\b\d{6}\b/.test(text))
+    ?.match(/\b\d{6}\b/);
   assert.ok(match?.[0], "telegram message must include a 6 digit code");
   return match[0];
 }
