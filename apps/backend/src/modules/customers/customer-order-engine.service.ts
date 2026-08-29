@@ -19,11 +19,12 @@ import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { OrdersService } from "../orders/orders.service";
 import type {
+  CustomerCheckoutQuoteDto,
   CreateOnlineOrderDto,
   OnlineOrderItemDto,
   OnlineOrderModifierDto,
 } from "./dto/customer.dto";
-import { OnlineOrderTypeDto } from "./dto/customer.dto";
+import { OnlineOrderTypeDto, OnlinePaymentMethodDto } from "./dto/customer.dto";
 
 type TransactionClient = Prisma.TransactionClient;
 type ModifierSnapshot = {
@@ -46,6 +47,7 @@ type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
 
 const CUSTOMER_ORDER_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_ORDER_ATTEMPT_WAIT_MS = 15000;
+const operationalCustomerPaymentMethods = [OnlinePaymentMethodDto.CASH] as const;
 
 @Injectable()
 export class CustomerOrderEngineService {
@@ -72,6 +74,8 @@ export class CustomerOrderEngineService {
     if (!customer) {
       throw new NotFoundException("Customer not found");
     }
+
+    this.assertCustomerPaymentMethodSupported(dto.paymentMethod);
 
     const attempt = dto.idempotencyKey
       ? await this.reserveCustomerOrderAttempt(
@@ -120,12 +124,14 @@ export class CustomerOrderEngineService {
             },
           });
 
+          let subtotal = new Prisma.Decimal(0);
           for (const item of dto.items) {
             const snapshot = await this.createItemSnapshot(
               tx,
               dto.branchId,
               item,
             );
+            subtotal = subtotal.add(snapshot.totalPrice);
             await tx.orderItem.create({
               data: {
                 orderId: order.id,
@@ -142,7 +148,8 @@ export class CustomerOrderEngineService {
             });
           }
 
-          await this.recalculateOrderTotals(tx, order.id);
+          const pricing = this.composeCustomerOrderPricing(dto.type, subtotal);
+          await this.recalculateOrderTotals(tx, order.id, pricing.deliveryFee);
           await tx.orderStatusHistory.create({
             data: {
               orderId: order.id,
@@ -223,6 +230,42 @@ export class CustomerOrderEngineService {
 
       throw error;
     }
+  }
+
+  async quoteCheckout(customerId: string, dto: CustomerCheckoutQuoteDto) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true },
+    });
+
+    if (!customer) {
+      throw new NotFoundException("Customer not found");
+    }
+
+    await this.branchesService.assertCustomerBranchAcceptsOrder(
+      dto.branchId,
+      dto.type,
+    );
+
+    const pricing = await this.prisma.$transaction(async (tx) =>
+      this.composeCustomerOrderPricing(
+        dto.type,
+        (
+          await this.calculateCustomerOrderPricing(
+            tx,
+            dto.branchId,
+            dto.items,
+          )
+        ).subtotal,
+      ),
+    );
+
+    return {
+      subtotal: pricing.subtotal.toFixed(2),
+      deliveryFee: pricing.deliveryFee.toFixed(2),
+      total: pricing.total.toFixed(2),
+      paymentMethods: this.customerPaymentMethods(),
+    };
   }
 
   private async reserveCustomerOrderAttempt(
@@ -472,9 +515,49 @@ export class CustomerOrderEngineService {
     );
   }
 
+  private async calculateCustomerOrderPricing(
+    tx: TransactionClient,
+    branchId: string,
+    items: OnlineOrderItemDto[],
+  ) {
+    const snapshots = await Promise.all(
+      items.map((item) => this.createItemSnapshot(tx, branchId, item)),
+    );
+    const subtotal = snapshots.reduce(
+      (total, item) => total.add(item.totalPrice),
+      new Prisma.Decimal(0),
+    );
+
+    return {
+      subtotal,
+    };
+  }
+
+  private composeCustomerOrderPricing(
+    type: OnlineOrderTypeDto,
+    subtotal: Prisma.Decimal,
+  ) {
+    const deliveryFee = this.resolveDeliveryFee(type);
+
+    return {
+      deliveryFee,
+      subtotal,
+      total: subtotal.add(deliveryFee),
+    };
+  }
+
+  private resolveDeliveryFee(type: OnlineOrderTypeDto): Prisma.Decimal {
+    if (type === OnlineOrderTypeDto.PICKUP) {
+      return new Prisma.Decimal(0);
+    }
+
+    return new Prisma.Decimal(0);
+  }
+
   private async recalculateOrderTotals(
     tx: TransactionClient,
     orderId: string,
+    deliveryFee: Prisma.Decimal,
   ): Promise<void> {
     const items = await tx.orderItem.findMany({
       where: { orderId, status: OrderItemStatus.ACTIVE },
@@ -487,8 +570,30 @@ export class CustomerOrderEngineService {
 
     await tx.order.update({
       where: { id: orderId },
-      data: { subtotal, total: subtotal },
+      data: {
+        deliveryFeeTotal: deliveryFee,
+        subtotal,
+        total: subtotal.add(deliveryFee),
+      },
     });
+  }
+
+  private assertCustomerPaymentMethodSupported(
+    paymentMethod: OnlinePaymentMethodDto,
+  ): void {
+    if (!operationalCustomerPaymentMethods.includes(paymentMethod as never)) {
+      throw new BadRequestException(
+        "Payment method is not available for customer orders",
+      );
+    }
+  }
+
+  private customerPaymentMethods() {
+    return operationalCustomerPaymentMethods.map((method) => ({
+      code: method,
+      label: method === OnlinePaymentMethodDto.CASH ? "Naqd" : method,
+      status: "AVAILABLE",
+    }));
   }
 
   private withDerivedCustomerOrderStatus<

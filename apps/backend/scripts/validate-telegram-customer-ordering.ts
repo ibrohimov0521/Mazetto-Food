@@ -596,6 +596,12 @@ async function seedCart(
 function createService(prisma: InMemoryPrisma) {
   const engineCalls: EngineCall[] = [];
   const orderEngine = {
+    quoteCheckout: async () => ({
+      subtotal: product.sellingPrice.toFixed(2),
+      deliveryFee: "0.00",
+      total: product.sellingPrice.toFixed(2),
+      paymentMethods: [{ code: "CASH", label: "Naqd", status: "AVAILABLE" }],
+    }),
     createOnlineOrder: async (
       customerId: string,
       dto: EngineCall["dto"],

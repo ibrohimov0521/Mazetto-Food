@@ -86,6 +86,10 @@ function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>)
       return "Tanlangan qo'shimchalardan biri bu mahsulot uchun mavjud emas.";
     }
 
+    if (backendMessage === "Payment method is not available for customer orders") {
+      return "Bu to'lov turi hozircha mavjud emas. Iltimos, naqd to'lovni tanlang.";
+    }
+
     if (backendMessage === "Checkout attempt is already being processed") {
       return "Buyurtma allaqachon yuborilmoqda. Iltimos, bir necha soniya kuting.";
     }

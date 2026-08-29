@@ -129,3 +129,17 @@ export class CreateOnlineOrderDto {
   @Type(() => OnlineOrderItemDto)
   items!: OnlineOrderItemDto[];
 }
+
+export class CustomerCheckoutQuoteDto {
+  @IsString()
+  branchId!: string;
+
+  @IsEnum(OnlineOrderTypeDto)
+  type!: OnlineOrderTypeDto;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => OnlineOrderItemDto)
+  items!: OnlineOrderItemDto[];
+}

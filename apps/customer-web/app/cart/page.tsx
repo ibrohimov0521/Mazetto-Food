@@ -19,8 +19,7 @@ export default function CartPage() {
 
 function CartReview() {
   const { customer, items, removeItem, subtotal, updateQuantity } = useCart();
-  const deliveryFee = subtotal > 0 ? 12000 : 0;
-  const total = subtotal + deliveryFee;
+  const total = subtotal;
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-3 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-5 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
@@ -93,8 +92,8 @@ function CartReview() {
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={subtotal} /></span>
           </div>
           <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
-            <span>Taxminiy yetkazish</span>
-            <span className="min-w-0 break-words text-right">{deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
+            <span>Yetkazib berish</span>
+            <span className="min-w-0 break-words text-right">Rasmiylashtirishda</span>
           </div>
           <div className="h-px bg-white/10" />
           <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-white">

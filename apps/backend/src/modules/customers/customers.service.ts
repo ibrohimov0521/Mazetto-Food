@@ -25,6 +25,7 @@ import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
 import type {
+  CustomerCheckoutQuoteDto,
   CreateOnlineOrderDto,
   CustomerLogoutDto,
   CustomerRefreshDto,
@@ -288,6 +289,10 @@ export class CustomersService {
     }
 
     return result;
+  }
+
+  quoteCheckout(customerId: string, dto: CustomerCheckoutQuoteDto) {
+    return this.customerOrderEngine.quoteCheckout(customerId, dto);
   }
   private async issueCustomerTokens(
     customer: { id: string; phone: string },

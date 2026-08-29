@@ -1,6 +1,6 @@
 # MAZETTO FOOD Work Status
 
-Last updated: 2026-08-27
+Last updated: 2026-08-30
 
 This file is the persistent working checklist for the existing MAZETTO FOOD production project. Read this before continuing any Mazetto task.
 
@@ -41,13 +41,13 @@ Media Service
 | --- | --- | --- |
 | Backend | Done | NestJS backend is deployed and health endpoint works. |
 | Database | Done | PostgreSQL is deployed, migrations and seed were applied. |
-| Customer Web | In progress | Main routes, cart, checkout, profile, orders, premium mobile UI exist. |
-| Media Service | In progress | nginx service and volume work, but real image files are missing. |
-| Telegram Staff Notifications | In progress | Backend code exists; production ENV and Telegram webhook setup remain. |
-| Customer Telegram Bot | Not started | Separate customer-facing bot is not implemented. |
-| MAZETTO Desktop | Not started | Will contain POS, Desktop Admin, offline SQLite, sync engine, and printer engine. |
-| Admin Panel | Not started | Planned for later. |
-| Payment Integrations | Not started | Click/Payme real integrations are later-stage work. |
+| Customer Web | 🟡 PARTIAL / RISK | Main routes, cart, checkout, profile, orders, premium mobile UI exist; Step 11 fixes delivery-fee/payment honesty locally but is not deployed. |
+| Media Service | 🟡 PARTIAL / RISK | nginx service and volume work, but production media volume is still missing real image files. |
+| Telegram Staff Notifications | 🟡 PARTIAL / RISK | Backend code exists; staff Telegram production verification is not complete. |
+| Customer Telegram Bot | 🟡 PARTIAL / RISK | Customer Telegram auth/order code exists in backend and one real Telegram order was verified; Step 10 UX polish is local-only and not deployed. |
+| MAZETTO Desktop | ❌ NOT IMPLEMENTED | Will contain POS, Desktop Admin, offline SQLite, sync engine, and printer engine. |
+| Admin Panel | ❌ NOT IMPLEMENTED / PARTIAL | Backend/admin foundations exist, but full admin web UI is planned for later. |
+| Payment Integrations | ❌ NOT IMPLEMENTED | Click/Payme real provider integrations are later-stage work. |
 
 ## Completed Work
 
@@ -287,6 +287,60 @@ Media Service
   - remaining: real `@mazettofoodbot` `/start -> contact -> request-code -> verify-code` login test requires the user/customer to perform the Telegram contact step
 
 ## Current Blockers
+
+### Full Repository Code Audit - 2026-08-29
+
+Status: Completed locally, production untouched
+
+Evidence document:
+
+```text
+docs/MAZETTO_FULL_CODE_AUDIT.md
+```
+
+Audit result:
+
+- ✅ VERIFIED: production MVP architecture is preserved; backend/customer-web/media infrastructure are active.
+- ✅ VERIFIED: customer order item pricing is calculated from backend database state, not client-supplied line totals.
+- ✅ VERIFIED: customer order history/detail routes are scoped by authenticated `customerId`.
+- ✅ VERIFIED: Telegram contact linking validates Telegram contact ownership.
+- 🟡 PARTIAL / RISK: customer-web displays a 12 000 so'm delivery fee, but backend customer order totals currently persist item subtotal only.
+- 🟡 PARTIAL / RISK: customer checkout shows Click, Payme, and Card options before real provider settlement exists.
+- 🟡 PARTIAL / RISK: Uzbek phone normalization can still create duplicate identities for local-format versus `+998` numbers.
+- 🟡 PARTIAL / RISK: Telegram category product listing is capped at 8 products without pagination.
+- 🟡 PARTIAL / RISK: Telegram cart quick-add creates separate identical cart rows instead of merging quantity.
+- 🟡 PARTIAL / RISK: production direct media URLs still 404 until real media files are uploaded into the `mazetto-media` volume.
+
+Recommended next fix phase:
+
+```text
+Fix delivery-fee source of truth and public checkout payment honesty before the next production release.
+```
+
+### Step 11 - Audit P1 Remediation
+
+Status: Local implementation complete, not deployed
+
+Scope:
+
+- AUD-001 delivery-fee source of truth.
+- AUD-002 customer payment UX honesty.
+
+Evidence:
+
+- ✅ VERIFIED: no schema migration was required because `Order.deliveryFeeTotal` already exists.
+- ✅ VERIFIED: backend `CustomerOrderEngineService` now owns customer checkout quote and final order pricing.
+- ✅ VERIFIED: because no branch/settings delivery-fee value exists yet, the current authoritative customer delivery fee remains `0.00`; this preserves the verified production DELIVERY + CASH order behavior and avoids inventing a new fee amount.
+- ✅ VERIFIED: new orders persist `deliveryFeeTotal` from the backend policy and calculate `total = subtotal + deliveryFeeTotal`.
+- ✅ VERIFIED: customer-web checkout no longer uses the old hardcoded `12000` delivery fee.
+- ✅ VERIFIED: customer-web checkout shows only the operational `CASH` payment option.
+- ✅ VERIFIED: backend rejects unsupported customer checkout methods such as `CLICK`, `PAYME`, and `CARD` until real provider/terminal settlement is implemented.
+- ✅ VERIFIED: Telegram checkout summary uses the same backend quote path as web checkout.
+
+Remaining:
+
+- Production still runs the previous deployed release until Step 11 is explicitly pushed and deployed.
+- A real non-zero delivery fee still requires an owner-approved backend/branch setting in a later phase.
 
 ### 0. Production Release Backup
 

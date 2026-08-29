@@ -1236,6 +1236,21 @@ export class TelegramCustomerOrderingService {
 
     await this.upsertCheckoutSession(customer.id, target.chatId, { step: "SUMMARY" });
     const totals = await this.calculateCartTotals(cart.items);
+    const quote = await this.customerOrderEngine.quoteCheckout(customer.id, {
+      branchId: branch.id,
+      type:
+        orderType === CustomerOrderType.DELIVERY
+          ? OnlineOrderTypeDto.DELIVERY
+          : OnlineOrderTypeDto.PICKUP,
+      items: cart.items.map((item) => ({
+        productId: item.productId,
+        ...(item.variantId ? { variantId: item.variantId } : {}),
+        quantity: Number(item.quantity),
+        modifiers: this.readCartModifiers(item.modifierSnapshot),
+        ...(item.notes ? { notes: item.notes } : {}),
+      })),
+    });
+    const deliveryFee = Number(quote.deliveryFee);
 
     await this.renderCustomerScreen(target, {
       text: [
@@ -1250,8 +1265,11 @@ export class TelegramCustomerOrderingService {
         "To'lov: <b>Naqd</b>",
         "",
         ...totals.lines,
+        deliveryFee > 0
+          ? `Yetkazib berish: ${this.formatMoney(new Prisma.Decimal(quote.deliveryFee))}`
+          : "",
         "",
-        `<b>Jami: ${this.formatMoney(totals.total)}</b>`,
+        `<b>Jami: ${this.formatMoney(new Prisma.Decimal(quote.total))}</b>`,
       ].filter(Boolean).join("\n"),
       parse_mode: "HTML",
       reply_markup: {

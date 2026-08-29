@@ -55,9 +55,21 @@ async function main(): Promise<void> {
       customerId: fixture.webCustomer.id,
       branchId: fixture.branch.id,
       source: OrderSource.WEB,
+      expectedDeliveryFee: new Prisma.Decimal(0),
       expectedTotal: fixture.expectedConfigurableTotal,
       expectedModifierName: fixture.modifier.name,
     });
+
+    const deliveryOrder = await createDeliveryWebOrder(services.orderEngine, fixture);
+    await proveOrderGraph(prisma, deliveryOrder.customerOrder.id, {
+      customerId: fixture.webCustomer.id,
+      branchId: fixture.branch.id,
+      source: OrderSource.WEB,
+      expectedDeliveryFee: new Prisma.Decimal(0),
+      expectedTotal: fixture.expectedConfigurableTotal,
+      expectedModifierName: fixture.modifier.name,
+    });
+    await proveUnsupportedCustomerPayments(services.orderEngine, prisma, fixture);
 
     const afterWebCounts = await orderGraphCounts(prisma);
     await services.orderEngine.createOnlineOrder(
@@ -85,6 +97,7 @@ async function main(): Promise<void> {
       customerId: fixture.telegramCustomer.id,
       branchId: fixture.branch.id,
       source: OrderSource.TELEGRAM,
+      expectedDeliveryFee: new Prisma.Decimal(0),
       expectedTotal: fixture.expectedConfigurableTotal,
       expectedModifierName: fixture.modifier.name,
     });
@@ -308,6 +321,40 @@ async function createWebOrder(
   return { ...result, dto };
 }
 
+async function createDeliveryWebOrder(
+  orderEngine: CustomerOrderEngineService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+) {
+  const dto = {
+    branchId: fixture.branch.id,
+    idempotencyKey: `step11-web-delivery-idempotency-key-${fixture.runId}`,
+    name: fixture.webCustomer.name,
+    type: OnlineOrderTypeDto.DELIVERY,
+    address: "Sergeli 7/3, Step 11 isolated delivery",
+    paymentMethod: OnlinePaymentMethodDto.CASH,
+    notes: "Step 11 isolated delivery quote order",
+    items: [
+      {
+        productId: fixture.configurable.id,
+        variantId: fixture.variant.id,
+        quantity: 1,
+        modifiers: [{ modifierId: fixture.modifier.id, quantity: 1 }],
+      },
+    ],
+    deliveryFee: 999999,
+    total: 999999,
+  } as const;
+
+  const quote = await orderEngine.quoteCheckout(fixture.webCustomer.id, dto);
+  assert.equal(quote.subtotal, fixture.expectedConfigurableTotal.toFixed(2));
+  assert.equal(quote.deliveryFee, "0.00");
+  assert.equal(quote.total, fixture.expectedConfigurableTotal.toFixed(2));
+  assert.deepEqual(quote.paymentMethods.map((method) => method.code), ["CASH"]);
+
+  const result = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
+  return { ...result, dto };
+}
+
 async function proveTelegramCart(
   prisma: PrismaService,
   telegramOrdering: TelegramCustomerOrderingService,
@@ -451,6 +498,7 @@ async function proveOrderGraph(
     customerId: string;
     branchId: string;
     source: OrderSource;
+    expectedDeliveryFee: Prisma.Decimal;
     expectedTotal: Prisma.Decimal;
     expectedModifierName: string;
   },
@@ -477,6 +525,10 @@ async function proveOrderGraph(
   assert.equal(customerOrder.order.kitchenTickets.length, 1);
   assert.ok(customerOrder.order.statusHistory.length >= 2);
   assert.equal(customerOrder.attempt?.status, "COMPLETED");
+  assert.equal(
+    customerOrder.order.deliveryFeeTotal.toFixed(2),
+    expected.expectedDeliveryFee.toFixed(2),
+  );
   assert.equal(customerOrder.order.total.toFixed(2), expected.expectedTotal.toFixed(2));
 
   const item = customerOrder.order.items[0]!;
@@ -513,6 +565,43 @@ async function proveRollbackSafety(
     await orderGraphCounts(prisma),
     before,
     "invalid modifier must not leave partial order graph",
+  );
+}
+
+async function proveUnsupportedCustomerPayments(
+  orderEngine: CustomerOrderEngineService,
+  prisma: PrismaService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  const before = await orderGraphCounts(prisma);
+
+  for (const paymentMethod of [
+    OnlinePaymentMethodDto.CLICK,
+    OnlinePaymentMethodDto.PAYME,
+    OnlinePaymentMethodDto.CARD,
+  ]) {
+    await assert.rejects(() =>
+      orderEngine.createOnlineOrder(fixture.webCustomer.id, {
+        branchId: fixture.branch.id,
+        idempotencyKey: `step11-unsupported-${paymentMethod}-${fixture.runId}`,
+        name: fixture.webCustomer.name,
+        type: OnlineOrderTypeDto.PICKUP,
+        paymentMethod,
+        items: [
+          {
+            productId: fixture.configurable.id,
+            variantId: fixture.variant.id,
+            quantity: 1,
+          },
+        ],
+      }),
+    );
+  }
+
+  assert.deepEqual(
+    await orderGraphCounts(prisma),
+    before,
+    "unsupported customer payment methods must not create order graph rows",
   );
 }
 

@@ -16,6 +16,7 @@ import { CustomerAuthGuard } from "../../common/guards/customer-auth.guard";
 import type { AuthenticatedCustomer } from "../../common/types/authenticated-customer";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
+  CustomerCheckoutQuoteDto,
   CreateOnlineOrderDto,
   CustomerLogoutDto,
   CustomerRefreshDto,
@@ -84,6 +85,16 @@ export class CustomerPublicController {
   @Get("menu/products/:id")
   getProduct(@Param("id") id: string) {
     return this.customersService.getProduct(id);
+  }
+
+  @UseGuards(CustomerAuthGuard)
+  @Public()
+  @Post("checkout/quote")
+  quoteCheckout(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: CustomerCheckoutQuoteDto,
+  ) {
+    return this.customersService.quoteCheckout(customer.id, dto);
   }
 
   @UseGuards(CustomerAuthGuard)

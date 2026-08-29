@@ -15,7 +15,13 @@ import type { Branch } from "../../lib/types";
 
 type OrderResult = { customerOrder: { id: string }; order: { orderNumber: string; id?: string } | null };
 type OrderType = "DELIVERY" | "PICKUP";
-type PaymentMethod = "CASH" | "CLICK" | "PAYME" | "CARD";
+type PaymentMethod = "CASH";
+type CheckoutQuote = {
+  subtotal: string;
+  deliveryFee: string;
+  total: string;
+  paymentMethods: { code: PaymentMethod; label: string; status: "AVAILABLE" }[];
+};
 type FormErrors = Partial<Record<"name" | "phone" | "address" | "branchId" | "items" | "customer", string>>;
 const branchStorageKey = "mazetto.customer.branchId";
 const checkoutAttemptKey = "mazetto.customer.checkoutAttemptId";
@@ -23,9 +29,6 @@ const checkoutAttemptPayloadKey = "mazetto.customer.checkoutAttemptPayload";
 
 const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] = [
   { value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" },
-  { value: "CLICK", label: "Click", hint: "To'lov turi sifatida belgilanadi" },
-  { value: "PAYME", label: "Payme", hint: "To'lov turi sifatida belgilanadi" },
-  { value: "CARD", label: "Karta", hint: "Terminal orqali" },
 ];
 
 export default function CheckoutPage() {
@@ -49,12 +52,32 @@ function CheckoutFlow() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [quote, setQuote] = useState<CheckoutQuote | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const deliveryFee = type === "DELIVERY" && subtotal > 0 ? 12000 : 0;
-  const total = subtotal + deliveryFee;
+  const deliveryFee = quote ? Number(quote.deliveryFee) : 0;
+  const total = quote ? Number(quote.total) : subtotal;
   const estimatedTime = useMemo(() => `${Math.min(35, 15 + items.length * 5)}-${Math.min(45, 25 + items.length * 5)} daqiqa`, [items.length]);
   const selectedBranch = branches.find((branch) => branch.id === branchId);
+  const availablePaymentOptions = useMemo(() => {
+    const allowedCodes = new Set((quote?.paymentMethods ?? []).map((method) => method.code));
+    return allowedCodes.size
+      ? paymentOptions.filter((option) => allowedCodes.has(option.value))
+      : paymentOptions;
+  }, [quote?.paymentMethods]);
+  const orderItemsPayload = useMemo(
+    () =>
+      items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        notes: item.notes,
+        modifiers: item.modifiers.map((modifier) => ({ modifierId: modifier.modifierId, quantity: 1 })),
+      })),
+    [items],
+  );
 
   const loadBranches = useCallback(async () => {
     setLoadingBranches(true);
@@ -86,6 +109,39 @@ function CheckoutFlow() {
       setPhone(customer.phone);
     }
   }, [customer]);
+
+  const loadQuote = useCallback(async () => {
+    if (!customer?.accessToken || !branchId || !items.length) {
+      setQuote(null);
+      setQuoteError(null);
+      return;
+    }
+
+    setLoadingQuote(true);
+    setQuoteError(null);
+    try {
+      const nextQuote = await apiFetch<CheckoutQuote>("/customer/checkout/quote", {
+        accessToken: customer.accessToken,
+        body: JSON.stringify({
+          branchId,
+          type,
+          items: orderItemsPayload,
+        }),
+        method: "POST",
+      });
+      setQuote(nextQuote);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Narxni hisoblab bo'lmadi";
+      setQuote(null);
+      setQuoteError(message);
+    } finally {
+      setLoadingQuote(false);
+    }
+  }, [branchId, customer?.accessToken, items.length, orderItemsPayload, type]);
+
+  useEffect(() => {
+    void loadQuote();
+  }, [loadQuote]);
 
   function validate() {
     const nextErrors: FormErrors = {};
@@ -168,13 +224,7 @@ function CheckoutFlow() {
         address: type === "DELIVERY" ? address.trim() : undefined,
         paymentMethod,
         notes: comment.trim() || undefined,
-        items: items.map((item) => ({
-          productId: item.productId,
-          variantId: item.variantId,
-          quantity: item.quantity,
-          notes: item.notes,
-          modifiers: item.modifiers.map((modifier) => ({ modifierId: modifier.modifierId, quantity: 1 })),
-        })),
+        items: orderItemsPayload,
       };
       const idempotencyKey = getCheckoutAttemptId(JSON.stringify(orderPayload));
       const request = {
@@ -288,13 +338,16 @@ function CheckoutFlow() {
         <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
           <h2 className="text-2xl font-black text-[#17314A]">To'lov turi</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {paymentOptions.map((option) => (
+            {availablePaymentOptions.map((option) => (
               <motion.button className={`pressable ripple mf-payment-option rounded-2xl px-4 py-4 text-left ${paymentMethod === option.value ? "is-active" : ""}`} key={option.value} layout onClick={() => { hapticTap(8); setPaymentMethod(option.value); }} type="button" whileTap={{ scale: 0.97 }}>
                 <span className="block font-black text-[#17314A]">{option.label}</span>
                 <span className="mt-1 block text-xs font-bold text-[#17314A]/58">{option.hint}</span>
               </motion.button>
             ))}
           </div>
+          <p className="mt-3 text-xs font-bold text-white/56">
+            Click va Payme real integratsiyasi yoqilgandan keyin ko'rsatiladi.
+          </p>
         </MotionDiv>
       </div>
 
@@ -328,11 +381,11 @@ function CheckoutFlow() {
         <div className="mf-card-soft mt-5 grid gap-3 p-4">
           <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
             <span>Mahsulotlar</span>
-            <span className="min-w-0 break-words text-right"><AnimatedMoney value={subtotal} /></span>
+            <span className="min-w-0 break-words text-right"><AnimatedMoney value={quote ? Number(quote.subtotal) : subtotal} /></span>
           </div>
           <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
             <span>Yetkazib berish</span>
-            <span className="min-w-0 break-words text-right">{deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
+            <span className="min-w-0 break-words text-right">{loadingQuote ? "Hisoblanmoqda..." : deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
           </div>
           <div className="h-px bg-white/10" />
           <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-white">
@@ -342,8 +395,9 @@ function CheckoutFlow() {
         </div>
 
         {submitError ? <p className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-300">{submitError}</p> : null}
+        {quoteError ? <p className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-300">{quoteError}</p> : null}
 
-        <button className="pressable ripple mf-button-primary mt-4 w-full px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches} onClick={() => void submitOrder()} type="button">
+        <button className="pressable ripple mf-button-primary mt-4 w-full px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
           {submitting ? "Yuborilmoqda..." : "Buyurtmani tasdiqlash"}
         </button>
       </aside>
@@ -354,7 +408,7 @@ function CheckoutFlow() {
             <p className="text-xs font-black uppercase text-white/50">Jami</p>
             <p className="text-lg font-black text-white"><AnimatedMoney value={total} /></p>
           </div>
-          <button className="pressable ripple mf-button-primary rounded-2xl px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches} onClick={() => void submitOrder()} type="button">
+          <button className="pressable ripple mf-button-primary rounded-2xl px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
             {submitting ? "Yuborilmoqda..." : "Tasdiqlash"}
           </button>
         </div>
