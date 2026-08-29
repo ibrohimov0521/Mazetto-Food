@@ -942,7 +942,7 @@ Still remaining in this master phase:
 3. Hero slider / Discount slider / Upsell UI. Status: Done.
 4. Real menu and 45 media images. Status: In progress, files missing.
 5. Branch system. Status: Sergeli production branch configured, admin UI pending.
-6. Customer order E2E. Status: Isolated DB validated locally; production order E2E still pending explicit approval.
+6. Customer order E2E. Status: Production release and one real Telegram DELIVERY + CASH customer order verified.
 7. Telegram Staff production. Status: In progress.
 8. MAZETTO Desktop architecture. Status: Not started.
 9. Desktop Local DB. Status: Not started.
@@ -959,7 +959,7 @@ Still remaining in this master phase:
 20. Kirim / Chiqim. Status: Not started.
 21. Daily Closing. Status: Not started.
 22. Reports. Status: Not started.
-23. Customer Telegram Bot. Status: Isolated DB validated locally for auth/history/menu/cart/pickup and cash checkout; production verification pending.
+23. Customer Telegram Bot. Status: Production auth/order path verified with one real Telegram DELIVERY + CASH order; Step 10 UX polish is local only until the next controlled release.
 24. Click / Payme. Status: Not started; no fake success flow exposed in Telegram.
 25. Security. Status: Not started.
 26. Backup / Monitoring. Status: Not started.
@@ -1023,7 +1023,85 @@ Notes:
 
 - The first PostgreSQL 18 container attempt failed because PostgreSQL 18 Docker images require mounting at `/var/lib/postgresql`, not `/var/lib/postgresql/data`; the failed temporary container and volume were removed and recreated correctly.
 - During the concurrent-confirm validation, `pg` printed a deprecation warning about overlapping client queries. The validation still passed and did not create duplicate order graphs. This warning is limited to the stress-style validator path and should be watched if similar concurrency appears in application-level tests.
-- Production order E2E remains not performed. It still requires explicit user approval.
+- Production order E2E was later performed and verified in Step 9B with one real human Telegram DELIVERY + CASH order.
+
+## Step 9B - Production Single Order Read-Only Verification
+
+Status: Completed; production release and one real customer order verified
+
+Date: 2026-08-29
+
+Safety boundary:
+
+- Verification was read-only against production data.
+- No production order, customer, status, migration, seed, deploy, webhook, Cloudflare, Click/Payme, or staff Telegram change was performed.
+- No sensitive customer phone, Telegram ID, token, webhook secret, JWT, or database URL was recorded.
+
+Verified production release:
+
+- Local HEAD and `origin/main`: `d3ba37de2e458a473af73d543049f097ce2ebdb4`.
+- Backend image: `mazetto-food-backend-pdslpm:d3ba37d`.
+- Customer-web image: `mazetto-food-customerweb-yvb3d0:d3ba37d`.
+- Backend health returned 200.
+- Customer-web returned 200.
+- Production services were `1/1`.
+- Production migrations remained at 16 applied and 0 failed.
+
+Verified real order:
+
+- Order number: `TG-20260829-171504-2213`.
+- Channel/source: `TELEGRAM`.
+- Order type: `DELIVERY`.
+- Payment: `CASH`.
+- Payment status: `PENDING`; no Click/Payme successful payment was recorded.
+- Branch: `MAZETTO Sergeli`.
+- Status history: `NEW` then `CONFIRMED`.
+- Total: `68 000 so'm`, matching the persisted item subtotal and authoritative order total.
+- Item snapshot: `2 x Mol go'shtli lavash`, variant `Standart`, unit price `34 000`, line total `68 000`, no modifiers.
+
+DB proof:
+
+- `orders = 1`.
+- `customer_orders = 1`.
+- `customer_order_attempts = 1`, completed.
+- `kitchen_tickets = 1`.
+- Duplicate logical orders: 0.
+- The order remained attached to the same customer identity; no duplicate customer row was created for the linked person.
+- Cart cleanup succeeded for the ordering customer: 0 remaining cart items.
+- Customer-web and Telegram use the same shared `customer_orders`/`orders` history model.
+
+Operational proof:
+
+- Telegram webhook remained healthy: host `api.mazettofood.uz`, pending updates 0, last error absent.
+- Backend log review around the order time found no 500, Prisma error, duplicate-order error, transaction failure, or Telegram callback failure.
+- Customer-web read-only smoke passed for `/`, `/menu`, `/orders`, and `/profile`.
+
+Remaining:
+
+- Click/Payme are not complete and must not be presented as real successful online payments.
+- Staff Telegram activation remains separate.
+- Authentic production media files remain incomplete and direct media URLs still need a separate media-volume fix.
+
+## Step 10 - Telegram Customer Ordering UX Polish
+
+Status: In progress locally; not deployed
+
+Date: 2026-08-29
+
+Scope:
+
+- Telegram customer presentation and navigation polish only.
+- No production deployment, production DB write, migration, webhook change, Click/Payme integration, or staff Telegram activation.
+
+Planned/active behavior:
+
+- Telegram menu groups `Lavash` and `Tovuqli lavash` into one virtual `Lavash` family.
+- Telegram menu groups `Burgerlar` and `Tovuqli burgerlar` into one virtual `Burger` family.
+- Family selection uses real catalog targets only: size -> meat -> qty 1 cart add.
+- Unsupported combinations are not shown.
+- Quick-add success uses callback notification instead of a new chat bubble.
+- After quick-add, the bot returns to the main interactive menu.
+- Branch screen uses real branch coordinates for the map button when coordinates exist.
 
 ## Architecture Decision Log
 
