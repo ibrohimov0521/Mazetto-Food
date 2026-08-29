@@ -942,7 +942,7 @@ Still remaining in this master phase:
 3. Hero slider / Discount slider / Upsell UI. Status: Done.
 4. Real menu and 45 media images. Status: In progress, files missing.
 5. Branch system. Status: Sergeli production branch configured, admin UI pending.
-6. Customer order E2E. Status: Blocked until validated Telegram verification implementation is deployed and configured.
+6. Customer order E2E. Status: Isolated DB validated locally; production order E2E still pending explicit approval.
 7. Telegram Staff production. Status: In progress.
 8. MAZETTO Desktop architecture. Status: Not started.
 9. Desktop Local DB. Status: Not started.
@@ -959,11 +959,71 @@ Still remaining in this master phase:
 20. Kirim / Chiqim. Status: Not started.
 21. Daily Closing. Status: Not started.
 22. Reports. Status: Not started.
-23. Customer Telegram Bot. Status: Partial locally, auth/history/menu/cart/pickup and delivery cash checkout implemented; production migration/deploy/verification pending.
+23. Customer Telegram Bot. Status: Isolated DB validated locally for auth/history/menu/cart/pickup and cash checkout; production verification pending.
 24. Click / Payme. Status: Not started; no fake success flow exposed in Telegram.
 25. Security. Status: Not started.
 26. Backup / Monitoring. Status: Not started.
 27. Full E2E / Production QA. Status: Not started.
+
+## Step 8 - Isolated PostgreSQL Order Engine E2E Proof
+
+Status: Completed locally against isolated PostgreSQL; no production changes
+
+Date: 2026-08-29
+
+Safety boundary:
+
+- No push, deployment, production database access, production Telegram webhook change, production customer, or production order was performed.
+- The E2E database was a temporary local Docker PostgreSQL 18 container exposed only on localhost.
+- The DB-backed validator refuses to run unless `MAZETTO_E2E_ISOLATED_DB=1` is set and `DATABASE_URL` points to a localhost database whose name includes `step8`.
+
+Completed:
+
+- Started temporary PostgreSQL 18.6 container `mazetto-step8-postgres-temp` with database `mazetto_step8_e2e`.
+- Applied the full Prisma migration chain from zero using `prisma migrate deploy`.
+- Verified 16 applied migrations and 0 rolled-back migrations with `prisma migrate status` reporting the schema is up to date.
+- Ran the normal repository seed against the temporary database only.
+- Seeded counts after seed: 0 branches, 10 categories, 35 products, 44 variants, 8 modifiers, 6 roles, 39 permissions, and 7 payment methods.
+- Added `apps/backend/scripts/validate-customer-order-e2e-db.ts` as a guarded DB-backed integration validator.
+- The validator created synthetic local-only customers and a synthetic local-only branch/warehouse fixture.
+- Proved WEB order creation through `CustomerOrderEngineService` using real seeded product, variant, modifier, server-side pricing, customer order attempt idempotency, order item snapshot, order history, and KitchenTicket creation.
+- Proved WEB idempotent retry returns without creating a duplicate order graph.
+- Proved Telegram persistent cart and modifier/quantity state using real `Cart` and `CartItem` rows.
+- Proved Telegram checkout state persistence using `TelegramCheckoutSession`.
+- Proved Telegram order creation through `TelegramCustomerOrderingService` and the shared `CustomerOrderEngineService` with `OrderSource.TELEGRAM`.
+- Proved stale Telegram confirm does not create a duplicate order.
+- Proved near-simultaneous Telegram double confirm creates one logical order and one KitchenTicket.
+- Proved successful Telegram order clears cart items and checkout session.
+- Proved invalid modifier rollback leaves no partial order graph.
+- Proved web and Telegram orders appear in the same customer order history model, and another customer cannot read the order detail.
+
+Isolated DB proof counts after validator:
+
+```text
+orders_total=3
+web_orders=1
+telegram_orders=2
+customer_orders=3
+customer_order_attempts=3
+order_items=3
+order_status_history=6
+kitchen_tickets=3
+cart_items_remaining=0
+telegram_checkout_sessions_remaining=0
+```
+
+Validation:
+
+- `pnpm --dir apps/backend exec prisma migrate deploy`: passed against isolated PostgreSQL 18.
+- `pnpm --dir apps/backend exec prisma migrate status`: passed, schema up to date.
+- `pnpm --dir apps/backend exec prisma db seed`: passed against isolated PostgreSQL 18.
+- `pnpm --dir apps/backend exec tsx scripts/validate-customer-order-e2e-db.ts`: passed.
+
+Notes:
+
+- The first PostgreSQL 18 container attempt failed because PostgreSQL 18 Docker images require mounting at `/var/lib/postgresql`, not `/var/lib/postgresql/data`; the failed temporary container and volume were removed and recreated correctly.
+- During the concurrent-confirm validation, `pg` printed a deprecation warning about overlapping client queries. The validation still passed and did not create duplicate order graphs. This warning is limited to the stress-style validator path and should be watched if similar concurrency appears in application-level tests.
+- Production order E2E remains not performed. It still requires explicit user approval.
 
 ## Architecture Decision Log
 
