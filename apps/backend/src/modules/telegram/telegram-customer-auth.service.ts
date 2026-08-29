@@ -248,7 +248,7 @@ export class TelegramCustomerAuthService {
     });
 
     await this.sendVerificationCode(chatId, challenge.code);
-    await this.sendMainMenu(chatId, displayName);
+    await this.telegramCustomerOrderingService.sendMainMenuFromMessage(message, displayName);
   }
 
   private async sendStartOrMainMenu(message: TelegramMessage) {
@@ -267,7 +267,10 @@ export class TelegramCustomerAuthService {
       : null;
 
     if (linkedCustomer) {
-      await this.sendMainMenu(String(chatId), linkedCustomer.name);
+      await this.telegramCustomerOrderingService.sendMainMenuFromMessage(
+        message,
+        linkedCustomer.name,
+      );
       return;
     }
 
@@ -285,26 +288,6 @@ export class TelegramCustomerAuthService {
 
   private async handleCustomerCallback(callback: TelegramCallbackQuery): Promise<void> {
     await this.telegramCustomerOrderingService.handleCustomerCallback(callback);
-  }
-
-  private async sendMainMenu(chatId: string, name?: string | null): Promise<void> {
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: [
-        `Assalomu alaykum${name ? `, ${this.escapeHtml(name)}` : ""}!`,
-        "",
-        "MAZETTO FOOD botida menyuni ko'rishingiz, buyurtmalaringizni tekshirishingiz va profilingizni boshqarishingiz mumkin.",
-      ].join("\n"),
-      parse_mode: "HTML",
-      reply_markup: {
-        keyboard: [
-          ["🍽 Menyu", "🛒 Savat"],
-          ["📦 Buyurtmalarim", "📍 Filial"],
-          ["👤 Profil"],
-        ],
-        resize_keyboard: true,
-      },
-    });
   }
 
   private async sendCategoryMenu(message: TelegramMessage): Promise<void> {

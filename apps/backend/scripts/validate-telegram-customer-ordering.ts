@@ -3,10 +3,12 @@ import * as assert from "node:assert/strict";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
 
 type SentTelegramPayload = {
+  method?: string;
   chat_id: string;
+  message_id?: number;
   text?: string;
   reply_markup?: {
-    inline_keyboard?: { text: string; callback_data: string }[][];
+    inline_keyboard?: { text: string; callback_data?: string; url?: string }[][];
     keyboard?: string[][];
   };
 };
@@ -35,9 +37,22 @@ const customer = {
   bonusBalance: new Prisma.Decimal(0),
 };
 const category = { id: "category_sets", code: "SETS", name: "Setlar" };
+const lavashCategory = { id: "category_lavash", code: "LAVASH", name: "Lavash" };
+const chickenLavashCategory = {
+  id: "category_chicken_lavash",
+  code: "CHICKEN_LAVASH",
+  name: "Tovuqli lavash",
+};
+const burgerCategory = { id: "category_burger", code: "BURGER", name: "Burgerlar" };
+const chickenBurgerCategory = {
+  id: "category_chicken_burger",
+  code: "CHICKEN_BURGER",
+  name: "Tovuqli burgerlar",
+};
 const product = {
   id: "product_lavash",
   categoryId: category.id,
+  code: "BIG_LAVASH",
   isAvailable: true,
   name: "Big Lavash",
   description: "Katta lavash",
@@ -51,6 +66,72 @@ const variant = {
   isDefault: true,
   isAvailable: true,
 };
+const miniLavashProduct = {
+  ...product,
+  id: "product_mini_lavash",
+  categoryId: lavashCategory.id,
+  code: "MINI_LAVASH",
+  name: "Mini lavash",
+  sellingPrice: new Prisma.Decimal(24000),
+};
+const beefLavashProduct = {
+  ...product,
+  id: "product_beef_lavash",
+  categoryId: lavashCategory.id,
+  code: "BEEF_LAVASH",
+  name: "Mol go'shtli lavash",
+  sellingPrice: new Prisma.Decimal(34000),
+};
+const chickenLavashProduct = {
+  ...product,
+  id: "product_chicken_lavash",
+  categoryId: chickenLavashCategory.id,
+  code: "CHICKEN_LAVASH",
+  name: "Tovuqli lavash",
+  sellingPrice: new Prisma.Decimal(30000),
+};
+const classicBurgerProduct = {
+  ...product,
+  id: "product_classic_burger",
+  categoryId: burgerCategory.id,
+  code: "CLASSIC_BURGER",
+  name: "Klassik burger",
+  sellingPrice: new Prisma.Decimal(29000),
+};
+const bigBurgerProduct = {
+  ...product,
+  id: "product_big_burger",
+  categoryId: burgerCategory.id,
+  code: "BIG_BURGER",
+  name: "Katta burger",
+  sellingPrice: new Prisma.Decimal(39000),
+};
+const chickenBurgerProduct = {
+  ...product,
+  id: "product_chicken_burger",
+  categoryId: chickenBurgerCategory.id,
+  code: "CHICKEN_BURGER",
+  name: "Tovuqli burger",
+  sellingPrice: new Prisma.Decimal(28000),
+};
+const crispyChickenBurgerProduct = {
+  ...product,
+  id: "product_crispy_chicken_burger",
+  categoryId: chickenBurgerCategory.id,
+  code: "CRISPY_CHICKEN_BURGER",
+  name: "Qarsildoq tovuqli burger",
+  sellingPrice: new Prisma.Decimal(33000),
+};
+const products = [
+  product,
+  miniLavashProduct,
+  beefLavashProduct,
+  chickenLavashProduct,
+  classicBurgerProduct,
+  bigBurgerProduct,
+  chickenBurgerProduct,
+  crispyChickenBurgerProduct,
+];
 const modifier = {
   id: "modifier_cheese",
   name: "Extra cheese",
@@ -64,6 +145,9 @@ const branch = {
   deliveryEnabled: true,
   pickupEnabled: true,
   isTemporarilyClosed: false,
+  address: "Sergeli 7/3",
+  latitude: new Prisma.Decimal("41.1970731"),
+  longitude: new Prisma.Decimal("69.2038921"),
 };
 const deliveryDisabledBranch = {
   ...branch,
@@ -107,17 +191,40 @@ class InMemoryPrisma {
   };
 
   category = {
-    findMany: async () => [category],
+    findMany: async () => [
+      category,
+      lavashCategory,
+      chickenLavashCategory,
+      burgerCategory,
+      chickenBurgerCategory,
+    ],
   };
 
   product = {
-    findMany: async () => [{ ...product, variants: [variant] }],
+    findMany: async ({ where }: { where?: { categoryId?: string; code?: { in: string[] } } } = {}) => {
+      const candidates = products.filter((candidate) => {
+        if (where?.categoryId && candidate.categoryId !== where.categoryId) {
+          return false;
+        }
+
+        if (where?.code?.in && !where.code.in.includes(candidate.code)) {
+          return false;
+        }
+
+        return true;
+      });
+
+      return candidates.map((candidate) => ({
+        ...candidate,
+        variants: [{ ...variant, id: `${candidate.id}_standard`, productId: candidate.id }],
+      }));
+    },
     findFirst: async ({ where }: { where: { id: string } }) =>
-      where.id === product.id
+      products.some((candidate) => candidate.id === where.id)
         ? {
-            ...product,
+            ...(products.find((candidate) => candidate.id === where.id) ?? product),
             category,
-            variants: [variant],
+            variants: [{ ...variant, id: `${where.id}_standard`, productId: where.id }],
             modifiers: [{ modifierId: modifier.id, modifier }],
           }
         : null,
@@ -278,16 +385,93 @@ class InMemoryPrisma {
 const sentTelegramPayloads: SentTelegramPayload[] = [];
 
 globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-  sentTelegramPayloads.push(JSON.parse(String(init?.body)) as SentTelegramPayload);
+  const method = String(_url).split("/").at(-1);
+  sentTelegramPayloads.push({
+    ...(JSON.parse(String(init?.body)) as SentTelegramPayload),
+    ...(method ? { method } : {}),
+  });
   return new Response(JSON.stringify({ ok: true }), { status: 200 });
 }) as typeof fetch;
 
 async function main(): Promise<void> {
   process.env.TELEGRAM_BOT_TOKEN = "mock-telegram-token";
+  await testVirtualFamilyNavigation();
+  await testFamilyQuickAdd();
+  await testBranchLocation();
   await testDeliveryFlow();
   await testPickupRegression();
   await testDeliveryDisabled();
   console.log("Telegram customer ordering validation passed");
+}
+
+async function testVirtualFamilyNavigation(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, callbackBase } = createService(prisma);
+
+  await service.sendCategoryMenu({ chat: { id: "chat_1" }, from: { id: "tg_1" } });
+  assert.match(lastText(), /Menyu bo'limini tanlang/);
+  const menuButtons = lastKeyboardText();
+  assert.equal((menuButtons.match(/🌯 Lavash/g) ?? []).length, 1);
+  assert.equal((menuButtons.match(/🍔 Burger/g) ?? []).length, 1);
+  assert.ok(!menuButtons.includes("Tovuqli lavash"));
+  assert.ok(!menuButtons.includes("Tovuqli burgerlar"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:fam:lavash" });
+  assert.equal(lastMethod(), "editMessageText");
+  assert.match(lastText(), /O'lchamini tanlang/);
+  assert.ok(lastKeyboardText().includes("Mini"));
+  assert.ok(lastKeyboardText().includes("Original"));
+  assert.ok(lastKeyboardText().includes("Max"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:fsize:lavash:mini" });
+  assert.equal(lastMethod(), "editMessageText");
+  assert.match(lastText(), /Go'sht turini tanlang/);
+  assert.ok(lastKeyboardText().includes("Mol go'shti"));
+  assert.ok(!lastKeyboardText().includes("Tovuq"));
+}
+
+async function testFamilyQuickAdd(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, callbackBase } = createService(prisma);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:fsize:burger:max" });
+  assert.match(lastText(), /Go'sht turini tanlang/);
+  assert.ok(lastKeyboardText().includes("Mol go'shti"));
+  assert.ok(lastKeyboardText().includes("Tovuq"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:burger:max:chicken" });
+  assert.equal(prisma.cartRecord?.items.length, 1);
+  assert.equal(prisma.cartRecord?.items[0]?.productId, crispyChickenBurgerProduct.id);
+  assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 1);
+  assert.ok(
+    sentTelegramPayloads.some(
+      (payload) =>
+        payload.method === "answerCallbackQuery" &&
+        payload.text === "Savatga qo'shildi ✅",
+    ),
+  );
+  assert.match(lastText(), /Menyu, savat, filial/);
+  assert.ok(!lastKeyboardText().includes("−"));
+  assert.ok(!lastKeyboardText().includes("+"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:cart" });
+  assert.ok(lastKeyboardText().includes("−"));
+  assert.ok(lastKeyboardText().includes("+"));
+}
+
+async function testBranchLocation(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service } = createService(prisma);
+
+  await service.sendBranches({ chat: { id: "chat_1" }, from: { id: "tg_1" } });
+  assert.match(lastText(), /MAZETTO Sergeli/);
+  assert.match(lastText(), /Sergeli 7\/3/);
+  assert.ok(lastPayload().reply_markup?.inline_keyboard?.flat().some((button) =>
+    button.url?.includes("41.1970731,69.2038921"),
+  ));
 }
 
 async function testDeliveryFlow(): Promise<void> {
@@ -430,7 +614,7 @@ function createService(prisma: InMemoryPrisma) {
   );
   const callbackBase = {
     id: "callback_1",
-    message: { chat: { id: "chat_1" } },
+    message: { chat: { id: "chat_1" }, message_id: 10 },
     from: { id: "tg_1" },
   };
 
@@ -439,6 +623,17 @@ function createService(prisma: InMemoryPrisma) {
 
 function lastText(): string {
   return sentTelegramPayloads.at(-1)?.text ?? "";
+}
+
+function lastMethod(): string {
+  return sentTelegramPayloads.at(-1)?.method ?? "";
+}
+
+function lastPayload(): SentTelegramPayload {
+  const payload = sentTelegramPayloads.at(-1);
+  assert.ok(payload, "expected a Telegram payload");
+
+  return payload;
 }
 
 function lastKeyboardText(): string {

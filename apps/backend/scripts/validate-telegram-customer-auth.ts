@@ -328,6 +328,7 @@ function createServices(prisma = new InMemoryPrisma()) {
     sendCategoryMenu: async () => undefined,
     sendCartFromMessage: async () => undefined,
     sendBranches: async () => undefined,
+    sendMainMenuFromMessage: async () => undefined,
   };
   const telegramCustomerAuthService = new TelegramCustomerAuthService(
     prisma as never,

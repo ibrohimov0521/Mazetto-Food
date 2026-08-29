@@ -15,7 +15,7 @@ type TelegramMessage = {
 type TelegramCallbackQuery = {
   id?: string;
   data?: string;
-  message?: { chat?: { id?: number | string } };
+  message?: { chat?: { id?: number | string }; message_id?: number };
   from?: { id?: number | string };
 };
 type LinkedCustomer = {
@@ -32,15 +32,129 @@ type CheckoutStep = "ORDER_TYPE" | "ADDRESS" | "NOTE" | "SUMMARY";
 type BranchForCheckout = {
   id: string;
   name: string;
+  address?: string | null;
+  latitude?: Prisma.Decimal | null;
+  longitude?: Prisma.Decimal | null;
   acceptsOrders: boolean;
   deliveryEnabled: boolean;
   pickupEnabled: boolean;
   isTemporarilyClosed: boolean;
 };
+type TelegramInlineButton = {
+  text: string;
+  callback_data?: string;
+  url?: string;
+};
+type CustomerScreenTarget = {
+  chatId: string;
+  callbackQueryId?: string;
+  messageId?: number;
+};
+type CustomerScreenPayload = {
+  text: string;
+  parse_mode?: "HTML";
+  reply_markup?: {
+    inline_keyboard?: TelegramInlineButton[][];
+    keyboard?: string[][];
+    resize_keyboard?: boolean;
+  };
+};
+export type TelegramProductFamily = "lavash" | "burger";
+export type TelegramFamilySize = "mini" | "original" | "max";
+export type TelegramFamilyMeat = "beef" | "chicken";
+export type TelegramFamilySku = {
+  family: TelegramProductFamily;
+  size: TelegramFamilySize;
+  meat: TelegramFamilyMeat;
+  productCode: string;
+  sizeLabel: string;
+  meatLabel: string;
+};
+type ResolvedTelegramFamilyOption = TelegramFamilySku & {
+  product: {
+    id: string;
+    code: string;
+    name: string;
+    sellingPrice: Prisma.Decimal;
+  };
+  variant: {
+    id: string;
+    name: string;
+    sellingPrice: Prisma.Decimal;
+    isDefault: boolean;
+  } | null;
+  price: Prisma.Decimal;
+};
 
 const customerCallbackPrefix = "cust";
 const TELEGRAM_CHECKOUT_SESSION_TTL_MS = 60 * 60 * 1000;
 const minimumAddressLength = 5;
+export const telegramFamilySkus: TelegramFamilySku[] = [
+  {
+    family: "lavash",
+    size: "mini",
+    meat: "beef",
+    productCode: "MINI_LAVASH",
+    sizeLabel: "Mini",
+    meatLabel: "Mol go'shti",
+  },
+  {
+    family: "lavash",
+    size: "original",
+    meat: "beef",
+    productCode: "BEEF_LAVASH",
+    sizeLabel: "Original",
+    meatLabel: "Mol go'shti",
+  },
+  {
+    family: "lavash",
+    size: "original",
+    meat: "chicken",
+    productCode: "CHICKEN_LAVASH",
+    sizeLabel: "Original",
+    meatLabel: "Tovuq",
+  },
+  {
+    family: "lavash",
+    size: "max",
+    meat: "beef",
+    productCode: "BIG_LAVASH",
+    sizeLabel: "Max",
+    meatLabel: "Mol go'shti",
+  },
+  {
+    family: "burger",
+    size: "original",
+    meat: "beef",
+    productCode: "CLASSIC_BURGER",
+    sizeLabel: "Original",
+    meatLabel: "Mol go'shti",
+  },
+  {
+    family: "burger",
+    size: "original",
+    meat: "chicken",
+    productCode: "CHICKEN_BURGER",
+    sizeLabel: "Original",
+    meatLabel: "Tovuq",
+  },
+  {
+    family: "burger",
+    size: "max",
+    meat: "beef",
+    productCode: "BIG_BURGER",
+    sizeLabel: "Max",
+    meatLabel: "Mol go'shti",
+  },
+  {
+    family: "burger",
+    size: "max",
+    meat: "chicken",
+    productCode: "CRISPY_CHICKEN_BURGER",
+    sizeLabel: "Max",
+    meatLabel: "Tovuq",
+  },
+];
 
 @Injectable()
 export class TelegramCustomerOrderingService {
@@ -59,88 +173,138 @@ export class TelegramCustomerOrderingService {
       return false;
     }
 
-    if (callback.id) {
-      await this.telegramRequest("answerCallbackQuery", {
-        callback_query_id: callback.id,
-      }).catch(() => undefined);
-    }
-
     const [, action, ...values] = data.split(":");
     const customer = await this.findLinkedCustomer(callback.from?.id);
+    const target = this.callbackTarget(callback);
 
     if (!customer) {
-      await this.sendLinkRequired(String(chatId));
+      await this.sendLinkRequired(target);
       return true;
     }
 
     if (action === "home") {
-      await this.sendMainMenu(String(chatId), customer.name);
+      await this.answerCallback(callback);
+      await this.sendMainMenu(target, customer.name);
+      return true;
+    }
+
+    if (action === "menu") {
+      await this.answerCallback(callback);
+      await this.sendCategoryMenuToTarget(target);
+      return true;
+    }
+
+    if (action === "branches") {
+      await this.answerCallback(callback);
+      await this.sendBranchesToTarget(target);
+      return true;
+    }
+
+    if (action === "orders") {
+      await this.answerCallback(callback);
+      await this.sendCustomerOrders(target, customer);
+      return true;
+    }
+
+    if (action === "profile") {
+      await this.answerCallback(callback);
+      await this.sendCustomerProfile(target, customer);
+      return true;
+    }
+
+    if (action === "fam" && values[0]) {
+      await this.answerCallback(callback);
+      await this.sendFamilySizeScreen(target, values[0]);
+      return true;
+    }
+
+    if (action === "fsize" && values[0] && values[1]) {
+      await this.answerCallback(callback);
+      await this.sendFamilyMeatScreen(target, values[0], values[1]);
+      return true;
+    }
+
+    if (action === "qadd" && values[0] && values[1] && values[2]) {
+      await this.quickAddFamilySku(target, callback, customer, values[0], values[1], values[2]);
       return true;
     }
 
     if (action === "cat" && values[0]) {
-      await this.sendProductsForCategory(String(chatId), values[0]);
+      await this.answerCallback(callback);
+      await this.sendProductsForCategory(target, values[0]);
       return true;
     }
 
     if (action === "prod" && values[0]) {
-      await this.sendProductConfigurator(String(chatId), values[0]);
+      await this.answerCallback(callback);
+      await this.sendProductConfigurator(target, values[0]);
       return true;
     }
 
     if (action === "addv" && values[0]) {
-      await this.addVariantToCart(String(chatId), customer, values[0]);
+      await this.addVariantToCart(target, callback, customer, values[0]);
       return true;
     }
 
     if (action === "addp" && values[0]) {
-      await this.addProductToCart(String(chatId), customer, values[0]);
+      await this.addProductToCart(target, callback, customer, values[0]);
       return true;
     }
 
     if (action === "mod" && values[0] && values[1]) {
-      await this.toggleCartModifier(String(chatId), customer, values[0], values[1]);
+      await this.answerCallback(callback);
+      await this.toggleCartModifier(target, customer, values[0], values[1]);
       return true;
     }
 
     if (action === "qty" && values[0] && values[1]) {
-      await this.changeCartQuantity(String(chatId), customer, values[0], values[1]);
+      await this.answerCallback(callback);
+      await this.changeCartQuantity(target, customer, values[0], values[1]);
       return true;
     }
 
     if (action === "rm" && values[0]) {
-      await this.removeCartItem(String(chatId), customer, values[0]);
+      await this.answerCallback(callback);
+      await this.removeCartItem(target, customer, values[0]);
       return true;
     }
 
     if (action === "cart") {
-      await this.sendCart(String(chatId), customer);
+      await this.answerCallback(callback);
+      await this.sendCart(target, customer);
       return true;
     }
 
     if (action === "checkout") {
-      await this.startCheckout(String(chatId), customer);
+      await this.answerCallback(callback);
+      await this.startCheckout(target, customer);
       return true;
     }
 
     if (action === "type" && values[0]) {
-      await this.selectOrderType(String(chatId), customer, values[0]);
+      await this.answerCallback(callback);
+      await this.selectOrderType(target, customer, values[0]);
       return true;
     }
 
     if (action === "note" && values[0]) {
-      await this.handleNoteChoice(String(chatId), customer, values[0]);
+      await this.answerCallback(callback);
+      await this.handleNoteChoice(target, customer, values[0]);
       return true;
     }
 
     if (action === "confirm" && values[0]) {
-      await this.confirmCartOrder(String(chatId), customer, values[0]);
+      await this.answerCallback(callback);
+      await this.confirmCartOrder(target, customer, values[0]);
       return true;
     }
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: String(chatId),
+    await this.answerCallback(callback, "Bu menyu eskirgan. Qayta oching.", true);
+    await this.renderCustomerScreen(target, {
       text: "Bu tugma eskirgan bo'lishi mumkin. Iltimos, bosh menyudan qayta tanlang.",
+      reply_markup: {
+        inline_keyboard: [[{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }]],
+      },
     });
     return true;
   }
@@ -167,7 +331,7 @@ export class TelegramCustomerOrderingService {
 
     if (text === "🏠 Bosh menyu") {
       await this.clearCheckoutSession(customer.id, chatId);
-      await this.sendMainMenu(chatId, customer.name);
+      await this.sendMainMenu({ chatId }, customer.name);
       return true;
     }
 
@@ -194,25 +358,33 @@ export class TelegramCustomerOrderingService {
     const customer = await this.findLinkedCustomer(message.from?.id);
 
     if (!customer) {
-      await this.sendLinkRequired(chatId);
+      await this.sendLinkRequired({ chatId });
       return;
     }
 
+    await this.sendCategoryMenuToTarget({ chatId });
+  }
+
+  private async sendCategoryMenuToTarget(target: CustomerScreenTarget): Promise<void> {
     const categories = await this.prisma.category.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, code: true, name: true },
     });
-    const sorted = [...categories].sort(
+    const visibleCategories = categories.filter(
+      (category) => !["LAVASH", "CHICKEN_LAVASH", "BURGER", "CHICKEN_BURGER"].includes(category.code ?? ""),
+    );
+    const sorted = [...visibleCategories].sort(
       (a, b) => (a.code === "SETS" ? -1 : 0) - (b.code === "SETS" ? -1 : 0),
     );
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: "🍽 <b>Menyu bo'limini tanlang</b>",
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
+          [{ text: "🌯 Lavash", callback_data: `${customerCallbackPrefix}:fam:lavash` }],
+          [{ text: "🍔 Burger", callback_data: `${customerCallbackPrefix}:fam:burger` }],
           ...sorted.map((category) => [
             {
               text: this.categoryButtonLabel(category.code, category.name),
@@ -231,21 +403,35 @@ export class TelegramCustomerOrderingService {
     const customer = await this.findLinkedCustomer(message.from?.id);
 
     if (!customer) {
-      await this.sendLinkRequired(chatId);
+      await this.sendLinkRequired({ chatId });
       return;
     }
 
-    await this.sendCart(chatId, customer);
+    await this.sendCart({ chatId }, customer);
+  }
+
+  async sendMainMenuFromMessage(
+    message: TelegramMessage,
+    name?: string | null,
+  ): Promise<void> {
+    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
+    await this.sendMainMenu({ chatId }, name);
   }
 
   async sendBranches(message: TelegramMessage): Promise<void> {
     const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
+    await this.sendBranchesToTarget({ chatId });
+  }
+
+  private async sendBranchesToTarget(target: CustomerScreenTarget): Promise<void> {
     const branches = await this.prisma.branch.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
         name: true,
         address: true,
+        latitude: true,
+        longitude: true,
         acceptsOrders: true,
         deliveryEnabled: true,
         pickupEnabled: true,
@@ -253,8 +439,7 @@ export class TelegramCustomerOrderingService {
       },
     });
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: [
         "📍 <b>Filiallar</b>",
         "",
@@ -270,10 +455,89 @@ export class TelegramCustomerOrderingService {
         ),
       ].join("\n\n"),
       parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          ...branches.flatMap((branch) => {
+            const mapUrl = this.branchMapUrl(branch);
+            return mapUrl
+              ? [[{ text: `📍 ${branch.name} xaritada`, url: mapUrl }]]
+              : [];
+          }),
+          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
+        ],
+      },
     });
   }
 
-  private async sendProductsForCategory(chatId: string, categoryId: string): Promise<void> {
+  private async sendCustomerOrders(
+    target: CustomerScreenTarget,
+    customer: LinkedCustomer,
+  ): Promise<void> {
+    const orders = await this.prisma.customerOrder.findMany({
+      where: { customerId: customer.id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      include: {
+        branch: { select: { name: true } },
+        order: { select: { orderNumber: true, status: true, total: true } },
+      },
+    });
+
+    await this.renderCustomerScreen(target, {
+      text: orders.length
+        ? [
+            "📦 <b>Buyurtmalaringiz</b>",
+            "",
+            ...orders.map((order) =>
+              [
+                `<b>${this.escapeHtml(order.order.orderNumber)}</b>`,
+                `${this.escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status)}`,
+                `Jami: ${this.formatMoney(order.order.total)}`,
+              ].join("\n"),
+            ),
+          ].join("\n\n")
+        : "Hali buyurtmalaringiz yo'q. Menyudan taom tanlab buyurtma berishingiz mumkin.",
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
+          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
+        ],
+      },
+    });
+  }
+
+  private async sendCustomerProfile(
+    target: CustomerScreenTarget,
+    customer: LinkedCustomer,
+  ): Promise<void> {
+    const orderCount = await this.prisma.customerOrder.count({
+      where: { customerId: customer.id },
+    });
+
+    await this.renderCustomerScreen(target, {
+      text: [
+        "👤 <b>Profil</b>",
+        "",
+        `<b>Ism:</b> ${this.escapeHtml(customer.name)}`,
+        `<b>Telefon:</b> ${this.maskPhone(customer.phone)}`,
+        `<b>Buyurtmalar:</b> ${orderCount}`,
+        `<b>Bonus:</b> ${this.formatMoney(customer.bonusBalance)}`,
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📦 Buyurtmalarim", callback_data: `${customerCallbackPrefix}:orders` }],
+          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
+        ],
+      },
+    });
+  }
+
+  private async sendProductsForCategory(
+    target: CustomerScreenTarget,
+    categoryId: string,
+  ): Promise<void> {
     const products = await this.prisma.product.findMany({
       where: { categoryId, isAvailable: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -287,15 +551,13 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!products.length) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Bu bo'limda hozircha mahsulot yo'q.",
       });
       return;
     }
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: "🍽 <b>Mahsulot tanlang</b>",
       parse_mode: "HTML",
       reply_markup: {
@@ -317,7 +579,10 @@ export class TelegramCustomerOrderingService {
     });
   }
 
-  private async sendProductConfigurator(chatId: string, productId: string): Promise<void> {
+  private async sendProductConfigurator(
+    target: CustomerScreenTarget,
+    productId: string,
+  ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: { id: productId, isAvailable: true },
       include: {
@@ -335,8 +600,7 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!product) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Mahsulot topilmadi yoki hozir mavjud emas.",
       });
       return;
@@ -354,8 +618,7 @@ export class TelegramCustomerOrderingService {
           callback_data: `${customerCallbackPrefix}:addp:${product.id}`,
         }]];
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: [
         `🍽 <b>${this.escapeHtml(product.name)}</b>`,
         product.category?.name ? this.escapeHtml(product.category.name) : "",
@@ -375,8 +638,121 @@ export class TelegramCustomerOrderingService {
     });
   }
 
+  private async sendFamilySizeScreen(
+    target: CustomerScreenTarget,
+    rawFamily: string,
+  ): Promise<void> {
+    const family = this.parseFamily(rawFamily);
+    const options = await this.resolveFamilyOptions(family);
+    const sizes = this.uniqueBy(options, (option) => option.size);
+
+    if (!sizes.length) {
+      await this.renderCustomerScreen(target, {
+        text: "Bu menyu hozir mavjud emas. Iltimos, boshqa bo'limni tanlang.",
+        reply_markup: {
+          inline_keyboard: [[{ text: "🍽 Menyuga qaytish", callback_data: `${customerCallbackPrefix}:menu` }]],
+        },
+      });
+      return;
+    }
+
+    await this.renderCustomerScreen(target, {
+      text: [
+        `${this.familyIcon(family)} <b>${this.familyLabel(family)}</b>`,
+        "",
+        "O'lchamini tanlang:",
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          ...sizes.map((option) => [
+            {
+              text: `${option.sizeLabel} · ${this.familySizePriceRange(options, option.size)}`,
+              callback_data: `${customerCallbackPrefix}:fsize:${family}:${option.size}`,
+            },
+          ]),
+          [{ text: "⬅️ Menyuga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
+          [{ text: "🛒 Savat", callback_data: `${customerCallbackPrefix}:cart` }],
+        ],
+      },
+    });
+  }
+
+  private async sendFamilyMeatScreen(
+    target: CustomerScreenTarget,
+    rawFamily: string,
+    rawSize: string,
+  ): Promise<void> {
+    const family = this.parseFamily(rawFamily);
+    const size = this.parseFamilySize(rawSize);
+    const options = (await this.resolveFamilyOptions(family)).filter(
+      (option) => option.size === size,
+    );
+
+    if (!options.length) {
+      await this.renderCustomerScreen(target, {
+        text: "Bu tanlov eskirgan yoki hozir mavjud emas.",
+        reply_markup: {
+          inline_keyboard: [[{ text: "⬅️ Qayta tanlash", callback_data: `${customerCallbackPrefix}:fam:${family}` }]],
+        },
+      });
+      return;
+    }
+
+    await this.renderCustomerScreen(target, {
+      text: [
+        `${this.familyIcon(family)} <b>${this.familyLabel(family)}</b>`,
+        "",
+        `O'lcham: <b>${this.escapeHtml(options[0]!.sizeLabel)}</b>`,
+        "Go'sht turini tanlang:",
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          ...options.map((option) => [
+            {
+              text: `${option.meatLabel} · ${this.formatMoney(option.price)}`,
+              callback_data: `${customerCallbackPrefix}:qadd:${family}:${size}:${option.meat}`,
+            },
+          ]),
+          [{ text: "⬅️ O'lchamga qaytish", callback_data: `${customerCallbackPrefix}:fam:${family}` }],
+          [{ text: "🛒 Savat", callback_data: `${customerCallbackPrefix}:cart` }],
+        ],
+      },
+    });
+  }
+
+  private async quickAddFamilySku(
+    target: CustomerScreenTarget,
+    callback: TelegramCallbackQuery,
+    customer: LinkedCustomer,
+    rawFamily: string,
+    rawSize: string,
+    rawMeat: string,
+  ): Promise<void> {
+    const family = this.parseFamily(rawFamily);
+    const size = this.parseFamilySize(rawSize);
+    const meat = this.parseFamilyMeat(rawMeat);
+    const options = await this.resolveFamilyOptions(family);
+    const matches = options.filter(
+      (option) => option.size === size && option.meat === meat,
+    );
+
+    if (matches.length !== 1) {
+      await this.answerCallback(callback, "Bu menyu eskirgan. Qayta oching.", true);
+      await this.sendFamilySizeScreen(target, family);
+      return;
+    }
+
+    const selected = matches[0]!;
+    await this.addCartItem(customer.id, selected.product.id, selected.variant?.id ?? null);
+    await this.answerCallback(callback, "Savatga qo'shildi ✅");
+    await this.sendMainMenu(target, customer.name);
+  }
+
   private async addVariantToCart(
-    chatId: string,
+    target: CustomerScreenTarget,
+    callback: TelegramCallbackQuery,
     customer: LinkedCustomer,
     variantId: string,
   ): Promise<void> {
@@ -396,19 +772,19 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!variant) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
-        text: "Variant topilmadi yoki hozir mavjud emas.",
-      });
+      await this.answerCallback(callback, "Variant topilmadi yoki mavjud emas.", true);
+      await this.renderCustomerScreen(target, { text: "Variant topilmadi yoki hozir mavjud emas." });
       return;
     }
 
     const cartItem = await this.addCartItem(customer.id, variant.productId, variant.id);
-    await this.sendCartItemConfigured(chatId, cartItem.id, variant.product.name, variant.product.modifiers);
+    await this.answerCallback(callback, "Savatga qo'shildi ✅");
+    await this.sendCartItemConfigured(target, cartItem.id, variant.product.name, variant.product.modifiers);
   }
 
   private async addProductToCart(
-    chatId: string,
+    target: CustomerScreenTarget,
+    callback: TelegramCallbackQuery,
     customer: LinkedCustomer,
     productId: string,
   ): Promise<void> {
@@ -424,15 +800,14 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!product) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
-        text: "Mahsulot topilmadi yoki hozir mavjud emas.",
-      });
+      await this.answerCallback(callback, "Mahsulot topilmadi yoki mavjud emas.", true);
+      await this.renderCustomerScreen(target, { text: "Mahsulot topilmadi yoki hozir mavjud emas." });
       return;
     }
 
     const cartItem = await this.addCartItem(customer.id, product.id, null);
-    await this.sendCartItemConfigured(chatId, cartItem.id, product.name, product.modifiers);
+    await this.answerCallback(callback, "Savatga qo'shildi ✅");
+    await this.sendCartItemConfigured(target, cartItem.id, product.name, product.modifiers);
   }
 
   private async addCartItem(
@@ -455,13 +830,12 @@ export class TelegramCustomerOrderingService {
   }
 
   private async sendCartItemConfigured(
-    chatId: string,
+    target: CustomerScreenTarget,
     cartItemId: string,
     productName: string,
     modifiers: Array<{ modifierId: string; modifier: { name: string; price: Prisma.Decimal } }>,
   ): Promise<void> {
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: `✅ <b>${this.escapeHtml(productName)}</b> savatga qo'shildi.`,
       parse_mode: "HTML",
       reply_markup: {
@@ -484,7 +858,7 @@ export class TelegramCustomerOrderingService {
   }
 
   private async toggleCartModifier(
-    chatId: string,
+    target: CustomerScreenTarget,
     customer: LinkedCustomer,
     cartItemId: string,
     modifierId: string,
@@ -492,7 +866,7 @@ export class TelegramCustomerOrderingService {
     const item = await this.findCustomerCartItem(customer.id, cartItemId);
 
     if (!item) {
-      await this.sendCart(chatId, customer);
+      await this.sendCart(target, customer);
       return;
     }
 
@@ -520,17 +894,16 @@ export class TelegramCustomerOrderingService {
       data: { modifierSnapshot: next },
     });
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: exists
-        ? `${allowed.modifier.name} savatdan olib tashlandi.`
-        : `${allowed.modifier.name} qo'shildi.`,
+        ? `${this.escapeHtml(allowed.modifier.name)} savatdan olib tashlandi.`
+        : `${this.escapeHtml(allowed.modifier.name)} qo'shildi.`,
     });
-    await this.sendCart(chatId, customer);
+    await this.sendCart(target, customer);
   }
 
   private async changeCartQuantity(
-    chatId: string,
+    target: CustomerScreenTarget,
     customer: LinkedCustomer,
     cartItemId: string,
     direction: string,
@@ -538,7 +911,7 @@ export class TelegramCustomerOrderingService {
     const item = await this.findCustomerCartItem(customer.id, cartItemId);
 
     if (!item) {
-      await this.sendCart(chatId, customer);
+      await this.sendCart(target, customer);
       return;
     }
 
@@ -554,11 +927,11 @@ export class TelegramCustomerOrderingService {
       });
     }
 
-    await this.sendCart(chatId, customer);
+    await this.sendCart(target, customer);
   }
 
   private async removeCartItem(
-    chatId: string,
+    target: CustomerScreenTarget,
     customer: LinkedCustomer,
     cartItemId: string,
   ): Promise<void> {
@@ -568,19 +941,19 @@ export class TelegramCustomerOrderingService {
       await this.prisma.cartItem.delete({ where: { id: cartItemId } });
     }
 
-    await this.sendCart(chatId, customer);
+    await this.sendCart(target, customer);
   }
 
-  private async sendCart(chatId: string, customer: LinkedCustomer): Promise<void> {
+  private async sendCart(target: CustomerScreenTarget, customer: LinkedCustomer): Promise<void> {
     const cart = await this.getCartWithItems(customer.id);
 
     if (!cart?.items.length) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "🛒 Savatingiz bo'sh. Menyudan taom tanlang.",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:home` }],
+            [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
+            [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
           ],
         },
       });
@@ -589,8 +962,7 @@ export class TelegramCustomerOrderingService {
 
     const totals = await this.calculateCartTotals(cart.items);
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: [
         "🛒 <b>Savat</b>",
         "",
@@ -609,32 +981,31 @@ export class TelegramCustomerOrderingService {
             [{ text: `O'chirish · ${item.product.name}`, callback_data: `${customerCallbackPrefix}:rm:${item.id}` }],
           ]),
           [{ text: "✅ Buyurtma berish", callback_data: `${customerCallbackPrefix}:checkout` }],
-          [{ text: "🍽 Menyuga qaytish", callback_data: `${customerCallbackPrefix}:home` }],
+          [{ text: "🍽 Menyuga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
         ],
       },
     });
   }
 
-  private async startCheckout(chatId: string, customer: LinkedCustomer): Promise<void> {
+  private async startCheckout(target: CustomerScreenTarget, customer: LinkedCustomer): Promise<void> {
     const cart = await this.getCartWithItems(customer.id);
 
     if (!cart?.items.length) {
-      await this.sendCart(chatId, customer);
+      await this.sendCart(target, customer);
       return;
     }
 
     const branches = await this.availableBranches();
 
     if (!branches.length) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Hozir buyurtma qabul qiladigan filial topilmadi.",
       });
       return;
     }
 
     const branch = branches[0]!;
-    await this.upsertCheckoutSession(customer.id, chatId, {
+    await this.upsertCheckoutSession(customer.id, target.chatId, {
       branchId: branch.id,
       step: "ORDER_TYPE",
       orderType: null,
@@ -645,15 +1016,13 @@ export class TelegramCustomerOrderingService {
     const typeButtons = this.orderTypeButtons(branch);
 
     if (!typeButtons.length) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Tanlangan filial hozir buyurtma turi qabul qilmayapti.",
       });
       return;
     }
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: [
         "✅ <b>Buyurtma turi</b>",
         "",
@@ -673,64 +1042,61 @@ export class TelegramCustomerOrderingService {
   }
 
   private async selectOrderType(
-    chatId: string,
+    target: CustomerScreenTarget,
     customer: LinkedCustomer,
     rawType: string,
   ): Promise<void> {
     const orderType = this.parseCustomerOrderType(rawType);
-    const session = await this.getActiveCheckoutSession(customer.id, chatId);
+    const session = await this.getActiveCheckoutSession(customer.id, target.chatId);
     const branch = session?.branchId
       ? await this.findBranchForCheckout(session.branchId)
       : await this.defaultBranchForType(orderType);
 
     if (!branch) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Hozir bu buyurtma turi uchun ochiq filial topilmadi.",
       });
       return;
     }
 
     if (!this.branchSupportsType(branch, orderType)) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text:
           orderType === CustomerOrderType.DELIVERY
             ? "Bu filialda yetkazib berish hozir mavjud emas."
             : "Bu filialdan olib ketish hozir mavjud emas.",
       });
-      await this.startCheckout(chatId, customer);
+      await this.startCheckout(target, customer);
       return;
     }
 
     if (orderType === CustomerOrderType.DELIVERY) {
-      await this.upsertCheckoutSession(customer.id, chatId, {
+      await this.upsertCheckoutSession(customer.id, target.chatId, {
         branchId: branch.id,
         orderType,
         step: "ADDRESS",
         address: null,
         note: null,
       });
-      await this.askDeliveryAddress(chatId, branch);
+      await this.askDeliveryAddress(target, branch);
       return;
     }
 
-    await this.upsertCheckoutSession(customer.id, chatId, {
+    await this.upsertCheckoutSession(customer.id, target.chatId, {
       branchId: branch.id,
       orderType,
       step: "SUMMARY",
       address: null,
       note: null,
     });
-    await this.sendCheckoutSummary(chatId, customer);
+    await this.sendCheckoutSummary(target, customer);
   }
 
   private async askDeliveryAddress(
-    chatId: string,
+    target: CustomerScreenTarget,
     branch: { name: string },
   ): Promise<void> {
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: [
         "🚚 <b>Yetkazib berish manzili</b>",
         "",
@@ -785,25 +1151,24 @@ export class TelegramCustomerOrderingService {
   }
 
   private async handleNoteChoice(
-    chatId: string,
+    target: CustomerScreenTarget,
     customer: LinkedCustomer,
     choice: string,
   ): Promise<void> {
     if (choice === "skip") {
-      await this.upsertCheckoutSession(customer.id, chatId, {
+      await this.upsertCheckoutSession(customer.id, target.chatId, {
         step: "SUMMARY",
         note: null,
       });
-      await this.sendCheckoutSummary(chatId, customer);
+      await this.sendCheckoutSummary(target, customer);
       return;
     }
 
     if (choice === "add") {
-      await this.upsertCheckoutSession(customer.id, chatId, {
+      await this.upsertCheckoutSession(customer.id, target.chatId, {
         step: "NOTE",
       });
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Kur'er uchun izohni yuboring. Masalan: Qo'ng'iroq qilmang, eshik oldiga qoldiring.",
         reply_markup: {
           keyboard: [["⬅️ Orqaga", "🏠 Bosh menyu"]],
@@ -832,46 +1197,47 @@ export class TelegramCustomerOrderingService {
       step: "SUMMARY",
       note: cleanNote.slice(0, 1000),
     });
-    await this.sendCheckoutSummary(chatId, customer);
+    await this.sendCheckoutSummary({ chatId }, customer);
   }
 
-  private async sendCheckoutSummary(chatId: string, customer: LinkedCustomer): Promise<void> {
+  private async sendCheckoutSummary(
+    target: CustomerScreenTarget,
+    customer: LinkedCustomer,
+  ): Promise<void> {
     const cart = await this.getCartWithItems(customer.id);
 
     if (!cart?.items.length) {
-      await this.sendCart(chatId, customer);
+      await this.sendCart(target, customer);
       return;
     }
 
-    const session = await this.getActiveCheckoutSession(customer.id, chatId);
+    const session = await this.getActiveCheckoutSession(customer.id, target.chatId);
     const branch = session?.branchId ? await this.findBranchForCheckout(session.branchId) : null;
     const orderType = session?.orderType;
 
     if (!session || !branch || !orderType) {
-      await this.startCheckout(chatId, customer);
+      await this.startCheckout(target, customer);
       return;
     }
 
     if (!this.branchSupportsType(branch, orderType)) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Tanlangan filial yoki buyurtma turi hozir mavjud emas. Iltimos, qayta tanlang.",
       });
-      await this.startCheckout(chatId, customer);
+      await this.startCheckout(target, customer);
       return;
     }
 
     if (orderType === CustomerOrderType.DELIVERY && !this.cleanAddress(session.address ?? "")) {
-      await this.upsertCheckoutSession(customer.id, chatId, { step: "ADDRESS" });
-      await this.askDeliveryAddress(chatId, branch);
+      await this.upsertCheckoutSession(customer.id, target.chatId, { step: "ADDRESS" });
+      await this.askDeliveryAddress(target, branch);
       return;
     }
 
-    await this.upsertCheckoutSession(customer.id, chatId, { step: "SUMMARY" });
+    await this.upsertCheckoutSession(customer.id, target.chatId, { step: "SUMMARY" });
     const totals = await this.calculateCartTotals(cart.items);
 
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+    await this.renderCustomerScreen(target, {
       text: [
         "✅ <b>Buyurtmani tasdiqlash</b>",
         "",
@@ -900,39 +1266,36 @@ export class TelegramCustomerOrderingService {
   }
 
   private async confirmCartOrder(
-    chatId: string,
+    target: CustomerScreenTarget,
     customer: LinkedCustomer,
     cartId: string,
   ): Promise<void> {
     const cart = await this.getCartWithItems(customer.id);
 
     if (!cart || cart.id !== cartId || !cart.items.length) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Bu tasdiqlash eskirgan. Iltimos, savatni qayta tekshiring.",
       });
       return;
     }
 
-    const session = await this.getActiveCheckoutSession(customer.id, chatId);
+    const session = await this.getActiveCheckoutSession(customer.id, target.chatId);
     const branch = session?.branchId ? await this.findBranchForCheckout(session.branchId) : null;
     const orderType = session?.orderType;
 
     if (!session || !branch || !orderType) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Bu tasdiqlash eskirgan. Iltimos, buyurtma turini qayta tanlang.",
       });
-      await this.startCheckout(chatId, customer);
+      await this.startCheckout(target, customer);
       return;
     }
 
     if (!this.branchSupportsType(branch, orderType)) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.renderCustomerScreen(target, {
         text: "Tanlangan filial bu buyurtma turini hozir qabul qilmayapti.",
       });
-      await this.startCheckout(chatId, customer);
+      await this.startCheckout(target, customer);
       return;
     }
 
@@ -942,8 +1305,8 @@ export class TelegramCustomerOrderingService {
         : null;
 
     if (orderType === CustomerOrderType.DELIVERY && !deliveryAddress) {
-      await this.upsertCheckoutSession(customer.id, chatId, { step: "ADDRESS" });
-      await this.askDeliveryAddress(chatId, branch);
+      await this.upsertCheckoutSession(customer.id, target.chatId, { step: "ADDRESS" });
+      await this.askDeliveryAddress(target, branch);
       return;
     }
 
@@ -975,9 +1338,8 @@ export class TelegramCustomerOrderingService {
       );
 
       await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-      await this.clearCheckoutSession(customer.id, chatId);
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+      await this.clearCheckoutSession(customer.id, target.chatId);
+      await this.renderCustomerScreen(target, {
         text: [
           "🎉 <b>Buyurtma qabul qilindi</b>",
           "",
@@ -1000,7 +1362,7 @@ export class TelegramCustomerOrderingService {
         error instanceof Error ? error.stack : String(error),
       );
       await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
+        chat_id: target.chatId,
         text: "Buyurtmani yaratishda xatolik bo'ldi. Iltimos, savatni tekshirib qayta urinib ko'ring.",
       });
     }
@@ -1100,8 +1462,10 @@ export class TelegramCustomerOrderingService {
     customer: LinkedCustomer,
     step: CheckoutStep,
   ): Promise<void> {
+    const target = { chatId };
+
     if (step === "ADDRESS") {
-      await this.startCheckout(chatId, customer);
+      await this.startCheckout(target, customer);
       return;
     }
 
@@ -1114,12 +1478,146 @@ export class TelegramCustomerOrderingService {
         note: null,
       });
       if (branch) {
-        await this.askDeliveryAddress(chatId, branch);
+        await this.askDeliveryAddress(target, branch);
         return;
       }
     }
 
-    await this.sendCart(chatId, customer);
+    await this.sendCart(target, customer);
+  }
+
+  private async resolveFamilyOptions(
+    family: TelegramProductFamily,
+  ): Promise<ResolvedTelegramFamilyOption[]> {
+    const skus = telegramFamilySkus.filter((sku) => sku.family === family);
+    const products = await this.prisma.product.findMany({
+      where: {
+        code: { in: skus.map((sku) => sku.productCode) },
+        isAvailable: true,
+      },
+      include: {
+        variants: {
+          where: { isAvailable: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+      },
+    });
+
+    return skus.flatMap((sku) => {
+      const product = products.find((candidate) => candidate.code === sku.productCode);
+
+      if (!product) {
+        return [];
+      }
+
+      const variant =
+        product.variants.find((candidate) => candidate.isDefault) ??
+        product.variants[0] ??
+        null;
+
+      return [
+        {
+          ...sku,
+          product: {
+            id: product.id,
+            code: product.code,
+            name: product.name,
+            sellingPrice: product.sellingPrice,
+          },
+          variant: variant
+            ? {
+                id: variant.id,
+                name: variant.name,
+                sellingPrice: variant.sellingPrice,
+                isDefault: variant.isDefault,
+              }
+            : null,
+          price: variant?.sellingPrice ?? product.sellingPrice,
+        },
+      ];
+    });
+  }
+
+  private uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+    const seen = new Set<string>();
+
+    return items.filter((item) => {
+      const value = key(item);
+
+      if (seen.has(value)) {
+        return false;
+      }
+
+      seen.add(value);
+      return true;
+    });
+  }
+
+  private familySizePriceRange(
+    options: ResolvedTelegramFamilyOption[],
+    size: TelegramFamilySize,
+  ): string {
+    const prices = options
+      .filter((option) => option.size === size)
+      .map((option) => Number(option.price));
+
+    if (!prices.length) {
+      return "";
+    }
+
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+
+    return min === max
+      ? this.formatMoney(min)
+      : `${this.formatMoney(min)} - ${this.formatMoney(max)}`;
+  }
+
+  private parseFamily(value: string): TelegramProductFamily {
+    if (value === "lavash" || value === "burger") {
+      return value;
+    }
+
+    throw new BadRequestException("Telegram product family is invalid");
+  }
+
+  private parseFamilySize(value: string): TelegramFamilySize {
+    if (value === "mini" || value === "original" || value === "max") {
+      return value;
+    }
+
+    throw new BadRequestException("Telegram product family size is invalid");
+  }
+
+  private parseFamilyMeat(value: string): TelegramFamilyMeat {
+    if (value === "beef" || value === "chicken") {
+      return value;
+    }
+
+    throw new BadRequestException("Telegram product family meat is invalid");
+  }
+
+  private familyLabel(family: TelegramProductFamily): string {
+    return family === "lavash" ? "Lavash" : "Burger";
+  }
+
+  private familyIcon(family: TelegramProductFamily): string {
+    return family === "lavash" ? "🌯" : "🍔";
+  }
+
+  private branchMapUrl(branch: {
+    latitude?: Prisma.Decimal | null;
+    longitude?: Prisma.Decimal | null;
+  }): string | null {
+    if (branch.latitude === null || branch.latitude === undefined) {
+      return null;
+    }
+
+    if (branch.longitude === null || branch.longitude === undefined) {
+      return null;
+    }
+
+    return `https://www.google.com/maps/search/?api=1&query=${Number(branch.latitude)},${Number(branch.longitude)}`;
   }
 
   private orderTypeButtons(branch: BranchForCheckout) {
@@ -1179,6 +1677,9 @@ export class TelegramCustomerOrderingService {
       select: {
         id: true,
         name: true,
+        address: true,
+        latitude: true,
+        longitude: true,
         acceptsOrders: true,
         deliveryEnabled: true,
         pickupEnabled: true,
@@ -1193,6 +1694,9 @@ export class TelegramCustomerOrderingService {
       select: {
         id: true,
         name: true,
+        address: true,
+        latitude: true,
+        longitude: true,
         acceptsOrders: true,
         deliveryEnabled: true,
         pickupEnabled: true,
@@ -1306,9 +1810,11 @@ export class TelegramCustomerOrderingService {
     });
   }
 
-  private async sendMainMenu(chatId: string, name?: string | null): Promise<void> {
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+  private async sendMainMenu(
+    target: CustomerScreenTarget,
+    name?: string | null,
+  ): Promise<void> {
+    await this.renderCustomerScreen(target, {
       text: [
         `Assalomu alaykum${name ? `, ${this.escapeHtml(name)}` : ""}!`,
         "",
@@ -1316,21 +1822,76 @@ export class TelegramCustomerOrderingService {
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
-        keyboard: [
-          ["🍽 Menyu", "🛒 Savat"],
-          ["📦 Buyurtmalarim", "📍 Filial"],
-          ["👤 Profil"],
+        inline_keyboard: [
+          [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
+          [{ text: "🛒 Savat", callback_data: `${customerCallbackPrefix}:cart` }],
+          [{ text: "📦 Buyurtmalarim", callback_data: `${customerCallbackPrefix}:orders` }],
+          [{ text: "📍 Filial", callback_data: `${customerCallbackPrefix}:branches` }],
+          [{ text: "👤 Profil", callback_data: `${customerCallbackPrefix}:profile` }],
         ],
-        resize_keyboard: true,
       },
     });
   }
 
-  private async sendLinkRequired(chatId: string): Promise<void> {
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
+  private async sendLinkRequired(target: CustomerScreenTarget): Promise<void> {
+    await this.renderCustomerScreen(target, {
       text: "Avval MAZETTO profilingizni ulang: /start bosing va telefon raqamingizni yuboring.",
     });
+  }
+
+  private callbackTarget(callback: TelegramCallbackQuery): CustomerScreenTarget {
+    return {
+      chatId: this.requiredTelegramId(callback.message?.chat?.id, "chat id"),
+      ...(callback.id ? { callbackQueryId: callback.id } : {}),
+      ...(callback.message?.message_id ? { messageId: callback.message.message_id } : {}),
+    };
+  }
+
+  private async answerCallback(
+    callback: TelegramCallbackQuery,
+    text?: string,
+    showAlert = false,
+  ): Promise<void> {
+    if (!callback.id) {
+      return;
+    }
+
+    await this.telegramRequest("answerCallbackQuery", {
+      callback_query_id: callback.id,
+      ...(text ? { text } : {}),
+      ...(showAlert ? { show_alert: true } : {}),
+    }).catch(() => undefined);
+  }
+
+  private async renderCustomerScreen(
+    target: CustomerScreenTarget,
+    payload: CustomerScreenPayload,
+  ): Promise<void> {
+    if (target.messageId) {
+      try {
+        await this.telegramRequest("editMessageText", {
+          chat_id: target.chatId,
+          message_id: target.messageId,
+          ...payload,
+        });
+        return;
+      } catch (error) {
+        if (this.isMessageNotModifiedError(error)) {
+          return;
+        }
+      }
+    }
+
+    await this.telegramRequest("sendMessage", {
+      chat_id: target.chatId,
+      ...payload,
+    });
+  }
+
+  private isMessageNotModifiedError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+    return message.includes("message is not modified");
   }
 
   private async telegramRequest(method: string, payload: unknown): Promise<void> {
@@ -1367,6 +1928,14 @@ export class TelegramCustomerOrderingService {
     const amount = Number(value);
 
     return `${new Intl.NumberFormat("uz-UZ").format(amount)} so'm`;
+  }
+
+  private maskPhone(phone: string): string {
+    if (phone.length <= 7) {
+      return this.escapeHtml(phone);
+    }
+
+    return this.escapeHtml(`${phone.slice(0, 4)}***${phone.slice(-4)}`);
   }
 
   private escapeHtml(value: string): string {

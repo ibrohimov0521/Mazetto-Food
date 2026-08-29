@@ -1084,7 +1084,7 @@ Remaining:
 
 ## Step 10 - Telegram Customer Ordering UX Polish
 
-Status: In progress locally; not deployed
+Status: Completed locally; not deployed
 
 Date: 2026-08-29
 
@@ -1093,7 +1093,7 @@ Scope:
 - Telegram customer presentation and navigation polish only.
 - No production deployment, production DB write, migration, webhook change, Click/Payme integration, or staff Telegram activation.
 
-Planned/active behavior:
+Completed locally:
 
 - Telegram menu groups `Lavash` and `Tovuqli lavash` into one virtual `Lavash` family.
 - Telegram menu groups `Burgerlar` and `Tovuqli burgerlar` into one virtual `Burger` family.
@@ -1101,7 +1101,37 @@ Planned/active behavior:
 - Unsupported combinations are not shown.
 - Quick-add success uses callback notification instead of a new chat bubble.
 - After quick-add, the bot returns to the main interactive menu.
+- The main Telegram customer screens now prefer editing the existing interactive message and fall back to one replacement message if editing is impossible.
 - Branch screen uses real branch coordinates for the map button when coordinates exist.
+- The existing persistent cart, checkout session, CASH payment, DELIVERY/PICKUP, shared order engine, and customer history architecture were preserved.
+
+Catalog mapping:
+
+- `Lavash / Mini / Mol go'shti` -> `Mini lavash` / `Standart`.
+- `Lavash / Original / Mol go'shti` -> `Mol go'shtli lavash` / `Standart`.
+- `Lavash / Original / Tovuq` -> `Tovuqli lavash` / `Standart`.
+- `Lavash / Max / Mol go'shti` -> `Katta lavash` / `Standart`.
+- `Burger / Original / Mol go'shti` -> `Klassik burger` / `Standart`.
+- `Burger / Original / Tovuq` -> `Tovuqli burger` / `Standart`.
+- `Burger / Max / Mol go'shti` -> `Katta burger` / `Standart`.
+- `Burger / Max / Tovuq` -> `Qarsildoq tovuqli burger` / `Standart`.
+
+Unsupported combinations intentionally hidden:
+
+- `Lavash / Mini / Tovuq`.
+- `Burger / Mini / Mol go'shti`.
+- `Burger / Mini / Tovuq`.
+
+Validation:
+
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-catalog-mapping.ts`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-ordering.ts`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-auth.ts`: passed.
+- `pnpm --dir apps/backend exec tsx scripts/validate-customer-order-history.ts`: passed.
+- Prisma format, validate, and generate passed locally with a safe placeholder database URL.
+- Backend typecheck, lint, and build passed.
+- Workspace typecheck and lint passed.
+- Workspace build completed all app tasks successfully; the shell session was stopped after the known post-success hang.
 
 ## Architecture Decision Log
 
