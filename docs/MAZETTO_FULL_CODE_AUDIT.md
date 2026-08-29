@@ -105,7 +105,7 @@ Files:
 - `apps/backend/src/modules/customers/customers.service.ts`
 - `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts`
 
-Evidence:
+Original evidence:
 
 Normalization strips formatting and prefixes `+` only when the normalized value starts with `998`. A local Uzbek input like `901234567` remains distinct from `+998901234567`.
 
@@ -113,11 +113,11 @@ Production impact:
 
 The same human can accidentally create multiple customer rows depending on input format or Telegram contact format.
 
-Recommended fix:
+Step 12 fix:
 
-Centralize Uzbek phone normalization and map valid 9-digit local numbers to `+998...`. Keep contact ownership checks unchanged.
+Backend customer identity paths now use one shared normalizer. Canonical persisted customer phone format is `+998XXXXXXXXX`. Accepted equivalent inputs include `+998901234567`, `998901234567`, `90 123 45 67`, `+998 (90) 123-45-67`, and `00998901234567`. Invalid short/long/non-Uzbek values are rejected through the existing validation/error path. Telegram contact ownership validation remains unchanged.
 
-Fixed: NO.
+Fixed: YES locally, not deployed.
 
 ### AUD-004: Pending customer order attempts can block retry after an interruption
 
@@ -125,7 +125,7 @@ Severity: P2 MEDIUM
 
 File: `apps/backend/src/modules/customers/customer-order-engine.service.ts`
 
-Evidence:
+Original evidence:
 
 The idempotency attempt TTL is 24 hours. A duplicate request waits for 15 seconds; if the original attempt remains `PENDING`, the service returns "Checkout is already being processed." A process crash or hard interruption after attempt reservation can leave the same key blocked until expiry.
 
@@ -133,11 +133,11 @@ Production impact:
 
 A customer may be unable to retry the same checkout payload with the same stored idempotency key after an infrastructure interruption.
 
-Recommended fix:
+Step 12 fix:
 
-Add stale `PENDING` recovery semantics for attempts older than a short processing timeout, or have clients rotate the idempotency key only after a clearly abandoned attempt.
+Customer order idempotency now distinguishes completed/recoverable attempts from active pending attempts. If a same-key attempt already has a `customerOrderId`, the engine reuses the existing order and repairs the attempt status to `COMPLETED` if needed. If a same-key `PENDING` attempt has no order and is older than the named stale threshold, it is removed and the retry reserves a fresh attempt. Active `PENDING` attempts still wait and then reject without creating duplicate order graph rows.
 
-Fixed: NO.
+Fixed: YES locally, not deployed.
 
 ### AUD-005: Random/derived business numbers have no collision retry
 
@@ -508,12 +508,10 @@ Remaining gaps:
 
 ## Recommended Fix Order
 
-1. Normalize Uzbek phone inputs centrally.
-2. Upload approved production media files to `mazetto-media`.
-3. Add stale pending attempt recovery.
-4. Add Telegram category pagination and cart merge.
-5. Add number-collision retry for order/ticket/receipt/shift numbers.
-6. Clean docs drift and placeholder app warnings.
+1. Upload approved production media files to `mazetto-media`.
+2. Add Telegram category pagination and cart merge.
+3. Add number-collision retry for order/ticket/receipt/shift numbers.
+4. Clean docs drift and placeholder app warnings.
 
 ## Verified Safe Areas
 
@@ -570,8 +568,8 @@ Whitespace result:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AUD-001 | P1 | Customer checkout/order engine | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Delivery fee displayed but backend total excludes it | Customer/staff total mismatch | Yes locally | pending commit |
 | AUD-002 | P1 | Customer checkout/payment | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/dto/customer.dto.ts` | Click/Payme/Card visible without provider settlement | Payment expectation mismatch | Yes locally | pending commit |
-| AUD-003 | P2 | Customer identity | `apps/backend/src/modules/customers/customers.service.ts` | Local phone formats can duplicate customers | Duplicate customer identity | No | n/a |
-| AUD-004 | P2 | Idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Stale pending attempts block retry | Checkout retry friction | No | n/a |
+| AUD-003 | P2 | Customer identity | `apps/backend/src/modules/customers/customers.service.ts` | Local phone formats can duplicate customers | Duplicate customer identity | Yes locally | pending commit |
+| AUD-004 | P2 | Idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Stale pending attempts block retry | Checkout retry friction | Yes locally | pending commit |
 | AUD-005 | P2 | Numbering | Backend order/kitchen/payment/shift services | No retry on unique number collision | Rare failed valid operations | No | n/a |
 | AUD-006 | P2 | Telegram menu | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Product list capped at 8 without pagination | Hidden products in Telegram | No | n/a |
 | AUD-007 | P2 | Telegram cart | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Identical Telegram items do not merge | Cart clutter and drift from web behavior | No | n/a |

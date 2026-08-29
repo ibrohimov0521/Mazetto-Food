@@ -306,7 +306,7 @@ Audit result:
 - ✅ VERIFIED: Telegram contact linking validates Telegram contact ownership.
 - 🟡 PARTIAL / RISK: customer-web displays a 12 000 so'm delivery fee, but backend customer order totals currently persist item subtotal only.
 - 🟡 PARTIAL / RISK: customer checkout shows Click, Payme, and Card options before real provider settlement exists.
-- 🟡 PARTIAL / RISK: Uzbek phone normalization can still create duplicate identities for local-format versus `+998` numbers.
+- ✅ VERIFIED LOCALLY: Uzbek phone normalization now uses one canonical backend helper and stores customer phones as `+998XXXXXXXXX`.
 - 🟡 PARTIAL / RISK: Telegram category product listing is capped at 8 products without pagination.
 - 🟡 PARTIAL / RISK: Telegram cart quick-add creates separate identical cart rows instead of merging quantity.
 - 🟡 PARTIAL / RISK: production direct media URLs still 404 until real media files are uploaded into the `mazetto-media` volume.
@@ -341,6 +341,33 @@ Remaining:
 
 - Production still runs the previous deployed release until Step 11 is explicitly pushed and deployed.
 - A real non-zero delivery fee still requires an owner-approved backend/branch setting in a later phase.
+
+### Step 12 - Data Integrity P2 Remediation
+
+Status: Local implementation complete, not deployed
+
+Scope:
+
+- AUD-003 customer phone normalization.
+- AUD-004 stale pending customer order attempt recovery.
+
+Evidence:
+
+- ✅ VERIFIED: customer phone identity now uses one shared backend normalizer.
+- ✅ VERIFIED: canonical persisted customer phone format is `+998XXXXXXXXX`.
+- ✅ VERIFIED: equivalent inputs such as `+998901234567`, `998901234567`, `90 123 45 67`, `+998 (90) 123-45-67`, and `00998901234567` normalize to the same identity.
+- ✅ VERIFIED: Telegram contact linking uses the same normalizer and still validates `contact.user_id === message.from.id`.
+- ✅ VERIFIED: isolated DB validation proves equivalent phone formats do not create duplicate customer rows.
+- ✅ VERIFIED: isolated DB validation proves concurrent equivalent Telegram contact linking leaves one customer row.
+- ✅ VERIFIED: completed idempotency retry still returns the existing logical order.
+- ✅ VERIFIED: `PENDING` attempt with an existing `CustomerOrder` is repaired/reused and does not create a duplicate order.
+- ✅ VERIFIED: stale `PENDING` attempt without an order can be retried safely.
+- ✅ VERIFIED: active `PENDING` attempt still rejects without creating duplicate `Order`, `CustomerOrder`, or `KitchenTicket` rows.
+
+Remaining:
+
+- Production still runs the previous deployed release until Step 11 and Step 12 are explicitly pushed and deployed.
+- Legacy production duplicate-phone preflight should be run read-only before deployment if production contains customer rows.
 
 ### 0. Production Release Backup
 

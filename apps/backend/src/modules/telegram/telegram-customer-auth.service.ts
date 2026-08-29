@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import { normalizeCustomerPhone } from "../customers/customer-phone";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
 
 type TelegramMessage = {
@@ -197,7 +198,7 @@ export class TelegramCustomerAuthService {
       return;
     }
 
-    const phone = this.normalizePhone(message.contact?.phone_number ?? "");
+    const phone = normalizeCustomerPhone(message.contact?.phone_number ?? "");
     const displayName = this.displayName(message);
     const now = new Date();
 
@@ -585,7 +586,7 @@ export class TelegramCustomerAuthService {
       .map((part) => String(part).trim())
       .filter(Boolean);
 
-    return parts.join(" ") || this.normalizePhone(message.contact?.phone_number ?? "");
+    return parts.join(" ") || normalizeCustomerPhone(message.contact?.phone_number ?? "");
   }
 
   private requiredTelegramId(
@@ -605,16 +606,6 @@ export class TelegramCustomerAuthService {
 
   private generateVerificationCode(): string {
     return randomInt(100000, 1000000).toString();
-  }
-
-  private normalizePhone(phone: string): string {
-    const normalized = phone.trim().replace(/[^\d+]/g, "");
-
-    if (!normalized || normalized.length < 7 || normalized.length > 20) {
-      throw new BadRequestException("Phone number is invalid");
-    }
-
-    return normalized.startsWith("998") ? `+${normalized}` : normalized;
   }
 
   private hasBotToken(): boolean {

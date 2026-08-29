@@ -29,6 +29,8 @@ const testPhones = [
   "+998990007005",
   "+998990007006",
   "+998990007007",
+  "+998990007008",
+  "+998990007009",
 ];
 
 if (!databaseUrl) {
@@ -59,6 +61,15 @@ async function run(): Promise<void> {
 
     await testUnlinkedChallenge(services.customersService);
     await testSelfContactLink(services.telegramCustomerAuthService, prisma);
+    await testEquivalentPhoneFormatting(
+      services.telegramCustomerAuthService,
+      services.customersService,
+      prisma,
+    );
+    await testConcurrentEquivalentContactLink(
+      services.telegramCustomerAuthService,
+      prisma,
+    );
     await testTelegramUniqueness(services.telegramCustomerAuthService, prisma);
     await testLinkedRequestResendAndVerify(services.customersService, prisma);
     await testExpiredAndAttemptLimit(services.customersService, prisma);
@@ -82,6 +93,7 @@ function createServices(prisma: PrismaClient) {
     sendCategoryMenu: async () => undefined,
     sendCartFromMessage: async () => undefined,
     sendBranches: async () => undefined,
+    sendMainMenuFromMessage: async () => undefined,
   };
   const telegramCustomerAuthService = new TelegramCustomerAuthService(
     prisma as never,
@@ -136,6 +148,89 @@ async function testSelfContactLink(
     await prisma.customerVerificationChallenge.count({
       where: { phone: "+998990007002", consumedAt: null },
     }),
+    1,
+  );
+}
+
+async function testEquivalentPhoneFormatting(
+  telegramCustomerAuthService: TelegramCustomerAuthService,
+  customersService: CustomersService,
+  prisma: PrismaClient,
+): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  await telegramCustomerAuthService.handleWebhookUpdate({
+    message: {
+      chat: { id: 87008 },
+      from: { id: 97008, first_name: "Format" },
+      contact: {
+        user_id: 97008,
+        phone_number: "99 000 70 08",
+        first_name: "Format",
+      },
+    },
+  });
+  assert.equal(
+    await prisma.customer.count({ where: { phone: "+998990007008" } }),
+    1,
+  );
+
+  const request = await customersService.requestCode({
+    phone: "00998 (99) 000-70-08",
+  });
+  assert.equal(request.challenge.phone, "+998990007008");
+  assert.equal(request.delivery.status, "SENT");
+  const code = latestCode();
+
+  const verified = await customersService.verifyCode({
+    phone: "+998 99 000 70 08",
+    code,
+    name: "Format Verified",
+  });
+  assert.equal(verified.customer.phone, "+998990007008");
+  assert.equal(
+    await prisma.customer.count({ where: { phone: "+998990007008" } }),
+    1,
+  );
+}
+
+async function testConcurrentEquivalentContactLink(
+  telegramCustomerAuthService: TelegramCustomerAuthService,
+  prisma: PrismaClient,
+): Promise<void> {
+  const updates = [
+    {
+      message: {
+        chat: { id: 87009 },
+        from: { id: 97009, first_name: "Concurrent" },
+        contact: {
+          user_id: 97009,
+          phone_number: "990007009",
+          first_name: "Concurrent",
+        },
+      },
+    },
+    {
+      message: {
+        chat: { id: 87009 },
+        from: { id: 97009, first_name: "Concurrent" },
+        contact: {
+          user_id: 97009,
+          phone_number: "+998 (99) 000-70-09",
+          first_name: "Concurrent",
+        },
+      },
+    },
+  ];
+  const results = await Promise.allSettled(
+    updates.map((update) => telegramCustomerAuthService.handleWebhookUpdate(update)),
+  );
+
+  assert.deepEqual(
+    results.map((result) => result.status),
+    ["fulfilled", "fulfilled"],
+  );
+  assert.equal(
+    await prisma.customer.count({ where: { phone: "+998990007009" } }),
     1,
   );
 }

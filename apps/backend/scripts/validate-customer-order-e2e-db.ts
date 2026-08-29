@@ -81,6 +81,16 @@ async function main(): Promise<void> {
       afterWebCounts,
       "web idempotent retry must not create another order graph",
     );
+    await provePendingAttemptWithExistingOrderRecovery(
+      services.orderEngine,
+      prisma,
+      fixture,
+      webOrder.customerOrder.id,
+      webOrder.dto,
+      afterWebCounts,
+    );
+    await proveStalePendingAttemptRetry(services.orderEngine, prisma, fixture);
+    await proveActivePendingAttemptSafety(services.orderEngine, prisma, fixture);
 
     await proveTelegramCart(prisma, services.telegramOrdering, fixture);
     await proveTelegramCheckoutSession(prisma, services.telegramOrdering, fixture);
@@ -353,6 +363,127 @@ async function createDeliveryWebOrder(
 
   const result = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
   return { ...result, dto };
+}
+
+async function provePendingAttemptWithExistingOrderRecovery(
+  orderEngine: CustomerOrderEngineService,
+  prisma: PrismaService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  customerOrderId: string,
+  dto: Awaited<ReturnType<typeof createWebOrder>>["dto"],
+  expectedCounts: Awaited<ReturnType<typeof orderGraphCounts>>,
+): Promise<void> {
+  const attempt = await prisma.customerOrderAttempt.findFirstOrThrow({
+    where: { customerOrderId },
+  });
+  await prisma.customerOrderAttempt.update({
+    where: { id: attempt.id },
+    data: { completedAt: null, status: "PENDING" },
+  });
+
+  const recovered = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
+  assert.equal(recovered.customerOrder.id, customerOrderId);
+  assert.deepEqual(
+    await orderGraphCounts(prisma),
+    expectedCounts,
+    "PENDING attempt with an existing CustomerOrder must reuse the existing order graph",
+  );
+  assert.equal(
+    (
+      await prisma.customerOrderAttempt.findUniqueOrThrow({
+        where: { id: attempt.id },
+      })
+    ).status,
+    "COMPLETED",
+  );
+}
+
+async function proveStalePendingAttemptRetry(
+  orderEngine: CustomerOrderEngineService,
+  prisma: PrismaService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  const before = await orderGraphCounts(prisma);
+  const dto = {
+    branchId: fixture.branch.id,
+    idempotencyKey: `step12-stale-pending-${fixture.runId}`,
+    name: fixture.webCustomer.name,
+    type: OnlineOrderTypeDto.PICKUP,
+    paymentMethod: OnlinePaymentMethodDto.CASH,
+    notes: "Step 12 stale pending recovery",
+    items: [
+      {
+        productId: fixture.configurable.id,
+        variantId: fixture.variant.id,
+        quantity: 1,
+      },
+    ],
+  };
+  await prisma.customerOrderAttempt.create({
+    data: {
+      customerId: fixture.webCustomer.id,
+      idempotencyKey: dto.idempotencyKey,
+      requestHash: checkoutRequestHash(orderEngine, dto),
+      createdAt: new Date(Date.now() - 3 * 60 * 1000),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const recovered = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
+  assert.ok(recovered.customerOrder.id);
+  const after = await orderGraphCounts(prisma);
+  assert.equal(after.orders, before.orders + 1);
+  assert.equal(after.customerOrders, before.customerOrders + 1);
+  assert.equal(after.kitchenTickets, before.kitchenTickets + 1);
+}
+
+async function proveActivePendingAttemptSafety(
+  orderEngine: CustomerOrderEngineService,
+  prisma: PrismaService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  const before = await orderGraphCounts(prisma);
+  const dto = {
+    branchId: fixture.branch.id,
+    idempotencyKey: `step12-active-pending-${fixture.runId}`,
+    name: fixture.webCustomer.name,
+    type: OnlineOrderTypeDto.PICKUP,
+    paymentMethod: OnlinePaymentMethodDto.CASH,
+    notes: "Step 12 active pending safety",
+    items: [
+      {
+        productId: fixture.configurable.id,
+        variantId: fixture.variant.id,
+        quantity: 1,
+      },
+    ],
+  };
+  await prisma.customerOrderAttempt.create({
+    data: {
+      customerId: fixture.webCustomer.id,
+      idempotencyKey: dto.idempotencyKey,
+      requestHash: checkoutRequestHash(orderEngine, dto),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  });
+
+  await assert.rejects(() => orderEngine.createOnlineOrder(fixture.webCustomer.id, dto));
+  const after = await orderGraphCounts(prisma);
+  assert.equal(after.orders, before.orders);
+  assert.equal(after.customerOrders, before.customerOrders);
+  assert.equal(after.kitchenTickets, before.kitchenTickets);
+  assert.equal(after.attempts, before.attempts + 1);
+}
+
+function checkoutRequestHash(
+  orderEngine: CustomerOrderEngineService,
+  dto: Parameters<CustomerOrderEngineService["createOnlineOrder"]>[1],
+): string {
+  return (
+    orderEngine as unknown as {
+      hashCheckoutRequest(dto: Parameters<CustomerOrderEngineService["createOnlineOrder"]>[1]): string;
+    }
+  ).hashCheckoutRequest(dto);
 }
 
 async function proveTelegramCart(

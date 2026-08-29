@@ -24,6 +24,7 @@ import { BranchesService } from "../branches/branches.service";
 import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
+import { normalizeCustomerPhone } from "./customer-phone";
 import type {
   CustomerCheckoutQuoteDto,
   CreateOnlineOrderDto,
@@ -62,7 +63,7 @@ export class CustomersService {
   ) {}
 
   async requestCode(dto: CustomerRequestCodeDto) {
-    const phone = this.normalizePhone(dto.phone);
+    const phone = normalizeCustomerPhone(dto.phone);
     const code = this.generateVerificationCode();
     const codeHash = await bcrypt.hash(code, 12);
     const challenge = await this.prisma.$transaction(async (tx) => {
@@ -98,7 +99,7 @@ export class CustomersService {
   }
 
   async verifyCode(dto: CustomerVerifyCodeDto) {
-    const phone = this.normalizePhone(dto.phone);
+    const phone = normalizeCustomerPhone(dto.phone);
     const now = new Date();
     const challenge = await this.prisma.customerVerificationChallenge.findFirst(
       {
@@ -605,16 +606,6 @@ export class CustomersService {
 
   private generateVerificationCode(): string {
     return randomInt(100000, 1000000).toString();
-  }
-
-  private normalizePhone(phone: string): string {
-    const normalized = phone.trim().replace(/[^\d+]/g, "");
-
-    if (!normalized || normalized.length < 7 || normalized.length > 20) {
-      throw new BadRequestException("Phone number is invalid");
-    }
-
-    return normalized.startsWith("998") ? `+${normalized}` : normalized;
   }
 
   private getCustomerRefreshExpiresAt(): Date {

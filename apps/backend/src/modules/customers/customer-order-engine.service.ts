@@ -40,6 +40,8 @@ type CustomerOrderAttemptRecord = {
   status: CustomerOrderAttemptStatus;
   requestHash: string;
   customerOrderId: string | null;
+  createdAt: Date;
+  expiresAt: Date;
 };
 type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
   created: boolean;
@@ -47,6 +49,7 @@ type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
 
 const CUSTOMER_ORDER_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_ORDER_ATTEMPT_WAIT_MS = 15000;
+const CUSTOMER_ORDER_STALE_PENDING_MS = 2 * 60 * 1000;
 const operationalCustomerPaymentMethods = [OnlinePaymentMethodDto.CASH] as const;
 
 @Injectable()
@@ -303,6 +306,14 @@ export class CustomerOrderEngineService {
       requestHash,
     );
 
+    if (!existing) {
+      return this.reserveCustomerOrderAttempt(
+        customerId,
+        idempotencyKey,
+        requestHash,
+      );
+    }
+
     return { ...existing, created: false };
   }
 
@@ -310,7 +321,7 @@ export class CustomerOrderEngineService {
     customerId: string,
     idempotencyKey: string,
     requestHash: string,
-  ): Promise<CustomerOrderAttemptRecord> {
+  ): Promise<CustomerOrderAttemptRecord | null> {
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < CUSTOMER_ORDER_ATTEMPT_WAIT_MS) {
@@ -334,11 +345,25 @@ export class CustomerOrderEngineService {
         );
       }
 
-      if (
-        existing.status === CustomerOrderAttemptStatus.COMPLETED &&
-        existing.customerOrderId
-      ) {
+      if (existing.customerOrderId) {
+        if (existing.status !== CustomerOrderAttemptStatus.COMPLETED) {
+          await this.prisma.customerOrderAttempt.update({
+            where: { id: existing.id },
+            data: {
+              status: CustomerOrderAttemptStatus.COMPLETED,
+              completedAt: new Date(),
+            },
+          });
+        }
+
         return existing;
+      }
+
+      if (this.isStalePendingAttempt(existing)) {
+        await this.prisma.customerOrderAttempt.delete({
+          where: { id: existing.id },
+        });
+        return null;
       }
 
       if (existing.expiresAt.getTime() <= Date.now()) {
@@ -350,8 +375,37 @@ export class CustomerOrderEngineService {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
+    const stale = await this.prisma.customerOrderAttempt.findUnique({
+      where: {
+        customerId_idempotencyKey: {
+          customerId,
+          idempotencyKey,
+        },
+      },
+      select: this.customerOrderAttemptSelect(),
+    });
+
+    if (
+      stale &&
+      stale.requestHash === requestHash &&
+      this.isStalePendingAttempt(stale)
+    ) {
+      await this.prisma.customerOrderAttempt.delete({
+        where: { id: stale.id },
+      });
+      return null;
+    }
+
     throw new ConflictException(
       "Checkout is already being processed. Please wait and try again.",
+    );
+  }
+
+  private isStalePendingAttempt(attempt: CustomerOrderAttemptRecord): boolean {
+    return (
+      attempt.status === CustomerOrderAttemptStatus.PENDING &&
+      !attempt.customerOrderId &&
+      Date.now() - attempt.createdAt.getTime() >= CUSTOMER_ORDER_STALE_PENDING_MS
     );
   }
 
@@ -367,6 +421,7 @@ export class CustomerOrderEngineService {
       status: true,
       requestHash: true,
       customerOrderId: true,
+      createdAt: true,
       expiresAt: true,
     } satisfies Prisma.CustomerOrderAttemptSelect;
   }
