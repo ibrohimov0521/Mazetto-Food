@@ -195,6 +195,15 @@ Media Service
   - sticky menu navigation, fixed bottom navigation, Uzbek language scan, and no-horizontal-overflow checks passed across the final matrix
   - one safe accessibility fix was added for cart quantity buttons
   - no backend, API, database, Telegram, payment, Dokploy, Cloudflare, production deploy, push, or media upload changes were made
+- Customer Web Step 6 authentic media recovery was improved locally:
+  - CDR direct extraction remains unavailable because no trustworthy local CDR/CorelDRAW conversion tool is installed
+  - the MAZETTO PDF was re-audited through page renders and 159 embedded image objects
+  - `Pishloqli fri` was recovered as an authentic composite from existing MAZETTO fries and actual pishloqli sous source material
+  - `Pishloqli sous` media was corrected from the nearby garlic sauce object to the actual yellow cheese sauce object
+  - product source-media coverage improved from 26/35 to 27/35 local deliberate assets
+  - category source-media coverage remains 10/10
+  - direct authentic 35/35 product coverage is not complete; 8 products still need authentic/official source material
+  - media production readiness is still pending because assets were not uploaded to the production media volume and no deployment was performed
 - Customer Telegram phone verification flow was implemented locally:
   - `Customer` now supports optional Telegram link fields: `telegramUserId`, `telegramChatId`, and `telegramLinkedAt`
   - `request-code` keeps the existing response shape and now returns Telegram delivery status: `SENT`, `TELEGRAM_LINK_REQUIRED`, or `PENDING_INTEGRATION`

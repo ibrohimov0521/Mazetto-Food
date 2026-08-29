@@ -666,14 +666,26 @@
       "productId": "CHEESE_FRIES",
       "databaseName": "Pishloqli fri",
       "category": "Gazaklar",
-      "sourcePage": null,
-      "sourceMenuLabel": null,
-      "matchConfidence": "missing",
-      "extractionMethod": "generation-needed",
-      "outputFile": null,
-      "qualityStatus": "NEEDS GENERATION",
-      "notes": "No printed pishloqli fri image was available as a separate food asset.",
-      "visualDescriptionFromMenu": "Fries topped or served with cheese sauce."
+      "sourcePage": 2,
+      "sourceMenuLabel": "Kartoshka fri + Pishloqli sous",
+      "matchConfidence": "composite",
+      "extractionMethod": "Authentic composite recovery from PDF embedded fries and pishloqli sous objects",
+      "outputFile": "/menu-media/source/products/cheese-fries.webp",
+      "qualityStatus": "ACCEPTABLE",
+      "notes": "Recovered as a truthful composite: MAZETTO fries source plus the actual yellow pishloqli sous source. No cheese was painted onto the fries.",
+      "visualDescriptionFromMenu": "Fries served with cheese sauce.",
+      "sourceFile": "docs/design/source-media/menu mazetto.pdf",
+      "sourceEmbeddedFile": "p02-x175 fries + p02-x155 pishloqli sous",
+      "sourcePixelDimensions": [
+        800,
+        800
+      ],
+      "outputDimensions": [
+        800,
+        800
+      ],
+      "step6AuthenticityClassification": "C. AUTHENTIC COMPOSITE RECOVERY",
+      "step6Evidence": "Recovered from MAZETTO PDF fries plus actual yellow pishloqli sous object."
     },
     {
       "productId": "CHICKEN_STRIPS",
@@ -686,7 +698,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "Printed menu has chicken balls and nuggets, but no clear strips product.",
-      "visualDescriptionFromMenu": "Crispy chicken strips with sauce."
+      "visualDescriptionFromMenu": "Crispy chicken strips with sauce.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "PDF contains nuggets/chicken balls but no strips; substitution would misrepresent the product."
     },
     {
       "productId": "NUGGETS",
@@ -721,7 +735,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "Printed menu set pages show Pepsi bottles, not Coca-Cola.",
-      "visualDescriptionFromMenu": "Coca-Cola bottle/can matching current variants."
+      "visualDescriptionFromMenu": "Coca-Cola bottle/can matching current variants.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "PDF shows Pepsi bottles, not Coca-Cola; do not relabel packaged beverage branding."
     },
     {
       "productId": "FANTA",
@@ -734,7 +750,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "No Fanta product image appears in the supplied menu source.",
-      "visualDescriptionFromMenu": "Fanta bottle/can matching current variants."
+      "visualDescriptionFromMenu": "Fanta bottle/can matching current variants.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "No Fanta package appears in supplied MAZETTO source material."
     },
     {
       "productId": "SPRITE",
@@ -747,7 +765,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "No Sprite product image appears in the supplied menu source.",
-      "visualDescriptionFromMenu": "Sprite bottle/can matching current variants."
+      "visualDescriptionFromMenu": "Sprite bottle/can matching current variants.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "No Sprite package appears in supplied MAZETTO source material."
     },
     {
       "productId": "WATER",
@@ -760,7 +780,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "No still water product image appears in the supplied menu source.",
-      "visualDescriptionFromMenu": "Water bottle matching current variants."
+      "visualDescriptionFromMenu": "Water bottle matching current variants.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "No still water bottle appears; the visible carton is juice, not water."
     },
     {
       "productId": "HOUSE_SAUCE",
@@ -773,7 +795,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "Printed menu includes ketchup, cheese sauce, and garlic sauce, but not MAZETTO house sauce.",
-      "visualDescriptionFromMenu": "MAZETTO branded sauce cup."
+      "visualDescriptionFromMenu": "MAZETTO branded sauce cup.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "PDF has ketchup, cheese sauce, and garlic sauce, but no MAZETTO maxsus sous."
     },
     {
       "productId": "CHEESE_SAUCE",
@@ -782,20 +806,20 @@
       "sourcePage": 2,
       "sourceMenuLabel": "Pishloqli sous",
       "matchConfidence": "exact",
-      "extractionMethod": "PDF embedded image with SMask",
+      "extractionMethod": "PDF embedded image object normalized from p02 x155",
       "outputFile": "/menu-media/source/products/cheese-sauce.webp",
       "sourceFile": "docs/design/source-media/menu mazetto.pdf",
-      "sourceEmbeddedFile": "p02-006-x153.webp",
+      "sourceEmbeddedFile": "p02-x155.png",
       "sourcePixelDimensions": [
         164,
-        138
+        140
       ],
       "outputDimensions": [
         800,
         800
       ],
       "qualityStatus": "GOOD",
-      "notes": "Cheese sauce pack and cup."
+      "notes": "Corrected from the nearby garlic sauce object to the yellow Heinz pishloqli sous object visible on PDF page 2."
     },
     {
       "productId": "SPICY_SAUCE",
@@ -808,7 +832,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "No dedicated spicy sauce image appears in the supplied source.",
-      "visualDescriptionFromMenu": "Spicy red sauce cup."
+      "visualDescriptionFromMenu": "Spicy red sauce cup.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "No dedicated spicy sauce visual appears; ketchup should not be reused as spicy sauce without approval."
     },
     {
       "productId": "FAMILY_SET",
@@ -887,7 +913,9 @@
       "outputFile": null,
       "qualityStatus": "NEEDS GENERATION",
       "notes": "No current Bolalar seti composition appears in page 3.",
-      "visualDescriptionFromMenu": "Kids set with nuggets, fries, cheese sauce, and water."
+      "visualDescriptionFromMenu": "Kids set with nuggets, fries, cheese sauce, and water.",
+      "step6AuthenticityClassification": "F. NEEDS NEW REAL PHOTO",
+      "step6Evidence": "No kids set composition appears, and no water source exists for a truthful composite."
     }
   ]
 }

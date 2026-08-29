@@ -7,15 +7,48 @@ Source CDR: `docs/design/source-media/menu mazetto.cdr` was present, but direct 
 
 - Products in database manifest: 35
 - Categories in database manifest: 10
-- Product assets extracted: 26
+- Product assets extracted/recovered: 27
 - Category assets extracted: 10
 - Exact matches: 18
 - High-confidence matches: 2
 - Manual-review matches: 6
-- Missing / generation-needed: 9
+- Authentic composite recoveries: 1
+- Missing / generation-needed: 8
 - GOOD product assets: 18
-- ACCEPTABLE product assets: 8
-- NEEDS GENERATION product assets: 9
+- ACCEPTABLE product assets: 9
+- NEEDS GENERATION product assets: 8
+
+## Step 6 Re-Audit Update
+
+Step 6 re-audited the supplied `menu mazetto.pdf` directly, including every page render and 159 embedded image objects. The local environment still has no trustworthy CDR extraction tool available for `menu mazetto.cdr`, so CDR direct recovery remains unavailable.
+
+Recovered/corrected media:
+
+- `Pishloqli fri` is now an authentic composite recovery at `/menu-media/source/products/cheese-fries.webp`, built only from the MAZETTO fries source and the actual yellow `Pishloqli sous` source from PDF page 2. No cheese or new food content was painted onto the fries.
+- `Pishloqli sous` was corrected to the actual yellow cheese sauce object from PDF page 2. The prior local file was the nearby purple garlic sauce object and did not match the database product.
+
+Step 6 authenticity classification for the original 9 missing keys:
+
+| Key | Product | Classification | Evidence |
+| --- | --- | --- | --- |
+| `cheese-fries` | Pishloqli fri | C. AUTHENTIC COMPOSITE RECOVERY | Recovered from real MAZETTO fries plus real yellow pishloqli sous source. |
+| `chicken-strips` | Tovuqli strips | F. NEEDS NEW REAL PHOTO | PDF has nuggets and chicken balls, but no strips visual. |
+| `coca-cola` | Coca-Cola | F. NEEDS NEW REAL PHOTO | PDF shows Pepsi bottles, not Coca-Cola. |
+| `fanta` | Fanta | F. NEEDS NEW REAL PHOTO | No Fanta package appears in the supplied source. |
+| `sprite` | Sprite | F. NEEDS NEW REAL PHOTO | No Sprite package appears in the supplied source. |
+| `water` | Suv | F. NEEDS NEW REAL PHOTO | No still water bottle appears; the visible carton is juice. |
+| `house-sauce` | Maxsus sous | F. NEEDS NEW REAL PHOTO | No MAZETTO maxsus sous visual appears. |
+| `spicy-sauce` | Achchiq sous | F. NEEDS NEW REAL PHOTO | No dedicated achchiq sous visual appears. |
+| `set-kids` | Bolalar seti | F. NEEDS NEW REAL PHOTO | No kids set composition appears, and no water source exists for a truthful composite. |
+
+Unresolved after re-audit:
+
+- `Tovuqli strips`: the PDF contains nuggets and chicken balls, but no clear strips product.
+- `Coca-Cola`, `Fanta`, `Sprite`: the PDF set pages show Pepsi bottles, not these Coca-Cola Company products.
+- `Suv`: the PDF contains a juice carton, not still water.
+- `Maxsus sous`: the PDF contains ketchup, cheese sauce, and garlic sauce, but no MAZETTO house sauce.
+- `Achchiq sous`: no dedicated spicy sauce visual appears in the supplied source.
+- `Bolalar seti`: no kids-set composition appears, and the database set includes water while no water source is available for a truthful composite.
 
 ## Product Mapping
 
@@ -42,7 +75,7 @@ Source CDR: `docs/design/source-media/menu mazetto.cdr` was present, but direct 
 | Doner tarelka | Doner | 1 | Doner Blyuda | exact | GOOD | /menu-media/source/products/doner-plate.webp | Doner plate with fries and salad. |
 | Tovuqli doner | Doner | 1 | Kurinniy Doner | exact | GOOD | /menu-media/source/products/chicken-doner.webp | Chicken doner wrap. |
 | Fri kartoshka | Gazaklar | 2 | Kartoshka fri | exact | GOOD | /menu-media/source/products/fries.webp | Fries in MAZETTO branded pack. |
-| Pishloqli fri | Gazaklar |  |  | missing | NEEDS GENERATION |  | No printed pishloqli fri image was available as a separate food asset. |
+| Pishloqli fri | Gazaklar | 2 | Kartoshka fri + Pishloqli sous | composite | ACCEPTABLE | /menu-media/source/products/cheese-fries.webp | Authentic composite from MAZETTO fries and actual yellow pishloqli sous source; no food content was invented. |
 | Tovuqli strips | Gazaklar |  |  | missing | NEEDS GENERATION |  | Printed menu has chicken balls and nuggets, but no clear strips product. |
 | Naggets | Gazaklar | 2 | Naggets 5 dona | exact | GOOD | /menu-media/source/products/nuggets.webp | Chicken nuggets. |
 | Coca-Cola | Ichimliklar |  |  | missing | NEEDS GENERATION |  | Printed menu set pages show Pepsi bottles, not Coca-Cola. |
@@ -50,7 +83,7 @@ Source CDR: `docs/design/source-media/menu mazetto.cdr` was present, but direct 
 | Sprite | Ichimliklar |  |  | missing | NEEDS GENERATION |  | No Sprite product image appears in the supplied menu source. |
 | Suv | Ichimliklar |  |  | missing | NEEDS GENERATION |  | No still water product image appears in the supplied menu source. |
 | Maxsus sous | Souslar |  |  | missing | NEEDS GENERATION |  | Printed menu includes ketchup, cheese sauce, and garlic sauce, but not MAZETTO house sauce. |
-| Pishloqli sous | Souslar | 2 | Pishloqli sous | exact | GOOD | /menu-media/source/products/cheese-sauce.webp | Cheese sauce pack and cup. |
+| Pishloqli sous | Souslar | 2 | Pishloqli sous | exact | GOOD | /menu-media/source/products/cheese-sauce.webp | Corrected to the yellow cheese sauce pack and cup from PDF page 2. |
 | Achchiq sous | Souslar |  |  | missing | NEEDS GENERATION |  | No dedicated spicy sauce image appears in the supplied source. |
 | Oilaviy set | Setlar | 3 | Oilaviy set | exact | GOOD | /menu-media/source/products/set-family.webp | Family set composition from page 3. |
 | Lavash set | Setlar | 3 | Lavash seti | exact | ACCEPTABLE | /menu-media/source/products/set-lavash.webp | Lavash set composition from page 3. |

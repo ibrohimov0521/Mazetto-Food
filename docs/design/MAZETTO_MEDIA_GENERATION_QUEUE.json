@@ -1,83 +1,90 @@
 [
   {
-    "productId": "CHEESE_FRIES",
-    "productName": "Pishloqli fri",
-    "category": "Gazaklar",
-    "closestSourceReference": null,
-    "reasonGenerationNeeded": "No printed pishloqli fri image was available as a separate food asset.",
-    "visualDescriptionFromMenu": "Fries topped or served with cheese sauce.",
-    "recommendedComposition": "Fries topped or served with cheese sauce."
-  },
-  {
     "productId": "CHICKEN_STRIPS",
     "productName": "Tovuqli strips",
     "category": "Gazaklar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "Printed menu has chicken balls and nuggets, but no clear strips product.",
+    "reasonGenerationNeeded": "PDF source includes nuggets and chicken balls, but no clear chicken strips product. Do not substitute nuggets for strips.",
     "visualDescriptionFromMenu": "Crispy chicken strips with sauce.",
-    "recommendedComposition": "Crispy chicken strips with sauce."
+    "recommendedComposition": "Crispy chicken strips with sauce.",
+    "recommendedNextAction": "AUTHENTIC_PHOTO_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   },
   {
     "productId": "COCA_COLA",
     "productName": "Coca-Cola",
     "category": "Ichimliklar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "Printed menu set pages show Pepsi bottles, not Coca-Cola.",
+    "reasonGenerationNeeded": "Coca-Cola is not present in the supplied MAZETTO PDF; page 3 shows Pepsi bottles instead, which must not be relabeled.",
     "visualDescriptionFromMenu": "Coca-Cola bottle/can matching current variants.",
-    "recommendedComposition": "Coca-Cola bottle/can matching current variants."
+    "recommendedComposition": "Coca-Cola bottle/can matching current variants.",
+    "recommendedNextAction": "OFFICIAL_BRAND_ASSET_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   },
   {
     "productId": "FANTA",
     "productName": "Fanta",
     "category": "Ichimliklar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "No Fanta product image appears in the supplied menu source.",
+    "reasonGenerationNeeded": "Fanta is not present in the supplied MAZETTO PDF; page 3 shows Pepsi bottles instead, which must not be relabeled.",
     "visualDescriptionFromMenu": "Fanta bottle/can matching current variants.",
-    "recommendedComposition": "Fanta bottle/can matching current variants."
+    "recommendedComposition": "Fanta bottle/can matching current variants.",
+    "recommendedNextAction": "OFFICIAL_BRAND_ASSET_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   },
   {
     "productId": "SPRITE",
     "productName": "Sprite",
     "category": "Ichimliklar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "No Sprite product image appears in the supplied menu source.",
+    "reasonGenerationNeeded": "Sprite is not present in the supplied MAZETTO PDF; page 3 shows Pepsi bottles instead, which must not be relabeled.",
     "visualDescriptionFromMenu": "Sprite bottle/can matching current variants.",
-    "recommendedComposition": "Sprite bottle/can matching current variants."
+    "recommendedComposition": "Sprite bottle/can matching current variants.",
+    "recommendedNextAction": "OFFICIAL_BRAND_ASSET_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   },
   {
     "productId": "WATER",
     "productName": "Suv",
     "category": "Ichimliklar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "No still water product image appears in the supplied menu source.",
+    "reasonGenerationNeeded": "No still water bottle appears in the supplied MAZETTO source. Page 3 contains a juice carton, not water.",
     "visualDescriptionFromMenu": "Water bottle matching current variants.",
-    "recommendedComposition": "Water bottle matching current variants."
+    "recommendedComposition": "Water bottle matching current variants.",
+    "recommendedNextAction": "AUTHENTIC_PHOTO_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   },
   {
     "productId": "HOUSE_SAUCE",
     "productName": "Maxsus sous",
     "category": "Souslar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "Printed menu includes ketchup, cheese sauce, and garlic sauce, but not MAZETTO house sauce.",
+    "reasonGenerationNeeded": "PDF source includes ketchup, pishloqli sous, and garlic sauce, but not MAZETTO maxsus sous.",
     "visualDescriptionFromMenu": "MAZETTO branded sauce cup.",
-    "recommendedComposition": "MAZETTO branded sauce cup."
+    "recommendedComposition": "MAZETTO branded sauce cup.",
+    "recommendedNextAction": "AUTHENTIC_PHOTO_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   },
   {
     "productId": "SPICY_SAUCE",
     "productName": "Achchiq sous",
     "category": "Souslar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "No dedicated spicy sauce image appears in the supplied source.",
+    "reasonGenerationNeeded": "PDF source includes ketchup but no dedicated achchiq sous visual. Do not reuse ketchup as spicy sauce without business approval.",
     "visualDescriptionFromMenu": "Spicy red sauce cup.",
-    "recommendedComposition": "Spicy red sauce cup."
+    "recommendedComposition": "Spicy red sauce cup.",
+    "recommendedNextAction": "AUTHENTIC_PHOTO_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   },
   {
     "productId": "KIDS_SET",
     "productName": "Bolalar seti",
     "category": "Setlar",
     "closestSourceReference": null,
-    "reasonGenerationNeeded": "No current Bolalar seti composition appears in page 3.",
+    "reasonGenerationNeeded": "No Bolalar seti source composition appears in the PDF. The DB set includes water, and no water source is available for an authentic composite.",
     "visualDescriptionFromMenu": "Kids set with nuggets, fries, cheese sauce, and water.",
-    "recommendedComposition": "Kids set with nuggets, fries, cheese sauce, and water."
+    "recommendedComposition": "Kids set with nuggets, fries, cheese sauce, and water.",
+    "recommendedNextAction": "AUTHENTIC_PHOTO_REQUIRED",
+    "authenticityConstraint": "Do not fabricate or relabel another product as this item."
   }
 ]

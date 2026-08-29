@@ -79,6 +79,7 @@ const sourceMenuMediaPaths = new Set([
   "/products/burger-big.webp",
   "/products/burger-classic.webp",
   "/products/burger-double.webp",
+  "/products/cheese-fries.webp",
   "/products/cheese-sauce.webp",
   "/products/cheeseburger.webp",
   "/products/chicken-burger.webp",
