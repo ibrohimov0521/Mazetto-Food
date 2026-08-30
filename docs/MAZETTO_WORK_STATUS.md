@@ -1255,6 +1255,79 @@ Release note:
 - Production still runs the older released revision until the full local release chain is pushed and deployed through a controlled release.
 - The production media volume is still expected to be empty until the controlled media population step is executed.
 
+## Step 14 - Controlled Production Release
+
+Status: Completed and verified in production
+
+Date: 2026-08-30
+
+Released revision:
+
+- Commit: `568b6ac121e953cea6a06c108e9b3f43949849d8`
+- Backend image: `mazetto-food-backend-pdslpm:568b6ac`
+- Customer-web image: `mazetto-food-customerweb-yvb3d0:568b6ac`
+- Media service image remained `mazetto-food-media-btinws:latest`; media content was populated through the persistent `mazetto-media` Docker volume.
+
+Backup:
+
+- PostgreSQL backup path: `/home/javohir/backups/mazetto/postgres/mazetto-step14-pre-release-20260830-040100.dump`
+- Backup was non-empty and verified with `pg_restore --list`.
+- Media volume pre-population backup path: `/home/javohir/backups/mazetto/media/mazetto-media-step14-pre-populate-20260830-040606.tar.gz`
+
+Preflight:
+
+- Backend, customer-web, media, and PostgreSQL services were `1/1`.
+- Public backend health returned 200.
+- Customer-web home and menu returned 200.
+- Customer API smoke returned 1 branch, 10 categories, and 35 products.
+- Production migrations were `16 applied / 0 failed`.
+- Production phone-normalization collision detector found 0 canonical collision groups.
+- Required backend ENV names were present without printing values.
+
+Release actions:
+
+- Approved local chain was pushed to `origin/main`.
+- Backend was updated to `mazetto-food-backend-pdslpm:568b6ac`.
+- Customer-web was updated to `mazetto-food-customerweb-yvb3d0:568b6ac`.
+- No production migration was executed because repository and production migration counts were already both 16.
+- Media volume was populated with the deterministic Step 13 script through Docker volume mount.
+
+Post-release verification:
+
+- Backend service converged to `1/1` and health returned 200.
+- Backend customer API smoke returned 1 branch, 10 categories, and 35 products.
+- Customer-web service converged to `1/1`.
+- Customer-web routes `/`, `/menu`, `/cart`, `/checkout`, `/orders`, and `/profile` returned 200.
+- Media service remained `1/1`.
+- Media public checks:
+  - `/categories/lavash.webp` returned 200.
+  - `/products/lavash-big.webp` returned 200.
+  - `/products/cheese-fries.webp` returned 200.
+  - known unresolved `/products/chicken-strips.webp` remained 404 as expected and should use the customer-web fallback.
+- Telegram webhook health was verified after release: host `api.mazettofood.uz`, pending updates 0, last error absent.
+- Release-window backend/customer-web logs showed no startup error, Prisma error, unique constraint failure, or Telegram callback failure.
+
+Important limitation:
+
+- Automated Telegram interactive UX smoke was not forced against a real customer chat, because sending synthetic callbacks to an existing user could spam a real Telegram chat and creating a new production customer/cart solely for smoke would be an unnecessary production DB write. Webhook health and deployed code evidence are verified; human Telegram UX smoke remains the next safe manual check.
+
+Deployed local fixes:
+
+- Step 10 Telegram customer UX polish is now deployed.
+- Step 11 authoritative delivery pricing and CASH-only customer payment honesty are now deployed.
+- Step 12 customer phone normalization and idempotency recovery are now deployed.
+- Step 13 Telegram pagination, Telegram cart merge, media release readiness, and safe Prisma migration script are now deployed.
+
+Still not complete:
+
+- Click/Payme provider integrations.
+- Staff Telegram production activation.
+- Eight unresolved authentic media assets.
+- AUD-005 number collision retry.
+- AUD-008 websocket refetch scope.
+- AUD-011 warehouse readiness.
+- AUD-012 httpOnly refresh-token hardening.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop

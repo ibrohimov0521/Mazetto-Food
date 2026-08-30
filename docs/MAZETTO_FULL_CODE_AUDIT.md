@@ -4,7 +4,7 @@ Date: 2026-08-29
 
 Starting HEAD: `9003b1458483394a72822dd66b15125642e323f1`
 
-Production baseline during this audit remains `d3ba37de2e458a473af73d543049f097ce2ebdb4`; no production writes, deploys, pushes, webhook changes, Cloudflare changes, or production orders were performed.
+Production baseline during the original audit was `d3ba37de2e458a473af73d543049f097ce2ebdb4`. Step 14 later deployed the approved local remediation chain through `568b6ac121e953cea6a06c108e9b3f43949849d8` after backup and preflight.
 
 ## Executive Summary
 
@@ -68,7 +68,7 @@ Step 11 fix:
 
 Backend `CustomerOrderEngineService` now exposes an authenticated customer checkout quote and uses the same pricing policy during final order creation. Since no trustworthy branch/settings delivery-fee value exists yet, the current authoritative delivery fee is `0.00` for both `DELIVERY` and `PICKUP`; this preserves the already verified production behavior and avoids inventing a new charge. `Order.deliveryFeeTotal` is persisted from the backend policy and `Order.total = subtotal + deliveryFeeTotal`.
 
-Fixed: YES locally, not deployed.
+Fixed: YES, deployed and smoke-verified in Step 14.
 
 ### AUD-002: Online payment choices are visible before real provider completion
 
@@ -92,7 +92,7 @@ Step 11 fix:
 
 Customer checkout now exposes only `CASH` as an available customer payment method. Backend customer order creation rejects unsupported customer payment methods, so stale clients cannot submit `CLICK`, `PAYME`, or `CARD` as if they were operational online payments.
 
-Fixed: YES locally, not deployed.
+Fixed: YES, deployed and smoke-verified in Step 14.
 
 ## P2 Findings
 
@@ -117,7 +117,7 @@ Step 12 fix:
 
 Backend customer identity paths now use one shared normalizer. Canonical persisted customer phone format is `+998XXXXXXXXX`. Accepted equivalent inputs include `+998901234567`, `998901234567`, `90 123 45 67`, `+998 (90) 123-45-67`, and `00998901234567`. Invalid short/long/non-Uzbek values are rejected through the existing validation/error path. Telegram contact ownership validation remains unchanged.
 
-Fixed: YES locally, not deployed.
+Fixed: YES, deployed and smoke-verified in Step 14.
 
 ### AUD-004: Pending customer order attempts can block retry after an interruption
 
@@ -137,7 +137,7 @@ Step 12 fix:
 
 Customer order idempotency now distinguishes completed/recoverable attempts from active pending attempts. If a same-key attempt already has a `customerOrderId`, the engine reuses the existing order and repairs the attempt status to `COMPLETED` if needed. If a same-key `PENDING` attempt has no order and is older than the named stale threshold, it is removed and the retry reserves a fresh attempt. Active `PENDING` attempts still wait and then reject without creating duplicate order graph rows.
 
-Fixed: YES locally, not deployed.
+Fixed: YES, deployed and smoke-verified in Step 14.
 
 ### AUD-005: Random/derived business numbers have no collision retry
 
@@ -183,7 +183,7 @@ Step 13 fix:
 
 Telegram category screens now use a named `TELEGRAM_MENU_PAGE_SIZE` constant and fetch one extra product to detect whether a next page exists. Callback data supports `cust:cat:<categoryId>:<page>` with invalid page values falling back safely to page 1. Navigation remains edit-in-place and shows compact previous/next controls without exposing inactive products or changing the Step 10 virtual Lavash/Burger family grouping.
 
-Fixed: YES locally, not deployed.
+Fixed: YES, deployed and smoke-verified in Step 14.
 
 ### AUD-007: Telegram cart does not merge identical quick-add items
 
@@ -206,7 +206,7 @@ Step 13 fix:
 
 Telegram add-to-cart now merges equivalent plain cart lines by `cartId + productId + variantId + empty modifier selection + no notes`. Lines with modifiers or different product/variant choices remain separate. The merge runs in a transaction and uses a PostgreSQL advisory transaction lock derived from the cart line identity, avoiding a schema migration while closing the concurrent quick-add race for this path.
 
-Fixed: YES locally, not deployed.
+Fixed: YES, deployed and smoke-verified in Step 14.
 
 ### AUD-008: Customer orders page reacts to every order websocket event
 
@@ -251,7 +251,7 @@ Step 13 readiness fix:
 
 Repository-side media delivery preparation now includes a deterministic manifest and validator for the approved local source assets. The media service still expects nginx root `/media`, with `/media/categories` and `/media/products` matching the database URL paths. The release copy script is dry-run by default and copies only approved existing assets into the target media volume path when an explicit `--target` is supplied during a later controlled release.
 
-Fixed: LOCAL READINESS YES; production media volume was not modified.
+Fixed: YES for the 37 approved available assets, deployed and smoke-verified in Step 14. Eight unresolved product assets remain fallback-only.
 
 ### AUD-010: Production-dangerous Prisma script name
 
@@ -271,7 +271,7 @@ Step 13 fix:
 
 `apps/backend/package.json` now makes `prisma:migrate` production-safe by pointing it to `prisma migrate deploy`. Explicit scripts separate the two workflows: `prisma:migrate:deploy` for release/prod-like use and `prisma:migrate:dev` for local development.
 
-Fixed: YES locally, not deployed.
+Fixed: YES, deployed in Step 14.
 
 ### AUD-011: Inventory deduction depends on branch warehouse readiness
 
@@ -566,16 +566,16 @@ Whitespace result:
 
 | ID | Severity | Area | File | Issue | Production Impact | Fixed? | Commit |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| AUD-001 | P1 | Customer checkout/order engine | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Delivery fee displayed but backend total excludes it | Customer/staff total mismatch | Yes locally | pending commit |
-| AUD-002 | P1 | Customer checkout/payment | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/dto/customer.dto.ts` | Click/Payme/Card visible without provider settlement | Payment expectation mismatch | Yes locally | pending commit |
-| AUD-003 | P2 | Customer identity | `apps/backend/src/modules/customers/customers.service.ts` | Local phone formats can duplicate customers | Duplicate customer identity | Yes locally | pending commit |
-| AUD-004 | P2 | Idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Stale pending attempts block retry | Checkout retry friction | Yes locally | pending commit |
+| AUD-001 | P1 | Customer checkout/order engine | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Delivery fee displayed but backend total excludes it | Customer/staff total mismatch | Yes, deployed | `6a19124`, released `568b6ac` |
+| AUD-002 | P1 | Customer checkout/payment | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/dto/customer.dto.ts` | Click/Payme/Card visible without provider settlement | Payment expectation mismatch | Yes, deployed | `6a19124`, released `568b6ac` |
+| AUD-003 | P2 | Customer identity | `apps/backend/src/modules/customers/customers.service.ts` | Local phone formats can duplicate customers | Duplicate customer identity | Yes, deployed | `dd8a920`, released `568b6ac` |
+| AUD-004 | P2 | Idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Stale pending attempts block retry | Checkout retry friction | Yes, deployed | `dd8a920`, released `568b6ac` |
 | AUD-005 | P2 | Numbering | Backend order/kitchen/payment/shift services | No retry on unique number collision | Rare failed valid operations | No | n/a |
-| AUD-006 | P2 | Telegram menu | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Product list capped at 8 without pagination | Hidden products in Telegram | Yes locally | pending commit |
-| AUD-007 | P2 | Telegram cart | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Identical Telegram items do not merge | Cart clutter and drift from web behavior | Yes locally | pending commit |
+| AUD-006 | P2 | Telegram menu | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Product list capped at 8 without pagination | Hidden products in Telegram | Yes, deployed | `568b6ac` |
+| AUD-007 | P2 | Telegram cart | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Identical Telegram items do not merge | Cart clutter and drift from web behavior | Yes, deployed | `568b6ac` |
 | AUD-008 | P2 | Customer web orders | `apps/customer-web/app/orders/page.tsx` | Order status events refetch all history | Scaling/performance noise | No | n/a |
-| AUD-009 | P2 | Media | `apps/media/nginx.conf`; media volume | Production volume has no image files | Direct media URLs 404 | Local readiness only | pending commit |
-| AUD-010 | P2 | Deployment scripts | `apps/backend/package.json` | `prisma:migrate` uses `migrate dev` | Operator mistake risk | Yes locally | pending commit |
+| AUD-009 | P2 | Media | `apps/media/nginx.conf`; media volume | Production volume had no image files | Direct media URLs 404 | Yes for approved assets, deployed | `568b6ac` |
+| AUD-010 | P2 | Deployment scripts | `apps/backend/package.json` | `prisma:migrate` uses `migrate dev` | Operator mistake risk | Yes, deployed | `568b6ac` |
 | AUD-011 | P2 | Inventory/order | `apps/backend/src/modules/orders/orders.service.ts` | Recipe deduction needs active warehouse | Future order failures when recipes enabled | No | n/a |
 | AUD-012 | P2 | Frontend auth | `apps/customer-web/lib/cart.tsx` | Tokens stored in localStorage | XSS token exposure risk | No | n/a |
 | AUD-013 | P3 | Docs | `docs/PRODUCTION_DEPLOYMENT.md` | CORS/WebSocket docs stale | Operator confusion | No | n/a |

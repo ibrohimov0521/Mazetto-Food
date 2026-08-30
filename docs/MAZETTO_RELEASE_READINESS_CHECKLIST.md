@@ -104,3 +104,43 @@ curl -I https://media.mazettofood.uz/products/lavash-big.webp
 - Eight product media assets remain unresolved and should keep using fallback behavior until approved assets exist.
 - Click and Payme are not active payment providers.
 - Staff Telegram activation remains a separate phase.
+
+## Step 14 Release Record
+
+Date: 2026-08-30
+
+Completed:
+
+- Approved chain through `568b6ac121e953cea6a06c108e9b3f43949849d8` was pushed and deployed.
+- PostgreSQL backup was created before release:
+  `/home/javohir/backups/mazetto/postgres/mazetto-step14-pre-release-20260830-040100.dump`
+- Backend image deployed:
+  `mazetto-food-backend-pdslpm:568b6ac`
+- Customer-web image deployed:
+  `mazetto-food-customerweb-yvb3d0:568b6ac`
+- No production migration was executed because production already had all 16 migrations applied with 0 failed migrations.
+- Media volume was backed up before population:
+  `/home/javohir/backups/mazetto/media/mazetto-media-step14-pre-populate-20260830-040606.tar.gz`
+- Media volume was populated with 37 approved assets:
+  10 category files and 27 product files.
+
+Verified:
+
+- Backend health returned 200.
+- Customer-web `/`, `/menu`, `/cart`, `/checkout`, `/orders`, and `/profile` returned 200.
+- Customer API returned 1 branch, 10 categories, and 35 products.
+- Media representative URLs returned 200 for `lavash.webp`, `lavash-big.webp`, and `cheese-fries.webp`.
+- Known unresolved `chicken-strips.webp` remained 404 as expected.
+- Telegram webhook host remained `api.mazettofood.uz`, pending updates were 0, and last error was absent.
+
+Not performed:
+
+- No new real production order was created.
+- No Click/Payme activation.
+- No staff Telegram activation.
+- No Cloudflare change.
+
+Remaining after Step 14:
+
+- Human Telegram UX smoke for the newly deployed single-message navigation and quick-add merge should be done manually from a real Telegram account without creating an unnecessary extra production order.
+- Eight authentic media assets remain unresolved.
