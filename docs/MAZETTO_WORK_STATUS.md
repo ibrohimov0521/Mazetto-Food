@@ -1214,6 +1214,47 @@ Validation:
 - Workspace typecheck and lint passed.
 - Workspace build completed all app tasks successfully; the shell session was stopped after the known post-success hang.
 
+## Step 13 - Remaining P2 Release Readiness Remediation
+
+Status: Completed locally; not deployed
+
+Date: 2026-08-30
+
+Scope:
+
+- Resolved only AUD-006, AUD-007, AUD-009 readiness, and AUD-010.
+- No production deployment, production database write, production media volume write, Telegram webhook change, Cloudflare change, Click/Payme activation, staff Telegram activation, or push was performed.
+
+Completed locally:
+
+- Telegram category product listing now supports compact pagination for categories with more than the Telegram page-size products.
+- Telegram menu page size is a named constant: `TELEGRAM_MENU_PAGE_SIZE = 8`.
+- Pagination callback data uses `cust:cat:<categoryId>:<page>` and invalid page values fall back safely to page 1.
+- Stable ordering remains `sortOrder asc, name asc`.
+- Step 10 virtual `Lavash` and `Burger` family grouping remains unchanged and is not paginated as normal duplicated categories.
+- Telegram quick-add now merges equivalent plain cart lines instead of creating duplicate equivalent `CartItem` rows.
+- Cart-line equivalence for this merge is: same cart, same product, same variant, no notes, and no selected modifiers.
+- Different products, variants, or modified cart lines remain separate.
+- The quick-add merge uses a PostgreSQL advisory transaction lock and did not require a schema migration.
+- Media release readiness now has a deterministic local asset manifest, validator, and dry-run-first copy script for the future controlled production media-volume population.
+- Media nginx root remains `/media`; expected public paths map to `/media/categories/*` and `/media/products/*`.
+- Available local media for release: 10 category assets and 27 product assets.
+- Unresolved product media remains 8 assets: `chicken-strips`, `coca-cola`, `fanta`, `sprite`, `water`, `house-sauce`, `spicy-sauce`, and `set-kids`.
+- `prisma:migrate` is now production-safe and runs `prisma migrate deploy`.
+- Explicit migration scripts now separate release and development usage: `prisma:migrate:deploy` and `prisma:migrate:dev`.
+
+Validation added/updated:
+
+- `validate-telegram-customer-ordering.ts` now proves category pagination, next/previous navigation, invalid page fallback, no product omissions/duplicates, quick-add merge, quick-add callback toast, main-menu return, and cart quantity controls preserved.
+- `validate-customer-order-e2e-db.ts` now proves Telegram quick-add merge against a real PostgreSQL transaction path, including concurrent equivalent quick-adds, modified-line separation, and different product separation.
+- `media:validate` verifies nginx root, all available local media sources, filename/path shape, 10 category assets, 27 product assets, 8 known unresolved assets, and release file count.
+- `media:prepare` defaults to dry-run and reports every source/destination path without copying files.
+
+Release note:
+
+- Production still runs the older released revision until the full local release chain is pushed and deployed through a controlled release.
+- The production media volume is still expected to be empty until the controlled media population step is executed.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop

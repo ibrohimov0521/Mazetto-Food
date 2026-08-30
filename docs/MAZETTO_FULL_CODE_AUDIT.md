@@ -179,11 +179,11 @@ Production impact:
 
 If a category has more than 8 active products, Telegram customers cannot reach the rest through that category screen.
 
-Recommended fix:
+Step 13 fix:
 
-Add compact pagination or split rows while preserving single-message navigation.
+Telegram category screens now use a named `TELEGRAM_MENU_PAGE_SIZE` constant and fetch one extra product to detect whether a next page exists. Callback data supports `cust:cat:<categoryId>:<page>` with invalid page values falling back safely to page 1. Navigation remains edit-in-place and shows compact previous/next controls without exposing inactive products or changing the Step 10 virtual Lavash/Burger family grouping.
 
-Fixed: NO.
+Fixed: YES locally, not deployed.
 
 ### AUD-007: Telegram cart does not merge identical quick-add items
 
@@ -202,11 +202,11 @@ Production impact:
 
 Repeated taps create multiple identical lines instead of increasing quantity. This is not duplicate order creation, but it is a cart UX and data consistency issue.
 
-Recommended fix:
+Step 13 fix:
 
-Merge identical cart lines in Telegram before creating a new row, or add an explicit cart line identity field. Avoid schema migration unless a simple service-level merge is enough.
+Telegram add-to-cart now merges equivalent plain cart lines by `cartId + productId + variantId + empty modifier selection + no notes`. Lines with modifiers or different product/variant choices remain separate. The merge runs in a transaction and uses a PostgreSQL advisory transaction lock derived from the cart line identity, avoiding a schema migration while closing the concurrent quick-add race for this path.
 
-Fixed: NO.
+Fixed: YES locally, not deployed.
 
 ### AUD-008: Customer orders page reacts to every order websocket event
 
@@ -247,11 +247,11 @@ Production impact:
 
 Direct image URLs such as `https://media.mazettofood.uz/categories/lavash.webp` return 404 until files are uploaded.
 
-Recommended fix:
+Step 13 readiness fix:
 
-Upload approved `.webp` files with exact database filenames to the `mazetto-media` Docker volume. Do not change database image paths.
+Repository-side media delivery preparation now includes a deterministic manifest and validator for the approved local source assets. The media service still expects nginx root `/media`, with `/media/categories` and `/media/products` matching the database URL paths. The release copy script is dry-run by default and copies only approved existing assets into the target media volume path when an explicit `--target` is supplied during a later controlled release.
 
-Fixed: NO.
+Fixed: LOCAL READINESS YES; production media volume was not modified.
 
 ### AUD-010: Production-dangerous Prisma script name
 
@@ -267,11 +267,11 @@ Production impact:
 
 A future operator could accidentally run a development migration command against production.
 
-Recommended fix:
+Step 13 fix:
 
-Add an explicit `prisma:migrate:deploy` script and rename or document the dev script. Consider a production guard for scripts that mutate databases.
+`apps/backend/package.json` now makes `prisma:migrate` production-safe by pointing it to `prisma migrate deploy`. Explicit scripts separate the two workflows: `prisma:migrate:deploy` for release/prod-like use and `prisma:migrate:dev` for local development.
 
-Fixed: NO.
+Fixed: YES locally, not deployed.
 
 ### AUD-011: Inventory deduction depends on branch warehouse readiness
 
@@ -571,11 +571,11 @@ Whitespace result:
 | AUD-003 | P2 | Customer identity | `apps/backend/src/modules/customers/customers.service.ts` | Local phone formats can duplicate customers | Duplicate customer identity | Yes locally | pending commit |
 | AUD-004 | P2 | Idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Stale pending attempts block retry | Checkout retry friction | Yes locally | pending commit |
 | AUD-005 | P2 | Numbering | Backend order/kitchen/payment/shift services | No retry on unique number collision | Rare failed valid operations | No | n/a |
-| AUD-006 | P2 | Telegram menu | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Product list capped at 8 without pagination | Hidden products in Telegram | No | n/a |
-| AUD-007 | P2 | Telegram cart | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Identical Telegram items do not merge | Cart clutter and drift from web behavior | No | n/a |
+| AUD-006 | P2 | Telegram menu | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Product list capped at 8 without pagination | Hidden products in Telegram | Yes locally | pending commit |
+| AUD-007 | P2 | Telegram cart | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Identical Telegram items do not merge | Cart clutter and drift from web behavior | Yes locally | pending commit |
 | AUD-008 | P2 | Customer web orders | `apps/customer-web/app/orders/page.tsx` | Order status events refetch all history | Scaling/performance noise | No | n/a |
-| AUD-009 | P2 | Media | `apps/media/nginx.conf`; media volume | Production volume has no image files | Direct media URLs 404 | No | n/a |
-| AUD-010 | P2 | Deployment scripts | `apps/backend/package.json` | `prisma:migrate` uses `migrate dev` | Operator mistake risk | No | n/a |
+| AUD-009 | P2 | Media | `apps/media/nginx.conf`; media volume | Production volume has no image files | Direct media URLs 404 | Local readiness only | pending commit |
+| AUD-010 | P2 | Deployment scripts | `apps/backend/package.json` | `prisma:migrate` uses `migrate dev` | Operator mistake risk | Yes locally | pending commit |
 | AUD-011 | P2 | Inventory/order | `apps/backend/src/modules/orders/orders.service.ts` | Recipe deduction needs active warehouse | Future order failures when recipes enabled | No | n/a |
 | AUD-012 | P2 | Frontend auth | `apps/customer-web/lib/cart.tsx` | Tokens stored in localStorage | XSS token exposure risk | No | n/a |
 | AUD-013 | P3 | Docs | `docs/PRODUCTION_DEPLOYMENT.md` | CORS/WebSocket docs stale | Operator confusion | No | n/a |

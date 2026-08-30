@@ -92,6 +92,7 @@ async function main(): Promise<void> {
     await proveStalePendingAttemptRetry(services.orderEngine, prisma, fixture);
     await proveActivePendingAttemptSafety(services.orderEngine, prisma, fixture);
 
+    await proveTelegramQuickAddMerge(prisma, services.telegramOrdering, fixture);
     await proveTelegramCart(prisma, services.telegramOrdering, fixture);
     await proveTelegramCheckoutSession(prisma, services.telegramOrdering, fixture);
 
@@ -546,6 +547,67 @@ async function proveTelegramCart(
     ).quantity.toNumber(),
     1,
   );
+}
+
+async function proveTelegramQuickAddMerge(
+  prisma: PrismaService,
+  telegramOrdering: TelegramCustomerOrderingService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
+
+  await Promise.all([
+    telegramOrdering.handleCustomerCallback({
+      id: "step13-quick-add-1",
+      message: { chat: { id: fixture.telegramChatId } },
+      from: { id: fixture.telegramUserId },
+      data: "cust:qadd:burger:max:chicken",
+    }),
+    telegramOrdering.handleCustomerCallback({
+      id: "step13-quick-add-2",
+      message: { chat: { id: fixture.telegramChatId } },
+      from: { id: fixture.telegramUserId },
+      data: "cust:qadd:burger:max:chicken",
+    }),
+  ]);
+
+  const mergedCart = await prisma.cart.findFirstOrThrow({
+    where: { customerId: fixture.telegramCustomer.id },
+    include: { items: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  assert.equal(mergedCart.items.length, 1, "equivalent concurrent quick-adds must merge");
+  assert.equal(mergedCart.items[0]?.quantity.toNumber(), 2);
+
+  await prisma.cartItem.update({
+    where: { id: mergedCart.items[0]!.id },
+    data: { modifierSnapshot: [{ modifierId: fixture.modifier.id, quantity: 1 }] },
+  });
+  await telegramOrdering.handleCustomerCallback({
+    id: "step13-quick-add-plain-after-modified",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: "cust:qadd:burger:max:chicken",
+  });
+  assert.equal(
+    await prisma.cartItem.count({ where: { cartId: mergedCart.id } }),
+    2,
+    "same product with modifiers must not merge with plain quick-add",
+  );
+
+  await telegramOrdering.handleCustomerCallback({
+    id: "step13-quick-add-different-product",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: "cust:qadd:lavash:original:beef",
+  });
+  assert.equal(
+    await prisma.cartItem.count({ where: { cartId: mergedCart.id } }),
+    3,
+    "different product/variant selections must remain separate",
+  );
+
+  await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
 }
 
 async function proveTelegramCheckoutSession(

@@ -132,6 +132,16 @@ const products = [
   chickenBurgerProduct,
   crispyChickenBurgerProduct,
 ];
+const paginatedCategory = { id: "category_paginated", code: "PAGED", name: "Ko'p mahsulot" };
+const paginatedProducts = Array.from({ length: 11 }, (_, index) => ({
+  ...product,
+  id: `product_page_${index + 1}`,
+  categoryId: paginatedCategory.id,
+  code: `PAGED_${index + 1}`,
+  name: `Page product ${index + 1}`,
+  sellingPrice: new Prisma.Decimal(10000 + index),
+}));
+const allProducts = [...products, ...paginatedProducts];
 const modifier = {
   id: "modifier_cheese",
   name: "Extra cheese",
@@ -184,6 +194,7 @@ class InMemoryPrisma {
     }>;
   } | null = null;
   private sequence = 0;
+  private transactionQueue = Promise.resolve();
 
   customer = {
     findUnique: async ({ where }: { where: { telegramUserId?: string } }) =>
@@ -193,6 +204,7 @@ class InMemoryPrisma {
   category = {
     findMany: async () => [
       category,
+      paginatedCategory,
       lavashCategory,
       chickenLavashCategory,
       burgerCategory,
@@ -201,8 +213,16 @@ class InMemoryPrisma {
   };
 
   product = {
-    findMany: async ({ where }: { where?: { categoryId?: string; code?: { in: string[] } } } = {}) => {
-      const candidates = products.filter((candidate) => {
+    findMany: async ({
+      where,
+      skip,
+      take,
+    }: {
+      where?: { categoryId?: string; code?: { in: string[] }; isAvailable?: boolean };
+      skip?: number;
+      take?: number;
+    } = {}) => {
+      const candidates = allProducts.filter((candidate) => {
         if (where?.categoryId && candidate.categoryId !== where.categoryId) {
           return false;
         }
@@ -214,15 +234,15 @@ class InMemoryPrisma {
         return true;
       });
 
-      return candidates.map((candidate) => ({
+      return candidates.slice(skip ?? 0, take ? (skip ?? 0) + take : undefined).map((candidate) => ({
         ...candidate,
         variants: [{ ...variant, id: `${candidate.id}_standard`, productId: candidate.id }],
       }));
     },
     findFirst: async ({ where }: { where: { id: string } }) =>
-      products.some((candidate) => candidate.id === where.id)
+      allProducts.some((candidate) => candidate.id === where.id)
         ? {
-            ...(products.find((candidate) => candidate.id === where.id) ?? product),
+            ...(allProducts.find((candidate) => candidate.id === where.id) ?? product),
             category,
             variants: [{ ...variant, id: `${where.id}_standard`, productId: where.id }],
             modifiers: [{ modifierId: modifier.id, modifier }],
@@ -306,6 +326,19 @@ class InMemoryPrisma {
   };
 
   cartItem = {
+    findMany: async ({
+      where,
+    }: {
+      where: { cartId: string; productId: string; variantId: string | null; notes: null };
+    }) =>
+      this.cartRecord?.id === where.cartId
+        ? this.cartRecord.items.filter(
+            (item) =>
+              item.productId === where.productId &&
+              item.variantId === where.variantId &&
+              item.notes === where.notes,
+          )
+        : [],
     create: async ({
       data,
     }: {
@@ -366,6 +399,22 @@ class InMemoryPrisma {
     },
   };
 
+  $executeRaw = async () => 1;
+
+  $transaction = async <T>(callback: (tx: this) => Promise<T>) => {
+    const previous = this.transactionQueue;
+    let release!: () => void;
+    this.transactionQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await callback(this);
+    } finally {
+      release();
+    }
+  };
+
   private enrichedCart() {
     if (!this.cartRecord) {
       return null;
@@ -396,12 +445,42 @@ globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => 
 async function main(): Promise<void> {
   process.env.TELEGRAM_BOT_TOKEN = "mock-telegram-token";
   await testVirtualFamilyNavigation();
+  await testCategoryPagination();
   await testFamilyQuickAdd();
+  await testQuickAddMerge();
+  await testConfiguredItemSeparation();
   await testBranchLocation();
   await testDeliveryFlow();
   await testPickupRegression();
   await testDeliveryDisabled();
   console.log("Telegram customer ordering validation passed");
+}
+
+async function testCategoryPagination(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, callbackBase } = createService(prisma);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${paginatedCategory.id}` });
+  assert.equal(lastMethod(), "editMessageText");
+  assert.match(lastText(), /Mahsulot tanlang/);
+  let productButtons = lastProductButtonTexts();
+  assert.ok(productButtons.some((text) => text.startsWith("Page product 1 ·")));
+  assert.ok(productButtons.some((text) => text.startsWith("Page product 8 ·")));
+  assert.ok(!productButtons.some((text) => text.startsWith("Page product 9 ·")));
+  assert.ok(lastKeyboardText().includes("Keyingi"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${paginatedCategory.id}:2` });
+  productButtons = lastProductButtonTexts();
+  assert.ok(productButtons.some((text) => text.startsWith("Page product 9 ·")));
+  assert.ok(productButtons.some((text) => text.startsWith("Page product 11 ·")));
+  assert.ok(!productButtons.some((text) => text.startsWith("Page product 1 ·")));
+  assert.ok(lastKeyboardText().includes("Oldingi"));
+
+  assert.equal(new Set(productButtons).size, productButtons.length);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${paginatedCategory.id}:0` });
+  assert.ok(lastKeyboardText().includes("Page product 1"), "invalid page should fail safely to page 1");
 }
 
 async function testVirtualFamilyNavigation(): Promise<void> {
@@ -459,6 +538,54 @@ async function testFamilyQuickAdd(): Promise<void> {
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:cart" });
   assert.ok(lastKeyboardText().includes("−"));
   assert.ok(lastKeyboardText().includes("+"));
+}
+
+async function testQuickAddMerge(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, callbackBase } = createService(prisma);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:burger:max:chicken" });
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:burger:max:chicken" });
+  assert.equal(prisma.cartRecord?.items.length, 1);
+  assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 2);
+
+  const concurrentPrisma = new InMemoryPrisma();
+  const { service: concurrentService, callbackBase: concurrentCallbackBase } =
+    createService(concurrentPrisma);
+  await Promise.all([
+    concurrentService.handleCustomerCallback({
+      ...concurrentCallbackBase,
+      id: "callback_merge_a",
+      data: "cust:qadd:burger:max:chicken",
+    }),
+    concurrentService.handleCustomerCallback({
+      ...concurrentCallbackBase,
+      id: "callback_merge_b",
+      data: "cust:qadd:burger:max:chicken",
+    }),
+  ]);
+  assert.equal(concurrentPrisma.cartRecord?.items.length, 1);
+  assert.equal(concurrentPrisma.cartRecord?.items[0]?.quantity.toNumber(), 2);
+}
+
+async function testConfiguredItemSeparation(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, callbackBase } = createService(prisma);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:lavash:mini:beef" });
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:lavash:original:beef" });
+  assert.equal(prisma.cartRecord?.items.length, 2, "different products must stay separate");
+
+  const modifiedItem = prisma.cartRecord!.items[0]!;
+  modifiedItem.modifierSnapshot = [{ modifierId: modifier.id, quantity: 1 }];
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:lavash:mini:beef" });
+  assert.equal(
+    prisma.cartRecord?.items.length,
+    3,
+    "same product with modifiers must stay separate from plain quick-add",
+  );
 }
 
 async function testBranchLocation(): Promise<void> {
@@ -649,6 +776,15 @@ function lastKeyboardText(): string {
       ?.reply_markup?.inline_keyboard?.flat()
       .map((button) => button.text)
       .join(" ") ?? ""
+  );
+}
+
+function lastProductButtonTexts(): string[] {
+  return (
+    lastPayload().reply_markup?.inline_keyboard
+      ?.flat()
+      .filter((button) => button.callback_data?.startsWith("cust:prod:"))
+      .map((button) => button.text) ?? []
   );
 }
 

@@ -8,6 +8,9 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "media:prepare": "node apps/media/scripts/prepare-media-release.mjs --dry-run",
+    "media:smoke": "node apps/media/scripts/smoke-media-container.mjs",
+    "media:validate": "node apps/media/scripts/validate-media-assets.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {

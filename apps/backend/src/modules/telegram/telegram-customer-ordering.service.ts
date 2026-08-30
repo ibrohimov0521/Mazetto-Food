@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { CustomerOrderType, OrderSource, Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
 import {
@@ -88,6 +89,7 @@ type ResolvedTelegramFamilyOption = TelegramFamilySku & {
 
 const customerCallbackPrefix = "cust";
 const TELEGRAM_CHECKOUT_SESSION_TTL_MS = 60 * 60 * 1000;
+const TELEGRAM_MENU_PAGE_SIZE = 8;
 const minimumAddressLength = 5;
 export const telegramFamilySkus: TelegramFamilySku[] = [
   {
@@ -231,7 +233,7 @@ export class TelegramCustomerOrderingService {
 
     if (action === "cat" && values[0]) {
       await this.answerCallback(callback);
-      await this.sendProductsForCategory(target, values[0]);
+      await this.sendProductsForCategory(target, values[0], values[1]);
       return true;
     }
 
@@ -537,11 +539,15 @@ export class TelegramCustomerOrderingService {
   private async sendProductsForCategory(
     target: CustomerScreenTarget,
     categoryId: string,
+    rawPage?: string,
   ): Promise<void> {
+    const page = this.parseMenuPage(rawPage);
+    const skip = (page - 1) * TELEGRAM_MENU_PAGE_SIZE;
     const products = await this.prisma.product.findMany({
       where: { categoryId, isAvailable: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      take: 8,
+      skip,
+      take: TELEGRAM_MENU_PAGE_SIZE + 1,
       include: {
         variants: {
           where: { isAvailable: true },
@@ -549,10 +555,25 @@ export class TelegramCustomerOrderingService {
         },
       },
     });
+    const hasNextPage = products.length > TELEGRAM_MENU_PAGE_SIZE;
+    const visibleProducts = products.slice(0, TELEGRAM_MENU_PAGE_SIZE);
 
-    if (!products.length) {
+    if (!visibleProducts.length) {
       await this.renderCustomerScreen(target, {
-        text: "Bu bo'limda hozircha mahsulot yo'q.",
+        text: page === 1
+          ? "Bu bo'limda hozircha mahsulot yo'q."
+          : "Bu sahifada mahsulot yo'q. Oldingi sahifaga qayting.",
+        reply_markup: {
+          inline_keyboard: [
+            ...(page > 1
+              ? [[{
+                  text: "⬅️ Oldingi",
+                  callback_data: `${customerCallbackPrefix}:cat:${categoryId}:${page - 1}`,
+                }]]
+              : []),
+            [{ text: "⬅️ Bo'limlarga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
+          ],
+        },
       });
       return;
     }
@@ -562,7 +583,7 @@ export class TelegramCustomerOrderingService {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          ...products.map((product) => {
+          ...visibleProducts.map((product) => {
             const variant =
               product.variants.find((item) => item.isDefault) ?? product.variants[0];
             return [
@@ -572,7 +593,24 @@ export class TelegramCustomerOrderingService {
               },
             ];
           }),
-          [{ text: "⬅️ Bo'limlarga qaytish", callback_data: `${customerCallbackPrefix}:home` }],
+          ...(page > 1 || hasNextPage
+            ? [[
+                ...(page > 1
+                  ? [{
+                      text: "⬅️ Oldingi",
+                      callback_data: `${customerCallbackPrefix}:cat:${categoryId}:${page - 1}`,
+                    }]
+                  : []),
+                { text: `${page}${hasNextPage ? "+" : ""}`, callback_data: `${customerCallbackPrefix}:cat:${categoryId}:${page}` },
+                ...(hasNextPage
+                  ? [{
+                      text: "Keyingi ➡️",
+                      callback_data: `${customerCallbackPrefix}:cat:${categoryId}:${page + 1}`,
+                    }]
+                  : []),
+              ]]
+            : []),
+          [{ text: "⬅️ Bo'limlarga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
           [{ text: "🛒 Savat", callback_data: `${customerCallbackPrefix}:cart` }],
         ],
       },
@@ -815,16 +853,68 @@ export class TelegramCustomerOrderingService {
     productId: string,
     variantId: string | null,
   ) {
-    const cart = await this.getOrCreateCart(customerId);
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockTelegramCart(tx, customerId);
+      const cart = await this.getOrCreateCartForTransaction(tx, customerId);
+      await this.lockCartLine(tx, cart.id, productId, variantId);
 
-    return this.prisma.cartItem.create({
-      data: {
-        cartId: cart.id,
-        productId,
-        variantId,
-        quantity: new Prisma.Decimal(1),
-        modifierSnapshot: [],
-      },
+      const existingItems = await tx.cartItem.findMany({
+        where: {
+          cartId: cart.id,
+          productId,
+          variantId,
+          notes: null,
+        },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          quantity: true,
+          modifierSnapshot: true,
+        },
+      });
+      const existing = existingItems.find(
+        (item) => this.readCartModifiers(item.modifierSnapshot).length === 0,
+      );
+
+      if (existing) {
+        return tx.cartItem.update({
+          where: { id: existing.id },
+          data: {
+            quantity: new Prisma.Decimal(existing.quantity).add(1),
+          },
+          select: { id: true },
+        });
+      }
+
+      return tx.cartItem.create({
+        data: {
+          cartId: cart.id,
+          productId,
+          variantId,
+          quantity: new Prisma.Decimal(1),
+          modifierSnapshot: [],
+        },
+        select: { id: true },
+      });
+    });
+  }
+
+  private async getOrCreateCartForTransaction(
+    tx: Prisma.TransactionClient,
+    customerId: string,
+  ): Promise<{ id: string }> {
+    const existing = await tx.cart.findFirst({
+      where: { customerId },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    return tx.cart.create({
+      data: { customerId },
       select: { id: true },
     });
   }
@@ -1613,6 +1703,51 @@ export class TelegramCustomerOrderingService {
     }
 
     throw new BadRequestException("Telegram product family meat is invalid");
+  }
+
+  private parseMenuPage(value: string | undefined): number {
+    if (!value) {
+      return 1;
+    }
+
+    if (!/^\d{1,4}$/.test(value)) {
+      return 1;
+    }
+
+    const page = Number(value);
+
+    if (!Number.isInteger(page) || page < 1) {
+      return 1;
+    }
+
+    return page;
+  }
+
+  private async lockCartLine(
+    tx: Prisma.TransactionClient,
+    cartId: string,
+    productId: string,
+    variantId: string | null,
+  ): Promise<void> {
+    await this.lockByKey(tx, ["telegram-cart-line", cartId, productId, variantId ?? ""]);
+  }
+
+  private async lockTelegramCart(
+    tx: Prisma.TransactionClient,
+    customerId: string,
+  ): Promise<void> {
+    await this.lockByKey(tx, ["telegram-cart", customerId]);
+  }
+
+  private async lockByKey(
+    tx: Prisma.TransactionClient,
+    values: string[],
+  ): Promise<void> {
+    const hash = createHash("sha256").update(values.join(":")).digest();
+    const firstKey = hash.readInt32BE(0);
+    const secondKey = hash.readInt32BE(4);
+
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${firstKey}, ${secondKey})`;
   }
 
   private familyLabel(family: TelegramProductFamily): string {
