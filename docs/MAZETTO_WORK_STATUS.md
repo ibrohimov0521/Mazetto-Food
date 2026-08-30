@@ -41,10 +41,10 @@ Media Service
 | --- | --- | --- |
 | Backend | Done | NestJS backend is deployed and health endpoint works. |
 | Database | Done | PostgreSQL is deployed, migrations and seed were applied. |
-| Customer Web | 🟡 PARTIAL / RISK | Main routes, cart, checkout, profile, orders, premium mobile UI exist; Step 11 fixes delivery-fee/payment honesty locally but is not deployed. |
-| Media Service | 🟡 PARTIAL / RISK | nginx service and volume work, but production media volume is still missing real image files. |
-| Telegram Staff Notifications | 🟡 PARTIAL / RISK | Backend code exists; staff Telegram production verification is not complete. |
-| Customer Telegram Bot | 🟡 PARTIAL / RISK | Customer Telegram auth/order code exists in backend and one real Telegram order was verified; Step 10 UX polish is local-only and not deployed. |
+| Customer Web | 🟡 PARTIAL / RISK | Main routes, cart, checkout, profile, orders, premium mobile UI, payment honesty, and visual contrast fixes are deployed; remaining work is broader product completeness and future payment UX. |
+| Media Service | 🟡 PARTIAL / RISK | nginx service, volume, and approved uploaded media work; several authentic product assets remain unresolved. |
+| Telegram Staff Notifications | 🟡 PARTIAL / RISK | Step 16 local implementation validates staff chat authorization, status lifecycle, customer status messages, and stale callback handling; production activation is not complete. |
+| Customer Telegram Bot | 🟡 PARTIAL / RISK | Customer Telegram auth/order UX is deployed and real Telegram orders were verified; staff-side lifecycle activation remains separate. |
 | MAZETTO Desktop | ❌ NOT IMPLEMENTED | Will contain POS, Desktop Admin, offline SQLite, sync engine, and printer engine. |
 | Admin Panel | ❌ NOT IMPLEMENTED / PARTIAL | Backend/admin foundations exist, but full admin web UI is planned for later. |
 | Payment Integrations | ❌ NOT IMPLEMENTED | Click/Payme real provider integrations are later-stage work. |
@@ -1591,6 +1591,65 @@ Production visual smoke:
 - No page-level horizontal overflow was found on tested routes after the UI settled.
 - Search, category navigation, product detail opening, variant/quantity controls, add-to-cart, cart display, branch picker opening, auth inputs, and Orders/Profile navigation were smoke-tested without creating a production order.
 - Representative media URLs returned 200: `/categories/lavash.webp`, `/products/lavash-big.webp`, and `/products/cheese-fries.webp`.
+
+## Step 16 - Staff Telegram + Kitchen Order Lifecycle
+
+Status: Completed locally; not deployed
+
+Date: 2026-08-30
+
+Scope:
+
+- Implemented local backend-only staff Telegram lifecycle hardening.
+- No production deploy, production database write, production webhook change, Cloudflare change, Click/Payme activation, customer media change, push, or production order creation was performed.
+- No Prisma schema or migration change was required.
+
+Local implementation:
+
+- Staff order callback payloads now use action-based commands: `accept`, `start_preparing`, `mark_ready`, and `cancel`.
+- Legacy staff callback statuses such as `CONFIRMED`, `PREPARING`, `READY`, and `CANCELLED` are still accepted and translated safely for old messages.
+- Staff callbacks are accepted only from `TELEGRAM_STAFF_CHAT_ID`.
+- Staff order lifecycle is server-authoritative:
+  - `NEW` or already-confirmed order with new kitchen ticket -> `CONFIRMED` / `ACCEPTED`
+  - `CONFIRMED` / `ACCEPTED` -> `PREPARING` / `COOKING`
+  - `PREPARING` / `COOKING` -> `READY` / `READY`
+  - valid pre-ready cancellation -> `CANCELLED` / `CANCELLED`
+- Invalid, stale, duplicate, unauthorized, and terminal-state callbacks do not mutate order state.
+- `OrderStatusHistory` is written only when the operational order status actually changes.
+- Staff Telegram messages are edited in place when possible; harmless edit failures fall back to one replacement staff message.
+- Staff buttons are reduced to the next valid actions for the current order/ticket state.
+- Linked customers receive Telegram status notifications for accepted, preparing, ready, and cancelled states.
+- Customer status notification failure is non-blocking and does not roll back the staff status transition.
+- Kitchen websocket status emission still occurs after successful state changes.
+
+Local validation:
+
+- Fresh isolated local PostgreSQL database `mazetto_step16_staff_20260830232546` was created.
+- All 16 migrations were applied from zero.
+- Seed completed successfully with 35 products and 4 combo sets; no demo users were created.
+- `validate-telegram-staff-lifecycle.ts`: passed.
+- The staff lifecycle validator proved new order notification buttons, staff chat authorization, accept/preparing/ready flow, cancellation flow, duplicate callback no-op behavior, invalid transition rejection, legacy callback compatibility, concurrent accept idempotency, staff edit fallback, customer notification, and customer-notification failure safety.
+- `validate-telegram-customer-auth-db.ts`: passed against the same isolated local database.
+- Separate isolated local PostgreSQL database `mazetto_step8_step16_20260830232755` was created for the existing customer order engine validator.
+- All 16 migrations and seed were applied to that database.
+- `validate-customer-order-e2e-db.ts`: passed.
+- `validate-telegram-customer-auth.ts`: passed.
+- `validate-telegram-customer-ordering.ts`: passed.
+- `validate-telegram-catalog-mapping.ts`: passed.
+- `validate-customer-order-history.ts`: passed.
+- Prisma format, validate, and generate passed.
+- Backend typecheck, lint, and build passed.
+
+Validation warnings:
+
+- DB-backed validators emitted a non-blocking Node/pg deprecation warning during simulated concurrent Prisma activity: `Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0`.
+- This did not fail validation, but should be watched before a future pg major-version upgrade.
+
+Remaining:
+
+- Production staff Telegram activation and human staff lifecycle smoke are still pending.
+- Click/Payme provider integrations remain incomplete.
+- Staff Telegram customer/order notifications are backend-local changes until this commit is released.
 
 ## Architecture Decision Log
 

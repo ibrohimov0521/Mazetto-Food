@@ -620,11 +620,11 @@ async function testWebhookSecretAndStaffRegression(): Promise<void> {
     {} as never,
   );
   const parser = realStaffService as unknown as {
-    parseCallbackData(data: string): { orderId: string; status: string };
+    parseCallbackData(data: string): { action: string; orderId: string };
   };
   assert.deepEqual(parser.parseCallbackData("mazetto_order:READY:order_1"), {
+    action: "mark_ready",
     orderId: "order_1",
-    status: "READY",
   });
 }
 

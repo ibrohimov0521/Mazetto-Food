@@ -266,6 +266,26 @@ Step 15 fix:
 
 Telegram confirmation idempotency keys now use a SHA-256 fingerprint of the actual checkout state: customer, cart id, branch, order type, address, note, cart item ids, product/variant ids, quantity, modifiers, item notes, and item timestamps when present. Same-payload retry/concurrent confirms remain stable, while new post-success cart contents get a new key.
 
+### AUD-020: Staff Telegram callbacks could skip lifecycle authorization and status sequencing
+
+Severity: P2 MEDIUM
+
+Area:
+
+- `apps/backend/src/modules/telegram/telegram-order-notification.service.ts`
+
+Finding:
+
+The staff Telegram order notification service previously accepted status-like callback payloads and applied the requested order status directly after webhook secret validation. It did not verify that the callback came from the configured staff chat, showed all status buttons on every order notification, sent a new staff message for each status change, and allowed stale/out-of-order actions such as jumping from a new kitchen ticket directly to ready.
+
+Impact:
+
+An old or unauthorized Telegram callback could create confusing order/kitchen state changes, duplicate staff chat noise, or status history drift. The risk is lower than a public API auth bypass because webhook secret validation still existed, but staff lifecycle transitions were not server-authoritative enough for production kitchen operations.
+
+Fix status:
+
+Fixed locally in Step 16. Staff callbacks now require `TELEGRAM_STAFF_CHAT_ID`, use action-based transitions, enforce `NEW/CONFIRMED -> PREPARING -> READY` sequencing, support valid pre-ready cancellation, keep legacy status callbacks as safe aliases, edit staff messages in place when possible, write `OrderStatusHistory` only on real order-status changes, notify linked customers non-blockingly, and validate duplicate/stale/concurrent callbacks with an isolated PostgreSQL lifecycle script. Production activation remains pending.
+
 Fixed: YES, deployed and smoke-verified in Step 15.
 
 ### AUD-009: Production media volume is empty
@@ -625,3 +645,4 @@ Whitespace result:
 | AUD-017 | P3 | Media config | `apps/customer-web/next.config.ts` | Media remote host hardcoded | Future CDN change friction | No | n/a |
 | AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes, deployed | `73d7407` |
 | AUD-019 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Post-success cart reuse can collide with previous idempotency key | Valid next Telegram checkout can fail | Yes, deployed | `b875f54` |
+| AUD-020 | P2 | Staff Telegram | `apps/backend/src/modules/telegram/telegram-order-notification.service.ts` | Staff callbacks were status-based, not staff-chat scoped, and could skip lifecycle sequencing | Kitchen/order lifecycle drift and staff chat noise | Yes, local only | pending |
