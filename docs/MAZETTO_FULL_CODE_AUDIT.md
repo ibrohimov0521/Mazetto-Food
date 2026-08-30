@@ -246,7 +246,7 @@ Step 14C fix:
 
 Auth/contact errors still use the phone-linking message, but non-contact customer interactions now receive operation-specific Uzbek errors for branch closed, delivery disabled, pickup disabled, missing branch, or a generic interaction failure.
 
-Fixed: YES locally; not deployed.
+Fixed: YES, deployed and verified in Step 14D.
 
 ### AUD-009: Production media volume is empty
 
@@ -603,4 +603,4 @@ Whitespace result:
 | AUD-015 | P3 | Git hygiene | repository | LF/CRLF warnings on Windows | Review noise | No | n/a |
 | AUD-016 | P3 | Placeholder apps | `apps/print-agent`; `apps/telegram-bot` | Placeholder services | Deployment confusion | No | n/a |
 | AUD-017 | P3 | Media config | `apps/customer-web/next.config.ts` | Media remote host hardcoded | Future CDN change friction | No | n/a |
-| AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes locally, not deployed | pending |
+| AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes, deployed | `73d7407` |

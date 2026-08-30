@@ -1330,7 +1330,7 @@ Still not complete:
 
 ## Step 14C - Production Telegram Checkout Regression Root Cause
 
-Status: Fixed locally; not deployed
+Status: Fixed locally; deployed and verified in Step 14D
 
 Date: 2026-08-30
 
@@ -1367,7 +1367,99 @@ Validation:
 
 Production note:
 
-- Production still runs release `568b6ac`; this Step 14C fix is local-only until the next approved controlled release.
+- Production now runs backend release `73d7407`; the Step 14C fix was deployed and verified in Step 14D.
+
+## Step 14D - Focused Telegram Error Message Fix Deploy
+
+Status: Completed; backend fix deployed and accidental real Telegram order verified
+
+Date: 2026-08-30
+
+Released backend revision:
+
+- Commit: `73d74073f5bf595eb6f0c6eb3bc4d2b52078be44`
+- Backend image: `mazetto-food-backend-pdslpm:73d7407`
+- Customer-web image remained `mazetto-food-customerweb-yvb3d0:568b6ac`
+
+Scope:
+
+- Focused backend-only release for Telegram checkout error-message handling.
+- No customer-web deploy, database migration, seed, Cloudflare change, webhook reset, Click/Payme activation, staff Telegram activation, order deletion, cancellation, or status mutation was performed.
+
+Local validation before deploy:
+
+- `validate-telegram-customer-auth.ts`: passed.
+- `validate-telegram-customer-ordering.ts`: passed.
+- `validate-telegram-catalog-mapping.ts`: passed.
+- `prisma validate`: passed.
+- Backend typecheck, lint, and build: passed.
+- `git diff --check`: passed.
+
+Production deploy verification:
+
+- Backend service converged to `1/1`.
+- Backend health returned 200.
+- Telegram webhook remained healthy: host `api.mazettofood.uz`, pending updates 0, last error absent.
+- Production branch `MAZETTO Sergeli` was open and accepting orders at smoke time.
+
+Human smoke result:
+
+- The linked Telegram customer flow reached checkout successfully after the fix.
+- The previous wrong phone-linking error was not reproduced.
+- The human tester accidentally pressed final confirmation, creating one real production Telegram order.
+- The order was not deleted, cancelled, or mutated; it was treated as a valid production E2E proof.
+
+Verified accidental order:
+
+- Order number: `TG-20260830-053906-3786`.
+- Source: `TELEGRAM`.
+- Operational order type: `TAKEAWAY`.
+- Customer order type: `PICKUP`.
+- Payment method: `CASH`.
+- Payment status: `PENDING`.
+- Payment rows for the order: 0; no Click/Payme/Card provider success was recorded.
+- Branch: `MAZETTO Sergeli`.
+- Total: `97 000 so'm`, matching persisted item subtotal.
+
+Order item proof:
+
+- `1 x Katta lavash`, variant `Standart`, unit `36 000`, line total `36 000`, no modifiers.
+- `1 x Klassik burger`, variant `Standart`, unit `29 000`, line total `29 000`, no modifiers.
+- `1 x Doner lavash`, variant `Standart`, unit `32 000`, line total `32 000`, no modifiers.
+
+DB graph proof:
+
+- For order `TG-20260830-053906-3786`: `Order = 1`, `CustomerOrder = 1`, `CustomerOrderAttempt = 1 COMPLETED`, `OrderItem = 3`, `OrderStatusHistory = 2`, `KitchenTicket = 1`.
+- Duplicate logical order count for the order number: 1.
+- Status history: `NEW`, then `CONFIRMED`.
+- Kitchen ticket: one ticket, status `NEW`.
+- Customer duplicate check for the ordering phone: 1 customer row.
+
+Production counts after accidental order:
+
+- Customers: 2.
+- Orders: 2.
+- Customer orders: 2.
+- Customer order attempts: 2.
+- Kitchen tickets: 2.
+
+Cart/session state:
+
+- Checkout session count for the ordering customer after order: 1.
+- Cart items created before the order time for the ordering customer: 0.
+- One cart item existed after the order time, created 16 seconds after the order; this is post-order cart activity, not evidence that the submitted cart failed to clear.
+
+Backend log review:
+
+- Release and order-window logs showed no 500, Prisma error, Telegram callback failure, duplicate-order error, or transaction failure.
+- Only a non-blocking Node deprecation warning was visible.
+
+Remaining:
+
+- Click/Payme provider integrations remain incomplete and must not be treated as successful online payments.
+- Staff Telegram production activation remains separate.
+- Eight authentic product media assets remain unresolved.
+- AUD-005, AUD-008, AUD-011, and AUD-012 remain open.
 
 ## Architecture Decision Log
 
