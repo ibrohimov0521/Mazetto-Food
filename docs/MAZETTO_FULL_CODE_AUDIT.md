@@ -266,7 +266,7 @@ Step 15 fix:
 
 Telegram confirmation idempotency keys now use a SHA-256 fingerprint of the actual checkout state: customer, cart id, branch, order type, address, note, cart item ids, product/variant ids, quantity, modifiers, item notes, and item timestamps when present. Same-payload retry/concurrent confirms remain stable, while new post-success cart contents get a new key.
 
-Fixed: YES locally; not deployed.
+Fixed: YES, deployed and smoke-verified in Step 15.
 
 ### AUD-009: Production media volume is empty
 
@@ -624,4 +624,4 @@ Whitespace result:
 | AUD-016 | P3 | Placeholder apps | `apps/print-agent`; `apps/telegram-bot` | Placeholder services | Deployment confusion | No | n/a |
 | AUD-017 | P3 | Media config | `apps/customer-web/next.config.ts` | Media remote host hardcoded | Future CDN change friction | No | n/a |
 | AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes, deployed | `73d7407` |
-| AUD-019 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Post-success cart reuse can collide with previous idempotency key | Valid next Telegram checkout can fail | Yes locally, not deployed | pending |
+| AUD-019 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Post-success cart reuse can collide with previous idempotency key | Valid next Telegram checkout can fail | Yes, deployed | `b875f54` |

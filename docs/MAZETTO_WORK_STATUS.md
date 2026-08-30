@@ -1463,7 +1463,7 @@ Remaining:
 
 ## Step 15 - Post-Order State Cleanup Audit
 
-Status: Cleanup bug fixed locally; not deployed
+Status: Cleanup bug fixed and deployed
 
 Date: 2026-08-30
 
@@ -1517,7 +1517,12 @@ Validation:
 
 Production note:
 
-- Production still runs backend release `73d7407`; this Step 15 fix is local-only until the next approved controlled release.
+- Controlled backend-only production release completed after local validation.
+- Backend service now runs image `mazetto-food-backend-pdslpm:b875f54`.
+- Customer-web remained unchanged on image `mazetto-food-customerweb-yvb3d0:568b6ac`.
+- Production health remained 200 after deploy; Telegram webhook remained healthy with no pending updates or last error.
+- Order graph counts remained unchanged during the deploy verification at `orders=3`, `customer_orders=3`, `customer_order_attempts=3`, `kitchen_tickets=3`.
+- No migration, seed, frontend deploy, Cloudflare change, webhook reset, Click/Payme activation, staff Telegram activation, or production order creation was performed.
 
 ## Architecture Decision Log
 
