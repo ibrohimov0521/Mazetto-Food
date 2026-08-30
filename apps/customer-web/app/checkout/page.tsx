@@ -270,7 +270,7 @@ function CheckoutFlow() {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-checkout-card p-8">
-          <p className="text-sm font-black uppercase text-[#67E8F9]">Rasmiylashtirish</p>
+          <p className="text-sm font-black uppercase text-[#0B7F75]">Rasmiylashtirish</p>
           <CustomerAuthPanel
             description="Buyurtmani yakunlash uchun telefon raqamingizni shu yerda tasdiqlang. Tasdiqlangandan keyin checkout sahifasi saqlanib qoladi."
             title="Telefonni tasdiqlang"
@@ -294,17 +294,17 @@ function CheckoutFlow() {
 
           <div className="mt-5 grid gap-3">
             <FieldError message={errors.customer} />
-            <label className="grid gap-2 text-sm font-black text-white/76">
+            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
               Ism va familiya
               <motion.input className={inputClass(Boolean(errors.name))} placeholder="Masalan: Javohir Aliyev" value={name} onChange={(event) => setName(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
               <FieldError message={errors.name} />
             </label>
-            <label className="grid gap-2 text-sm font-black text-white/76">
+            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
               Telefon raqam
               <motion.input className={inputClass(Boolean(errors.phone))} placeholder="+998 90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
               <FieldError message={errors.phone} />
             </label>
-            <label className="grid gap-2 text-sm font-black text-white/76">
+            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
               Filial
               {loadingBranches ? (
                 <div className="skeleton h-12 rounded-2xl" />
@@ -312,7 +312,7 @@ function CheckoutFlow() {
                 <BranchPicker branches={branches} onChange={selectBranch} orderType={type} value={branchId} />
               )}
               <FieldError message={errors.branchId} />
-              {selectedBranch?.address ? <p className="text-xs font-bold text-white/48">{selectedBranch.address}{branchLabelSuffix(selectedBranch, type)}</p> : null}
+              {selectedBranch?.address ? <p className="text-xs font-bold text-[#17314A]/56">{selectedBranch.address}{branchLabelSuffix(selectedBranch, type)}</p> : null}
             </label>
 
             <div className="grid min-w-0 grid-cols-2 gap-2">
@@ -321,14 +321,14 @@ function CheckoutFlow() {
             </div>
 
             {type === "DELIVERY" ? (
-              <label className="grid gap-2 text-sm font-black text-white/76">
+              <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
                 Yetkazib berish manzili
                 <motion.textarea className={`${inputClass(Boolean(errors.address))} min-h-28`} placeholder="Ko'cha, uy, mo'ljal" value={address} onChange={(event) => setAddress(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
                 <FieldError message={errors.address} />
               </label>
             ) : null}
 
-            <label className="grid gap-2 text-sm font-black text-white/76">
+            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
               Buyurtma izohi
               <motion.textarea className={`${inputClass(false)} min-h-24`} placeholder="Masalan: piyozsiz, qo'ng'iroq qilmang" value={comment} onChange={(event) => setComment(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
             </label>
@@ -345,7 +345,7 @@ function CheckoutFlow() {
               </motion.button>
             ))}
           </div>
-          <p className="mt-3 text-xs font-bold text-white/56">
+          <p className="mt-3 text-xs font-bold text-[#17314A]/58">
             Click va Payme real integratsiyasi yoqilgandan keyin ko'rsatiladi.
           </p>
         </MotionDiv>
@@ -357,7 +357,7 @@ function CheckoutFlow() {
             <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma</p>
             <h2 className="mt-1 text-2xl font-black text-[#17314A]">Xulosa</h2>
           </div>
-          <span className="rounded-full bg-[#22C55E]/16 px-3 py-2 text-xs font-black text-[#67E8F9]">{estimatedTime}</span>
+          <span className="rounded-full bg-[#0B7F75]/10 px-3 py-2 text-xs font-black text-[#0B7F75]">{estimatedTime}</span>
         </div>
 
         <div className="mt-4 grid gap-3">
@@ -371,24 +371,24 @@ function CheckoutFlow() {
                 src={item.imageUrl}
               />
               <div className="min-w-0">
-                <p className="truncate font-black text-white">{item.quantity}x {localizeMenuName(item.productName)}</p>
-                <p className="text-xs font-semibold text-white/52">{localizeMenuName(item.variantName) || "Oddiy"}</p>
+                <p className="truncate font-black text-[#17314A]">{item.quantity}x {localizeMenuName(item.productName)}</p>
+                <p className="text-xs font-semibold text-[#17314A]/56">{localizeMenuName(item.variantName) || "Oddiy"}</p>
               </div>
             </div>
           )) : <FieldError message={errors.items ?? "Savat bo'sh."} />}
         </div>
 
         <div className="mf-card-soft mt-5 grid gap-3 p-4">
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
             <span>Mahsulotlar</span>
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={quote ? Number(quote.subtotal) : subtotal} /></span>
           </div>
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
             <span>Yetkazib berish</span>
             <span className="min-w-0 break-words text-right">{loadingQuote ? "Hisoblanmoqda..." : deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
           </div>
-          <div className="h-px bg-white/10" />
-          <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-white">
+          <div className="h-px bg-[#0B7F75]/12" />
+          <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-[#17314A]">
             <span>Jami</span>
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>
           </div>
@@ -422,7 +422,7 @@ function inputClass(error: boolean): string {
 }
 
 function choiceClass(active: boolean): string {
-  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "mazetto-glass-button text-white/76"}`;
+  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "mf-button-secondary"}`;
 }
 
 function FieldError({ message }: { message: string | undefined }) {

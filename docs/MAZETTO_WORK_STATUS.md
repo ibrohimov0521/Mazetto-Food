@@ -1524,6 +1524,51 @@ Production note:
 - Order graph counts remained unchanged during the deploy verification at `orders=3`, `customer_orders=3`, `customer_order_attempts=3`, `kitchen_tickets=3`.
 - No migration, seed, frontend deploy, Cloudflare change, webhook reset, Click/Payme activation, staff Telegram activation, or production order creation was performed.
 
+## Customer Web Visual QA - Contrast and Branch Selector Fix
+
+Status: Completed locally; not deployed
+
+Date: 2026-08-30
+
+Scope:
+
+- Fixed customer-web visual contrast regressions only.
+- Backend, database, API contracts, order engine, Telegram, Cloudflare, Dokploy, production data, and production services were not changed.
+- Production customer-web still runs the previously deployed image until a separate controlled frontend release is approved.
+
+Root cause:
+
+- Several ivory/light customer surfaces reused dark-theme utility classes such as `text-white`, `text-white/60`, and bright cyan accent text.
+- The branch picker trigger reused the shared input/glass styling while its inner text remained white, causing unreadable text on light surfaces.
+- The desktop top navigation relied on translucent glass buttons whose inactive state could lose contrast against the locked MAZETTO shell.
+- Product detail media used the same Framer Motion `layoutId` as product cards in the full menu continuation, so duplicate layout ids on the same page could make the hero product image animate away and remain invisible.
+
+Local fixes:
+
+- Added scoped light-surface contrast hardening for `mf-card`, `mf-card-soft`, and checkout card content.
+- Reworked the customer branch picker visual layer into a dedicated premium light selector and menu while preserving existing branch logic.
+- Added a high-contrast desktop top-navigation button state.
+- Recolored customer auth, cart, checkout, orders, order detail, profile, and menu microcopy where text sat on ivory/light surfaces.
+- Fixed product detail image visibility by giving the detail hero a unique layout id and using contain-fit media presentation.
+
+Local QA evidence:
+
+- Browser visual QA screenshots were captured under `.qa-screenshots/` for home, menu, cart, checkout auth state, profile, and orders at 390, 768, and 1440px.
+- Branch picker open state was visually checked at 390px.
+- Product detail media visibility was checked for `Katta lavash` and `Pishloqli sous` at 390px.
+- Checked document-level horizontal overflow on tested customer routes; no page-level horizontal overflow was found.
+- The remaining horizontal overflow candidates were contained category/product scrollers, not body/header overflow.
+
+Validation:
+
+- `pnpm --filter customer-web typecheck`: passed.
+- `pnpm --filter customer-web lint`: passed.
+- `pnpm --filter customer-web build`: passed.
+- `pnpm typecheck`: passed.
+- `pnpm lint`: passed.
+- `pnpm build`: all 9 Turbo build tasks reported successful; the known post-success Turbo session hang required manually stopping the runner after success was printed.
+- `git diff --check`: passed with existing CRLF/LF working-copy warnings only; no whitespace errors.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop

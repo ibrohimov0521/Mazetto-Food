@@ -150,7 +150,7 @@ function isNavActive(pathname: string, href: string): boolean {
 }
 
 function topNavClass(active: boolean): string {
-  return `pressable mazetto-glass-button shrink-0 whitespace-nowrap rounded-full px-3 py-2 transition-colors ${active ? "mazetto-liquid-active text-[#F5CF00]" : "hover:text-white"}`;
+  return `pressable ripple mf-top-nav-link shrink-0 whitespace-nowrap px-3 py-2 transition-colors ${active ? "is-active" : ""}`;
 }
 
 function CartFlightOverlay({ flight, onDone }: { flight: CartFlight | null; onDone: () => void }) {

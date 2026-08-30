@@ -92,8 +92,8 @@ export function CustomerAuthPanel({
   if (customer?.accessToken) {
     return (
       <div className="mf-card-soft p-4">
-        <p className="text-sm font-black text-white">Profil ulangan</p>
-        <p className="mt-1 text-sm font-semibold text-white/60">{customer.name} · {customer.phone}</p>
+        <p className="text-sm font-black text-[#17314A]">Profil ulangan</p>
+        <p className="mt-1 text-sm font-semibold text-[#17314A]/62">{customer.name} · {customer.phone}</p>
         <Link className="pressable ripple mf-button-secondary mt-4 inline-flex px-4 py-3 text-sm font-black" href="/orders">
           Buyurtmalarim
         </Link>
@@ -104,8 +104,8 @@ export function CustomerAuthPanel({
   return (
     <div className="grid min-w-0 gap-3">
       <div>
-        <h2 className="text-2xl font-black text-white">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-white/60">{description}</p>
+        <h2 className="text-2xl font-black text-[#17314A]">{title}</h2>
+        <p className="mt-2 text-sm font-semibold leading-6 text-[#17314A]/64">{description}</p>
       </div>
       <input className="mf-input px-4 py-3" placeholder="Ismingiz" value={name} onChange={(event) => setName(event.target.value)} />
       <input className="mf-input px-4 py-3" inputMode="tel" placeholder="+998 telefon raqam" value={phone} onChange={(event) => setPhone(event.target.value)} />
@@ -116,7 +116,7 @@ export function CustomerAuthPanel({
             {verifyingCode ? "Tekshirilmoqda..." : "Kodni tasdiqlash"}
           </button>
           {telegramBotUrl ? (
-            <Link className="pressable ripple mazetto-glass-chip rounded-2xl px-5 py-4 text-center font-black text-[#67E8F9]" href={telegramBotUrl} target="_blank">
+            <Link className="pressable ripple mf-button-secondary rounded-2xl px-5 py-4 text-center font-black" href={telegramBotUrl} target="_blank">
               Telegram botga o'tish
             </Link>
           ) : null}
@@ -129,7 +129,7 @@ export function CustomerAuthPanel({
           {requestingCode ? "Yuborilmoqda..." : "Kod olish"}
         </button>
       )}
-      {message ? <p className="rounded-2xl bg-[#22C55E]/14 px-4 py-3 text-sm font-bold text-[#67E8F9]">{message}</p> : null}
+      {message ? <p className="mf-surface-note rounded-2xl px-4 py-3 text-sm font-bold">{message}</p> : null}
     </div>
   );
 }

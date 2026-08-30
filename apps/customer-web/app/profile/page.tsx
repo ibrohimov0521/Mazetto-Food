@@ -167,7 +167,7 @@ function Profile() {
       <Panel title="Saqlangan manzillar">
         <div className="flex flex-wrap gap-3">
           {addresses.length ? addresses.map((address) => (
-            <span className="rounded-2xl bg-[#22C55E]/16 px-4 py-3 text-sm font-bold text-[#67E8F9]" key={address}>{address}</span>
+            <span className="rounded-2xl bg-[#0B7F75]/10 px-4 py-3 text-sm font-bold text-[#0B7F75]" key={address}>{address}</span>
           )) : <span className="rounded-2xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-semibold text-[#17314A]/56">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
         </div>
       </Panel>

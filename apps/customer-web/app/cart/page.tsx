@@ -69,7 +69,7 @@ function CartReview() {
           </MotionDiv>
         ) : (
           <div className="mf-card-soft mt-5 p-8 text-center">
-            <p className="font-bold text-white">Savatchangiz hozircha bo'sh.</p>
+            <p className="font-bold text-[#17314A]">Savatchangiz hozircha bo'sh.</p>
             <Link className="pressable ripple mf-button-primary mt-4 inline-flex px-5 py-3 font-bold" href="/menu">
               Menyuga o'tish
             </Link>
@@ -82,21 +82,21 @@ function CartReview() {
       <aside className="mf-checkout-card min-w-0 h-fit p-5">
         <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
         {!customer?.accessToken ? (
-          <div className="mt-4 rounded-2xl bg-[#67E8F9]/14 px-4 py-3 text-sm font-bold text-[#67E8F9]">
+          <div className="mf-surface-note mt-4 rounded-2xl px-4 py-3 text-sm font-bold">
             Buyurtma berish uchun telefon raqamingizni tasdiqlang.
           </div>
         ) : null}
         <div className="mf-card-soft mt-5 grid gap-3 p-4">
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
             <span>Mahsulotlar</span>
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={subtotal} /></span>
           </div>
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-white/60">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
             <span>Yetkazib berish</span>
             <span className="min-w-0 break-words text-right">Rasmiylashtirishda</span>
           </div>
-          <div className="h-px bg-white/10" />
-          <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-white">
+          <div className="h-px bg-[#0B7F75]/12" />
+          <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-[#17314A]">
             <span>Jami</span>
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>
           </div>

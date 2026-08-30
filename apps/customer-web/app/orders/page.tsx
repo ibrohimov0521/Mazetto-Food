@@ -164,7 +164,7 @@ function OrdersDashboard() {
                   <p className="mt-1 text-sm font-semibold text-[#17314A]/60">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
                   {activeOrder.branch ? <p className="mt-1 text-sm font-semibold text-[#17314A]/45">{activeOrder.branch.name}</p> : null}
                 </div>
-                <span className="rounded-full bg-[#22C55E]/16 px-4 py-2 text-sm font-black text-[#67E8F9]">{formatMoney(activeOrder.order.total)}</span>
+                <span className="rounded-full bg-[#0B7F75]/10 px-4 py-2 text-sm font-black text-[#0B7F75]">{formatMoney(activeOrder.order.total)}</span>
               </div>
               <StatusTracker status={activeOrder.order.status ?? activeOrder.status} />
               <div className="mt-5 grid gap-2">
@@ -186,8 +186,8 @@ function OrdersDashboard() {
           <div className="mt-4 grid gap-3">
             {error ? (
               <div className="mf-card-soft p-8 text-center">
-                <h3 className="text-2xl font-black text-white">Buyurtmalar yuklanmadi</h3>
-                <p className="mt-2 text-sm font-semibold text-white/60">{error}</p>
+                <h3 className="text-2xl font-black text-[#17314A]">Buyurtmalar yuklanmadi</h3>
+                <p className="mt-2 text-sm font-semibold text-[#17314A]/62">{error}</p>
                 <button className="pressable ripple mf-button-primary mt-5 px-5 py-3 font-black" onClick={() => void load()} type="button">
                   Qayta urinish
                 </button>
@@ -210,8 +210,8 @@ function OrdersDashboard() {
               </Link>
             )) : (
               <div className="mf-card-soft p-8 text-center">
-                <h3 className="text-2xl font-black text-white">Hali buyurtmalaringiz yo'q</h3>
-                <p className="mt-2 text-sm font-semibold text-white/60">Birinchi buyurtmangiz shu yerda tarixi bilan ko'rinadi.</p>
+                <h3 className="text-2xl font-black text-[#17314A]">Hali buyurtmalaringiz yo'q</h3>
+                <p className="mt-2 text-sm font-semibold text-[#17314A]/62">Birinchi buyurtmangiz shu yerda tarixi bilan ko'rinadi.</p>
                 <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/menu">
                   Menyuni ko'rish
                 </Link>
@@ -269,7 +269,7 @@ function StatusTracker({ status }: { status: string }) {
         return (
           <div className="grid gap-2" key={step}>
             <div className={`h-2 rounded-full ${active ? "bg-[#22C55E]" : "bg-white/12"}`} />
-            <p className={`text-[10px] font-black sm:text-xs ${active ? "text-[#67E8F9]" : "text-white/35"}`}>{statusLabel(step)}</p>
+            <p className={`text-[10px] font-black sm:text-xs ${active ? "text-[#0B7F75]" : "text-[#17314A]/42"}`}>{statusLabel(step)}</p>
           </div>
         );
       })}

@@ -102,6 +102,27 @@ img {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 12px 36px rgba(0, 0, 0, 0.18);
 }
 
+.mf-top-nav-link {
+  border: 1px solid rgba(245, 245, 239, 0.44);
+  border-radius: 999px;
+  background: rgba(245, 245, 239, 0.86);
+  color: #07373a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 24px rgba(0, 32, 35, 0.12);
+}
+
+.mf-top-nav-link:hover {
+  border-color: rgba(245, 207, 0, 0.44);
+  background: rgba(255, 255, 248, 0.96);
+  color: #004f55;
+}
+
+.mf-top-nav-link.is-active {
+  border-color: rgba(245, 207, 0, 0.62);
+  background: linear-gradient(135deg, rgba(245, 207, 0, 0.92), rgba(255, 216, 61, 0.94));
+  color: #07373a;
+  box-shadow: 0 12px 28px rgba(245, 207, 0, 0.2);
+}
+
 .mf-bottom-nav {
   position: fixed !important;
   left: 0.75rem;
@@ -131,6 +152,7 @@ img {
   border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)), var(--mf-card);
+  color: var(--mf-text);
   box-shadow: var(--mf-shadow);
   backdrop-filter: blur(14px);
 }
@@ -516,6 +538,52 @@ img {
   border: 1px solid var(--mf-border);
   border-radius: 24px;
   background: var(--mf-card-soft);
+  color: var(--mf-text);
+}
+
+.mf-card:not(.mazetto-liquid-surface) .text-white,
+.mf-card-soft .text-white,
+.mf-checkout-card .text-white {
+  color: #17314a;
+}
+
+.mf-card:not(.mazetto-liquid-surface) .text-white\/76,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/72,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/70,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/68,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/64,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/60,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/58,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/56,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/54,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/52,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/50,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/48,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/45,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/42,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/40,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/38,
+.mf-card:not(.mazetto-liquid-surface) .text-white\/35,
+.mf-card-soft .text-white\/76,
+.mf-card-soft .text-white\/72,
+.mf-card-soft .text-white\/70,
+.mf-card-soft .text-white\/68,
+.mf-card-soft .text-white\/64,
+.mf-card-soft .text-white\/60,
+.mf-card-soft .text-white\/58,
+.mf-card-soft .text-white\/56,
+.mf-card-soft .text-white\/54,
+.mf-card-soft .text-white\/52,
+.mf-card-soft .text-white\/50,
+.mf-card-soft .text-white\/48,
+.mf-card-soft .text-white\/45,
+.mf-card-soft .text-white\/42,
+.mf-card-soft .text-white\/40,
+.mf-card-soft .text-white\/38,
+.mf-card-soft .text-white\/35,
+.mf-checkout-card .text-white\/70,
+.mf-checkout-card .text-white\/38 {
+  color: rgba(23, 49, 74, 0.62);
 }
 
 .mf-card-light {
@@ -558,6 +626,68 @@ img {
   background: var(--mf-control-bg);
   color: var(--mf-text);
   transform: translateZ(0);
+}
+
+.mf-button-secondary:hover {
+  background: var(--mf-control-hover);
+}
+
+.mf-button-secondary:disabled,
+.mf-button-primary:disabled {
+  opacity: 0.55;
+}
+
+.mf-surface-note {
+  border: 1px solid rgba(0, 79, 85, 0.12);
+  background: rgba(35, 149, 141, 0.1);
+  color: #0a4f55;
+}
+
+.mf-branch-trigger {
+  border: 1px solid rgba(0, 79, 85, 0.14);
+  border-radius: 1.25rem;
+  background:
+    radial-gradient(circle at 92% 4%, rgba(245, 207, 0, 0.12), transparent 8rem),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(245, 245, 239, 0.9));
+  color: #17314a;
+  box-shadow: 0 12px 30px rgba(0, 79, 85, 0.12);
+}
+
+.mf-branch-trigger:disabled {
+  opacity: 0.58;
+}
+
+.mf-branch-icon,
+.mf-branch-chevron {
+  border: 1px solid rgba(0, 79, 85, 0.12);
+  background: rgba(0, 91, 94, 0.08);
+  color: #0a4f55;
+}
+
+.mf-branch-menu {
+  border: 1px solid rgba(245, 245, 239, 0.72);
+  background:
+    radial-gradient(circle at 88% 0%, rgba(245, 207, 0, 0.14), transparent 11rem),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(245, 245, 239, 0.94));
+  color: #17314a;
+  box-shadow: 0 24px 70px rgba(0, 32, 35, 0.28);
+}
+
+.mf-branch-option {
+  border: 1px solid rgba(0, 79, 85, 0.1);
+  background: rgba(255, 255, 255, 0.58);
+  color: #17314a;
+}
+
+.mf-branch-option:hover {
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.mf-branch-option.is-active {
+  border-color: rgba(245, 207, 0, 0.48);
+  background:
+    linear-gradient(135deg, rgba(245, 207, 0, 0.22), rgba(185, 184, 240, 0.1)),
+    rgba(255, 255, 255, 0.88);
 }
 
 .mf-quantity-button {

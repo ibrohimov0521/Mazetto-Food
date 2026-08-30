@@ -126,12 +126,14 @@ function ProductDetails({ id }: { id: string }) {
             alt={product.name}
             aspectClassName="aspect-[1.08/1] sm:aspect-[16/10] lg:aspect-[1.08/1]"
             className="floating-image rounded-[1.7rem] will-change-transform"
+            fallbackLabel={product.name}
+            fit="contain"
             motionProps={{
               ...imageMotion,
-              layoutId: `product-image-${product.id}`,
+              layoutId: `product-detail-image-${product.id}`,
             }}
             priority
-            imageClassName="scale-[1.22]"
+            imageClassName="p-4"
             ref={imageRef}
             sizes="(max-width: 1024px) 100vw, 45vw"
             src={product.imageUrl}
@@ -246,8 +248,8 @@ function pillClass(active: boolean): string {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="mf-card-soft min-w-0 p-2 sm:p-3">
-      <p className="truncate text-[10px] font-black uppercase text-[#F5CF00] sm:text-xs">{label}</p>
-      <p className="mt-1 truncate text-sm font-black text-white sm:text-base">{value}</p>
+      <p className="truncate text-[10px] font-black uppercase text-[#0B7F75] sm:text-xs">{label}</p>
+      <p className="mt-1 truncate text-sm font-black text-[#17314A] sm:text-base">{value}</p>
     </div>
   );
 }

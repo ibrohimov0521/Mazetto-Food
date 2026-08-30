@@ -194,7 +194,7 @@ function OrderDetail() {
                 {modifiersFor(item.modifierSnapshot).length ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {modifiersFor(item.modifierSnapshot).map((modifier, index) => (
-                      <span className="rounded-full bg-[#22C55E]/14 px-3 py-1 text-xs font-black text-[#67E8F9]" key={`${modifier.name}-${index}`}>
+                      <span className="rounded-full bg-[#0B7F75]/10 px-3 py-1 text-xs font-black text-[#0B7F75]" key={`${modifier.name}-${index}`}>
                         {localizeMenuName(modifier.name)}
                       </span>
                     ))}
