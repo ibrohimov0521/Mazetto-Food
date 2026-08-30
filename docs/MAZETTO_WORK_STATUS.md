@@ -1328,6 +1328,47 @@ Still not complete:
 - AUD-011 warehouse readiness.
 - AUD-012 httpOnly refresh-token hardening.
 
+## Step 14C - Production Telegram Checkout Regression Root Cause
+
+Status: Fixed locally; not deployed
+
+Date: 2026-08-30
+
+Scope:
+
+- Focused only on the Telegram checkout regression discovered during human production smoke.
+- No production deployment, production database write, production order, migration, seed, webhook change, Cloudflare change, Click/Payme activation, staff Telegram activation, or push was performed.
+
+Observed production behavior:
+
+- A linked Telegram customer reached DELIVERY checkout.
+- After entering an address and pressing `O'tkazib yuborish` for courier note, the bot sent:
+  `Telefon raqamni bog'lashda xatolik bo'ldi. Iltimos, /start bosib qayta urinib ko'ring.`
+
+Root cause:
+
+- Production logs showed the underlying application error was `Branch is not accepting orders now`.
+- The smoke happened before MAZETTO Sergeli opening time; the branch API also reported `isOpen: false` and `acceptsOrders: false`.
+- The order engine correctly blocked checkout while the branch was closed.
+- The regression was in `TelegramCustomerAuthService.handleWebhookUpdate`: every caught customer callback/message error was converted into the generic phone-linking auth error unless it came from a contact message.
+
+Local fix:
+
+- Telegram contact-link errors still use the existing phone-linking error path.
+- Non-contact customer interactions, including Telegram ordering callbacks such as `cust:note:skip`, now send operation-specific Uzbek error messages.
+- `Branch is not accepting orders now` now becomes:
+  `Filial hozir buyurtma qabul qilmayapti. Iltimos, ish vaqtida qayta urinib ko'ring.`
+- Delivery-disabled, pickup-disabled, and missing-branch cases also receive order-specific messages.
+
+Validation:
+
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-auth.ts`: passed and now covers ordering callback errors not being converted into auth errors.
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-ordering.ts`: passed and still covers delivery address, note skip, checkout summary, pickup, quick-add, pagination, and cart behavior.
+
+Production note:
+
+- Production still runs release `568b6ac`; this Step 14C fix is local-only until the next approved controlled release.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop

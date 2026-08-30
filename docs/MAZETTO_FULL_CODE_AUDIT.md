@@ -228,6 +228,26 @@ Scope websocket updates by relevant order/customer where possible, or filter eve
 
 Fixed: NO.
 
+### AUD-018: Telegram checkout errors can be reported as phone-linking failures
+
+Severity: P2 MEDIUM
+
+File: `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts`
+
+Evidence:
+
+Step 14B human production smoke showed a linked Telegram customer entered a delivery address and pressed `O'tkazib yuborish` for courier note. Production logs showed the real underlying error was `Branch is not accepting orders now`, because the smoke was performed before MAZETTO Sergeli opening time. The webhook catch block still sent the generic phone-linking failure message.
+
+Production impact:
+
+Customers can be told to relink Telegram even when their account is already linked and the real problem is branch/order availability. This blocks clear recovery during Telegram checkout.
+
+Step 14C fix:
+
+Auth/contact errors still use the phone-linking message, but non-contact customer interactions now receive operation-specific Uzbek errors for branch closed, delivery disabled, pickup disabled, missing branch, or a generic interaction failure.
+
+Fixed: YES locally; not deployed.
+
 ### AUD-009: Production media volume is empty
 
 Severity: P2 MEDIUM
@@ -583,3 +603,4 @@ Whitespace result:
 | AUD-015 | P3 | Git hygiene | repository | LF/CRLF warnings on Windows | Review noise | No | n/a |
 | AUD-016 | P3 | Placeholder apps | `apps/print-agent`; `apps/telegram-bot` | Placeholder services | Deployment confusion | No | n/a |
 | AUD-017 | P3 | Media config | `apps/customer-web/next.config.ts` | Media remote host hardcoded | Future CDN change friction | No | n/a |
+| AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes locally, not deployed | pending |

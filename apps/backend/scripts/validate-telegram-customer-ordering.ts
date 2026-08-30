@@ -451,6 +451,7 @@ async function main(): Promise<void> {
   await testConfiguredItemSeparation();
   await testBranchLocation();
   await testDeliveryFlow();
+  await testDeliveryNoteFlow();
   await testPickupRegression();
   await testDeliveryDisabled();
   console.log("Telegram customer ordering validation passed");
@@ -672,6 +673,38 @@ async function testPickupRegression(): Promise<void> {
   assert.equal(engineCalls[0]?.dto.type, "PICKUP");
   assert.equal(engineCalls[0]?.dto.address, undefined);
   assert.equal(engineCalls[0]?.dto.paymentMethod, "CASH");
+}
+
+async function testDeliveryNoteFlow(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, engineCalls, callbackBase } = createService(prisma);
+
+  await seedCart(service, prisma, callbackBase);
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:checkout" });
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:type:DELIVERY" });
+  await service.handleCustomerMessage({
+    chat: { id: "chat_1" },
+    from: { id: "tg_1" },
+    text: "Sergeli 7, 12-uy, 3-podyezd",
+  });
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:note:add" });
+  assert.match(lastText(), /Kur'er uchun izohni yuboring/);
+  assert.equal(engineCalls.length, 0);
+
+  await service.handleCustomerMessage({
+    chat: { id: "chat_1" },
+    from: { id: "tg_1" },
+    text: "Darvozadan keyin chap taraf",
+  });
+  assert.match(lastText(), /Buyurtmani tasdiqlash/);
+  assert.match(lastText(), /Izoh: Darvozadan keyin chap taraf/);
+  assert.equal(engineCalls.length, 0);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:confirm:cart_1" });
+  assert.equal(engineCalls.length, 1);
+  assert.equal(engineCalls[0]?.dto.type, "DELIVERY");
+  assert.equal(engineCalls[0]?.dto.notes, "Telegram orqali buyurtma. Darvozadan keyin chap taraf");
 }
 
 async function testDeliveryDisabled(): Promise<void> {

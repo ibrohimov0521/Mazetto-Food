@@ -1,4 +1,4 @@
-import { UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as assert from "node:assert/strict";
 import * as bcrypt from "bcryptjs";
@@ -322,13 +322,23 @@ function latestCode(): string {
   assert.fail("telegram message must include a 6 digit code");
 }
 
-function createServices(prisma = new InMemoryPrisma()) {
+function createServices(
+  prisma = new InMemoryPrisma(),
+  orderingOverrides: Partial<{
+    handleCustomerCallback: () => Promise<boolean>;
+    sendCategoryMenu: () => Promise<void>;
+    sendCartFromMessage: () => Promise<void>;
+    sendBranches: () => Promise<void>;
+    sendMainMenuFromMessage: () => Promise<void>;
+  }> = {},
+) {
   const telegramCustomerOrderingService = {
     handleCustomerCallback: async () => true,
     sendCategoryMenu: async () => undefined,
     sendCartFromMessage: async () => undefined,
     sendBranches: async () => undefined,
     sendMainMenuFromMessage: async () => undefined,
+    ...orderingOverrides,
   };
   const telegramCustomerAuthService = new TelegramCustomerAuthService(
     prisma as never,
@@ -360,8 +370,40 @@ async function run(): Promise<void> {
   await testCodeRotationReuseExpiryAndAttempts();
   await testRequestCodeRateLimit();
   await testWebhookSecretAndStaffRegression();
+  await testOrderingCallbackErrorsDoNotSendAuthError();
 
   console.log("Telegram customer auth validation passed");
+}
+
+async function testOrderingCallbackErrorsDoNotSendAuthError(): Promise<void> {
+  process.env.TELEGRAM_WEBHOOK_SECRET = "test-secret";
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  sentTelegramPayloads.length = 0;
+  const { telegramCustomerAuthService } = createServices(
+    new InMemoryPrisma(),
+    {
+      handleCustomerCallback: async () => {
+        throw new BadRequestException("Branch is not accepting orders now");
+      },
+    },
+  );
+  const controller = new TelegramController(
+    telegramCustomerAuthService,
+    { handleWebhook: async () => ({ ok: true, handled: true }) } as never,
+  );
+
+  const result = await controller.handleWebhook("test-secret", {
+    callback_query: {
+      id: "callback-note-skip",
+      data: "cust:note:skip",
+      from: { id: 8001 },
+      message: { chat: { id: 7001 }, message_id: 9001 },
+    },
+  });
+
+  assert.equal(result.handled, true);
+  assert.match(sentTelegramPayloads.at(-1)?.text ?? "", /Filial hozir buyurtma qabul qilmayapti/);
+  assert.doesNotMatch(sentTelegramPayloads.at(-1)?.text ?? "", /Telefon raqamni bog'lashda xatolik/);
 }
 
 async function testMissingBotToken(): Promise<void> {

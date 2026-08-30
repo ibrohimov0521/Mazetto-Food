@@ -176,7 +176,13 @@ export class TelegramCustomerAuthService {
           error instanceof Error ? error.stack : String(error),
         );
       }
-      await this.sendCustomerAuthError(message?.chat?.id ?? callback?.message?.chat?.id);
+      const chatId = message?.chat?.id ?? callback?.message?.chat?.id;
+
+      if (message?.contact) {
+        await this.sendCustomerAuthError(chatId);
+      } else {
+        await this.sendCustomerInteractionError(chatId, error);
+      }
       return { ok: true, handled: true };
     }
 
@@ -520,6 +526,42 @@ export class TelegramCustomerAuthService {
       text:
         "Telefon raqamni bog'lashda xatolik bo'ldi. Iltimos, /start bosib qayta urinib ko'ring.",
     }).catch(() => undefined);
+  }
+
+  private async sendCustomerInteractionError(
+    chatId: number | string | undefined,
+    error: unknown,
+  ): Promise<void> {
+    if (!chatId || !this.hasBotToken()) {
+      return;
+    }
+
+    await this.telegramRequest("sendMessage", {
+      chat_id: String(chatId),
+      text: this.customerInteractionErrorMessage(error),
+    }).catch(() => undefined);
+  }
+
+  private customerInteractionErrorMessage(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes("Branch is not accepting orders now")) {
+      return "Filial hozir buyurtma qabul qilmayapti. Iltimos, ish vaqtida qayta urinib ko'ring.";
+    }
+
+    if (message.includes("Delivery is not available for this branch")) {
+      return "Bu filialda yetkazib berish hozircha mavjud emas. Iltimos, olib ketishni tanlang.";
+    }
+
+    if (message.includes("Pickup is not available for this branch")) {
+      return "Bu filialda olib ketish hozircha mavjud emas. Iltimos, yetkazib berishni tanlang.";
+    }
+
+    if (message.includes("Branch not found")) {
+      return "Tanlangan filial topilmadi. Iltimos, filialni qayta tanlang.";
+    }
+
+    return "Amalni bajarishda xatolik bo'ldi. Iltimos, bosh menyudan qayta urinib ko'ring.";
   }
 
   private async telegramRequest(method: string, payload: unknown): Promise<void> {
