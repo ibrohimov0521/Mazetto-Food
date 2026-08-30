@@ -41,6 +41,26 @@ type BranchForCheckout = {
   pickupEnabled: boolean;
   isTemporarilyClosed: boolean;
 };
+type TelegramCartForCheckout = {
+  id: string;
+  updatedAt: Date;
+  items: Array<{
+    id: string;
+    productId: string;
+    variantId: string | null;
+    quantity: Prisma.Decimal;
+    modifierSnapshot: Prisma.JsonValue | null;
+    notes: string | null;
+    createdAt?: Date;
+    updatedAt?: Date;
+  }>;
+};
+type TelegramCheckoutSessionForKey = {
+  branchId: string | null;
+  orderType: CustomerOrderType | null;
+  address: string | null;
+  note: string | null;
+};
 type TelegramInlineButton = {
   text: string;
   callback_data?: string;
@@ -1423,7 +1443,11 @@ export class TelegramCustomerOrderingService {
         customer.id,
         {
           branchId: branch.id,
-          idempotencyKey: `telegram:${customer.id}:${cart.id}:${cart.updatedAt.getTime()}`,
+          idempotencyKey: this.createTelegramOrderIdempotencyKey(
+            customer.id,
+            cart,
+            session,
+          ),
           name: customer.name,
           type:
             orderType === CustomerOrderType.DELIVERY
@@ -1491,6 +1515,39 @@ export class TelegramCustomerOrderingService {
       data: { customerId },
       select: { id: true },
     });
+  }
+
+  private createTelegramOrderIdempotencyKey(
+    customerId: string,
+    cart: TelegramCartForCheckout,
+    session: TelegramCheckoutSessionForKey,
+  ): string {
+    const fingerprint = {
+      customerId,
+      cartId: cart.id,
+      branchId: session.branchId,
+      orderType: session.orderType,
+      address: session.address?.trim() ?? null,
+      note: session.note?.trim() ?? null,
+      items: cart.items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity.toFixed(3),
+        modifiers: this.readCartModifiers(item.modifierSnapshot).sort((a, b) =>
+          a.modifierId.localeCompare(b.modifierId),
+        ),
+        notes: item.notes?.trim() ?? null,
+        createdAt: item.createdAt?.toISOString() ?? null,
+        updatedAt: item.updatedAt?.toISOString() ?? null,
+      })),
+    };
+    const hash = createHash("sha256")
+      .update(JSON.stringify(fingerprint))
+      .digest("hex")
+      .slice(0, 32);
+
+    return `telegram:${customerId}:${cart.id}:${hash}`;
   }
 
   private getCartWithItems(customerId: string) {

@@ -1461,6 +1461,64 @@ Remaining:
 - Eight authentic product media assets remain unresolved.
 - AUD-005, AUD-008, AUD-011, and AUD-012 remain open.
 
+## Step 15 - Post-Order State Cleanup Audit
+
+Status: Cleanup bug fixed locally; not deployed
+
+Date: 2026-08-30
+
+Scope:
+
+- Audited the post-order Telegram cart/session state after accidental production order `TG-20260830-053906-3786`.
+- Production inspection was read-only.
+- No production order, customer, cart, checkout session, database row, migration, seed, deployment, webhook, Cloudflare, Click/Payme, or staff Telegram change was performed.
+
+Production observation:
+
+- The submitted cart for `TG-20260830-053906-3786` was cleared before/at order creation time.
+- A cart item appeared 16 seconds after the order was created.
+- A Telegram checkout session was also created/updated after the order was created.
+- The remaining cart/session state therefore came from post-order user interaction, not from failed cleanup of the submitted order.
+
+Code lifecycle evidence:
+
+- Successful Telegram confirmation calls `CustomerOrderEngineService.createOnlineOrder`.
+- After success, Telegram ordering deletes all cart items for the submitted cart and clears the `TelegramCheckoutSession` for the same customer/chat.
+- `/start` and inline main-menu navigation do not create orders.
+- `startCheckout` resets branch/order type/address/note before a new checkout flow.
+
+Bug found during isolated DB reproduction:
+
+- Telegram order idempotency key used `customerId + cartId + cart.updatedAt`.
+- PostgreSQL/Prisma did not update the parent `Cart.updatedAt` when a new `CartItem` was inserted into the existing cart after a successful order.
+- A second post-success checkout could therefore reuse the previous idempotency key with a different payload and fail with `Idempotency key was already used with a different checkout request`.
+
+Local fix:
+
+- Telegram confirmation idempotency keys now include a stable SHA-256 fingerprint of the actual checkout state:
+  customer, cart id, branch, order type, address, note, cart item ids, product/variant ids, quantity, modifiers, item notes, and item timestamps when available.
+- Same-payload concurrent/retry confirms still share the same key.
+- New cart contents after a successful order produce a new key even when the same empty cart row is reused.
+- No `CustomerOrderEngineService` pricing/order persistence logic was changed.
+
+Validation:
+
+- Fresh isolated local PostgreSQL database `mazetto_step8_step15_e2e` was created, migrated through all 16 migrations, seeded, and used for DB-backed E2E validation.
+- DB-backed validation proved cart cleanup, checkout session cleanup, stale confirm no-duplicate behavior, post-success second-order behavior, no stale address/note leakage, and no duplicate KitchenTicket.
+- `validate-customer-order-e2e-db.ts`: passed.
+- `validate-telegram-customer-ordering.ts`: passed.
+- `validate-telegram-customer-auth.ts`: passed.
+- `validate-customer-order-history.ts`: passed.
+- Prisma format, validate, and generate passed.
+- Backend typecheck, lint, and build passed.
+- Customer-web typecheck, lint, and build passed.
+- Workspace typecheck and lint passed.
+- Workspace build reported all 9 tasks successful; the known Turbo post-success non-exit required manually stopping the runner.
+
+Production note:
+
+- Production still runs backend release `73d7407`; this Step 15 fix is local-only until the next approved controlled release.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop

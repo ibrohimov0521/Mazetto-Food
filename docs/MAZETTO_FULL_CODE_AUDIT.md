@@ -248,6 +248,26 @@ Auth/contact errors still use the phone-linking message, but non-contact custome
 
 Fixed: YES, deployed and verified in Step 14D.
 
+### AUD-019: Telegram post-success cart reuse can collide with the previous idempotency key
+
+Severity: P2 MEDIUM
+
+File: `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts`
+
+Evidence:
+
+Step 15 isolated PostgreSQL reproduction showed that a successful Telegram order clears the submitted cart items and checkout session. If the customer adds a new item afterward, the existing `Cart` row can be reused while `Cart.updatedAt` remains unchanged. The Telegram confirmation idempotency key previously used `customerId + cartId + cart.updatedAt`, so the second checkout could reuse the first order's key with a different payload.
+
+Production impact:
+
+A valid second Telegram order after a successful order can fail with `Idempotency key was already used with a different checkout request`. This is not duplicate order creation, but it is a post-order checkout recovery bug.
+
+Step 15 fix:
+
+Telegram confirmation idempotency keys now use a SHA-256 fingerprint of the actual checkout state: customer, cart id, branch, order type, address, note, cart item ids, product/variant ids, quantity, modifiers, item notes, and item timestamps when present. Same-payload retry/concurrent confirms remain stable, while new post-success cart contents get a new key.
+
+Fixed: YES locally; not deployed.
+
 ### AUD-009: Production media volume is empty
 
 Severity: P2 MEDIUM
@@ -604,3 +624,4 @@ Whitespace result:
 | AUD-016 | P3 | Placeholder apps | `apps/print-agent`; `apps/telegram-bot` | Placeholder services | Deployment confusion | No | n/a |
 | AUD-017 | P3 | Media config | `apps/customer-web/next.config.ts` | Media remote host hardcoded | Future CDN change friction | No | n/a |
 | AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes, deployed | `73d7407` |
+| AUD-019 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Post-success cart reuse can collide with previous idempotency key | Valid next Telegram checkout can fail | Yes locally, not deployed | pending |

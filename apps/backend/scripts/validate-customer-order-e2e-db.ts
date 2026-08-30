@@ -144,6 +144,13 @@ async function main(): Promise<void> {
       "stale Telegram confirm must not create another order graph",
     );
 
+    await proveTelegramNewOrderAfterSuccess(
+      prisma,
+      services.telegramOrdering,
+      fixture,
+    );
+    const afterPostSuccessNewOrder = await orderGraphCounts(prisma);
+
     const concurrentFixture = await createTelegramReadyCart(prisma, fixture);
     await Promise.all([
       services.telegramOrdering.handleCustomerCallback({
@@ -162,12 +169,12 @@ async function main(): Promise<void> {
     const afterConcurrentConfirm = await orderGraphCounts(prisma);
     assert.equal(
       afterConcurrentConfirm.orders,
-      afterTelegramConfirm.orders + 1,
+      afterPostSuccessNewOrder.orders + 1,
       "concurrent Telegram confirms must create one logical order only",
     );
     assert.equal(
       afterConcurrentConfirm.kitchenTickets,
-      afterTelegramConfirm.kitchenTickets + 1,
+      afterPostSuccessNewOrder.kitchenTickets + 1,
       "concurrent Telegram confirms must create one kitchen ticket only",
     );
 
@@ -682,6 +689,82 @@ async function createTelegramReadyCart(
   });
 
   return { cartId: cart.id };
+}
+
+async function proveTelegramNewOrderAfterSuccess(
+  prisma: PrismaService,
+  telegramOrdering: TelegramCustomerOrderingService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  assert.equal(
+    await prisma.telegramCheckoutSession.count({
+      where: { customerId: fixture.telegramCustomer.id, chatId: fixture.telegramChatId },
+    }),
+    0,
+    "new Telegram order must start after the previous checkout session was cleared",
+  );
+
+  await telegramOrdering.handleCustomerCallback({
+    id: "step15-post-success-quick-add",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: "cust:qadd:burger:max:chicken",
+  });
+  const cart = await prisma.cart.findFirstOrThrow({
+    where: { customerId: fixture.telegramCustomer.id },
+    orderBy: { updatedAt: "desc" },
+    include: { items: true },
+  });
+  assert.equal(cart.items.length, 1, "post-success quick-add should create a new cart line");
+
+  await telegramOrdering.handleCustomerCallback({
+    id: "step15-post-success-checkout",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: "cust:checkout",
+  });
+  await telegramOrdering.handleCustomerCallback({
+    id: "step15-post-success-type-pickup",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: "cust:type:PICKUP",
+  });
+  const session = await prisma.telegramCheckoutSession.findUniqueOrThrow({
+    where: {
+      customerId_chatId: {
+        customerId: fixture.telegramCustomer.id,
+        chatId: fixture.telegramChatId,
+      },
+    },
+  });
+  assert.equal(session.branchId, fixture.branch.id);
+  assert.equal(session.orderType, CustomerOrderType.PICKUP);
+  assert.equal(session.step, "SUMMARY");
+  assert.equal(session.address, null, "new pickup checkout must not inherit old address");
+  assert.equal(session.note, null, "new checkout must not inherit old note");
+
+  const beforeConfirm = await orderGraphCounts(prisma);
+  await telegramOrdering.handleCustomerCallback({
+    id: "step15-post-success-confirm",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: `cust:confirm:${cart.id}`,
+  });
+  const afterConfirm = await orderGraphCounts(prisma);
+  assert.equal(afterConfirm.orders, beforeConfirm.orders + 1);
+  assert.equal(afterConfirm.kitchenTickets, beforeConfirm.kitchenTickets + 1);
+  assert.equal(
+    await prisma.cartItem.count({ where: { cartId: cart.id } }),
+    0,
+    "second Telegram order cart must be cleared after success",
+  );
+  assert.equal(
+    await prisma.telegramCheckoutSession.count({
+      where: { customerId: fixture.telegramCustomer.id, chatId: fixture.telegramChatId },
+    }),
+    0,
+    "second Telegram order session must be cleared after success",
+  );
 }
 
 async function proveOrderGraph(
