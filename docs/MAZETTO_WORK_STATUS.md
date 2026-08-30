@@ -1165,7 +1165,7 @@ Remaining:
 
 ## Step 10 - Telegram Customer Ordering UX Polish
 
-Status: Completed locally; not deployed
+Status: Deployed and smoke-verified in production
 
 Date: 2026-08-29
 
@@ -1534,7 +1534,8 @@ Scope:
 
 - Fixed customer-web visual contrast regressions only.
 - Backend, database, API contracts, order engine, Telegram, Cloudflare, Dokploy, production data, and production services were not changed.
-- Production customer-web still runs the previously deployed image until a separate controlled frontend release is approved.
+- Production customer-web was deployed separately from the approved frontend-only visual fix commit.
+- Backend, database, Telegram, Cloudflare, Click/Payme, staff Telegram, and production order data were not changed.
 
 Root cause:
 
@@ -1568,6 +1569,28 @@ Validation:
 - `pnpm lint`: passed.
 - `pnpm build`: all 9 Turbo build tasks reported successful; the known post-success Turbo session hang required manually stopping the runner after success was printed.
 - `git diff --check`: passed with existing CRLF/LF working-copy warnings only; no whitespace errors.
+
+Production deployment:
+
+- Previous customer-web image: `mazetto-food-customerweb-yvb3d0:568b6ac`.
+- New customer-web image: `mazetto-food-customerweb-yvb3d0:48375b2`.
+- Backend remained unchanged on `mazetto-food-backend-pdslpm:b875f54`.
+- Production services after deploy: backend `1/1`, customer-web `1/1`, media `1/1`, PostgreSQL `1/1`.
+- Public checks after deploy returned 200 for `/`, `/menu`, `/cart`, `/checkout`, `/orders`, and `/profile`.
+- Backend health remained 200.
+
+Production visual smoke:
+
+- Home, Menu, Cart, Checkout, Orders, Profile, Katta lavash product detail, and Pishloqli sous product detail were checked at 390, 768, and 1440px.
+- Desktop header links `Menyu`, `Buyurtmalar`, `Profil`, and cart amount were readable.
+- Menu hero heading, subtitle, search input, and category pills were readable.
+- Auth/profile/checkout input text and buttons were readable on light surfaces.
+- Branch picker was verified as a custom premium selector, not native select, with `MAZETTO Sergeli` and `Sergeli 7/3` visible.
+- Product detail variant buttons, quantity controls, and `Savatchaga qo'shish` CTA were readable.
+- Katta lavash and Pishloqli sous product images rendered visibly; the Framer Motion duplicate-layout-id disappearance was not reproduced.
+- No page-level horizontal overflow was found on tested routes after the UI settled.
+- Search, category navigation, product detail opening, variant/quantity controls, add-to-cart, cart display, branch picker opening, auth inputs, and Orders/Profile navigation were smoke-tested without creating a production order.
+- Representative media URLs returned 200: `/categories/lavash.webp`, `/products/lavash-big.webp`, and `/products/cheese-fries.webp`.
 
 ## Architecture Decision Log
 
