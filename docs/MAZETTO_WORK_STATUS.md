@@ -1701,6 +1701,51 @@ Pending human smoke:
 - Initial staff buttons should expose only the valid next actions such as `Qabul qilish` and `Bekor qilish`.
 - After the next real order, verify accept, preparing, and ready transitions in production without cancelling the order merely for testing.
 
+## Gate A - Mobile Orders UI Customer-Web Release
+
+Status: Customer-web deployed and production smoke-verified
+
+Date: 2026-08-31
+
+Scope:
+
+- Released the customer-web-only mobile orders layout/navigation polish.
+- Release commit: `2376ed26bb5507104f4ca8fc25de9940c92b904f`.
+- Backend, database, migrations, Telegram ENV/webhook, `TELEGRAM_STAFF_CHAT_ID`, `/staffid`, media assets, Cloudflare, and order/payment logic were not changed.
+- No production order was created for this release.
+
+Local validation before release:
+
+- `pnpm --filter customer-web typecheck`: passed.
+- `pnpm --filter customer-web lint`: passed.
+- `pnpm --filter customer-web build`: passed.
+- `pnpm typecheck`: passed.
+- `pnpm lint`: passed.
+- `git diff --check`: passed.
+
+Production deployment:
+
+- Previous customer-web image: `mazetto-food-customerweb-yvb3d0:48375b2`.
+- New customer-web image: `mazetto-food-customerweb-yvb3d0:2376ed2`.
+- Backend remained unchanged on `mazetto-food-backend-pdslpm:791d797`.
+- Production services after deploy: backend `1/1`, customer-web `1/1`, media `1/1`, PostgreSQL `1/1`.
+- Public checks returned 200 for `/`, `/menu`, `/orders`, `/cart`, `/profile`, and backend health.
+
+Production visual smoke:
+
+- `/orders` was checked at 360, 390, 430, 768, and 1440px.
+- No page-level horizontal overflow was found on `/orders`.
+- Mobile logo used the existing real `BrandLogo`, was not distorted, and was geometrically centered at 360/390/430px.
+- Mobile bottom navigation was verified at 58px height, with readable labels and clear active `Buyurtma` state.
+- Production browser was not authenticated as a customer during this smoke; therefore active/history order cards were not opened with production customer data to avoid creating verification challenges or mutating production state.
+- The same deployed commit had already passed local authenticated `/orders` QA with an active order card, status tracker, item prices, history card, and bottom navigation at 360, 390, 430, 768, and 1440px.
+
+Remaining:
+
+- Step 16 Staff Telegram lifecycle human smoke remains pending.
+- Eight authentic product media assets remain unresolved.
+- Click/Payme remain inactive.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop
