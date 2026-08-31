@@ -370,6 +370,7 @@ async function run(): Promise<void> {
   await testCodeRotationReuseExpiryAndAttempts();
   await testRequestCodeRateLimit();
   await testWebhookSecretAndStaffRegression();
+  await testTemporaryStaffChatIdDiagnostic();
   await testOrderingCallbackErrorsDoNotSendAuthError();
 
   console.log("Telegram customer auth validation passed");
@@ -626,6 +627,42 @@ async function testWebhookSecretAndStaffRegression(): Promise<void> {
     action: "mark_ready",
     orderId: "order_1",
   });
+}
+
+async function testTemporaryStaffChatIdDiagnostic(): Promise<void> {
+  process.env.TELEGRAM_WEBHOOK_SECRET = "test-secret";
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  sentTelegramPayloads.length = 0;
+  const { telegramCustomerAuthService } = createServices();
+  const staffService = {
+    called: 0,
+    handleWebhook: async () => {
+      staffService.called += 1;
+      return { ok: true, handled: true };
+    },
+  };
+  const controller = new TelegramController(
+    telegramCustomerAuthService,
+    staffService as never,
+  );
+  const result = await controller.handleWebhook("test-secret", {
+    message: {
+      chat: {
+        id: -1001234567890,
+        title: "MAZETTO Staff",
+        type: "supergroup",
+      },
+      from: { id: 777001, first_name: "Owner" },
+      text: "/staffid@mazettofoodbot",
+    },
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(staffService.called, 0);
+  assert.match(sentTelegramPayloads.at(-1)?.text ?? "", /MAZETTO Staff/);
+  assert.match(sentTelegramPayloads.at(-1)?.text ?? "", /Chat ID: -1001234567890/);
+  assert.match(sentTelegramPayloads.at(-1)?.text ?? "", /Chat type: supergroup/);
+  assert.match(sentTelegramPayloads.at(-1)?.text ?? "", /Title: MAZETTO Staff/);
 }
 
 void run();
