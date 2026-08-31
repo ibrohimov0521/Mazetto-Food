@@ -26,9 +26,9 @@
   --mf-radius: 24px;
   --mf-shadow: 0 20px 56px rgba(0, 79, 85, 0.18);
   --mf-glow: 0 16px 36px rgba(245, 207, 0, 0.32);
-  --mf-bottom-nav-gap: 0.45rem;
-  --mf-bottom-nav-height: 4rem;
-  --mf-bottom-nav-space: calc(var(--mf-bottom-nav-height) + var(--mf-bottom-nav-gap) + 0.5rem);
+  --mf-bottom-nav-gap: 0.4rem;
+  --mf-bottom-nav-height: 3.65rem;
+  --mf-bottom-nav-space: calc(var(--mf-bottom-nav-height) + var(--mf-bottom-nav-gap) + 0.45rem);
   --mf-mobile-action-height: 4.25rem;
 }
 
@@ -45,7 +45,7 @@ body {
 
 html {
   overflow-x: clip;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
 }
 
 body {
@@ -145,6 +145,12 @@ img {
 @media (min-width: 640px) {
   .mf-app-shell {
     padding-bottom: 0;
+  }
+}
+
+@media (min-width: 768px) {
+  html {
+    scrollbar-gutter: stable;
   }
 }
 
@@ -770,12 +776,12 @@ img {
 
 .mazetto-glass-nav {
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
-    linear-gradient(120deg, rgba(245, 207, 0, 0.14), rgba(185, 184, 240, 0.09) 45%, rgba(0, 79, 85, 0.9));
+    linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.035)),
+    linear-gradient(120deg, rgba(245, 207, 0, 0.14), rgba(185, 184, 240, 0.08) 42%, rgba(0, 55, 59, 0.95));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -10px 28px rgba(245, 207, 0, 0.08),
-    0 18px 54px rgba(0, 0, 0, 0.44);
+    inset 0 -8px 22px rgba(245, 207, 0, 0.07),
+    0 14px 42px rgba(0, 0, 0, 0.38);
 }
 
 .mazetto-glass-button {

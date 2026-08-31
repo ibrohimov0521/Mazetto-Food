@@ -150,28 +150,28 @@ function OrdersDashboard() {
   }
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-3 py-5 sm:px-4 sm:py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid min-w-0 gap-5">
-        <div className="mf-checkout-card p-5">
+        <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
           <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtmani kuzatish</p>
-          <h1 className="mt-1 text-3xl font-black text-[#17314A]">Buyurtmalarim</h1>
+          <h1 className="mt-1 text-[1.65rem] font-black leading-tight text-[#17314A] sm:text-3xl">Buyurtmalarim</h1>
           {activeOrder ? (
-            <div className="mf-cart-row mt-5 p-5">
+            <div className="mf-cart-row mt-4 min-w-0 p-4 sm:mt-5 sm:p-5">
               <p className="text-sm font-bold uppercase text-[#0B7F75]">Faol buyurtma</p>
-              <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <Link className="text-2xl font-black text-[#17314A] transition hover:text-[#0B7F75]" href={`/orders/${activeOrder.id}`}>{activeOrder.order.orderNumber}</Link>
+              <div className="mt-2 grid min-w-0 gap-3 sm:flex sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <Link className="break-words text-xl font-black leading-tight text-[#17314A] transition hover:text-[#0B7F75] sm:text-2xl" href={`/orders/${activeOrder.id}`}>{activeOrder.order.orderNumber}</Link>
                   <p className="mt-1 text-sm font-semibold text-[#17314A]/60">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
                   {activeOrder.branch ? <p className="mt-1 text-sm font-semibold text-[#17314A]/45">{activeOrder.branch.name}</p> : null}
                 </div>
-                <span className="rounded-full bg-[#0B7F75]/10 px-4 py-2 text-sm font-black text-[#0B7F75]">{formatMoney(activeOrder.order.total)}</span>
+                <span className="w-fit rounded-full bg-[#0B7F75]/10 px-3 py-2 text-sm font-black text-[#0B7F75] sm:px-4">{formatMoney(activeOrder.order.total)}</span>
               </div>
               <StatusTracker status={activeOrder.order.status ?? activeOrder.status} />
-              <div className="mt-5 grid gap-2">
+              <div className="mt-5 grid min-w-0 gap-2">
                 {activeOrder.order.items.map((item) => (
-                  <div className="flex min-w-0 justify-between gap-3 rounded-xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-bold text-[#17314A]" key={item.id}>
-                    <span className="min-w-0 truncate">{Number(item.quantity)}x {localizeMenuName(item.productName)}</span>
-                    <span className="text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
+                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-xl bg-[#0B7F75]/7 px-3 py-3 text-sm font-bold text-[#17314A] sm:gap-3 sm:px-4" key={item.id}>
+                    <span className="min-w-0 break-words leading-snug">{Number(item.quantity)}x {localizeMenuName(item.productName)}</span>
+                    <span className="shrink-0 whitespace-nowrap text-right text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
@@ -181,8 +181,8 @@ function OrdersDashboard() {
           )}
         </div>
 
-        <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
-          <h2 className="text-2xl font-black text-[#17314A]">Buyurtmalar tarixi</h2>
+        <MotionDiv {...sectionMotion} className="mf-checkout-card min-w-0 p-4 sm:p-5">
+          <h2 className="text-[1.35rem] font-black leading-tight text-[#17314A] sm:text-2xl">Buyurtmalar tarixi</h2>
           <div className="mt-4 grid gap-3">
             {error ? (
               <div className="mf-card-soft p-8 text-center">
@@ -195,17 +195,17 @@ function OrdersDashboard() {
             ) : loading ? (
               Array.from({ length: 3 }, (_, index) => <div className="skeleton h-24 rounded-2xl" key={index} />)
             ) : history.length ? history.map((order) => (
-              <Link className="pressable mf-cart-row block p-4 transition hover:border-[#0B8F83]/36" href={`/orders/${order.id}`} key={order.id}>
-                <div className="flex min-w-0 justify-between gap-3">
+              <Link className="pressable mf-cart-row block min-w-0 p-4 transition hover:border-[#0B8F83]/36" href={`/orders/${order.id}`} key={order.id}>
+                <div className="grid min-w-0 gap-2 sm:flex sm:justify-between sm:gap-3">
                   <div className="min-w-0">
-                    <p className="font-black text-[#17314A]">{order.order.orderNumber}</p>
-                    <p className="mt-1 truncate text-sm text-[#17314A]/52">
+                    <p className="break-words font-black leading-tight text-[#17314A]">{order.order.orderNumber}</p>
+                    <p className="mt-1 text-sm leading-5 text-[#17314A]/52">
                       {new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}
                       {order.branch ? ` · ${order.branch.name}` : ""}
                     </p>
-                    <p className="mt-2 text-sm font-semibold text-[#17314A]/60">{orderSummary(order)}</p>
+                    <p className="mt-2 break-words text-sm font-semibold leading-5 text-[#17314A]/60">{orderSummary(order)}</p>
                   </div>
-                  <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>
+                  <span className="shrink-0 whitespace-nowrap font-black text-[#0B7F75] sm:text-right">{formatMoney(order.order.total)}</span>
                 </div>
               </Link>
             )) : (
@@ -222,11 +222,11 @@ function OrdersDashboard() {
       </div>
 
       <aside className="grid min-w-0 content-start gap-5">
-        <div className="mf-checkout-card p-5">
+        <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
           <p className="text-sm font-bold text-[#0B7F75]">Bonuslar</p>
-          <p className="mt-2 text-4xl font-black text-[#17314A]"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> so'm</p>
+          <p className="mt-2 break-words text-3xl font-black text-[#17314A] sm:text-4xl"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> so'm</p>
         </div>
-        <div className="mf-checkout-card p-5">
+        <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
           <h2 className="text-xl font-black text-[#17314A]">Sevimlilar</h2>
           <div className="mt-4 grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
@@ -238,9 +238,9 @@ function OrdersDashboard() {
                   sizes="64px"
                   src={product.imageUrl}
                 />
-                <div>
-                  <p className="truncate font-bold text-[#17314A]">{localizeMenuName(product.name)}</p>
-                  <p className="text-sm text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
+                <div className="min-w-0">
+                  <p className="break-words font-bold leading-tight text-[#17314A]">{localizeMenuName(product.name)}</p>
+                  <p className="mt-1 whitespace-nowrap text-sm text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
             )) : <p className="text-sm text-[#17314A]/56">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
@@ -263,13 +263,13 @@ function StatusTracker({ status }: { status: string }) {
   const activeIndex = Math.max(0, trackingSteps.indexOf(normalized));
 
   return (
-    <div className="mt-5 grid grid-cols-5 gap-2">
+    <div className="mt-5 grid min-w-0 grid-cols-5 gap-1 sm:gap-2">
       {trackingSteps.map((step, index) => {
         const active = index <= activeIndex;
         return (
-          <div className="grid gap-2" key={step}>
-            <div className={`h-2 rounded-full ${active ? "bg-[#22C55E]" : "bg-white/12"}`} />
-            <p className={`text-[10px] font-black sm:text-xs ${active ? "text-[#0B7F75]" : "text-[#17314A]/42"}`}>{statusLabel(step)}</p>
+          <div className="grid min-w-0 gap-1.5 text-center" key={step}>
+            <div className={`h-1.5 rounded-full ${active ? "bg-[#22C55E]" : "bg-[#0B7F75]/12"}`} />
+            <p className={`min-w-0 break-words text-[8.5px] font-black leading-[1.05] sm:text-xs ${active ? "text-[#0B7F75]" : "text-[#17314A]/46"}`}>{statusLabel(step)}</p>
           </div>
         );
       })}
