@@ -67,6 +67,8 @@ type StaffTransitionResult = {
 };
 
 const callbackPrefix = "mazetto_order";
+const telegramRequestMaxAttempts = 3;
+const telegramRequestRetryDelayMs = 250;
 const actionLabels: Record<StaffOrderAction, string> = {
   accept: "Qabul qilindi",
   start_preparing: "Tayyorlanmoqda",
@@ -129,14 +131,12 @@ export class TelegramOrderNotificationService {
       this.assertStaffCallback(callback);
       const { orderId, action } = this.parseCallbackData(callback.data);
       const result = await this.applyStaffAction(orderId, action);
+      const callbackText = result.changed
+        ? `${result.order.orderNumber}: ${actionLabels[action]}`
+        : `${result.order.orderNumber}: bu amal allaqachon bajarilgan`;
 
-      await this.answerCallback(
-        callback.id,
-        result.changed
-          ? `${result.order.orderNumber}: ${actionLabels[action]}`
-          : `${result.order.orderNumber}: bu amal allaqachon bajarilgan`,
-      );
-      await this.renderStaffOrderMessage(callback, result.order);
+      await this.answerCallbackSafely(callback.id, callbackText, result.order, action);
+      await this.renderStaffOrderMessageSafely(callback, result.order, action);
       await this.notifyCustomerStatus(result);
 
       return { ok: true, handled: true };
@@ -153,7 +153,7 @@ export class TelegramOrderNotificationService {
       }
 
       if (callback.id) {
-        await this.answerCallback(callback.id, this.safeCallbackError(error));
+        await this.answerCallbackErrorSafely(callback.id, error);
       }
 
       return { ok: true, handled: true };
@@ -489,6 +489,35 @@ export class TelegramOrderNotificationService {
     });
   }
 
+  private async answerCallbackSafely(
+    callbackQueryId: string,
+    text: string,
+    order: Pick<StaffOrderForMessage, "id" | "orderNumber">,
+    action: StaffOrderAction,
+  ): Promise<void> {
+    try {
+      await this.answerCallback(callbackQueryId, text);
+    } catch (error) {
+      this.logger.warn(
+        `Telegram staff callback acknowledgement failed for order ${order.id} (${order.orderNumber}) action ${action}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private async answerCallbackErrorSafely(callbackQueryId: string, error: unknown): Promise<void> {
+    try {
+      await this.answerCallback(callbackQueryId, this.safeCallbackError(error));
+    } catch (callbackError) {
+      this.logger.warn(
+        `Telegram staff callback error acknowledgement failed: ${
+          callbackError instanceof Error ? callbackError.message : String(callbackError)
+        }`,
+      );
+    }
+  }
+
   private async renderStaffOrderMessage(callback: TelegramCallbackQuery, order: StaffOrderForMessage): Promise<void> {
     const chatId = callback.message?.chat?.id ?? this.staffChatId();
     const messageId = callback.message?.message_id;
@@ -518,6 +547,22 @@ export class TelegramOrderNotificationService {
     }
 
     await this.telegramRequest("sendMessage", payload);
+  }
+
+  private async renderStaffOrderMessageSafely(
+    callback: TelegramCallbackQuery,
+    order: StaffOrderForMessage,
+    action: StaffOrderAction,
+  ): Promise<void> {
+    try {
+      await this.renderStaffOrderMessage(callback, order);
+    } catch (error) {
+      this.logger.warn(
+        `Telegram staff message render failed for order ${order.id} (${order.orderNumber}) action ${action}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private async notifyCustomerStatus(result: StaffTransitionResult): Promise<void> {
@@ -565,16 +610,57 @@ export class TelegramOrderNotificationService {
       return;
     }
 
-    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let lastError: unknown;
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
+    for (let attempt = 1; attempt <= telegramRequestMaxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (response.ok) {
+          return;
+        }
+
+        const body = await response.text();
+        const error = new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
+
+        if (!this.shouldRetryTelegramRequest(error, response.status) || attempt === telegramRequestMaxAttempts) {
+          throw error;
+        }
+
+        lastError = error;
+      } catch (error) {
+        if (!this.shouldRetryTelegramRequest(error) || attempt === telegramRequestMaxAttempts) {
+          throw error;
+        }
+
+        lastError = error;
+      }
+
+      await this.sleep(telegramRequestRetryDelayMs * attempt);
     }
+
+    throw lastError instanceof Error ? lastError : new Error(`Telegram ${method} failed`);
+  }
+
+  private shouldRetryTelegramRequest(error: unknown, status?: number): boolean {
+    if (status && (status === 429 || status >= 500)) {
+      return true;
+    }
+
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return message.includes("fetch failed") || message.includes("econnreset") || message.includes("etimedout");
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private assertWebhookSecret(secret: string): void {

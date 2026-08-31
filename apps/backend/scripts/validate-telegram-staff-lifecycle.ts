@@ -25,11 +25,23 @@ type StaffLifecycleFixture = {
 
 const sentTelegramPayloads: SentTelegramPayload[] = [];
 const editFailures = new Set<number>();
+const forcedFetchFailures = new Set<string>();
+const transientFetchFailures = new Map<string, number>();
 
 globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
   const method = String(url).split("/").at(-1) ?? "";
   const payload = JSON.parse(String(init?.body)) as SentTelegramPayload["payload"];
   sentTelegramPayloads.push({ method, payload });
+
+  if (forcedFetchFailures.has(method)) {
+    throw new TypeError("fetch failed");
+  }
+
+  const remainingTransientFailures = transientFetchFailures.get(method) ?? 0;
+  if (remainingTransientFailures > 0) {
+    transientFetchFailures.set(method, remainingTransientFailures - 1);
+    throw new TypeError("fetch failed");
+  }
 
   if (method === "editMessageText" && payload.message_id && editFailures.has(payload.message_id)) {
     editFailures.delete(payload.message_id);
@@ -68,7 +80,9 @@ async function main(): Promise<void> {
     const fixture = await createFixture(prisma);
 
     await proveNewOrderNotification(prisma, staffNotifications, fixture);
+    await proveNewOrderNotificationRetriesTransientFailure(prisma, staffNotifications, fixture);
     await proveLifecycle(prisma, staffNotifications, fixture);
+    await proveLifecycleCustomerNotificationSurvivesCallbackAckFailure(prisma, staffNotifications, fixture);
     await proveCancellation(prisma, staffNotifications, fixture);
     await proveUnauthorizedCallback(prisma, staffNotifications, fixture);
     await proveInvalidAndStaleCallback(prisma, staffNotifications, fixture);
@@ -128,6 +142,24 @@ async function proveNewOrderNotification(
   assertNoKeyboardTexts(message, ["Tayyorlanmoqda", "Tayyor"]);
 }
 
+async function proveNewOrderNotificationRetriesTransientFailure(
+  prisma: PrismaService,
+  staffNotifications: TelegramOrderNotificationService,
+  fixture: StaffLifecycleFixture,
+): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  transientFetchFailures.set("sendMessage", 1);
+  const order = await createStaffOrder(prisma, fixture, "notify-retry");
+
+  await staffNotifications.notifyNewOrder(order.id);
+
+  const staffMessages = sentTelegramPayloads.filter(
+    (payload) => payload.method === "sendMessage" && payload.payload.chat_id === process.env.TELEGRAM_STAFF_CHAT_ID,
+  );
+  assert.equal(staffMessages.length, 2, "staff new-order notification should retry once after a transient fetch failure");
+  assert.match(staffMessages.at(-1)?.payload.text ?? "", new RegExp(order.orderNumber));
+}
+
 async function proveLifecycle(
   prisma: PrismaService,
   staffNotifications: TelegramOrderNotificationService,
@@ -154,6 +186,26 @@ async function proveLifecycle(
   await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.READY);
   assert.deepEqual(latestEdit()?.payload.reply_markup?.inline_keyboard, []);
   assertCustomerMessage(order.orderNumber, /tayyor/);
+}
+
+async function proveLifecycleCustomerNotificationSurvivesCallbackAckFailure(
+  prisma: PrismaService,
+  staffNotifications: TelegramOrderNotificationService,
+  fixture: StaffLifecycleFixture,
+): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  forcedFetchFailures.add("answerCallbackQuery");
+  const order = await createStaffOrder(prisma, fixture, "callback-ack-fail");
+
+  try {
+    await handleStaffCallback(staffNotifications, `mazetto_order:accept:${order.id}`, 1101);
+  } finally {
+    forcedFetchFailures.delete("answerCallbackQuery");
+  }
+
+  await assertOrderState(prisma, order.id, OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED);
+  assertKeyboardTexts(latestEdit(), ["Tayyorlanmoqda", "Bekor qilish"]);
+  assertCustomerMessage(order.orderNumber, /qabul qilindi/);
 }
 
 async function proveCancellation(
