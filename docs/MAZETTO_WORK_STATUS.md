@@ -1,6 +1,6 @@
 # MAZETTO FOOD Work Status
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
 
 This file is the persistent working checklist for the existing MAZETTO FOOD production project. Read this before continuing any Mazetto task.
 
@@ -43,7 +43,7 @@ Media Service
 | Database | Done | PostgreSQL is deployed, migrations and seed were applied. |
 | Customer Web | 🟡 PARTIAL / RISK | Main routes, cart, checkout, profile, orders, premium mobile UI, payment honesty, and visual contrast fixes are deployed; remaining work is broader product completeness and future payment UX. |
 | Media Service | 🟡 PARTIAL / RISK | nginx service, volume, and approved uploaded media work; several authentic product assets remain unresolved. |
-| Telegram Staff Notifications | 🟡 PARTIAL / RISK | Step 16 local implementation validates staff chat authorization, status lifecycle, customer status messages, and stale callback handling; production activation is not complete. |
+| Telegram Staff Notifications | 🟡 PARTIAL / RISK | Backend notification reliability hotfix is deployed; human Telegram lifecycle and web-order staff smoke remain pending. |
 | Customer Telegram Bot | 🟡 PARTIAL / RISK | Customer Telegram auth/order UX is deployed and real Telegram orders were verified; staff-side lifecycle activation remains separate. |
 | MAZETTO Desktop | ❌ NOT IMPLEMENTED | Will contain POS, Desktop Admin, offline SQLite, sync engine, and printer engine. |
 | Admin Panel | ❌ NOT IMPLEMENTED / PARTIAL | Backend/admin foundations exist, but full admin web UI is planned for later. |
@@ -1700,6 +1700,64 @@ Pending human smoke:
 - The staff message should include the order number, branch, order type, items, variants/modifiers when present, payment method, total, and delivery address only for delivery orders.
 - Initial staff buttons should expose only the valid next actions such as `Qabul qilish` and `Bekor qilish`.
 - After the next real order, verify accept, preparing, and ready transitions in production without cancelling the order merely for testing.
+
+## Step 16 Notification Reliability Hotfix
+
+Status: Backend deployed; human smoke pending
+
+Date: 2026-08-31
+
+Scope:
+
+- Released backend-only notification reliability hotfix `df87d0067ce5a0473f33259405d9ece163da0edd`.
+- No customer-web deployment, database schema change, migration, seed, manual DB write, Telegram ENV change, webhook reset, Cloudflare change, media change, Click/Payme activation, `/staffid` removal, or production order creation was performed.
+- The temporary `/staffid` diagnostic remains present until the staff lifecycle smoke is fully verified.
+
+Root cause:
+
+- Staff lifecycle transitions updated the authoritative order/kitchen state successfully, but a transient Telegram `fetch failed` during callback acknowledgement or staff message edit could stop execution before the linked customer status notification was attempted.
+- Web-created customer orders already invoked the staff notification path after successful order creation, but a transient Telegram `fetch failed` caused the single outbound staff notification attempt to fail.
+
+Fix:
+
+- Telegram transport now uses a bounded retry for transient failures only: network fetch failure, `ECONNRESET`, `ETIMEDOUT`, Telegram `429`, and Telegram `5xx`.
+- Permanent Telegram errors such as malformed request, unauthorized, forbidden, invalid chat, and invalid callback data are not blindly retried.
+- Staff callback acknowledgement and staff message edit/render failures are logged with safe order/action correlation and do not prevent the customer status notification attempt after a successful DB transition.
+- Retry is transport-level only and cannot rerun order creation or staff lifecycle business transitions.
+
+Release evidence:
+
+- Previous backend service image: `mazetto-food-backend-pdslpm:791d797`.
+- New backend service image: `mazetto-food-backend-pdslpm:df87d00`.
+- Customer-web remained unchanged on `mazetto-food-customerweb-yvb3d0:2376ed2`.
+- Production services after release: backend `1/1`, customer-web `1/1`, media `1/1`, PostgreSQL `1/1`.
+- Backend health returned 200 after release.
+- Customer-web health returned 200 after release.
+- Production order graph counts remained unchanged across deployment at `orders=9`, `customer_orders=9`, `customer_order_attempts=9`, `kitchen_tickets=9`.
+- Deployment itself created zero orders, customer orders, attempts, or kitchen tickets.
+- Immediate backend logs showed successful Nest startup, Prisma connection, and no startup, dependency injection, retry-loop, or Prisma errors.
+
+Validation:
+
+- Backend typecheck, lint, and build passed.
+- `validate-telegram-customer-ordering.ts`: passed.
+- `validate-telegram-customer-auth.ts`: passed.
+- `validate-customer-order-history.ts`: passed.
+- `validate-telegram-catalog-mapping.ts`: passed.
+- Workspace typecheck and lint passed.
+- `git diff --check` passed.
+- Prisma validate and generate passed locally with a safe placeholder `DATABASE_URL`.
+- Fresh isolated DB lifecycle rerun was not performed in this release gate because local Docker/PostgreSQL was unavailable; production DB was not used for E2E validation.
+
+Production warning:
+
+- Preflight and post-deploy Telegram `getWebhookInfo` reported `pending_update_count = 0`; `last_error_message` still contained a prior `Wrong response from the webhook: 500 Internal Server Error` entry from before this hotfix. No new order or callback smoke has occurred yet to replace that historical Telegram error state.
+
+Pending human smoke:
+
+- On the next legitimate Telegram customer order, verify exactly one staff new-order message, then press `Qabul qilish`, `Tayyorlanmoqda`, and `Tayyor`; confirm the linked customer receives accepted, preparing, and ready Telegram status notifications.
+- On the next legitimate web order, verify exactly one staff Telegram new-order notification.
+- Do not mark Step 16 notification reliability fully verified until the human Telegram-visible smoke and read-only DB/log correlation pass.
 
 ## Gate A - Mobile Orders UI Customer-Web Release
 
