@@ -1651,6 +1651,56 @@ Remaining:
 - Click/Payme provider integrations remain incomplete.
 - Staff Telegram customer/order notifications are backend-local changes until this commit is released.
 
+## Step 16B - Telegram Customer Order To Staff Notification Release
+
+Status: Backend deployed; human Telegram order smoke pending
+
+Date: 2026-08-31
+
+Scope:
+
+- Released the backend-only fix that triggers staff Telegram notification after a successful Telegram customer order commit.
+- No customer-web deployment, database schema change, migration, seed, Cloudflare change, webhook reset, Click/Payme activation, staff callback lifecycle smoke mutation, or artificial production order was performed.
+- The temporary `/staffid` diagnostic remains present until the full production staff lifecycle smoke is completed.
+
+Root cause:
+
+- Web customer orders already triggered `TelegramOrderNotificationService.notifyNewOrder(...)`.
+- Telegram customer orders used `CustomerOrderEngineService.createOnlineOrder(...)` directly and did not call the staff notification service after success.
+- Production environment and Telegram permissions were not the root cause: `TELEGRAM_STAFF_CHAT_ID` was present in the running backend and matched the intended staff group.
+
+Release evidence:
+
+- Released backend revision: `791d7977762bfe93dc6f06dd976aea3271ddcf2c`.
+- Previous backend image before the controlled release was recorded as `mazetto-food-backend-pdslpm:latest` with image id `sha256:0eb70c2441136c7b5cc4c8833b0186cdf2edb4770a6592754396aef277bf02a3`.
+- New backend service image: `mazetto-food-backend-pdslpm:791d797`.
+- Customer-web remained unchanged on `mazetto-food-customerweb-yvb3d0:48375b2`.
+- Production services after release: backend `1/1`, customer-web `1/1`, media `1/1`, PostgreSQL `1/1`.
+- Backend health returned 200 after release.
+- Customer-web health returned 200 after release.
+- Telegram webhook remained healthy with `pending_update_count = 0` and no last error.
+- Production migrations remained `16 applied / 0 failed`; no migration was executed.
+- Order graph counts remained unchanged across deployment at `orders=5`, `customer_orders=5`, `customer_order_attempts=5`, `kitchen_tickets=5`.
+- Running backend contains the notification call in both web and Telegram customer order paths.
+
+Local validation:
+
+- Prisma format, validate, and generate passed using a safe placeholder `DATABASE_URL`.
+- Backend typecheck, lint, and build passed.
+- `validate-telegram-customer-ordering.ts` passed and now proves Telegram checkout triggers exactly one staff notification attempt after successful order creation, while stale duplicate confirmation does not trigger another attempt.
+- `validate-telegram-customer-auth.ts` passed.
+- `validate-telegram-catalog-mapping.ts` passed.
+- `validate-customer-order-history.ts` passed.
+- Workspace typecheck and lint passed.
+- `git diff --check` passed with the existing LF/CRLF warning only.
+
+Pending human smoke:
+
+- The next legitimate Telegram customer order should produce exactly one staff group notification in `MAZETTO food / MAZETTO Staff / Kitchen`.
+- The staff message should include the order number, branch, order type, items, variants/modifiers when present, payment method, total, and delivery address only for delivery orders.
+- Initial staff buttons should expose only the valid next actions such as `Qabul qilish` and `Bekor qilish`.
+- After the next real order, verify accept, preparing, and ready transitions in production without cancelling the order merely for testing.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop
