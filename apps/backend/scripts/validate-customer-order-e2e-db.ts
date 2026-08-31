@@ -212,12 +212,16 @@ function createServices(prisma: PrismaService) {
     kitchenService,
     ordersService,
   );
-  const telegramOrdering = new TelegramCustomerOrderingService(prisma, orderEngine);
-  const telegramAuth = new TelegramCustomerAuthService(prisma, telegramOrdering);
   const telegramNotifications = new TelegramOrderNotificationService(
     prisma,
     kitchenService,
   );
+  const telegramOrdering = new TelegramCustomerOrderingService(
+    prisma,
+    orderEngine,
+    telegramNotifications,
+  );
+  const telegramAuth = new TelegramCustomerAuthService(prisma, telegramOrdering);
   const customersService = new CustomersService(
     prisma,
     branchesService,

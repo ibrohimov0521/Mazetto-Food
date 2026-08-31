@@ -7,6 +7,7 @@ import {
   OnlineOrderTypeDto,
   OnlinePaymentMethodDto,
 } from "../customers/dto/customer.dto";
+import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
@@ -185,6 +186,7 @@ export class TelegramCustomerOrderingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly customerOrderEngine: CustomerOrderEngineService,
+    private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
   ) {}
 
   async handleCustomerCallback(callback: TelegramCallbackQuery): Promise<boolean> {
@@ -1468,6 +1470,10 @@ export class TelegramCustomerOrderingService {
         },
         { source: OrderSource.TELEGRAM, orderNumberPrefix: "TG" },
       );
+
+      if (result.order?.id) {
+        void this.telegramOrderNotificationService.notifyNewOrder(result.order.id);
+      }
 
       await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
       await this.clearCheckoutSession(customer.id, target.chatId);
