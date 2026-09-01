@@ -85,6 +85,22 @@ const customerCallbackPrefix = "cust";
 const TELEGRAM_CHECKOUT_SESSION_TTL_MS = 60 * 60 * 1000;
 const TELEGRAM_MENU_PAGE_SIZE = 8;
 const minimumAddressLength = 5;
+const lavashTelegramRows = [
+  ["CLASSIC_LAVASH", "CHICKEN_LAVASH"],
+  ["BIG_LAVASH", "BIG_CHICKEN_LAVASH"],
+  ["LAVASH_CHEESE", "CHICKEN_CHEESE_LAVASH"],
+  ["BIG_LAVASH_CHEESE", "BIG_CHICKEN_LAVASH_CHEESE"],
+  ["LAVASH_SPICY", "CHICKEN_SPICY_LAVASH"],
+  ["BIG_LAVASH_SPICY", "BIG_CHICKEN_SPICY_LAVASH"],
+  ["TANDIR_LAVASH"],
+  ["TANDIR_LAVASH_CHEESE"],
+] as const;
+const burgerTelegramRows = [
+  ["CLASSIC_BURGER", "CHICKEN_BURGER"],
+  ["CHEESEBURGER", "CHICKEN_CHEESEBURGER"],
+  ["DOUBLE_BURGER", "DOUBLE_CHICKEN_BURGER"],
+  ["DOUBLE_CHEESEBURGER", "DOUBLE_CHICKEN_CHEESEBURGER"],
+] as const;
 
 @Injectable()
 export class TelegramCustomerOrderingService {
@@ -460,6 +476,21 @@ export class TelegramCustomerOrderingService {
     categoryId: string,
     rawPage?: string,
   ): Promise<void> {
+    const category = await this.prisma.category.findFirst({
+      where: { id: categoryId, isActive: true },
+      select: { code: true, name: true },
+    });
+
+    if (category?.code === "LAVASH" || category?.code === "BURGER") {
+      await this.sendPairedCanonicalProductsForCategory(
+        target,
+        customerId,
+        categoryId,
+        category.code,
+      );
+      return;
+    }
+
     const page = this.parseMenuPage(rawPage);
     const skip = (page - 1) * TELEGRAM_MENU_PAGE_SIZE;
     const products = await this.prisma.product.findMany({
@@ -512,7 +543,7 @@ export class TelegramCustomerOrderingService {
       text: [
         "🍽 <b>Mahsulot tanlang</b>",
         hasQuickAddableProducts
-          ? "\nOddiy sous va ichimliklar bir bosishda savatga qo'shiladi."
+          ? "\nBitta turdagi mahsulotlar bir bosishda savatga qo'shiladi."
           : "",
       ].join("\n"),
       parse_mode: "HTML",
@@ -546,6 +577,69 @@ export class TelegramCustomerOrderingService {
                   : []),
               ]]
             : []),
+          [{ text: "⬅️ Bo'limlarga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
+          [{ text: cartLabel, callback_data: `${customerCallbackPrefix}:cart` }],
+        ],
+      },
+    });
+  }
+
+  private async sendPairedCanonicalProductsForCategory(
+    target: CustomerScreenTarget,
+    customerId: string,
+    categoryId: string,
+    categoryCode: "LAVASH" | "BURGER",
+  ): Promise<void> {
+    const configuredRows = categoryCode === "LAVASH" ? lavashTelegramRows : burgerTelegramRows;
+    const productCodes = configuredRows.flat();
+    const products = await this.prisma.product.findMany({
+      where: { categoryId, code: { in: [...productCodes] }, isAvailable: true },
+      include: {
+        category: { select: { code: true, name: true } },
+        variants: {
+          where: { isAvailable: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+        modifiers: {
+          where: { modifier: { isActive: true } },
+          orderBy: { sortOrder: "asc" },
+          include: { modifier: true },
+        },
+      },
+    });
+    const productByCode = new Map(products.map((product) => [product.code, product]));
+    const rows = configuredRows
+      .map((row) =>
+        row
+          .map((code) => productByCode.get(code))
+          .filter((product): product is NonNullable<typeof product> => Boolean(product))
+          .map((product) => {
+            const variant = product.variants.find((item) => item.isDefault) ?? product.variants[0];
+            return {
+              text: `${this.telegramProductButtonLabel(product.code, product.name)} · ${this.formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
+              callback_data: this.isSimpleQuickAddProduct(product)
+                ? `${customerCallbackPrefix}:qprod:${product.id}:${categoryId}:1`
+                : `${customerCallbackPrefix}:prod:${product.id}`,
+            };
+          }),
+      )
+      .filter((row) => row.length > 0);
+
+    const cartLabel = await this.cartButtonLabel(customerId);
+
+    await this.renderCustomerScreen(target, {
+      text: [
+        categoryCode === "LAVASH"
+          ? "🌯 <b>Lavashlar</b>"
+          : "🍔 <b>Burgerlar</b>",
+        "",
+        "Chapda mol go'shtli, o'ngda tovuqli mahsulotlar.",
+        "Tanlanganda mahsulot savatga qo'shiladi.",
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          ...rows,
           [{ text: "⬅️ Bo'limlarga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
           [{ text: cartLabel, callback_data: `${customerCallbackPrefix}:cart` }],
         ],
@@ -936,6 +1030,7 @@ export class TelegramCustomerOrderingService {
               { text: `− ${item.product.name}`, callback_data: `${customerCallbackPrefix}:qty:${item.id}:dec` },
               { text: "+", callback_data: `${customerCallbackPrefix}:qty:${item.id}:inc` },
             ],
+            ...this.cartModifierRows(item),
             [{ text: `O'chirish · ${item.product.name}`, callback_data: `${customerCallbackPrefix}:rm:${item.id}` }],
           ]),
           [{ text: "✅ Buyurtma berish", callback_data: `${customerCallbackPrefix}:checkout` }],
@@ -1402,6 +1497,28 @@ export class TelegramCustomerOrderingService {
     return `telegram:${customerId}:${cart.id}:${hash}`;
   }
 
+  private cartModifierRows(
+    item: NonNullable<Awaited<ReturnType<typeof this.getCartWithItems>>>["items"][number],
+  ) {
+    const modifiers = item.product.modifiers ?? [];
+
+    if (!modifiers.length) {
+      return [];
+    }
+
+    const selected = new Set(
+      this.readCartModifiers(item.modifierSnapshot).map((modifier) => modifier.modifierId),
+    );
+
+    return this.chunkButtons(
+      modifiers.map((productModifier) => ({
+        text: `${selected.has(productModifier.modifierId) ? "✓" : "+"} ${productModifier.modifier.name}`,
+        callback_data: `${customerCallbackPrefix}:mod:${item.id}:${productModifier.modifierId}`,
+      })),
+      2,
+    );
+  }
+
   private getCartWithItems(customerId: string) {
     return this.prisma.cart.findFirst({
       where: { customerId },
@@ -1410,7 +1527,18 @@ export class TelegramCustomerOrderingService {
         items: {
           orderBy: { createdAt: "asc" },
           include: {
-            product: { select: { id: true, name: true, sellingPrice: true } },
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sellingPrice: true,
+                modifiers: {
+                  where: { modifier: { isActive: true } },
+                  orderBy: { sortOrder: "asc" },
+                  include: { modifier: true },
+                },
+              },
+            },
             variant: { select: { id: true, name: true, sellingPrice: true } },
           },
         },
@@ -1787,22 +1915,7 @@ export class TelegramCustomerOrderingService {
     variants?: Array<{ id: string; isDefault?: boolean | null }>;
     modifiers?: unknown[];
   }): boolean {
-    return this.isQuickAddCategory(product.category) && (product.variants?.length ?? 0) <= 1 && (product.modifiers?.length ?? 0) === 0;
-  }
-
-  private isQuickAddCategory(category?: { code?: string | null; name?: string | null } | null): boolean {
-    const code = category?.code?.toUpperCase() ?? "";
-    const name = category?.name?.toLowerCase() ?? "";
-
-    return (
-      ["SAUCES", "DRINKS", "FAST_FOOD"].includes(code) ||
-      name.includes("sous") ||
-      name.includes("sauce") ||
-      name.includes("ichimlik") ||
-      name.includes("drink") ||
-      name.includes("fri") ||
-      name.includes("gazak")
-    );
+    return (product.variants?.length ?? 0) <= 1;
   }
 
   private async cartButtonLabel(customerId?: string): Promise<string> {
@@ -1955,6 +2068,35 @@ export class TelegramCustomerOrderingService {
     };
 
     return `${icons[code ?? ""] ?? "🍽"} ${name}`;
+  }
+
+  private telegramProductButtonLabel(code: string, name: string): string {
+    const labels: Record<string, string> = {
+      BIG_CHICKEN_LAVASH: "Kurinniy Big",
+      BIG_CHICKEN_LAVASH_CHEESE: "Kurinniy Big Pishloqli",
+      BIG_CHICKEN_SPICY_LAVASH: "Achchiq Kurinniy Big",
+      BIG_LAVASH: "Big Lavash",
+      BIG_LAVASH_CHEESE: "Big Pishloqli",
+      BIG_LAVASH_SPICY: "Achchiq Big",
+      CHEESEBURGER: "Chizburger",
+      CHICKEN_BURGER: "Chicken Burger",
+      CHICKEN_CHEESEBURGER: "Chicken Chizburger",
+      CHICKEN_CHEESE_LAVASH: "Kurinniy Pishloqli",
+      CHICKEN_LAVASH: "Kurinniy Lavash",
+      CHICKEN_SPICY_LAVASH: "Achchiq Kurinniy",
+      CLASSIC_BURGER: "Burger",
+      CLASSIC_LAVASH: "Lavash",
+      DOUBLE_BURGER: "Double Burger",
+      DOUBLE_CHEESEBURGER: "Double Chizburger",
+      DOUBLE_CHICKEN_BURGER: "Double Chicken",
+      DOUBLE_CHICKEN_CHEESEBURGER: "Double Chicken Chizburger",
+      LAVASH_CHEESE: "Pishloqli",
+      LAVASH_SPICY: "Achchiq Lavash",
+      TANDIR_LAVASH: "Tandir Lavash",
+      TANDIR_LAVASH_CHEESE: "Tandir Pishloqli",
+    };
+
+    return labels[code] ?? name;
   }
 
   private statusLabel(status: string): string {

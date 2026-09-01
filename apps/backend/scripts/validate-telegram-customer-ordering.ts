@@ -90,11 +90,118 @@ const beefLavashProduct = {
 const chickenLavashProduct = {
   ...product,
   id: "product_chicken_lavash",
-  categoryId: chickenLavashCategory.id,
+  categoryId: lavashCategory.id,
   code: "CHICKEN_LAVASH",
-  name: "Tovuqli lavash",
-  sellingPrice: new Prisma.Decimal(30000),
+  name: "Kurinniy Lavash",
+  sellingPrice: new Prisma.Decimal(28000),
 };
+const canonicalLavashProducts = [
+  {
+    ...product,
+    id: "product_classic_lavash",
+    categoryId: lavashCategory.id,
+    code: "CLASSIC_LAVASH",
+    name: "Lavash",
+    sellingPrice: new Prisma.Decimal(32000),
+  },
+  {
+    ...product,
+    id: "product_big_lavash",
+    categoryId: lavashCategory.id,
+    code: "BIG_LAVASH",
+    name: "Big Lavash",
+    sellingPrice: new Prisma.Decimal(36000),
+  },
+  {
+    ...product,
+    id: "product_lavash_cheese",
+    categoryId: lavashCategory.id,
+    code: "LAVASH_CHEESE",
+    name: "Lavash Pishloqli",
+    sellingPrice: new Prisma.Decimal(35000),
+  },
+  {
+    ...product,
+    id: "product_big_lavash_cheese",
+    categoryId: lavashCategory.id,
+    code: "BIG_LAVASH_CHEESE",
+    name: "Big Lavash Pishloqli",
+    sellingPrice: new Prisma.Decimal(39000),
+  },
+  {
+    ...product,
+    id: "product_lavash_spicy",
+    categoryId: lavashCategory.id,
+    code: "LAVASH_SPICY",
+    name: "Achchiq Lavash",
+    sellingPrice: new Prisma.Decimal(34000),
+  },
+  {
+    ...product,
+    id: "product_big_lavash_spicy",
+    categoryId: lavashCategory.id,
+    code: "BIG_LAVASH_SPICY",
+    name: "Achchiq Big Lavash",
+    sellingPrice: new Prisma.Decimal(39000),
+  },
+  {
+    ...product,
+    id: "product_tandir_lavash",
+    categoryId: lavashCategory.id,
+    code: "TANDIR_LAVASH",
+    name: "Tandir Lavash",
+    sellingPrice: new Prisma.Decimal(43000),
+  },
+  {
+    ...product,
+    id: "product_tandir_lavash_cheese",
+    categoryId: lavashCategory.id,
+    code: "TANDIR_LAVASH_CHEESE",
+    name: "Tandir Lavash Pishloqli",
+    sellingPrice: new Prisma.Decimal(45000),
+  },
+  chickenLavashProduct,
+  {
+    ...product,
+    id: "product_big_chicken_lavash",
+    categoryId: lavashCategory.id,
+    code: "BIG_CHICKEN_LAVASH",
+    name: "Kurinniy Big Lavash",
+    sellingPrice: new Prisma.Decimal(32000),
+  },
+  {
+    ...product,
+    id: "product_chicken_cheese_lavash",
+    categoryId: lavashCategory.id,
+    code: "CHICKEN_CHEESE_LAVASH",
+    name: "Kurinniy Lavash Pishloqli",
+    sellingPrice: new Prisma.Decimal(31000),
+  },
+  {
+    ...product,
+    id: "product_big_chicken_lavash_cheese",
+    categoryId: lavashCategory.id,
+    code: "BIG_CHICKEN_LAVASH_CHEESE",
+    name: "Kurinniy Big Lavash Pishloqli",
+    sellingPrice: new Prisma.Decimal(35000),
+  },
+  {
+    ...product,
+    id: "product_chicken_spicy_lavash",
+    categoryId: lavashCategory.id,
+    code: "CHICKEN_SPICY_LAVASH",
+    name: "Achchiq Kurinniy Lavash",
+    sellingPrice: new Prisma.Decimal(31000),
+  },
+  {
+    ...product,
+    id: "product_big_chicken_spicy_lavash",
+    categoryId: lavashCategory.id,
+    code: "BIG_CHICKEN_SPICY_LAVASH",
+    name: "Achchiq Kurinniy Big Lavash",
+    sellingPrice: new Prisma.Decimal(35000),
+  },
+];
 const classicBurgerProduct = {
   ...product,
   id: "product_classic_burger",
@@ -114,10 +221,10 @@ const bigBurgerProduct = {
 const chickenBurgerProduct = {
   ...product,
   id: "product_chicken_burger",
-  categoryId: chickenBurgerCategory.id,
+  categoryId: burgerCategory.id,
   code: "CHICKEN_BURGER",
-  name: "Tovuqli burger",
-  sellingPrice: new Prisma.Decimal(28000),
+  name: "Chicken Burger",
+  sellingPrice: new Prisma.Decimal(26000),
 };
 const crispyChickenBurgerProduct = {
   ...product,
@@ -127,6 +234,61 @@ const crispyChickenBurgerProduct = {
   name: "Qarsildoq tovuqli burger",
   sellingPrice: new Prisma.Decimal(33000),
 };
+const canonicalBurgerProducts = [
+  {
+    ...classicBurgerProduct,
+    name: "Burger",
+  },
+  {
+    ...product,
+    id: "product_cheeseburger",
+    categoryId: burgerCategory.id,
+    code: "CHEESEBURGER",
+    name: "Chizburger",
+    sellingPrice: new Prisma.Decimal(32000),
+  },
+  {
+    ...product,
+    id: "product_double_burger",
+    categoryId: burgerCategory.id,
+    code: "DOUBLE_BURGER",
+    name: "Double Burger",
+    sellingPrice: new Prisma.Decimal(42000),
+  },
+  {
+    ...product,
+    id: "product_double_cheeseburger",
+    categoryId: burgerCategory.id,
+    code: "DOUBLE_CHEESEBURGER",
+    name: "Double Chizburger",
+    sellingPrice: new Prisma.Decimal(46000),
+  },
+  chickenBurgerProduct,
+  {
+    ...product,
+    id: "product_chicken_cheeseburger",
+    categoryId: burgerCategory.id,
+    code: "CHICKEN_CHEESEBURGER",
+    name: "Chicken Chizburger",
+    sellingPrice: new Prisma.Decimal(29000),
+  },
+  {
+    ...product,
+    id: "product_double_chicken_burger",
+    categoryId: burgerCategory.id,
+    code: "DOUBLE_CHICKEN_BURGER",
+    name: "Double Chicken Burger",
+    sellingPrice: new Prisma.Decimal(37000),
+  },
+  {
+    ...product,
+    id: "product_double_chicken_cheeseburger",
+    categoryId: burgerCategory.id,
+    code: "DOUBLE_CHICKEN_CHEESEBURGER",
+    name: "Double Chicken Chizburger",
+    sellingPrice: new Prisma.Decimal(41000),
+  },
+];
 const sauceProduct = {
   ...product,
   id: "product_house_sauce",
@@ -145,12 +307,12 @@ const drinkProduct = {
 };
 const products = [
   product,
+  ...canonicalLavashProducts,
+  ...canonicalBurgerProducts,
   miniLavashProduct,
   beefLavashProduct,
-  chickenLavashProduct,
   classicBurgerProduct,
   bigBurgerProduct,
-  chickenBurgerProduct,
   crispyChickenBurgerProduct,
   sauceProduct,
   drinkProduct,
@@ -241,6 +403,8 @@ class InMemoryPrisma {
 
   category = {
     findMany: async () => allCategories,
+    findFirst: async ({ where }: { where: { id: string } }) =>
+      allCategories.find((candidate) => candidate.id === where.id) ?? null,
   };
 
   product = {
@@ -269,7 +433,12 @@ class InMemoryPrisma {
         ...candidate,
         category: categoryForProduct(candidate.id),
         modifiers: this.productModifiers(candidate.id),
-        variants: [{ ...variant, id: `${candidate.id}_standard`, productId: candidate.id }],
+        variants: [{
+          ...variant,
+          id: `${candidate.id}_standard`,
+          productId: candidate.id,
+          sellingPrice: candidate.sellingPrice,
+        }],
       }));
     },
     findFirst: async ({ where }: { where: { id: string } }) =>
@@ -277,7 +446,12 @@ class InMemoryPrisma {
         ? {
             ...(allProducts.find((candidate) => candidate.id === where.id) ?? product),
             category: categoryForProduct(where.id),
-            variants: [{ ...variant, id: `${where.id}_standard`, productId: where.id }],
+            variants: [{
+              ...variant,
+              id: `${where.id}_standard`,
+              productId: where.id,
+              sellingPrice: (allProducts.find((candidate) => candidate.id === where.id) ?? product).sellingPrice,
+            }],
             modifiers: this.productModifiers(where.id),
           }
         : null,
@@ -290,6 +464,9 @@ class InMemoryPrisma {
             ...variant,
             id: where.id,
             productId: where.id === variant.id ? product.id : where.id.replace(/_standard$/, ""),
+            sellingPrice: (
+              allProducts.find((candidate) => candidate.id === where.id.replace(/_standard$/, "")) ?? product
+            ).sellingPrice,
             product: {
               ...(allProducts.find((candidate) => candidate.id === where.id.replace(/_standard$/, "")) ?? product),
               modifiers: this.productModifiers(where.id.replace(/_standard$/, "")),
@@ -299,13 +476,18 @@ class InMemoryPrisma {
   };
 
   private productModifiers(productId: string) {
-    return productId === product.id ? [{ modifierId: modifier.id, modifier }] : [];
+    const foundProduct = allProducts.find((candidate) => candidate.id === productId);
+    const categoryCode = foundProduct ? categoryForProduct(foundProduct.id).code : null;
+
+    return productId === product.id || categoryCode === "LAVASH" || categoryCode === "BURGER"
+      ? [{ modifierId: modifier.id, modifier }]
+      : [];
   }
 
   productModifier = {
     findFirst: async ({ where }: { where: { productId: string; modifierId: string } }) =>
-      where.productId === product.id && where.modifierId === modifier.id
-        ? { productId: product.id, modifierId: modifier.id, modifier }
+      this.productModifiers(where.productId).some((item) => item.modifierId === where.modifierId)
+        ? { productId: where.productId, modifierId: modifier.id, modifier }
         : null,
   };
 
@@ -463,8 +645,15 @@ class InMemoryPrisma {
       ...this.cartRecord,
       items: this.cartRecord.items.map((item) => ({
         ...item,
-        product,
-        variant,
+        product: {
+          ...(allProducts.find((candidate) => candidate.id === item.productId) ?? product),
+          modifiers: this.productModifiers(item.productId),
+        },
+        variant: {
+          ...variant,
+          id: item.variantId ?? variant.id,
+          productId: item.productId,
+        },
       })),
     };
   }
@@ -539,16 +728,16 @@ async function testCategoryPagination(): Promise<void> {
   assert.equal(lastMethod(), "editMessageText");
   assert.match(lastText(), /Mahsulot tanlang/);
   let productButtons = lastProductButtonTexts();
-  assert.ok(productButtons.some((text) => text.startsWith("Page product 1 ·")));
-  assert.ok(productButtons.some((text) => text.startsWith("Page product 8 ·")));
-  assert.ok(!productButtons.some((text) => text.startsWith("Page product 9 ·")));
+  assert.ok(productButtons.some((text) => text.includes("Page product 1 ·")));
+  assert.ok(productButtons.some((text) => text.includes("Page product 8 ·")));
+  assert.ok(!productButtons.some((text) => text.includes("Page product 9 ·")));
   assert.ok(lastKeyboardText().includes("Keyingi"));
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${paginatedCategory.id}:2` });
   productButtons = lastProductButtonTexts();
-  assert.ok(productButtons.some((text) => text.startsWith("Page product 9 ·")));
-  assert.ok(productButtons.some((text) => text.startsWith("Page product 11 ·")));
-  assert.ok(!productButtons.some((text) => text.startsWith("Page product 1 ·")));
+  assert.ok(productButtons.some((text) => text.includes("Page product 9 ·")));
+  assert.ok(productButtons.some((text) => text.includes("Page product 11 ·")));
+  assert.ok(!productButtons.some((text) => text.includes("Page product 1 ·")));
   assert.ok(lastKeyboardText().includes("Oldingi"));
 
   assert.equal(new Set(productButtons).size, productButtons.length);
@@ -572,9 +761,43 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${lavashCategory.id}` });
   assert.equal(lastMethod(), "editMessageText");
-  assert.match(lastText(), /Mahsulot tanlang/);
-  assert.ok(lastKeyboardText().includes("Mini lavash"));
+  assert.match(lastText(), /Lavashlar/);
+  assert.ok(!lastKeyboardText().includes("Keyingi"));
+  assert.ok(!lastKeyboardText().includes("1+"));
+  assert.ok(!lastKeyboardText().includes("Xaggi"));
   assert.ok(!lastText().includes("Go'sht turini tanlang"));
+  assert.deepEqual(normalizedLastProductButtonTexts(), [
+    "Lavash · 32 000 so'm",
+    "Kurinniy Lavash · 28 000 so'm",
+    "Big Lavash · 36 000 so'm",
+    "Kurinniy Big · 32 000 so'm",
+    "Pishloqli · 35 000 so'm",
+    "Kurinniy Pishloqli · 31 000 so'm",
+    "Big Pishloqli · 39 000 so'm",
+    "Kurinniy Big Pishloqli · 35 000 so'm",
+    "Achchiq Lavash · 34 000 so'm",
+    "Achchiq Kurinniy · 31 000 so'm",
+    "Achchiq Big · 39 000 so'm",
+    "Achchiq Kurinniy Big · 35 000 so'm",
+    "Tandir Lavash · 43 000 so'm",
+    "Tandir Pishloqli · 45 000 so'm",
+  ]);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${burgerCategory.id}` });
+  assert.equal(lastMethod(), "editMessageText");
+  assert.match(lastText(), /Burgerlar/);
+  assert.ok(!lastKeyboardText().includes("Keyingi"));
+  assert.ok(!lastText().includes("Go'sht turini tanlang"));
+  assert.deepEqual(normalizedLastProductButtonTexts(), [
+    "Burger · 29 000 so'm",
+    "Chicken Burger · 26 000 so'm",
+    "Chizburger · 32 000 so'm",
+    "Chicken Chizburger · 29 000 so'm",
+    "Double Burger · 42 000 so'm",
+    "Double Chicken · 37 000 so'm",
+    "Double Chizburger · 46 000 so'm",
+    "Double Chicken Chizburger · 41 000 so'm",
+  ]);
 }
 
 async function testDirectProductQuickAdd(): Promise<void> {
@@ -582,9 +805,13 @@ async function testDirectProductQuickAdd(): Promise<void> {
   const prisma = new InMemoryPrisma();
   const { service, callbackBase } = createService(prisma);
 
-  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1` });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${burgerCategory.id}` });
+  assert.ok(normalizedLastKeyboardText().includes("Chicken Burger · 26 000 so'm"));
+  assert.ok(!lastKeyboardText().includes("Standart"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${chickenBurgerProduct.id}:${burgerCategory.id}:1` });
   assert.equal(prisma.cartRecord?.items.length, 1);
-  assert.equal(prisma.cartRecord?.items[0]?.productId, sauceProduct.id);
+  assert.equal(prisma.cartRecord?.items[0]?.productId, chickenBurgerProduct.id);
   assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 1);
   assert.ok(
     sentTelegramPayloads.some(
@@ -593,14 +820,16 @@ async function testDirectProductQuickAdd(): Promise<void> {
         payload.text === "Savatga qo'shildi ✅",
     ),
   );
-  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.match(lastText(), /Burgerlar/);
   assert.ok(lastKeyboardText().includes("Savat (1)"));
+  assert.ok(!lastText().includes("Standart"));
   assert.ok(!lastKeyboardText().includes("−"));
   assert.ok(!lastKeyboardText().includes("+"));
 
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:cart" });
   assert.ok(lastKeyboardText().includes("−"));
   assert.ok(lastKeyboardText().includes("+"));
+  assert.ok(lastKeyboardText().includes("+ Extra cheese"));
 }
 
 async function testQuickAddMerge(): Promise<void> {
@@ -888,13 +1117,24 @@ function lastKeyboardText(): string {
   );
 }
 
+function normalizedLastKeyboardText(): string {
+  return lastKeyboardText().replace(/\u00a0/g, " ");
+}
+
 function lastProductButtonTexts(): string[] {
   return (
     lastPayload().reply_markup?.inline_keyboard
       ?.flat()
-      .filter((button) => button.callback_data?.startsWith("cust:prod:"))
+      .filter((button) =>
+        button.callback_data?.startsWith("cust:prod:") ||
+        button.callback_data?.startsWith("cust:qprod:"),
+      )
       .map((button) => button.text) ?? []
   );
+}
+
+function normalizedLastProductButtonTexts(): string[] {
+  return lastProductButtonTexts().map((text) => text.replace(/\u00a0/g, " "));
 }
 
 void main();

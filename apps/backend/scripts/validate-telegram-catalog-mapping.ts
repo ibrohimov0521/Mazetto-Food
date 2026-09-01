@@ -29,6 +29,41 @@ function main(): void {
   assert.equal(burgerProducts.length, 8, "Telegram Burgerlar should expose 8 canonical PDF-backed burger products directly");
   assert.ok(productsByCode.has("CHICKEN_LAVASH"), "Tovuqli lavash must be a direct product, not a meat submenu");
   assert.ok(productsByCode.has("CHICKEN_BURGER"), "Chicken Burger must be a direct product, not a meat submenu");
+  assert.equal(lavashProducts.some((product) => product.code === "XAGGI"), false, "Xaggi must not be in Lavashlar");
+  assert.deepEqual(lavashProducts.map((product) => product.code), [
+    "CLASSIC_LAVASH",
+    "BIG_LAVASH",
+    "LAVASH_CHEESE",
+    "BIG_LAVASH_CHEESE",
+    "LAVASH_SPICY",
+    "BIG_LAVASH_SPICY",
+    "TANDIR_LAVASH",
+    "TANDIR_LAVASH_CHEESE",
+    "CHICKEN_LAVASH",
+    "BIG_CHICKEN_LAVASH",
+    "CHICKEN_CHEESE_LAVASH",
+    "BIG_CHICKEN_LAVASH_CHEESE",
+    "CHICKEN_SPICY_LAVASH",
+    "BIG_CHICKEN_SPICY_LAVASH",
+  ]);
+  assert.deepEqual(burgerProducts.map((product) => product.code), [
+    "CLASSIC_BURGER",
+    "CHEESEBURGER",
+    "DOUBLE_BURGER",
+    "DOUBLE_CHEESEBURGER",
+    "CHICKEN_BURGER",
+    "CHICKEN_CHEESEBURGER",
+    "DOUBLE_CHICKEN_BURGER",
+    "DOUBLE_CHICKEN_CHEESEBURGER",
+  ]);
+
+  for (const category of menuCategories) {
+    assert.doesNotMatch(category.description, /PDF|PDF menyu|PDF menyudagi|source menu|canonical PDF|menu source/i);
+  }
+
+  for (const product of menuProducts) {
+    assert.doesNotMatch(product.description, /PDF|PDF menyu|PDF menyudagi|source menu|canonical PDF|menu source/i);
+  }
 
   console.log("Telegram flattened catalog validation passed");
   console.log(`Lavash direct products: ${lavashProducts.length}`);

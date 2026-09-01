@@ -256,14 +256,14 @@ function displayKnownDescription(value: string): string {
 
 function localizeCategoryDescription(category: Category): string | null | undefined {
   const descriptions: Record<string, string> = {
-    LAVASH: "PDF menyudagi mol go'shtli, tovuqli, pishloqli, achchiq va tandir lavashlar.",
+    LAVASH: "Mol go'shtli, tovuqli, pishloqli, achchiq va tandir lavashlar.",
     CHICKEN_LAVASH: "Legacy tovuqli lavash bo'limi.",
-    BURGER: "PDF menyudagi mol go'shtli va tovuqli burgerlar.",
+    BURGER: "Mol go'shtli va tovuqli burgerlar.",
     CHICKEN_BURGER: "Legacy tovuqli burger bo'limi.",
-    HOT_DOG: "PDF menyudagi salatli, qazili, chicken va shashlikli hot doglar.",
-    DONER: "PDF menyudagi doner, klab senvich, xaggi va uy uslubidagi mahsulotlar.",
-    BLYUDALAR: "PDF menyudagi tarelka va uy uslubidagi blyudalar.",
-    FAST_FOOD: "PDF menyudagi fri, naggets, kurinniy sharik va boshqa gazaklar.",
+    HOT_DOG: "Salatli, qazili, chicken va shashlikli hot doglar.",
+    DONER: "Doner, klab senvich, xaggi va uy uslubidagi mahsulotlar.",
+    BLYUDALAR: "Tarelka va uy uslubidagi blyudalar.",
+    FAST_FOOD: "Fri, naggets, kurinniy sharik va boshqa gazaklar.",
     DRINKS: "Taom va setlar uchun sovuq ichimliklar.",
     SAUCES: "Souslar va qo'shimchalar.",
     SETS: "Foydali setlar va oilaviy to'plamlar.",

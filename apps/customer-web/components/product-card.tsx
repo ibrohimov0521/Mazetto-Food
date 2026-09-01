@@ -77,7 +77,7 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
           </span>
         </div>
         <p className={`${compact ? "line-clamp-2 text-[10px] leading-4 sm:text-[11px]" : "line-clamp-2 min-h-11 text-sm leading-5"} mf-product-description text-white/64`}>
-          {product.description ?? "Buyurtmadan keyin issiq tayyorlanadi."}
+          {product.description?.trim() || "Buyurtmadan keyin issiq tayyorlanadi."}
         </p>
         <div className="mf-product-price-row flex min-w-0 items-center justify-between gap-2 sm:gap-3">
           <motion.span

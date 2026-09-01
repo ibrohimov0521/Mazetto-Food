@@ -154,7 +154,7 @@ function ProductDetails({ id }: { id: string }) {
             {formatMoney(total)}
           </div>
         </div>
-        <p className="mt-3 text-sm font-semibold leading-6 text-[#17314A]/68 sm:text-base sm:leading-7">{product.description ?? "Buyurtmadan keyin issiq tayyorlanadi."}</p>
+        <p className="mt-3 text-sm font-semibold leading-6 text-[#17314A]/68 sm:text-base sm:leading-7">{product.description?.trim() || "Buyurtmadan keyin issiq tayyorlanadi."}</p>
 
         <div className="mt-4 flex flex-wrap gap-2">
           {(ingredientHints.length ? ingredientHints : ["Yangi", "Buyurtma bilan tayyorlanadi", "Oshxonaga yuboriladi"]).map((item) => (

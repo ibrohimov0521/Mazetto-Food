@@ -202,9 +202,9 @@ export default function Home() {
       <MotionDiv {...sectionMotion} className="mx-auto max-w-6xl px-4 pb-12">
         <div className="mf-card mazetto-liquid-surface grid min-w-0 gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,360px)]">
           <div className="min-w-0">
-            <p className="text-sm font-black uppercase text-[#67E8F9]">Telefon orqali profil</p>
-            <h2 className="mt-2 text-3xl font-black text-white">Sevimlilarni saqlang va buyurtmani kuzating.</h2>
-            <p className="mt-2 text-sm leading-6 text-white/60">Telefon raqamingizni kiriting, keyin MAZETTO Telegram boti yuborgan qisqa kodni tasdiqlang.</p>
+            <p className="text-sm font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>
+            <h2 className="mt-2 text-3xl font-black text-[#17314A]">Sevimlilarni saqlang va buyurtmani kuzating.</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-[#17314A]/72">Telefon raqamingizni kiriting, keyin MAZETTO Telegram boti yuborgan qisqa kodni tasdiqlang.</p>
           </div>
           <div className="grid min-w-0 gap-3">
             {customer ? (
