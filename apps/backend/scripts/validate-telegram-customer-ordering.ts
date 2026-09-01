@@ -673,10 +673,11 @@ globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => 
 async function main(): Promise<void> {
   process.env.TELEGRAM_BOT_TOKEN = "mock-telegram-token";
   await testFlattenedCategoryNavigation();
-  await testCategoryPagination();
+  await testAllCategoriesSinglePage();
   await testSimpleSauceAndDrinkQuickAdd();
   await testDirectProductQuickAdd();
   await testQuickAddMerge();
+  await testCartQuantityOnlyControls();
   await testConfiguredItemSeparation();
   await testBranchLocation();
   await testDeliveryFlow();
@@ -719,7 +720,7 @@ async function testSimpleSauceAndDrinkQuickAdd(): Promise<void> {
   assert.equal(prisma.cartRecord?.items[1]?.productId, drinkProduct.id);
 }
 
-async function testCategoryPagination(): Promise<void> {
+async function testAllCategoriesSinglePage(): Promise<void> {
   sentTelegramPayloads.length = 0;
   const prisma = new InMemoryPrisma();
   const { service, callbackBase } = createService(prisma);
@@ -727,23 +728,14 @@ async function testCategoryPagination(): Promise<void> {
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${paginatedCategory.id}` });
   assert.equal(lastMethod(), "editMessageText");
   assert.match(lastText(), /Mahsulot tanlang/);
-  let productButtons = lastProductButtonTexts();
+  const productButtons = lastProductButtonTexts();
   assert.ok(productButtons.some((text) => text.includes("Page product 1 ·")));
   assert.ok(productButtons.some((text) => text.includes("Page product 8 ·")));
-  assert.ok(!productButtons.some((text) => text.includes("Page product 9 ·")));
-  assert.ok(lastKeyboardText().includes("Keyingi"));
-
-  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${paginatedCategory.id}:2` });
-  productButtons = lastProductButtonTexts();
   assert.ok(productButtons.some((text) => text.includes("Page product 9 ·")));
   assert.ok(productButtons.some((text) => text.includes("Page product 11 ·")));
-  assert.ok(!productButtons.some((text) => text.includes("Page product 1 ·")));
-  assert.ok(lastKeyboardText().includes("Oldingi"));
-
+  assert.equal(productButtons.length, 11);
   assert.equal(new Set(productButtons).size, productButtons.length);
-
-  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${paginatedCategory.id}:0` });
-  assert.ok(lastKeyboardText().includes("Page product 1"), "invalid page should fail safely to page 1");
+  assertNoPaginationControls();
 }
 
 async function testFlattenedCategoryNavigation(): Promise<void> {
@@ -829,7 +821,7 @@ async function testDirectProductQuickAdd(): Promise<void> {
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:cart" });
   assert.ok(lastKeyboardText().includes("−"));
   assert.ok(lastKeyboardText().includes("+"));
-  assert.ok(lastKeyboardText().includes("+ Extra cheese"));
+  assertCartHasOnlyQuantityControls();
 }
 
 async function testQuickAddMerge(): Promise<void> {
@@ -859,6 +851,36 @@ async function testQuickAddMerge(): Promise<void> {
   ]);
   assert.equal(concurrentPrisma.cartRecord?.items.length, 1);
   assert.equal(concurrentPrisma.cartRecord?.items[0]?.quantity.toNumber(), 2);
+}
+
+async function testCartQuantityOnlyControls(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, callbackBase } = createService(prisma);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}` });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${drinkProduct.id}:${drinksCategory.id}` });
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:cart" });
+  assertCartHasOnlyQuantityControls();
+  assert.equal(prisma.cartRecord?.items.length, 2);
+
+  const firstItemId = prisma.cartRecord!.items[0]!.id;
+  const secondItemId = prisma.cartRecord!.items[1]!.id;
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qty:${firstItemId}:inc` });
+  assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 2, "plus should increment the same cart line");
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qty:${firstItemId}:dec` });
+  assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 1, "minus from 2 should return to 1");
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qty:${firstItemId}:dec` });
+  assert.equal(
+    prisma.cartRecord?.items.some((item) => item.id === firstItemId),
+    false,
+    "minus from 1 should remove the item",
+  );
+  assert.equal(prisma.cartRecord?.items.some((item) => item.id === secondItemId), true);
+  assertCartHasOnlyQuantityControls();
 }
 
 async function testConfiguredItemSeparation(): Promise<void> {
@@ -1043,12 +1065,7 @@ async function seedCart(
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:addv:variant_standard" });
   assert.match(lastText(), /savatga qo'shildi/);
   assert.equal(prisma.cartRecord?.items.length, 1);
-
-  const cartItemId = prisma.cartRecord!.items[0]!.id;
-  await service.handleCustomerCallback({ ...callbackBase, data: `cust:mod:${cartItemId}:modifier_cheese` });
-  assert.deepEqual(prisma.cartRecord?.items[0]?.modifierSnapshot, [
-    { modifierId: modifier.id, quantity: 1 },
-  ]);
+  prisma.cartRecord!.items[0]!.modifierSnapshot = [{ modifierId: modifier.id, quantity: 1 }];
 }
 
 function createService(prisma: InMemoryPrisma) {
@@ -1135,6 +1152,35 @@ function lastProductButtonTexts(): string[] {
 
 function normalizedLastProductButtonTexts(): string[] {
   return lastProductButtonTexts().map((text) => text.replace(/\u00a0/g, " "));
+}
+
+function assertNoPaginationControls(): void {
+  const keyboard = lastKeyboardText();
+  assert.ok(!keyboard.includes("Keyingi"), "customer category keyboard must not include Keyingi");
+  assert.ok(!keyboard.includes("Oldingi"), "customer category keyboard must not include Oldingi");
+  assert.ok(!keyboard.includes("Next"), "customer category keyboard must not include Next");
+  assert.ok(!keyboard.includes("Previous"), "customer category keyboard must not include Previous");
+  assert.ok(!/\b\d+\+\b/.test(keyboard), "customer category keyboard must not include page indicators");
+  assert.ok(
+    !(lastPayload().reply_markup?.inline_keyboard?.flat() ?? []).some((button) =>
+      /:cat:[^:]+:\d+$/.test(button.callback_data ?? ""),
+    ),
+    "customer category keyboard must not include page callbacks",
+  );
+}
+
+function assertCartHasOnlyQuantityControls(): void {
+  const keyboard = lastPayload().reply_markup?.inline_keyboard ?? [];
+  const forbidden = /[+✓]\s*(Qo'shimcha sous|Qo'shimcha go'sht|Achchiq|Piyozsiz|Bodringsiz|Extra cheese)|O'chirish|modifier/i;
+  assert.doesNotMatch(lastKeyboardText(), forbidden);
+  assert.ok(
+    keyboard.flat().every((button) =>
+      button.callback_data?.startsWith("cust:qty:") ||
+      button.callback_data === "cust:checkout" ||
+      button.callback_data === "cust:menu",
+    ),
+    "cart keyboard must contain only item quantity controls plus cart-level actions",
+  );
 }
 
 void main();

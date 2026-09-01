@@ -547,11 +547,9 @@ async function proveTelegramCart(
   assert.equal(cart.items[0]?.variantId, fixture.variant.id);
   assert.equal(cart.items[0]?.quantity.toNumber(), 1);
 
-  await telegramOrdering.handleCustomerCallback({
-    id: "step8-add-modifier",
-    message: { chat: { id: fixture.telegramChatId } },
-    from: { id: fixture.telegramUserId },
-    data: `cust:mod:${cart.items[0]!.id}:${fixture.modifier.id}`,
+  await prisma.cartItem.update({
+    where: { id: cart.items[0]!.id },
+    data: { modifierSnapshot: [{ modifierId: fixture.modifier.id, quantity: 1 }] },
   });
   const withModifier = await prisma.cartItem.findUniqueOrThrow({
     where: { id: cart.items[0]!.id },
