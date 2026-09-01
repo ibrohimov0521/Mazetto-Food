@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import {
+  customerVisibleProductCodeSet,
+  legacyProductCodeSet,
+} from "../customers/customer-catalog-visibility";
 import type { ListMenuDto } from "./dto/list-menu.dto";
 import type {
   CreateCategoryDto,
@@ -17,7 +21,7 @@ export class MenuService {
   async listCategories(query: ListMenuDto) {
     return this.prisma.category.findMany({
       where: {
-        isActive: true,
+        ...(query.includeInactive === "true" ? {} : { isActive: true }),
         ...(query.branchId ? { OR: [{ branchId: query.branchId }, { branchId: null }] } : {}),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -29,15 +33,21 @@ export class MenuService {
         name: true,
         description: true,
         imageUrl: true,
+        isActive: true,
         sortOrder: true,
+        _count: {
+          select: {
+            products: true,
+          },
+        },
       },
     });
   }
 
   async listProducts(query: ListMenuDto) {
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       where: {
-        isAvailable: true,
+        ...(query.includeInactive === "true" ? {} : { isAvailable: true }),
         ...(query.branchId ? { OR: [{ branchId: query.branchId }, { branchId: null }] } : {}),
         ...this.unavailableProductWhere(query.branchId),
         ...(query.categoryId ? { categoryId: query.categoryId } : {}),
@@ -57,15 +67,17 @@ export class MenuService {
         isAvailable: true,
         isRecommended: true,
         isCombo: true,
+        sortOrder: true,
         printerRouting: true,
         category: {
           select: {
             id: true,
+            code: true,
             name: true,
           },
         },
         variants: {
-          where: { isAvailable: true },
+          where: query.includeInactive === "true" ? {} : { isAvailable: true },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
           select: {
             id: true,
@@ -73,7 +85,26 @@ export class MenuService {
             name: true,
             sellingPrice: true,
             isDefault: true,
+            isAvailable: true,
             sortOrder: true,
+          },
+        },
+        bundleItems: {
+          orderBy: { sortOrder: "asc" },
+          select: {
+            id: true,
+            componentCode: true,
+            componentName: true,
+            quantity: true,
+            unitLabel: true,
+            sortOrder: true,
+            componentProduct: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+              },
+            },
           },
         },
         modifiers: {
@@ -100,6 +131,113 @@ export class MenuService {
         },
       },
     });
+
+    return products.map((product) => ({
+      ...product,
+      catalogVisibility: this.getCatalogVisibility(product.code),
+    }));
+  }
+
+  async getProduct(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        branchId: true,
+        categoryId: true,
+        code: true,
+        name: true,
+        description: true,
+        imageUrl: true,
+        preparationTime: true,
+        sellingPrice: true,
+        costPrice: true,
+        isAvailable: true,
+        isRecommended: true,
+        isCombo: true,
+        sortOrder: true,
+        printerRouting: true,
+        category: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+        variants: {
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            sellingPrice: true,
+            costPrice: true,
+            isDefault: true,
+            isAvailable: true,
+            sortOrder: true,
+          },
+        },
+        modifiers: {
+          orderBy: { sortOrder: "asc" },
+          select: {
+            isRequired: true,
+            minSelect: true,
+            maxSelect: true,
+            sortOrder: true,
+            modifier: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                description: true,
+                price: true,
+                isActive: true,
+                sortOrder: true,
+              },
+            },
+          },
+        },
+        bundleItems: {
+          orderBy: { sortOrder: "asc" },
+          select: {
+            id: true,
+            componentCode: true,
+            componentName: true,
+            quantity: true,
+            unitLabel: true,
+            sortOrder: true,
+            componentProduct: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException("Product not found");
+    }
+
+    return {
+      ...product,
+      catalogVisibility: this.getCatalogVisibility(product.code),
+    };
+  }
+
+  private getCatalogVisibility(code: string): "CANONICAL" | "LEGACY" | "INTERNAL" {
+    if (customerVisibleProductCodeSet.has(code)) {
+      return "CANONICAL";
+    }
+
+    if (legacyProductCodeSet.has(code)) {
+      return "LEGACY";
+    }
+
+    return "INTERNAL";
   }
 
   async createCategory(dto: CreateCategoryDto) {
@@ -143,7 +281,7 @@ export class MenuService {
     const defaultVariant = dto.variants?.find((variant) => variant.isDefault) ?? dto.variants?.[0];
     const sellingPrice = new Prisma.Decimal(defaultVariant?.price ?? 0);
 
-    return this.prisma.$transaction(async (tx) => {
+    const product = await this.prisma.$transaction(async (tx) => {
       const product = await tx.product.create({
         data: {
           branchId: dto.branchId ?? null,
@@ -156,6 +294,8 @@ export class MenuService {
           sellingPrice,
           costPrice: defaultVariant?.costPrice ? new Prisma.Decimal(defaultVariant.costPrice) : null,
           isAvailable: true,
+          isRecommended: dto.isRecommended ?? false,
+          sortOrder: dto.sortOrder ?? 0,
         },
       });
 
@@ -186,17 +326,16 @@ export class MenuService {
         });
       }
 
-      return tx.product.findUnique({
-        where: { id: product.id },
-        include: { variants: true, modifiers: { include: { modifier: true } } },
-      });
+      return product;
     });
+
+    return this.getProduct(product.id);
   }
 
   async updateProduct(id: string, dto: UpdateProductDto) {
     await this.assertProduct(id);
 
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
         data: {
@@ -205,11 +344,15 @@ export class MenuService {
           ...(dto.description !== undefined ? { description: dto.description } : {}),
           ...(dto.image !== undefined ? { imageUrl: dto.image } : {}),
           ...(dto.isActive !== undefined ? { isAvailable: dto.isActive } : {}),
+          ...(dto.isRecommended !== undefined ? { isRecommended: dto.isRecommended } : {}),
           ...(dto.preparationTime !== undefined ? { preparationTime: dto.preparationTime } : {}),
+          ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
         },
       });
 
       if (dto.variants) {
+        const defaultVariant = dto.variants.find((variant) => variant.isDefault) ?? dto.variants[0];
+
         await tx.productVariant.updateMany({
           where: { productId: id },
           data: { isAvailable: false },
@@ -244,6 +387,19 @@ export class MenuService {
             });
           }
         }
+
+        if (defaultVariant) {
+          await tx.product.update({
+            where: { id },
+            data: {
+              sellingPrice: new Prisma.Decimal(defaultVariant.price),
+              costPrice:
+                defaultVariant.costPrice !== undefined
+                  ? new Prisma.Decimal(defaultVariant.costPrice)
+                  : null,
+            },
+          });
+        }
       }
 
       if (dto.modifiers) {
@@ -258,11 +414,9 @@ export class MenuService {
         });
       }
 
-      return tx.product.findUnique({
-        where: { id },
-        include: { variants: true, modifiers: { include: { modifier: true } } },
-      });
     });
+
+    return this.getProduct(id);
   }
 
   async deleteProduct(id: string) {

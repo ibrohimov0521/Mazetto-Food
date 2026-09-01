@@ -54,6 +54,12 @@ export class MenuController {
     return this.menuService.listProducts(query);
   }
 
+  @Get("products/:id")
+  @Permissions(PERMISSIONS.MENU_VIEW)
+  getProduct(@Param("id") id: string) {
+    return this.menuService.getProduct(id);
+  }
+
   @Post("products")
   @Permissions(PERMISSIONS.MENU_CREATE)
   createProduct(@Body() dto: CreateProductDto) {

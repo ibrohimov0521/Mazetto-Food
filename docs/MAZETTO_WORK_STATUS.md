@@ -46,7 +46,7 @@ Media Service
 | Telegram Staff Notifications | 🟡 PARTIAL / RISK | Backend notification reliability hotfix is deployed; human Telegram lifecycle and web-order staff smoke remain pending. |
 | Customer Telegram Bot | 🟡 PARTIAL / RISK | Customer Telegram auth/order UX is deployed and real Telegram orders were verified; staff-side lifecycle activation remains separate. |
 | MAZETTO Desktop | ❌ NOT IMPLEMENTED | Will contain POS, Desktop Admin, offline SQLite, sync engine, and printer engine. |
-| Admin Panel | ❌ NOT IMPLEMENTED / PARTIAL | Backend/admin foundations exist, but full admin web UI is planned for later. |
+| Admin Panel | 🟡 PARTIAL / RISK | POS-web local Admin Core now has protected dashboard, products, categories, and branch-status screens; full admin business coverage and production release are still pending. |
 | Payment Integrations | ❌ NOT IMPLEMENTED | Click/Payme real provider integrations are later-stage work. |
 
 ## Completed Work
@@ -2195,3 +2195,48 @@ Pending:
 - The isolated DB test emitted the existing non-blocking Node/pg deprecation warning during simulated concurrent Prisma activity: `Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0`.
 - Automated screenshot QA is pending because Playwright is not installed in the local workspace; the route was build-verified and opened in the Codex browser panel for manual inspection.
 - Owner review is required before any production release.
+
+## Overnight Work Session - POS Public Route and Admin Core
+
+Status: Local Admin Core prepared; POS public route still blocked by Cloudflare remote-managed routing
+
+Date: 2026-09-02
+
+Kitchen/POS production route state:
+
+- Production POS web service exists internally as `mazetto-food-posweb` and was verified on the shared `dokploy-network`.
+- Traefik has an internal Host route for `pos.mazettofood.uz` to `http://mazetto-food-posweb:3000`.
+- The internal Traefik route returns the POS `/login` page correctly.
+- The Cloudflare tunnel is remote-managed and the running cloudflared container has no local mounted ingress config.
+- Current remote-managed Cloudflare ingress includes `api.mazettofood.uz`, `mazettofood.uz`, `www.mazettofood.uz`, and `media.mazettofood.uz`; it does not include `pos.mazettofood.uz`.
+- No Cloudflare API token or safe local Cloudflare credential was available on the server, so the public DNS/tunnel route was not changed.
+- Required owner/Cloudflare action remains: add `pos.mazettofood.uz -> http://mazetto-food-posweb:3000` to the existing Cloudflare Tunnel routing.
+
+Admin Core local scope:
+
+- POS web now includes protected admin routes:
+  `/admin`, `/admin/dashboard`, `/admin/products`, `/admin/products/new`,
+  `/admin/products/[id]`, `/admin/categories`, and `/admin/branches`.
+- Admin Core uses the existing POS staff auth/RBAC guards, not customer auth.
+- Product/category routes are protected by `MENU_VIEW`, `MENU_CREATE`, or `MENU_EDIT`.
+- Branch status route is protected by `BRANCH_VIEW`.
+- Admin product listing can request inactive/internal catalog rows with `includeInactive=true`.
+- Admin product detail uses `GET /api/v1/menu/products/:id`.
+- Admin product create/edit preserves the existing menu models and updates only safe fields: name, description, category, image path, default price, preparation time, recommended flag, active flag, and sort order.
+- Product deletion is intentionally not exposed in the UI.
+- Media upload remains intentionally disabled and documented as a future media phase.
+- New admin-created products are not automatically part of the canonical 74-item customer catalog; customer visibility remains controlled separately.
+
+Validation:
+
+- Backend and POS web typecheck passed during implementation.
+- Full backend/POS/workspace validation must be completed before a production Admin release.
+
+Not performed:
+
+- No production database mutation.
+- No migration.
+- No production deploy for Admin Core.
+- No customer-web change.
+- No Cloudflare route change.
+- No Telegram, payment, media, or customer checkout change.

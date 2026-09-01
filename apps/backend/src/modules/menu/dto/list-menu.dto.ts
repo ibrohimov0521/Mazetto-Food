@@ -12,4 +12,8 @@ export class ListMenuDto {
   @IsOptional()
   @IsBooleanString()
   recommended?: string;
+
+  @IsOptional()
+  @IsBooleanString()
+  includeInactive?: string;
 }

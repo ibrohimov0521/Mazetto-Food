@@ -114,6 +114,15 @@ export class CreateProductDto {
   preparationTime?: number;
 
   @IsOptional()
+  @IsBoolean()
+  isRecommended?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sortOrder?: number;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ProductVariantDto)
@@ -153,6 +162,15 @@ export class UpdateProductDto {
   @IsNumber()
   @Min(0)
   preparationTime?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isRecommended?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sortOrder?: number;
 
   @IsOptional()
   @IsArray()
