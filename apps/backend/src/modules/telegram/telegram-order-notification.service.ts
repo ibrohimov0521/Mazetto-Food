@@ -1,9 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { CustomerOrderType, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
-import { KitchenService } from "../kitchen/kitchen.service";
+import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
 import { PrismaService } from "../../prisma/prisma.service";
 
-type StaffOrderAction = "accept" | "start_preparing" | "mark_ready" | "cancel";
+type StaffOrderAction = Exclude<KitchenStaffAction, "complete">;
 type LegacyCallbackStatus = "CONFIRMED" | "PREPARING" | "READY" | "CANCELLED";
 type TelegramInlineButton = {
   text: string;
@@ -161,188 +161,22 @@ export class TelegramOrderNotificationService {
   }
 
   private async applyStaffAction(orderId: string, action: StaffOrderAction): Promise<StaffTransitionResult> {
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
-
-      const order = await this.findOrderForMessage(orderId, tx);
-
-      if (!order) {
-        throw new BadRequestException("Buyurtma topilmadi");
-      }
-
-      const ticket = order.kitchenTickets[0] ?? null;
-
-      if (!ticket) {
-        throw new BadRequestException("Oshxona chiptasi topilmadi");
-      }
-
-      const transition = this.resolveTransition(order, ticket, action);
-
-      if (!transition.changed) {
-        return {
-          changed: false,
-          customerTelegramChatId: order.customerOrder?.customer?.telegramChatId ?? null,
-          order,
-          requestedAction: action,
-        };
-      }
-
-      const now = new Date();
-      const orderData: Prisma.OrderUpdateInput = {};
-
-      if (order.status !== transition.orderStatus) {
-        orderData.status = transition.orderStatus;
-      }
-
-      if (transition.orderStatus === OrderStatus.CONFIRMED && !order.acceptedAt) {
-        orderData.acceptedAt = now;
-      }
-
-      if (transition.orderStatus === OrderStatus.CANCELLED) {
-        orderData.cancelledAt = order.cancelledAt ?? now;
-        orderData.cancellationReason = order.cancellationReason ?? "Telegram staff orqali bekor qilindi";
-      }
-
-      if (Object.keys(orderData).length > 0) {
-        await tx.order.update({ where: { id: orderId }, data: orderData });
-      }
-
-      if (order.status !== transition.orderStatus) {
-        await tx.orderStatusHistory.create({
-          data: {
-            orderId,
-            fromStatus: order.status,
-            toStatus: transition.orderStatus,
-            reason: `Telegram staff: ${actionLabels[action]}`,
-          },
-        });
-      }
-
-      if (ticket && ticket.status !== transition.ticketStatus) {
-        await tx.kitchenTicket.update({
-          where: { id: ticket.id },
-          data: {
-            status: transition.ticketStatus,
-            ...(transition.ticketStatus === KitchenTicketStatus.ACCEPTED ||
-            transition.ticketStatus === KitchenTicketStatus.COOKING
-              ? { acceptedAt: ticket.acceptedAt ?? now }
-              : {}),
-            ...(transition.ticketStatus === KitchenTicketStatus.CANCELLED
-              ? { completedAt: ticket.completedAt ?? now }
-              : {}),
-          },
-        });
-      }
-
-      const updatedOrder = await this.findOrderForMessage(orderId, tx);
-
-      if (!updatedOrder) {
-        throw new BadRequestException("Buyurtma topilmadi");
-      }
-
-      return {
-        changed: true,
-        customerTelegramChatId: updatedOrder.customerOrder?.customer?.telegramChatId ?? null,
-        order: updatedOrder,
-        requestedAction: action,
-      };
+    const transition = await this.kitchenService.applyOrderAction(orderId, action, {
+      reasonPrefix: "Telegram staff",
+      cancellationReason: "Telegram staff orqali bekor qilindi",
     });
+    const order = await this.findOrderForMessage(orderId);
 
-    if (result.changed) {
-      this.kitchenService.emitOrderStatusChanged(result.order);
+    if (!order) {
+      throw new BadRequestException("Buyurtma topilmadi");
     }
 
-    return result;
-  }
-
-  private resolveTransition(
-    order: Pick<StaffOrderForMessage, "orderNumber" | "status">,
-    ticket: StaffOrderForMessage["kitchenTickets"][number] | null,
-    action: StaffOrderAction,
-  ): { changed: boolean; orderStatus: OrderStatus; ticketStatus: KitchenTicketStatus } {
-    const ticketStatus = ticket?.status ?? null;
-
-    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
-      throw new BadRequestException(`Buyurtma allaqachon ${this.orderStatusLabel(order.status).toLowerCase()}`);
-    }
-
-    if (ticketStatus === KitchenTicketStatus.COMPLETED || ticketStatus === KitchenTicketStatus.CANCELLED) {
-      throw new BadRequestException("Oshxona chiptasi yopilgan");
-    }
-
-    if (action === "accept") {
-      if (order.status === OrderStatus.CONFIRMED && ticketStatus === KitchenTicketStatus.ACCEPTED) {
-        return {
-          changed: false,
-          orderStatus: OrderStatus.CONFIRMED,
-          ticketStatus: KitchenTicketStatus.ACCEPTED,
-        };
-      }
-
-      if (
-        (order.status === OrderStatus.NEW || order.status === OrderStatus.CONFIRMED) &&
-        ticketStatus === KitchenTicketStatus.NEW
-      ) {
-        return {
-          changed: true,
-          orderStatus: OrderStatus.CONFIRMED,
-          ticketStatus: KitchenTicketStatus.ACCEPTED,
-        };
-      }
-    }
-
-    if (action === "start_preparing") {
-      if (order.status === OrderStatus.PREPARING && ticketStatus === KitchenTicketStatus.COOKING) {
-        return {
-          changed: false,
-          orderStatus: OrderStatus.PREPARING,
-          ticketStatus: KitchenTicketStatus.COOKING,
-        };
-      }
-
-      if (order.status === OrderStatus.CONFIRMED && ticketStatus === KitchenTicketStatus.ACCEPTED) {
-        return {
-          changed: true,
-          orderStatus: OrderStatus.PREPARING,
-          ticketStatus: KitchenTicketStatus.COOKING,
-        };
-      }
-    }
-
-    if (action === "mark_ready") {
-      if (order.status === OrderStatus.READY && ticketStatus === KitchenTicketStatus.READY) {
-        return {
-          changed: false,
-          orderStatus: OrderStatus.READY,
-          ticketStatus: KitchenTicketStatus.READY,
-        };
-      }
-
-      if (order.status === OrderStatus.PREPARING && ticketStatus === KitchenTicketStatus.COOKING) {
-        return {
-          changed: true,
-          orderStatus: OrderStatus.READY,
-          ticketStatus: KitchenTicketStatus.READY,
-        };
-      }
-    }
-
-    if (action === "cancel") {
-      if (
-        (order.status === OrderStatus.NEW || order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.PREPARING) &&
-        (ticketStatus === KitchenTicketStatus.NEW ||
-          ticketStatus === KitchenTicketStatus.ACCEPTED ||
-          ticketStatus === KitchenTicketStatus.COOKING)
-      ) {
-        return {
-          changed: true,
-          orderStatus: OrderStatus.CANCELLED,
-          ticketStatus: KitchenTicketStatus.CANCELLED,
-        };
-      }
-    }
-
-    throw new BadRequestException("Bu statusdan bunday amal bajarib bo'lmaydi");
+    return {
+      changed: transition.changed,
+      customerTelegramChatId: order.customerOrder?.customer?.telegramChatId ?? null,
+      order,
+      requestedAction: action,
+    };
   }
 
   private async findOrderForMessage(

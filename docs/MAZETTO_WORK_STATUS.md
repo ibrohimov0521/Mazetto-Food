@@ -2136,3 +2136,59 @@ Pending:
   cart rows show only minus/plus, simple products one-tap add, qty 1 minus removes item, no `cust:qadd`.
 - Human active-order visual smoke for `/orders` if an authenticated session with active order is available.
 - Production media direct URLs still depend on the media volume containing the required files.
+
+## Kitchen UI Local Phase - Staff Order Board
+
+Status: Ready locally; not pushed or deployed
+
+Date: 2026-09-02
+
+Scope:
+
+- Kitchen staff board remains in the existing `apps/pos-web` staff/POS web app at `/kitchen`; no new web app was created.
+- The route is protected by the existing staff auth/RBAC layer:
+  `KITCHEN` or `SUPER_ADMIN` role plus `KITCHEN_VIEW` permission.
+- Active tickets are loaded from the existing authenticated backend endpoint:
+  `GET /api/v1/kitchen/orders`.
+- Existing ticket mutation endpoints are reused for accept/start/ready/complete, and a minimal authenticated cancel endpoint was added:
+  `PATCH /api/v1/kitchen/orders/:id/cancel`.
+- Kitchen UI actions and Telegram staff callbacks now use the same `KitchenService.applyOrderAction` transition path instead of separate transition logic.
+- The board shows active statuses only:
+  `NEW`, `ACCEPTED`, `COOKING`, and `READY`.
+- Completed and cancelled tickets leave the active board because the existing active-ticket query excludes closed statuses.
+- Refresh strategy is controlled polling every 5 seconds, immediate refetch after an action, and refetch when the tab becomes visible again.
+- No Redis and no new websocket implementation were added.
+- Kitchen cards show order number, source, order type, elapsed minutes, branch, table/pickup/delivery context, item quantities, variants, selected modifiers, notes, and item count.
+- Customer PII is intentionally not shown on kitchen cards.
+- Canonical catalog validation uncovered two preserved legacy burger products still marked `recommended`; those flags were removed so legacy products cannot leak into recommendations.
+
+Validation:
+
+- `prisma format`, `prisma validate`, and `prisma generate` passed locally with a safe placeholder `DATABASE_URL`.
+- Backend typecheck, lint, and build passed.
+- `pos-web` typecheck, lint, and build passed; `/kitchen` is present in the Next.js build route output.
+- `validate-kitchen-order-board.ts` passed.
+- `validate-canonical-catalog.ts` passed with 56 standalone products, 18 sets, 74 customer-visible items, and 0 legacy-visible items.
+- `validate-telegram-catalog-mapping.ts` passed.
+- `validate-telegram-customer-ordering.ts` passed.
+- `validate-customer-order-history.ts` passed.
+- Workspace typecheck and lint passed.
+- Workspace build reported all 9 tasks successful, then Turbo remained open and was interrupted after successful task output.
+- `git diff --check` passed with only existing CRLF conversion warnings.
+
+Not performed:
+
+- No production change.
+- No push.
+- No deploy.
+- No production DB mutation.
+- No migration.
+- No Telegram webhook or Cloudflare change.
+- No payment flow change.
+- No customer-web/media-generation work.
+
+Pending:
+
+- DB-backed KitchenTicket transition smoke is pending because Docker Desktop/local PostgreSQL was not available in this environment.
+- Automated screenshot QA is pending because Playwright is not installed in the local workspace; the route was build-verified and opened in the Codex browser panel for manual inspection.
+- Owner review is required before any production release.

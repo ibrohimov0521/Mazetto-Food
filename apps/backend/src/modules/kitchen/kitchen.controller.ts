@@ -41,4 +41,13 @@ export class KitchenController {
   ) {
     return this.kitchenService.completeTicket(id, user);
   }
+
+  @Patch("orders/:id/cancel")
+  @Permissions(PERMISSIONS.KITCHEN_STATUS_UPDATE)
+  cancelOrder(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.kitchenService.cancelTicket(id, user);
+  }
 }
