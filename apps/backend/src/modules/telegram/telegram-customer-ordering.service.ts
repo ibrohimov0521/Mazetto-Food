@@ -2,6 +2,10 @@ import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { CustomerOrderType, OrderSource, Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import {
+  customerVisibleCategoryCodes,
+  customerVisibleProductCodes,
+} from "../customers/customer-catalog-visibility";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
 import {
   OnlineOrderTypeDto,
@@ -295,14 +299,11 @@ export class TelegramCustomerOrderingService {
 
   private async sendCategoryMenuToTarget(target: CustomerScreenTarget, customerId?: string): Promise<void> {
     const categories = await this.prisma.category.findMany({
-      where: { isActive: true },
+      where: { isActive: true, code: { in: [...customerVisibleCategoryCodes] } },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, code: true, name: true },
     });
-    const visibleCategories = categories.filter(
-      (category) => !["CHICKEN_LAVASH", "CHICKEN_BURGER"].includes(category.code ?? ""),
-    );
-    const sorted = [...visibleCategories].sort(
+    const sorted = [...categories].sort(
       (a, b) => (a.code === "SETS" ? -1 : 0) - (b.code === "SETS" ? -1 : 0),
     );
 
@@ -469,7 +470,11 @@ export class TelegramCustomerOrderingService {
     categoryId: string,
   ): Promise<void> {
     const category = await this.prisma.category.findFirst({
-      where: { id: categoryId, isActive: true },
+      where: {
+        id: categoryId,
+        isActive: true,
+        code: { in: [...customerVisibleCategoryCodes] },
+      },
       select: { code: true, name: true },
     });
 
@@ -484,7 +489,11 @@ export class TelegramCustomerOrderingService {
     }
 
     const products = await this.prisma.product.findMany({
-      where: { categoryId, isAvailable: true },
+      where: {
+        categoryId,
+        isAvailable: true,
+        code: { in: [...customerVisibleProductCodes] },
+      },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         category: { select: { code: true, name: true } },
@@ -554,7 +563,15 @@ export class TelegramCustomerOrderingService {
     const configuredRows = categoryCode === "LAVASH" ? lavashTelegramRows : burgerTelegramRows;
     const productCodes = configuredRows.flat();
     const products = await this.prisma.product.findMany({
-      where: { categoryId, code: { in: [...productCodes] }, isAvailable: true },
+      where: {
+        categoryId,
+        code: {
+          in: productCodes.filter((code) =>
+            customerVisibleProductCodes.includes(code),
+          ),
+        },
+        isAvailable: true,
+      },
       include: {
         category: { select: { code: true, name: true } },
         variants: {
@@ -613,7 +630,11 @@ export class TelegramCustomerOrderingService {
     productId: string,
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
-      where: { id: productId, isAvailable: true },
+      where: {
+        id: productId,
+        isAvailable: true,
+        code: { in: [...customerVisibleProductCodes] },
+      },
       include: {
         category: { select: { name: true } },
         variants: {
@@ -675,7 +696,11 @@ export class TelegramCustomerOrderingService {
     categoryId?: string,
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
-      where: { id: productId, isAvailable: true },
+      where: {
+        id: productId,
+        isAvailable: true,
+        code: { in: [...customerVisibleProductCodes] },
+      },
       include: {
         category: { select: { code: true, name: true } },
         variants: {
@@ -717,7 +742,14 @@ export class TelegramCustomerOrderingService {
     variantId: string,
   ): Promise<void> {
     const variant = await this.prisma.productVariant.findFirst({
-      where: { id: variantId, isAvailable: true, product: { isAvailable: true } },
+      where: {
+        id: variantId,
+        isAvailable: true,
+        product: {
+          isAvailable: true,
+          code: { in: [...customerVisibleProductCodes] },
+        },
+      },
       include: {
         product: {
           include: {
@@ -749,7 +781,11 @@ export class TelegramCustomerOrderingService {
     productId: string,
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
-      where: { id: productId, isAvailable: true },
+      where: {
+        id: productId,
+        isAvailable: true,
+        code: { in: [...customerVisibleProductCodes] },
+      },
       include: {
         modifiers: {
           where: { modifier: { isActive: true } },

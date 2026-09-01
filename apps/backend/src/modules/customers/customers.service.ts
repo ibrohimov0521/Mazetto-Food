@@ -24,6 +24,10 @@ import { BranchesService } from "../branches/branches.service";
 import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
+import {
+  customerVisibleCategoryCodes,
+  customerVisibleProductCodes,
+} from "./customer-catalog-visibility";
 import { normalizeCustomerPhone } from "./customer-phone";
 import type {
   CustomerCheckoutQuoteDto,
@@ -224,6 +228,7 @@ export class CustomersService {
     return this.prisma.category.findMany({
       where: {
         isActive: true,
+        code: { in: [...customerVisibleCategoryCodes] },
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -246,6 +251,7 @@ export class CustomersService {
     return this.prisma.product.findMany({
       where: {
         isAvailable: true,
+        code: { in: [...customerVisibleProductCodes] },
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
         ...this.branchesService.getUnavailableProductWhere(branchId),
         ...(categoryId ? { categoryId } : {}),
@@ -257,7 +263,7 @@ export class CustomersService {
 
   async getProduct(id: string) {
     const product = await this.prisma.product.findFirst({
-      where: { id, isAvailable: true },
+      where: { id, isAvailable: true, code: { in: [...customerVisibleProductCodes] } },
       include: this.productInclude(),
     });
 

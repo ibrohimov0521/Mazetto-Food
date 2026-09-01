@@ -3,6 +3,12 @@ import { menuCategories } from "../prisma/seeds/menu/categories";
 import { comboVariants, menuCombos } from "../prisma/seeds/menu/combos";
 import { menuProducts } from "../prisma/seeds/menu/products";
 import { menuVariants } from "../prisma/seeds/menu/variants";
+import {
+  customerVisibleCategoryCodes,
+  customerVisibleProductCodeSet,
+  customerVisibleProductCodes,
+  legacyProductCodes,
+} from "../src/modules/customers/customer-catalog-visibility";
 
 const hiddenTelegramCategoryCodes = new Set(["CHICKEN_LAVASH", "CHICKEN_BURGER"]);
 const lavashTelegramRows = [
@@ -21,6 +27,17 @@ const burgerTelegramRows = [
   ["DOUBLE_BURGER", "DOUBLE_CHICKEN_BURGER"],
   ["DOUBLE_CHEESEBURGER", "DOUBLE_CHICKEN_CHEESEBURGER"],
 ];
+const expectedTelegramCategoryCounts = new Map([
+  ["LAVASH", 14],
+  ["BURGER", 8],
+  ["DONER", 5],
+  ["HOT_DOG", 13],
+  ["BLYUDALAR", 3],
+  ["FAST_FOOD", 8],
+  ["SAUCES", 3],
+  ["DRINKS", 2],
+  ["SETS", 18],
+]);
 
 function main(): void {
   const catalogProducts = [...menuProducts, ...menuCombos];
@@ -51,6 +68,7 @@ function main(): void {
   assert.equal(lavashProducts.length, 14, "Telegram Lavashlar should expose 14 canonical PDF-backed lavash products directly");
   assert.equal(burgerProducts.length, 8, "Telegram Burgerlar should expose 8 canonical PDF-backed burger products directly");
   assert.equal(setProducts.length, 18, "Telegram Setlar should expose 18 canonical PDF-backed sets directly");
+  assert.equal(customerVisibleProductCodes.length, 74, "Customer-visible catalog must expose exactly 74 canonical products");
   assert.ok(productsByCode.has("CHICKEN_LAVASH"), "Tovuqli lavash must be a direct product, not a meat submenu");
   assert.ok(productsByCode.has("CHICKEN_BURGER"), "Chicken Burger must be a direct product, not a meat submenu");
   assert.equal(lavashProducts.some((product) => product.code === "XAGGI"), false, "Xaggi must not be in Lavashlar");
@@ -83,10 +101,22 @@ function main(): void {
 
   for (const [categoryCode, rows] of productRowsByCategory) {
     const productCodes = rows.flat();
+    const expectedCount = expectedTelegramCategoryCounts.get(categoryCode);
+    assert.equal(productCodes.length, expectedCount, `${categoryCode} Telegram customer-visible count mismatch`);
     assert.equal(new Set(productCodes).size, productCodes.length, `${categoryCode} must not duplicate product buttons`);
     assert.ok(rows.length === 1 || rows.every((row) => row.length <= 2), `${categoryCode} must use stable one/two-column rows`);
     assert.ok(productCodes.length < 90, `${categoryCode} is approaching Telegram inline keyboard button limits`);
     assert.ok(rows.length >= 0, `${categoryCode} must render as one Telegram keyboard page`);
+
+    for (const code of productCodes) {
+      assert.ok(customerVisibleProductCodeSet.has(code), `${categoryCode} exposes non-customer-visible product ${code}`);
+    }
+  }
+
+  for (const code of legacyProductCodes) {
+    for (const [categoryCode, rows] of productRowsByCategory) {
+      assert.equal(rows.flat().includes(code), false, `${categoryCode} must not expose legacy product ${code}`);
+    }
   }
 
   for (const category of menuCategories) {
@@ -101,7 +131,7 @@ function main(): void {
   console.log(`Lavash direct products: ${lavashProducts.length}`);
   console.log(`Burger direct products: ${burgerProducts.length}`);
   console.log(`Set direct products: ${setProducts.length}`);
-  for (const category of menuCategories.filter((item) => !hiddenTelegramCategoryCodes.has(item.code))) {
+  for (const category of menuCategories.filter((item) => customerVisibleCategoryCodes.includes(item.code))) {
     const rows = productRowsByCategory.get(category.code) ?? [];
     console.log(
       `${category.name}: ${rows.flat().length} products, 1 page, rows: ${rows
@@ -119,12 +149,21 @@ function buildTelegramCategoryRows(): Map<string, string[][]> {
   rowsByCategory.set("BURGER", burgerTelegramRows);
 
   for (const category of menuCategories) {
-    if (hiddenTelegramCategoryCodes.has(category.code) || rowsByCategory.has(category.code)) {
+    if (
+      hiddenTelegramCategoryCodes.has(category.code) ||
+      rowsByCategory.has(category.code) ||
+      !customerVisibleCategoryCodes.includes(category.code)
+    ) {
       continue;
     }
 
     const products = catalogProducts
-      .filter((product) => product.categoryCode === category.code && product.active)
+      .filter(
+        (product) =>
+          product.categoryCode === category.code &&
+          product.active &&
+          customerVisibleProductCodeSet.has(product.code),
+      )
       .map((product) => product.code);
     rowsByCategory.set(category.code, chunk(products, 2));
   }

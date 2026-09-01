@@ -2026,3 +2026,46 @@ MAZETTO Desktop
 ```
 
 The central server database remains the source of truth. Desktop stores only local operational/cache data and syncs safely when connectivity returns.
+
+## Local Customer Catalog Visibility Gate - 2026-09-01
+
+Status: Ready locally; not pushed or deployed
+
+Scope:
+
+- Customer-facing catalog visibility is now centralized by stable `Product.code` allowlists.
+- Customer menu/category APIs, customer product detail lookup, homepage product-backed surfaces, Telegram customer catalog navigation, and customer checkout product snapshot lookup now expose/select only the 74 canonical PDF catalog items.
+- The canonical customer-facing catalog is verified locally as 56 standalone products plus 18 sets, 74 total.
+- The 17 legacy DB-only products/sets remain preserved and are not deleted, disabled, renamed, or customer-visible.
+- `Saseska podomashniy` (`SAUSAGE_HOME_STYLE`) was moved from `DONER` to `BLYUDALAR`, correcting category membership to Doner/Klab/Xaggi = 5 and Blyudalar = 3.
+- Telegram catalog validation confirms all customer categories fit on one screen without `Keyingi`/`Oldingi` pagination controls for the current 74-item catalog.
+- Telegram stale legacy product callbacks are rejected safely and do not create cart items.
+- Customer cart quantity controls remain preserved; quick-add legacy paths are blocked by customer visibility checks.
+
+Validation:
+
+- `prisma format`, `prisma validate`, and `prisma generate` passed locally with a safe placeholder `DATABASE_URL`.
+- Backend typecheck, lint, and build passed.
+- Customer-web typecheck, lint, and build passed.
+- `validate-canonical-catalog.ts` passed and reports 74 customer-visible items and 0 owner decisions pending.
+- `validate-telegram-catalog-mapping.ts` passed with expected category counts.
+- `validate-telegram-customer-ordering.ts` passed, including legacy-hidden stale callback checks.
+- `validate-telegram-customer-auth.ts` passed.
+- `validate-customer-order-history.ts` passed.
+- Workspace typecheck and lint passed.
+- `git diff --check` passed with only existing CRLF conversion warnings.
+
+Not performed:
+
+- No production DB mutation.
+- No production migration.
+- No production seed.
+- No deploy.
+- No push.
+- No Telegram webhook or Cloudflare change.
+- No media upload or generation.
+
+Pending:
+
+- Isolated local PostgreSQL E2E validation is pending because Docker Desktop was not available locally.
+- Combined controlled release is the next step after owner approval.

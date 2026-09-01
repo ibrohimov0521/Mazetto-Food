@@ -591,7 +591,7 @@ export const menuProducts: MenuProductSeed[] = [
   },
   {
     code: "SAUSAGE_HOME_STYLE",
-    categoryCode: "DONER",
+    categoryCode: "BLYUDALAR",
     name: "Saseska podomashniy",
     description: "",
     basePrice: 35000,

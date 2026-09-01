@@ -845,3 +845,101 @@ Isolated local PostgreSQL test was attempted but blocked because Docker Desktop 
 ### Production Safety
 
 No production migration was applied. No production seed was run. No production DB rows were changed. No deploy, push, Cloudflare change, Telegram webhook change, media upload, or production order was performed.
+
+## Local Customer Catalog Visibility Gate - 2026-09-01
+
+This local-only remediation keeps the production database model intact while making the customer-facing catalog expose exactly the canonical PDF menu. The source of truth remains the canonical catalog seed data and stable `Product.code` values.
+
+### Visibility Source of Truth
+
+Customer visibility is now centralized in:
+
+- `apps/backend/src/modules/customers/customer-catalog-visibility.ts`
+
+The visibility list contains exactly 74 canonical customer products:
+
+| Metric | Count |
+| --- | ---: |
+| Customer-visible standalone products | 56 |
+| Customer-visible sets | 18 |
+| Customer-visible total | 74 |
+| Preserved legacy DB-only products/sets | 17 |
+| Customer-visible legacy products/sets | 0 |
+
+No database schema change was required. No migration was added. Legacy records are still preserved for historical order compatibility and admin/internal continuity.
+
+### Exact Customer Category Membership
+
+| Customer category | Expected visible count |
+| --- | ---: |
+| Lavashlar | 14 |
+| Burgerlar | 8 |
+| Doner / Klab / Xaggi | 5 |
+| Hot Doglar | 13 |
+| Blyudalar | 3 |
+| Gazaklar | 8 |
+| Souslar | 3 |
+| Ichimliklar | 2 |
+| Setlar | 18 |
+
+The previous local mismatch was caused by `Saseska podomashniy` (`SAUSAGE_HOME_STYLE`) being assigned to `DONER`. It is now assigned to `BLYUDALAR`, which produces the expected `Doner / Klab / Xaggi = 5` and `Blyudalar = 3` membership.
+
+### Customer-Facing Filters
+
+The shared visibility allowlist is applied locally to:
+
+- Customer menu categories and products.
+- Customer product detail lookup.
+- Customer order-engine product snapshot lookup.
+- Homepage product fallback and product-linked hero/promotion records.
+- Telegram customer category/product navigation, configurator, variant add, and one-tap add paths.
+
+This means stale or legacy customer product IDs are rejected during customer checkout/product selection instead of creating new orders from legacy catalog rows.
+
+### Preserved Legacy Codes
+
+The following 17 DB-only products/sets remain preserved but are not customer-visible:
+
+- `MINI_LAVASH`
+- `BEEF_LAVASH`
+- `BIG_BURGER`
+- `CRISPY_CHICKEN_BURGER`
+- `CLASSIC_HOT_DOG`
+- `CHEESE_HOT_DOG`
+- `DOUBLE_HOT_DOG`
+- `CHEESE_FRIES`
+- `CHICKEN_STRIPS`
+- `COCA_COLA`
+- `FANTA`
+- `SPRITE`
+- `WATER`
+- `HOUSE_SAUCE`
+- `SPICY_SAUCE`
+- `BURGER_SET`
+- `KIDS_SET`
+
+### Local Validation Evidence
+
+Passed locally:
+
+- `prisma format`
+- `prisma validate`
+- `prisma generate`
+- `pnpm --filter backend typecheck`
+- `pnpm --filter backend lint`
+- `pnpm --filter backend build`
+- `pnpm --filter customer-web typecheck`
+- `pnpm --filter customer-web lint`
+- `pnpm --filter customer-web build`
+- `pnpm --dir apps/backend exec tsx scripts/validate-canonical-catalog.ts`
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-catalog-mapping.ts`
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-ordering.ts`
+- `pnpm --dir apps/backend exec tsx scripts/validate-telegram-customer-auth.ts`
+- `pnpm --dir apps/backend exec tsx scripts/validate-customer-order-history.ts`
+- `pnpm typecheck`
+- `pnpm lint`
+- `git diff --check`
+
+`git diff --check` only reported existing Windows CRLF conversion warnings for edited files.
+
+Isolated local PostgreSQL validation is pending because the local Docker daemon was unavailable. Production was not touched.

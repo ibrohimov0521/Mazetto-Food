@@ -18,6 +18,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { OrdersService } from "../orders/orders.service";
+import { customerVisibleProductCodes } from "./customer-catalog-visibility";
 import type {
   CustomerCheckoutQuoteDto,
   CreateOnlineOrderDto,
@@ -476,6 +477,7 @@ export class CustomerOrderEngineService {
       where: {
         id: dto.productId,
         isAvailable: true,
+        code: { in: [...customerVisibleProductCodes] },
         OR: [{ branchId }, { branchId: null }],
         ...this.branchesService.getUnavailableProductWhere(branchId),
       },
