@@ -92,7 +92,7 @@ async function main(): Promise<void> {
     await proveStalePendingAttemptRetry(services.orderEngine, prisma, fixture);
     await proveActivePendingAttemptSafety(services.orderEngine, prisma, fixture);
 
-    await proveTelegramQuickAddMerge(prisma, services.telegramOrdering, fixture);
+    await proveTelegramFlattenedCatalogFlow(prisma, services.telegramOrdering, fixture);
     await proveTelegramCart(prisma, services.telegramOrdering, fixture);
     await proveTelegramCheckoutSession(prisma, services.telegramOrdering, fixture);
 
@@ -278,6 +278,10 @@ async function createFixture(prisma: PrismaService) {
   const variant = configurable.variants[0]!;
   const modifier = configurable.modifiers[0]!.modifier;
   const expectedConfigurableTotal = variant.sellingPrice.add(modifier.price);
+  const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH");
+  const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER");
+  const simple = await findCatalogProduct(prisma, "KETCHUP");
+  const set = await findCatalogProduct(prisma, "SET_CHEESEBURGER");
   const webCustomer = await prisma.customer.create({
     data: {
       name: "Step 8 Web Customer",
@@ -304,11 +308,15 @@ async function createFixture(prisma: PrismaService) {
 
   return {
     branch,
+    burger,
     configurable,
     expectedConfigurableTotal,
+    lavash,
     modifier,
     otherCustomer,
     runId,
+    set,
+    simple,
     telegramCartId: "",
     telegramChatId,
     telegramCustomer,
@@ -316,6 +324,25 @@ async function createFixture(prisma: PrismaService) {
     variant,
     webCustomer,
   };
+}
+
+async function findCatalogProduct(prisma: PrismaService, code: string) {
+  return prisma.product.findFirstOrThrow({
+    where: { code, isAvailable: true },
+    include: {
+      category: true,
+      variants: {
+        where: { isAvailable: true },
+        orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
+      },
+      modifiers: {
+        where: { modifier: { isActive: true } },
+        include: { modifier: true },
+        orderBy: { sortOrder: "asc" },
+      },
+      bundleItems: true,
+    },
+  });
 }
 
 async function createWebOrder(
@@ -560,25 +587,68 @@ async function proveTelegramCart(
   );
 }
 
-async function proveTelegramQuickAddMerge(
+async function proveTelegramFlattenedCatalogFlow(
   prisma: PrismaService,
   telegramOrdering: TelegramCustomerOrderingService,
   fixture: Awaited<ReturnType<typeof createFixture>>,
 ): Promise<void> {
   await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
+  sentTelegramPayloads.length = 0;
+
+  await telegramOrdering.handleCustomerCallback({
+    id: "step-catalog-lavash-category",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: `cust:cat:${fixture.lavash.categoryId}`,
+  });
+  assert.ok(
+    sentTelegramPayloads.some((payload) =>
+      payload.reply_markup?.inline_keyboard
+        ?.flat()
+        .some((button) => button.callback_data === `cust:prod:${fixture.lavash.id}`),
+    ),
+    "Lavash category must expose real products directly without old meat family callbacks",
+  );
+  assert.ok(
+    !sentTelegramPayloads.some((payload) =>
+      JSON.stringify(payload.reply_markup ?? {}).includes("cust:qadd:lavash"),
+    ),
+    "Lavash category must not expose removed cust:qadd family callbacks",
+  );
+
+  await telegramOrdering.handleCustomerCallback({
+    id: "step-catalog-burger-category",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: `cust:cat:${fixture.burger.categoryId}`,
+  });
+  assert.ok(
+    sentTelegramPayloads.some((payload) =>
+      payload.reply_markup?.inline_keyboard
+        ?.flat()
+        .some((button) => button.callback_data === `cust:prod:${fixture.burger.id}`),
+    ),
+    "Burger category must expose real products directly without old meat family callbacks",
+  );
+  assert.ok(
+    !sentTelegramPayloads.some((payload) =>
+      JSON.stringify(payload.reply_markup ?? {}).includes("cust:qadd:burger"),
+    ),
+    "Burger category must not expose removed cust:qadd family callbacks",
+  );
 
   await Promise.all([
     telegramOrdering.handleCustomerCallback({
-      id: "step13-quick-add-1",
+      id: "step-current-simple-add-1",
       message: { chat: { id: fixture.telegramChatId } },
       from: { id: fixture.telegramUserId },
-      data: "cust:qadd:burger:max:chicken",
+      data: `cust:qprod:${fixture.simple.id}:${fixture.simple.categoryId}:1`,
     }),
     telegramOrdering.handleCustomerCallback({
-      id: "step13-quick-add-2",
+      id: "step-current-simple-add-2",
       message: { chat: { id: fixture.telegramChatId } },
       from: { id: fixture.telegramUserId },
-      data: "cust:qadd:burger:max:chicken",
+      data: `cust:qprod:${fixture.simple.id}:${fixture.simple.categoryId}:1`,
     }),
   ]);
 
@@ -588,6 +658,8 @@ async function proveTelegramQuickAddMerge(
     orderBy: { updatedAt: "desc" },
   });
   assert.equal(mergedCart.items.length, 1, "equivalent concurrent quick-adds must merge");
+  assert.equal(mergedCart.items[0]?.productId, fixture.simple.id);
+  assert.equal(mergedCart.items[0]?.variantId, fixture.simple.variants[0]?.id);
   assert.equal(mergedCart.items[0]?.quantity.toNumber(), 2);
 
   await prisma.cartItem.update({
@@ -595,10 +667,10 @@ async function proveTelegramQuickAddMerge(
     data: { modifierSnapshot: [{ modifierId: fixture.modifier.id, quantity: 1 }] },
   });
   await telegramOrdering.handleCustomerCallback({
-    id: "step13-quick-add-plain-after-modified",
+    id: "step-current-simple-plain-after-modified",
     message: { chat: { id: fixture.telegramChatId } },
     from: { id: fixture.telegramUserId },
-    data: "cust:qadd:burger:max:chicken",
+    data: `cust:qprod:${fixture.simple.id}:${fixture.simple.categoryId}:1`,
   });
   assert.equal(
     await prisma.cartItem.count({ where: { cartId: mergedCart.id } }),
@@ -607,15 +679,41 @@ async function proveTelegramQuickAddMerge(
   );
 
   await telegramOrdering.handleCustomerCallback({
-    id: "step13-quick-add-different-product",
+    id: "step-current-lavash-variant-add",
     message: { chat: { id: fixture.telegramChatId } },
     from: { id: fixture.telegramUserId },
-    data: "cust:qadd:lavash:original:beef",
+    data: `cust:addv:${fixture.lavash.variants[0]!.id}`,
   });
   assert.equal(
     await prisma.cartItem.count({ where: { cartId: mergedCart.id } }),
     3,
     "different product/variant selections must remain separate",
+  );
+
+  await telegramOrdering.handleCustomerCallback({
+    id: "step-current-burger-variant-add",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: `cust:addv:${fixture.burger.variants[0]!.id}`,
+  });
+  await telegramOrdering.handleCustomerCallback({
+    id: "step-current-set-variant-add",
+    message: { chat: { id: fixture.telegramChatId } },
+    from: { id: fixture.telegramUserId },
+    data: `cust:addv:${fixture.set.variants[0]!.id}`,
+  });
+  const cartWithSet = await prisma.cart.findFirstOrThrow({
+    where: { customerId: fixture.telegramCustomer.id },
+    include: { items: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  assert.equal(cartWithSet.items.filter((item) => item.productId === fixture.set.id).length, 1);
+  assert.equal(
+    cartWithSet.items.filter((item) =>
+      fixture.set.bundleItems.some((bundleItem) => bundleItem.componentProductId === item.productId),
+    ).length,
+    0,
+    "set quick add must not expand bundle components into separately charged cart lines",
   );
 
   await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
@@ -709,10 +807,10 @@ async function proveTelegramNewOrderAfterSuccess(
   );
 
   await telegramOrdering.handleCustomerCallback({
-    id: "step15-post-success-quick-add",
+    id: "step15-post-success-simple-add",
     message: { chat: { id: fixture.telegramChatId } },
     from: { id: fixture.telegramUserId },
-    data: "cust:qadd:burger:max:chicken",
+    data: `cust:qprod:${fixture.simple.id}:${fixture.simple.categoryId}:1`,
   });
   const cart = await prisma.cart.findFirstOrThrow({
     where: { customerId: fixture.telegramCustomer.id },

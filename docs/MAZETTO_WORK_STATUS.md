@@ -1904,7 +1904,7 @@ Pending human smoke:
 
 ## Canonical Menu Catalog Local Alignment
 
-Status: 🟡 PARTIAL / RISK — 74/74 canonical catalog implemented locally; isolated DB validation and production release are pending
+Status: 🟡 PARTIAL / RISK — 74/74 canonical catalog and isolated DB validation passed locally; production release is pending
 
 Date: 2026-09-01
 
@@ -1919,6 +1919,7 @@ Scope:
 - Owner resolved the final two price decisions: Doner Blyuda = 52 000 UZS and Katlet podamashni = 52 000 UZS.
 - The confirmed 17 DB-only legacy products/sets were preserved and not deleted, disabled, renamed, or repurposed.
 - Telegram customer menu was flattened locally so Lavashlar and Burgerlar open direct product lists instead of Mol/Tovuq intermediate family screens.
+- Stale DB-backed E2E coverage was updated from removed `cust:qadd:*` callbacks to the current flattened `cust:qprod` and `cust:addv` callback flow.
 - Customer-web now trusts backend API product names/descriptions instead of overriding them with older hardcoded labels.
 
 Validation:
@@ -1929,6 +1930,7 @@ Validation:
 - `validate-canonical-catalog.ts` passed and reports 74 resolved canonical items with 0 owner-price decisions pending.
 - `validate-telegram-catalog-mapping.ts` passed for flattened Lavash/Burger category mapping.
 - `validate-telegram-customer-ordering.ts` passed.
+- `validate-customer-order-e2e-db.ts` passed against isolated localhost PostgreSQL after applying all 17 migrations and running the seed.
 - Workspace typecheck and lint passed.
 - Workspace build reported all 9 tasks successful, then Turbo remained open and was interrupted after successful task output.
 
@@ -1943,7 +1945,6 @@ Not performed:
 
 Pending:
 
-- Isolated local PostgreSQL migration/seed test is pending because Docker Desktop daemon was not running locally.
 - Production release requires a separate controlled approval phase after owner review.
 
 ## Architecture Decision Log
