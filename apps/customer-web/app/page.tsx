@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BrandLogo } from "../components/brand-logo";
 import { BranchPicker } from "../components/branch-picker";
 import { CustomerAuthPanel } from "../components/customer-auth-panel";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
@@ -101,9 +100,6 @@ export default function Home() {
       <MotionDiv {...pageMotion} className="mx-auto w-full max-w-6xl px-3 pb-3 pt-4 sm:px-4 lg:pt-7">
         <section className="mf-hero-shell mf-home-hero mf-organic grid min-w-0 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-stretch">
           <div className="min-w-0 px-4 pb-4 pt-5 sm:p-7 lg:p-9">
-            <div className="mx-auto mb-3 w-[min(18rem,78vw)] lg:hidden">
-              <BrandLogo className="h-auto w-full drop-shadow-[0_18px_42px_rgba(0,0,0,0.24)]" priority sizes="288px" />
-            </div>
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#0B7F75]">MAZETTO FOOD</p>
             <h1 className="mt-2 max-w-2xl text-[2.45rem] font-black leading-[0.98] text-[#17314A] sm:text-5xl lg:text-6xl">
               {heroTitle}
@@ -112,7 +108,7 @@ export default function Home() {
               {heroSubtitle}
             </p>
 
-            <div className="mt-5 grid max-w-xl min-w-0 gap-2 rounded-[1.45rem] border border-[#0B7F75]/12 bg-white/82 p-2 shadow-[0_16px_42px_rgba(0,79,85,0.14)] sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="mt-5 grid max-w-xl min-w-0 gap-2 rounded-[1.45rem] border border-[#0B7F75]/12 bg-white/82 p-2 shadow-[0_16px_42px_rgba(0,79,85,0.14)] xl:grid-cols-[minmax(16rem,1fr)_auto]">
               <BranchPicker branches={branches} disabled={loading} onChange={selectBranch} value={branchId} />
               <Link className="pressable ripple mf-button-primary grid min-h-12 place-items-center px-5 py-3 text-center font-black" href={branchId ? `/menu?branchId=${branchId}` : "/menu"}>
                 Buyurtma berish
@@ -126,13 +122,10 @@ export default function Home() {
             </div>
           </div>
           <MotionDiv {...cardMotion} className="mf-home-hero-media relative min-h-[17rem] overflow-hidden p-4 sm:min-h-[20rem] lg:min-h-[28rem]">
-            <div className="absolute right-5 top-5 hidden w-[min(20rem,38vw)] lg:block">
-              <BrandLogo className="h-auto w-full drop-shadow-[0_18px_42px_rgba(0,0,0,0.26)]" priority sizes="340px" />
-            </div>
             <div className="absolute inset-x-6 top-5 hidden rounded-full border border-white/12 bg-white/12 px-4 py-2 text-center text-xs font-black uppercase tracking-[0.18em] text-[#F5CF00] backdrop-blur lg:block">
               est. 2025
             </div>
-            <div className="mx-auto mt-1 w-[min(19rem,84vw)] lg:absolute lg:bottom-8 lg:left-7 lg:w-[min(27rem,46vw)]">
+            <div className="mx-auto mt-1 w-[min(19rem,84vw)] lg:absolute lg:bottom-6 lg:left-1/2 lg:w-[min(30rem,46vw)] lg:-translate-x-1/2">
               <MediaImage
                 alt={heroProduct?.name ?? "MAZETTO FOOD taomi"}
                 aspectClassName="aspect-[1.18/1]"
@@ -144,7 +137,7 @@ export default function Home() {
                 src={heroImageUrl}
               />
             </div>
-            <div className="absolute bottom-5 right-5 rounded-[1.35rem] border border-white/18 bg-white/18 px-4 py-3 text-white shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-md">
+            <div className="absolute bottom-4 right-4 max-w-[11rem] rounded-[1.35rem] border border-white/18 bg-[#07373A]/52 px-4 py-3 text-white shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-md">
               <p className="text-[11px] font-black uppercase text-[#F5CF00]">Bugungi tanlov</p>
               <p className="mt-1 max-w-36 truncate text-sm font-black">{heroProduct?.name ?? "Issiq menyu"}</p>
               <p className="mt-1 text-sm font-black text-[#F5CF00]">{formatMoney(heroProduct?.sellingPrice ?? 0)}</p>

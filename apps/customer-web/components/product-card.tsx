@@ -24,6 +24,51 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
     [product.id, variant?.id],
   );
   const cartLine = items.find((item) => item.key === quickCartKey);
+  const actionControl = cartLine && !requiresConfiguration ? (
+    <ProductQuantityControl
+      onDecrease={() => {
+        hapticTap(8);
+        updateQuantity(cartLine.key, cartLine.quantity - 1);
+      }}
+      onIncrease={() => {
+        hapticTap(8);
+        updateQuantity(cartLine.key, cartLine.quantity + 1);
+      }}
+      productName={product.name}
+      quantity={cartLine.quantity}
+    />
+  ) : requiresConfiguration ? (
+    <Link className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
+      {compact ? "+" : "Tanlash"}
+    </Link>
+  ) : (
+    <MotionButton
+      {...buttonMotion}
+      aria-label={`${product.name} savatga qo'shish`}
+      className="pressable ripple mf-button-primary mf-product-plus justify-self-end font-black"
+      onClick={() => {
+        const rect = imageRef.current?.getBoundingClientRect();
+        if (rect) {
+          triggerCartFlight(product.imageUrl, rect);
+        }
+
+        hapticTap([10, 24, 10]);
+        addItem({
+          productId: product.id,
+          productName: product.name,
+          imageUrl: product.imageUrl,
+          variantId: variant?.id,
+          variantName: variant?.name,
+          unitPrice: price,
+          quantity: 1,
+          modifiers: [],
+        });
+      }}
+      type="button"
+    >
+      {compact ? "+" : "Qo'shish"}
+    </MotionButton>
+  );
 
   return (
     <MotionArticle
@@ -66,6 +111,9 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
             Set
           </span>
         ) : null}
+        <div className="mf-product-action-slot">
+          {actionControl}
+        </div>
       </div>
       <div className={compact ? "grid min-h-0 grid-rows-[2.35rem_2.35rem_2.75rem] gap-1.5 p-2.5" : "grid gap-2 p-4"}>
         <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
@@ -87,53 +135,6 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
           >
             {formatMoney(price)}
           </motion.span>
-          <div className="mf-product-action-slot">
-            {cartLine && !requiresConfiguration ? (
-              <ProductQuantityControl
-                onDecrease={() => {
-                  hapticTap(8);
-                  updateQuantity(cartLine.key, cartLine.quantity - 1);
-                }}
-                onIncrease={() => {
-                  hapticTap(8);
-                  updateQuantity(cartLine.key, cartLine.quantity + 1);
-                }}
-                productName={product.name}
-                quantity={cartLine.quantity}
-              />
-            ) : requiresConfiguration ? (
-              <Link className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
-                {compact ? "+" : "Tanlash"}
-              </Link>
-            ) : (
-              <MotionButton
-                {...buttonMotion}
-                aria-label={`${product.name} savatga qo'shish`}
-                className="pressable ripple mf-button-primary mf-product-plus justify-self-end font-black"
-                onClick={() => {
-                  const rect = imageRef.current?.getBoundingClientRect();
-                  if (rect) {
-                    triggerCartFlight(product.imageUrl, rect);
-                  }
-
-                  hapticTap([10, 24, 10]);
-                  addItem({
-                    productId: product.id,
-                    productName: product.name,
-                    imageUrl: product.imageUrl,
-                    variantId: variant?.id,
-                    variantName: variant?.name,
-                    unitPrice: price,
-                    quantity: 1,
-                    modifiers: [],
-                  });
-                }}
-                type="button"
-              >
-                {compact ? "+" : "Qo'shish"}
-              </MotionButton>
-            )}
-          </div>
         </div>
       </div>
     </MotionArticle>

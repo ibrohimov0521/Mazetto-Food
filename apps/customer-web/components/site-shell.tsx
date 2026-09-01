@@ -10,7 +10,7 @@ import { useCart, type CartFlight } from "../lib/cart";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { cartFlight, customer, finishCartFlight, items, subtotal, toastMessage } = useCart();
+  const { cartFlight, finishCartFlight, items, subtotal, toastMessage } = useCart();
   const navItems = useMemo(
     () => [
       { href: "/", label: "Bosh sahifa", icon: HomeIcon },
@@ -40,13 +40,8 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
               </Link>
             </nav>
           </div>
-          <div className={`hidden h-6 overflow-hidden border-t px-4 transition-colors duration-200 md:block ${customer ? "border-white/10 bg-white/6" : "border-transparent bg-transparent"}`}>
-            <div className={`flex h-full items-center justify-center text-center text-xs font-semibold text-[#67E8F9] transition-opacity duration-200 ${customer ? "opacity-100" : "opacity-0"}`} aria-hidden={!customer}>
-              {customer ? `${customer.name} · bonus ${formatCompact(Number(customer.bonusBalance ?? 0))}` : "\u00a0"}
-            </div>
-          </div>
         </header>
-        <div aria-hidden="true" className="hidden h-20 md:block" />
+        <div aria-hidden="true" className="hidden h-14 md:block" />
         <LayoutGroup id="customer-page-content">
           <AnimatePresence initial={false} mode="wait">
             <motion.div

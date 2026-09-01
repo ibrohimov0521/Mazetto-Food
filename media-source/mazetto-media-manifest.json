@@ -1,0 +1,119 @@
+{
+  "project": "MAZETTO FOOD",
+  "phase": "74-item product media pipeline proof batch",
+  "generatedAt": "2026-09-01T18:44:45.983504+00:00",
+  "localOnly": true,
+  "productionChanged": false,
+  "sourceFiles": {
+    "pdf": "docs/design/source-media/menu mazetto.pdf",
+    "cdr": "docs/design/source-media/menu mazetto.cdr",
+    "referenceBackground": "C:\\Users\\javoh\\Downloads\\01-lavash.png"
+  },
+  "cdrExtraction": {
+    "status": "not_available",
+    "reason": "No compatible local CorelDRAW/CDR extraction CLI is available; existing PDF-derived assets are used."
+  },
+  "canvas": [
+    1600,
+    1600
+  ],
+  "lockedBackground": {
+    "path": "media-source/backgrounds/mazetto-premium-product-background.png",
+    "sha256": "3a27cccdbd4e0495442268bec7362c65b0d9369b7cae9b5c26016372d0f88034"
+  },
+  "proofBatch": [
+    {
+      "sequence": 9,
+      "filename": "09-kurinniy-lavash.png",
+      "databaseName": "Kurinniy Lavash",
+      "sourceName": "Tovuqli lavash",
+      "sourcePath": "apps/customer-web/public/menu-media/source/products/chicken-lavash.webp",
+      "extractedPath": "media-source/extracted/09-kurinniy-lavash.png",
+      "cleanedPath": "media-source/cleaned/09-kurinniy-lavash.png",
+      "finalPath": "media-source/final/09-kurinniy-lavash.png",
+      "sourceSha256": "1debaf194001daa4b5463760cf27d4bd6ba87ae937162a9a7a6e0af2bb147191",
+      "finalSha256": "7d5c02a7043b72ab27ef50f0ff63195c664427ecb5f62882e456b4a282b7dc73",
+      "canvas": [
+        1600,
+        1600
+      ],
+      "background": "media-source/backgrounds/mazetto-premium-product-background.png",
+      "backgroundSha256": "3a27cccdbd4e0495442268bec7362c65b0d9369b7cae9b5c26016372d0f88034",
+      "status": "READY_FOR_OWNER_REVIEW",
+      "authenticity": "No ingredients invented; source food object reused from MAZETTO PDF extraction.",
+      "notes": "Exact chicken lavash visual sourced from the MAZETTO PDF extraction."
+    },
+    {
+      "sequence": 10,
+      "filename": "10-kurinniy-big-lavash.png",
+      "databaseName": "Kurinniy Big Lavash",
+      "sourceName": "Tovuqli lavash",
+      "sourcePath": "apps/customer-web/public/menu-media/source/products/chicken-lavash.webp",
+      "extractedPath": "media-source/extracted/10-kurinniy-big-lavash.png",
+      "cleanedPath": "media-source/cleaned/10-kurinniy-big-lavash.png",
+      "finalPath": "media-source/final/10-kurinniy-big-lavash.png",
+      "sourceSha256": "1debaf194001daa4b5463760cf27d4bd6ba87ae937162a9a7a6e0af2bb147191",
+      "finalSha256": "e9ef533ffcd61c954c677ed7d4d6c4086e8ee9dd662ba780523c6620fc5f8d92",
+      "canvas": [
+        1600,
+        1600
+      ],
+      "background": "media-source/backgrounds/mazetto-premium-product-background.png",
+      "backgroundSha256": "3a27cccdbd4e0495442268bec7362c65b0d9369b7cae9b5c26016372d0f88034",
+      "status": "READY_FOR_OWNER_REVIEW",
+      "authenticity": "No ingredients invented; source food object reused from MAZETTO PDF extraction.",
+      "notes": "The PDF does not provide a separate big chicken lavash image; the same authentic chicken lavash visual is reused at a larger presentation scale."
+    },
+    {
+      "sequence": 11,
+      "filename": "11-kurinniy-lavash-pishloqli.png",
+      "databaseName": "Kurinniy Lavash Pishloqli",
+      "sourceName": "Tovuqli pishloqli lavash",
+      "sourcePath": "apps/customer-web/public/menu-media/source/products/chicken-cheese-lavash.webp",
+      "extractedPath": "media-source/extracted/11-kurinniy-lavash-pishloqli.png",
+      "cleanedPath": "media-source/cleaned/11-kurinniy-lavash-pishloqli.png",
+      "finalPath": "media-source/final/11-kurinniy-lavash-pishloqli.png",
+      "sourceSha256": "d57cd2ea0ec52b61a33982785091fc595796e3d6b0e0760716455c91da233df6",
+      "finalSha256": "ad15048f8a5a0c84abac96affcb9751f64fd907bef65e38cfb12fbe24d34c63c",
+      "canvas": [
+        1600,
+        1600
+      ],
+      "background": "media-source/backgrounds/mazetto-premium-product-background.png",
+      "backgroundSha256": "3a27cccdbd4e0495442268bec7362c65b0d9369b7cae9b5c26016372d0f88034",
+      "status": "READY_FOR_OWNER_REVIEW",
+      "authenticity": "No ingredients invented; source food object reused from MAZETTO PDF extraction.",
+      "notes": "Exact chicken cheese lavash visual sourced from the MAZETTO PDF extraction."
+    },
+    {
+      "sequence": 12,
+      "filename": "12-kurinniy-big-lavash-pishloqli.png",
+      "databaseName": "Kurinniy Big Lavash Pishloqli",
+      "sourceName": "Tovuqli pishloqli lavash",
+      "sourcePath": "apps/customer-web/public/menu-media/source/products/chicken-cheese-lavash.webp",
+      "extractedPath": "media-source/extracted/12-kurinniy-big-lavash-pishloqli.png",
+      "cleanedPath": "media-source/cleaned/12-kurinniy-big-lavash-pishloqli.png",
+      "finalPath": "media-source/final/12-kurinniy-big-lavash-pishloqli.png",
+      "sourceSha256": "d57cd2ea0ec52b61a33982785091fc595796e3d6b0e0760716455c91da233df6",
+      "finalSha256": "9560db37940239d5a213a66675c728fde092fc87e260caafe387cddc6e308549",
+      "canvas": [
+        1600,
+        1600
+      ],
+      "background": "media-source/backgrounds/mazetto-premium-product-background.png",
+      "backgroundSha256": "3a27cccdbd4e0495442268bec7362c65b0d9369b7cae9b5c26016372d0f88034",
+      "status": "READY_FOR_OWNER_REVIEW",
+      "authenticity": "No ingredients invented; source food object reused from MAZETTO PDF extraction.",
+      "notes": "The PDF does not provide a separate big chicken cheese lavash image; the same authentic chicken cheese lavash visual is reused at a larger presentation scale."
+    }
+  ],
+  "fullCatalogPolicy": {
+    "canonicalItems": 74,
+    "standaloneProducts": 56,
+    "sets": 18,
+    "batchPolicy": "Only the four requested proof-batch files were generated in this run.",
+    "noAiGeneration": true,
+    "noDatabaseChanges": true,
+    "noSeedImagePathChanges": true
+  }
+}

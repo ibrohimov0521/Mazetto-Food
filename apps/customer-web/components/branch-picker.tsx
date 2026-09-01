@@ -71,8 +71,8 @@ export function BranchPicker({
         <span className="mf-branch-icon grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-lg" aria-hidden="true">⌖</span>
         <span className="min-w-0 flex-1">
           <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-[#0B7F75]">{label}</span>
-          <span className="mt-0.5 block truncate text-[15px] font-black text-[#17314A]">{selectedBranch?.name ?? "Filial tanlang"}</span>
-          {selectedBranch?.address ? <span className="mt-0.5 block truncate text-[11px] font-bold text-[#17314A]/58">{selectedBranch.address}</span> : null}
+          <span className="mt-0.5 block break-words text-[15px] font-black leading-tight text-[#17314A]">{selectedBranch?.name ?? "Filial tanlang"}</span>
+          {selectedBranch?.address ? <span className="mt-0.5 block break-words text-[11px] font-bold leading-tight text-[#17314A]/58">{selectedBranch.address}</span> : null}
         </span>
         <span className={`mf-branch-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
       </button>
