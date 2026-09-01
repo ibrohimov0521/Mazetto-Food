@@ -156,22 +156,41 @@ function OrdersDashboard() {
           <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtmani kuzatish</p>
           <h1 className="mt-1 text-[1.65rem] font-black leading-tight text-[#17314A] sm:text-3xl">Buyurtmalarim</h1>
           {activeOrder ? (
-            <div className="mf-cart-row mt-4 min-w-0 p-4 sm:mt-5 sm:p-5">
-              <p className="text-sm font-bold uppercase text-[#0B7F75]">Faol buyurtma</p>
-              <div className="mt-2 grid min-w-0 gap-3 sm:flex sm:items-start sm:justify-between">
+            <div className="mf-active-order-card mt-4 min-w-0 overflow-hidden p-4 sm:mt-5 sm:p-5">
+              <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                 <div className="min-w-0">
-                  <Link className="break-words text-xl font-black leading-tight text-[#17314A] transition hover:text-[#0B7F75] sm:text-2xl" href={`/orders/${activeOrder.id}`}>{activeOrder.order.orderNumber}</Link>
-                  <p className="mt-1 text-sm font-semibold text-[#17314A]/60">{statusLabel(activeOrder.status)} · {typeLabels[activeOrder.type] ?? activeOrder.type}</p>
-                  {activeOrder.branch ? <p className="mt-1 text-sm font-semibold text-[#17314A]/45">{activeOrder.branch.name}</p> : null}
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[#0B7F75]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-[#0B7F75]">Faol buyurtma</span>
+                    <StatusChip status={activeOrder.status} />
+                  </div>
+                  <Link className="mt-3 block break-words text-2xl font-black leading-tight text-[#07373A] transition hover:text-[#0B7F75] sm:text-3xl" href={`/orders/${activeOrder.id}`}>
+                    {activeOrder.order.orderNumber}
+                  </Link>
+                  <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                    <InfoChip label={typeLabels[activeOrder.type] ?? activeOrder.type} />
+                    {activeOrder.branch ? <InfoChip label={activeOrder.branch.name} /> : null}
+                  </div>
                 </div>
-                <span className="w-fit rounded-full bg-[#0B7F75]/10 px-3 py-2 text-sm font-black text-[#0B7F75] sm:px-4">{formatMoney(activeOrder.order.total)}</span>
+                <div className="mf-active-order-total min-w-0 rounded-[1.35rem] px-4 py-3 text-left lg:min-w-[11rem] lg:text-right">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-[#07373A]/58">Jami</p>
+                  <p className="mt-1 whitespace-nowrap text-2xl font-black text-[#07373A] sm:text-3xl">{formatMoney(activeOrder.order.total)}</p>
+                </div>
               </div>
               <StatusTracker status={activeOrder.order.status ?? activeOrder.status} />
-              <div className="mt-5 grid min-w-0 gap-2">
+              <div className="mt-5 grid min-w-0 gap-2.5">
                 {activeOrder.order.items.map((item) => (
-                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-xl bg-[#0B7F75]/7 px-3 py-3 text-sm font-bold text-[#17314A] sm:gap-3 sm:px-4" key={item.id}>
-                    <span className="min-w-0 break-words leading-snug">{Number(item.quantity)}x {localizeMenuName(item.productName)}</span>
-                    <span className="shrink-0 whitespace-nowrap text-right text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
+                  <div className="mf-active-order-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-[1.15rem] px-3 py-3 text-sm text-[#17314A] sm:px-4" key={item.id}>
+                    <div className="min-w-0">
+                      <p className="break-words font-black leading-snug">
+                        <span className="text-[#0B7F75]">{Number(item.quantity)}x</span> {localizeMenuName(item.productName)}
+                      </p>
+                      {item.variantName || item.modifierSnapshot?.length ? (
+                        <p className="mt-1 break-words text-xs font-semibold leading-5 text-[#17314A]/54">
+                          {[item.variantName, ...(item.modifierSnapshot?.map((modifier) => modifier.name) ?? [])].filter(Boolean).join(" · ")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 whitespace-nowrap text-right font-black text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
@@ -263,17 +282,35 @@ function StatusTracker({ status }: { status: string }) {
   const activeIndex = Math.max(0, trackingSteps.indexOf(normalized));
 
   return (
-    <div className="mt-5 grid min-w-0 grid-cols-5 gap-1 sm:gap-2">
+    <div className="mt-5 grid min-w-0 grid-cols-5 gap-1.5 rounded-[1.35rem] bg-white/58 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] sm:gap-2 sm:p-3">
       {trackingSteps.map((step, index) => {
         const active = index <= activeIndex;
+        const current = index === activeIndex;
         return (
           <div className="grid min-w-0 gap-1.5 text-center" key={step}>
-            <div className={`h-1.5 rounded-full ${active ? "bg-[#22C55E]" : "bg-[#0B7F75]/12"}`} />
+            <div className={`h-2 rounded-full transition-colors ${active ? "bg-[#F5CF00]" : "bg-[#0B7F75]/12"} ${current ? "shadow-[0_0_18px_rgba(245,207,0,0.48)]" : ""}`} />
             <p className={`min-w-0 break-words text-[8.5px] font-black leading-[1.05] sm:text-xs ${active ? "text-[#0B7F75]" : "text-[#17314A]/46"}`}>{statusLabel(step)}</p>
           </div>
         );
       })}
     </div>
+  );
+}
+
+function StatusChip({ status }: { status: string }) {
+  const cancelled = status === "CANCELLED";
+  return (
+    <span className={`rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide ${cancelled ? "bg-red-500/12 text-red-700" : "bg-[#F5CF00]/28 text-[#07373A]"}`}>
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+function InfoChip({ label }: { label: string }) {
+  return (
+    <span className="min-w-0 rounded-full border border-[#0B7F75]/12 bg-white/64 px-3 py-1.5 text-xs font-black text-[#0A4F55] shadow-[0_8px_18px_rgba(0,79,85,0.07)]">
+      {label}
+    </span>
   );
 }
 

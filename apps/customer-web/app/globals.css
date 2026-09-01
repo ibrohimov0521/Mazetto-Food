@@ -551,6 +551,33 @@ img {
   box-shadow: 0 10px 24px rgba(0, 79, 85, 0.08);
 }
 
+.mf-active-order-card {
+  position: relative;
+  border: 1px solid rgba(10, 79, 85, 0.12);
+  border-radius: 1.45rem;
+  background:
+    radial-gradient(circle at 92% 5%, rgba(245, 207, 0, 0.18), transparent 12rem),
+    radial-gradient(ellipse at 0% 100%, rgba(11, 143, 131, 0.12), transparent 14rem),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(245, 245, 239, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 16px 42px rgba(0, 79, 85, 0.16);
+}
+
+.mf-active-order-total {
+  border: 1px solid rgba(245, 207, 0, 0.44);
+  background:
+    linear-gradient(135deg, rgba(245, 207, 0, 0.95), rgba(255, 216, 61, 0.9)),
+    #f5cf00;
+  box-shadow: 0 16px 34px rgba(245, 207, 0, 0.24);
+}
+
+.mf-active-order-item {
+  border: 1px solid rgba(10, 79, 85, 0.1);
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: 0 10px 22px rgba(0, 79, 85, 0.08);
+}
+
 .mf-cart-upsell-card {
   border: 1px solid rgba(10, 79, 85, 0.1);
   background:
