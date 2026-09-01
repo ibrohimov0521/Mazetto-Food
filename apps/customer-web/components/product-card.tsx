@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef } from "react";
-import { motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { MediaImage } from "./media-image";
 import { MotionArticle, MotionButton, buttonMotion, cardMotion, hapticTap, imageMotion } from "./motion-primitives";
 import { cartItemKey, formatMoney, useCart } from "../lib/cart";
@@ -89,11 +89,18 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
           </motion.span>
           <div className="mf-product-action-slot">
             {cartLine && !requiresConfiguration ? (
-              <div className="mf-product-stepper mf-button-primary grid grid-cols-3 items-center overflow-hidden rounded-full text-sm font-black">
-                <button aria-label={`${product.name} kamaytirish`} className="pressable h-full w-full" onClick={() => { hapticTap(8); updateQuantity(cartLine.key, cartLine.quantity - 1); }} type="button">-</button>
-                <motion.span animate={{ scale: [1, 1.16, 1] }} className="text-center" key={cartLine.quantity} transition={{ duration: 0.22 }}>{cartLine.quantity}</motion.span>
-                <button aria-label={`${product.name} qo'shish`} className="pressable h-full w-full" onClick={() => { hapticTap(8); updateQuantity(cartLine.key, cartLine.quantity + 1); }} type="button">+</button>
-              </div>
+              <ProductQuantityControl
+                onDecrease={() => {
+                  hapticTap(8);
+                  updateQuantity(cartLine.key, cartLine.quantity - 1);
+                }}
+                onIncrease={() => {
+                  hapticTap(8);
+                  updateQuantity(cartLine.key, cartLine.quantity + 1);
+                }}
+                productName={product.name}
+                quantity={cartLine.quantity}
+              />
             ) : requiresConfiguration ? (
               <Link className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
                 {compact ? "+" : "Tanlash"}
@@ -130,5 +137,115 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
         </div>
       </div>
     </MotionArticle>
+  );
+}
+
+function ProductQuantityControl({
+  onDecrease,
+  onIncrease,
+  productName,
+  quantity,
+}: {
+  onDecrease: () => void;
+  onIncrease: () => void;
+  productName: string;
+  quantity: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const collapseTimer = useRef<number | null>(null);
+
+  const clearCollapseTimer = useCallback(() => {
+    if (collapseTimer.current) {
+      window.clearTimeout(collapseTimer.current);
+      collapseTimer.current = null;
+    }
+  }, []);
+
+  const scheduleCollapse = useCallback(() => {
+    clearCollapseTimer();
+    collapseTimer.current = window.setTimeout(() => {
+      setExpanded(false);
+      collapseTimer.current = null;
+    }, 2000);
+  }, [clearCollapseTimer]);
+
+  const expand = useCallback(() => {
+    setExpanded(true);
+    scheduleCollapse();
+  }, [scheduleCollapse]);
+
+  useEffect(() => clearCollapseTimer, [clearCollapseTimer]);
+
+  useEffect(() => {
+    if (expanded) {
+      scheduleCollapse();
+    }
+  }, [expanded, quantity, scheduleCollapse]);
+
+  return (
+    <motion.div
+      animate={{ scale: expanded ? 1 : 0.98 }}
+      className={`mf-product-stepper mf-button-primary ${expanded ? "is-expanded" : "is-collapsed"} items-center overflow-hidden rounded-full text-sm font-black`}
+      initial={false}
+      transition={{ type: "spring", stiffness: 520, damping: 38 }}
+    >
+      <AnimatePresence initial={false} mode="popLayout">
+        {expanded ? (
+          <motion.div
+            animate={{ opacity: 1 }}
+            className="grid h-full w-full grid-cols-3 items-center"
+            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            key="expanded"
+            transition={{ duration: 0.16 }}
+          >
+            <button
+              aria-label={`${productName} kamaytirish`}
+              className="pressable h-full w-full"
+              onClick={() => {
+                onDecrease();
+                scheduleCollapse();
+              }}
+              type="button"
+            >
+              -
+            </button>
+            <motion.span
+              animate={{ scale: [1, 1.16, 1] }}
+              className="text-center"
+              key={quantity}
+              transition={{ duration: 0.22 }}
+            >
+              {quantity}
+            </motion.span>
+            <button
+              aria-label={`${productName} qo'shish`}
+              className="pressable h-full w-full"
+              onClick={() => {
+                onIncrease();
+                scheduleCollapse();
+              }}
+              type="button"
+            >
+              +
+            </button>
+          </motion.div>
+        ) : (
+          <motion.button
+            animate={{ opacity: 1, scale: 1 }}
+            aria-label={`${productName} miqdori ${quantity}. O'zgartirish`}
+            className="pressable grid h-full w-full place-items-center"
+            exit={{ opacity: 0, scale: 0.92 }}
+            initial={{ opacity: 0, scale: 0.92 }}
+            key="collapsed"
+            onClick={expand}
+            transition={{ duration: 0.16 }}
+            type="button"
+          >
+            {quantity}
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

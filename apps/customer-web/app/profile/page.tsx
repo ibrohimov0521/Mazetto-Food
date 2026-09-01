@@ -77,8 +77,8 @@ function Profile() {
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-card p-8">
           <CustomerAuthPanel
-            description="Sevimlilar, buyurtmalar va bonus balansini ko'rish uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
-            title="Telefonni tasdiqlang"
+            description="Sevimlilarni saqlang va buyurtmani kuzating. Telefon raqamingizni Telegram kodi bilan tasdiqlang."
+            title="Telefon orqali profil"
           />
         </div>
       </section>
@@ -89,9 +89,15 @@ function Profile() {
     <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-5">
       <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
         <div className="mf-checkout-card min-w-0 p-4">
-          <p className="text-xs font-black uppercase text-[#0B7F75]">Mijoz profili</p>
+          <p className="text-xs font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>
           <h1 className="mt-1 text-3xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
           <p className="mt-1 text-sm font-bold text-[#17314A]/60">{dashboard?.phone ?? customer.phone}</p>
+          <div className="mt-3 inline-flex rounded-full bg-[#0B7F75]/10 px-3 py-1 text-xs font-black text-[#0B7F75]">
+            Profil ulangan
+          </div>
+          <p className="mt-2 text-sm font-semibold leading-5 text-[#17314A]/62">
+            Sevimlilarni saqlang va buyurtmani kuzating.
+          </p>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
             <Stat label="Buyurtmalar" value={`${dashboard?.customerOrders.length ?? 0}`} />
