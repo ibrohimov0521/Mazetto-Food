@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { BrandLogo } from "../../../components/brand-logo";
 import { CustomerMenuSections } from "../../../components/customer-menu-sections";
 import { MediaImage } from "../../../components/media-image";
 import { MotionButton, MotionDiv, buttonMotion, cardMotion, hapticTap, imageMotion, pageMotion } from "../../../components/motion-primitives";
@@ -103,52 +102,29 @@ function ProductDetails({ id }: { id: string }) {
 
   return (
     <>
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 pt-4">
-        <Link className="pressable grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-white/12 text-2xl font-black text-white backdrop-blur" href="/menu" aria-label="Menyuga qaytish">
-          ‹
-        </Link>
-        <BrandLogo className="h-auto w-[min(15rem,56vw)]" priority sizes="240px" />
-        <button
-          aria-label="Sevimlilarga qo'shish"
-          className={`pressable grid h-11 w-11 place-items-center rounded-full border border-white/20 text-lg font-black shadow ${isFavorite(product.id) ? "bg-[#F5CF00] text-[#07373A]" : "bg-white/12 text-white backdrop-blur"}`}
-          onClick={() => {
-            hapticTap(8);
-            toggleFavorite(product.id);
-          }}
-          type="button"
-        >
-          ♥
-        </button>
-      </div>
-      <MotionDiv {...pageMotion} className="mf-product-detail-stage mx-auto grid w-full max-w-6xl gap-4 px-3 py-5 sm:px-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <MotionDiv {...cardMotion} className="mf-product-media-panel min-w-0 overflow-hidden">
-          <MediaImage
-            alt={product.name}
-            aspectClassName="aspect-[1.08/1] sm:aspect-[16/10] lg:aspect-[1.08/1]"
-            className="floating-image rounded-[1.7rem] will-change-transform"
-            fallbackLabel={product.name}
-            fit="contain"
-            motionProps={{
-              ...imageMotion,
-              layoutId: `product-detail-image-${product.id}`,
-            }}
-            priority
-            imageClassName="p-4"
-            ref={imageRef}
-            sizes="(max-width: 1024px) 100vw, 45vw"
-            src={product.imageUrl}
-          />
-          <div className="grid grid-cols-3 gap-2 p-2.5 sm:p-3">
-            <Metric label="Tayyorlanish" value={`${product.preparationTime ?? 10} daq`} />
-            <Metric label="Bo'lim" value={product.category?.name ?? "Menyu"} />
-            <Metric label="Narx" value={formatMoney(product.sellingPrice)} />
-          </div>
-        </MotionDiv>
+      <MotionDiv {...pageMotion} className="mf-product-detail-stage mx-auto grid w-full max-w-6xl gap-4 px-3 py-5 sm:px-4 lg:grid-cols-[minmax(0,1.02fr)_minmax(20rem,0.98fr)]">
       <div className="mf-product-config min-w-0 p-4 sm:p-5 lg:p-6">
-        <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <Link className="pressable grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#0B7F75]/16 bg-[#0B7F75]/8 text-2xl font-black text-[#0A4F55]" href="/menu" aria-label="Menyuga qaytish">
+            ‹
+          </Link>
+          <button
+            aria-label="Sevimlilarga qo'shish"
+            className={`pressable grid h-10 w-10 shrink-0 place-items-center rounded-full border text-lg font-black shadow ${isFavorite(product.id) ? "border-[#F5CF00]/45 bg-[#F5CF00] text-[#07373A]" : "border-[#0B7F75]/16 bg-[#0B7F75]/8 text-[#0A4F55]"}`}
+            onClick={() => {
+              hapticTap(8);
+              toggleFavorite(product.id);
+            }}
+            type="button"
+          >
+            ♥
+          </button>
+        </div>
+
+        <div className="mt-5 flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#0B7F75]">MAZETTO tanlovi</p>
-            <h1 className="mt-1 break-words text-[2.45rem] font-black leading-[0.98] text-[#0A4F55] sm:text-4xl lg:text-5xl">{product.name}</h1>
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#0B7F75]">Issiq tayyorlanadi</p>
+            <h1 className="mt-2 break-words text-[2.35rem] font-black leading-[0.98] text-[#0A4F55] sm:text-4xl lg:text-5xl">{product.name}</h1>
           </div>
           <div className="shrink-0 rounded-2xl bg-[#F5CF00] px-3 py-2 text-right text-sm font-black text-[#07373A] shadow-[0_12px_28px_rgba(245,207,0,0.24)]">
             {formatMoney(total)}
@@ -230,6 +206,34 @@ function ProductDetails({ id }: { id: string }) {
           </div>
         </div>
       </div>
+        <MotionDiv {...cardMotion} className="mf-product-media-panel min-w-0 overflow-hidden">
+          <div className="relative">
+            <MediaImage
+              alt={product.name}
+              aspectClassName="aspect-[1.08/1] sm:aspect-[16/10] lg:aspect-[1.08/1]"
+              className="floating-image rounded-[1.7rem] will-change-transform"
+              fallbackLabel={product.name}
+              fit="contain"
+              motionProps={{
+                ...imageMotion,
+                layoutId: `product-detail-image-${product.id}`,
+              }}
+              priority
+              imageClassName="p-4"
+              ref={imageRef}
+              sizes="(max-width: 1024px) 100vw, 45vw"
+              src={product.imageUrl}
+            />
+            <div className="absolute bottom-3 right-3 rounded-2xl bg-[#F5CF00] px-3 py-2 text-sm font-black text-[#07373A] shadow-[0_14px_32px_rgba(0,0,0,0.24)]">
+              {formatMoney(variant?.sellingPrice ?? product.sellingPrice)}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 p-2.5 sm:p-3">
+            <Metric label="Tayyorlanish" value={`${product.preparationTime ?? 10} daq`} />
+            <Metric label="Bo'lim" value={product.category?.name ?? "Menyu"} />
+            <Metric label="Narx" value={formatMoney(product.sellingPrice)} />
+          </div>
+        </MotionDiv>
       </MotionDiv>
       <section className="mf-product-menu-bridge mx-auto w-full max-w-6xl px-4 pb-2 pt-1">
         <div className="rounded-[1.5rem] border border-white/12 bg-white/8 px-4 py-3 text-center text-sm font-black text-[#F5CF00] backdrop-blur">
