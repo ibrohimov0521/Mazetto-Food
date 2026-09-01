@@ -17,7 +17,7 @@
   --mf-aqua: #23958d;
   --mf-lavender: #b9b8f0;
   --mf-ivory: #f5f5ef;
-  --mf-glass: rgba(245, 245, 239, 0.86);
+  --mf-glass: rgba(245, 245, 239, 0.94);
   --mf-glass-border: rgba(255, 255, 248, 0.48);
   --mf-control-bg: rgba(255, 255, 248, 0.74);
   --mf-control-hover: rgba(255, 255, 248, 0.92);
@@ -26,10 +26,10 @@
   --mf-radius: 24px;
   --mf-shadow: 0 20px 56px rgba(0, 79, 85, 0.18);
   --mf-glow: 0 16px 36px rgba(245, 207, 0, 0.32);
-  --mf-bottom-nav-gap: 0.4rem;
-  --mf-bottom-nav-height: 3.65rem;
-  --mf-bottom-nav-space: calc(var(--mf-bottom-nav-height) + var(--mf-bottom-nav-gap) + 0.45rem);
-  --mf-mobile-action-height: 4.25rem;
+  --mf-bottom-nav-gap: 0.28rem;
+  --mf-bottom-nav-height: 3.45rem;
+  --mf-bottom-nav-space: calc(var(--mf-bottom-nav-height) + var(--mf-bottom-nav-gap) + 0.4rem);
+  --mf-mobile-action-height: 3.55rem;
 }
 
 *,
@@ -140,6 +140,13 @@ img {
   left: 0.75rem;
   right: 0.75rem;
   bottom: calc(var(--mf-bottom-nav-space) + env(safe-area-inset-bottom));
+  border: 1px solid rgba(0, 79, 85, 0.14);
+  background:
+    linear-gradient(135deg, rgba(245, 207, 0, 0.18), rgba(255, 255, 248, 0.98) 42%),
+    rgba(245, 245, 239, 0.98);
+  color: #17314a;
+  box-shadow: 0 12px 30px rgba(0, 32, 35, 0.2);
+  backdrop-filter: blur(10px) saturate(1.08);
 }
 
 @media (min-width: 640px) {
@@ -522,7 +529,7 @@ img {
   border: 1px solid rgba(10, 79, 85, 0.1);
   border-radius: 1.25rem;
   background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 12px 28px rgba(0, 79, 85, 0.08);
+  box-shadow: 0 10px 24px rgba(0, 79, 85, 0.08);
 }
 
 .mf-cart-upsell-card {
@@ -530,7 +537,7 @@ img {
   background:
     radial-gradient(circle at 84% 12%, rgba(245, 207, 0, 0.12), transparent 8rem),
     linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(245, 245, 239, 0.88));
-  box-shadow: 0 14px 34px rgba(0, 79, 85, 0.12);
+  box-shadow: 0 10px 24px rgba(0, 79, 85, 0.12);
 }
 
 .mf-profile-bonus-panel {
@@ -776,12 +783,13 @@ img {
 
 .mazetto-glass-nav {
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.035)),
-    linear-gradient(120deg, rgba(245, 207, 0, 0.14), rgba(185, 184, 240, 0.08) 42%, rgba(0, 55, 59, 0.95));
+    linear-gradient(145deg, rgba(245, 245, 239, 0.1), rgba(0, 55, 59, 0.02)),
+    linear-gradient(120deg, rgba(245, 207, 0, 0.16), rgba(0, 79, 85, 0.98) 42%, rgba(0, 55, 59, 0.99));
+  border-color: rgba(245, 245, 239, 0.24);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -8px 22px rgba(245, 207, 0, 0.07),
-    0 14px 42px rgba(0, 0, 0, 0.38);
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -6px 16px rgba(245, 207, 0, 0.06),
+    0 10px 30px rgba(0, 0, 0, 0.32);
 }
 
 .mazetto-glass-button {

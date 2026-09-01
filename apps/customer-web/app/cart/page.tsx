@@ -22,7 +22,7 @@ function CartReview() {
   const total = subtotal;
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-3 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-5 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
+    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-4 px-3 pb-[calc(9.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
       <div className="mf-checkout-card min-w-0 p-5">
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -112,13 +112,13 @@ function CartReview() {
         )}
       </aside>
 
-      <div className="mf-mobile-action-bar mazetto-glass fixed inset-x-3 z-30 rounded-[1.5rem] p-3 lg:hidden">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-black uppercase text-white/50">Jami</p>
-            <p className="text-lg font-black text-white"><AnimatedMoney value={total} /></p>
+      <div className="mf-mobile-action-bar fixed inset-x-3 z-30 rounded-[1.2rem] p-2.5 lg:hidden">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2.5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-wide text-[#0B7F75]">Jami</p>
+            <p className="truncate text-base font-black text-[#17314A]"><AnimatedMoney value={total} /></p>
           </div>
-          <Link className={`pressable ripple rounded-2xl px-5 py-4 font-black ${items.length ? "mf-button-primary" : "pointer-events-none bg-white/10 text-white/40"}`} href={customer?.accessToken ? "/checkout" : "/checkout?auth=1"}>
+          <Link className={`pressable ripple grid h-11 shrink-0 place-items-center rounded-[1.05rem] px-4 text-sm font-black ${items.length ? "mf-button-primary" : "pointer-events-none bg-[#07373A]/10 text-[#07373A]/40"}`} href={customer?.accessToken ? "/checkout" : "/checkout?auth=1"}>
             {customer?.accessToken ? "Davom etish" : "Tasdiqlash"}
           </Link>
         </div>

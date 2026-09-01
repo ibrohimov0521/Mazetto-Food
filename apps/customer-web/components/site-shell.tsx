@@ -34,7 +34,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
               <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">Menyu</Link>
               <Link aria-current={isNavActive(pathname, "/orders") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/orders"))} href="/orders">Buyurtmalar</Link>
               <Link aria-current={isNavActive(pathname, "/profile") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/profile"))} href="/profile">Profil</Link>
-              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} data-cart-target="true" className="pressable ripple mf-button-primary grid min-w-[9.75rem] shrink-0 grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 whitespace-nowrap px-4 py-2" href="/cart">
+              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} aria-label={cartAriaLabel(items.length, subtotal)} data-cart-target="true" className="pressable ripple mf-button-primary grid min-w-[9.75rem] shrink-0 grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 whitespace-nowrap px-4 py-2" href="/cart">
                 <CartIcon />
                 <span className="block min-w-0 text-center">{items.length ? formatCompact(subtotal) : "Savat"}</span>
               </Link>
@@ -68,7 +68,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                 const Icon = item.icon;
 
                 return (
-                  <Link aria-current={active ? "page" : undefined} className={`pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1rem] px-0.5 text-[9px] font-black leading-tight text-white/82 ${item.href === "/cart" ? "mf-nav-cart" : ""}`} data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
+                  <Link aria-current={active ? "page" : undefined} aria-label={item.href === "/cart" ? cartAriaLabel(items.length, subtotal) : item.label} className={`pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1rem] px-0.5 text-[9px] font-black leading-tight text-white/82 ${item.href === "/cart" ? "mf-nav-cart" : ""}`} data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
                     {active ? (
                       <motion.span
                         className="mazetto-liquid-active absolute inset-0 rounded-[1rem]"
@@ -115,6 +115,14 @@ function formatCompact(value: number): string {
 
 function formatCartCount(count: number): string {
   return count > 99 ? "99+" : String(count);
+}
+
+function cartAriaLabel(itemCount: number, subtotal: number): string {
+  if (!itemCount) {
+    return "Savat";
+  }
+
+  return `Savat, jami ${formatCompact(subtotal)}, ${formatCartCount(itemCount)} ta mahsulot`;
 }
 
 function mobileNavLabel(href: string): string {

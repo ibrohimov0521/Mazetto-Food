@@ -52,6 +52,8 @@ const chickenBurgerCategory = {
   code: "CHICKEN_BURGER",
   name: "Tovuqli burgerlar",
 };
+const sauceCategory = { id: "category_sauces", code: "SAUCES", name: "Souslar" };
+const drinksCategory = { id: "category_drinks", code: "DRINKS", name: "Ichimliklar" };
 const product = {
   id: "product_lavash",
   categoryId: category.id,
@@ -125,6 +127,22 @@ const crispyChickenBurgerProduct = {
   name: "Qarsildoq tovuqli burger",
   sellingPrice: new Prisma.Decimal(33000),
 };
+const sauceProduct = {
+  ...product,
+  id: "product_house_sauce",
+  categoryId: sauceCategory.id,
+  code: "HOUSE_SAUCE",
+  name: "Maxsus sous",
+  sellingPrice: new Prisma.Decimal(3000),
+};
+const drinkProduct = {
+  ...product,
+  id: "product_cola",
+  categoryId: drinksCategory.id,
+  code: "COCA_COLA",
+  name: "Coca-Cola",
+  sellingPrice: new Prisma.Decimal(12000),
+};
 const products = [
   product,
   miniLavashProduct,
@@ -134,6 +152,8 @@ const products = [
   bigBurgerProduct,
   chickenBurgerProduct,
   crispyChickenBurgerProduct,
+  sauceProduct,
+  drinkProduct,
 ];
 const paginatedCategory = { id: "category_paginated", code: "PAGED", name: "Ko'p mahsulot" };
 const paginatedProducts = Array.from({ length: 11 }, (_, index) => ({
@@ -145,6 +165,21 @@ const paginatedProducts = Array.from({ length: 11 }, (_, index) => ({
   sellingPrice: new Prisma.Decimal(10000 + index),
 }));
 const allProducts = [...products, ...paginatedProducts];
+const allCategories = [
+  category,
+  paginatedCategory,
+  lavashCategory,
+  chickenLavashCategory,
+  burgerCategory,
+  chickenBurgerCategory,
+  sauceCategory,
+  drinksCategory,
+];
+function categoryForProduct(productId: string) {
+  const foundProduct = allProducts.find((candidate) => candidate.id === productId) ?? product;
+
+  return allCategories.find((item) => item.id === foundProduct.categoryId) ?? category;
+}
 const modifier = {
   id: "modifier_cheese",
   name: "Extra cheese",
@@ -205,14 +240,7 @@ class InMemoryPrisma {
   };
 
   category = {
-    findMany: async () => [
-      category,
-      paginatedCategory,
-      lavashCategory,
-      chickenLavashCategory,
-      burgerCategory,
-      chickenBurgerCategory,
-    ],
+    findMany: async () => allCategories,
   };
 
   product = {
@@ -239,6 +267,8 @@ class InMemoryPrisma {
 
       return candidates.slice(skip ?? 0, take ? (skip ?? 0) + take : undefined).map((candidate) => ({
         ...candidate,
+        category: categoryForProduct(candidate.id),
+        modifiers: this.productModifiers(candidate.id),
         variants: [{ ...variant, id: `${candidate.id}_standard`, productId: candidate.id }],
       }));
     },
@@ -246,25 +276,31 @@ class InMemoryPrisma {
       allProducts.some((candidate) => candidate.id === where.id)
         ? {
             ...(allProducts.find((candidate) => candidate.id === where.id) ?? product),
-            category,
+            category: categoryForProduct(where.id),
             variants: [{ ...variant, id: `${where.id}_standard`, productId: where.id }],
-            modifiers: [{ modifierId: modifier.id, modifier }],
+            modifiers: this.productModifiers(where.id),
           }
         : null,
   };
 
   productVariant = {
     findFirst: async ({ where }: { where: { id: string } }) =>
-      where.id === variant.id
+      allProducts.some((candidate) => where.id === `${candidate.id}_standard`) || where.id === variant.id
         ? {
             ...variant,
+            id: where.id,
+            productId: where.id === variant.id ? product.id : where.id.replace(/_standard$/, ""),
             product: {
-              ...product,
-              modifiers: [{ modifierId: modifier.id, modifier }],
+              ...(allProducts.find((candidate) => candidate.id === where.id.replace(/_standard$/, "")) ?? product),
+              modifiers: this.productModifiers(where.id.replace(/_standard$/, "")),
             },
           }
         : null,
   };
+
+  private productModifiers(productId: string) {
+    return productId === product.id ? [{ modifierId: modifier.id, modifier }] : [];
+  }
 
   productModifier = {
     findFirst: async ({ where }: { where: { productId: string; modifierId: string } }) =>
@@ -449,6 +485,7 @@ async function main(): Promise<void> {
   process.env.TELEGRAM_BOT_TOKEN = "mock-telegram-token";
   await testVirtualFamilyNavigation();
   await testCategoryPagination();
+  await testSimpleSauceAndDrinkQuickAdd();
   await testFamilyQuickAdd();
   await testQuickAddMerge();
   await testConfiguredItemSeparation();
@@ -458,6 +495,39 @@ async function main(): Promise<void> {
   await testPickupRegression();
   await testDeliveryDisabled();
   console.log("Telegram customer ordering validation passed");
+}
+
+async function testSimpleSauceAndDrinkQuickAdd(): Promise<void> {
+  sentTelegramPayloads.length = 0;
+  const prisma = new InMemoryPrisma();
+  const { service, callbackBase } = createService(prisma);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${sauceCategory.id}` });
+  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.ok(lastKeyboardText().includes("➕ Maxsus sous"));
+  assert.ok(lastKeyboardText().includes("🛒 Savat"));
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1` });
+  assert.equal(prisma.cartRecord?.items.length, 1);
+  assert.equal(prisma.cartRecord?.items[0]?.productId, sauceProduct.id);
+  assert.equal(prisma.cartRecord?.items[0]?.variantId, `${sauceProduct.id}_standard`);
+  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.ok(lastKeyboardText().includes("🛒 Savat (1)"));
+  assert.ok(
+    sentTelegramPayloads.some(
+      (payload) => payload.method === "answerCallbackQuery" && payload.text === "Savatga qo'shildi ✅",
+    ),
+  );
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1` });
+  assert.equal(prisma.cartRecord?.items.length, 1);
+  assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 2);
+
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${drinksCategory.id}` });
+  assert.ok(lastKeyboardText().includes("➕ Coca-Cola"));
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${drinkProduct.id}:${drinksCategory.id}:1` });
+  assert.equal(prisma.cartRecord?.items.length, 2);
+  assert.equal(prisma.cartRecord?.items[1]?.productId, drinkProduct.id);
 }
 
 async function testCategoryPagination(): Promise<void> {

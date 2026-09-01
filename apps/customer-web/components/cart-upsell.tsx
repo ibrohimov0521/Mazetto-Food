@@ -65,9 +65,9 @@ export function CartUpsell() {
     return (
       <section className="mt-5">
         <div className="skeleton h-6 w-56 rounded-full" />
-        <div className="no-scrollbar mt-3 flex max-w-full gap-3 overflow-x-auto pb-1">
-          {Array.from({ length: 3 }, (_, index) => (
-            <div className="skeleton h-36 min-w-[13rem] rounded-[1.5rem]" key={index} />
+        <div className="no-scrollbar mt-3 flex max-w-full snap-x gap-2.5 overflow-x-auto overscroll-x-contain pb-1">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div className="skeleton h-36 min-w-[9.5rem] rounded-[1.2rem]" key={index} />
           ))}
         </div>
       </section>
@@ -79,15 +79,18 @@ export function CartUpsell() {
   }
 
   return (
-    <MotionDiv {...sectionMotion} className="mt-6">
-      <div className="mb-3 flex items-end justify-between gap-3">
+    <MotionDiv {...sectionMotion} className="mt-5">
+      <div className="mb-2.5 flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-black text-[#17314A]">Hech narsa qolib ketmadimi?</h2>
-          <p className="mt-1 text-sm font-semibold text-[#17314A]/58">Sous yoki ichimlik qo'shamizmi?</p>
+          <h2 className="text-xl font-black text-[#17314A] sm:text-2xl">Hech narsa qolib ketmadimi?</h2>
+          <p className="mt-0.5 text-xs font-semibold text-[#17314A]/58 sm:text-sm">Sous, ichimlik yoki gazak qo'shing.</p>
         </div>
         <Link className="hidden text-sm font-black text-[#0B7F75] sm:inline" href="/menu">Menyu</Link>
       </div>
-      <div className="no-scrollbar flex max-w-full snap-x gap-3 overflow-x-auto pb-2">
+      <div
+        className="no-scrollbar -mx-1 flex max-w-full snap-x gap-2.5 overflow-x-auto overscroll-x-contain px-1 pb-2"
+        data-upsell-rail
+      >
         {recommended.map((product) => (
           <UpsellCard addItem={addItem} key={product.id} product={product} triggerCartFlight={triggerCartFlight} />
         ))}
@@ -108,46 +111,58 @@ function UpsellCard({
   const imageRef = useRef<HTMLDivElement | null>(null);
   const variant = product.variants.find((candidate) => candidate.isDefault) ?? product.variants[0];
   const price = variant?.sellingPrice ?? product.sellingPrice;
+  const canQuickAdd = product.variants.length <= 1 && !product.modifiers.length;
 
   return (
-    <article className="mf-cart-upsell-card grid w-[min(13.5rem,78vw)] shrink-0 snap-start overflow-hidden rounded-[1.35rem]">
+    <article className="mf-cart-upsell-card grid w-[9.6rem] shrink-0 snap-start overflow-hidden rounded-[1.15rem] sm:w-[10.5rem]">
       <MediaImage
         alt={product.name}
-        aspectClassName="h-28"
+        aspectClassName="h-24 sm:h-[6.5rem]"
         imageClassName="transition-transform duration-300 hover:scale-[1.04]"
         ref={imageRef}
-        sizes="216px"
+        sizes="168px"
         src={product.imageUrl}
       />
-      <div className="grid min-w-0 gap-2 p-3">
-        <h3 className="line-clamp-1 font-black text-[#17314A]">{product.name}</h3>
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <span className="text-sm font-black text-[#0B7F75]">{formatMoney(price)}</span>
-          <MotionButton
-            {...buttonMotion}
-            className="pressable ripple mf-button-primary rounded-xl px-3 py-2 text-xs font-black"
-            onClick={() => {
-              const rect = imageRef.current?.getBoundingClientRect();
-              if (rect) {
-                triggerCartFlight(product.imageUrl, rect);
-              }
+      <div className="grid min-w-0 gap-2 p-2.5">
+        <h3 className="line-clamp-2 min-h-[2.25rem] text-sm font-black leading-tight text-[#17314A]">{product.name}</h3>
+        <div className="flex min-w-0 items-center justify-between gap-1.5">
+          <span className="min-w-0 truncate text-xs font-black text-[#0B7F75]">{formatMoney(price)}</span>
+          {canQuickAdd ? (
+            <MotionButton
+              {...buttonMotion}
+              aria-label={`${product.name} savatga qo'shish`}
+              className="pressable ripple mf-button-primary grid h-9 w-9 shrink-0 place-items-center rounded-xl text-base font-black"
+              onClick={() => {
+                const rect = imageRef.current?.getBoundingClientRect();
+                if (rect) {
+                  triggerCartFlight(product.imageUrl, rect);
+                }
 
-              hapticTap([8, 20, 8]);
-              addItem({
-                productId: product.id,
-                productName: product.name,
-                imageUrl: product.imageUrl,
-                variantId: variant?.id,
-                variantName: variant?.name,
-                unitPrice: price,
-                quantity: 1,
-                modifiers: [],
-              });
-            }}
-            type="button"
-          >
-            Qo'shish
-          </MotionButton>
+                hapticTap([8, 20, 8]);
+                addItem({
+                  productId: product.id,
+                  productName: product.name,
+                  imageUrl: product.imageUrl,
+                  variantId: variant?.id,
+                  variantName: variant?.name,
+                  unitPrice: price,
+                  quantity: 1,
+                  modifiers: [],
+                });
+              }}
+              type="button"
+            >
+              +
+            </MotionButton>
+          ) : (
+            <Link
+              aria-label={`${product.name} tanlash`}
+              className="mf-button-primary grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sm font-black"
+              href={`/product/${product.id}`}
+            >
+              →
+            </Link>
+          )}
         </div>
       </div>
     </article>
