@@ -2160,7 +2160,8 @@ Scope:
 - No Redis and no new websocket implementation were added.
 - Kitchen cards show order number, source, order type, elapsed minutes, branch, table/pickup/delivery context, item quantities, variants, selected modifiers, notes, and item count.
 - Customer PII is intentionally not shown on kitchen cards.
-- Kitchen UI does not depend on catalog seed data; the unrelated `products.ts` recommendation cleanup was reverted out of the Kitchen release-gate scope.
+- Kitchen UI does not depend on catalog seed data; the unrelated `products.ts` recommendation cleanup was split into a separate catalog hygiene commit.
+- The two exact legacy recommendation rows were `BIG_BURGER` / `Katta burger` and `CRISPY_CHICKEN_BURGER` / `Qarsildoq tovuqli burger`; both remain preserved legacy products but are no longer recommendation-eligible.
 
 Validation:
 
@@ -2168,7 +2169,7 @@ Validation:
 - Backend typecheck, lint, and build passed.
 - `pos-web` typecheck, lint, and build passed; `/kitchen` is present in the Next.js build route output.
 - `validate-kitchen-order-board.ts` passed.
-- `validate-canonical-catalog.ts` is blocked by pre-existing catalog seed drift: two preserved legacy burger products remain marked `recommended` in `products.ts`. This is unrelated to Kitchen UI and should be handled in a dedicated catalog cleanup.
+- `validate-canonical-catalog.ts` passed after the separate catalog hygiene fix and reports 56 standalone products, 18 sets, 74 customer-visible items, 17 preserved legacy products, and 0 legacy recommendation leaks.
 - `validate-telegram-catalog-mapping.ts` passed.
 - `validate-telegram-customer-ordering.ts` passed.
 - `validate-customer-order-history.ts` passed.
@@ -2189,7 +2190,8 @@ Not performed:
 
 Pending:
 
-- DB-backed KitchenTicket transition smoke is pending because Docker Desktop/local PostgreSQL was not available in this environment.
-- Canonical catalog recommendation cleanup is pending as a separate non-Kitchen release blocker.
+- Fresh isolated PostgreSQL database `mazetto_kitchen_isolated_20260902` was created in a disposable local Docker container, migrated through all 17 migrations, and used for DB-backed KitchenTicket transition smoke.
+- DB-backed Kitchen smoke passed for `NEW -> ACCEPTED`, `ACCEPTED -> COOKING`, `COOKING -> READY`, `READY -> COMPLETED`, valid cancellation, invalid `NEW -> READY` rejection, repeated accept/double-click behavior, stale concurrent accept, completed/cancelled active-board removal, branch scoping, and no duplicate `Order`/`CustomerOrder`/`KitchenTicket` rows.
+- The isolated DB test emitted the existing non-blocking Node/pg deprecation warning during simulated concurrent Prisma activity: `Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0`.
 - Automated screenshot QA is pending because Playwright is not installed in the local workspace; the route was build-verified and opened in the Codex browser panel for manual inspection.
 - Owner review is required before any production release.
