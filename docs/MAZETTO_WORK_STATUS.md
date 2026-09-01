@@ -1851,7 +1851,7 @@ Remaining:
 
 ## Web Checkout Auth Regression Fix
 
-Status: Fixed locally; production not changed
+Status: Customer-web deployed; authenticated human checkout smoke pending
 
 Date: 2026-09-01
 
@@ -1871,12 +1871,36 @@ Safety:
 
 - Backend authentication guard remains unchanged.
 - Checkout remains authenticated; no anonymous checkout or expired-JWT acceptance was added.
-- No backend, database, migration, seed, production deploy, webhook, Cloudflare, payment, or order-engine change was made.
+- No backend, database, migration, seed, webhook, Cloudflare, payment, or order-engine change was made.
 
 Validation:
 
 - `pnpm --filter customer-web typecheck`: passed.
 - `pnpm --filter customer-web lint`: passed.
+- `pnpm --filter customer-web build`: passed.
+- `pnpm typecheck`: passed.
+- `pnpm lint`: passed.
+- `pnpm build`: passed.
+- `validate-customer-order-history.ts`: passed.
+- `validate-telegram-customer-auth.ts`: passed.
+- `validate-telegram-customer-ordering.ts`: passed.
+- `git diff --check`: passed.
+
+Production release:
+
+- Approved hotfix commit `a2857321fb83bb7d47b54f76960643c4e65357a5` was pushed to `origin/main`.
+- Previous customer-web image: `mazetto-food-customerweb-yvb3d0:4e7075a`.
+- New customer-web image: `mazetto-food-customerweb-yvb3d0:a285732`.
+- Backend remained unchanged on `mazetto-food-backend-pdslpm:4e7075a`.
+- Production services after release: backend `1/1`, customer-web `1/1`, media `1/1`, PostgreSQL `1/1`.
+- Public checks returned 200 for backend health, `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders`.
+- Production order graph counts remained unchanged across deployment at `orders=13`, `customer_orders=13`, `customer_order_attempts=13`, `kitchen_tickets=13`.
+- Release-window backend and customer-web logs showed no new token, startup, Prisma, or server errors.
+
+Pending human smoke:
+
+- Verify with an existing legitimate logged-in customer session that stale access token recovery refreshes once, quote reloads, and checkout remains usable.
+- If refresh cannot recover the session, verify the stale session clears and the in-place phone verification UI appears instead of the raw backend token error.
 
 ## Architecture Decision Log
 
