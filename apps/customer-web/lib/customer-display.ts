@@ -3,12 +3,13 @@
 import type { Category, CustomerHome, HomepageHeroSlide, HomepagePromotion, ModifierLink, Product, ProductVariant } from "./types";
 
 const categoryLabels: Record<string, string> = {
-  LAVASH: "Lavash",
+  LAVASH: "Lavashlar",
   CHICKEN_LAVASH: "Tovuqli lavash",
   BURGER: "Burgerlar",
   CHICKEN_BURGER: "Tovuqli burgerlar",
-  HOT_DOG: "Hot-dog",
-  DONER: "Doner",
+  HOT_DOG: "Hot Doglar",
+  DONER: "Doner / Klab / Xaggi",
+  BLYUDALAR: "Blyudalar",
   FAST_FOOD: "Gazaklar",
   DRINKS: "Ichimliklar",
   SAUCES: "Souslar",
@@ -128,7 +129,7 @@ export function displayProduct(product: Product): Product {
   const nextProduct: Product = {
     ...product,
     modifiers: product.modifiers.map(displayModifierLink),
-    name: product.code ? productLabels[product.code] ?? product.name : product.name,
+    name: product.name,
     variants: product.variants.map(displayVariant),
   };
 
@@ -137,7 +138,7 @@ export function displayProduct(product: Product): Product {
   }
 
   if (product.description != null) {
-    nextProduct.description = product.code ? productDescriptions[product.code] ?? product.description : product.description;
+    nextProduct.description = product.description;
   }
 
   return nextProduct;
@@ -233,7 +234,7 @@ function displayPromotion(promotion: HomepagePromotion): HomepagePromotion {
 function displayProductSummary<T extends Pick<Product, "id" | "name" | "imageUrl" | "sellingPrice" | "preparationTime" | "isCombo">>(product: T): T {
   return {
     ...product,
-    name: displayKnownTitle(product.name),
+    name: product.name,
   };
 }
 
@@ -255,13 +256,14 @@ function displayKnownDescription(value: string): string {
 
 function localizeCategoryDescription(category: Category): string | null | undefined {
   const descriptions: Record<string, string> = {
-    LAVASH: "Yangi sabzavot va maxsus sousli MAZETTO lavashlari.",
-    CHICKEN_LAVASH: "Klassik, pishloqli va achchiq tovuqli lavashlar.",
-    BURGER: "Mol go'shtli burgerlar: zalda, olib ketish yoki yetkazish uchun.",
-    CHICKEN_BURGER: "Qarsildoq va shirali tovuqli burgerlar.",
-    HOT_DOG: "Tez tayyorlanadigan klassik va to'yimli hot-doglar.",
-    DONER: "Yangi garnirli doner lavash va tarelkalar.",
-    FAST_FOOD: "Fri, strips, naggets va yengil gazaklar.",
+    LAVASH: "PDF menyudagi mol go'shtli, tovuqli, pishloqli, achchiq va tandir lavashlar.",
+    CHICKEN_LAVASH: "Legacy tovuqli lavash bo'limi.",
+    BURGER: "PDF menyudagi mol go'shtli va tovuqli burgerlar.",
+    CHICKEN_BURGER: "Legacy tovuqli burger bo'limi.",
+    HOT_DOG: "PDF menyudagi salatli, qazili, chicken va shashlikli hot doglar.",
+    DONER: "PDF menyudagi doner, klab senvich, xaggi va uy uslubidagi mahsulotlar.",
+    BLYUDALAR: "PDF menyudagi tarelka va uy uslubidagi blyudalar.",
+    FAST_FOOD: "PDF menyudagi fri, naggets, kurinniy sharik va boshqa gazaklar.",
     DRINKS: "Taom va setlar uchun sovuq ichimliklar.",
     SAUCES: "Souslar va qo'shimchalar.",
     SETS: "Foydali setlar va oilaviy to'plamlar.",

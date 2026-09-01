@@ -102,6 +102,40 @@ export async function seedMenu(prisma: PrismaClient): Promise<SeedResult> {
     }
   }
 
+  for (const combo of menuCombos) {
+    const bundleProduct = productByCode.get(combo.code);
+
+    if (!bundleProduct) {
+      throw new Error(`Combo ${combo.code} was not seeded`);
+    }
+
+    await prisma.productBundleItem.deleteMany({
+      where: { bundleProductId: bundleProduct.id },
+    });
+
+    for (const component of combo.bundle) {
+      const componentProduct = component.productCode
+        ? productByCode.get(component.productCode)
+        : null;
+
+      if (component.productCode && !componentProduct) {
+        throw new Error(`Bundle component product ${component.productCode} was not seeded`);
+      }
+
+      await prisma.productBundleItem.create({
+        data: {
+          bundleProductId: bundleProduct.id,
+          componentCode: component.componentCode,
+          componentName: component.componentName,
+          componentProductId: componentProduct?.id ?? null,
+          quantity: new Prisma.Decimal(component.quantity),
+          unitLabel: component.unitLabel ?? null,
+          sortOrder: component.sortOrder,
+        },
+      });
+    }
+  }
+
   return {
     categories: menuCategories.length,
     products: allProducts.length,

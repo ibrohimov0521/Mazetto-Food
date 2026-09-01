@@ -81,103 +81,10 @@ type CustomerScreenPayload = {
     resize_keyboard?: boolean;
   };
 };
-export type TelegramProductFamily = "lavash" | "burger";
-export type TelegramFamilySize = "mini" | "original" | "max";
-export type TelegramFamilyMeat = "beef" | "chicken";
-export type TelegramFamilySku = {
-  family: TelegramProductFamily;
-  size: TelegramFamilySize;
-  meat: TelegramFamilyMeat;
-  productCode: string;
-  sizeLabel: string;
-  meatLabel: string;
-};
-type ResolvedTelegramFamilyOption = TelegramFamilySku & {
-  product: {
-    id: string;
-    code: string;
-    name: string;
-    sellingPrice: Prisma.Decimal;
-  };
-  variant: {
-    id: string;
-    name: string;
-    sellingPrice: Prisma.Decimal;
-    isDefault: boolean;
-  } | null;
-  price: Prisma.Decimal;
-};
-
 const customerCallbackPrefix = "cust";
 const TELEGRAM_CHECKOUT_SESSION_TTL_MS = 60 * 60 * 1000;
 const TELEGRAM_MENU_PAGE_SIZE = 8;
 const minimumAddressLength = 5;
-export const telegramFamilySkus: TelegramFamilySku[] = [
-  {
-    family: "lavash",
-    size: "mini",
-    meat: "beef",
-    productCode: "MINI_LAVASH",
-    sizeLabel: "Mini",
-    meatLabel: "Mol go'shti",
-  },
-  {
-    family: "lavash",
-    size: "original",
-    meat: "beef",
-    productCode: "BEEF_LAVASH",
-    sizeLabel: "Original",
-    meatLabel: "Mol go'shti",
-  },
-  {
-    family: "lavash",
-    size: "original",
-    meat: "chicken",
-    productCode: "CHICKEN_LAVASH",
-    sizeLabel: "Original",
-    meatLabel: "Tovuq",
-  },
-  {
-    family: "lavash",
-    size: "max",
-    meat: "beef",
-    productCode: "BIG_LAVASH",
-    sizeLabel: "Max",
-    meatLabel: "Mol go'shti",
-  },
-  {
-    family: "burger",
-    size: "original",
-    meat: "beef",
-    productCode: "CLASSIC_BURGER",
-    sizeLabel: "Original",
-    meatLabel: "Mol go'shti",
-  },
-  {
-    family: "burger",
-    size: "original",
-    meat: "chicken",
-    productCode: "CHICKEN_BURGER",
-    sizeLabel: "Original",
-    meatLabel: "Tovuq",
-  },
-  {
-    family: "burger",
-    size: "max",
-    meat: "beef",
-    productCode: "BIG_BURGER",
-    sizeLabel: "Max",
-    meatLabel: "Mol go'shti",
-  },
-  {
-    family: "burger",
-    size: "max",
-    meat: "chicken",
-    productCode: "CRISPY_CHICKEN_BURGER",
-    sizeLabel: "Max",
-    meatLabel: "Tovuq",
-  },
-];
 
 @Injectable()
 export class TelegramCustomerOrderingService {
@@ -233,23 +140,6 @@ export class TelegramCustomerOrderingService {
     if (action === "profile") {
       await this.answerCallback(callback);
       await this.sendCustomerProfile(target, customer);
-      return true;
-    }
-
-    if (action === "fam" && values[0]) {
-      await this.answerCallback(callback);
-      await this.sendFamilySizeScreen(target, values[0]);
-      return true;
-    }
-
-    if (action === "fsize" && values[0] && values[1]) {
-      await this.answerCallback(callback);
-      await this.sendFamilyMeatScreen(target, values[0], values[1]);
-      return true;
-    }
-
-    if (action === "qadd" && values[0] && values[1] && values[2]) {
-      await this.quickAddFamilySku(target, callback, customer, values[0], values[1], values[2]);
       return true;
     }
 
@@ -401,7 +291,7 @@ export class TelegramCustomerOrderingService {
       select: { id: true, code: true, name: true },
     });
     const visibleCategories = categories.filter(
-      (category) => !["LAVASH", "CHICKEN_LAVASH", "BURGER", "CHICKEN_BURGER"].includes(category.code ?? ""),
+      (category) => !["CHICKEN_LAVASH", "CHICKEN_BURGER"].includes(category.code ?? ""),
     );
     const sorted = [...visibleCategories].sort(
       (a, b) => (a.code === "SETS" ? -1 : 0) - (b.code === "SETS" ? -1 : 0),
@@ -414,10 +304,6 @@ export class TelegramCustomerOrderingService {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          [
-            { text: "🌯 Lavash", callback_data: `${customerCallbackPrefix}:fam:lavash` },
-            { text: "🍔 Burger", callback_data: `${customerCallbackPrefix}:fam:burger` },
-          ],
           ...this.chunkButtons(
             sorted.map((category) => ({
               text: this.categoryButtonLabel(category.code, category.name),
@@ -724,118 +610,6 @@ export class TelegramCustomerOrderingService {
         ],
       },
     });
-  }
-
-  private async sendFamilySizeScreen(
-    target: CustomerScreenTarget,
-    rawFamily: string,
-  ): Promise<void> {
-    const family = this.parseFamily(rawFamily);
-    const options = await this.resolveFamilyOptions(family);
-    const sizes = this.uniqueBy(options, (option) => option.size);
-
-    if (!sizes.length) {
-      await this.renderCustomerScreen(target, {
-        text: "Bu menyu hozir mavjud emas. Iltimos, boshqa bo'limni tanlang.",
-        reply_markup: {
-          inline_keyboard: [[{ text: "🍽 Menyuga qaytish", callback_data: `${customerCallbackPrefix}:menu` }]],
-        },
-      });
-      return;
-    }
-
-    await this.renderCustomerScreen(target, {
-      text: [
-        `${this.familyIcon(family)} <b>${this.familyLabel(family)}</b>`,
-        "",
-        "O'lchamini tanlang:",
-      ].join("\n"),
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          ...sizes.map((option) => [
-            {
-              text: `${option.sizeLabel} · ${this.familySizePriceRange(options, option.size)}`,
-              callback_data: `${customerCallbackPrefix}:fsize:${family}:${option.size}`,
-            },
-          ]),
-          [{ text: "⬅️ Menyuga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
-          [{ text: "🛒 Savat", callback_data: `${customerCallbackPrefix}:cart` }],
-        ],
-      },
-    });
-  }
-
-  private async sendFamilyMeatScreen(
-    target: CustomerScreenTarget,
-    rawFamily: string,
-    rawSize: string,
-  ): Promise<void> {
-    const family = this.parseFamily(rawFamily);
-    const size = this.parseFamilySize(rawSize);
-    const options = (await this.resolveFamilyOptions(family)).filter(
-      (option) => option.size === size,
-    );
-
-    if (!options.length) {
-      await this.renderCustomerScreen(target, {
-        text: "Bu tanlov eskirgan yoki hozir mavjud emas.",
-        reply_markup: {
-          inline_keyboard: [[{ text: "⬅️ Qayta tanlash", callback_data: `${customerCallbackPrefix}:fam:${family}` }]],
-        },
-      });
-      return;
-    }
-
-    await this.renderCustomerScreen(target, {
-      text: [
-        `${this.familyIcon(family)} <b>${this.familyLabel(family)}</b>`,
-        "",
-        `O'lcham: <b>${this.escapeHtml(options[0]!.sizeLabel)}</b>`,
-        "Go'sht turini tanlang:",
-      ].join("\n"),
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          ...options.map((option) => [
-            {
-              text: `${option.meatLabel} · ${this.formatMoney(option.price)}`,
-              callback_data: `${customerCallbackPrefix}:qadd:${family}:${size}:${option.meat}`,
-            },
-          ]),
-          [{ text: "⬅️ O'lchamga qaytish", callback_data: `${customerCallbackPrefix}:fam:${family}` }],
-          [{ text: "🛒 Savat", callback_data: `${customerCallbackPrefix}:cart` }],
-        ],
-      },
-    });
-  }
-
-  private async quickAddFamilySku(
-    target: CustomerScreenTarget,
-    callback: TelegramCallbackQuery,
-    customer: LinkedCustomer,
-    rawFamily: string,
-    rawSize: string,
-    rawMeat: string,
-  ): Promise<void> {
-    const family = this.parseFamily(rawFamily);
-    const size = this.parseFamilySize(rawSize);
-    const meat = this.parseFamilyMeat(rawMeat);
-    const options = await this.resolveFamilyOptions(family);
-    const matches = options.filter(
-      (option) => option.size === size && option.meat === meat,
-    );
-
-    if (matches.length !== 1) {
-      await this.answerCallback(callback, "Bu menyu eskirgan. Qayta oching.", true);
-      await this.sendFamilySizeScreen(target, family);
-      return;
-    }
-
-    const selected = matches[0]!;
-    await this.addCartItem(customer.id, selected.product.id, selected.variant?.id ?? null);
-    await this.answerCallback(callback, "Savatga qo'shildi ✅");
-    await this.sendMainMenu(target, customer.name, customer.id);
   }
 
   private async quickAddSimpleProduct(
@@ -1729,117 +1503,6 @@ export class TelegramCustomerOrderingService {
     await this.sendCart(target, customer);
   }
 
-  private async resolveFamilyOptions(
-    family: TelegramProductFamily,
-  ): Promise<ResolvedTelegramFamilyOption[]> {
-    const skus = telegramFamilySkus.filter((sku) => sku.family === family);
-    const products = await this.prisma.product.findMany({
-      where: {
-        code: { in: skus.map((sku) => sku.productCode) },
-        isAvailable: true,
-      },
-      include: {
-        variants: {
-          where: { isAvailable: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        },
-      },
-    });
-
-    return skus.flatMap((sku) => {
-      const product = products.find((candidate) => candidate.code === sku.productCode);
-
-      if (!product) {
-        return [];
-      }
-
-      const variant =
-        product.variants.find((candidate) => candidate.isDefault) ??
-        product.variants[0] ??
-        null;
-
-      return [
-        {
-          ...sku,
-          product: {
-            id: product.id,
-            code: product.code,
-            name: product.name,
-            sellingPrice: product.sellingPrice,
-          },
-          variant: variant
-            ? {
-                id: variant.id,
-                name: variant.name,
-                sellingPrice: variant.sellingPrice,
-                isDefault: variant.isDefault,
-              }
-            : null,
-          price: variant?.sellingPrice ?? product.sellingPrice,
-        },
-      ];
-    });
-  }
-
-  private uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
-    const seen = new Set<string>();
-
-    return items.filter((item) => {
-      const value = key(item);
-
-      if (seen.has(value)) {
-        return false;
-      }
-
-      seen.add(value);
-      return true;
-    });
-  }
-
-  private familySizePriceRange(
-    options: ResolvedTelegramFamilyOption[],
-    size: TelegramFamilySize,
-  ): string {
-    const prices = options
-      .filter((option) => option.size === size)
-      .map((option) => Number(option.price));
-
-    if (!prices.length) {
-      return "";
-    }
-
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-
-    return min === max
-      ? this.formatMoney(min)
-      : `${this.formatMoney(min)} - ${this.formatMoney(max)}`;
-  }
-
-  private parseFamily(value: string): TelegramProductFamily {
-    if (value === "lavash" || value === "burger") {
-      return value;
-    }
-
-    throw new BadRequestException("Telegram product family is invalid");
-  }
-
-  private parseFamilySize(value: string): TelegramFamilySize {
-    if (value === "mini" || value === "original" || value === "max") {
-      return value;
-    }
-
-    throw new BadRequestException("Telegram product family size is invalid");
-  }
-
-  private parseFamilyMeat(value: string): TelegramFamilyMeat {
-    if (value === "beef" || value === "chicken") {
-      return value;
-    }
-
-    throw new BadRequestException("Telegram product family meat is invalid");
-  }
-
   private parseMenuPage(value: string | undefined): number {
     if (!value) {
       return 1;
@@ -1883,14 +1546,6 @@ export class TelegramCustomerOrderingService {
     const secondKey = hash.readInt32BE(4);
 
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${firstKey}, ${secondKey})`;
-  }
-
-  private familyLabel(family: TelegramProductFamily): string {
-    return family === "lavash" ? "Lavash" : "Burger";
-  }
-
-  private familyIcon(family: TelegramProductFamily): string {
-    return family === "lavash" ? "🌯" : "🍔";
   }
 
   private branchMapUrl(branch: {
@@ -2287,6 +1942,7 @@ export class TelegramCustomerOrderingService {
   private categoryButtonLabel(code: string | null | undefined, name: string): string {
     const icons: Record<string, string> = {
       BURGER: "🍔",
+      BLYUDALAR: "🍽",
       CHICKEN_BURGER: "🍔",
       CHICKEN_LAVASH: "🍗",
       DONER: "🥙",

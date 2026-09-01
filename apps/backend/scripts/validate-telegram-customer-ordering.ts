@@ -483,10 +483,10 @@ globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => 
 
 async function main(): Promise<void> {
   process.env.TELEGRAM_BOT_TOKEN = "mock-telegram-token";
-  await testVirtualFamilyNavigation();
+  await testFlattenedCategoryNavigation();
   await testCategoryPagination();
   await testSimpleSauceAndDrinkQuickAdd();
-  await testFamilyQuickAdd();
+  await testDirectProductQuickAdd();
   await testQuickAddMerge();
   await testConfiguredItemSeparation();
   await testBranchLocation();
@@ -557,7 +557,7 @@ async function testCategoryPagination(): Promise<void> {
   assert.ok(lastKeyboardText().includes("Page product 1"), "invalid page should fail safely to page 1");
 }
 
-async function testVirtualFamilyNavigation(): Promise<void> {
+async function testFlattenedCategoryNavigation(): Promise<void> {
   sentTelegramPayloads.length = 0;
   const prisma = new InMemoryPrisma();
   const { service, callbackBase } = createService(prisma);
@@ -570,33 +570,21 @@ async function testVirtualFamilyNavigation(): Promise<void> {
   assert.ok(!menuButtons.includes("Tovuqli lavash"));
   assert.ok(!menuButtons.includes("Tovuqli burgerlar"));
 
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:fam:lavash" });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${lavashCategory.id}` });
   assert.equal(lastMethod(), "editMessageText");
-  assert.match(lastText(), /O'lchamini tanlang/);
-  assert.ok(lastKeyboardText().includes("Mini"));
-  assert.ok(lastKeyboardText().includes("Original"));
-  assert.ok(lastKeyboardText().includes("Max"));
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:fsize:lavash:mini" });
-  assert.equal(lastMethod(), "editMessageText");
-  assert.match(lastText(), /Go'sht turini tanlang/);
-  assert.ok(lastKeyboardText().includes("Mol go'shti"));
-  assert.ok(!lastKeyboardText().includes("Tovuq"));
+  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.ok(lastKeyboardText().includes("Mini lavash"));
+  assert.ok(!lastText().includes("Go'sht turini tanlang"));
 }
 
-async function testFamilyQuickAdd(): Promise<void> {
+async function testDirectProductQuickAdd(): Promise<void> {
   sentTelegramPayloads.length = 0;
   const prisma = new InMemoryPrisma();
   const { service, callbackBase } = createService(prisma);
 
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:fsize:burger:max" });
-  assert.match(lastText(), /Go'sht turini tanlang/);
-  assert.ok(lastKeyboardText().includes("Mol go'shti"));
-  assert.ok(lastKeyboardText().includes("Tovuq"));
-
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:burger:max:chicken" });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1` });
   assert.equal(prisma.cartRecord?.items.length, 1);
-  assert.equal(prisma.cartRecord?.items[0]?.productId, crispyChickenBurgerProduct.id);
+  assert.equal(prisma.cartRecord?.items[0]?.productId, sauceProduct.id);
   assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 1);
   assert.ok(
     sentTelegramPayloads.some(
@@ -605,7 +593,8 @@ async function testFamilyQuickAdd(): Promise<void> {
         payload.text === "Savatga qo'shildi ✅",
     ),
   );
-  assert.match(lastText(), /Menyu, savat, filial/);
+  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.ok(lastKeyboardText().includes("Savat (1)"));
   assert.ok(!lastKeyboardText().includes("−"));
   assert.ok(!lastKeyboardText().includes("+"));
 
@@ -619,8 +608,8 @@ async function testQuickAddMerge(): Promise<void> {
   const prisma = new InMemoryPrisma();
   const { service, callbackBase } = createService(prisma);
 
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:burger:max:chicken" });
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:burger:max:chicken" });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1` });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1` });
   assert.equal(prisma.cartRecord?.items.length, 1);
   assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 2);
 
@@ -631,12 +620,12 @@ async function testQuickAddMerge(): Promise<void> {
     concurrentService.handleCustomerCallback({
       ...concurrentCallbackBase,
       id: "callback_merge_a",
-      data: "cust:qadd:burger:max:chicken",
+      data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1`,
     }),
     concurrentService.handleCustomerCallback({
       ...concurrentCallbackBase,
       id: "callback_merge_b",
-      data: "cust:qadd:burger:max:chicken",
+      data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1`,
     }),
   ]);
   assert.equal(concurrentPrisma.cartRecord?.items.length, 1);
@@ -648,13 +637,13 @@ async function testConfiguredItemSeparation(): Promise<void> {
   const prisma = new InMemoryPrisma();
   const { service, callbackBase } = createService(prisma);
 
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:lavash:mini:beef" });
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:lavash:original:beef" });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:addv:${miniLavashProduct.id}_standard` });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:addv:${beefLavashProduct.id}_standard` });
   assert.equal(prisma.cartRecord?.items.length, 2, "different products must stay separate");
 
   const modifiedItem = prisma.cartRecord!.items[0]!;
   modifiedItem.modifierSnapshot = [{ modifierId: modifier.id, quantity: 1 }];
-  await service.handleCustomerCallback({ ...callbackBase, data: "cust:qadd:lavash:mini:beef" });
+  await service.handleCustomerCallback({ ...callbackBase, data: `cust:addv:${miniLavashProduct.id}_standard` });
   assert.equal(
     prisma.cartRecord?.items.length,
     3,

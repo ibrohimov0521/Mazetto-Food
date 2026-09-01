@@ -1902,6 +1902,51 @@ Pending human smoke:
 - Verify with an existing legitimate logged-in customer session that stale access token recovery refreshes once, quote reloads, and checkout remains usable.
 - If refresh cannot recover the session, verify the stale session clears and the in-place phone verification UI appears instead of the raw backend token error.
 
+## Canonical Menu Catalog Local Alignment
+
+Status: 🟡 PARTIAL / RISK — implemented locally; owner price decisions and production release are pending
+
+Date: 2026-09-01
+
+Scope:
+
+- Production menu audit was reconciled after the server came back online.
+- Production DB/API currently expose 35 products, 44 variants, 4 sets, and 10 categories.
+- PDF canonical menu remains 56 standalone products and 18 sets, 74 total customer-visible items.
+- Local schema now includes additive `ProductBundleItem` metadata for persisted set composition and quantities.
+- Local migration added: `20260901120000_product_bundle_items`.
+- Local seed/catalog definitions now include 54 resolved standalone PDF-backed products and all 18 PDF-backed sets.
+- Two standalone items remain owner-price pending because the PDF shows two prices: Doner Blyuda and Katlet podamashni.
+- The confirmed 17 DB-only legacy products/sets were preserved and not deleted, disabled, renamed, or repurposed.
+- Telegram customer menu was flattened locally so Lavashlar and Burgerlar open direct product lists instead of Mol/Tovuq intermediate family screens.
+- Customer-web now trusts backend API product names/descriptions instead of overriding them with older hardcoded labels.
+
+Validation:
+
+- `prisma format`, `prisma validate`, and `prisma generate` passed locally with a safe placeholder `DATABASE_URL`.
+- Backend typecheck, lint, and build passed.
+- Customer-web typecheck, lint, and build passed.
+- `validate-canonical-catalog.ts` passed and reports 72 resolved canonical items plus 2 owner-price decisions pending.
+- `validate-telegram-catalog-mapping.ts` passed for flattened Lavash/Burger category mapping.
+- `validate-telegram-customer-ordering.ts` passed.
+- Workspace typecheck and lint passed.
+- Workspace build reported all 9 tasks successful, then Turbo remained open and was interrupted after successful task output.
+
+Not performed:
+
+- No production migration.
+- No production seed.
+- No production DB write.
+- No deploy.
+- No push.
+- No media generation/upload.
+
+Pending:
+
+- Owner must resolve Doner Blyuda price and Katlet podamashni price.
+- Isolated local PostgreSQL migration/seed test is pending because Docker Desktop daemon was not running locally.
+- Production release requires a separate controlled approval phase after owner review.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop

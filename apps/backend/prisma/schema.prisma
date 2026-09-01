@@ -674,6 +674,8 @@ model Product {
   promotions           Promotion[]
   priceHistory         PriceHistory[]
   variants             ProductVariant[]
+  bundleItems          ProductBundleItem[]         @relation("BundleProduct")
+  usedInBundles        ProductBundleItem[]         @relation("BundleComponent")
 
   @@unique([branchId, code])
   @@index([categoryId, isAvailable])
@@ -799,6 +801,28 @@ model ProductModifier {
   @@index([modifierId])
   @@index([sortOrder])
   @@map("product_modifiers")
+}
+
+model ProductBundleItem {
+  id                 String   @id @default(cuid())
+  bundleProductId    String
+  componentCode      String
+  componentName      String
+  componentProductId String?
+  quantity           Decimal  @db.Decimal(10, 3)
+  unitLabel          String?
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  bundleProduct    Product  @relation("BundleProduct", fields: [bundleProductId], references: [id], onDelete: Cascade)
+  componentProduct Product? @relation("BundleComponent", fields: [componentProductId], references: [id], onDelete: SetNull)
+
+  @@unique([bundleProductId, componentCode])
+  @@index([bundleProductId])
+  @@index([componentProductId])
+  @@index([sortOrder])
+  @@map("product_bundle_items")
 }
 
 model PriceHistory {

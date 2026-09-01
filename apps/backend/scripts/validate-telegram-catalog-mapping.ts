@@ -1,72 +1,38 @@
 import * as assert from "node:assert/strict";
+import { menuCategories } from "../prisma/seeds/menu/categories";
 import { menuProducts } from "../prisma/seeds/menu/products";
 import { menuVariants } from "../prisma/seeds/menu/variants";
-import { telegramFamilySkus } from "../src/modules/telegram/telegram-customer-ordering.service";
-
-const supportedFamilies = new Set(["lavash", "burger"]);
-const supportedSizes = new Set(["mini", "original", "max"]);
-const supportedMeats = new Set(["beef", "chicken"]);
 
 function main(): void {
-  assert.ok(telegramFamilySkus.length > 0, "Telegram family mapping must not be empty");
+  const categoriesByCode = new Map(menuCategories.map((category) => [category.code, category]));
+  const productsByCode = new Map(menuProducts.map((product) => [product.code, product]));
+  const variantsByProduct = new Map<string, number>();
 
-  const keys = new Set<string>();
-
-  for (const sku of telegramFamilySkus) {
-    assert.ok(supportedFamilies.has(sku.family), `Unsupported family: ${sku.family}`);
-    assert.ok(supportedSizes.has(sku.size), `Unsupported size: ${sku.size}`);
-    assert.ok(supportedMeats.has(sku.meat), `Unsupported meat: ${sku.meat}`);
-
-    const key = `${sku.family}:${sku.size}:${sku.meat}`;
-    assert.ok(!keys.has(key), `Ambiguous Telegram family mapping: ${key}`);
-    keys.add(key);
-
-    const productMatches = menuProducts.filter(
-      (product) => product.code === sku.productCode && product.active,
-    );
-    assert.equal(
-      productMatches.length,
-      1,
-      `${key} must map to exactly one active product code (${sku.productCode})`,
-    );
-
-    const defaultVariants = menuVariants.filter(
-      (variant) => variant.productCode === sku.productCode && variant.isDefault,
-    );
-    assert.equal(
-      defaultVariants.length,
-      1,
-      `${key} must map to exactly one default variant for ${sku.productCode}`,
-    );
+  for (const variant of menuVariants) {
+    variantsByProduct.set(variant.productCode, (variantsByProduct.get(variant.productCode) ?? 0) + 1);
   }
 
-  assert.ok(
-    keys.has("lavash:mini:beef"),
-    "Lavash Mini beef mapping should exist when MINI_LAVASH is active",
-  );
-  assert.ok(
-    !keys.has("lavash:mini:chicken"),
-    "Lavash Mini chicken must not be exposed without a real SKU",
-  );
-  assert.ok(
-    !keys.has("burger:mini:beef"),
-    "Burger Mini beef must not be exposed without a real SKU",
-  );
-  assert.ok(
-    !keys.has("burger:mini:chicken"),
-    "Burger Mini chicken must not be exposed without a real SKU",
-  );
+  assert.ok(categoriesByCode.has("LAVASH"), "Lavashlar category must be available directly");
+  assert.ok(categoriesByCode.has("BURGER"), "Burgerlar category must be available directly");
+  assert.ok(categoriesByCode.has("HOT_DOG"), "Hot Doglar category must be available directly");
+  assert.ok(categoriesByCode.has("SETS"), "Setlar category must be available directly");
 
-  console.log("Telegram catalog mapping validation passed");
-  for (const sku of telegramFamilySkus) {
-    const variant = menuVariants.find(
-      (candidate) => candidate.productCode === sku.productCode && candidate.isDefault,
-    );
-    const product = menuProducts.find((candidate) => candidate.code === sku.productCode);
-    console.log(
-      `${sku.family} | ${sku.sizeLabel} | ${sku.meatLabel} -> ${product?.name} / ${variant?.name}`,
-    );
+  for (const product of menuProducts) {
+    assert.ok(categoriesByCode.has(product.categoryCode), `${product.code} references missing category ${product.categoryCode}`);
+    assert.ok(variantsByProduct.has(product.code), `${product.code} must have at least one variant for Telegram/customer ordering`);
   }
+
+  const lavashProducts = menuProducts.filter((product) => product.categoryCode === "LAVASH" && product.canonical);
+  const burgerProducts = menuProducts.filter((product) => product.categoryCode === "BURGER" && product.canonical);
+
+  assert.equal(lavashProducts.length, 14, "Telegram Lavashlar should expose 14 canonical PDF-backed lavash products directly");
+  assert.equal(burgerProducts.length, 8, "Telegram Burgerlar should expose 8 canonical PDF-backed burger products directly");
+  assert.ok(productsByCode.has("CHICKEN_LAVASH"), "Tovuqli lavash must be a direct product, not a meat submenu");
+  assert.ok(productsByCode.has("CHICKEN_BURGER"), "Chicken Burger must be a direct product, not a meat submenu");
+
+  console.log("Telegram flattened catalog validation passed");
+  console.log(`Lavash direct products: ${lavashProducts.length}`);
+  console.log(`Burger direct products: ${burgerProducts.length}`);
 }
 
 main();

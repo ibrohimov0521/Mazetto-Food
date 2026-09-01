@@ -1,3 +1,5 @@
+import { menuProducts } from "./products";
+
 export type MenuVariantSeed = {
   productCode: string;
   code: string;
@@ -8,109 +10,7 @@ export type MenuVariantSeed = {
   sortOrder: number;
 };
 
-const standardVariantProducts = [
-  "CLASSIC_LAVASH",
-  "MINI_LAVASH",
-  "BEEF_LAVASH",
-  "CHICKEN_LAVASH",
-  "CLASSIC_BURGER",
-  "CHEESEBURGER",
-  "DOUBLE_BURGER",
-  "CHICKEN_BURGER",
-  "CRISPY_CHICKEN_BURGER",
-  "CHICKEN_CHEESEBURGER",
-  "CLASSIC_HOT_DOG",
-  "CHEESE_HOT_DOG",
-  "DOUBLE_HOT_DOG",
-  "DONER_WRAP",
-  "DONER_PLATE",
-  "CHICKEN_DONER",
-  "FRIES",
-  "CHEESE_FRIES",
-  "CHICKEN_STRIPS",
-  "NUGGETS",
-  "HOUSE_SAUCE",
-  "CHEESE_SAUCE",
-  "SPICY_SAUCE",
-];
-
-export const menuVariants: MenuVariantSeed[] = [
-  {
-    productCode: "BIG_LAVASH",
-    code: "STANDARD",
-    name: "Standart",
-    price: 36000,
-    costPrice: 23000,
-    isDefault: true,
-    sortOrder: 10,
-  },
-  {
-    productCode: "BIG_LAVASH",
-    code: "CHEESE",
-    name: "Pishloqli",
-    price: 41000,
-    costPrice: 25500,
-    sortOrder: 20,
-  },
-  {
-    productCode: "BIG_LAVASH",
-    code: "SPICY",
-    name: "Achchiq",
-    price: 38000,
-    costPrice: 23500,
-    sortOrder: 30,
-  },
-  {
-    productCode: "CHICKEN_CHEESE_LAVASH",
-    code: "STANDARD",
-    name: "Standart",
-    price: 35000,
-    costPrice: 22000,
-    isDefault: true,
-    sortOrder: 10,
-  },
-  {
-    productCode: "CHICKEN_CHEESE_LAVASH",
-    code: "SPICY",
-    name: "Achchiq",
-    price: 37000,
-    costPrice: 22500,
-    sortOrder: 20,
-  },
-  {
-    productCode: "CHICKEN_SPICY_LAVASH",
-    code: "STANDARD",
-    name: "Standart",
-    price: 33000,
-    costPrice: 21000,
-    isDefault: true,
-    sortOrder: 10,
-  },
-  {
-    productCode: "CHICKEN_SPICY_LAVASH",
-    code: "CHEESE",
-    name: "Pishloqli",
-    price: 38000,
-    costPrice: 23500,
-    sortOrder: 20,
-  },
-  {
-    productCode: "BIG_BURGER",
-    code: "STANDARD",
-    name: "Standart",
-    price: 39000,
-    costPrice: 25000,
-    isDefault: true,
-    sortOrder: 10,
-  },
-  {
-    productCode: "BIG_BURGER",
-    code: "DOUBLE_CHEESE",
-    name: "Double pishloq",
-    price: 46000,
-    costPrice: 29000,
-    sortOrder: 20,
-  },
+const legacyDrinkVariants: MenuVariantSeed[] = [
   {
     productCode: "COCA_COLA",
     code: "500ML",
@@ -179,12 +79,20 @@ export const menuVariants: MenuVariantSeed[] = [
     costPrice: 5000,
     sortOrder: 20,
   },
-  ...standardVariantProducts.map((productCode) => ({
-    productCode,
-    code: "STANDARD",
-    name: "Standart",
-    price: 0,
-    isDefault: true,
-    sortOrder: 10,
-  })),
+];
+
+const productsWithExplicitVariants = new Set(legacyDrinkVariants.map((variant) => variant.productCode));
+
+export const menuVariants: MenuVariantSeed[] = [
+  ...legacyDrinkVariants,
+  ...menuProducts
+    .filter((product) => !productsWithExplicitVariants.has(product.code))
+    .map((product) => ({
+      productCode: product.code,
+      code: "STANDARD",
+      name: "Standart",
+      price: product.basePrice,
+      isDefault: true,
+      sortOrder: 10,
+    })),
 ];
