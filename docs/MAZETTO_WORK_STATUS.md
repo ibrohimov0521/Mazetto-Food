@@ -2160,7 +2160,7 @@ Scope:
 - No Redis and no new websocket implementation were added.
 - Kitchen cards show order number, source, order type, elapsed minutes, branch, table/pickup/delivery context, item quantities, variants, selected modifiers, notes, and item count.
 - Customer PII is intentionally not shown on kitchen cards.
-- Canonical catalog validation uncovered two preserved legacy burger products still marked `recommended`; those flags were removed so legacy products cannot leak into recommendations.
+- Kitchen UI does not depend on catalog seed data; the unrelated `products.ts` recommendation cleanup was reverted out of the Kitchen release-gate scope.
 
 Validation:
 
@@ -2168,7 +2168,7 @@ Validation:
 - Backend typecheck, lint, and build passed.
 - `pos-web` typecheck, lint, and build passed; `/kitchen` is present in the Next.js build route output.
 - `validate-kitchen-order-board.ts` passed.
-- `validate-canonical-catalog.ts` passed with 56 standalone products, 18 sets, 74 customer-visible items, and 0 legacy-visible items.
+- `validate-canonical-catalog.ts` is blocked by pre-existing catalog seed drift: two preserved legacy burger products remain marked `recommended` in `products.ts`. This is unrelated to Kitchen UI and should be handled in a dedicated catalog cleanup.
 - `validate-telegram-catalog-mapping.ts` passed.
 - `validate-telegram-customer-ordering.ts` passed.
 - `validate-customer-order-history.ts` passed.
@@ -2190,5 +2190,6 @@ Not performed:
 Pending:
 
 - DB-backed KitchenTicket transition smoke is pending because Docker Desktop/local PostgreSQL was not available in this environment.
+- Canonical catalog recommendation cleanup is pending as a separate non-Kitchen release blocker.
 - Automated screenshot QA is pending because Playwright is not installed in the local workspace; the route was build-verified and opened in the Codex browser panel for manual inspection.
 - Owner review is required before any production release.
