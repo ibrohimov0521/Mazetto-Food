@@ -1804,6 +1804,51 @@ Remaining:
 - Eight authentic product media assets remain unresolved.
 - Click/Payme remain inactive.
 
+## Customer Ordering UX Controlled Release
+
+Status: Backend and customer-web deployed; production smoke partially verified
+
+Date: 2026-09-01
+
+Scope:
+
+- Released local customer ordering UX commits through `4e7075ad88e683e36bb8a39c06d7ce013305f9d6`.
+- Backend release includes Telegram customer ordering UX polish only: compact Telegram menu presentation, simple-item direct add, cart count display, redundant menu-level cleanup, and edit-in-place navigation behavior.
+- Customer-web release includes horizontal cart upsell, compact recommendation treatment, mobile checkout/bottom navigation contrast improvements, profile contrast fixes, and EVOS-style quantity control behavior.
+- No database migration, seed, manual database write, Cloudflare change, media asset change, Telegram ENV change, Telegram webhook reset, Click/Payme activation, staff lifecycle redesign, or production order creation was performed.
+
+Production deployment:
+
+- Previous backend image: `mazetto-food-backend-pdslpm:df87d00`.
+- New backend image: `mazetto-food-backend-pdslpm:4e7075a`.
+- Previous customer-web image: `mazetto-food-customerweb-yvb3d0:2376ed2`.
+- New customer-web image: `mazetto-food-customerweb-yvb3d0:4e7075a`.
+- Production services after release: backend `1/1`, customer-web `1/1`, media `1/1`, PostgreSQL `1/1`.
+- Public checks returned 200 for backend health, customer-web health, `/`, `/menu`, `/cart`, `/profile`, and `/orders`.
+- Production order graph counts remained unchanged across deployment at `orders=12`, `customer_orders=12`, `customer_order_attempts=12`, `kitchen_tickets=12`.
+
+Validation:
+
+- Backend typecheck, lint, and build passed locally.
+- Customer-web typecheck, lint, and build passed locally.
+- Workspace typecheck and lint passed locally.
+- `validate-telegram-customer-ordering.ts`, `validate-telegram-customer-auth.ts`, `validate-customer-order-history.ts`, and `validate-telegram-catalog-mapping.ts` passed locally.
+- `validate-telegram-staff-lifecycle.ts` was not run in this release gate because it requires an isolated database guard; production DB was not used for E2E validation.
+- `git diff --check` passed.
+
+Production warnings:
+
+- Telegram `getWebhookInfo` returned `pending_update_count = 0`; `last_error_message` still contains the historical `Wrong response from the webhook: 500 Internal Server Error` timestamp from before this release. No new backend log error appeared during the release window.
+- Automated browser screenshot tooling was unavailable in the current Codex environment, so route/health/API smoke was completed and visual screenshot QA remains a manual follow-up for this production release.
+- Telegram interactive human UX smoke was not forced from automation to avoid messaging a real customer or creating production state. The next safe step is a human bot navigation smoke without confirming an order.
+
+Remaining:
+
+- Human Telegram UX smoke for compact menu, simple item direct add, cart count, edit-in-place behavior, and staff lifecycle visibility remains pending.
+- Eight authentic product media assets remain unresolved.
+- Production media direct URLs still depend on the media volume containing the required files.
+- Click/Payme remain inactive.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop
