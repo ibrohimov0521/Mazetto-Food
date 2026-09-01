@@ -62,7 +62,11 @@ function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>)
       return "Juda ko'p urinish bo'ldi. Bir oz kutib qayta urinib ko'ring.";
     }
 
-    if (backendMessage.includes("Unauthorized")) {
+    if (
+      backendMessage.includes("Unauthorized") ||
+      backendMessage.includes("customer bearer token") ||
+      backendMessage.includes("customer token")
+    ) {
       return "Sessiya muddati tugagan. Telefon raqamingizni qayta tasdiqlang.";
     }
 

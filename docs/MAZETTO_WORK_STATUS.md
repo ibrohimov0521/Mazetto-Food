@@ -1849,6 +1849,35 @@ Remaining:
 - Production media direct URLs still depend on the media volume containing the required files.
 - Click/Payme remain inactive.
 
+## Web Checkout Auth Regression Fix
+
+Status: Fixed locally; production not changed
+
+Date: 2026-09-01
+
+Scope:
+
+- Investigated the customer-web checkout regression where a visibly logged-in customer could reach checkout but see `Invalid or expired customer token` and could not complete the order.
+- Root cause: checkout quote loading used the stored customer access token directly. If the short-lived access token had expired, `/customer/checkout/quote` returned a customer-token 401, `quoteError` was set, and the submit button stayed disabled before the existing submit-time refresh/retry path could run.
+- The regression was introduced with the checkout quote flow added in `6a191248`; profile and orders already had refresh/retry behavior, but checkout quote did not.
+
+Fix:
+
+- Customer-web API error mapping now treats backend customer token failures as the existing Uzbek session-expired message instead of exposing raw backend text.
+- Checkout quote loading now refreshes the customer session once and retries the quote with the fresh access token when the failure is session-related.
+- If refresh fails, the invalid session is cleared through the existing auth state and checkout shows the in-place phone verification panel.
+
+Safety:
+
+- Backend authentication guard remains unchanged.
+- Checkout remains authenticated; no anonymous checkout or expired-JWT acceptance was added.
+- No backend, database, migration, seed, production deploy, webhook, Cloudflare, payment, or order-engine change was made.
+
+Validation:
+
+- `pnpm --filter customer-web typecheck`: passed.
+- `pnpm --filter customer-web lint`: passed.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop

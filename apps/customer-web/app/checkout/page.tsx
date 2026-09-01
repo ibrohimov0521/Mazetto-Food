@@ -120,7 +120,7 @@ function CheckoutFlow() {
     setLoadingQuote(true);
     setQuoteError(null);
     try {
-      const nextQuote = await apiFetch<CheckoutQuote>("/customer/checkout/quote", {
+      const request = {
         accessToken: customer.accessToken,
         body: JSON.stringify({
           branchId,
@@ -128,7 +128,28 @@ function CheckoutFlow() {
           items: orderItemsPayload,
         }),
         method: "POST",
-      });
+      } as const;
+      let nextQuote: CheckoutQuote;
+
+      try {
+        nextQuote = await apiFetch<CheckoutQuote>("/customer/checkout/quote", request);
+      } catch (error) {
+        if (!isCustomerSessionError(error)) {
+          throw error;
+        }
+
+        const refreshed = await refreshCustomer();
+
+        if (!refreshed) {
+          throw error;
+        }
+
+        nextQuote = await apiFetch<CheckoutQuote>("/customer/checkout/quote", {
+          ...request,
+          accessToken: refreshed.accessToken,
+        });
+      }
+
       setQuote(nextQuote);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Narxni hisoblab bo'lmadi";
@@ -137,7 +158,7 @@ function CheckoutFlow() {
     } finally {
       setLoadingQuote(false);
     }
-  }, [branchId, customer?.accessToken, items.length, orderItemsPayload, type]);
+  }, [branchId, customer?.accessToken, items.length, orderItemsPayload, refreshCustomer, type]);
 
   useEffect(() => {
     void loadQuote();
@@ -479,6 +500,10 @@ function getCheckoutAttemptId(payloadSignature: string): string {
 function clearCheckoutAttempt() {
   window.localStorage.removeItem(checkoutAttemptKey);
   window.localStorage.removeItem(checkoutAttemptPayloadKey);
+}
+
+function isCustomerSessionError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Sessiya muddati tugagan");
 }
 
 function createClientId(): string {
