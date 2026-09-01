@@ -78,7 +78,7 @@ export const menuCombos: ComboSeed[] = [
     active: true,
     canonical: true,
     bundle: [
-      item("CUTLET_HOME_STYLE", "Katlet podamashni", 2, 10),
+      item("CUTLET_HOME_STYLE", "Katlet podamashni", 2, 10, "CUTLET_HOME_STYLE"),
       item("CHICKEN_BALLS", "Kurinniy sharik", 2, 20, "CHICKEN_BALLS_3"),
       item("NUGGETS", "Naggets", 2, 30, "NUGGETS"),
       item("PEPSI_025", "Pepsi 0.25", 2, 40),

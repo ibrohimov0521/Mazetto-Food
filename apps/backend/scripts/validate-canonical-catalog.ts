@@ -7,10 +7,7 @@ import { menuVariants } from "../prisma/seeds/menu/variants";
 const canonicalStandaloneTarget = 56;
 const canonicalSetTarget = 18;
 const canonicalTotalTarget = 74;
-const pendingOwnerPriceDecisions = [
-  { name: "Doner Blyuda", reason: "PDF shows 52 000 / 55 000" },
-  { name: "Katlet podamashni", reason: "PDF shows 52 000 / 55 000" },
-];
+const pendingOwnerPriceDecisions: Array<{ name: string; reason: string }> = [];
 const legacyCodes = new Set([
   "MINI_LAVASH",
   "BEEF_LAVASH",
@@ -58,10 +55,12 @@ function main(): void {
   const legacyProducts = products.filter((product) => product.legacy);
   const actualLegacyCodes = new Set(legacyProducts.map((product) => product.code));
 
-  assert.equal(canonicalStandalone.length, canonicalStandaloneTarget - pendingOwnerPriceDecisions.length);
+  assert.equal(canonicalStandalone.length, canonicalStandaloneTarget);
   assert.equal(canonicalSets.length, canonicalSetTarget);
-  assert.equal(canonicalStandalone.length + canonicalSets.length, canonicalTotalTarget - pendingOwnerPriceDecisions.length);
+  assert.equal(canonicalStandalone.length + canonicalSets.length, canonicalTotalTarget);
   assert.equal(legacyProducts.length, legacyCodes.size, "All 17 legacy DB-only products/sets must be preserved");
+  assert.equal(menuProducts.find((product) => product.code === "DONER_PLATE")?.basePrice, 52000);
+  assert.equal(menuProducts.find((product) => product.code === "CUTLET_HOME_STYLE")?.basePrice, 52000);
 
   for (const code of legacyCodes) {
     assert.ok(actualLegacyCodes.has(code), `Legacy product was not preserved: ${code}`);

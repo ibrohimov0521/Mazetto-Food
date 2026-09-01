@@ -1904,7 +1904,7 @@ Pending human smoke:
 
 ## Canonical Menu Catalog Local Alignment
 
-Status: 🟡 PARTIAL / RISK — implemented locally; owner price decisions and production release are pending
+Status: 🟡 PARTIAL / RISK — 74/74 canonical catalog implemented locally; isolated DB validation and production release are pending
 
 Date: 2026-09-01
 
@@ -1915,8 +1915,8 @@ Scope:
 - PDF canonical menu remains 56 standalone products and 18 sets, 74 total customer-visible items.
 - Local schema now includes additive `ProductBundleItem` metadata for persisted set composition and quantities.
 - Local migration added: `20260901120000_product_bundle_items`.
-- Local seed/catalog definitions now include 54 resolved standalone PDF-backed products and all 18 PDF-backed sets.
-- Two standalone items remain owner-price pending because the PDF shows two prices: Doner Blyuda and Katlet podamashni.
+- Local seed/catalog definitions now include all 56 standalone PDF-backed products and all 18 PDF-backed sets.
+- Owner resolved the final two price decisions: Doner Blyuda = 52 000 UZS and Katlet podamashni = 52 000 UZS.
 - The confirmed 17 DB-only legacy products/sets were preserved and not deleted, disabled, renamed, or repurposed.
 - Telegram customer menu was flattened locally so Lavashlar and Burgerlar open direct product lists instead of Mol/Tovuq intermediate family screens.
 - Customer-web now trusts backend API product names/descriptions instead of overriding them with older hardcoded labels.
@@ -1926,7 +1926,7 @@ Validation:
 - `prisma format`, `prisma validate`, and `prisma generate` passed locally with a safe placeholder `DATABASE_URL`.
 - Backend typecheck, lint, and build passed.
 - Customer-web typecheck, lint, and build passed.
-- `validate-canonical-catalog.ts` passed and reports 72 resolved canonical items plus 2 owner-price decisions pending.
+- `validate-canonical-catalog.ts` passed and reports 74 resolved canonical items with 0 owner-price decisions pending.
 - `validate-telegram-catalog-mapping.ts` passed for flattened Lavash/Burger category mapping.
 - `validate-telegram-customer-ordering.ts` passed.
 - Workspace typecheck and lint passed.
@@ -1943,7 +1943,6 @@ Not performed:
 
 Pending:
 
-- Owner must resolve Doner Blyuda price and Katlet podamashni price.
 - Isolated local PostgreSQL migration/seed test is pending because Docker Desktop daemon was not running locally.
 - Production release requires a separate controlled approval phase after owner review.
 

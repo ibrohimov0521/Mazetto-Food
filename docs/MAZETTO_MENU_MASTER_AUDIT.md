@@ -240,8 +240,8 @@ Conclusion: the earlier seed/local counts were accurate for the current producti
 
 | PDF item | PDF price | Current DB status |
 | --- | ---: | --- |
-| Doner Blyuda | 52 000 / 55 000 | Ambiguous PDF price; closest current `DONER_PLATE` is 42 000 |
-| Katlet podamashni | 52 000 / 55 000 | Ambiguous PDF price; missing |
+| Doner Blyuda | 52 000 | Owner resolved at 52 000; implemented locally as canonical `DONER_PLATE` |
+| Katlet podamashni | 52 000 | Owner resolved at 52 000; implemented locally as canonical `CUTLET_HOME_STYLE` |
 
 ### Sides / Snacks
 
@@ -365,7 +365,7 @@ Examples:
 | Klab senvich frisiz | `CLUB_SANDWICH_NO_FRIES` | no |
 | Klab senvich | `CLUB_SANDWICH` | no |
 | Saseska podomashniy | `SAUSAGE_HOME_STYLE` | no |
-| Katlet podamashni | `CUTLET_HOME_STYLE` | blocked by ambiguous price |
+| Katlet podamashni | `CUTLET_HOME_STYLE` | implemented locally; owner resolved price at 52 000 |
 | Ketchup | `KETCHUP` | no |
 | Chesnochniy sous | `GARLIC_SAUCE` | no |
 | Kampot | `KOMPOT` | no |
@@ -413,7 +413,7 @@ These current products have a likely PDF equivalent but require owner-approved n
 | `CHICKEN_BURGER` | Tovuqli burger | 28 000 | Chicken Burger | 26 000 | Price alignment |
 | `CHICKEN_CHEESEBURGER` | Tovuqli chizburger | 31 000 | Chicken Chizburger | 29 000 | Price alignment |
 | `DONER_WRAP` | Doner lavash | 32 000 | Doner | 38 000 | Name/category/price alignment |
-| `DONER_PLATE` | Doner tarelka | 42 000 | Doner Blyuda | 52 000 / 55 000 | Ambiguous price; owner review needed |
+| `DONER_PLATE` | Doner Blyuda | 52 000 | Doner Blyuda | 52 000 | Owner resolved price; implemented locally |
 | `CHICKEN_DONER` | Tovuqli doner | 30 000 | Kurinniy Doner | 34 000 | Price alignment |
 | `NUGGETS` | Naggets | 24 000 | Naggets 5 dona | 18 000 | Portion/price alignment |
 | `FAMILY_SET` | Oilaviy set | 119 000 | Oilaviy set | 143 000 | Content/price alignment |
@@ -500,12 +500,12 @@ Known fallback-only media items:
 
 For the strict PDF catalog, any item missing from DB is also missing a confirmed product media assignment until owner-approved product creation/mapping is performed.
 
-## Ambiguous PDF Items
+## Resolved Price Decisions And Remaining Ambiguous PDF Items
 
 | Item | Ambiguity |
 | --- | --- |
-| Doner Blyuda | PDF shows `52 000 / 55 000`; options/portion difference unclear |
-| Katlet podamashni | PDF shows `52 000 / 55 000`; options/portion difference unclear |
+| Doner Blyuda | Resolved by owner at `52 000`; implemented locally as canonical `DONER_PLATE` |
+| Katlet podamashni | Resolved by owner at `52 000`; implemented locally as canonical `CUTLET_HOME_STYLE` |
 | Big Doner | Appears in set composition text, but standalone PDF item appears as `Doner`; owner must confirm naming |
 | 0.25 Pepsi | Appears in set composition, but drinks section lists Kampot/Moxito; standalone selling status unclear |
 | Sok 1L | Appears in `Oilaviy set`; standalone selling status unclear |
@@ -525,7 +525,7 @@ Recommended for this project: use separate customer-facing products for every pr
 
 ## Canonical Alignment Blockers Before Local Seed Changes
 
-The follow-up alignment phase was started after production reconciliation, but full local implementation is blocked by two owner/schema decisions that must be resolved before changing seed data safely.
+The follow-up alignment phase was started after production reconciliation. The original blockers are now resolved locally as follows.
 
 ### Blocker 1 — Set Composition Is Not Persisted
 
@@ -574,26 +574,26 @@ Notes:
 - `componentCode` and `componentName` preserve the PDF-backed composition even when a component is not a customer-visible product.
 - This avoids deleting or rewriting existing products and preserves historical order IDs.
 
-### Blocker 2 — Two Standalone PDF Items Have Ambiguous Prices
+### Resolved Blocker 2 — Two Standalone PDF Items Have Owner-Approved Prices
 
-The PDF rendering shows two prices for each of these items:
+The PDF rendering previously appeared to show two prices for each of these items. The owner resolved both at 52 000 UZS.
 
-| PDF item | Visible prices | Required owner decision |
+| PDF item | Owner-approved price | Local implementation |
 | --- | ---: | --- |
-| Doner Blyuda | 52 000 / 55 000 | Confirm whether these are size/portion variants, meat variants, or one corrected price |
-| Katlet podamashni | 52 000 / 55 000 | Confirm whether these are size/portion variants, meat variants, or one corrected price |
+| Doner Blyuda | 52 000 | canonical `DONER_PLATE` |
+| Katlet podamashni | 52 000 | canonical `CUTLET_HOME_STYLE` |
 
-Until this is resolved, these items should not be inserted into the seed with a guessed single price.
+No unresolved owner price decisions remain.
 
 ### Safe Implementation Boundary
 
-Until the two blockers above are approved, the safe local work is:
+The blocker decisions are now resolved locally:
 
-- document canonical code mapping;
-- classify legacy DB-only products;
-- prepare a non-destructive upsert plan;
-- update Telegram plan to flatten Lavash/Burger categories conceptually;
-- avoid seed/schema edits that would produce incomplete or misleading production catalog state.
+- additive set composition schema exists through `ProductBundleItem`;
+- Doner Blyuda and Katlet podamashni both have owner-approved 52 000 UZS prices;
+- canonical seed definitions now represent all 74 PDF customer-visible items.
+
+The remaining boundary is production safety: do not run the new migration or catalog seed in production until a separate controlled release phase is approved.
 
 ### Step B — Resolve DB-Only Products
 
@@ -702,16 +702,16 @@ This migration is additive only. It does not change historical `OrderItem` snaps
 | PDF standalone target | 56 |
 | PDF set target | 18 |
 | PDF total target | 74 |
-| Resolved standalone products implemented locally | 54 |
+| Resolved standalone products implemented locally | 56 |
 | Resolved sets implemented locally | 18 |
-| Resolved canonical items implemented locally | 72 |
-| Owner price decisions pending | 2 |
+| Resolved canonical items implemented locally | 74 |
+| Owner price decisions pending | 0 |
 | Legacy DB-only products/sets preserved | 17 |
 
-Pending owner price decisions:
+Resolved owner price decisions:
 
-- Doner Blyuda: PDF shows `52 000 / 55 000`.
-- Katlet podamashni: PDF shows `52 000 / 55 000`.
+- Doner Blyuda: 52 000 UZS.
+- Katlet podamashni: 52 000 UZS.
 
 ### Bundle Composition
 
