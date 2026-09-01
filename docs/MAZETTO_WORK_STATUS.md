@@ -1961,6 +1961,50 @@ Pending:
 - Click/Payme provider integrations remain not implemented.
 - Production media direct URLs still depend on the media volume containing the required files.
 
+## Customer UX Hotfix Release - Telegram One-Tap, Category Ordering, Web Contrast
+
+Status: Deployed; human Telegram smoke pending
+
+Date: 2026-09-01
+
+Scope:
+
+- Released hotfix commit `b787116a8c827440fd480039c63c0626f6e5df0a`.
+- Backend image deployed: `mazetto-food-backend-pdslpm:b787116`.
+- Customer-web image deployed: `mazetto-food-customerweb-yvb3d0:b787116`.
+- Customer-facing menu/category descriptions no longer expose internal PDF/source-menu copy.
+- Telegram customer menu keeps direct Lavashlar and Burgerlar category listing without the old Mol/Tovuq intermediate split.
+- Simple one-variant products use the streamlined Telegram add flow instead of an unnecessary `Standart` selection screen.
+- Customer-web home/profile contrast fixes are included in the deployed customer-web image.
+
+Production safety:
+
+- A fresh pre-release PostgreSQL backup was created and verified:
+  `/home/javohir/backups/mazetto/postgres/mazetto-ux-hotfix-pre-release-20260901-131520.dump`.
+- No Prisma migration was executed.
+- Production seed/catalog apply was run once to reconcile idempotent menu/category text and existing catalog records.
+- No order, customer, payment, kitchen lifecycle, Cloudflare, Telegram webhook, media asset, or environment change was performed.
+- Production order graph counts remained unchanged during the release at `orders=15`, `customer_orders=15`, `customer_order_attempts=15`, and `kitchen_tickets=15`.
+
+Post-release verification:
+
+- Production services after release: backend `1/1`, customer-web `1/1`, media `1/1`, PostgreSQL `1/1`.
+- Backend health returned 200.
+- Customer-web routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Production customer API returned 11 categories and 91 products.
+- Product and category PDF/source-menu description matches returned 0 through the production API and direct production DB checks.
+- Production DB integrity checks returned 0 duplicate product codes, 0 duplicate bundle rows, 0 invalid bundle links, 0 products without categories, and 0 combo products without components.
+- Customer-web runtime ENV points to `https://api.mazettofood.uz/api/v1` and `https://media.mazettofood.uz`.
+- Customer-web runtime files showed no `localhost:4000` fallback.
+- Telegram webhook remained configured and had `pending_update_count = 0`; Telegram still reports a historical `Wrong response from the webhook: 500 Internal Server Error` from 2026-08-31 20:33:36 Asia/Tashkent, before this release window.
+- Backend and customer-web release-window logs showed no startup, Prisma, duplicate, or server errors.
+
+Pending:
+
+- Human Telegram smoke is still required for the streamlined one-tap/simple-product flow and Lavashlar/Burgerlar category navigation in the real `@mazettofoodbot` chat.
+- No production order should be created for that smoke unless explicitly approved.
+- Production media direct URLs still depend on the media volume containing the required files.
+
 ## Architecture Decision Log
 
 ### Print Agent Replaced By MAZETTO Desktop
