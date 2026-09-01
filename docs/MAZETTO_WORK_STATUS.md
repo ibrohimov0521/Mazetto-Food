@@ -2069,3 +2069,70 @@ Pending:
 
 - Isolated local PostgreSQL E2E validation is pending because Docker Desktop was not available locally.
 - Combined controlled release is the next step after owner approval.
+
+## Combined Customer Experience Release - Telegram UX, Web Redesigns, Exact 74 Customer Catalog
+
+Status: Deployed; human Telegram/cart visual smoke partially pending
+
+Date: 2026-09-01
+
+Release revision:
+
+- Application commit: `92a313dc1c1bd6aa1bc8dfef503919c788c829ac`
+- Backend image: `mazetto-food-backend-pdslpm:92a313d`
+- Customer-web image: `mazetto-food-customerweb-yvb3d0:92a313d`
+
+Scope released:
+
+- Telegram customer catalog keeps flattened food category navigation.
+- Customer-facing catalog visibility is exactly 74 canonical PDF items.
+- The 17 legacy DB-only products/sets remain preserved internally and hidden from customer-facing catalog surfaces.
+- Customer product detail hero redesign is deployed.
+- Active order card redesign is deployed.
+- No auth, payment, order lifecycle, staff Telegram, Cloudflare, media, or webhook behavior was intentionally changed.
+
+Production safety:
+
+- Pre-release backup was created and restore-list readability was verified:
+  `/home/javohir/backups/mazetto/postgres/mazetto-combined-customer-experience-pre-release-20260901-172922.dump`
+- No Prisma migration was executed.
+- Production seed/catalog apply was run once to reconcile the approved `SAUSAGE_HOME_STYLE` category mapping.
+- No production order/customer/payment/kitchen lifecycle mutation was performed by the release verification.
+
+Production DB/API verification:
+
+- Internal DB remains 91 total products, 100 variants, 20 combo products, and 75 product bundle rows.
+- Order graph counts remained unchanged during release verification:
+  `orders=16`, `customer_orders=16`, `customer_order_attempts=16`, `kitchen_tickets=16`.
+- Customer API returns 9 categories and 74 products.
+- Customer-visible standalone products: 56.
+- Customer-visible sets: 18.
+- Customer-visible legacy products: 0.
+- Exact customer category counts were verified:
+  Lavashlar 14, Burgerlar 8, Doner / Klab / Xaggi 5, Hot Doglar 13, Blyudalar 3, Gazaklar 8, Souslar 3, Ichimliklar 2, Setlar 18.
+- `SAUSAGE_HOME_STYLE` is now persisted under `BLYUDALAR`.
+- Bundle integrity checks passed for duplicate product codes, duplicate bundle rows, orphan bundle rows, invalid bundle quantities, products without categories, and combo products without composition.
+- Homepage customer response had 0 legacy product leaks.
+
+Production web verification:
+
+- Backend health returned 200 with database status `ok`.
+- Customer-web routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, `/orders`, and a real `/product/[id]` route returned 200.
+- Served customer-web bundle contains `api.mazettofood.uz` and `media.mazettofood.uz`.
+- Served customer-web bundle contains no `localhost:4000` fallback.
+
+Telegram verification:
+
+- Telegram webhook remained configured with `pending_update_count = 0`.
+- No new backend Telegram/startup/Prisma/callback errors were found in the release window logs.
+- Historical Telegram webhook error metadata may still be present from an older pre-release timestamp.
+- Human all-category Telegram pagination/cart smoke remains pending because it requires the owner/customer Telegram account and must not create a production order.
+
+Pending:
+
+- Human Telegram all-category smoke:
+  no `Keyingi`, no `Oldingi`, no page indicator, no legacy products, and expected counts by category.
+- Human Telegram cart smoke:
+  cart rows show only minus/plus, simple products one-tap add, qty 1 minus removes item, no `cust:qadd`.
+- Human active-order visual smoke for `/orders` if an authenticated session with active order is available.
+- Production media direct URLs still depend on the media volume containing the required files.

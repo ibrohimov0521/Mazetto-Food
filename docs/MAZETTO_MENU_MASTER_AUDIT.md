@@ -943,3 +943,51 @@ Passed locally:
 `git diff --check` only reported existing Windows CRLF conversion warnings for edited files.
 
 Isolated local PostgreSQL validation is pending because the local Docker daemon was unavailable. Production was not touched.
+
+## Production Customer Visibility Release - 2026-09-01
+
+Release revision `92a313dc1c1bd6aa1bc8dfef503919c788c829ac` was deployed to backend and customer-web production services.
+
+Production verification confirmed:
+
+| Metric | Count |
+| --- | ---: |
+| Internal Product rows | 91 |
+| Internal variants | 100 |
+| Internal combo products | 20 |
+| ProductBundleItem rows | 75 |
+| Customer-visible standalone products | 56 |
+| Customer-visible sets | 18 |
+| Customer-visible total | 74 |
+| Customer-visible legacy products/sets | 0 |
+
+Exact customer-visible category counts:
+
+| Customer category | Production count |
+| --- | ---: |
+| Lavashlar | 14 |
+| Burgerlar | 8 |
+| Doner / Klab / Xaggi | 5 |
+| Hot Doglar | 13 |
+| Blyudalar | 3 |
+| Gazaklar | 8 |
+| Souslar | 3 |
+| Ichimliklar | 2 |
+| Setlar | 18 |
+
+The approved data reconciliation was applied once through the existing idempotent seed/catalog process. No Prisma migration was executed.
+
+`SAUSAGE_HOME_STYLE` is now persisted in the `BLYUDALAR` category. The 17 legacy DB-only products/sets remain preserved internally and hidden from customer-facing API/catalog paths.
+
+Integrity checks after apply:
+
+- Duplicate product codes: 0.
+- Duplicate bundle rows: 0.
+- Orphan bundle rows: 0.
+- Invalid bundle quantities: 0.
+- Products without category: 0.
+- Combo products without composition: 0.
+
+Order graph counts did not change during release verification.
+
+Human Telegram all-category/cart smoke remains pending and must be completed without creating a production order unless explicitly approved.
