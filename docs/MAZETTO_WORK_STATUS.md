@@ -1902,25 +1902,30 @@ Pending human smoke:
 - Verify with an existing legitimate logged-in customer session that stale access token recovery refreshes once, quote reloads, and checkout remains usable.
 - If refresh cannot recover the session, verify the stale session clears and the in-place phone verification UI appears instead of the raw backend token error.
 
-## Canonical Menu Catalog Local Alignment
+## Canonical Menu Catalog Production Release
 
-Status: 🟡 PARTIAL / RISK — 74/74 canonical catalog and isolated DB validation passed locally; production release is pending
+Status: ✅ VERIFIED — 74/74 canonical catalog and bundle composition are deployed in production
 
 Date: 2026-09-01
 
 Scope:
 
 - Production menu audit was reconciled after the server came back online.
-- Production DB/API currently expose 35 products, 44 variants, 4 sets, and 10 categories.
+- Production before this release exposed 35 products, 44 variants, 4 sets, and 10 categories.
 - PDF canonical menu remains 56 standalone products and 18 sets, 74 total customer-visible items.
-- Local schema now includes additive `ProductBundleItem` metadata for persisted set composition and quantities.
-- Local migration added: `20260901120000_product_bundle_items`.
-- Local seed/catalog definitions now include all 56 standalone PDF-backed products and all 18 PDF-backed sets.
+- Production now includes the additive `ProductBundleItem` metadata for persisted set composition and quantities.
+- Production migration applied: `20260901120000_product_bundle_items`.
+- Production seed/catalog now includes all 56 standalone PDF-backed products and all 18 PDF-backed sets.
 - Owner resolved the final two price decisions: Doner Blyuda = 52 000 UZS and Katlet podamashni = 52 000 UZS.
 - The confirmed 17 DB-only legacy products/sets were preserved and not deleted, disabled, renamed, or repurposed.
-- Telegram customer menu was flattened locally so Lavashlar and Burgerlar open direct product lists instead of Mol/Tovuq intermediate family screens.
+- Telegram customer menu was flattened so Lavashlar and Burgerlar open direct product lists instead of Mol/Tovuq intermediate family screens.
 - Stale DB-backed E2E coverage was updated from removed `cust:qadd:*` callbacks to the current flattened `cust:qprod` and `cust:addv` callback flow.
 - Customer-web now trusts backend API product names/descriptions instead of overriding them with older hardcoded labels.
+- Production services now run backend image `mazetto-food-backend-pdslpm:acae4bd` and customer-web image `mazetto-food-customerweb-yvb3d0:acae4bd`.
+- Production DB now reports 17 applied Prisma migrations and 0 failed migrations.
+- Production DB/API now expose 11 categories, 91 total products, 100 variants, 20 combo products, and 75 persisted product bundle rows.
+- The production customer API returns 91 products because it intentionally preserves the 17 legacy DB-only products/sets alongside the 74 canonical PDF items.
+- Production order graph counts remained unchanged during catalog release verification at `orders=13`, `customer_orders=13`, `customer_order_attempts=13`, and `kitchen_tickets=13`.
 
 Validation:
 
@@ -1933,19 +1938,28 @@ Validation:
 - `validate-customer-order-e2e-db.ts` passed against isolated localhost PostgreSQL after applying all 17 migrations and running the seed.
 - Workspace typecheck and lint passed.
 - Workspace build reported all 9 tasks successful, then Turbo remained open and was interrupted after successful task output.
+- A fresh production backup was created before the DB mutation: `/home/javohir/backups/mazetto/postgres/mazetto-canonical74-pre-release-20260901-122233.dump`.
+- Production migration deploy applied `20260901120000_product_bundle_items` successfully.
+- Production seed ran once successfully and reported 91 products including 20 combo sets.
+- Production bundle integrity checks passed for duplicate product codes, duplicate bundle rows, invalid bundle quantities, products without categories, and combo products without components.
+- Bundle-only components such as `Pepsi 0.25`, `Sok 1L`, generic `Sous`, and `Big Doner` intentionally remain preserved by `componentCode`/`componentName` without invented standalone product rows.
+- Public backend health returned 200 with database status `ok`.
+- Public customer-web routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Served customer-web assets contain `api.mazettofood.uz` and `media.mazettofood.uz`, with no `localhost:4000` fallback found in the served bundle.
 
 Not performed:
 
-- No production migration.
-- No production seed.
-- No production DB write.
-- No deploy.
-- No push.
+- No order/customer/payment/kitchen lifecycle mutation was performed during this catalog release.
+- No production order was created.
+- No Telegram webhook change.
+- No Cloudflare change.
 - No media generation/upload.
 
 Pending:
 
-- Production release requires a separate controlled approval phase after owner review.
+- Human Telegram catalog smoke is still pending after release; do not create a production order for this smoke.
+- Click/Payme provider integrations remain not implemented.
+- Production media direct URLs still depend on the media volume containing the required files.
 
 ## Architecture Decision Log
 

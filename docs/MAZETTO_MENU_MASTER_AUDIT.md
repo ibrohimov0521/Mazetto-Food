@@ -4,6 +4,8 @@ Date: 2026-09-01
 
 Repository HEAD at audit: `7c84a7cb7dd35090ea7886b114790d035e597d7b`
 
+Latest production release reconciled at: `acae4bd9a9dfca3cc0623a3f4ffeaedde8ca5d86`
+
 Audit mode: read-only analysis. No database, production, deployment, seed, product, price, or image mutations were performed.
 
 ## Executive Summary
@@ -14,7 +16,85 @@ The PDF contains **56 standalone menu items** and **18 set/combo items**, for **
 
 The biggest mismatch is structural: many PDF items are modeled as separate sellable products, while the current DB contains a smaller normalized/renamed catalog with some variants and some products that do not appear in the PDF. Telegram also currently groups Lavash and Burger into virtual quick-add families, which conflicts with the latest owner direction that all lavash/burger products should be visible as individual menu products.
 
-Production media direct URLs remain an operational issue: the frontend supports media fallback, but the production media volume previously had missing files. This audit did not upload, generate, or modify media.
+Production media direct URLs remain an operational issue: the frontend supports media fallback, but production image availability still depends on the media volume containing the expected files.
+
+## Controlled Production Release — 2026-09-01
+
+This section records the approved production release of the canonical 74-item catalog and supersedes the earlier 35-product production snapshot for current live catalog counts.
+
+Release commit: `acae4bd9a9dfca3cc0623a3f4ffeaedde8ca5d86`
+
+Released images:
+
+| Service | Image |
+| --- | --- |
+| Backend | `mazetto-food-backend-pdslpm:acae4bd` |
+| Customer-web | `mazetto-food-customerweb-yvb3d0:acae4bd` |
+
+Safety:
+
+- Backup created before DB mutation: `/home/javohir/backups/mazetto/postgres/mazetto-canonical74-pre-release-20260901-122233.dump`
+- No database reset, truncate, delete, `db push`, or `migrate dev` was performed.
+- No product image paths were changed.
+- No production orders, customers, payments, customer order attempts, kitchen tickets, Telegram webhook, Cloudflare route, or media files were changed by the catalog release.
+
+Production migration result:
+
+| Metric | Result |
+| --- | ---: |
+| Applied migrations | 17 |
+| Failed migrations | 0 |
+| New migration | `20260901120000_product_bundle_items` |
+| New table | `product_bundle_items` |
+
+Production catalog result:
+
+| Area | Production count |
+| --- | ---: |
+| Categories | 11 |
+| Products total | 91 |
+| Canonical PDF-backed products/sets | 74 |
+| Preserved legacy DB-only products/sets | 17 |
+| Combo/set products total | 20 |
+| Variants | 100 |
+| Modifiers | 8 |
+| Product bundle rows | 75 |
+
+Integrity verification:
+
+| Check | Result |
+| --- | ---: |
+| Duplicate product codes | 0 |
+| Duplicate bundle rows | 0 |
+| Invalid bundle quantities | 0 |
+| Products without category | 0 |
+| Combo products without components | 0 |
+| Doner Blyuda price | 52 000 UZS |
+| Katlet podamashni price | 52 000 UZS |
+
+Bundle component note:
+
+- `componentProductId` is intentionally nullable.
+- Bundle-only components such as `Pepsi 0.25`, `Sok 1L`, generic `Sous`, and `Big Doner` are preserved as `componentCode`/`componentName` rows without inventing standalone customer-visible product prices.
+
+Production API result:
+
+| Endpoint | Result |
+| --- | ---: |
+| `/api/v1/health` | 200, database status `ok` |
+| `/api/v1/customer/menu/categories` | 11 categories |
+| `/api/v1/customer/menu/products` | 91 products |
+| Customer-web `/` | 200 |
+| Customer-web `/menu` | 200 |
+| Customer-web `/cart` | 200 |
+| Customer-web `/checkout` | 200 |
+| Customer-web `/profile` | 200 |
+| Customer-web `/orders` | 200 |
+
+Visibility note:
+
+- The public customer API returns 91 products because the owner-approved release preserves the 17 legacy DB-only products/sets alongside the 74 canonical PDF items.
+- This is intentional preservation, not a legacy cleanup. A later owner-approved catalog cleanup/visibility phase would be needed if legacy items should be hidden or retired.
 
 ## Production Reconciliation — 2026-09-01
 
