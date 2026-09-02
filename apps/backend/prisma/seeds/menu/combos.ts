@@ -227,7 +227,7 @@ export const menuCombos: ComboSeed[] = [
     name: "Lavash seti",
     description: "Big Lavash, kichik fri va Pepsi 0.25.",
     basePrice: 51000,
-    imageUrl: "/products/set-lavash.webp",
+    imageUrl: "/products/set-lavash-canonical.webp",
     preparationTime: 13,
     active: true,
     canonical: true,

@@ -269,7 +269,7 @@ export const menuProducts: MenuProductSeed[] = [
     name: "Chicken Burger",
     description: "",
     basePrice: 26000,
-    imageUrl: "/products/chicken-burger.webp",
+    imageUrl: "/products/chicken-burger-canonical.webp",
     preparationTime: 9,
     active: true,
     canonical: true,

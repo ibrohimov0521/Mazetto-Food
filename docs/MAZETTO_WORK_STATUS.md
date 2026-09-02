@@ -771,7 +771,7 @@ products/burger-classic.webp
 products/burger-big.webp
 products/cheeseburger.webp
 products/burger-double.webp
-products/chicken-burger.webp
+products/chicken-burger-canonical.webp
 products/crispy-chicken-burger.webp
 products/chicken-cheeseburger.webp
 products/hot-dog-classic.webp
@@ -792,7 +792,7 @@ products/house-sauce.webp
 products/cheese-sauce.webp
 products/spicy-sauce.webp
 products/set-family.webp
-products/set-lavash.webp
+products/set-lavash-canonical.webp
 products/set-burger.webp
 products/set-kids.webp
 ```

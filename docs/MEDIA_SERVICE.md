@@ -123,7 +123,7 @@ products/burger.webp
 products/chizburger.webp
 products/double-burger.webp
 products/double-chizburger.webp
-products/chicken-burger.webp
+products/chicken-burger-canonical.webp
 products/chicken-chizburger.webp
 products/double-chicken-burger.webp
 products/double-chicken-chizburger.webp
@@ -161,7 +161,7 @@ products/set-lavashlar-juftligi.webp
 products/set-double-chizburger-juftligi.webp
 products/set-doner-blyuda-juftligi.webp
 products/set-salatli-hot-dog.webp
-products/set-lavash.webp
+products/set-lavash-canonical.webp
 products/set-xaggi.webp
 products/set-qazili-hot-dog.webp
 products/set-chizburger.webp
