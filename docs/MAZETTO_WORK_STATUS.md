@@ -2240,3 +2240,61 @@ Not performed:
 - No customer-web change.
 - No Cloudflare route change.
 - No Telegram, payment, media, or customer checkout change.
+
+## Admin Core + POS/Kitchen Production Release - 2026-09-02
+
+Status: Deployed; authorized human write/live-order smoke pending
+
+Release revision:
+
+- Backend image: `mazetto-food-backend-pdslpm:ac20b4c`
+- POS web image: `mazetto-food-posweb:ac20b4c`
+- Customer web image remained unchanged: `mazetto-food-customerweb-yvb3d0:1c0e497`
+
+Public route:
+
+- `https://pos.mazettofood.uz/login` is live and returns 200.
+- `https://pos.mazettofood.uz/admin` and `https://pos.mazettofood.uz/kitchen` are publicly reachable as POS web shells, but protected data is not exposed without staff authentication.
+- Backend protected APIs remained guarded: unauthenticated kitchen and admin menu requests returned 401.
+
+Production backup:
+
+- Fresh PostgreSQL backup before release:
+  `/home/javohir/backups/mazetto/postgres/mazetto-admin-core-pre-release-20260902-102808.dump`
+- Backup size was verified as non-zero: 214K.
+
+Admin routes deployed:
+
+- `/admin`
+- `/admin/dashboard`
+- `/admin/products`
+- `/admin/products/new`
+- `/admin/products/[id]`
+- `/admin/categories`
+- `/admin/branches`
+
+Release verification:
+
+- Backend service reached `1/1` and public health returned database `ok`.
+- POS web service reached `1/1` and public `/login` returned 200 after deployment.
+- Customer web routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` remained healthy.
+- Customer catalog regression passed: 56 standalone products, 18 sets, 74 total customer-visible products, and 0 legacy customer-visible leaks.
+- Internal production catalog counts remained unchanged during release verification:
+  products 91, variants 100, categories 11, product bundle rows 75.
+- Order graph counts remained unchanged during release verification:
+  orders 17, customer_orders 17, customer_order_attempts 17, kitchen_tickets 17.
+- Telegram webhook remained configured with pending updates 0. Telegram still reports the historical 2026-08-31 webhook 500 metadata; no new release-window backend or POS web errors were found in service logs.
+
+Not performed:
+
+- No migration.
+- No seed/catalog apply.
+- No fake production product/category/order was created.
+- No production product, category, branch, order, payment, Telegram webhook, Cloudflare, media, or customer-web mutation was performed.
+
+Pending:
+
+- Authorized Admin human smoke with a legitimate `SUPER_ADMIN` or `BRANCH_MANAGER` account:
+  dashboard, product list/detail, product-new form without submitting fake data, categories, and branches.
+- Authorized Kitchen human smoke with a legitimate `KITCHEN` or `SUPER_ADMIN` account.
+- Live Kitchen lifecycle smoke remains pending until the next legitimate order arrives; do not create fake production orders for this.
