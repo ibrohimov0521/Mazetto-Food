@@ -15,7 +15,7 @@ export class CashRegisterController {
   constructor(private readonly cashRegisterService: CashRegisterService) {}
 
   @Get("shift")
-  @Permissions(PERMISSIONS.SHIFT_OPEN)
+  @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
   getCurrentShift(@CurrentUser() user: AuthenticatedUser) {
     return this.cashRegisterService.getCurrentShift(user);
   }
@@ -37,7 +37,7 @@ export class CashRegisterController {
   }
 
   @Get("shift/:id/transactions")
-  @Permissions(PERMISSIONS.SHIFT_OPEN)
+  @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
   getTransactions(
     @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser,

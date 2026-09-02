@@ -84,7 +84,7 @@ const columns: Column[] = [
 
 export default function KitchenPage() {
   return (
-    <RoleGuard roles={["KITCHEN", "SUPER_ADMIN"]}>
+    <RoleGuard roles={["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="KITCHEN_VIEW">
         <KitchenDisplay />
       </PermissionGuard>

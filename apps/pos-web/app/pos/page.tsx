@@ -2,25 +2,27 @@
 
 import Link from "next/link";
 import { AuthShell, DashboardCards } from "../../components/auth/auth-shell";
+import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 
 export default function PosPage() {
   return (
     <RoleGuard roles={["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"]}>
-      <AuthShell eyebrow="Cashier workspace" title="POS">
-        <DashboardCards
-          items={[
-            { label: "Orders", value: "Create" },
-            { label: "Payments", value: "Receive" },
-            { label: "Menu editing", value: "Restricted" },
-          ]}
-        />
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <PosLink href="/pos/payment" title="Payment terminal" description="Receive cash, card, Click, Payme, and mixed payments." />
-          <PosLink href="/pos/shifts" title="Cash drawer" description="Open shifts, track drawer movements, and close the day." />
-          <PosLink href="/admin/printers" title="Printers" description="Configure receipt printers and device status." />
-        </div>
-      </AuthShell>
+      <PermissionGuard permission="POS_USE">
+        <AuthShell eyebrow="Kassa ish joyi" title="POS">
+          <DashboardCards
+            items={[
+              { label: "Buyurtmalar", value: "Yaratish" },
+              { label: "To'lovlar", value: "Qabul qilish" },
+              { label: "Menyu tahriri", value: "Cheklangan" },
+            ]}
+          />
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <PosLink href="/pos/payment" title="To'lov terminali" description="Naqd, karta va aralash to'lovlarni qabul qilish." />
+            <PosLink href="/pos/shifts" title="Kassa smenasi" description="Smenani ochish, pul harakatlari va topshirishni kuzatish." />
+          </div>
+        </AuthShell>
+      </PermissionGuard>
     </RoleGuard>
   );
 }

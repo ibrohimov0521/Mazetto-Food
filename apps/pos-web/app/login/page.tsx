@@ -18,7 +18,7 @@ export default function LoginPage() {
     try {
       await login(identifier, password);
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : "Login failed");
+      setError(loginError instanceof Error ? loginError.message : "Kirish amalga oshmadi");
     } finally {
       setIsSubmitting(false);
     }
@@ -33,29 +33,29 @@ export default function LoginPage() {
               MAZETTO FOOD
             </p>
             <h1 className="mt-8 max-w-md text-4xl font-semibold tracking-normal sm:text-5xl">
-              Restaurant operations, secured by role.
+              Xodimlar uchun xavfsiz boshqaruv paneli.
             </h1>
           </div>
           <div className="grid gap-3 text-sm text-emerald-50">
-            <p>Branch-aware access</p>
-            <p>Permission protected POS workflows</p>
-            <p>Session-backed refresh tokens</p>
+            <p>Filial bo'yicha cheklangan kirish</p>
+            <p>Rol va permission bilan himoyalangan ish joylari</p>
+            <p>JWT va refresh session xavfsizligi</p>
           </div>
         </div>
 
         <form className="flex flex-col justify-center gap-5 p-8 sm:p-10" onSubmit={handleSubmit}>
           <div>
-            <p className="text-sm font-semibold text-emerald-700">Secure sign in</p>
+            <p className="text-sm font-semibold text-emerald-700">Xavfsiz kirish</p>
             <h2 className="mt-2 text-3xl font-semibold tracking-normal text-neutral-950">
-              Welcome back
+              Xush kelibsiz
             </h2>
             <p className="mt-2 text-sm text-neutral-500">
-              Use your employee email or phone number to continue.
+              Davom etish uchun xodim emaili yoki telefon raqamini kiriting.
             </p>
           </div>
 
           <label className="grid gap-2 text-sm font-medium text-neutral-700">
-            Email or phone
+            Email yoki telefon
             <input
               className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-base text-neutral-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
               value={identifier}
@@ -66,7 +66,7 @@ export default function LoginPage() {
           </label>
 
           <label className="grid gap-2 text-sm font-medium text-neutral-700">
-            Password
+            Parol
             <input
               className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-base text-neutral-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
               value={password}
@@ -88,7 +88,7 @@ export default function LoginPage() {
             disabled={isSubmitting}
             type="submit"
           >
-            {isSubmitting ? "Signing in..." : "Sign in"}
+            {isSubmitting ? "Kirilmoqda..." : "Kirish"}
           </button>
         </form>
       </section>

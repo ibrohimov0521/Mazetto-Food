@@ -21,7 +21,7 @@ export function AuthShell({
             <p className="text-sm font-medium text-emerald-700">{eyebrow}</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-normal text-neutral-950">{title}</h1>
             <p className="mt-2 text-sm text-neutral-500">
-              {user?.email ?? user?.phone ?? "Authenticated MAZETTO FOOD user"}
+              {user?.email ?? user?.phone ?? "MAZETTO FOOD xodimi"}
             </p>
           </div>
           <button
@@ -29,7 +29,7 @@ export function AuthShell({
             type="button"
             onClick={() => void logout()}
           >
-            Sign out
+            Chiqish
           </button>
         </header>
         {children}

@@ -2,6 +2,7 @@
 
 export type MazettoRole =
   | "SUPER_ADMIN"
+  | "ADMIN"
   | "BRANCH_MANAGER"
   | "CASHIER"
   | "WAITER"
@@ -33,6 +34,7 @@ export const authStorageKey = "mazetto.auth.session";
 
 export const roleRedirects: Record<MazettoRole, string> = {
   SUPER_ADMIN: "/admin/dashboard",
+  ADMIN: "/admin/dashboard",
   BRANCH_MANAGER: "/manager/dashboard",
   CASHIER: "/pos",
   WAITER: "/waiter",
@@ -47,6 +49,7 @@ export function getApiBaseUrl(): string {
 export function getPrimaryRedirect(roles: string[]): string {
   const orderedRoles: MazettoRole[] = [
     "SUPER_ADMIN",
+    "ADMIN",
     "BRANCH_MANAGER",
     "CASHIER",
     "WAITER",

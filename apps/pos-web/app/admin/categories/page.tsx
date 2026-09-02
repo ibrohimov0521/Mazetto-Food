@@ -7,7 +7,7 @@ import { RoleGuard } from "../../../components/auth/role-guard";
 
 export default function CategoriesPage() {
   return (
-    <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
+    <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="MENU_VIEW">
         <AuthShell eyebrow="Menyu boshqaruvi" title="Kategoriyalar">
           <AdminCategoriesPage />

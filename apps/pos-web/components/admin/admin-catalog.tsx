@@ -106,6 +106,9 @@ export function AdminDashboard() {
       <section className="grid gap-4 lg:grid-cols-3">
         <QuickLink href="/admin/products" title="Mahsulotlar" detail="Narx, holat, rasm yo'li va set tarkibi" />
         <QuickLink href="/admin/categories" title="Kategoriyalar" detail="Saralash, nom va ommaviy katalog tuzilmasi" />
+        <QuickLink href="/admin/staff" title="Xodimlar" detail="Rol, filial, parol reset va bloklash" />
+        <QuickLink href="/admin/reports" title="Hisobotlar" detail="Sana bo'yicha ishonchli sotuvlar" />
+        <QuickLink href="/admin/branches" title="Filiallar" detail="Buyurtma holati va ish vaqti" />
         <QuickLink href="/kitchen" title="Kitchen" detail={activeKitchen} />
       </section>
     </div>

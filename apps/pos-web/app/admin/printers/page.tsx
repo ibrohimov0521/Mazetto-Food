@@ -24,7 +24,7 @@ const printerStatuses: PrinterStatus[] = ["ONLINE", "OFFLINE", "ERROR"];
 
 export default function PrintersPage() {
   return (
-    <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER", "CASHIER"]}>
+    <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="RECEIPT_PRINT">
         <AuthShell eyebrow="Hardware" title="Printers">
           <PrintersConsole />

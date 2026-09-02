@@ -42,9 +42,10 @@ for (const source of [
   adminCategories,
   adminBranches,
 ]) {
-  assert.match(source, /RoleGuard roles=\{\["SUPER_ADMIN", "BRANCH_MANAGER"\]\}/);
+  assert.match(source, /RoleGuard roles=\{\["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"\]\}/);
 }
 
+assert.match(adminDashboard, /PermissionGuard permission="ADMIN_ACCESS"/);
 assert.match(adminProducts, /PermissionGuard permission="MENU_VIEW"/);
 assert.match(adminProductNew, /PermissionGuard permission="MENU_CREATE"/);
 assert.match(adminProductEdit, /PermissionGuard permission="MENU_EDIT"/);

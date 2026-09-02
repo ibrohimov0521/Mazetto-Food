@@ -7,8 +7,8 @@ import { RoleGuard } from "../../../components/auth/role-guard";
 
 export default function AdminDashboardPage() {
   return (
-    <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="MENU_VIEW">
+    <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
+      <PermissionGuard permission="ADMIN_ACCESS">
         <AuthShell eyebrow="Admin panel" title="MAZETTO boshqaruvi">
           <AdminDashboard />
         </AuthShell>

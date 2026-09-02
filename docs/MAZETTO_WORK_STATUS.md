@@ -2298,3 +2298,82 @@ Pending:
   dashboard, product list/detail, product-new form without submitting fake data, categories, and branches.
 - Authorized Kitchen human smoke with a legitimate `KITCHEN` or `SUPER_ADMIN` account.
 - Live Kitchen lifecycle smoke remains pending until the next legitimate order arrives; do not create fake production orders for this.
+
+## Staff Accounts and RBAC Foundation - Local
+
+Status: Ready locally; not pushed or deployed
+
+Date: 2026-09-02
+
+Scope:
+
+- Staff management now uses the existing staff `User`, `Role`, `Permission`, `UserRole`, `Employee`, `Session`, and `AuditLog` architecture.
+- No customer authentication, customer checkout, payment, Telegram webhook, Cloudflare, or production configuration behavior was changed.
+- The missing `ADMIN` role is added through the existing seed role reconciliation path without renaming or removing existing roles.
+- New staff/RBAC permissions are added through the existing permission seed path:
+  `ADMIN_ACCESS`, `STAFF_VIEW`, `STAFF_CREATE`, `STAFF_UPDATE`, `STAFF_PASSWORD_RESET`,
+  `STAFF_STATUS_CHANGE`, `STAFF_ROLE_ASSIGN`, `POS_USE`, and `SHIFT_VIEW_OWN`.
+- `SUPER_ADMIN` keeps full access through the existing `ALL` permission.
+- `ADMIN` receives admin/catalog/staff/report capabilities, remains branch-scoped by default, and does not receive automatic Kitchen access unless `KITCHEN_VIEW` is explicitly assigned.
+- `CASHIER` receives only future POS and own-shift permissions. Cashier access to `/admin`, `/admin/printers`, and `/kitchen` remains blocked by role/permission gates.
+- `KITCHEN` remains restricted to Kitchen permissions and does not receive admin, POS, catalog, staff, or financial-report permissions.
+- Protected backend staff endpoints were added:
+  `GET /api/v1/staff`,
+  `GET /api/v1/staff/:id`,
+  `POST /api/v1/staff`,
+  `PATCH /api/v1/staff/:id`,
+  `PATCH /api/v1/staff/:id/role`,
+  `PATCH /api/v1/staff/:id/status`,
+  `POST /api/v1/staff/:id/password-reset`,
+  and `POST /api/v1/staff/me/password`.
+- Staff password creation/reset/change reuses bcrypt hashing and never returns password hashes.
+- Staff account block/deactivation sets the user inactive, suspends the linked employee where present, and revokes active sessions.
+- Protected staff requests now re-resolve the current user, active roles, branch scope, employee state, and permissions from the database instead of trusting stale JWT payload claims.
+- Final active `SUPER_ADMIN` protection prevents blocking or downgrading the last active owner account.
+- Branch-scoped staff accounts require an assigned branch. Branch-scoped managers cannot manage global staff, cross-branch staff, or assign global staff roles.
+- A safe bootstrap script was added for owner account creation/reset from environment variables:
+  `pnpm --dir apps/backend staff:bootstrap`.
+- Bootstrap uses only environment-supplied credentials, never hardcodes or logs plaintext passwords, and prints only safe masked account metadata.
+- POS web now includes protected staff-management routes:
+  `/admin/staff`, `/admin/staff/new`, and `/admin/staff/[id]`.
+- POS web now includes a protected reports foundation route:
+  `/admin/reports`.
+- The reports foundation currently shows only metrics that can be calculated from existing order/payment data. POS/shift/provider-specific metrics remain clearly blocked for later phases.
+- Existing `/pos` is protected by `POS_USE`; full Desktop POS/kassa implementation is intentionally not part of this phase.
+- Existing `Shift` and `CashTransaction` models were found and can be reused by the next shift/kassa handover phase. Full shift handover was not implemented here.
+- Staff management actions write existing `AuditLog` records for create, update, role change, status change, password reset, own password change, and bootstrap.
+
+Validation:
+
+- `prisma format`, `prisma validate`, and `prisma generate` passed locally with a safe placeholder `DATABASE_URL`.
+- Backend typecheck, lint, and build passed locally.
+- POS web typecheck, lint, and build passed locally.
+- `validate-staff-rbac.ts` passed.
+- `validate-admin-catalog-core.ts` passed.
+- `validate-kitchen-order-board.ts` passed after aligning the validator with the permission-gated Kitchen route.
+- `validate-canonical-catalog.ts` passed and still reports 56 standalone products, 18 sets, 74 customer-visible items, and 0 legacy customer-visible items.
+- `validate-telegram-catalog-mapping.ts` passed.
+- `validate-telegram-customer-ordering.ts` passed.
+- `validate-telegram-customer-auth.ts` passed.
+- `validate-customer-order-history.ts` passed.
+- Workspace typecheck and lint passed.
+- Workspace build reported all 9 tasks successful, then Turbo remained open and was interrupted after successful task output.
+- Isolated DB-backed staff smoke script exists at `apps/backend/scripts/validate-staff-rbac-db.ts`, but could not be run in this local session because Docker Desktop daemon and local PostgreSQL client were unavailable.
+- Automated screenshot QA for `/login`, `/admin`, `/admin/staff`, `/admin/staff/new`, `/admin/staff/[id]`, `/admin/reports`, `/admin/products`, `/admin/categories`, and `/kitchen` is pending because Playwright is not installed in the local workspace. The POS web production build verified all new routes.
+
+Not performed:
+
+- No production DB mutation.
+- No production staff account creation.
+- No production migration or seed.
+- No push.
+- No deploy.
+- No Telegram webhook or Cloudflare change.
+- No customer-web, customer order, payment, or media logic change.
+
+Pending:
+
+- Run the isolated DB-backed staff smoke when local Docker/PostgreSQL is available.
+- Owner review before push/deploy.
+- Next roadmap phase:
+  `DESKTOP POS / KASSA -> SHIFT / KASSA TOPSHIRISH -> ADMIN SALES REPORTS HARDENING -> PRINTER / RECEIPT`.

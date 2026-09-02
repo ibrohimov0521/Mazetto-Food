@@ -1,19 +1,19 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { AdminProductEditor } from "../../../../components/admin/admin-catalog";
+import { AdminStaffEditor } from "../../../../components/admin/admin-staff";
 import { AuthShell } from "../../../../components/auth/auth-shell";
 import { PermissionGuard } from "../../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../../components/auth/role-guard";
 
-export default function ProductDetailPage() {
+export default function StaffDetailPage() {
   const params = useParams<{ id: string }>();
 
   return (
     <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="MENU_EDIT">
-        <AuthShell eyebrow="Menyu boshqaruvi" title="Mahsulotni tahrirlash">
-          <AdminProductEditor productId={params.id} />
+      <PermissionGuard permission="STAFF_UPDATE">
+        <AuthShell eyebrow="Xodimlar" title="Xodim profili">
+          <AdminStaffEditor staffId={params.id} />
         </AuthShell>
       </PermissionGuard>
     </RoleGuard>

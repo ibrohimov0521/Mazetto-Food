@@ -9,6 +9,7 @@ import {
   getJwtRefreshExpiresIn,
   getJwtRefreshSecret,
 } from "../../config/auth.config";
+import { normalizeCustomerPhone } from "../customers/customer-phone";
 import type { AuthResponse, AuthTokens, RefreshTokenPayload } from "./auth.types";
 import type { LoginDto } from "./dto/login.dto";
 
@@ -33,10 +34,11 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto): Promise<AuthResponse> {
+    const identifier = this.normalizeIdentifier(dto.identifier);
     const userRecord = await this.prisma.user.findFirst({
       where: {
         isActive: true,
-        OR: [{ email: dto.identifier }, { phone: dto.identifier }],
+        OR: [{ email: identifier }, { phone: identifier }],
       },
       include: this.userAuthInclude(),
     });
@@ -209,6 +211,11 @@ export class AuthService {
     return {
       employee: true,
       roles: {
+        where: {
+          role: {
+            isActive: true,
+          },
+        },
         include: {
           role: {
             include: {
@@ -222,6 +229,20 @@ export class AuthService {
         },
       },
     } as const;
+  }
+
+  private normalizeIdentifier(value: string): string {
+    const trimmed = value.trim();
+
+    if (trimmed.includes("@")) {
+      return trimmed.toLowerCase();
+    }
+
+    try {
+      return normalizeCustomerPhone(trimmed);
+    } catch {
+      return trimmed;
+    }
   }
 
   private getRefreshExpiresAt(): Date {

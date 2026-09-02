@@ -23,6 +23,7 @@ import { RecipesModule } from "./modules/recipes/recipes.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { RolesModule } from "./modules/roles/roles.module";
 import { ShiftsModule } from "./modules/shifts/shifts.module";
+import { StaffModule } from "./modules/staff/staff.module";
 import { SuppliersModule } from "./modules/suppliers/suppliers.module";
 import { TablesModule } from "./modules/tables/tables.module";
 import { TelegramModule } from "./modules/telegram/telegram.module";
@@ -49,6 +50,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     HomepageModule,
     DashboardModule,
     ReportsModule,
+    StaffModule,
     InventoryModule,
     KitchenModule,
     RecipesModule,

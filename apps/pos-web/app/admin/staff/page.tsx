@@ -1,16 +1,16 @@
 "use client";
 
-import { AdminProductsPage } from "../../../components/admin/admin-catalog";
+import { AdminStaffPage } from "../../../components/admin/admin-staff";
 import { AuthShell } from "../../../components/auth/auth-shell";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
 
-export default function ProductsPage() {
+export default function StaffPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="MENU_VIEW">
-        <AuthShell eyebrow="Menyu boshqaruvi" title="Mahsulotlar">
-          <AdminProductsPage />
+      <PermissionGuard permission="STAFF_VIEW">
+        <AuthShell eyebrow="Xodimlar" title="Staff boshqaruvi">
+          <AdminStaffPage />
         </AuthShell>
       </PermissionGuard>
     </RoleGuard>

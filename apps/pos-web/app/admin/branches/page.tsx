@@ -7,7 +7,7 @@ import { RoleGuard } from "../../../components/auth/role-guard";
 
 export default function BranchesPage() {
   return (
-    <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
+    <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="BRANCH_VIEW">
         <AuthShell eyebrow="Filiallar" title="Filial holati">
           <AdminBranchesPage />
