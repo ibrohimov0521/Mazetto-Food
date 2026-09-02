@@ -2408,3 +2408,75 @@ Not performed:
 - No production seed/catalog apply.
 - No push.
 - No deploy.
+
+## Canonical 74 Product Media - Production Release
+
+Status: Deployed and verified in production
+
+Date: 2026-09-02
+
+Revisions:
+
+- Initial media replacement commit: `dcfd14e4dd02eb9e10305c03038b4c6666878e66`
+- Final production revision after targeted cache-busting path fix: `f245aa39b612c03ac5388420f80dfffab7f70dae`
+- Customer-web production image: `mazetto-food-customerweb-yvb3d0:f245aa3`
+- Backend production image remained unchanged: `mazetto-food-backend-pdslpm:ac20b4c`
+- POS web production image remained unchanged: `mazetto-food-posweb:ac20b4c`
+- Media nginx service image remained unchanged; only the persistent `mazetto-media` volume was synchronized.
+
+Backups:
+
+- PostgreSQL backup: `/home/javohir/backups/mazetto/postgres/mazetto-canonical-media-pre-release-20260902-170642.dump` (`218762` bytes)
+- Media volume backup: `/home/javohir/backups/mazetto/media/mazetto-media-pre-canonical-20260902-170715` (`37` files, `1988588` bytes)
+
+Production media result:
+
+- Release manifest: 84 files total.
+- Category media: 10/10 present.
+- Product/set media: 74/74 present.
+- Public media exact-size verification: 84/84 passed.
+- Canonical customer API image verification: 74/74 passed.
+- Set image verification: 18/18 passed.
+- Canonical placeholder count: 0.
+
+Production DB result:
+
+- Migration: not run.
+- Seed: not run.
+- Catalog media path apply: run with a focused transaction that updated only canonical product/set `imageUrl` paths.
+- Products: 91.
+- Product variants: 100.
+- Categories: 11.
+- ProductBundleItem: 75.
+- Canonical product/set rows: 74.
+- Canonical media paths populated: 74/74.
+- Legacy canonical media assignment: 0.
+- Product prices, categories, variants, bundle composition, branches, staff, auth, and orders were not intentionally changed.
+
+Order graph safety:
+
+- Orders remained 17.
+- CustomerOrders remained 17.
+- CustomerOrderAttempts remained 17.
+- KitchenTickets remained 17.
+- No fake production order was created.
+
+Customer-web smoke:
+
+- `/`, `/menu`, `/cart`, `/checkout`, `/profile`, `/orders` returned HTTP 200.
+- `https://pos.mazettofood.uz/login` returned HTTP 200.
+- Backend health returned HTTP 200.
+- Telegram webhook remained reachable with pending updates 0. The stored Telegram `last_error` timestamp was old (`2026-08-31`) and no release-window backend errors were found.
+
+Visual smoke:
+
+- 390, 768, and 1440 checks found no broken images and no horizontal overflow on `/menu` or representative product detail.
+- Product/detail media loaded without stretching in the inspected screenshot.
+- Home still contains a hero fallback text (`Rasm tayyorlanmoqda`) from homepage hero/recommendation data, not from canonical product media. This remains a separate UX/data follow-up and did not block the 74/74 catalog media release.
+
+Cache handling:
+
+- Cloudflare immutable cache initially held stale content for two reused filenames: `/products/chicken-burger.webp` and `/products/set-lavash.webp`.
+- Because no purge credential was available, those two canonical paths were changed to cache-busting filenames:
+  `/products/chicken-burger-canonical.webp` and `/products/set-lavash-canonical.webp`.
+- Final public media exact-size verification passed with stale count 0.
