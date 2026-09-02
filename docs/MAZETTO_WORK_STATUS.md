@@ -2377,3 +2377,34 @@ Pending:
 - Owner review before push/deploy.
 - Next roadmap phase:
   `DESKTOP POS / KASSA -> SHIFT / KASSA TOPSHIRISH -> ADMIN SALES REPORTS HARDENING -> PRINTER / RECEIPT`.
+
+## Canonical 74 Product Media Replacement - Local
+
+Status: Ready locally; not pushed or deployed
+
+Date: 2026-09-02
+
+Scope:
+
+- Owner-provided numbered product/set media in `media-source/final/1.png` through `media-source/final/74.png` was mapped to the canonical 74-item menu order.
+- The old customer-web product media files under `apps/customer-web/public/menu-media/source/products/` were removed and replaced with 74 optimized WebP product/set assets.
+- Category media under `apps/customer-web/public/menu-media/source/categories/` was preserved because the owner-provided 74-image batch covers product/set items, not category tiles.
+- Canonical seed image paths were updated for all 56 standalone products and all 18 set products.
+- Product image filenames now match the customer-visible canonical menu rather than the older partial 27-asset mapping.
+- The media service release manifest now contains 10 category assets plus 74 product assets, 84 release files total.
+- The unresolved product media backlog is now 0 for the local customer-visible 74-item catalog.
+- The customer-web local source media fallback list now includes all 74 canonical product/set image paths plus existing category paths.
+
+Validation:
+
+- `pnpm media:validate` passed with 10 category assets, 74 product assets, 0 unresolved assets, and 84 release files.
+- Canonical seed/file mapping passed: 74 canonical items, 74 unique image URLs, and every canonical image path has a local source file.
+- `validate-canonical-catalog.ts` passed and still reports 56 standalone products, 18 sets, 74 customer-visible items, and 0 owner decisions pending.
+
+Not performed:
+
+- No production media volume upload.
+- No production DB mutation.
+- No production seed/catalog apply.
+- No push.
+- No deploy.

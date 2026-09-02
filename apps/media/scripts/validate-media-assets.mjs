@@ -25,8 +25,8 @@ function main() {
   );
 
   assert(categoryAssets.length === 10, "Expected 10 category media assets");
-  assert(productAssets.length === 27, "Expected 27 available product media assets");
-  assert(unresolvedProductAssets.length === 8, "Expected 8 unresolved product assets");
+  assert(productAssets.length === 74, "Expected 74 available product media assets");
+  assert(unresolvedProductAssets.length === 0, "Expected 0 unresolved product assets");
 
   const seenPaths = new Set();
   let totalBytes = 0;

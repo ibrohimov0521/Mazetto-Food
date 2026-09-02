@@ -1,6 +1,6 @@
 # MAZETTO FOOD Media Service
 
-The media service is a separate static file service for product and category images. Database records keep relative paths such as `/products/lavash-big.webp`; customer-web prefixes those paths with `NEXT_PUBLIC_MEDIA_URL`.
+The media service is a separate static file service for product and category images. Database records keep relative paths such as `/products/big-lavash.webp`; customer-web prefixes those paths with `NEXT_PUBLIC_MEDIA_URL`.
 
 ## Service
 
@@ -29,7 +29,7 @@ Production media files should live in a persistent Dokploy/Docker volume mounted
 Expected paths:
 
 ```text
-/media/products/lavash-big.webp
+/media/products/big-lavash.webp
 /media/categories/lavash.webp
 ```
 
@@ -93,39 +93,78 @@ categories/sets.webp
 ### Products
 
 ```text
-products/lavash-big.webp
-products/lavash-classic.webp
-products/lavash-mini.webp
-products/lavash-beef.webp
-products/chicken-lavash.webp
-products/chicken-cheese-lavash.webp
-products/chicken-spicy-lavash.webp
-products/burger-classic.webp
-products/burger-big.webp
-products/cheeseburger.webp
-products/burger-double.webp
+products/lavash.webp
+products/big-lavash.webp
+products/lavash-pishloqli.webp
+products/big-lavash-pishloqli.webp
+products/achchiq-lavash.webp
+products/achchiq-big-lavash.webp
+products/tandir-lavash.webp
+products/tandir-lavash-pishloqli.webp
+products/kurinniy-lavash.webp
+products/kurinniy-big-lavash.webp
+products/kurinniy-lavash-pishloqli.webp
+products/kurinniy-big-lavash-pishloqli.webp
+products/achchiq-kurinniy-lavash.webp
+products/achchiq-kurinniy-big-lavash.webp
+products/xaggi.webp
+products/doner.webp
+products/kurinniy-doner.webp
+products/klab-senwich-friziz.webp
+products/klab-senwich.webp
+products/saseska-podomashniy.webp
+products/chicken-hot-dog-mini.webp
+products/chicken-hot-dog-katta.webp
+products/doner-blyuda.webp
+products/katlet-podamashni.webp
+products/kampot.webp
+products/moxito.webp
+products/burger.webp
+products/chizburger.webp
+products/double-burger.webp
+products/double-chizburger.webp
 products/chicken-burger.webp
-products/crispy-chicken-burger.webp
-products/chicken-cheeseburger.webp
-products/hot-dog-classic.webp
-products/hot-dog-cheese.webp
-products/hot-dog-double.webp
-products/doner-wrap.webp
-products/doner-plate.webp
-products/chicken-doner.webp
-products/fries.webp
-products/cheese-fries.webp
-products/chicken-strips.webp
-products/nuggets.webp
-products/coca-cola.webp
-products/fanta.webp
-products/sprite.webp
-products/water.webp
-products/house-sauce.webp
-products/cheese-sauce.webp
-products/spicy-sauce.webp
-products/set-family.webp
+products/chicken-chizburger.webp
+products/double-chicken-burger.webp
+products/double-chicken-chizburger.webp
+products/kurinniy-sharik-3-dona.webp
+products/kurinniy-sharik-5-dona.webp
+products/naggets-5-dona.webp
+products/kurinniy-lukavoyi-kalso-8-ta.webp
+products/kartoshka-fri-kichik-100gr.webp
+products/kartoshka-fri-katta-120gr.webp
+products/jaydari-kartoshka-120gr.webp
+products/jaydari-kartoshka-150gr.webp
+products/salatli-hot-dog-kichik.webp
+products/salatli-hot-dog-katta.webp
+products/salatli-mega-hot-dog.webp
+products/fresh-hot-dog.webp
+products/karaleviski-hot-dog.webp
+products/kichkina-qazili-hot-dog.webp
+products/ortacha-qazili-hot-dog.webp
+products/katta-qazili-hot-dog.webp
+products/ultra-qazili-hot-dog.webp
+products/shashlikli-hot-dog.webp
+products/shashlik-katletli-hot-dog.webp
+products/ketchup.webp
+products/pishloqli-sous.webp
+products/chesnochniy-sous.webp
+products/set-lavashlar-uchligi.webp
+products/set-tandir-lavash-juftligi.webp
+products/set-donerda-baraka.webp
+products/set-katlet-podomashni-juftligi.webp
+products/set-oilaviy.webp
+products/set-klab-senwich-juftligi.webp
+products/set-xaggi-uchligi.webp
+products/set-klab-senwich.webp
+products/set-lavashlar-juftligi.webp
+products/set-double-chizburger-juftligi.webp
+products/set-doner-blyuda-juftligi.webp
+products/set-salatli-hot-dog.webp
 products/set-lavash.webp
-products/set-burger.webp
-products/set-kids.webp
+products/set-xaggi.webp
+products/set-qazili-hot-dog.webp
+products/set-chizburger.webp
+products/set-doner.webp
+products/set-double-chizburger.webp
 ```
