@@ -2530,3 +2530,72 @@ Notes:
 
 - CASHIER can access the backend `/printers` API because the endpoint is guarded by `RECEIPT_PRINT`, which CASHIER intentionally has for receipt operations. The POS `/admin/printers` UI remains role-gated to admin roles. This should be accepted as POS printer foundation behavior or tightened in a future focused printer-admin permission task.
 - No production DB, production account, production service, Cloudflare route, Telegram webhook, media volume, customer-web deploy, backend deploy, POS deploy, push, or production order was touched.
+
+## Staff/RBAC Production Release
+
+Status: Deployed; owner SUPER_ADMIN bootstrap pending secure credential input
+
+Date: 2026-09-03
+
+Release revision:
+
+- Application revision: `d75b56e4055c4840244ebafed5cbb31ccb067b4a`
+- Previous backend image: `mazetto-food-backend-pdslpm:ac20b4c`
+- Released backend image: `mazetto-food-backend-pdslpm:d75b56e`
+- Previous POS web image: `mazetto-food-posweb:ac20b4c`
+- Released POS web image: `mazetto-food-posweb:d75b56e`
+- Customer web remained unchanged: `mazetto-food-customerweb-yvb3d0:0004277`
+- Media service remained unchanged.
+
+Backup:
+
+- PostgreSQL backup: `/home/javohir/backups/mazetto/postgres/mazetto-staff-rbac-pre-release-20260903-111119.dump` (`219600` bytes)
+
+Database release:
+
+- Migration required: no.
+- Production migration state before release: 17 applied, 0 failed.
+- Prisma migration command was not run.
+- Full menu seed was not run.
+- Role/permission data was updated with a focused idempotent RBAC-only transaction based on the approved seed definitions.
+- Roles after release: 7.
+- Permissions after release: 48.
+- Role-permission links after release: 101.
+- Required roles present: `SUPER_ADMIN`, `ADMIN`, `CASHIER`, `KITCHEN`.
+
+Regression:
+
+- Backend service converged at 1/1.
+- Backend health returned 200 with database status `ok`.
+- POS web service converged at 1/1.
+- POS `/login` returned 200.
+- Customer web public routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200 from external smoke and remained on the previous customer-web revision.
+- Internal customer-web and POS container smoke checks returned 200 for representative routes.
+- Unauthenticated protected backend APIs returned 401 for staff, kitchen, reports, and catalog mutation/list management routes.
+- Telegram webhook remained healthy with pending updates 0. A stored Telegram `last_error` remained present from before the release window; no new backend release-window Telegram errors were found.
+
+Catalog and order safety:
+
+- Products remained 91.
+- Product variants remained 100.
+- Categories remained 11.
+- ProductBundleItem remained 75.
+- Orders remained 18.
+- CustomerOrders remained 18.
+- CustomerOrderAttempts remained 18.
+- KitchenTickets remained 18.
+- No fake production order was created.
+- No customer media, Cloudflare route, Telegram webhook, product price, category, variant, bundle composition, branch, customer, or order data was intentionally changed.
+
+Owner bootstrap:
+
+- Real owner credentials were not supplied to Codex and were not invented.
+- Owner bootstrap was not executed.
+- Required secure one-process environment variable names: `MAZETTO_BOOTSTRAP_ADMIN_EMAIL`, `MAZETTO_BOOTSTRAP_ADMIN_PHONE`, `MAZETTO_BOOTSTRAP_ADMIN_NAME`, `MAZETTO_BOOTSTRAP_ADMIN_PASSWORD`, `MAZETTO_BOOTSTRAP_ADMIN_BRANCH`, `MAZETTO_BOOTSTRAP_ADMIN_ACTIVATE`.
+- Next required action: owner must supply real credentials securely and run the existing `pnpm --dir apps/backend staff:bootstrap` command in a backend-capable production terminal.
+
+Rollback:
+
+- Rollback was not required.
+- Backend rollback image remains `mazetto-food-backend-pdslpm:ac20b4c`.
+- POS web rollback image remains `mazetto-food-posweb:ac20b4c`.
