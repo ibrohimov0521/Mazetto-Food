@@ -2599,3 +2599,74 @@ Rollback:
 - Rollback was not required.
 - Backend rollback image remains `mazetto-food-backend-pdslpm:ac20b4c`.
 - POS web rollback image remains `mazetto-food-posweb:ac20b4c`.
+
+## Staff Bootstrap - Owner and Cashier
+
+Status: Owner SUPER_ADMIN and Sergeli cashier created and verified in production
+
+Date: 2026-09-03
+
+Credential storage:
+
+- Credential file exists on the production host at `/home/javohir/mazetto-secrets/mazetto-staff-credentials-20260903-130322.txt`.
+- File mode verified: `600`.
+- Credential directory is outside the repository and public application paths.
+- Passwords are not documented here.
+
+Bootstrap execution:
+
+- Runtime source script `apps/backend/scripts/bootstrap-staff-admin.ts` is not present in the minimized production backend image.
+- A temporary script was executed inside the already-running backend container and called the compiled production `StaffService` and `AuthService`.
+- No source-code change or backend redeploy was required.
+- Temporary runtime script/input files were removed after verification.
+
+Accounts:
+
+- Owner login: `owner@mazettofood.uz`.
+- Owner existed before bootstrap: no.
+- Owner duplicate count after bootstrap: 1.
+- Owner active: yes.
+- Owner role: `SUPER_ADMIN`.
+- Owner branch: `SERGELI`.
+- Owner login verified through production auth: yes.
+- Owner API access verified for staff, reports, catalog administration, branch administration, and kitchen.
+- Cashier login: `cashier.sergeli@mazettofood.uz`.
+- Cashier existed before creation: no.
+- Cashier duplicate count after creation: 1.
+- Cashier active: yes.
+- Cashier role: `CASHIER`.
+- Cashier branch: `SERGELI`.
+- Cashier login verified through production auth: yes.
+
+Cashier isolation:
+
+- Staff API denied: yes.
+- Reports API denied: yes.
+- Kitchen API denied: yes.
+- Product mutation denied: yes.
+- Category mutation denied: yes.
+- Staff mutation denied: yes.
+- Cashier retained `POS_USE`, own shift, payment, receipt, and cash transaction foundation permissions.
+- Backend `/printers` remained reachable for CASHIER because it is guarded by `RECEIPT_PRINT`; POS `/admin/printers` remains admin-role gated in the frontend source.
+
+Production safety:
+
+- Products remained 91.
+- Product variants remained 100.
+- ProductBundleItem remained 75.
+- Customer-visible catalog remained 74.
+- Missing canonical product images remained 0.
+- Orders remained 18.
+- CustomerOrders remained 18.
+- CustomerOrderAttempts remained 18.
+- KitchenTickets remained 18.
+- No fake production order was created.
+- Backend health remained 200.
+- POS login remained 200.
+- Customer routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Telegram webhook remained healthy with pending updates 0. The stored Telegram `last_error` remained an older pre-existing value.
+- No password, password hash, JWT, refresh token, token, or secret was found in representative backend release-window logs or staff audit metadata.
+
+Next:
+
+- Staff/RBAC foundation is ready for the next roadmap step: Desktop POS / Kassa.
