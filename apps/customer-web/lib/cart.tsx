@@ -345,15 +345,45 @@ export function productImage(imageUrl?: string | null): string {
 }
 
 export function sourceMenuImage(imageUrl?: string | null): string {
-  if (!imageUrl || imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+  const sourcePath = getSourceMenuPath(imageUrl);
+
+  if (!sourcePath) {
     return "";
   }
 
-  if (sourceMenuMediaPaths.has(imageUrl)) {
-    return `/menu-media/source${imageUrl}`;
+  if (sourceMenuMediaPaths.has(sourcePath)) {
+    return `/menu-media/source${sourcePath}`;
   }
 
   return "";
+}
+
+function getSourceMenuPath(imageUrl?: string | null): string {
+  if (!imageUrl) {
+    return "";
+  }
+
+  if (imageUrl.startsWith("/")) {
+    return imageUrl;
+  }
+
+  if (!imageUrl.startsWith("http://") && !imageUrl.startsWith("https://")) {
+    return "";
+  }
+
+  try {
+    const mediaUrl = process.env.NEXT_PUBLIC_MEDIA_URL?.replace(/\/$/, "");
+    const parsedImageUrl = new URL(imageUrl);
+
+    if (!mediaUrl) {
+      return "";
+    }
+
+    const parsedMediaUrl = new URL(mediaUrl);
+    return parsedImageUrl.origin === parsedMediaUrl.origin ? parsedImageUrl.pathname : "";
+  } catch {
+    return "";
+  }
 }
 
 function getCustomerApiBaseUrl(): string {

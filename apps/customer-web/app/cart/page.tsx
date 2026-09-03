@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
 import { CartUpsell } from "../../components/cart-upsell";
 import { AnimatedMoney, MotionDiv, hapticTap, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
-import { localizeMenuName } from "../../lib/customer-display";
+import { apiFetch } from "../../lib/api";
+import { displayCategory, displayProducts, localizeMenuName } from "../../lib/customer-display";
 import { useCart } from "../../lib/cart";
+import type { Category, Product } from "../../lib/types";
 
 export default function CartPage() {
   return (
@@ -19,11 +22,61 @@ export default function CartPage() {
 
 function CartReview() {
   const { customer, items, removeItem, subtotal, updateQuantity } = useCart();
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<Category[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const total = subtotal;
+  const cartProductKey = useMemo(() => items.map((item) => item.productId).sort().join("|"), [items]);
+  const catalogImageByProductId = useMemo(
+    () => new Map(catalogProducts.map((product) => [product.id, product.imageUrl])),
+    [catalogProducts],
+  );
+
+  useEffect(() => {
+    if (!items.length) {
+      setCatalogProducts([]);
+      setCatalogCategories([]);
+      setCatalogLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCatalogLoading(true);
+
+    Promise.all([
+      apiFetch<Category[]>("/customer/menu/categories"),
+      apiFetch<Product[]>("/customer/menu/products"),
+    ])
+      .then(([nextCategories, nextProducts]) => {
+        if (cancelled) {
+          return;
+        }
+
+        setCatalogCategories(nextCategories.map(displayCategory));
+        setCatalogProducts(displayProducts(nextProducts));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setCatalogCategories([]);
+        setCatalogProducts([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCatalogLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cartProductKey, items.length]);
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-4 px-3 pb-[calc(9.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
-      <div className="mf-checkout-card min-w-0 p-5">
+      <div className="mf-checkout-card min-w-0 p-5 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-4">
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-black uppercase text-[#0B7F75]">Savat</p>
@@ -41,7 +94,7 @@ function CartReview() {
                   aspectClassName="h-20 w-20 sm:h-24 sm:w-24"
                   className="rounded-2xl"
                   sizes="96px"
-                  src={item.imageUrl}
+                  src={item.imageUrl || catalogImageByProductId.get(item.productId)}
                 />
                 <div className="min-w-0">
                   <div className="flex min-w-0 justify-between gap-3">
@@ -76,7 +129,7 @@ function CartReview() {
           </div>
         )}
 
-        <CartUpsell />
+        <CartUpsell categories={catalogCategories} loading={catalogLoading} products={catalogProducts} />
       </div>
 
       <aside className="mf-checkout-card min-w-0 h-fit p-5">

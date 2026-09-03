@@ -11,13 +11,27 @@ import type { Category, Product } from "../lib/types";
 
 const upsellCategoryCodes = ["SAUCES", "DRINKS", "FAST_FOOD"];
 
-export function CartUpsell() {
+type CartUpsellProps = {
+  categories?: Category[];
+  loading?: boolean;
+  products?: Product[];
+};
+
+export function CartUpsell({ categories: providedCategories, loading: providedLoading, products: providedProducts }: CartUpsellProps = {}) {
   const { addItem, items, triggerCartFlight } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
+  const activeProducts = providedProducts ?? products;
+  const activeCategories = providedCategories ?? categories;
+  const activeLoading = providedLoading ?? loading;
+  const shouldLoadCatalog = !providedProducts || !providedCategories;
 
   const loadUpsell = useCallback(async () => {
+    if (!shouldLoadCatalog) {
+      return;
+    }
+
     if (!items.length) {
       setProducts([]);
       setCategories([]);
@@ -38,34 +52,34 @@ export function CartUpsell() {
     } finally {
       setLoading(false);
     }
-  }, [items.length]);
+  }, [items.length, shouldLoadCatalog]);
 
   useEffect(() => {
     void loadUpsell();
   }, [loadUpsell]);
 
   const recommended = useMemo(() => {
-    const categoryRank = new Map(categories.map((category) => [category.id, getUpsellRank(category)]));
+    const categoryRank = new Map(activeCategories.map((category) => [category.id, getUpsellRank(category)]));
     const cartProductIds = new Set(items.map((item) => item.productId));
 
-    return products
+    return activeProducts
       .filter((product) => !cartProductIds.has(product.id))
       .map((product) => ({ product, rank: categoryRank.get(product.categoryId) ?? getUpsellRank(product.category) }))
       .filter(({ rank }) => rank < Number.POSITIVE_INFINITY)
       .sort((a, b) => a.rank - b.rank || Number(a.product.sellingPrice) - Number(b.product.sellingPrice) || a.product.name.localeCompare(b.product.name))
       .slice(0, 8)
       .map(({ product }) => product);
-  }, [categories, items, products]);
+  }, [activeCategories, activeProducts, items]);
 
   if (!items.length) {
     return null;
   }
 
-  if (loading) {
+  if (activeLoading) {
     return (
       <section className="mt-5">
         <div className="skeleton h-6 w-56 rounded-full" />
-        <div className="no-scrollbar mt-3 flex max-w-full snap-x gap-2.5 overflow-x-auto overscroll-x-contain pb-1">
+        <div className="no-scrollbar mt-3 flex max-w-full snap-x gap-2.5 overflow-x-auto overflow-y-visible overscroll-x-contain pb-4">
           {Array.from({ length: 4 }, (_, index) => (
             <div className="skeleton h-36 min-w-[9.5rem] rounded-[1.2rem]" key={index} />
           ))}
@@ -88,7 +102,7 @@ export function CartUpsell() {
         <Link className="hidden text-sm font-black text-[#0B7F75] sm:inline" href="/menu">Menyu</Link>
       </div>
       <div
-        className="no-scrollbar -mx-1 flex max-w-full snap-x gap-2.5 overflow-x-auto overscroll-x-contain px-1 pb-2"
+        className="no-scrollbar -mx-1 flex max-w-full snap-x gap-2.5 overflow-x-auto overflow-y-visible overscroll-x-contain px-1 pb-5 pt-1"
         data-upsell-rail
       >
         {recommended.map((product) => (
