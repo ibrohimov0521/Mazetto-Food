@@ -76,7 +76,7 @@ function CartReview() {
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-4 px-3 pb-[calc(9.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
-      <div className="mf-checkout-card min-w-0 p-5 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-4">
+      <div className="mf-checkout-card min-w-0 p-5">
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-black uppercase text-[#0B7F75]">Savat</p>
