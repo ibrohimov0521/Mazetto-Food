@@ -2480,3 +2480,53 @@ Cache handling:
 - Because no purge credential was available, those two canonical paths were changed to cache-busting filenames:
   `/products/chicken-burger-canonical.webp` and `/products/set-lavash-canonical.webp`.
 - Final public media exact-size verification passed with stale count 0.
+
+## Staff/RBAC Release Gate - Local Isolated DB
+
+Status: Passed locally; ready for controlled production release
+
+Date: 2026-09-03
+
+Scope:
+
+- Verified the current HEAD with the existing Staff/RBAC implementation commit in history.
+- Created a local isolated PostgreSQL 18 database on localhost port `55438`.
+- Applied the full Prisma migration chain from zero: 17 migrations applied, 0 failed.
+- Ran the existing role/permission/menu seed twice against the isolated DB and verified idempotent behavior.
+- Ran the real staff owner bootstrap command twice with isolated test credentials only.
+- Verified bootstrap did not create duplicate owner rows and did not print plaintext password, password hash, JWT, refresh token, or secrets.
+- Fixed the DB-backed Staff/RBAC smoke validator so its test branch `sortOrder` stays inside PostgreSQL integer range.
+
+RBAC proof:
+
+- SUPER_ADMIN login, admin APIs, reports, and kitchen access passed.
+- ADMIN login, staff/admin/report/menu-management permission gates passed.
+- CASHIER login passed; staff/admin/report/kitchen/menu mutation APIs were denied.
+- KITCHEN login passed; kitchen API access passed while admin/staff/report/menu mutation APIs were denied.
+- CASHIER and KITCHEN self-escalation attempts were denied by API guards.
+- ADMIN to SUPER_ADMIN escalation was denied.
+- Blocking a staff account invalidated the old access token through current DB-state resolution.
+- Changing an ADMIN to CASHIER caused the old ADMIN access token to resolve with CASHIER permissions and lose admin access.
+- Duplicate staff email and duplicate staff phone were rejected.
+- Password reset/change flows were verified; old passwords failed and new passwords succeeded.
+- Audit log metadata was inspected for representative staff actions and did not contain plaintext passwords, password hashes, JWTs, refresh tokens, or secrets.
+
+Regression:
+
+- `validate-staff-rbac.ts` passed.
+- `validate-admin-catalog-core.ts` passed.
+- `validate-kitchen-order-board.ts` passed.
+- `validate-canonical-catalog.ts` passed with 56 standalone products, 18 sets, 74 customer-visible canonical items, and 0 customer-visible legacy items.
+- `validate-telegram-catalog-mapping.ts` passed.
+- `validate-telegram-customer-ordering.ts` passed.
+- `validate-telegram-customer-auth.ts` passed.
+- `validate-customer-order-history.ts` passed.
+- Backend typecheck, lint, and build passed.
+- POS web typecheck, lint, and build passed.
+- Workspace typecheck and lint passed.
+- `git diff --check` passed with only existing LF/CRLF warnings.
+
+Notes:
+
+- CASHIER can access the backend `/printers` API because the endpoint is guarded by `RECEIPT_PRINT`, which CASHIER intentionally has for receipt operations. The POS `/admin/printers` UI remains role-gated to admin roles. This should be accepted as POS printer foundation behavior or tightened in a future focused printer-admin permission task.
+- No production DB, production account, production service, Cloudflare route, Telegram webhook, media volume, customer-web deploy, backend deploy, POS deploy, push, or production order was touched.

@@ -1,5 +1,6 @@
 import { JwtService } from "@nestjs/jwt";
 import * as assert from "node:assert/strict";
+import { randomInt } from "node:crypto";
 import { compare } from "bcryptjs";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { StaffService } from "../src/modules/staff/staff.service";
@@ -223,7 +224,7 @@ async function createBranch(prisma: PrismaService, code: string, name: string) {
       acceptsOrders: true,
       deliveryEnabled: true,
       pickupEnabled: true,
-      sortOrder: -Date.now(),
+      sortOrder: -randomInt(1000, 10000),
     },
   });
 }
