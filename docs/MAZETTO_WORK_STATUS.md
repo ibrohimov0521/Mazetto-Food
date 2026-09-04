@@ -2736,3 +2736,103 @@ Production safety:
 Next:
 
 - Prepare a controlled production release plan for POS/Kassa after owner approval.
+
+## Desktop POS / Kassa - Production Release
+
+Status: DEPLOYED AND VERIFIED, ready for Shift / Kassa topshirish.
+
+Date: 2026-09-05
+
+Release revisions:
+
+- Backend release revision: `ea250a9d66549048c30ca2d2beedaada85d7b82f`.
+- POS web release revision: `4cf2241b3d0d75bcfaa4049490fe4aa2a1625ed4`.
+- POS web includes the production media build fix for `NEXT_PUBLIC_MEDIA_URL`.
+- Customer web remained unchanged on `mazetto-food-customerweb-yvb3d0:0004277`.
+- Media service remained unchanged on `mazetto-food-media-btinws:latest`.
+
+Backup:
+
+- PostgreSQL backup before release: `/home/javohir/backups/mazetto/postgres/mazetto-pos-pre-release-20260904-190313.dump` (`221233` bytes).
+
+Database and migration:
+
+- Prisma schema changed: no.
+- New migration required: no.
+- Production migration command was not run.
+- Production seed was not run.
+- Products before/after: 91 -> 91.
+- Product variants before/after: 100 -> 100.
+- ProductBundleItem before/after: 75 -> 75.
+- Canonical customer-visible products after release: 74.
+- Canonical standalone after release: 56.
+- Canonical sets after release: 18.
+- Legacy customer-visible products after release: 0.
+- Missing canonical image paths after release: 0.
+- Orders before/after: 18 -> 18.
+- CustomerOrders before/after: 18 -> 18.
+- CustomerOrderAttempts before/after: 18 -> 18.
+- KitchenTickets before/after: 18 -> 18.
+- No fake production POS order was created.
+
+Production smoke:
+
+- Backend service converged at 1/1 on `mazetto-food-backend-pdslpm:ea250a9`.
+- Backend health returned 200 with database status `ok`.
+- POS web service converged at 1/1 on `mazetto-food-posweb:4cf2241`.
+- POS `/login` returned 200.
+- POS `/pos` route returned 200.
+- Cashier login verified through the production backend API.
+- Cashier primary redirect policy remained `/pos`.
+- Cashier has `POS_USE` and a branch scope.
+- POS catalog endpoint returned 200 for cashier.
+- POS catalog returned 74 products: 56 standalone and 18 sets.
+- POS catalog legacy-visible count: 0.
+- POS catalog media paths resolved to `https://media.mazettofood.uz/...` after the POS media build fix.
+- Unauthenticated POS catalog returned 401.
+- Unauthenticated POS order create returned 401.
+- Authenticated invalid POS order request returned 400 and did not create an order.
+
+RBAC smoke:
+
+- Cashier `/pos` access: allowed.
+- Cashier staff API: denied with 403.
+- Cashier reports API: denied with 403.
+- Cashier kitchen API: denied with 403.
+- Cashier product mutation: denied with 403.
+- Cashier category mutation: denied with 403.
+- Owner SUPER_ADMIN staff API: allowed.
+- Owner SUPER_ADMIN reports API: allowed.
+- Owner SUPER_ADMIN menu catalog API: allowed.
+- Owner SUPER_ADMIN kitchen API: allowed.
+- Owner SUPER_ADMIN POS catalog policy: denied with 403 because POS catalog requires branch-scoped POS access.
+
+Regression:
+
+- Customer public routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Telegram webhook remained healthy with pending updates 0 and no last error.
+- Backend and POS-web release-window logs showed no new error/exception output.
+- Kitchen API remained healthy for SUPER_ADMIN.
+- Click and Payme were not activated.
+- Card payment success was not introduced.
+- Shift handover and physical receipt printing remain future phases.
+
+Visual smoke:
+
+- Authenticated production POS browser smoke loaded `/pos` as the real cashier.
+- Product grid showed 74 products.
+- Cart section and disabled confirm button were visible before adding items.
+- One local browser cart interaction was performed without submitting an order.
+- Viewport QA at 768, 1024, 1280, 1440, and 1920 showed no horizontal overflow.
+- Representative product media rendered from `media.mazettofood.uz`; the first 12 images at 768 loaded successfully.
+
+Rollback:
+
+- Rollback was not required.
+- Backend rollback image before release: `mazetto-food-backend-pdslpm:d75b56e`.
+- POS-web rollback image before release: `mazetto-food-posweb:d75b56e`.
+- Normal rollback path remains application-image-only because no migration and no release-created order occurred.
+
+Next:
+
+- Build the Shift / Kassa topshirish workflow.
