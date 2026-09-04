@@ -9,20 +9,23 @@ import {
   OrderSource,
   OrderStatus,
   OrderType,
+  PaymentStatus,
   Prisma,
   StockMovementType,
   TableStatus,
 } from "@prisma/client";
-import { randomInt } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { customerVisibleProductCodes } from "../customers/customer-catalog-visibility";
 import { InventoryService } from "../inventory/inventory.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import type { CreateOrderDto } from "./dto/create-order.dto";
 import type { ListOrdersDto } from "./dto/list-orders.dto";
 import type { AddOrderItemDto, OrderItemModifierDto, UpdateOrderItemDto } from "./dto/order-item.dto";
 import { PosOrderStatus, type UpdateOrderStatusDto } from "./dto/order-status.dto";
+import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
 
 type TransactionClient = Prisma.TransactionClient;
 type ConfirmOrderForPreparationOptions = {
@@ -40,6 +43,12 @@ type ModifierSnapshot = {
   unitPrice: string;
   totalPrice: string;
 };
+type PosCheckoutOperation = {
+  id: string;
+  orderId: string;
+  requestHash: string;
+  status: string;
+};
 
 @Injectable()
 export class OrdersService {
@@ -48,6 +57,292 @@ export class OrdersService {
     private readonly inventoryService: InventoryService,
     private readonly kitchenService: KitchenService,
   ) {}
+
+  async listPosCatalog(user: AuthenticatedUser) {
+    const branchId = resolveRequiredBranchScope(user);
+
+    await this.assertBranchExists(this.prisma, branchId);
+
+    const categories = await this.prisma.category.findMany({
+      where: {
+        isActive: true,
+        OR: [{ branchId }, { branchId: null }],
+        products: {
+          some: {
+            code: { in: [...customerVisibleProductCodes] },
+            isAvailable: true,
+            OR: [{ branchId }, { branchId: null }],
+            ...this.unavailableProductWhere(branchId),
+          },
+        },
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        imageUrl: true,
+        sortOrder: true,
+      },
+    });
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        code: { in: [...customerVisibleProductCodes] },
+        isAvailable: true,
+        OR: [{ branchId }, { branchId: null }],
+        ...this.unavailableProductWhere(branchId),
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        categoryId: true,
+        code: true,
+        name: true,
+        description: true,
+        imageUrl: true,
+        preparationTime: true,
+        sellingPrice: true,
+        isCombo: true,
+        category: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+        },
+        variants: {
+          where: { isAvailable: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            sellingPrice: true,
+            isDefault: true,
+            sortOrder: true,
+          },
+        },
+        modifiers: {
+          where: { modifier: { isActive: true } },
+          orderBy: { sortOrder: "asc" },
+          select: {
+            isRequired: true,
+            minSelect: true,
+            maxSelect: true,
+            sortOrder: true,
+            modifier: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                price: true,
+                sortOrder: true,
+              },
+            },
+          },
+        },
+        bundleItems: {
+          orderBy: { sortOrder: "asc" },
+          select: {
+            id: true,
+            componentCode: true,
+            componentName: true,
+            quantity: true,
+            unitLabel: true,
+            sortOrder: true,
+          },
+        },
+      },
+    });
+
+    return {
+      branchId,
+      categories,
+      products,
+      paymentMethods: [{ code: "CASH", name: "Naqd", active: true }],
+    };
+  }
+
+  async createPosCheckout(dto: CreatePosCheckoutDto, user: AuthenticatedUser) {
+    const branchId = resolveRequiredBranchScope(user);
+    const employeeId = this.requireEmployee(user);
+    const idempotencyKey = this.createPosIdempotencyKey(dto.idempotencyKey);
+    const requestHash = this.createPosCheckoutRequestHash(dto, branchId, employeeId);
+    let kitchenTicket: Awaited<ReturnType<KitchenService["createTicketForOrder"]>> | null = null;
+
+    this.assertPosCheckoutQuantities(dto);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      kitchenTicket = null;
+
+      try {
+      const order = await this.prisma.$transaction(
+        async (tx) => {
+          const existingOperation = await tx.paymentOperation.findUnique({
+            where: { idempotencyKey },
+          });
+
+          if (existingOperation) {
+            return this.resolveExistingPosCheckout(tx, existingOperation, requestHash);
+          }
+
+          await this.assertBranchExists(tx, branchId);
+          await this.assertEmployeeInBranch(tx, employeeId, branchId);
+          const cashMethod = await this.assertCashPaymentMethod(tx, branchId);
+
+          const order = await tx.order.create({
+            data: {
+              branchId,
+              orderNumber: this.createOrderNumber(),
+              source: OrderSource.POS,
+              type: OrderType.TAKEAWAY,
+              status: OrderStatus.NEW,
+              paymentStatus: PaymentStatus.PENDING,
+              createdById: employeeId,
+              acceptedById: employeeId,
+              notes: dto.notes ?? null,
+              kitchenComment: "POS counter order",
+            },
+          });
+
+          const operation = await tx.paymentOperation.create({
+            data: {
+              orderId: order.id,
+              idempotencyKey,
+              requestHash,
+              status: "PROCESSING",
+              createdById: user.id,
+              employeeId,
+            },
+          });
+
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              toStatus: OrderStatus.NEW,
+              changedByUserId: user.id,
+              changedByEmployeeId: employeeId,
+              reason: "POS order created",
+            },
+          });
+
+          for (const item of dto.items) {
+            const snapshot = await this.createItemSnapshot(tx, branchId, item, {
+              requireCanonical: true,
+            });
+
+            await tx.orderItem.create({
+              data: {
+                orderId: order.id,
+                productId: item.productId,
+                variantId: item.variantId ?? null,
+                createdById: employeeId,
+                productName: snapshot.productName,
+                variantName: snapshot.variantName ?? null,
+                quantity: snapshot.quantity,
+                unitPrice: snapshot.unitPrice,
+                totalPrice: snapshot.totalPrice,
+                modifierSnapshot: snapshot.modifiers,
+                notes: item.notes ?? null,
+              },
+            });
+          }
+
+          await this.recalculateOrderTotals(tx, order.id);
+          const pricedOrder = await tx.order.findUnique({
+            where: { id: order.id },
+            select: { total: true },
+          });
+
+          if (!pricedOrder) {
+            throw new NotFoundException("Order not found");
+          }
+
+          const cashReceived = new Prisma.Decimal(dto.cashReceived);
+
+          if (cashReceived.lessThan(pricedOrder.total)) {
+            throw new BadRequestException("Received cash is less than order total");
+          }
+
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              paymentMethodId: cashMethod.id,
+              paymentOperationId: operation.id,
+              operationTenderIndex: 0,
+              acceptedById: employeeId,
+              createdById: user.id,
+              status: PaymentStatus.SUCCESS,
+              amount: pricedOrder.total,
+              methodCode: cashMethod.code,
+              reference: "POS cash payment",
+              paidAt: new Date(),
+            },
+          });
+
+          await tx.order.update({
+            where: { id: order.id },
+            data: { paymentStatus: PaymentStatus.PAID },
+          });
+
+          const confirmed = await this.confirmOrderForPreparation(tx, {
+            orderId: order.id,
+            userId: user.id,
+            employeeId,
+            reason: "POS order accepted for kitchen",
+          });
+
+          await tx.paymentOperation.update({
+            where: { id: operation.id },
+            data: { status: "COMPLETED", completedAt: new Date() },
+          });
+
+          kitchenTicket = confirmed.kitchenTicket;
+          return this.findOrderById(order.id, tx);
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 },
+      );
+
+      this.kitchenService.emitOrderCreated(order);
+      this.kitchenService.emitOrderConfirmed(order);
+
+      if (kitchenTicket) {
+        this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
+      }
+
+      return {
+        order,
+        payment: {
+          method: "CASH",
+          cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
+          change: new Prisma.Decimal(dto.cashReceived).sub(order.total).toFixed(2),
+        },
+      };
+      } catch (error) {
+        if (this.isUniqueConstraintError(error)) {
+          const order = await this.resolveExistingPosCheckoutByKey(idempotencyKey, requestHash);
+
+          return {
+            order,
+            payment: {
+              method: "CASH",
+              cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
+              change: new Prisma.Decimal(dto.cashReceived).sub(order.total).toFixed(2),
+            },
+          };
+        }
+
+        if (this.isRetryableTransactionConflict(error) && attempt < 2) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new BadRequestException("POS checkout could not be completed");
+  }
 
   async createOrder(dto: CreateOrderDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
@@ -391,10 +686,12 @@ export class OrdersService {
     tx: TransactionClient,
     branchId: string,
     dto: AddOrderItemDto,
+    options?: { requireCanonical?: boolean },
   ) {
     const product = await tx.product.findFirst({
       where: {
         id: dto.productId,
+        ...(options?.requireCanonical ? { code: { in: [...customerVisibleProductCodes] } } : {}),
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
         ...this.unavailableProductWhere(branchId),
@@ -474,6 +771,116 @@ export class OrdersService {
         totalPrice: totalPrice.toFixed(2),
       };
     });
+  }
+
+  private createPosIdempotencyKey(idempotencyKey: string): string {
+    return `POS_CHECKOUT:${idempotencyKey}`;
+  }
+
+  private assertPosCheckoutQuantities(dto: CreatePosCheckoutDto): void {
+    for (const item of dto.items) {
+      if (item.quantity <= 0 || item.quantity > 99) {
+        throw new BadRequestException("POS item quantity must be between 1 and 99");
+      }
+
+      for (const modifier of item.modifiers ?? []) {
+        const quantity = modifier.quantity ?? 1;
+
+        if (quantity <= 0 || quantity > 99) {
+          throw new BadRequestException("POS modifier quantity must be between 1 and 99");
+        }
+      }
+    }
+  }
+
+  private createPosCheckoutRequestHash(
+    dto: CreatePosCheckoutDto,
+    branchId: string,
+    employeeId: string,
+  ): string {
+    const normalized = {
+      branchId,
+      employeeId,
+      cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
+      notes: dto.notes ?? null,
+      items: dto.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        quantity: new Prisma.Decimal(item.quantity).toFixed(3),
+        notes: item.notes ?? null,
+        modifiers: (item.modifiers ?? [])
+          .map((modifier) => ({
+            modifierId: modifier.modifierId,
+            quantity: new Prisma.Decimal(modifier.quantity ?? 1).toFixed(3),
+          }))
+          .sort((left, right) => left.modifierId.localeCompare(right.modifierId)),
+      })),
+    };
+
+    return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+  }
+
+  private async assertCashPaymentMethod(tx: TransactionClient, branchId: string) {
+    const method = await tx.paymentMethod.findFirst({
+      where: {
+        code: "CASH",
+        isActive: true,
+        OR: [{ branchId }, { branchId: null }],
+      },
+      orderBy: { branchId: "desc" },
+      select: { id: true, code: true, name: true },
+    });
+
+    if (!method) {
+      throw new BadRequestException("Cash payment method is not available");
+    }
+
+    return method;
+  }
+
+  private async resolveExistingPosCheckout(
+    tx: TransactionClient | PrismaService,
+    operation: PosCheckoutOperation,
+    requestHash: string,
+  ) {
+    if (operation.requestHash !== requestHash) {
+      throw new BadRequestException("Idempotency key was already used with a different POS checkout");
+    }
+
+    if (operation.status !== "COMPLETED") {
+      throw new BadRequestException("POS checkout is already in progress");
+    }
+
+    return this.findOrderById(operation.orderId, tx);
+  }
+
+  private async resolveExistingPosCheckoutByKey(
+    idempotencyKey: string,
+    requestHash: string,
+  ) {
+    const operation = await this.prisma.paymentOperation.findUnique({
+      where: { idempotencyKey },
+    });
+
+    if (!operation) {
+      throw new BadRequestException("POS checkout could not be resolved");
+    }
+
+    return this.resolveExistingPosCheckout(this.prisma, operation, requestHash);
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    );
+  }
+
+  private isRetryableTransactionConflict(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    );
   }
 
   private calculateItemTotal(
@@ -657,7 +1064,7 @@ export class OrdersService {
     return user.employeeId;
   }
 
-  private async assertBranchExists(tx: TransactionClient, branchId: string): Promise<void> {
+  private async assertBranchExists(tx: TransactionClient | PrismaService, branchId: string): Promise<void> {
     const branch = await tx.branch.findFirst({ where: { id: branchId, isActive: true } });
 
     if (!branch) {

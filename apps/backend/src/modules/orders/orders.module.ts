@@ -4,10 +4,11 @@ import { KitchenModule } from "../kitchen/kitchen.module";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { OrdersController } from "./orders.controller";
 import { OrdersService } from "./orders.service";
+import { PosController } from "./pos.controller";
 
 @Module({
   imports: [PrismaModule, InventoryModule, KitchenModule],
-  controllers: [OrdersController],
+  controllers: [OrdersController, PosController],
   providers: [OrdersService],
   exports: [OrdersService],
 })

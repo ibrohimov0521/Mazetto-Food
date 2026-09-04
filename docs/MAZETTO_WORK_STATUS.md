@@ -2670,3 +2670,69 @@ Production safety:
 Next:
 
 - Staff/RBAC foundation is ready for the next roadmap step: Desktop POS / Kassa.
+
+## Desktop POS / Kassa - Local Implementation
+
+Status: LOCAL RELEASE READINESS VALIDATED, production release pending explicit approval.
+
+Date: 2026-09-04
+
+Implemented locally:
+
+- POS web `/pos` placeholder was replaced with a real cashier workspace.
+- `/pos` remains protected by frontend `RoleGuard` and `PermissionGuard permission="POS_USE"`.
+- Cashier catalog loads from a new backend staff-only POS catalog endpoint.
+- POS catalog is filtered to the canonical customer-visible product code set.
+- Legacy products are not intentionally exposed in the POS catalog endpoint.
+- POS cart supports add, quantity increase/decrease, remove, subtotal/total preview, cash received input, and change preview.
+- Simple products can be added directly.
+- Products with variants or modifiers open a compact selection dialog.
+- Sets remain sellable as their real product rows; bundle composition is not mutated.
+- New backend POS order endpoint creates operational POS orders with server-side branch, cashier, source, item snapshot, pricing, payment record, order history, and KitchenTicket logic.
+- Frontend POS checkout uses a stable per-cart idempotency key: unchanged failed submissions retry with the same key, and cart edits rotate the key.
+- `OrderSource.POS` already existed; no Prisma enum migration was required.
+- POS counter sale does not require a customer account, customer phone, Telegram account, or address.
+- Click, Payme, Card, receipt printing, and shift handover were not implemented in this step.
+
+Validation completed:
+
+- `pnpm --dir apps/backend exec tsx scripts/validate-pos-kassa.ts`: passed.
+- `pnpm --filter backend typecheck`: passed.
+- `pnpm --filter pos-web typecheck`: passed.
+- `pnpm --filter backend lint`: passed.
+- `pnpm --filter pos-web lint`: passed.
+- `pnpm --filter backend build`: passed.
+- `pnpm --filter pos-web build`: passed.
+- Fresh isolated local PostgreSQL 17 container `mazetto_pos_isolated_20260904` was started on `127.0.0.1:55440`.
+- `prisma migrate deploy` applied all 17 migrations successfully to the isolated database.
+- `pnpm --dir apps/backend exec tsx scripts/validate-pos-kassa-db.ts`: passed.
+- POS DB smoke proved: simple sale, variant sale, modifier sale, set sale, authoritative cash payment, PAID order persistence, CONFIRMED history, KitchenTicket creation, same-key idempotency, concurrent idempotency, invalid cash rejection, invalid variant rejection, invalid modifier rejection, blocked staff rejection, cross-branch rejection, and server-side quantity guard.
+- `pnpm typecheck`: passed.
+- `pnpm lint`: passed.
+- Existing static/regression validators passed: staff RBAC, admin catalog, kitchen board, canonical catalog, Telegram catalog mapping, Telegram customer ordering, Telegram customer auth, customer order history.
+- `pnpm build`: all 9 workspace build tasks reported successful; Turbo session stayed open after success and was manually stopped.
+- `prisma validate`: passed with safe local placeholder `DATABASE_URL`.
+- `prisma generate`: passed with safe local placeholder `DATABASE_URL`.
+- `git diff --check`: passed.
+
+Still required before production release:
+
+- Owner review of the local POS/Kassa UI and release scope.
+- Production backup, push, backend/POS-web deploy, and read-only production smoke in a separate controlled release phase.
+- Live browser visual QA at 768, 1024, 1280, 1440, and 1920 remains recommended before production release; no production browser or order was used in this local validation.
+
+Known limitations:
+
+- Controller-level `POS_USE` authorization is validated statically by guards and source wiring; the DB validator exercises service-level staff/branch safety directly.
+- The DB validator emitted a non-fatal pg deprecation warning during the concurrent idempotency proof; the validator completed successfully.
+
+Production safety:
+
+- No production DB change.
+- No production order created.
+- No push.
+- No deploy.
+
+Next:
+
+- Prepare a controlled production release plan for POS/Kassa after owner approval.
