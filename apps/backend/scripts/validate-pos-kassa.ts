@@ -50,12 +50,15 @@ assert.doesNotMatch(posCheckoutBody, /dto\.source/);
 
 assert.match(posPage, /PermissionGuard permission="POS_USE"/);
 assert.match(posPage, /RoleGuard roles=\{\["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"\]\}/);
+assert.match(posPage, /min-h-screen overflow-x-hidden bg-\[#062d2b\][^"]*lg:h-screen lg:overflow-hidden/);
+assert.match(posPage, /flex min-h-screen flex-col lg:h-screen/);
 assert.match(posPage, /apiFetch<CurrentShift \| null>\("\/cash-register\/shift"\)/);
 assert.match(posPage, /router\.replace\("\/shift"\)/);
 assert.match(posPage, /apiFetch<Catalog>\("\/pos\/catalog"\)/);
 assert.match(posPage, /apiFetch<PosOrderResult>\("\/pos\/orders"/);
 assert.match(posPage, /const \[checkoutKey, setCheckoutKey\] = useState\(createCheckoutKey\)/);
 assert.match(posPage, /grid-cols-\[minmax\(0,1fr\)_390px\]/);
+assert.match(posPage, /max-md:grid-cols-1/);
 assert.match(posPage, /<aside className="[^"]*max-h-\[calc\(100vh-120px\)\][^"]*overflow-hidden/);
 assert.match(posPage, /no-scrollbar mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto/);
 assert.match(posPage, /mt-4 shrink-0 space-y-3 border-t/);

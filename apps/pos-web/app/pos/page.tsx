@@ -195,8 +195,8 @@ function PosTerminal() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#062d2b] text-[#10233a]">
-      <div className="flex min-h-screen flex-col">
+    <main className="min-h-screen overflow-x-hidden bg-[#062d2b] text-[#10233a] lg:h-screen lg:overflow-hidden">
+      <div className="flex min-h-screen flex-col lg:h-screen">
         <header className="flex items-center justify-between border-b border-white/10 bg-[#073f3b] px-5 py-3 text-white">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ffd52e]">MAZETTO FOOD</p>
@@ -217,7 +217,7 @@ function PosTerminal() {
             </p>
           </div>
         ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px] gap-4 p-4 max-lg:grid-cols-1">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px] gap-4 p-4 max-md:grid-cols-1">
           <section className="min-h-0 min-w-0 overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl">
             <div className="flex flex-wrap items-center gap-3">
               <input
@@ -267,7 +267,7 @@ function PosTerminal() {
             </div>
           </section>
 
-          <aside className="flex max-h-[calc(100vh-120px)] min-h-0 min-w-0 flex-col overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl max-lg:max-h-[calc(100vh-140px)]">
+          <aside className="flex max-h-[calc(100vh-120px)] min-h-0 min-w-0 flex-col overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl max-md:max-h-[calc(100vh-140px)]">
             <div className="flex shrink-0 items-center justify-between">
               <h2 className="text-2xl font-black">Savat</h2>
               <span className="rounded-full bg-[#ffe86b] px-3 py-2 text-sm font-black">{cart.length} qator</span>
