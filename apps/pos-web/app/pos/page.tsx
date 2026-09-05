@@ -6,7 +6,7 @@ import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 import { useAuth } from "../../components/auth/auth-provider";
 import { apiFetch } from "../../lib/api";
-import { productImage } from "../../lib/media";
+import { handleProductImageError, productImage } from "../../lib/media";
 
 type Variant = { id: string; name: string; sellingPrice: string; isDefault: boolean };
 type Modifier = { isRequired: boolean; modifier: { id: string; name: string; price: string } };
@@ -217,8 +217,8 @@ function PosTerminal() {
             </p>
           </div>
         ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[1fr_390px] gap-4 p-4 max-lg:grid-cols-1">
-          <section className="min-h-0 overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px] gap-4 p-4 max-lg:grid-cols-1">
+          <section className="min-h-0 min-w-0 overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl">
             <div className="flex flex-wrap items-center gap-3">
               <input
                 className="min-h-12 flex-1 rounded-2xl border border-[#d8e5df] px-4 text-base font-bold outline-none focus:border-[#008678]"
@@ -249,7 +249,13 @@ function PosTerminal() {
                   type="button"
                 >
                   <div className="aspect-[4/3] bg-[#073f3b]">
-                    {product.imageUrl ? <img alt="" className="h-full w-full object-cover" src={productImage(product.imageUrl)} /> : null}
+                    <img
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      onError={(event) => handleProductImageError(event.currentTarget)}
+                      src={productImage(product.imageUrl)}
+                    />
                   </div>
                   <div className="p-3">
                     <h2 className="line-clamp-2 min-h-10 text-base font-black">{product.name}</h2>
@@ -261,12 +267,12 @@ function PosTerminal() {
             </div>
           </section>
 
-          <aside className="flex min-h-0 flex-col rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl">
-            <div className="flex items-center justify-between">
+          <aside className="flex max-h-[calc(100vh-120px)] min-h-0 min-w-0 flex-col overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl max-lg:max-h-[calc(100vh-140px)]">
+            <div className="flex shrink-0 items-center justify-between">
               <h2 className="text-2xl font-black">Savat</h2>
               <span className="rounded-full bg-[#ffe86b] px-3 py-2 text-sm font-black">{cart.length} qator</span>
             </div>
-            <div className="mt-4 flex-1 space-y-2 overflow-y-auto">
+            <div className="no-scrollbar mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
               {cart.length ? cart.map((line) => (
                 <div className="rounded-2xl bg-white p-3 shadow-sm" key={line.key}>
                   <div className="flex justify-between gap-2">
@@ -285,9 +291,9 @@ function PosTerminal() {
                     <button className="text-sm font-bold text-red-500" onClick={() => changeQuantity(line.key, -999)} type="button">O'chirish</button>
                   </div>
                 </div>
-              )) : <p className="rounded-2xl bg-white p-4 text-sm font-bold text-slate-500">Mahsulot tanlang.</p>}
+              )) : <div className="grid min-h-full place-items-center rounded-2xl bg-white p-6 text-center text-sm font-bold text-slate-500">Mahsulot tanlang.</div>}
             </div>
-            <div className="mt-4 space-y-3 border-t border-[#d8e5df] pt-4">
+            <div className="mt-4 shrink-0 space-y-3 border-t border-[#d8e5df] pt-4">
               <div className="flex justify-between text-xl font-black"><span>Jami</span><span>{money(total)}</span></div>
               <input className="min-h-12 w-full rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none" inputMode="numeric" onChange={(event) => setCashReceived(event.target.value)} placeholder="Qabul qilingan naqd pul" value={cashReceived} />
               <div className="flex justify-between font-black text-[#008678]"><span>Qaytim</span><span>{money(change)}</span></div>

@@ -12,6 +12,8 @@ const posDto = readSource("apps/backend/src/modules/orders/dto/pos-checkout.dto.
 const ordersService = readSource("apps/backend/src/modules/orders/orders.service.ts");
 const schema = readSource("apps/backend/prisma/schema.prisma");
 const posPage = readSource("apps/pos-web/app/pos/page.tsx");
+const posMedia = readSource("apps/pos-web/lib/media.ts");
+const posGlobals = readSource("apps/pos-web/app/globals.css");
 const authProvider = readSource("apps/pos-web/components/auth/auth-provider.tsx");
 const posAuth = readSource("apps/pos-web/lib/auth.ts");
 
@@ -53,6 +55,17 @@ assert.match(posPage, /router\.replace\("\/shift"\)/);
 assert.match(posPage, /apiFetch<Catalog>\("\/pos\/catalog"\)/);
 assert.match(posPage, /apiFetch<PosOrderResult>\("\/pos\/orders"/);
 assert.match(posPage, /const \[checkoutKey, setCheckoutKey\] = useState\(createCheckoutKey\)/);
+assert.match(posPage, /grid-cols-\[minmax\(0,1fr\)_390px\]/);
+assert.match(posPage, /<aside className="[^"]*max-h-\[calc\(100vh-120px\)\][^"]*overflow-hidden/);
+assert.match(posPage, /no-scrollbar mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto/);
+assert.match(posPage, /mt-4 shrink-0 space-y-3 border-t/);
+assert.match(posPage, /handleProductImageError\(event\.currentTarget\)/);
+assert.match(posMedia, /const defaultMediaUrl = "https:\/\/media\.mazettofood\.uz"/);
+assert.match(posMedia, /export const fallbackImage =/);
+assert.match(posMedia, /return `\$\{getMediaUrl\(\)\}\$\{imageUrl\}`/);
+assert.match(posMedia, /return `\$\{getMediaUrl\(\)\}\/\$\{imageUrl\.replace/);
+assert.match(posMedia, /export function handleProductImageError\(image: HTMLImageElement\)/);
+assert.match(posGlobals, /\.no-scrollbar/);
 const posOrderPayload = posPage.match(/body: JSON\.stringify\(\{[\s\S]*?\n {8}\}\),/)?.[0] ?? "";
 assert.match(posOrderPayload, /idempotencyKey: checkoutKey/);
 assert.match(posOrderPayload, /productId/);

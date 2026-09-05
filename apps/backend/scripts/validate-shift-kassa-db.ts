@@ -58,6 +58,15 @@ async function main(): Promise<void> {
       /already has an open shift/i,
     );
 
+    const otherCashierShift = await cashRegisterService.openShift({ openingBalance: 50000 }, fixture.otherCashier);
+    assert.equal(otherCashierShift.branchId, fixture.branchId);
+    assert.equal(otherCashierShift.employeeId, fixture.otherCashier.employeeId);
+    assert.equal(otherCashierShift.status, ShiftStatus.OPEN);
+    assert.equal(
+      await prisma.shift.count({ where: { branchId: fixture.branchId, status: ShiftStatus.OPEN } }),
+      2,
+    );
+
     const sale = await ordersService.createPosCheckout(posDto(fixture, "sale", 2, 30000), fixture.cashier);
     assert.equal(sale.order.source, OrderSource.POS);
     assert.equal(sale.order.paymentStatus, PaymentStatus.PAID);
