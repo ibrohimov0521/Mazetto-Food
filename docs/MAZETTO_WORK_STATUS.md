@@ -3231,7 +3231,7 @@ Next:
 
 ## Cashier Shift Controls UX
 
-Status: ✅ LOCAL IMPLEMENTATION + LOCAL QA PASSED; ready for controlled release gate after owner review.
+Status: ✅ PRODUCTION RELEASED AND VERIFIED.
 
 Scope completed locally:
 
@@ -3286,6 +3286,33 @@ Validation notes:
 - DB-backed POS/Shift validator runs emitted the existing `pg` deprecation warning about `client.query()` while a query is already executing. The validations passed; this remains a known adapter/driver warning.
 - The first Admin Reports DB validator attempt was run on a seeded isolated DB and failed because seed fixture data changed the expected total. It passed on the clean isolated DB expected by that validator.
 
+Production release verification:
+
+- Released POS-web revision `4baf11d` to `mazetto-food-posweb:4baf11d`.
+- Backend remained unchanged at `mazetto-food-backend-pdslpm:03e6498`.
+- Customer-web remained unchanged at `mazetto-food-customerweb-yvb3d0:0004277`.
+- Media service remained unchanged at `mazetto-food-media-btinws:latest`.
+- PostgreSQL remained unchanged by this release: no migration, seed, reset, manual SQL mutation, fake shift, fake close, fake POS order, revenue record, cash transaction, or kitchen ticket was created.
+- Production services verified healthy: backend 1/1, POS-web 1/1, customer-web 1/1, media 1/1, PostgreSQL 1/1.
+- Backend health returned 200.
+- POS routes `/login`, `/shift`, `/pos`, `/admin/reports`, and `/kitchen` returned 200.
+- Customer-web routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Cashier authenticated smoke passed for `/cash-register/shift` and `/pos/catalog`.
+- Cashier RBAC smoke preserved denial for reports and kitchen access.
+- Owner authenticated smoke passed for reports and kitchen read endpoints.
+- POS catalog smoke returned 74 visible products: 56 standalone and 18 sets; legacy visible count remained 0.
+- Production currently has 2 open shifts, both scoped to `MAZETTO Sergeli`; no production shift was opened or closed by this release.
+- Production responsive browser QA passed for `/pos` and `/shift` at 390, 768, 1024, 1280, 1440, 1920, 1024x600, and 1366x768.
+- Production QA confirmed no horizontal overflow, no `NaN`, no `undefined`, visible POS shift control, and readable `/shift` open-state UI.
+- Telegram webhook remained healthy: `ok=true`, URL present, pending updates 0, no last error.
+- POS-web and backend release-window logs showed no new React, Next runtime, Shift, auth, Prisma, Telegram, Kitchen, RBAC, or 500-level errors.
+
+Production data safety:
+
+- Before release: orders 28, customer_orders 20, customer_order_attempts 20, kitchen_tickets 28, shifts 2, open shifts 2, revenue_records 3, cash_transactions 5.
+- After release: orders 28, customer_orders 20, customer_order_attempts 20, kitchen_tickets 28, shifts 2, open shifts 2, revenue_records 3, cash_transactions 5.
+- Release-generated business data change: 0.
+
 Next:
 
-- Owner review, then run a controlled Shift Controls production release gate. Do not push or deploy this local phase until explicitly approved.
+- Continue with the next POS/Kassa roadmap phase after owner approval. No Shift Controls rollback is required.
