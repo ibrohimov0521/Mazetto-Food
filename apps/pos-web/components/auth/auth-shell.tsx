@@ -17,8 +17,8 @@ export function AuthShell({
   const adminBackFallback = getAdminBackFallback(pathname);
 
   return (
-    <main className="min-h-screen bg-white px-6 py-8 text-neutral-950">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-white px-4 py-8 text-neutral-950 sm:px-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-4 rounded-3xl border border-emerald-100 bg-white p-6 shadow-[0_18px_60px_rgba(15,118,110,0.10)] sm:flex-row sm:items-center sm:justify-between">
           <div>
             {adminBackFallback ? <AdminBackButton fallback={adminBackFallback} /> : null}
