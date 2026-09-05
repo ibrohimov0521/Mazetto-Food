@@ -3054,3 +3054,78 @@ Next:
 - Complete authenticated Admin Back visual smoke with owner SUPER_ADMIN session.
 - Complete first real cashier shift smoke during real operation without creating fake production orders.
 - Next roadmap phase: Admin sales reports hardening.
+
+## POS Cart + Media Production Release
+
+Status: ✅ DEPLOYED AND VERIFIED.
+
+Release revisions:
+
+- Application release chain pushed through `094eb7d6d421cc7769d8f705df1fb95b06499ca2`.
+- POS-web production image: `mazetto-food-posweb:094eb7d`.
+- Previous POS-web image before release: `mazetto-food-posweb:e466a16`.
+- Backend remained unchanged at `mazetto-food-backend-pdslpm:0a459a9`.
+- Customer-web remained unchanged at `mazetto-food-customerweb-yvb3d0:0004277`.
+- Media service remained unchanged at `mazetto-food-media-btinws:latest`.
+- PostgreSQL service remained unchanged.
+
+Release scope:
+
+- POS cart layout now keeps the summary/action area visible while only the cart item list scrolls.
+- Large-cart production browser smoke loaded 14 cart rows without hiding total, received cash input, change preview, or the confirm button.
+- Empty-cart production smoke kept the cart summary visible and disabled confirmation.
+- POS media resolver now handles API/media URLs, relative media paths, and fallback media without leaking broken image elements.
+- POS catalog media production verification found 74 catalog products and 74/74 valid public media URLs.
+
+Production verification:
+
+- Backend, POS-web, customer-web, media, and PostgreSQL services were all `1/1`.
+- Backend health returned 200.
+- POS `/login`, `/pos`, and `/kitchen` returned 200.
+- Customer public routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Cashier API smoke passed for `/pos/catalog`, returned 74 products, and preserved staff/report denial checks for the cashier account.
+- Cashier shift status was `OPEN`.
+- Telegram webhook remained healthy with pending updates 0 and no last error.
+- POS-web release-window logs showed normal Next.js startup with no new errors.
+- Backend release-window log scan found no new Prisma, Telegram, Kitchen, Shift, or 500-level errors.
+
+Production data safety:
+
+- No migration was executed.
+- No seed was executed.
+- No fake shift was created.
+- No fake POS order was created.
+- Products remained 91.
+- Product variants remained 100.
+- Categories remained 11.
+- ProductBundleItem remained 75.
+- Orders remained 25.
+- CustomerOrders remained 19.
+- CustomerOrderAttempts remained 19.
+- KitchenTickets remained 25.
+- Shifts remained 2, with 2 open shifts.
+- RevenueRecords remained 1.
+- CashTransactions remained 3.
+
+Validation:
+
+- `pnpm --filter pos-web typecheck`: passed.
+- `pnpm --filter pos-web lint`: passed.
+- `pnpm --filter pos-web build`: passed.
+- `pnpm --filter backend typecheck`: passed.
+- `pnpm --filter backend lint`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-pos-kassa.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-shift-kassa.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-canonical-catalog.ts`: passed with 56 standalone, 18 sets, and 74 total customer-visible canonical items.
+- `git diff --check`: passed.
+
+Notes:
+
+- Production visual proof used authenticated browser interaction and accessibility-tree inspection; screenshot capture timed out in the browser automation layer, but the deployed POS revision is the same locally validated build.
+- The confirm button was enabled during cart smoke only after entering sufficient received cash; it was not clicked.
+- Cloudflare, media volume contents, customer-web, backend runtime, Telegram webhook configuration, Click, Payme, and production database rows were not changed by this release.
+
+Next:
+
+- Observe the next real cashier session during normal operations and confirm the pinned POS cart footer remains comfortable with real product mixes.
+- Continue with Admin sales reports hardening.
