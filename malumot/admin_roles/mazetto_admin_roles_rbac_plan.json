@@ -1,0 +1,600 @@
+{
+  "schema_version": "1.0.0",
+  "project": "MAZETTO FOOD",
+  "document_type": "admin_staff_roles_rbac_plan",
+  "repository": "ibrohimov0521/Mazetto-Food",
+  "basis": "current main branch role seed + permissions + access-scope + staff service",
+  "generated_date": "2026-09-06",
+  "core_rules": {
+    "customer_is_staff_role": false,
+    "customer_auth_is_separate": true,
+    "authorization_source_of_truth": "BACKEND_PERMISSION_AND_BRANCH_SCOPE",
+    "frontend_guards_are_security_source": false,
+    "branch_scoped_roles": [
+      "ADMIN",
+      "BRANCH_MANAGER",
+      "CASHIER",
+      "WAITER",
+      "KITCHEN"
+    ],
+    "global_scope_roles": [
+      "SUPER_ADMIN",
+      "ACCOUNTANT"
+    ],
+    "branch_scoped_roles_require_branch": true,
+    "cross_branch_for_branch_scoped_roles": false,
+    "only_super_admin_can_assign_super_admin": true,
+    "only_super_admin_can_assign_global_roles": true,
+    "minimum_active_super_admins": 1,
+    "role_change_revokes_sessions": true,
+    "blocked_user_sessions_revoked": true,
+    "password_reset_revokes_sessions": true,
+    "staff_login_requires_email_or_phone": true,
+    "staff_email_or_phone_must_be_unique": true,
+    "managed_staff_role_behavior": "Current StaffService role update deletes prior UserRole rows and creates one new primary role."
+  },
+  "permission_catalog": [
+    "*",
+    "ADMIN_ACCESS",
+    "DASHBOARD_VIEW",
+    "BRANCH_VIEW",
+    "BRANCH_CREATE",
+    "BRANCH_EDIT",
+    "USER_VIEW",
+    "ROLE_VIEW",
+    "PERMISSION_VIEW",
+    "STAFF_VIEW",
+    "STAFF_CREATE",
+    "STAFF_UPDATE",
+    "STAFF_PASSWORD_RESET",
+    "STAFF_STATUS_CHANGE",
+    "STAFF_ROLE_ASSIGN",
+    "MENU_VIEW",
+    "MENU_CREATE",
+    "MENU_EDIT",
+    "MENU_DELETE",
+    "HOMEPAGE_MANAGE",
+    "INVENTORY_VIEW",
+    "INVENTORY_CREATE",
+    "INVENTORY_EDIT",
+    "RECIPE_MANAGE",
+    "TABLE_VIEW",
+    "TABLE_CREATE",
+    "TABLE_EDIT",
+    "ORDER_VIEW",
+    "ORDER_CREATE",
+    "ORDER_UPDATE",
+    "ORDER_SEND_KITCHEN",
+    "KITCHEN_VIEW",
+    "KITCHEN_ACCEPT",
+    "KITCHEN_STATUS_UPDATE",
+    "POS_USE",
+    "PAYMENT_CREATE",
+    "PAYMENT_VIEW",
+    "RECEIPT_VIEW",
+    "RECEIPT_PRINT",
+    "SHIFT_VIEW_OWN",
+    "SHIFT_VIEW_BRANCH",
+    "SHIFT_OPEN",
+    "SHIFT_CLOSE",
+    "CASH_TRANSACTION_CREATE",
+    "CUSTOMER_VIEW",
+    "ONLINE_ORDER_VIEW",
+    "REPORT_SALES_VIEW",
+    "REPORT_PRODUCTS_VIEW",
+    "REPORT_EMPLOYEES_VIEW",
+    "REPORT_EXPENSES_VIEW"
+  ],
+  "roles": {
+    "SUPER_ADMIN": {
+      "name": "Super Admin",
+      "scope": "GLOBAL",
+      "branch_required": false,
+      "permissions": [
+        "*"
+      ],
+      "purpose": "Butun tizim bo‘yicha owner/system administrator.",
+      "main_tasks": [
+        "Barcha filiallar, staff, katalog, report, finance va security nazorati",
+        "SUPER_ADMIN va ACCOUNTANT kabi global rollarni biriktirish",
+        "Kritik konfiguratsiya va owner-level boshqaruv"
+      ],
+      "default_route": "/admin"
+    },
+    "BRANCH_MANAGER": {
+      "name": "Branch Manager",
+      "scope": "BRANCH",
+      "branch_required": true,
+      "permissions": [
+        "ADMIN_ACCESS",
+        "DASHBOARD_VIEW",
+        "BRANCH_VIEW",
+        "BRANCH_EDIT",
+        "USER_VIEW",
+        "ROLE_VIEW",
+        "PERMISSION_VIEW",
+        "STAFF_VIEW",
+        "STAFF_CREATE",
+        "STAFF_UPDATE",
+        "STAFF_PASSWORD_RESET",
+        "STAFF_STATUS_CHANGE",
+        "STAFF_ROLE_ASSIGN",
+        "MENU_VIEW",
+        "MENU_CREATE",
+        "MENU_EDIT",
+        "MENU_DELETE",
+        "HOMEPAGE_MANAGE",
+        "INVENTORY_VIEW",
+        "INVENTORY_CREATE",
+        "INVENTORY_EDIT",
+        "RECIPE_MANAGE",
+        "TABLE_VIEW",
+        "TABLE_CREATE",
+        "TABLE_EDIT",
+        "ORDER_VIEW",
+        "ORDER_CREATE",
+        "ORDER_UPDATE",
+        "ORDER_SEND_KITCHEN",
+        "KITCHEN_VIEW",
+        "KITCHEN_ACCEPT",
+        "KITCHEN_STATUS_UPDATE",
+        "POS_USE",
+        "PAYMENT_CREATE",
+        "PAYMENT_VIEW",
+        "RECEIPT_VIEW",
+        "RECEIPT_PRINT",
+        "SHIFT_VIEW_OWN",
+        "SHIFT_VIEW_BRANCH",
+        "SHIFT_OPEN",
+        "SHIFT_CLOSE",
+        "CASH_TRANSACTION_CREATE",
+        "CUSTOMER_VIEW",
+        "ONLINE_ORDER_VIEW",
+        "REPORT_SALES_VIEW",
+        "REPORT_PRODUCTS_VIEW",
+        "REPORT_EMPLOYEES_VIEW",
+        "REPORT_EXPENSES_VIEW"
+      ],
+      "purpose": "Biriktirilgan filialning kundalik operatsion boshqaruvchisi.",
+      "main_tasks": [
+        "O‘z filiali staffi, menu, inventory, table, order, kitchen, POS va shiftlarini boshqarish",
+        "O‘z filialining reportlarini ko‘rish"
+      ],
+      "default_route": "/manager/dashboard"
+    },
+    "ADMIN": {
+      "name": "Admin",
+      "scope": "BRANCH",
+      "branch_required": true,
+      "permissions": [
+        "ADMIN_ACCESS",
+        "DASHBOARD_VIEW",
+        "BRANCH_VIEW",
+        "BRANCH_EDIT",
+        "USER_VIEW",
+        "ROLE_VIEW",
+        "PERMISSION_VIEW",
+        "STAFF_VIEW",
+        "STAFF_CREATE",
+        "STAFF_UPDATE",
+        "STAFF_PASSWORD_RESET",
+        "STAFF_STATUS_CHANGE",
+        "STAFF_ROLE_ASSIGN",
+        "MENU_VIEW",
+        "MENU_CREATE",
+        "MENU_EDIT",
+        "MENU_DELETE",
+        "HOMEPAGE_MANAGE",
+        "CUSTOMER_VIEW",
+        "ONLINE_ORDER_VIEW",
+        "REPORT_SALES_VIEW",
+        "REPORT_PRODUCTS_VIEW",
+        "REPORT_EMPLOYEES_VIEW",
+        "REPORT_EXPENSES_VIEW"
+      ],
+      "purpose": "Biriktirilgan filial bo‘yicha admin panel, katalog, staff va report boshqaruvi.",
+      "main_tasks": [
+        "Admin panel",
+        "Filial sozlamalari",
+        "Staff yaratish/tahrirlash/bloklash",
+        "Menu/katalog boshqaruvi",
+        "Customer/online orderlarni ko‘rish",
+        "Reportlarni ko‘rish"
+      ],
+      "default_route": "/admin"
+    },
+    "CASHIER": {
+      "name": "Cashier",
+      "scope": "BRANCH",
+      "branch_required": true,
+      "permissions": [
+        "MENU_VIEW",
+        "POS_USE",
+        "ORDER_VIEW",
+        "ORDER_CREATE",
+        "ORDER_UPDATE",
+        "PAYMENT_CREATE",
+        "RECEIPT_VIEW",
+        "RECEIPT_PRINT",
+        "SHIFT_VIEW_OWN",
+        "SHIFT_OPEN",
+        "SHIFT_CLOSE",
+        "CASH_TRANSACTION_CREATE"
+      ],
+      "purpose": "POS/Kassa, payment, receipt va o‘z smenasini boshqaruvchi kassir.",
+      "main_tasks": [
+        "POS order yaratish",
+        "Payment qabul qilish",
+        "Receipt ko‘rish/chop etish",
+        "O‘z smenasini ochish/yopish",
+        "Kassa topshirish"
+      ],
+      "default_route_no_open_shift": "/shift",
+      "default_route_open_shift": "/pos"
+    },
+    "WAITER": {
+      "name": "Waiter",
+      "scope": "BRANCH",
+      "branch_required": true,
+      "permissions": [
+        "MENU_VIEW",
+        "TABLE_VIEW",
+        "ORDER_VIEW",
+        "ORDER_CREATE",
+        "ORDER_UPDATE",
+        "ORDER_SEND_KITCHEN"
+      ],
+      "purpose": "Zal/stol bo‘yicha mijoz buyurtmasini qabul qiluvchi ofitsiant.",
+      "main_tasks": [
+        "Menu va table ko‘rish",
+        "Buyurtma yaratish/yangilash",
+        "Kitchen'ga yuborish"
+      ],
+      "default_route": "/waiter"
+    },
+    "KITCHEN": {
+      "name": "Kitchen",
+      "scope": "BRANCH",
+      "branch_required": true,
+      "permissions": [
+        "KITCHEN_VIEW",
+        "KITCHEN_ACCEPT",
+        "KITCHEN_STATUS_UPDATE"
+      ],
+      "purpose": "Oshxona buyurtmalarini ko‘rish va tayyorlash statuslarini boshqarish.",
+      "main_tasks": [
+        "Kitchen board ko‘rish",
+        "Ticketni qabul qilish",
+        "Statuslarni yangilash"
+      ],
+      "default_route": "/kitchen"
+    },
+    "ACCOUNTANT": {
+      "name": "Accountant",
+      "scope": "GLOBAL",
+      "branch_required": false,
+      "permissions": [
+        "DASHBOARD_VIEW",
+        "INVENTORY_VIEW",
+        "CUSTOMER_VIEW",
+        "ONLINE_ORDER_VIEW",
+        "PAYMENT_VIEW",
+        "RECEIPT_VIEW",
+        "REPORT_SALES_VIEW",
+        "REPORT_PRODUCTS_VIEW",
+        "REPORT_EMPLOYEES_VIEW",
+        "REPORT_EXPENSES_VIEW"
+      ],
+      "purpose": "Global finance/reportingga yo‘naltirilgan buxgalter.",
+      "main_tasks": [
+        "Sales/product/employee/expense reportlari",
+        "Receipt va inventoryni read-only ko‘rish",
+        "Kelajakda finance/reconciliation/export"
+      ],
+      "default_route": "/accounting"
+    }
+  },
+  "current_staff_api_contract": [
+    {
+      "method": "GET",
+      "path": "/staff",
+      "permission": "STAFF_VIEW"
+    },
+    {
+      "method": "GET",
+      "path": "/staff/:id",
+      "permission": "STAFF_VIEW"
+    },
+    {
+      "method": "POST",
+      "path": "/staff",
+      "permission": "STAFF_CREATE"
+    },
+    {
+      "method": "PATCH",
+      "path": "/staff/:id",
+      "permission": "STAFF_UPDATE"
+    },
+    {
+      "method": "PATCH",
+      "path": "/staff/:id/role",
+      "permission": "STAFF_ROLE_ASSIGN"
+    },
+    {
+      "method": "PATCH",
+      "path": "/staff/:id/status",
+      "permission": "STAFF_STATUS_CHANGE"
+    },
+    {
+      "method": "POST",
+      "path": "/staff/:id/password-reset",
+      "permission": "STAFF_PASSWORD_RESET"
+    },
+    {
+      "method": "POST",
+      "path": "/staff/me/password",
+      "permission": "AUTHENTICATED_STAFF"
+    }
+  ],
+  "current_ui_routes": {
+    "SUPER_ADMIN_ADMIN": [
+      "/admin",
+      "/admin/dashboard",
+      "/admin/products",
+      "/admin/categories",
+      "/admin/branches",
+      "/admin/staff",
+      "/admin/reports"
+    ],
+    "BRANCH_MANAGER": [
+      "/manager/dashboard"
+    ],
+    "CASHIER": [
+      "/shift",
+      "/pos"
+    ],
+    "WAITER": [
+      "/waiter"
+    ],
+    "KITCHEN": [
+      "/kitchen"
+    ],
+    "ACCOUNTANT": [
+      "/accounting"
+    ],
+    "COMMON": [
+      "/login",
+      "/access-denied"
+    ]
+  },
+  "operational_contracts": {
+    "cashier": [
+      "Cashier filialga majburiy biriktiriladi.",
+      "Bir cashier bir vaqtda faqat bitta OPEN shiftga ega bo‘ladi.",
+      "Bir filialda bir nechta boshqa cashier bir vaqtda OPEN shift ochishi mumkin.",
+      "POS order branchId + cashier + shiftId bilan serverda bog‘lanadi.",
+      "Cashier faqat o‘z shiftini boshqarishi kerak."
+    ],
+    "kitchen": [
+      "Faqat o‘z filiali ticketlarini ko‘rishi kerak.",
+      "Kitchen status transitionlari backend orqali authoritative bo‘lishi kerak.",
+      "Customer PII minimal ko‘rsatiladi."
+    ],
+    "admin_and_manager": [
+      "Branch-scoped actor requestedBranchId orqali boshqa filialga o‘ta olmaydi.",
+      "Frontend branch selector backend authorization o‘rnini bosmaydi.",
+      "Sensitive staff actionlar audit qilinishi kerak."
+    ],
+    "accountant": [
+      "Current code bo‘yicha global report scope.",
+      "Write-finance permissions hali alohida yaratilmagan; finance phase'da qo‘shilishi kerak."
+    ]
+  },
+  "staff_security_contract": {
+    "super_admin": [
+      "SUPER_ADMIN accountini faqat SUPER_ADMIN boshqaradi.",
+      "SUPER_ADMIN parolini faqat SUPER_ADMIN reset qiladi.",
+      "Oxirgi active SUPER_ADMIN deactivate yoki demote qilinmaydi."
+    ],
+    "staff_changes": [
+      "Role change -> sessions revoked",
+      "Block -> sessions revoked",
+      "Password reset -> sessions revoked",
+      "Own password change -> sessions revoked"
+    ],
+    "audit_events_current": [
+      "STAFF_CREATED",
+      "STAFF_UPDATED",
+      "STAFF_ROLE_CHANGED",
+      "STAFF_ACTIVATED",
+      "STAFF_BLOCKED",
+      "STAFF_PASSWORD_RESET",
+      "STAFF_OWN_PASSWORD_CHANGED",
+      "STAFF_BOOTSTRAP_SUPER_ADMIN_CREATED",
+      "STAFF_BOOTSTRAP_SUPER_ADMIN_RESET"
+    ]
+  },
+  "developer_rules": {
+    "backend": [
+      "Endpointni permission guard bilan himoyalash.",
+      "Service qatlamida branch scope'ni enforce qilish.",
+      "Frontend yuborgan role/branchId/cashierId/shiftId/price/financial totalga ishonmaslik.",
+      "Sensitive o‘zgarishlar audit log yozishi kerak.",
+      "Permission qo‘shilsa seed va validator ham yangilansin."
+    ],
+    "frontend": [
+      "Navigation permission asosida ko‘rsatilsin.",
+      "RoleGuard/PermissionGuard faqat UX; haqiqiy authorization backendda.",
+      "Branch-scoped rolga boshqa branch selector ko‘rsatilmasin.",
+      "403 va access-denied state aniq bo‘lsin."
+    ],
+    "tests": [
+      "Unauthenticated -> 401",
+      "Permission yo‘q -> 403",
+      "Allowed -> success",
+      "Same branch -> success",
+      "Cross branch -> denied",
+      "SUPER_ADMIN global -> allowed",
+      "ACCOUNTANT global report -> allowed",
+      "Role change'dan keyin eski session -> denied",
+      "Last active SUPER_ADMIN protection -> passed"
+    ]
+  },
+  "module_status": {
+    "admin_core": "PRODUCTION",
+    "staff_rbac": "PRODUCTION",
+    "catalog_core": "PRODUCTION",
+    "customer_web": "PRODUCTION",
+    "telegram_ordering": "PRODUCTION",
+    "kitchen": "PRODUCTION",
+    "pos": "PRODUCTION",
+    "shift_kassa": "PRODUCTION",
+    "admin_sales_reports": "PRODUCTION",
+    "cashier_shift_controls_ux": "CURRENT_NEXT_TASK",
+    "printer_receipt_print_agent": "PLANNED",
+    "desktop_offline_app": "PLANNED",
+    "admin_catalog_phase_2": "PLANNED",
+    "inventory_warehouse": "PLANNED",
+    "finance": "PLANNED",
+    "click_payme": "PLANNED",
+    "realtime": "PLANNED",
+    "security_hardening": "PARTIAL",
+    "audit_hardening": "PARTIAL",
+    "admin_operational_listings": "IMPLEMENTED_LOCAL",
+    "admin_orders_ui": "IMPLEMENTED_LOCAL",
+    "admin_customers_ui": "IMPLEMENTED_LOCAL",
+    "admin_homepage_ui": "IMPLEMENTED_LOCAL"
+  },
+  "future_permission_plan": {
+    "printer": [
+      "PRINTER_VIEW",
+      "PRINTER_MANAGE",
+      "PRINT_JOB_VIEW",
+      "PRINT_JOB_RETRY"
+    ],
+    "inventory": [
+      "WAREHOUSE_VIEW",
+      "WAREHOUSE_MANAGE",
+      "STOCK_RECEIVE",
+      "STOCK_ADJUST",
+      "STOCK_WRITE_OFF",
+      "STOCK_TRANSFER",
+      "INVENTORY_AUDIT"
+    ],
+    "finance": [
+      "FINANCE_VIEW",
+      "EXPENSE_CREATE",
+      "EXPENSE_EDIT",
+      "EXPENSE_APPROVE",
+      "CASH_RECONCILE",
+      "P_AND_L_VIEW",
+      "FINANCE_EXPORT"
+    ],
+    "payments": [
+      "PAYMENT_REFUND",
+      "PAYMENT_RECONCILE",
+      "PAYMENT_PROVIDER_MANAGE"
+    ],
+    "security_audit": [
+      "AUDIT_VIEW",
+      "SECURITY_SETTINGS_MANAGE",
+      "ROLE_MANAGE",
+      "PERMISSION_MANAGE"
+    ],
+    "catalog_phase_2": [
+      "PRODUCT_MEDIA_MANAGE",
+      "VARIANT_MANAGE",
+      "MODIFIER_MANAGE",
+      "BUNDLE_MANAGE",
+      "BRANCH_AVAILABILITY_MANAGE"
+    ]
+  },
+  "policy_decisions_to_finalize": [
+    {
+      "id": "ROLE_HIERARCHY",
+      "current": "ADMIN va BRANCH_MANAGER ikkalasida STAFF_ROLE_ASSIGN bor; current service global-vs-branch scope'ni asosiy cheklov qiladi.",
+      "recommended": "Explicit hierarchy: SUPER_ADMIN > BRANCH_MANAGER > ADMIN > operational roles."
+    },
+    {
+      "id": "ACCOUNTANT_SCOPE",
+      "current": "ACCOUNTANT global.",
+      "recommended": "Filial accountant kerak bo‘lsa BRANCH_ACCOUNTANT yoki scoped accountant qo‘shish."
+    },
+    {
+      "id": "MANAGER_OPERATIONS",
+      "current": "BRANCH_MANAGER POS/Kitchen/Shift permissionlariga ham ega.",
+      "recommended": "Manager real ishda operator bo‘ladimi yo‘qmi biznes bo‘yicha yakuniy qaror qilish."
+    },
+    {
+      "id": "MENU_DELETE",
+      "current": "MENU_DELETE permission mavjud.",
+      "recommended": "Historical integrity uchun hard delete o‘rniga archive/deactivate."
+    },
+    {
+      "id": "ACCOUNTANT_SHIFT_VISIBILITY",
+      "current": "ACCOUNTANT ga SHIFT_VIEW_BRANCH berilmadi — smena boshqaruvi operatsion ish deb hisoblandi.",
+      "recommended": "Buxgalter kassa solishtiruvini ko'rishi kerakmi yoki yo'qmi — biznes bo'yicha yakuniy qaror qilish."
+    }
+  ],
+  "recommended_role_hierarchy": [
+    {
+      "level": 100,
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "level": 80,
+      "role": "BRANCH_MANAGER"
+    },
+    {
+      "level": 70,
+      "role": "ADMIN"
+    },
+    {
+      "level": 60,
+      "role": "ACCOUNTANT"
+    },
+    {
+      "level": 40,
+      "role": "CASHIER"
+    },
+    {
+      "level": 30,
+      "role": "WAITER"
+    },
+    {
+      "level": 30,
+      "role": "KITCHEN"
+    }
+  ],
+  "feature_coding_checklist": [
+    "Feature uchun kerakli permissionni aniqlash.",
+    "permissions.ts va seed role matrixni yangilash.",
+    "Backend controller guard qo‘shish.",
+    "Service branch/global scope enforce qilish.",
+    "Frontend navigation/route guard qo‘shish.",
+    "401/403/same-branch/cross-branch test yozish.",
+    "Sensitive action uchun audit event qo‘shish.",
+    "Seed/role validatorni yangilash.",
+    "Ushbu RBAC JSON specni yangilash."
+  ],
+  "current_operational_listing_api": [
+    {
+      "method": "GET",
+      "path": "/shifts",
+      "permission": "SHIFT_VIEW_BRANCH",
+      "note": "Filial smenalari; branch scope va pagination majburiy. 4-bosqichda qo'shildi."
+    },
+    {
+      "method": "GET",
+      "path": "/receipts",
+      "permission": "RECEIPT_VIEW",
+      "note": "Chek ro'yxati; `content` va ESC/POS qaytarilmaydi. 4-bosqichda qo'shildi."
+    },
+    {
+      "method": "GET",
+      "path": "/payments",
+      "permission": "PAYMENT_VIEW",
+      "note": "To'lov tarixi; branch scope buyurtma orqali. 4-bosqichda qo'shildi."
+    }
+  ]
+}
