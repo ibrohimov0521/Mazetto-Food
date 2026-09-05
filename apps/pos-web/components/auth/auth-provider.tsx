@@ -2,13 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  authStorageKey,
-  getApiBaseUrl,
-  getPrimaryRedirect,
-  type AuthSession,
-  type AuthUser,
-} from "../../lib/auth";
+import { getApiBaseUrl, getPrimaryRedirect, type AuthSession, type AuthUser } from "../../lib/auth";
+import { readSession, subscribeToSession, writeSession } from "../../lib/session";
 
 type AuthContextValue = {
   isReady: boolean;
@@ -35,24 +30,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(authStorageKey);
-
-    if (stored) {
-      setSession(JSON.parse(stored) as AuthSession);
-    }
-
+    setSession(readSession());
     setIsReady(true);
   }, []);
 
-  const persistSession = useCallback((nextSession: AuthSession | null) => {
-    setSession(nextSession);
+  /*
+   * `lib/api.ts` token yangilaganda yoki sessiya tugaganini aniqlaganda
+   * shu yerga xabar keladi. Sessiya yo'qolgan bo'lsa login'ga yo'naltiramiz.
+   */
+  useEffect(() => {
+    return subscribeToSession((nextSession) => {
+      setSession(nextSession);
 
-    if (nextSession) {
-      window.localStorage.setItem(authStorageKey, JSON.stringify(nextSession));
-    } else {
-      window.localStorage.removeItem(authStorageKey);
-    }
-  }, []);
+      if (!nextSession) {
+        router.replace("/login");
+      }
+    });
+  }, [router]);
 
   const login = useCallback(
     async (identifier: string, password: string) => {
@@ -61,21 +55,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier, password }),
       });
-      const payload = (await response.json()) as { success: boolean; data?: AuthSession; error?: { message: string } };
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: AuthSession;
+        error?: { message: string };
+      };
 
       if (!response.ok || !payload.success || !payload.data) {
         throw new Error(payload.error?.message ?? "Login failed");
       }
 
-      persistSession(payload.data);
+      writeSession(payload.data);
       router.replace(await getLoginRedirect(payload.data));
     },
-    [persistSession, router],
+    [router],
   );
 
   const logout = useCallback(async () => {
     const refreshToken = session?.tokens.refreshToken;
-    persistSession(null);
 
     if (refreshToken) {
       await fetch(`${getApiBaseUrl()}/auth/logout`, {
@@ -85,8 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => undefined);
     }
 
-    router.replace("/login");
-  }, [persistSession, router, session?.tokens.refreshToken]);
+    // Sessiyani tozalash login'ga yo'naltirishni ham ishga tushiradi (yuqoridagi subscribe).
+    writeSession(null);
+  }, [session?.tokens.refreshToken]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

@@ -1,0 +1,212 @@
+/*
+ * MAZETTO FOOD — Admin dizayn tokenlari
+ *
+ * Manba: docs/admin-redesign/PLAN.md §1.1
+ * Brend qulfi: docs/design/MAZETTO_DESIGN_LOCK.md (teal / oltin / ivory)
+ * Layout o'lchamlari: AdminLTE 4.9.1 (MIT) — docs/admin-redesign/01-adminlte4/
+ *
+ * Uch qatlam:
+ *   1  PRIMITIV   xom rang qiymatlari (ramp)
+ *   2  SEMANTIK   rol bo'yicha (surface, text, primary, status)
+ *   3  KOMPONENT  o'lcham, radius, soya, z-index
+ *
+ * Komponentlar faqat 2 va 3-qatlamga murojaat qiladi, 1-qatlamga emas.
+ */
+
+@theme {
+  /* ---------------------------------------------------------------
+   * 1-QATLAM — PRIMITIV
+   * ------------------------------------------------------------- */
+
+  /* Teal — brend asosi (customer-web --mf-bg / --mf-surface / --mf-aqua) */
+  --color-mz-teal-950: #002a2e;
+  --color-mz-teal-900: #003b40;
+  --color-mz-teal-800: #004f55;
+  --color-mz-teal-700: #06616a;
+  --color-mz-teal-600: #08686a;
+  --color-mz-teal-500: #23958d;
+  --color-mz-teal-300: #7fbfba;
+  --color-mz-teal-100: #d8e5df;
+  --color-mz-teal-50: #eef4f3;
+
+  /* Oltin — CTA (customer-web --mf-gold / --mf-orange) */
+  --color-mz-gold-600: #f5cf00;
+  --color-mz-gold-500: #ffd83d;
+  --color-mz-gold-400: #ffe86b;
+  --color-mz-gold-100: #fff7e8;
+
+  /* Ink — matn (customer-web --mf-text) */
+  --color-mz-ink-900: #07373a;
+  --color-mz-ink-700: #245055;
+  --color-mz-ink-500: #5c7b7e;
+  --color-mz-ink-300: #9db0b2;
+
+  /* Sirtlar */
+  --color-mz-ivory: #f5f5ef;
+  --color-mz-white: #ffffff;
+
+  /* ---------------------------------------------------------------
+   * 2-QATLAM — SEMANTIK
+   * ------------------------------------------------------------- */
+
+  /* Qobiq — sidebar va header (to'q teal) */
+  --color-mz-shell: #004f55;
+  --color-mz-shell-raised: #06616a;
+  --color-mz-shell-fg: #f5f5ef;
+  --color-mz-shell-fg-muted: #a9c6c5;
+  --color-mz-shell-active: #08686a;
+  --color-mz-shell-border: #01646a;
+
+  /* Kontent — och */
+  --color-mz-canvas: #f5f5ef;
+  --color-mz-surface: #ffffff;
+  --color-mz-surface-sunken: #eef4f3;
+  --color-mz-text: #07373a;
+  --color-mz-text-muted: #5c7b7e;
+  --color-mz-text-faint: #9db0b2;
+  --color-mz-text-inverse: #f5f5ef;
+  --color-mz-border: #dde7e6;
+  --color-mz-border-strong: #b8ccca;
+
+  /* Harakatlar */
+  --color-mz-primary: #ffd83d;
+  --color-mz-primary-hover: #f5cf00;
+  --color-mz-primary-fg: #07373a;
+  --color-mz-accent: #23958d;
+  --color-mz-focus: #23958d;
+
+  /*
+   * Status — matn uchun xavfsiz variantlar (oq fonda >= 4.5:1),
+   * `-accent` esa nuqta/chiziq/ikonka uchun (kontrast talab qilinmaydi).
+   */
+  --color-mz-success: #2f7d50;
+  --color-mz-success-accent: #3f9f68;
+  --color-mz-success-bg: #e8f5ee;
+
+  --color-mz-danger: #c8352f;
+  --color-mz-danger-accent: #e0524c;
+  --color-mz-danger-bg: #fdeceb;
+
+  --color-mz-warning: #9a5b0c;
+  --color-mz-warning-accent: #d98218;
+  --color-mz-warning-bg: #fdf3e3;
+
+  --color-mz-info: #157069;
+  --color-mz-info-accent: #23958d;
+  --color-mz-info-bg: #e6f3f2;
+
+  /* ---------------------------------------------------------------
+   * 3-QATLAM — KOMPONENT
+   * ------------------------------------------------------------- */
+
+  /* Radius — Lezato 12px va AdminLTE 6px orasida */
+  --radius-mz-card: 14px;
+  --radius-mz-control: 10px;
+  --radius-mz-pill: 999px;
+
+  /* Soya — AdminLTE (juda quruq) va Lezato (juda havodor) orasida */
+  --shadow-mz-card: 0 4px 16px rgba(0, 79, 85, 0.08);
+  --shadow-mz-raised: 0 8px 24px rgba(0, 79, 85, 0.12);
+  --shadow-mz-overlay: 0 12px 32px rgba(0, 79, 85, 0.16);
+}
+
+/*
+ * Layout o'lchamlari va z-index.
+ * Bular Tailwind utility'siga aylanmaydi — faqat CSS o'zgaruvchisi sifatida
+ * shell komponentlarida ishlatiladi.
+ *
+ * Sidebar 264px: AdminLTE 250px va Lezato 328px orasida.
+ * Z-index qiymatlari AdminLTE 4 dan aynan ko'chirilgan (sinovdan o'tgan tartib).
+ */
+:root {
+  --mz-sidebar-w: 264px;
+  --mz-sidebar-mini-w: 72px;
+  --mz-header-h: 60px;
+
+  --mz-z-header: 1034;
+  --mz-z-sidebar-overlay: 1037;
+  --mz-z-sidebar: 1038;
+  --mz-z-modal: 1050;
+  --mz-z-toast: 1060;
+
+  --mz-transition: 0.3s ease-in-out;
+}
+
+/*
+ * Admin ildizi. AdminLayout shu klassni qo'yadi.
+ * 14px bazaviy font — operatsion zichlik uchun (Lezato naqshi).
+ */
+.mz-admin {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-mz-text);
+  background: var(--color-mz-canvas);
+}
+
+/* Fokus halqasi — klaviatura navigatsiyasi uchun butun admin bo'ylab bir xil */
+.mz-admin :focus-visible {
+  outline: 2px solid var(--color-mz-focus);
+  outline-offset: 2px;
+}
+
+/* To'q qobiq ichida fokus halqasi oltin bo'ladi — teal fonda ko'rinishi uchun */
+.mz-shell-surface :focus-visible {
+  outline-color: var(--color-mz-primary);
+}
+
+/*
+ * Sidebar animatsiyasi: AdminLTE naqshi — `width` emas, `min/max-width`.
+ * Bu layout reflow'ni kamaytiradi.
+ */
+.mz-sidebar-transition {
+  transition:
+    min-width var(--mz-transition),
+    max-width var(--mz-transition),
+    margin-inline-start var(--mz-transition),
+    transform var(--mz-transition);
+}
+
+/*
+ * Kontent siljishi. `lg` (1024px) dan pastda sidebar off-canvas bo'ladi,
+ * shuning uchun siljish yo'q.
+ */
+.mz-content {
+  margin-inline-start: 0;
+}
+
+@media (min-width: 1024px) {
+  .mz-content {
+    margin-inline-start: var(--mz-sidebar-w);
+  }
+
+  .mz-content--mini {
+    margin-inline-start: var(--mz-sidebar-mini-w);
+  }
+}
+
+/* Ingichka scrollbar — sidebar va jadval konteynerlari uchun */
+.mz-thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-mz-teal-500) transparent;
+}
+
+.mz-thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.mz-thin-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--color-mz-teal-500);
+}
+
+.mz-thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Harakatni kamaytirish sozlamasini hurmat qilish */
+@media (prefers-reduced-motion: reduce) {
+  .mz-sidebar-transition {
+    transition: none;
+  }
+}
