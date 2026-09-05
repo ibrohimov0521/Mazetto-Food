@@ -3132,7 +3132,7 @@ Next:
 
 ## Admin Sales Reports Hardening
 
-Status: ✅ LOCAL IMPLEMENTATION + AUTHENTICATED VISUAL QA PASSED; ready for owner review before controlled release gate.
+Status: ✅ PRODUCTION RELEASED AND VERIFIED.
 
 Scope completed locally:
 
@@ -3196,8 +3196,35 @@ Validation notes:
 
 - DB-backed POS/Shift validator runs emitted the existing `pg` deprecation warning about `client.query()` while a query is already executing. The validations passed; this remains a known adapter/driver warning.
 - Visual QA artifacts are stored under `.qa-screenshots/admin-reports-*` and remain intentionally untracked.
-- No production DB, production service, Cloudflare route, Telegram webhook, media volume, push, deploy, migration, seed, fake shift, or fake order was touched.
+- During the local implementation and visual QA phase, no production DB, production service, Cloudflare route, Telegram webhook, media volume, push, deploy, migration, seed, fake shift, or fake order was touched.
+
+Production release verification:
+
+- Released backend revision `03e6498` to `mazetto-food-backend-pdslpm:03e6498`.
+- Released POS-web revision `03e6498`, then applied the production-only visual release gate fix `6da8f9a` to `mazetto-food-posweb:6da8f9a`.
+- Customer-web remained unchanged at `mazetto-food-customerweb-yvb3d0:0004277`.
+- Media service remained unchanged at `mazetto-food-media-btinws:latest`.
+- PostgreSQL remained unchanged by this release: no migration, seed, reset, or manual SQL mutation was executed.
+- Production services verified healthy: backend 1/1, POS-web 1/1, customer-web 1/1, media 1/1, PostgreSQL 1/1.
+- Backend health returned 200 with database status `ok`.
+- POS routes `/login`, `/admin/reports`, `/pos`, and `/kitchen` returned 200.
+- Customer-web routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Admin `/reports/sales` authenticated API smoke passed for `today`, `yesterday`, `last7days`, `thisMonth`, `year`, `custom`, `WEB`, `TELEGRAM`, `POS`, and branch filter.
+- Reports RBAC smoke passed: unauthenticated access returned 401 and CASHIER access returned 403.
+- POS cashier regression smoke passed for `/pos/catalog` and `/cash-register/shift`.
+- Kitchen read smoke passed for SUPER_ADMIN via `/kitchen/orders`.
+- Telegram webhook remained healthy: `ok=true`, URL present, pending updates 0, no last error.
+- Production browser smoke confirmed `/admin/reports` renders authenticated report data with no `NaN` or `undefined`.
+- Responsive production QA passed at 768, 1024, 1440, and 1920 after `6da8f9a`; 768 horizontal overflow was fixed and rechecked with `scrollWidth == clientWidth`.
+- Backend and POS-web release-window logs showed no new Prisma, Nest, Telegram, Kitchen, Shift, RBAC, hydration, or 500-level errors.
+
+Production data note:
+
+- Business counts were stable immediately after the backend/POS reports release smoke.
+- During the later visual release window, a real POS order appeared naturally in production: `POS-20260905-154025-3383`, source `POS`, status `CONFIRMED`, type `TAKEAWAY`, total `65,000`.
+- This order was not created by the release smoke; no fake order or fake shift was created.
+- Post-release production counts after that real activity were: orders 27, customer_orders 19, customer_order_attempts 19, kitchen_tickets 27, shifts 2, revenue_records 3, cash_transactions 5, products 91, product_variants 100, ProductBundleItem 75.
 
 Next:
 
-- After owner review, run an Admin Reports release gate with production backup, controlled backend/POS-web deploy, and read-only report smoke.
+- Continue with the next roadmap item only after owner approval. Do not start Cashier Shift Controls UX or additional report dashboards as part of this release.
