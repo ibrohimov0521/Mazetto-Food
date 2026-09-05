@@ -77,11 +77,16 @@ function ShiftConsole() {
       const current = await apiFetch<Shift | null>("/cash-register/shift");
       setShift(current);
     } catch (loadError) {
+      if (isAuthenticationError(loadError)) {
+        void logout();
+        return;
+      }
+
       setError(loadError instanceof Error ? loadError.message : "Smena ma'lumoti yuklanmadi");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [logout]);
 
   useEffect(() => {
     void loadShift();
@@ -260,4 +265,8 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function money(value: string | number): string {
   return `${formatter.format(Math.round(Number(value || 0)))} so'm`;
+}
+
+function isAuthenticationError(error: unknown): boolean {
+  return error instanceof Error && /invalid or expired access token|unauthorized|jwt/i.test(error.message);
 }

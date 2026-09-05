@@ -90,6 +90,11 @@ function PosTerminal() {
         setCatalog(await apiFetch<Catalog>("/pos/catalog"));
       } catch (loadError) {
         if (isMounted) {
+          if (isAuthenticationError(loadError)) {
+            void logout();
+            return;
+          }
+
           setError(loadError instanceof Error ? loadError.message : "Katalog yuklanmadi");
         }
       } finally {
@@ -104,7 +109,7 @@ function PosTerminal() {
     return () => {
       isMounted = false;
     };
-  }, [router]);
+  }, [logout, router]);
 
   const products = catalog?.products ?? [];
   const filteredProducts = useMemo(() => {
@@ -359,4 +364,8 @@ function tabClass(active: boolean): string {
 
 function choiceClass(active: boolean): string {
   return `flex min-h-12 items-center justify-between rounded-2xl border px-4 text-sm font-black ${active ? "border-[#ffd52e] bg-[#fff3a3]" : "border-[#d8e5df] bg-white"}`;
+}
+
+function isAuthenticationError(error: unknown): boolean {
+  return error instanceof Error && /invalid or expired access token|unauthorized|jwt/i.test(error.message);
 }
