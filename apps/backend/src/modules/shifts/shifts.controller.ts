@@ -1,8 +1,9 @@
-import { Body, Controller, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { ListShiftsDto } from "./dto/list-shifts.dto";
 import {
   CloseShiftDto,
   CreateCashTransactionDto,
@@ -13,6 +14,15 @@ import { ShiftsService } from "./shifts.service";
 @Controller("shifts")
 export class ShiftsController {
   constructor(private readonly shiftsService: ShiftsService) {}
+
+  @Get()
+  @Permissions(PERMISSIONS.SHIFT_VIEW_BRANCH)
+  listShifts(
+    @Query() query: ListShiftsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.shiftsService.listShifts(query, user);
+  }
 
   @Post("open")
   @Permissions(PERMISSIONS.SHIFT_OPEN)

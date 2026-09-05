@@ -1,13 +1,46 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { CashTransactionType, PaymentStatus, Prisma, ShiftStatus } from "@prisma/client";
-import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
+import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import type { ListShiftsDto } from "./dto/list-shifts.dto";
 import type { CloseShiftDto, CreateCashTransactionDto, OpenShiftDto } from "./dto/shift.dto";
 
 @Injectable()
 export class ShiftsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Filial smenalari ro'yxati.
+   *
+   * `SHIFT_VIEW_BRANCH` permission'i bilan himoyalangan — `SHIFT_VIEW_OWN`
+   * dan farqli, bu butun filial smenalarini ko'rsatadi. Branch scope
+   * `resolveBranchScope` orqali majburlanadi: branch-scoped rol boshqa
+   * filialni so'rasa `ForbiddenException` qaytadi.
+   */
+  async listShifts(query: ListShiftsDto, user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user, query.branchId);
+    const openedAt =
+      query.from || query.to
+        ? {
+            ...(query.from ? { gte: new Date(query.from) } : {}),
+            ...(query.to ? { lte: new Date(query.to) } : {}),
+          }
+        : undefined;
+
+    return this.prisma.shift.findMany({
+      where: {
+        ...(branchId ? { branchId } : {}),
+        ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(openedAt ? { openedAt } : {}),
+      },
+      orderBy: { openedAt: "desc" },
+      skip: query.offset,
+      take: query.limit,
+      include: this.shiftInclude(),
+    });
+  }
 
   async openShift(dto: OpenShiftDto, user: AuthenticatedUser) {
     const employeeId = this.resolveTargetEmployee(dto.employeeId, user);

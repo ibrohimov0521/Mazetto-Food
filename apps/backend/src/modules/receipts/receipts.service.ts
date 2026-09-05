@@ -3,10 +3,58 @@ import { Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import type { ListReceiptsDto } from "./dto/list-receipts.dto";
 
 @Injectable()
 export class ReceiptsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Cheklar ro'yxati.
+   *
+   * Chek MAZMUNI (`content`) va ESC/POS satri bu yerda qaytarilmaydi —
+   * ular faqat bitta chek so'ralganda kerak. Ro'yxat yengil bo'lib qoladi.
+   */
+  async listReceipts(query: ListReceiptsDto, user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user, query.branchId);
+    const createdAt =
+      query.from || query.to
+        ? {
+            ...(query.from ? { gte: new Date(query.from) } : {}),
+            ...(query.to ? { lte: new Date(query.to) } : {}),
+          }
+        : undefined;
+
+    return this.prisma.receipt.findMany({
+      where: {
+        ...(branchId ? { branchId } : {}),
+        ...(query.orderId ? { orderId: query.orderId } : {}),
+        ...(createdAt ? { createdAt } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      skip: query.offset,
+      take: query.limit,
+      select: {
+        id: true,
+        receiptNumber: true,
+        total: true,
+        printed: true,
+        printedAt: true,
+        createdAt: true,
+        orderId: true,
+        branch: { select: { id: true, code: true, name: true } },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            paymentStatus: true,
+            source: true,
+          },
+        },
+      },
+    });
+  }
 
   async getReceipt(id: string, user: AuthenticatedUser) {
     const receipt = await this.prisma.receipt.findUnique({

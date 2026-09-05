@@ -14,8 +14,10 @@ import {
   TableStatus,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import type { ListPaymentsDto } from "./dto/list-payments.dto";
 import type {
   CreatePaymentDto,
   PaymentTenderDto,
@@ -32,6 +34,58 @@ type NormalizedPaymentTender = {
 @Injectable()
 export class PaymentsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * To'lovlar ro'yxati.
+   *
+   * Branch scope buyurtma orqali qo'llanadi (`Payment` da `branchId` yo'q).
+   * `PAYMENT_VIEW` permission'i bilan himoyalangan — `PAYMENT_CREATE`
+   * yozish uchun, bu esa ko'rish uchun.
+   */
+  async listPayments(query: ListPaymentsDto, user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user, query.branchId);
+    const paidAt =
+      query.from || query.to
+        ? {
+            ...(query.from ? { gte: new Date(query.from) } : {}),
+            ...(query.to ? { lte: new Date(query.to) } : {}),
+          }
+        : undefined;
+
+    return this.prisma.payment.findMany({
+      where: {
+        ...(query.orderId ? { orderId: query.orderId } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.methodCode ? { methodCode: query.methodCode } : {}),
+        ...(paidAt ? { paidAt } : {}),
+        ...(branchId ? { order: { branchId } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      skip: query.offset,
+      take: query.limit,
+      select: {
+        id: true,
+        amount: true,
+        status: true,
+        methodCode: true,
+        reference: true,
+        paidAt: true,
+        createdAt: true,
+        method: { select: { id: true, code: true, name: true } },
+        acceptedBy: { select: { id: true, firstName: true, lastName: true } },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            source: true,
+            status: true,
+            total: true,
+            branch: { select: { id: true, code: true, name: true } },
+          },
+        },
+      },
+    });
+  }
 
   async createPayment(dto: CreatePaymentDto, user: AuthenticatedUser) {
     const tender: PaymentTenderDto = {
