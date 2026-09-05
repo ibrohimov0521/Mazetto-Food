@@ -3228,3 +3228,64 @@ Production data note:
 Next:
 
 - Continue with the next roadmap item only after owner approval. Do not start Cashier Shift Controls UX or additional report dashboards as part of this release.
+
+## Cashier Shift Controls UX
+
+Status: ✅ LOCAL IMPLEMENTATION + LOCAL QA PASSED; ready for controlled release gate after owner review.
+
+Scope completed locally:
+
+- POS `/pos` now shows a compact visible shift control in the cashier header when a shift is open.
+- The POS shift control shows `Smena ochiq` and the local Tashkent start time, then navigates to `/shift`.
+- `/pos` still redirects to `/shift` when the cashier has no open shift.
+- `/shift` open-state view shows shift status, cashier identity, branch name/address when available, opened time, order count, cash sales, expected cash, and cash transactions.
+- `/shift` close flow now requires an explicit confirmation modal before closing the shift.
+- The close confirmation shows expected cash, actual cash, and a clear difference label: `Mos`, `Ortiqcha`, or `Kamomad`.
+- Double-submit protection remains in place through disabled saving states.
+- Backend Shift, POS order, revenue, cash transaction, report, RBAC, Kitchen, Customer history, Telegram catalog, and canonical catalog architecture were preserved.
+- No backend schema, migration, seed, production service, production DB, Cloudflare, Telegram webhook, customer-web, Click, or Payme changes were made.
+
+Local validation:
+
+- `prisma format`: passed with build-only placeholder `DATABASE_URL`.
+- `prisma validate`: passed with build-only placeholder `DATABASE_URL`.
+- `prisma generate`: passed with build-only placeholder `DATABASE_URL`.
+- `pnpm --filter backend typecheck`: passed.
+- `pnpm --filter backend lint`: passed.
+- `pnpm --filter backend build`: passed.
+- `pnpm --filter pos-web typecheck`: passed.
+- `pnpm --filter pos-web lint`: passed.
+- `pnpm --filter pos-web build`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-pos-kassa.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-shift-kassa.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-staff-rbac.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-admin-sales-reports.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-kitchen-order-board.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-canonical-catalog.ts`: passed with 56 standalone, 18 sets, and 74 customer-visible canonical items.
+- `pnpm --filter backend exec tsx scripts/validate-telegram-catalog-mapping.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-customer-order-history.ts`: passed.
+- DB-backed POS/Kassa validation passed against isolated local PostgreSQL `mazetto_reports_isolated_shift_controls`.
+- DB-backed Shift/Kassa validation passed against isolated local PostgreSQL `mazetto_reports_isolated_shift_controls`.
+- DB-backed Staff/RBAC validation passed against isolated local PostgreSQL `mazetto_reports_isolated_shift_controls`.
+- DB-backed Admin Sales Reports validation passed against clean isolated local PostgreSQL `mazetto_reports_isolated_clean`.
+- `pnpm typecheck`: passed.
+- `pnpm lint`: passed.
+- `git diff --check`: passed.
+
+Visual QA:
+
+- Local POS/Shift visual QA used a temporary mock API and production-built POS-web.
+- `/shift` open-state and close confirmation passed at 390, 768, 1024, 1280, 1440, 1920, 1024x600, and 1366x768.
+- `/pos` shift-control header passed at 390, 768, 1024, 1280, 1440, 1920, 1024x600, and 1366x768.
+- `/shift` no-open-shift state passed at 390.
+- All checked viewports had no horizontal overflow and no `NaN` or `undefined` text.
+- Visual artifacts are stored under `.qa-screenshots/shift-controls-*` and remain intentionally untracked.
+
+Validation notes:
+
+- DB-backed POS/Shift validator runs emitted the existing `pg` deprecation warning about `client.query()` while a query is already executing. The validations passed; this remains a known adapter/driver warning.
+- The first Admin Reports DB validator attempt was run on a seeded isolated DB and failed because seed fixture data changed the expected total. It passed on the clean isolated DB expected by that validator.
+
+Next:
+
+- Owner review, then run a controlled Shift Controls production release gate. Do not push or deploy this local phase until explicitly approved.

@@ -52,6 +52,7 @@ function ShiftConsole() {
   const [closedShift, setClosedShift] = useState<Shift | null>(null);
   const [openingCash, setOpeningCash] = useState("0");
   const [closingCash, setClosingCash] = useState("");
+  const [isConfirmingClose, setIsConfirmingClose] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +131,7 @@ function ShiftConsole() {
       setClosedShift(closed);
       setShift(null);
       setClosingCash("");
+      setIsConfirmingClose(false);
       setMessage("Smena yopildi. Yangi savdo uchun yangi smena oching.");
     } catch (closeError) {
       setError(closeError instanceof Error ? closeError.message : "Smena yopilmadi");
@@ -174,6 +176,10 @@ function ShiftConsole() {
                   <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">Ochiq smena</p>
                   <h2 className="mt-2 text-4xl font-black">#{shift.shiftNumber}</h2>
                   <p className="mt-2 text-sm font-bold text-slate-500">{shift.branch.name}</p>
+                  {shift.branch.address ? <p className="mt-1 text-sm font-bold text-slate-500">{shift.branch.address}</p> : null}
+                  <p className="mt-3 inline-flex rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-800">
+                    Status: Ochiq
+                  </p>
                 </div>
                 <div className="rounded-[24px] bg-[#ffe86b] px-5 py-4 text-right">
                   <p className="text-xs font-black uppercase text-[#00796f]">Kutilgan naqd</p>
@@ -216,7 +222,7 @@ function ShiftConsole() {
                 <div className="flex justify-between"><span>Kutilgan</span><span>{money(expectedCash)}</span></div>
                 <div className="flex justify-between"><span>Farq</span><span className={differencePreview === 0 ? "text-[#008678]" : "text-red-600"}>{money(differencePreview)}</span></div>
               </div>
-              <button className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50" disabled={isSaving || !closingCash} onClick={() => void closeShift()} type="button">
+              <button className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50" disabled={isSaving || !closingCash} onClick={() => setIsConfirmingClose(true)} type="button">
                 {isSaving ? "Yopilmoqda..." : "Kassa topshirish"}
               </button>
             </aside>
@@ -250,6 +256,41 @@ function ShiftConsole() {
           </section>
         ) : null}
       </div>
+
+      {shift && isConfirmingClose ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
+          <section className="w-full max-w-md rounded-[30px] bg-[#fffaf0] p-5 text-[#10233a] shadow-2xl">
+            <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">Tasdiqlash</p>
+            <h2 className="mt-2 text-2xl font-black">Smenani yakunlaysizmi?</h2>
+            <p className="mt-2 text-sm font-bold text-slate-600">
+              Bu amal kassani yopadi va POS savdo oynasi yangi smena ochilmaguncha ishlamaydi.
+            </p>
+            <div className="mt-4 grid gap-2 rounded-2xl bg-white p-4 text-sm font-black">
+              <div className="flex justify-between"><span>Kutilgan naqd</span><span>{money(expectedCash)}</span></div>
+              <div className="flex justify-between"><span>Haqiqiy naqd</span><span>{money(closingValue)}</span></div>
+              <div className="flex justify-between"><span>Farq</span><span className={differencePreview === 0 ? "text-[#008678]" : differencePreview > 0 ? "text-emerald-700" : "text-red-600"}>{differenceText(differencePreview)}</span></div>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                className="min-h-12 rounded-2xl bg-white text-sm font-black shadow-sm"
+                disabled={isSaving}
+                onClick={() => setIsConfirmingClose(false)}
+                type="button"
+              >
+                Bekor qilish
+              </button>
+              <button
+                className="min-h-12 rounded-2xl bg-[#ffd52e] text-sm font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50"
+                disabled={isSaving}
+                onClick={() => void closeShift()}
+                type="button"
+              >
+                {isSaving ? "Yopilmoqda..." : "Ha, yakunlash"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -265,6 +306,18 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function money(value: string | number): string {
   return `${formatter.format(Math.round(Number(value || 0)))} so'm`;
+}
+
+function differenceText(value: number): string {
+  if (value === 0) {
+    return `Mos: ${money(value)}`;
+  }
+
+  if (value > 0) {
+    return `Ortiqcha: ${money(value)}`;
+  }
+
+  return `Kamomad: ${money(Math.abs(value))}`;
 }
 
 function isAuthenticationError(error: unknown): boolean {

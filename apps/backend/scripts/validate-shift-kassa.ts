@@ -26,10 +26,19 @@ function main(): void {
   assert.match(ordersService, /CashTransactionType\.SALE/);
   assert.match(posPage, /\/cash-register\/shift/);
   assert.match(posPage, /router\.replace\("\/shift"\)/);
+  assert.match(posPage, /Smena ochiq/);
+  assert.match(posPage, /Boshlangan:/);
+  assert.match(posPage, /router\.push\("\/shift"\)/);
   assert.match(auth, /CASHIER: "\/shift"/);
   assert.match(shiftPage, /\/cash-register\/shift\/open/);
   assert.match(shiftPage, /\/cash-register\/shift\/\$\{shift\.id\}\/close/);
   assert.doesNotMatch(shiftPage, /branchId/);
+  assert.match(shiftPage, /Status: Ochiq/);
+  assert.match(shiftPage, /setIsConfirmingClose\(true\)/);
+  assert.match(shiftPage, /Smenani yakunlaysizmi\?/);
+  assert.match(shiftPage, /Ha, yakunlash/);
+  assert.match(shiftPage, /disabled=\{isSaving \|\| !closingCash\}/);
+  assert.match(shiftPage, /differenceText\(differencePreview\)/);
 
   console.info("Shift/Kassa static validation passed");
 }

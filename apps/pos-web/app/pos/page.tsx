@@ -36,7 +36,14 @@ type PosOrderResult = {
   order: { orderNumber: string; total: string; branch?: { name?: string | null } | null };
   payment: { cashReceived: string; change: string };
 };
-type CurrentShift = { id: string; status: "OPEN" | "CLOSED" };
+type CurrentShift = {
+  id: string;
+  shiftNumber?: number;
+  status: "OPEN" | "CLOSED";
+  openedAt?: string;
+  branch?: { name?: string | null; address?: string | null } | null;
+  employee?: { firstName?: string | null; lastName?: string | null } | null;
+};
 
 const formatter = new Intl.NumberFormat("uz-UZ");
 
@@ -58,6 +65,7 @@ function PosTerminal() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [currentShift, setCurrentShift] = useState<CurrentShift | null>(null);
   const [isCheckingShift, setIsCheckingShift] = useState(true);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [categoryId, setCategoryId] = useState("ALL");
@@ -83,10 +91,12 @@ function PosTerminal() {
         }
 
         if (!currentShift || currentShift.status !== "OPEN") {
+          setCurrentShift(null);
           router.replace("/shift");
           return;
         }
 
+        setCurrentShift(currentShift);
         setCatalog(await apiFetch<Catalog>("/pos/catalog"));
       } catch (loadError) {
         if (isMounted) {
@@ -197,13 +207,24 @@ function PosTerminal() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#062d2b] text-[#10233a] lg:h-screen lg:overflow-hidden">
       <div className="flex min-h-screen flex-col lg:h-screen">
-        <header className="flex items-center justify-between border-b border-white/10 bg-[#073f3b] px-5 py-3 text-white">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#073f3b] px-4 py-3 text-white sm:px-5">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ffd52e]">MAZETTO FOOD</p>
             <h1 className="text-2xl font-black">Kassa</h1>
           </div>
-          <div className="flex items-center gap-3 text-sm font-bold">
-            <span>{user?.email ?? user?.phone ?? "Xodim"}</span>
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-sm font-bold sm:gap-3">
+            <button
+              className="flex min-h-11 items-center gap-2 rounded-full border border-[#ffd52e]/50 bg-[#ffd52e] px-4 py-2 text-left font-black text-[#10233a] shadow-[0_8px_22px_rgba(255,213,46,0.22)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(255,213,46,0.30)]"
+              onClick={() => router.push("/shift")}
+              type="button"
+            >
+              <span aria-hidden="true">●</span>
+              <span className="grid leading-tight">
+                <span>Smena ochiq</span>
+                <span className="text-[11px] font-black text-[#00685f]">{currentShift?.openedAt ? `Boshlangan: ${formatTime(currentShift.openedAt)}` : "Smena sahifasi"}</span>
+              </span>
+            </button>
+            <span className="max-w-[180px] truncate text-right text-white/85">{user?.email ?? user?.phone ?? "Xodim"}</span>
             <button className="rounded-full bg-white/10 px-4 py-2" onClick={() => void logout()} type="button">
               Chiqish
             </button>
@@ -362,6 +383,14 @@ function lineTotal(line: CartLine): number {
 
 function money(value: number | string): string {
   return `${formatter.format(Math.round(Number(value || 0)))} so'm`;
+}
+
+function formatTime(value: string): string {
+  return new Intl.DateTimeFormat("uz-UZ", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Tashkent",
+  }).format(new Date(value));
 }
 
 function tabClass(active: boolean): string {
