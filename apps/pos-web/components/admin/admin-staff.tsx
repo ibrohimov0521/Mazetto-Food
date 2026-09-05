@@ -2,9 +2,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { EmptyState, PrimaryButton, TextInput } from "../erp/erp-ui";
-import { apiFetch } from "../../lib/api";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "../admin-ui/button";
+import { TextInput } from "../admin-ui/form";
+import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { isSuperAdminStaff, resolveStaffActionBlock } from "../../lib/staff-guards";
+import { useAuth } from "../auth/auth-provider";
+import { Badge as UiBadge } from "../admin-ui/badge";
+import { ButtonLink, GuardedButton } from "../admin-ui/button";
+import { Card } from "../admin-ui/card";
+import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
+import { ErrorState } from "../admin-ui/feedback";
+import { FilterBar } from "../admin-ui/form";
+import { useToast } from "../admin-ui/toast";
 
 type Role = {
   id: string;
@@ -55,12 +65,28 @@ export function AdminStaffPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("ALL");
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError("");
+
+    try {
+      setStaff(await apiFetch<Staff[]>("/staff"));
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      setError("Xodimlar ro'yxatini yuklab bo'lmadi.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void apiFetch<Staff[]>("/staff")
-      .then(setStaff)
-      .catch(() => setError("Xodimlar ro'yxatini yuklab bo'lmadi."));
-  }, []);
+    void load();
+  }, [load]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -85,80 +111,108 @@ export function AdminStaffPage() {
     });
   }, [query, staff, status]);
 
+  const columns: DataTableColumn<Staff>[] = [
+    {
+      key: "staff",
+      header: "Xodim",
+      primary: true,
+      render: (item) => (
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-mz-text">
+            {item.displayName ?? item.email ?? item.phone ?? "Xodim"}
+          </p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {[item.email, item.phone].filter(Boolean).join(" · ") || "Login kiritilmagan"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "roles",
+      header: "Rol",
+      render: (item) => (
+        <div className="flex flex-wrap justify-end gap-1 md:justify-start">
+          {item.roles.map((role) => (
+            <UiBadge key={role.id} tone={role.code === "SUPER_ADMIN" ? "warning" : "info"}>
+              {role.code}
+            </UiBadge>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: "branch",
+      header: "Filial",
+      render: (item) => item.employee?.branch?.name ?? "Global",
+    },
+    {
+      key: "status",
+      header: "Holat",
+      render: (item) => (
+        <UiBadge tone={item.isActive ? "success" : "danger"} withDot>
+          {item.isActive ? "Faol" : "Bloklangan"}
+        </UiBadge>
+      ),
+    },
+    {
+      key: "created",
+      header: "Yaratilgan",
+      hideOnMobile: true,
+      render: (item) => (
+        <span className="text-xs text-mz-text-muted">{formatDate(item.createdAt)}</span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (item) => (
+        <ButtonLink href={`/admin/staff/${item.id}`} size="sm" variant="ghost">
+          Ochish
+        </ButtonLink>
+      ),
+    },
+  ];
+
   return (
     <div className="grid gap-5">
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-      <section className="grid gap-3 rounded-3xl border border-white/70 bg-white p-4 shadow-[0_18px_60px_rgba(0,84,77,0.10)] lg:grid-cols-[1fr_180px_auto]">
-        <TextInput
-          placeholder="Ism, telefon, email yoki rol"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Select value={status} onChange={(event) => setStatus(event.target.value)}>
-          <option value="ALL">Barcha holatlar</option>
-          <option value="ACTIVE">Faol</option>
-          <option value="BLOCKED">Bloklangan</option>
-        </Select>
-        <Link
-          className="inline-flex items-center justify-center rounded-2xl bg-[#f7c948] px-4 py-3 text-sm font-black text-[#06433d]"
-          href="/admin/staff/new"
-        >
-          Yangi xodim
-        </Link>
-      </section>
+      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
 
-      <section className="overflow-hidden rounded-3xl border border-white/70 bg-white shadow-[0_18px_60px_rgba(0,84,77,0.10)]">
-        <div className="grid grid-cols-[1.4fr_130px_150px_130px_100px] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500 max-lg:hidden">
-          <span>Xodim</span>
-          <span>Rol</span>
-          <span>Filial</span>
-          <span>Holat</span>
-          <span />
-        </div>
-        {filtered.length ? (
-          filtered.map((item) => (
-            <article
-              className="grid gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0 lg:grid-cols-[1.4fr_130px_150px_130px_100px] lg:items-center"
-              key={item.id}
-            >
-              <div className="min-w-0">
-                <h3 className="truncate text-base font-black text-[#083f39]">
-                  {item.displayName ?? item.email ?? item.phone ?? "Xodim"}
-                </h3>
-                <p className="truncate text-xs font-semibold text-slate-500">
-                  {[item.email, item.phone].filter(Boolean).join(" · ") || "Login kiritilmagan"}
-                </p>
-                <p className="mt-1 text-xs font-semibold text-slate-400">
-                  Yaratilgan: {formatDate(item.createdAt)}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {item.roles.map((role) => (
-                  <Badge key={role.id} tone={role.code === "SUPER_ADMIN" ? "gold" : "teal"}>
-                    {role.code}
-                  </Badge>
-                ))}
-              </div>
-              <span className="text-sm font-bold text-slate-600">
-                {item.employee?.branch?.name ?? "Global"}
-              </span>
-              <Badge tone={item.isActive ? "green" : "red"}>
-                {item.isActive ? "Faol" : "Bloklangan"}
-              </Badge>
-              <Link
-                className="rounded-2xl border border-[#0c6b60]/20 px-4 py-2 text-center text-sm font-black text-[#0c6b60] hover:bg-[#e6f4ef]"
-                href={`/admin/staff/${item.id}`}
-              >
-                Ochish
-              </Link>
-            </article>
-          ))
-        ) : (
-          <div className="p-5">
-            <EmptyState title="Mos xodim topilmadi." />
+      <Card>
+        <FilterBar>
+          <div className="min-w-52 flex-1">
+            <TextInput
+              aria-label="Xodimlarni qidirish"
+              placeholder="Ism, telefon, email yoki rol"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
           </div>
-        )}
-      </section>
+          <div className="w-44">
+            <Select
+              aria-label="Holat bo'yicha filtr"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              <option value="ALL">Barcha holatlar</option>
+              <option value="ACTIVE">Faol</option>
+              <option value="BLOCKED">Bloklangan</option>
+            </Select>
+          </div>
+          <ButtonLink href="/admin/staff/new">Yangi xodim</ButtonLink>
+        </FilterBar>
+
+        <DataTable
+          caption="Xodimlar ro'yxati"
+          columns={columns}
+          emptyDescription="Qidiruv yoki filtrni o'zgartirib ko'ring."
+          emptyTitle="Mos xodim topilmadi"
+          getRowKey={(item) => item.id}
+          isLoading={isLoading}
+          rows={filtered}
+        />
+      </Card>
+
       <OwnPasswordPanel />
     </div>
   );
@@ -167,8 +221,11 @@ export function AdminStaffPage() {
 export function AdminStaffEditor({ staffId }: { staffId?: string }) {
   const isNew = !staffId;
   const router = useRouter();
+  const { user } = useAuth();
+  const { showToast } = useToast();
   const [roles, setRoles] = useState<Role[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [staff, setStaff] = useState<Staff | null>(null);
   const [passwordReset, setPasswordReset] = useState("");
   const [message, setMessage] = useState("");
@@ -185,12 +242,18 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
 
   useEffect(() => {
     async function load() {
-      const [nextRoles, nextBranches] = await Promise.all([
+      /*
+       * `/staff` ham yuklanadi: "oxirgi faol SUPER_ADMIN" qoidasini
+       * tekshirish uchun umumiy ro'yxat kerak (lib/staff-guards.ts).
+       */
+      const [nextRoles, nextBranches, nextAllStaff] = await Promise.all([
         apiFetch<Role[]>("/roles"),
         apiFetch<Branch[]>("/branches"),
+        apiFetch<Staff[]>("/staff"),
       ]);
       setRoles(nextRoles);
       setBranches(nextBranches);
+      setAllStaff(nextAllStaff);
 
       if (staffId) {
         const nextStaff = await apiFetch<Staff>(`/staff/${staffId}`);
@@ -301,17 +364,33 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       });
       setPasswordReset("");
       setMessage("Parol reset qilindi. Xodim yangi parol bilan qayta kiradi.");
+      showToast("Parol reset qilindi. Xodimning barcha sessiyalari bekor qilindi.", "success");
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : "Parol reset qilinmadi.");
     }
   }
+
+  /*
+   * RBAC staff_security_contract — UI qatlami.
+   * Haqiqiy cheklov backend'da; bu yerda foydalanuvchi sababni oldindan ko'radi.
+   */
+  const roleChangeBlock = staff
+    ? resolveStaffActionBlock({ actor: user, target: staff, action: "role", allStaff })
+    : null;
+  const statusChangeBlock = staff
+    ? resolveStaffActionBlock({ actor: user, target: staff, action: "status", allStaff })
+    : null;
+  const passwordResetBlock = staff
+    ? resolveStaffActionBlock({ actor: user, target: staff, action: "password", allStaff })
+    : null;
+  const isProtectedSuperAdmin = staff ? isSuperAdminStaff(staff) : false;
 
   return (
     <div className="grid gap-5">
       {error ? <Notice tone="danger">{error}</Notice> : null}
       {message ? <Notice>{message}</Notice> : null}
       <form className="grid gap-5 lg:grid-cols-[1fr_320px]" onSubmit={save}>
-        <section className="grid gap-4 rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_rgba(0,84,77,0.10)]">
+        <section className="grid gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
           <Field label="Ism familiya">
             <TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
           </Field>
@@ -330,13 +409,24 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Rol">
-              <Select value={form.roleCode} onChange={(event) => setForm({ ...form, roleCode: event.target.value })}>
+              <Select
+                disabled={Boolean(roleChangeBlock)}
+                value={form.roleCode}
+                onChange={(event) => setForm({ ...form, roleCode: event.target.value })}
+              >
                 {roles.map((role) => (
                   <option key={role.id} value={role.code}>
                     {role.name} ({role.code})
                   </option>
                 ))}
               </Select>
+              {roleChangeBlock ? (
+                <p className="text-xs font-semibold text-mz-warning">{roleChangeBlock}</p>
+              ) : !isNew ? (
+                <p className="text-xs font-normal text-mz-text-muted">
+                  Rol o'zgarsa, xodimning barcha sessiyalari bekor qilinadi.
+                </p>
+              ) : null}
             </Field>
             <Field label="Filial">
               <Select
@@ -353,46 +443,72 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
               </Select>
             </Field>
           </div>
-          <Check
-            checked={form.isActive}
-            label={form.isActive ? "Faol account" : "Bloklangan account"}
-            onChange={(checked) => setForm({ ...form, isActive: checked })}
-          />
+          <div className="grid gap-1.5">
+            <Check
+              checked={form.isActive}
+              disabled={Boolean(statusChangeBlock)}
+              label={form.isActive ? "Faol account" : "Bloklangan account"}
+              onChange={(checked) => setForm({ ...form, isActive: checked })}
+            />
+            {statusChangeBlock ? (
+              <p className="text-xs font-semibold text-mz-warning">{statusChangeBlock}</p>
+            ) : !isNew ? (
+              <p className="text-xs text-mz-text-muted">
+                Bloklansa, xodimning barcha sessiyalari bekor qilinadi.
+              </p>
+            ) : null}
+          </div>
         </section>
 
         <aside className="grid content-start gap-4">
-          <section className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_rgba(0,84,77,0.10)]">
-            <p className="text-sm font-black text-[#06433d]">Xavfsizlik</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
+          <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+            <p className="text-sm font-black text-mz-text">Xavfsizlik</p>
+            <p className="mt-2 text-sm leading-6 text-mz-text-muted">
               Parol hash ko'rinishida saqlanadi. Bu sahifada parol hash yoki token ko'rsatilmaydi.
             </p>
+            {isProtectedSuperAdmin ? (
+              <div className="mt-3 rounded-mz-control bg-mz-warning-bg px-3 py-2">
+                <p className="text-xs font-bold text-mz-warning">
+                  Bu SUPER_ADMIN accounti — himoyalangan qoidalar amal qiladi.
+                </p>
+              </div>
+            ) : null}
           </section>
           {!isNew ? (
-            <section className="grid gap-3 rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_rgba(0,84,77,0.10)]">
-              <p className="text-sm font-black text-[#06433d]">Parol reset</p>
+            <section className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+              <p className="text-sm font-black text-mz-text">Parol reset</p>
               <TextInput
+                disabled={Boolean(passwordResetBlock)}
                 minLength={8}
                 placeholder="Yangi vaqtinchalik parol"
                 type="password"
                 value={passwordReset}
                 onChange={(event) => setPasswordReset(event.target.value)}
               />
-              <button
-                className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-800"
-                type="button"
+              <GuardedButton
+                blockedReason={passwordResetBlock}
                 onClick={() => void resetPassword()}
+                size="sm"
+                variant="ghost"
               >
                 Parolni reset qilish
-              </button>
+              </GuardedButton>
+              {passwordResetBlock ? (
+                <p className="text-xs font-semibold text-mz-warning">{passwordResetBlock}</p>
+              ) : (
+                <p className="text-xs text-mz-text-muted">
+                  Reset qilinsa, xodimning barcha sessiyalari bekor qilinadi.
+                </p>
+              )}
             </section>
           ) : null}
         </aside>
 
         <div className="flex flex-wrap justify-end gap-3 lg:col-span-2">
-          <Link className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-black text-slate-600" href="/admin/staff">
+          <Link className="rounded-mz-control border border-mz-border px-5 py-3 text-sm font-black text-mz-text-muted" href="/admin/staff">
             Bekor qilish
           </Link>
-          <PrimaryButton type="submit">Saqlash</PrimaryButton>
+          <Button type="submit">Saqlash</Button>
         </div>
       </form>
     </div>
@@ -426,13 +542,13 @@ function OwnPasswordPanel() {
   }
 
   return (
-    <form className="grid gap-3 rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_rgba(0,84,77,0.10)] lg:grid-cols-[1fr_1fr_1fr_auto]" onSubmit={submit}>
+    <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card lg:grid-cols-[1fr_1fr_1fr_auto]" onSubmit={submit}>
       <TextInput placeholder="Joriy parol" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
       <TextInput placeholder="Yangi parol" type="password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
       <TextInput placeholder="Yangi parolni takrorlang" type="password" minLength={8} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required />
-      <PrimaryButton type="submit">Parolni yangilash</PrimaryButton>
-      {message ? <p className="text-sm font-bold text-emerald-700 lg:col-span-4">{message}</p> : null}
-      {error ? <p className="text-sm font-bold text-red-700 lg:col-span-4">{error}</p> : null}
+      <Button type="submit">Parolni yangilash</Button>
+      {message ? <p className="text-sm font-bold text-mz-info lg:col-span-4">{message}</p> : null}
+      {error ? <p className="text-sm font-bold text-mz-danger lg:col-span-4">{error}</p> : null}
     </form>
   );
 }
@@ -447,17 +563,37 @@ function formatDate(value?: string | null): string {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="grid gap-2 text-sm font-black text-[#083f39]">
+    <label className="grid gap-2 text-sm font-black text-mz-text">
       {label}
       {children}
     </label>
   );
 }
 
-function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function Check({
+  label,
+  checked,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
   return (
-    <label className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-[#083f39]">
-      <input checked={checked} className="h-4 w-4 accent-emerald-600" type="checkbox" onChange={(event) => onChange(event.target.checked)} />
+    <label
+      className={`inline-flex w-fit items-center gap-2 rounded-mz-control border border-mz-border px-4 py-3 text-sm font-black text-mz-text ${
+        disabled ? "cursor-not-allowed opacity-60" : ""
+      }`}
+    >
+      <input
+        checked={checked}
+        className="h-4 w-4 accent-mz-accent"
+        disabled={disabled}
+        type="checkbox"
+        onChange={(event) => onChange(event.target.checked)}
+      />
       {label}
     </label>
   );
@@ -467,25 +603,15 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+      className="w-full rounded-mz-control border border-mz-border bg-mz-surface px-4 py-3 text-sm font-bold text-mz-text outline-none transition focus:border-mz-accent focus:ring-4 focus:ring-mz-info-bg disabled:cursor-not-allowed disabled:bg-mz-surface-sunken disabled:text-mz-text-faint"
     />
   );
 }
 
-function Badge({ children, tone }: { children: React.ReactNode; tone: "green" | "red" | "teal" | "gold" }) {
-  const tones = {
-    green: "bg-emerald-100 text-emerald-800",
-    red: "bg-red-100 text-red-700",
-    teal: "bg-teal-100 text-teal-800",
-    gold: "bg-[#fff2b8] text-[#836100]",
-  };
-
-  return <span className={`rounded-full px-3 py-1 text-xs font-black ${tones[tone]}`}>{children}</span>;
-}
 
 function Notice({ children, tone = "success" }: { children: React.ReactNode; tone?: "success" | "danger" }) {
   return (
-    <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>
+    <div className={`rounded-mz-control px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-mz-danger-bg text-mz-danger" : "bg-mz-info-bg text-mz-info"}`}>
       {children}
     </div>
   );

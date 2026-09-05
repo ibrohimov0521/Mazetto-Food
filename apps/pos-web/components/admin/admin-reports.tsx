@@ -1,8 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { EmptyState, PrimaryButton, TextInput } from "../erp/erp-ui";
+import { Button } from "../admin-ui/button";
+import { TextInput } from "../admin-ui/form";
+import { EmptyState } from "../admin-ui/feedback";
 import { apiFetch } from "../../lib/api";
+import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
 
 type Branch = {
   id: string;
@@ -185,9 +188,9 @@ export function AdminReportsPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <Notice tone="danger">{error}</Notice> : null}
+      {error ? <ErrorState message={error} onRetry={() => void reloadReport()} /> : null}
 
-      <form className="grid gap-3 rounded-3xl border border-white/70 bg-white p-4 shadow-[0_18px_60px_rgba(0,84,77,0.10)] xl:grid-cols-[150px_150px_130px_1fr_150px_auto]" onSubmit={submit}>
+      <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-4 shadow-mz-card xl:grid-cols-[150px_150px_130px_1fr_150px_auto]" onSubmit={submit}>
         <select className="report-select" value={preset} onChange={(event) => setPreset(event.target.value)}>
           <option value="today">Bugun</option>
           <option value="yesterday">Kecha</option>
@@ -219,7 +222,7 @@ export function AdminReportsPage() {
             </option>
           ))}
         </select>
-        <PrimaryButton type="submit">Ko'rish</PrimaryButton>
+        <Button type="submit">Ko'rish</Button>
       </form>
 
       <div className="flex flex-wrap gap-2">
@@ -230,7 +233,7 @@ export function AdminReportsPage() {
         <QuickRange active={preset === "year"} label="Yil" onClick={() => void choosePreset("year")} />
       </div>
 
-      {isLoading && !report ? <EmptyState title="Hisobot yuklanmoqda." /> : null}
+      {isLoading && !report ? <SkeletonRows rows={8} /> : null}
 
       {report ? (
         <>
@@ -444,20 +447,20 @@ function employeeName(employee: { employeeCode: string; firstName: string; lastN
 
 function Metric({ label, muted, value }: { label: string; muted?: boolean; value: string }) {
   return (
-    <article className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_rgba(0,84,77,0.10)]">
-      <p className="text-sm font-bold text-slate-500">{label}</p>
-      <p className={`mt-3 text-2xl font-black ${muted ? "text-slate-500" : "text-[#083f39]"}`}>{value}</p>
+    <article className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+      <p className="text-sm font-bold text-mz-text-muted">{label}</p>
+      <p className={`mt-3 text-2xl font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}>{value}</p>
     </article>
   );
 }
 
 function Panel({ children, subtitle, title }: { children: React.ReactNode; subtitle?: string; title: string }) {
   return (
-    <section className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_rgba(0,84,77,0.10)]">
+    <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-[#06433d]">{title}</p>
-          {subtitle ? <p className="mt-1 text-sm font-semibold text-slate-500">{subtitle}</p> : null}
+          <p className="text-sm font-black text-mz-text">{title}</p>
+          {subtitle ? <p className="mt-1 text-sm font-semibold text-mz-text-muted">{subtitle}</p> : null}
         </div>
       </div>
       {children}
@@ -470,8 +473,8 @@ function QuickRange({ active, label, onClick }: { active?: boolean; label: strin
     <button
       className={`rounded-full border px-4 py-2 text-sm font-black shadow-sm transition ${
         active
-          ? "border-[#ffd52e] bg-[#ffd52e] text-[#063f39]"
-          : "border-white/70 bg-white text-[#0c6b60] hover:bg-[#e6f4ef]"
+          ? "border-mz-primary bg-mz-primary text-mz-text"
+          : "border-mz-border bg-mz-surface text-mz-teal-700 hover:bg-mz-surface-sunken"
       }`}
       type="button"
       onClick={onClick}
@@ -483,81 +486,103 @@ function QuickRange({ active, label, onClick }: { active?: boolean; label: strin
 
 function BreakdownRow({ detail, label, value }: { detail: string; label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm">
+    <div className="flex items-center justify-between gap-4 rounded-mz-control bg-mz-surface-sunken px-4 py-3 text-sm">
       <div>
-        <p className="font-black text-[#083f39]">{label}</p>
-        <p className="text-xs font-semibold text-slate-500">{detail}</p>
+        <p className="font-black text-mz-text">{label}</p>
+        <p className="text-xs font-semibold text-mz-text-muted">{detail}</p>
       </div>
-      <span className="text-right font-black text-[#06433d]">{value}</span>
+      <span className="text-right font-black text-mz-text">{value}</span>
     </div>
   );
 }
 
 function ChartRow({ detail, label, value, width }: { detail: string; label: string; value: string; width: string }) {
   return (
-    <div className="grid gap-1 rounded-2xl bg-slate-50 p-3">
+    <div className="grid gap-1 rounded-mz-control bg-mz-surface-sunken p-3">
       <div className="flex items-center justify-between gap-4 text-sm">
-        <span className="font-black text-[#083f39]">{label}</span>
-        <span className="text-right font-black text-[#06433d]">{value}</span>
+        <span className="font-black text-mz-text">{label}</span>
+        <span className="text-right font-black text-mz-text">{value}</span>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-white">
-        <div className="h-full rounded-full bg-[#ffd52e]" style={{ width }} />
+      <div className="h-3 overflow-hidden rounded-full bg-mz-surface">
+        <div className="h-full rounded-full bg-mz-primary" style={{ width }} />
       </div>
-      <p className="text-xs font-semibold text-slate-500">{detail}</p>
+      <p className="text-xs font-semibold text-mz-text-muted">{detail}</p>
     </div>
   );
 }
 
+/*
+ * Hisobot jadvali.
+ *
+ * DESIGN_RULES: kichik ekranda jadval gorizontal overflow bermasdan
+ * transformatsiya qilinishi kerak — shuning uchun `md` dan pastda
+ * har bir qator label/value kartochkasiga aylanadi.
+ */
 function DataTable({ empty, headers, rows }: { empty: string; headers: string[]; rows: string[][] }) {
   if (!rows.length) {
     return <EmptyState title={empty} />;
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-left text-sm">
-        <thead className="text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            {headers.map((header) => (
-              <th className="whitespace-nowrap border-b border-slate-100 px-3 py-2 font-black" key={header}>
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr className="border-b border-slate-100 last:border-0" key={`${row[0]}-${rowIndex}`}>
-              {row.map((cell, cellIndex) => (
-                <td className={`px-3 py-3 ${cellIndex === 0 ? "font-black text-[#083f39]" : "font-semibold text-slate-600"}`} key={`${cell}-${cellIndex}`}>
-                  {cell}
-                </td>
+    <>
+      <div className="mz-thin-scrollbar hidden overflow-x-auto md:block">
+        <table className="min-w-full text-left text-sm">
+          <thead className="text-xs uppercase tracking-wide text-mz-text-muted">
+            <tr>
+              {headers.map((header) => (
+                <th className="whitespace-nowrap border-b border-mz-border px-3 py-2 font-black" key={header}>
+                  {header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr className="border-b border-mz-border last:border-0" key={`${row[0]}-${rowIndex}`}>
+                {row.map((cell, cellIndex) => (
+                  <td className={`px-3 py-3 ${cellIndex === 0 ? "font-black text-mz-text" : "font-semibold text-mz-text-muted"}`} key={`${cell}-${cellIndex}`}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <ul className="grid gap-2 md:hidden">
+        {rows.map((row, rowIndex) => (
+          <li
+            className="rounded-mz-control border border-mz-border bg-mz-surface p-3"
+            key={`${row[0]}-${rowIndex}`}
+          >
+            <p className="mb-1.5 text-sm font-bold text-mz-text">{row[0]}</p>
+            <dl className="grid gap-1">
+              {row.slice(1).map((cell, cellIndex) => (
+                <div className="flex items-start justify-between gap-3" key={`${cell}-${cellIndex}`}>
+                  <dt className="text-xs font-medium text-mz-text-muted">
+                    {headers[cellIndex + 1] ?? ""}
+                  </dt>
+                  <dd className="text-right text-xs font-semibold text-mz-text">{cell}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
 function Readiness({ items, muted, title }: { items: string[]; muted?: boolean; title: string }) {
   return (
-    <section className="rounded-3xl border border-white/70 bg-white p-5 shadow-[0_18px_60px_rgba(0,84,77,0.10)]">
-      <p className={`text-sm font-black ${muted ? "text-slate-500" : "text-[#06433d]"}`}>{title}</p>
-      <ul className="mt-3 grid gap-2 text-sm font-semibold text-slate-600">
+    <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+      <p className={`text-sm font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}>{title}</p>
+      <ul className="mt-3 grid gap-2 text-sm font-semibold text-mz-text-muted">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}
       </ul>
     </section>
-  );
-}
-
-function Notice({ children, tone = "success" }: { children: React.ReactNode; tone?: "success" | "danger" }) {
-  return (
-    <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>
-      {children}
-    </div>
   );
 }

@@ -1,10 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AuthShell } from "../../../components/auth/auth-shell";
+import { AdminLayout } from "../../../components/admin-shell/admin-layout";
+import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
-import { EmptyState, ErpPageShell, PrimaryButton, TextInput } from "../../../components/erp/erp-ui";
+import { Button } from "../../../components/admin-ui/button";
+import { TextInput } from "../../../components/admin-ui/form";
+import { EmptyState } from "../../../components/admin-ui/feedback";
 import { apiFetch } from "../../../lib/api";
 
 type Product = {
@@ -22,9 +25,14 @@ export default function AdminRecipesPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="RECIPE_MANAGE">
-        <AuthShell eyebrow="Recipes" title="Recipe builder">
+        <AdminLayout>
+          <AdminPageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Ombor" }, { label: "Retseptlar" }]}
+            description="Mahsulot variantlari uchun ingredient tarkibi"
+            title="Retseptlar"
+          />
           <RecipeBuilder />
-        </AuthShell>
+        </AdminLayout>
       </PermissionGuard>
     </RoleGuard>
   );
@@ -88,17 +96,14 @@ function RecipeBuilder() {
   }
 
   return (
-    <ErpPageShell
-      title="Recipe management"
-      subtitle="Connect sellable product variants to ingredient quantities for automatic stock deduction."
-    >
+    <section className="grid gap-5">
       <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
-        <section className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
+        <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
           <form className="grid gap-4" onSubmit={saveRecipe}>
-            <label className="grid gap-2 text-sm font-semibold text-neutral-700">
+            <label className="grid gap-2 text-sm font-semibold text-mz-text">
               Product variant
               <select
-                className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 outline-none"
+                className="rounded-mz-control border border-mz-border bg-mz-surface px-4 py-3 text-sm text-mz-text outline-none"
                 value={variantId}
                 onChange={(event) => setVariantId(event.target.value)}
               >
@@ -110,16 +115,16 @@ function RecipeBuilder() {
               </select>
             </label>
 
-            <div className="grid gap-3 rounded-2xl bg-emerald-50/60 p-4 md:grid-cols-[1fr_120px_140px_auto]">
+            <div className="grid gap-3 rounded-mz-control bg-mz-info-bg/60 p-4 md:grid-cols-[1fr_120px_140px_auto]">
               <TextInput placeholder="Ingredient ID" value={ingredientId} onChange={(event) => setIngredientId(event.target.value)} />
               <TextInput placeholder="Qty" type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-              <select className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 outline-none" value={unit} onChange={(event) => setUnit(event.target.value)}>
+              <select className="rounded-mz-control border border-mz-border bg-mz-surface px-4 py-3 text-sm text-mz-text outline-none" value={unit} onChange={(event) => setUnit(event.target.value)}>
                 <option value="GRAM">GRAM</option>
                 <option value="KG">KG</option>
                 <option value="LITER">LITER</option>
                 <option value="PIECE">PIECE</option>
               </select>
-              <button className="rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800" onClick={addRecipeItem} type="button">
+              <button className="rounded-mz-control border border-mz-border bg-mz-surface px-4 py-2 text-sm font-semibold text-mz-info" onClick={addRecipeItem} type="button">
                 Add
               </button>
             </div>
@@ -127,9 +132,9 @@ function RecipeBuilder() {
             <div className="grid gap-2">
               {items.length ? (
                 items.map((item, index) => (
-                  <div className="flex items-center justify-between rounded-2xl border border-neutral-100 px-4 py-3 text-sm" key={`${item.ingredientId}-${index}`}>
-                    <span className="font-semibold text-neutral-800">{item.ingredientId}</span>
-                    <span className="text-neutral-500">{item.quantity} {item.unit}</span>
+                  <div className="flex items-center justify-between rounded-mz-control border border-mz-border px-4 py-3 text-sm" key={`${item.ingredientId}-${index}`}>
+                    <span className="font-semibold text-mz-text">{item.ingredientId}</span>
+                    <span className="text-mz-text-muted">{item.quantity} {item.unit}</span>
                   </div>
                 ))
               ) : (
@@ -137,19 +142,19 @@ function RecipeBuilder() {
               )}
             </div>
 
-            <PrimaryButton type="submit">Save recipe</PrimaryButton>
+            <Button type="submit">Save recipe</Button>
           </form>
         </section>
 
         <aside className="grid gap-3">
           {recipes.length ? (
             recipes.map((recipe) => (
-              <article className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]" key={recipe.id}>
-                <h3 className="font-semibold text-neutral-950">{recipe.variant.product.name}</h3>
-                <p className="mt-1 text-sm text-emerald-700">{recipe.variant.name}</p>
+              <article className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" key={recipe.id}>
+                <h3 className="font-semibold text-mz-text">{recipe.variant.product.name}</h3>
+                <p className="mt-1 text-sm text-mz-info">{recipe.variant.name}</p>
                 <div className="mt-4 grid gap-2">
                   {recipe.items.map((item) => (
-                    <div className="flex justify-between text-sm text-neutral-600" key={item.id}>
+                    <div className="flex justify-between text-sm text-mz-text-muted" key={item.id}>
                       <span>{item.ingredient.name}</span>
                       <span>{item.quantity} {item.unit}</span>
                     </div>
@@ -162,6 +167,6 @@ function RecipeBuilder() {
           )}
         </aside>
       </div>
-    </ErpPageShell>
+    </section>
   );
 }

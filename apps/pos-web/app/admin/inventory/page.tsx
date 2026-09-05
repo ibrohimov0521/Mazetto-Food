@@ -1,10 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AuthShell } from "../../../components/auth/auth-shell";
+import { AdminLayout } from "../../../components/admin-shell/admin-layout";
+import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
-import { EmptyState, ErpPageShell, PrimaryButton, TextInput } from "../../../components/erp/erp-ui";
+import { Button } from "../../../components/admin-ui/button";
+import { TextInput } from "../../../components/admin-ui/form";
+import { EmptyState } from "../../../components/admin-ui/feedback";
 import { apiFetch } from "../../../lib/api";
 
 type StockRow = {
@@ -20,9 +23,14 @@ export default function AdminInventoryPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="INVENTORY_VIEW">
-        <AuthShell eyebrow="Inventory" title="Stock control">
+        <AdminLayout>
+          <AdminPageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Ombor" }, { label: "Zaxira" }]}
+            description="Ingredient qoldiqlari va zaxira harakatlari"
+            title="Ombor zaxirasi"
+          />
           <InventoryManagement />
-        </AuthShell>
+        </AdminLayout>
       </PermissionGuard>
     </RoleGuard>
   );
@@ -73,16 +81,17 @@ function InventoryManagement() {
   }
 
   return (
-    <ErpPageShell
-      title="Inventory management"
-      subtitle="Track stock levels, low-stock risk, and every stock movement across warehouses."
-      actions={<span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800">{lowStockCount} alerts</span>}
-    >
+    <section className="grid gap-5">
+      <div className="flex flex-wrap justify-end gap-2">
+        <span className="rounded-mz-pill bg-mz-warning-bg px-3 py-1.5 text-xs font-bold text-mz-warning">
+          {lowStockCount} ta kam qoldiq ogohlantirishi
+        </span>
+      </div>
       <div className="grid gap-6">
-        <section className="grid gap-3 rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)] md:grid-cols-[1fr_180px]">
+        <section className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card md:grid-cols-[1fr_180px]">
           <TextInput placeholder="Search ingredient" value={search} onChange={(event) => setSearch(event.target.value)} />
           <select
-            className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 outline-none"
+            className="rounded-mz-control border border-mz-border bg-mz-surface px-4 py-3 text-sm font-semibold text-mz-text outline-none"
             value={status}
             onChange={(event) => setStatus(event.target.value)}
           >
@@ -93,18 +102,18 @@ function InventoryManagement() {
           </select>
         </section>
 
-        <form className="grid gap-3 rounded-3xl border border-emerald-100 bg-emerald-50/60 p-5 md:grid-cols-[1fr_1fr_140px_auto]" onSubmit={addStock}>
+        <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-info-bg/60 p-5 md:grid-cols-[1fr_1fr_140px_auto]" onSubmit={addStock}>
           <TextInput placeholder="Warehouse ID" value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} required />
           <TextInput placeholder="Ingredient ID" value={ingredientId} onChange={(event) => setIngredientId(event.target.value)} required />
           <TextInput placeholder="Qty" type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(event.target.value)} required />
-          <PrimaryButton type="submit">Add stock</PrimaryButton>
+          <Button type="submit">Add stock</Button>
         </form>
 
-        <section className="overflow-hidden rounded-3xl border border-neutral-100 bg-white shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
+        <section className="overflow-hidden rounded-mz-card border border-mz-border bg-mz-surface shadow-mz-card">
           {filteredStock.length ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-                <thead className="bg-neutral-50 text-neutral-500">
+                <thead className="bg-mz-surface-sunken text-mz-text-muted">
                   <tr>
                     <th className="px-5 py-4 font-semibold">Ingredient</th>
                     <th className="px-5 py-4 font-semibold">Warehouse</th>
@@ -116,14 +125,14 @@ function InventoryManagement() {
                 </thead>
                 <tbody>
                   {filteredStock.map((row) => (
-                    <tr className="border-t border-neutral-100" key={row.id}>
-                      <td className="px-5 py-4 font-semibold text-neutral-950">{row.ingredient.name}</td>
-                      <td className="px-5 py-4 text-neutral-600">{row.warehouse.name}</td>
-                      <td className="px-5 py-4 text-neutral-700">{row.currentQuantity} {row.ingredient.unit}</td>
-                      <td className="px-5 py-4 text-neutral-700">{row.minimumQuantity}</td>
-                      <td className="px-5 py-4 text-neutral-700">{row.ingredient.costPerUnit}</td>
+                    <tr className="border-t border-mz-border" key={row.id}>
+                      <td className="px-5 py-4 font-semibold text-mz-text">{row.ingredient.name}</td>
+                      <td className="px-5 py-4 text-mz-text-muted">{row.warehouse.name}</td>
+                      <td className="px-5 py-4 text-mz-text">{row.currentQuantity} {row.ingredient.unit}</td>
+                      <td className="px-5 py-4 text-mz-text">{row.minimumQuantity}</td>
+                      <td className="px-5 py-4 text-mz-text">{row.ingredient.costPerUnit}</td>
                       <td className="px-5 py-4">
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${row.status === "NORMAL" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${row.status === "NORMAL" ? "bg-mz-info-bg text-mz-info" : "bg-mz-danger-bg text-mz-danger"}`}>
                           {row.status.replaceAll("_", " ")}
                         </span>
                       </td>
@@ -137,6 +146,6 @@ function InventoryManagement() {
           )}
         </section>
       </div>
-    </ErpPageShell>
+    </section>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { AdminProductEditor } from "../../../../components/admin/admin-catalog";
-import { AuthShell } from "../../../../components/auth/auth-shell";
+import { AdminLayout } from "../../../../components/admin-shell/admin-layout";
+import { AdminPageHeader } from "../../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../../components/auth/role-guard";
 
@@ -9,9 +10,14 @@ export default function NewProductPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="MENU_CREATE">
-        <AuthShell eyebrow="Menyu boshqaruvi" title="Yangi mahsulot">
+        <AdminLayout>
+          <AdminPageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Mahsulotlar", href: "/admin/products" }, { label: "Yangi" }]}
+            description="Katalogga yangi mahsulot qo'shish"
+            title="Yangi mahsulot"
+          />
           <AdminProductEditor />
-        </AuthShell>
+        </AdminLayout>
       </PermissionGuard>
     </RoleGuard>
   );

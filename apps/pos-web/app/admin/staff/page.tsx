@@ -1,7 +1,8 @@
 "use client";
 
 import { AdminStaffPage } from "../../../components/admin/admin-staff";
-import { AuthShell } from "../../../components/auth/auth-shell";
+import { AdminLayout } from "../../../components/admin-shell/admin-layout";
+import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
 
@@ -9,9 +10,14 @@ export default function StaffPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="STAFF_VIEW">
-        <AuthShell eyebrow="Xodimlar" title="Staff boshqaruvi">
+        <AdminLayout>
+          <AdminPageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Odamlar" }, { label: "Xodimlar" }]}
+            description="Rol, filial, parol reset va bloklash"
+            title="Xodimlar"
+          />
           <AdminStaffPage />
-        </AuthShell>
+        </AdminLayout>
       </PermissionGuard>
     </RoleGuard>
   );

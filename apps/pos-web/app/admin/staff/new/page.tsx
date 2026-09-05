@@ -1,7 +1,8 @@
 "use client";
 
 import { AdminStaffEditor } from "../../../../components/admin/admin-staff";
-import { AuthShell } from "../../../../components/auth/auth-shell";
+import { AdminLayout } from "../../../../components/admin-shell/admin-layout";
+import { AdminPageHeader } from "../../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../../components/auth/role-guard";
 
@@ -9,9 +10,14 @@ export default function NewStaffPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="STAFF_CREATE">
-        <AuthShell eyebrow="Xodimlar" title="Yangi xodim">
+        <AdminLayout>
+          <AdminPageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Xodimlar", href: "/admin/staff" }, { label: "Yangi" }]}
+            description="Yangi xodim yaratish va rol biriktirish"
+            title="Yangi xodim"
+          />
           <AdminStaffEditor />
-        </AuthShell>
+        </AdminLayout>
       </PermissionGuard>
     </RoleGuard>
   );

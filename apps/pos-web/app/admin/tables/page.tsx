@@ -1,10 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AuthShell } from "../../../components/auth/auth-shell";
+import { AdminLayout } from "../../../components/admin-shell/admin-layout";
+import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
-import { EmptyState, ErpPageShell, PrimaryButton, TextInput } from "../../../components/erp/erp-ui";
+import { Button } from "../../../components/admin-ui/button";
+import { TextInput } from "../../../components/admin-ui/form";
+import { EmptyState } from "../../../components/admin-ui/feedback";
 import { apiFetch } from "../../../lib/api";
 
 type TableStatus = "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING";
@@ -23,9 +26,14 @@ export default function AdminTablesPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="TABLE_VIEW">
-        <AuthShell eyebrow="Table management" title="Restaurant floor">
+        <AdminLayout>
+          <AdminPageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Operatsiya" }, { label: "Stollar" }]}
+            description="Zal tuzilmasi va stol holati"
+            title="Stollar va zallar"
+          />
           <TableManagement />
-        </AuthShell>
+        </AdminLayout>
       </PermissionGuard>
     </RoleGuard>
   );
@@ -90,28 +98,25 @@ function TableManagement() {
   }
 
   return (
-    <ErpPageShell
-      title="Tables and halls"
-      subtitle="Create halls, manage table capacity, and keep the restaurant floor status visible for service teams."
-    >
+    <section className="grid gap-5">
       <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
         <aside className="grid gap-4">
-          <section className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
-            <label className="grid gap-2 text-sm font-semibold text-neutral-700">
+          <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+            <label className="grid gap-2 text-sm font-semibold text-mz-text">
               Branch ID
               <TextInput value={branchId} onChange={(event) => setBranchId(event.target.value)} placeholder="Required branch id" />
             </label>
           </section>
 
-          <form className="grid gap-3 rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]" onSubmit={createHall}>
-            <h3 className="font-semibold text-neutral-950">Create hall</h3>
+          <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" onSubmit={createHall}>
+            <h3 className="font-semibold text-mz-text">Create hall</h3>
             <TextInput value={hallName} onChange={(event) => setHallName(event.target.value)} placeholder="Main Hall" required />
-            <PrimaryButton type="submit">Add hall</PrimaryButton>
+            <Button type="submit">Add hall</Button>
           </form>
 
-          <form className="grid gap-3 rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]" onSubmit={createTable}>
-            <h3 className="font-semibold text-neutral-950">Create table</h3>
-            <select className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 outline-none" value={hallId} onChange={(event) => setHallId(event.target.value)} required>
+          <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" onSubmit={createTable}>
+            <h3 className="font-semibold text-mz-text">Create table</h3>
+            <select className="rounded-mz-control border border-mz-border bg-mz-surface px-4 py-3 text-sm text-mz-text outline-none" value={hallId} onChange={(event) => setHallId(event.target.value)} required>
               <option value="">Select hall</option>
               {halls.map((hall) => (
                 <option key={hall.id} value={hall.id}>{hall.name}</option>
@@ -122,30 +127,30 @@ function TableManagement() {
               <TextInput value={number} onChange={(event) => setNumber(event.target.value)} type="number" min="1" placeholder="Number" />
               <TextInput value={capacity} onChange={(event) => setCapacity(event.target.value)} type="number" min="1" placeholder="Capacity" />
             </div>
-            <PrimaryButton type="submit">Add table</PrimaryButton>
+            <Button type="submit">Add table</Button>
           </form>
         </aside>
 
-        <section className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
+        <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
           <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-neutral-950">Floor layout</h3>
-            <span className="text-sm font-medium text-neutral-500">Drag-ready card grid</span>
+            <h3 className="text-lg font-semibold text-mz-text">Floor layout</h3>
+            <span className="text-sm font-medium text-mz-text-muted">Drag-ready card grid</span>
           </div>
           {tables.length ? (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {tables.map((table) => (
-                <article className="cursor-grab rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_12px_36px_rgba(17,24,39,0.08)] active:cursor-grabbing" draggable key={table.id}>
+                <article className="cursor-grab rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card active:cursor-grabbing" draggable key={table.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase text-emerald-700">{table.hall?.name ?? "No hall"}</p>
-                      <h4 className="mt-2 text-xl font-semibold text-neutral-950">{table.name}</h4>
-                      <p className="mt-1 text-sm text-neutral-500">{table.capacity ?? 0} seats</p>
+                      <p className="text-xs font-semibold uppercase text-mz-info">{table.hall?.name ?? "No hall"}</p>
+                      <h4 className="mt-2 text-xl font-semibold text-mz-text">{table.name}</h4>
+                      <p className="mt-1 text-sm text-mz-text-muted">{table.capacity ?? 0} seats</p>
                     </div>
                     <StatusBadge status={table.status} />
                   </div>
                   <div className="mt-5 grid grid-cols-2 gap-2">
                     {(["AVAILABLE", "RESERVED", "CLEANING", "OCCUPIED"] as TableStatus[]).map((nextStatus) => (
-                      <button className="rounded-2xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-emerald-50" key={nextStatus} onClick={() => void setStatus(table.id, nextStatus)} type="button">
+                      <button className="rounded-mz-control border border-mz-border px-3 py-2 text-xs font-semibold text-mz-text hover:bg-mz-info-bg" key={nextStatus} onClick={() => void setStatus(table.id, nextStatus)} type="button">
                         {nextStatus}
                       </button>
                     ))}
@@ -158,16 +163,16 @@ function TableManagement() {
           )}
         </section>
       </div>
-    </ErpPageShell>
+    </section>
   );
 }
 
 function StatusBadge({ status }: { status: TableStatus }) {
   const colors: Record<TableStatus, string> = {
-    AVAILABLE: "bg-emerald-50 text-emerald-700",
-    OCCUPIED: "bg-red-50 text-red-700",
-    RESERVED: "bg-yellow-50 text-yellow-700",
-    CLEANING: "bg-neutral-100 text-neutral-700",
+    AVAILABLE: "bg-mz-info-bg text-mz-info",
+    OCCUPIED: "bg-mz-danger-bg text-mz-danger",
+    RESERVED: "bg-mz-warning-bg text-mz-warning",
+    CLEANING: "bg-mz-surface-sunken text-mz-text",
   };
 
   return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${colors[status]}`}>{status}</span>;

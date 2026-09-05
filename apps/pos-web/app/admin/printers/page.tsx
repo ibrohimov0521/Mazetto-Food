@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AuthShell } from "../../../components/auth/auth-shell";
+import { AdminLayout } from "../../../components/admin-shell/admin-layout";
+import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
-import { EmptyState, PrimaryButton } from "../../../components/erp/erp-ui";
+import { Button } from "../../../components/admin-ui/button";
+import { EmptyState } from "../../../components/admin-ui/feedback";
 import { apiFetch } from "../../../lib/api";
 
 type PrinterType = "RECEIPT" | "KITCHEN" | "BAR" | "THERMAL" | "A4" | "OTHER";
@@ -26,9 +28,14 @@ export default function PrintersPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="RECEIPT_PRINT">
-        <AuthShell eyebrow="Hardware" title="Printers">
+        <AdminLayout>
+          <AdminPageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Sozlamalar" }, { label: "Printerlar" }]}
+            description="Chek va oshxona printerlarini boshqarish"
+            title="Printerlar"
+          />
           <PrintersConsole />
-        </AuthShell>
+        </AdminLayout>
       </PermissionGuard>
     </RoleGuard>
   );
@@ -67,29 +74,29 @@ function PrintersConsole() {
 
   return (
     <section className="grid gap-6 xl:grid-cols-[380px_1fr]">
-      <aside className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
-        <h2 className="text-xl font-semibold text-neutral-950">Add printer</h2>
+      <aside className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+        <h2 className="text-xl font-semibold text-mz-text">Add printer</h2>
         <div className="mt-4 grid gap-3">
-          <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-500" placeholder="Branch ID" value={branchId} onChange={(event) => setBranchId(event.target.value)} />
-          <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-500" placeholder="Printer name" value={name} onChange={(event) => setName(event.target.value)} />
-          <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-semibold outline-none focus:border-emerald-500" value={type} onChange={(event) => setType(event.target.value as PrinterType)}>
+          <input className="rounded-mz-control border border-mz-border px-4 py-3 text-sm outline-none focus:border-mz-accent" placeholder="Branch ID" value={branchId} onChange={(event) => setBranchId(event.target.value)} />
+          <input className="rounded-mz-control border border-mz-border px-4 py-3 text-sm outline-none focus:border-mz-accent" placeholder="Printer name" value={name} onChange={(event) => setName(event.target.value)} />
+          <select className="rounded-mz-control border border-mz-border px-4 py-3 text-sm font-semibold outline-none focus:border-mz-accent" value={type} onChange={(event) => setType(event.target.value as PrinterType)}>
             {printerTypes.map((printerType) => (
               <option key={printerType} value={printerType}>{printerType}</option>
             ))}
           </select>
-          <PrimaryButton onClick={() => void createPrinter()}>Create printer</PrimaryButton>
+          <Button onClick={() => void createPrinter()}>Create printer</Button>
         </div>
       </aside>
 
-      <div className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
+      <div className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold text-neutral-950">Configured printers</h2>
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">ESC/POS ready</span>
+          <h2 className="text-xl font-semibold text-mz-text">Configured printers</h2>
+          <span className="rounded-full bg-mz-info-bg px-3 py-1 text-sm font-semibold text-mz-info">ESC/POS ready</span>
         </div>
         {printers.length ? (
-          <div className="mt-5 overflow-hidden rounded-2xl border border-neutral-100">
+          <div className="mt-5 overflow-hidden rounded-mz-control border border-mz-border">
             <table className="w-full text-left text-sm">
-              <thead className="bg-neutral-50 text-neutral-500">
+              <thead className="bg-mz-surface-sunken text-mz-text-muted">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Branch</th>
@@ -100,11 +107,11 @@ function PrintersConsole() {
               <tbody className="divide-y divide-neutral-100">
                 {printers.map((printer) => (
                   <tr key={printer.id}>
-                    <td className="px-4 py-3 font-semibold text-neutral-900">{printer.name}</td>
-                    <td className="px-4 py-3 text-neutral-600">{printer.branch?.name ?? printer.branchId}</td>
-                    <td className="px-4 py-3 text-neutral-600">{printer.type}</td>
+                    <td className="px-4 py-3 font-semibold text-mz-text">{printer.name}</td>
+                    <td className="px-4 py-3 text-mz-text-muted">{printer.branch?.name ?? printer.branchId}</td>
+                    <td className="px-4 py-3 text-mz-text-muted">{printer.type}</td>
                     <td className="px-4 py-3">
-                      <select className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-semibold" value={printer.status} onChange={(event) => void updateStatus(printer, event.target.value as PrinterStatus)}>
+                      <select className="rounded-mz-control border border-mz-border px-3 py-2 text-sm font-semibold" value={printer.status} onChange={(event) => void updateStatus(printer, event.target.value as PrinterStatus)}>
                         {printerStatuses.map((status) => (
                           <option key={status} value={status}>{status}</option>
                         ))}
