@@ -17,7 +17,10 @@ function main(): void {
 
   assert.match(schema, /expectedCash\s+Decimal\?/);
   assert.match(schema, /cashDifference\s+Decimal\?/);
+  assert.match(schema, /shiftId\s+String\?/);
+  assert.match(schema, /shift\s+Shift\?/);
   assert.match(ordersService, /assertOpenCashierShift/);
+  assert.match(ordersService, /shiftId: openShift\.id/);
   assert.match(ordersService, /tx\.revenueRecord\.create/);
   assert.match(ordersService, /tx\.cashTransaction\.create/);
   assert.match(ordersService, /CashTransactionType\.SALE/);

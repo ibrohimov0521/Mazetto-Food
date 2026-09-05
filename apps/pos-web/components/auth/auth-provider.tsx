@@ -20,6 +20,15 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+type CurrentShiftResponse = {
+  status?: string;
+} | null;
+
+type ApiEnvelope<T> = {
+  success: boolean;
+  data?: T;
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -59,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       persistSession(payload.data);
-      router.replace(getPrimaryRedirect(payload.data.user.roles));
+      router.replace(await getLoginRedirect(payload.data));
     },
     [persistSession, router],
   );
@@ -91,6 +100,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+async function getLoginRedirect(session: AuthSession): Promise<string> {
+  const fallbackRedirect = getPrimaryRedirect(session.user.roles);
+
+  if (fallbackRedirect !== "/shift") {
+    return fallbackRedirect;
+  }
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/cash-register/shift`, {
+      headers: { Authorization: `${session.tokens.tokenType} ${session.tokens.accessToken}` },
+    });
+    const payload = (await response.json()) as ApiEnvelope<CurrentShiftResponse>;
+
+    return response.ok && payload.success && payload.data?.status === "OPEN" ? "/pos" : "/shift";
+  } catch {
+    return "/shift";
+  }
 }
 
 export function useAuth(): AuthContextValue {

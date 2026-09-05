@@ -19,7 +19,9 @@ import { PrismaService } from "../src/prisma/prisma.service";
 type Fixture = {
   runId: string;
   branchId: string;
+  otherBranchId: string;
   cashier: AuthenticatedUser;
+  otherCashier: AuthenticatedUser;
   productId: string;
 };
 
@@ -60,11 +62,27 @@ async function main(): Promise<void> {
     assert.equal(sale.order.source, OrderSource.POS);
     assert.equal(sale.order.paymentStatus, PaymentStatus.PAID);
     assert.equal(sale.order.total.toFixed(0), "24000");
+    const persistedSale = await prisma.order.findUniqueOrThrow({ where: { id: sale.order.id } });
+    assert.equal(persistedSale.shiftId, opened.id);
 
     const payment = await prisma.payment.findFirstOrThrow({ where: { orderId: sale.order.id } });
     assert.equal(
       await prisma.revenueRecord.count({ where: { orderId: sale.order.id, shiftId: opened.id } }),
       1,
+    );
+
+    const retry = await ordersService.createPosCheckout(posDto(fixture, "sale", 2, 30000), fixture.cashier);
+    assert.equal(retry.order.id, sale.order.id);
+    assert.equal(await prisma.revenueRecord.count({ where: { orderId: sale.order.id, shiftId: opened.id } }), 1);
+    assert.equal(await prisma.cashTransaction.count({ where: { orderId: sale.order.id, shiftId: opened.id, type: CashTransactionType.SALE } }), 1);
+
+    await assert.rejects(
+      () => cashRegisterService.closeShift(opened.id, { closingBalance: 124000 }, fixture.otherCashier),
+      /another cashier shift/i,
+    );
+    await assert.rejects(
+      () => cashRegisterService.openShift({ branchId: fixture.otherBranchId, openingBalance: 0 }, fixture.cashier),
+      /another branch/i,
     );
     assert.equal(
       await prisma.cashTransaction.count({
@@ -85,6 +103,12 @@ async function main(): Promise<void> {
     assert.equal(closed.cashDifference?.toFixed(0), "1500");
     assert.equal(closed.orderCount, 1);
     assert.equal(closed.cashTotal.toFixed(0), "24000");
+    assert.equal(await prisma.cashTransaction.count({ where: { shiftId: opened.id, type: CashTransactionType.CLOSING_BALANCE } }), 1);
+    await assert.rejects(
+      () => cashRegisterService.closeShift(opened.id, { closingBalance: 125500 }, fixture.cashier),
+      /already closed/i,
+    );
+    assert.equal(await prisma.cashTransaction.count({ where: { shiftId: opened.id, type: CashTransactionType.CLOSING_BALANCE } }), 1);
 
     await assert.rejects(
       () => ordersService.createPosCheckout(posDto(fixture, "after-close", 1, 12000), fixture.cashier),
@@ -94,6 +118,16 @@ async function main(): Promise<void> {
     const reopened = await cashRegisterService.openShift({ openingBalance: 0 }, fixture.cashier);
     assert.equal(reopened.status, ShiftStatus.OPEN);
     assert.notEqual(reopened.id, opened.id);
+    const zero = await cashRegisterService.closeShift(reopened.id, { closingBalance: 0 }, fixture.cashier);
+    assert.equal(zero.cashDifference?.toFixed(0), "0");
+
+    const negativeShift = await cashRegisterService.openShift({ openingBalance: 1000 }, fixture.cashier);
+    const negative = await cashRegisterService.closeShift(negativeShift.id, { closingBalance: 500 }, fixture.cashier);
+    assert.equal(negative.cashDifference?.toFixed(0), "-500");
+
+    await proveConcurrentOpen(prisma, cashRegisterService);
+    await proveConcurrentClose(prisma, cashRegisterService);
+    await proveSaleVsCloseRace(prisma, ordersService, cashRegisterService);
 
     console.info("Shift/Kassa DB-backed validation passed");
   } finally {
@@ -105,6 +139,9 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   const runId = Date.now().toString();
   const branch = await prisma.branch.create({
     data: { code: `SHIFT_${runId}`, name: "Shift Sergeli", isActive: true, acceptsOrders: true },
+  });
+  const otherBranch = await prisma.branch.create({
+    data: { code: `SHIFT_OTHER_${runId}`, name: "Shift Other", isActive: true, acceptsOrders: true },
   });
   const category = await prisma.category.create({
     data: { code: `SHIFT_CAT_${runId}`, name: "Shift Lavash", isActive: true },
@@ -130,10 +167,22 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
       status: EmployeeStatus.ACTIVE,
     },
   });
+  const otherUser = await prisma.user.create({ data: { email: `shift-other-${runId}@example.test`, displayName: "Other Cashier" } });
+  const otherEmployee = await prisma.employee.create({
+    data: {
+      branchId: branch.id,
+      userId: otherUser.id,
+      employeeCode: `SHIFT-OTHER-${runId}`,
+      firstName: "Other",
+      lastName: "Cashier",
+      status: EmployeeStatus.ACTIVE,
+    },
+  });
 
   return {
     runId,
     branchId: branch.id,
+    otherBranchId: otherBranch.id,
     productId: product.id,
     cashier: {
       id: user.id,
@@ -142,7 +191,80 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
       roles: ["CASHIER"],
       permissions: ["POS_USE", "SHIFT_VIEW_OWN", "SHIFT_OPEN", "SHIFT_CLOSE"],
     },
+    otherCashier: {
+      id: otherUser.id,
+      employeeId: otherEmployee.id,
+      branchId: branch.id,
+      roles: ["CASHIER"],
+      permissions: ["POS_USE", "SHIFT_VIEW_OWN", "SHIFT_OPEN", "SHIFT_CLOSE"],
+    },
   };
+}
+
+async function proveConcurrentOpen(
+  prisma: PrismaService,
+  cashRegisterService: CashRegisterService,
+): Promise<void> {
+  const fixture = await createFixture(prisma);
+  const results = await Promise.allSettled([
+    cashRegisterService.openShift({ openingBalance: 0 }, fixture.cashier),
+    cashRegisterService.openShift({ openingBalance: 0 }, fixture.cashier),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(
+    await prisma.shift.count({
+      where: { branchId: fixture.branchId, employeeId: fixture.cashier.employeeId, status: ShiftStatus.OPEN },
+    }),
+    1,
+  );
+}
+
+async function proveConcurrentClose(
+  prisma: PrismaService,
+  cashRegisterService: CashRegisterService,
+): Promise<void> {
+  const fixture = await createFixture(prisma);
+  const opened = await cashRegisterService.openShift({ openingBalance: 1000 }, fixture.cashier);
+  const results = await Promise.allSettled([
+    cashRegisterService.closeShift(opened.id, { closingBalance: 1000 }, fixture.cashier),
+    cashRegisterService.closeShift(opened.id, { closingBalance: 1000 }, fixture.cashier),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(await prisma.cashTransaction.count({ where: { shiftId: opened.id, type: CashTransactionType.CLOSING_BALANCE } }), 1);
+  const closed = await prisma.shift.findUniqueOrThrow({ where: { id: opened.id } });
+  assert.equal(closed.status, ShiftStatus.CLOSED);
+  assert.equal(closed.expectedCash?.toFixed(0), "1000");
+}
+
+async function proveSaleVsCloseRace(
+  prisma: PrismaService,
+  ordersService: OrdersService,
+  cashRegisterService: CashRegisterService,
+): Promise<void> {
+  for (let index = 0; index < 5; index += 1) {
+    const fixture = await createFixture(prisma);
+    const opened = await cashRegisterService.openShift({ openingBalance: 1000 }, fixture.cashier);
+    const results = await Promise.allSettled([
+      ordersService.createPosCheckout(posDto(fixture, `race-${index}`, 1, 12000), fixture.cashier),
+      cashRegisterService.closeShift(opened.id, { closingBalance: 13000 }, fixture.cashier),
+    ]);
+    const orders = await prisma.order.findMany({ where: { shiftId: opened.id }, include: { revenueRecords: true, cashTransactions: true } });
+    const shift = await prisma.shift.findUniqueOrThrow({ where: { id: opened.id } });
+
+    if (orders.length === 1) {
+      assert.equal(orders[0]?.revenueRecords.length, 1);
+      assert.equal(orders[0]?.cashTransactions.length, 1);
+      assert.equal(shift.status, ShiftStatus.CLOSED);
+      assert.equal(shift.cashTotal.toFixed(0), "12000");
+      assert.equal(shift.expectedCash?.toFixed(0), "13000");
+    } else {
+      assert.equal(orders.length, 0);
+      assert.ok(results.some((result) => result.status === "rejected"));
+      assert.equal(shift.status, ShiftStatus.CLOSED);
+      assert.equal(shift.cashTotal.toFixed(0), "0");
+      assert.equal(shift.expectedCash?.toFixed(0), "1000");
+    }
+  }
 }
 
 function posDto(

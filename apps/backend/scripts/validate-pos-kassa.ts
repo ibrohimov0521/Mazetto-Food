@@ -12,6 +12,7 @@ const posDto = readSource("apps/backend/src/modules/orders/dto/pos-checkout.dto.
 const ordersService = readSource("apps/backend/src/modules/orders/orders.service.ts");
 const schema = readSource("apps/backend/prisma/schema.prisma");
 const posPage = readSource("apps/pos-web/app/pos/page.tsx");
+const authProvider = readSource("apps/pos-web/components/auth/auth-provider.tsx");
 const posAuth = readSource("apps/pos-web/lib/auth.ts");
 
 assert.match(permissions, /POS_USE: "POS_USE"/);
@@ -60,6 +61,9 @@ assert.doesNotMatch(posOrderPayload, /price:/);
 assert.doesNotMatch(posOrderPayload, /total:/);
 assert.match(posAuth, /CASHIER: "\/shift"/);
 assert.match(posAuth, /KITCHEN: "\/kitchen"/);
+assert.match(authProvider, /getLoginRedirect/);
+assert.match(authProvider, /\/cash-register\/shift/);
+assert.match(authProvider, /payload\.data\?\.status === "OPEN" \? "\/pos" : "\/shift"/);
 
 console.info("POS/Kassa static validation passed");
 

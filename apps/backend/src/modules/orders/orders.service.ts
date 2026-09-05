@@ -199,6 +199,7 @@ export class OrdersService {
             data: {
               branchId,
               orderNumber: this.createOrderNumber(),
+              shiftId: openShift.id,
               source: OrderSource.POS,
               type: OrderType.TAKEAWAY,
               status: OrderStatus.NEW,
@@ -885,6 +886,20 @@ export class OrdersService {
     });
 
     if (!shift) {
+      throw new BadRequestException("Open cashier shift is required before POS sales");
+    }
+
+    const touched = await tx.shift.updateMany({
+      where: {
+        id: shift.id,
+        branchId,
+        employeeId,
+        status: ShiftStatus.OPEN,
+      },
+      data: { updatedAt: new Date() },
+    });
+
+    if (touched.count !== 1) {
       throw new BadRequestException("Open cashier shift is required before POS sales");
     }
 

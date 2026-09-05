@@ -2893,3 +2893,82 @@ Production:
 Next:
 
 - Controlled production release for Shift / Kassa topshirish with backup, migration deploy, backend deploy, POS-web deploy, and cashier smoke test.
+
+## Shift / Kassa Topshirish Release Gate
+
+Status: ✅ VERIFIED LOCALLY.
+
+Release-gate scope:
+
+- Starting local implementation commit: `f9add2f9f2a1aaca936cfe938b3893731562e050`.
+- Starting `origin/main`: `3c17e307234cd60d9124289a63fe4d5a8b6c056a`.
+- No production services, production database, Telegram webhook, Cloudflare, push, or deploy were touched.
+
+Additional local hardening found during release-gate:
+
+- Added additive migration `20260905123000_order_shift_link`.
+- `Order.shiftId` is nullable and links POS orders directly to the cashier shift that created them.
+- Existing historical orders remain valid because `orders.shiftId` is nullable.
+- POS checkout now persists `shiftId: openShift.id` on the order in the same transaction as payment, revenue, cash transaction, status history, and kitchen ticket creation.
+- Shift close now uses a serializable transaction with retry for PostgreSQL serialization/deadlock conflicts.
+- POS checkout touches the open shift row before sale creation, so concurrent close-vs-sale races are forced into a retry/conflict path instead of silently closing with a stale cash total.
+- Cashier shift close, manual cash transaction, and transaction history access are scoped to the owning cashier unless the user has an elevated operations role.
+- Cashier login now checks the current shift after authentication and routes to `/pos` when an open shift exists, otherwise `/shift`.
+
+Fresh isolated DB proof:
+
+- Fresh local PostgreSQL 17 container `mazetto_shift_release_gate_20260905` was used on localhost only.
+- `prisma migrate deploy` applied 19 migrations successfully.
+- `validate-shift-kassa-db.ts` passed.
+- `validate-pos-kassa-db.ts` passed.
+- Verified POS sale with an open shift creates:
+  - one POS order
+  - one payment
+  - one revenue record
+  - one cash transaction
+  - one kitchen ticket
+  - direct `Order.shiftId`
+- Verified same idempotency key retry did not duplicate order, revenue, or cash transaction records.
+- Verified positive, zero, and negative cash difference calculations.
+- Verified sequential and concurrent duplicate open-shift protection.
+- Verified sequential and concurrent close protection.
+- Verified repeated sale-vs-close race attempts kept shift expected cash aligned with recorded cash sale.
+- Verified closed shift blocks new POS sale and a new shift can be opened afterward.
+- Verified other cashier cannot close another cashier shift.
+- Verified cross-branch cashier cannot open a shift outside assigned branch.
+
+Upgrade-style compatibility proof:
+
+- A separate local PostgreSQL 17 database was prepared with all migrations before shift handover.
+- Existing rows were inserted before applying the two shift migrations.
+- Applying `20260905120000_shift_cash_handover` and `20260905123000_order_shift_link` preserved existing branches, users, employees, orders, customer orders, kitchen tickets, shifts, and cash transactions.
+- Historical orders and shifts remain nullable-safe after the release migrations.
+
+Validation:
+
+- Prisma format: passed.
+- Prisma validate: passed.
+- Prisma generate: passed.
+- Backend typecheck/lint/build: passed.
+- POS-web typecheck/lint/build: passed.
+- Shift/Kassa static validation: passed.
+- POS/Kassa static validation: passed.
+- Staff RBAC static validation: passed.
+- Admin catalog core validation: passed.
+- Kitchen order board validation: passed.
+- Canonical catalog validation: passed.
+- Telegram catalog mapping validation: passed.
+- Telegram customer ordering validation: passed.
+- Telegram customer auth validation: passed with the expected closed-branch warning.
+- Customer order history ownership validation: passed.
+- DB-backed Shift/Kassa and POS/Kassa release-gate validations passed on isolated local PostgreSQL.
+
+Warnings:
+
+- DB-backed validator runs emitted the existing `pg` deprecation warning about `client.query()` while a query is already executing. The validations still passed; this is a driver/adapter warning to track separately from the shift release.
+- Production release still requires a fresh production backup before migration deploy.
+
+Next:
+
+- Push the verified local release chain only after owner approval.
+- Controlled production release should run `prisma migrate deploy`, then deploy backend and POS-web, then run cashier shift smoke without creating fake production orders.

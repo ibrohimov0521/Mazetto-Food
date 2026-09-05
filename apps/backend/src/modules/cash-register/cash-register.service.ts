@@ -49,13 +49,14 @@ export class CashRegisterService {
   }
 
   async getTransactions(shiftId: string, user: AuthenticatedUser) {
-    const shift = await this.prisma.shift.findUnique({ where: { id: shiftId }, select: { branchId: true } });
+    const shift = await this.prisma.shift.findUnique({ where: { id: shiftId }, select: { branchId: true, employeeId: true } });
 
     if (!shift) {
       return [];
     }
 
     resolveBranchScope(user, shift.branchId);
+    this.assertCanViewShift(user, shift.employeeId);
 
     return this.prisma.cashTransaction.findMany({
       where: { shiftId },
@@ -115,5 +116,13 @@ export class CashRegisterService {
     }
 
     return user.employeeId;
+  }
+
+  private assertCanViewShift(user: AuthenticatedUser, shiftEmployeeId: string): void {
+    if (shiftEmployeeId === user.employeeId || user.roles.some((role) => ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role))) {
+      return;
+    }
+
+    throw new ForbiddenException("Cannot access another cashier shift");
   }
 }

@@ -364,6 +364,7 @@ async function assertPosOrderGraph(
   });
   assert.equal(order.source, OrderSource.POS);
   assert.equal(order.branchId, fixture.branchId);
+  assert.equal(order.shiftId, fixture.shiftId);
   assert.equal(order.createdById, fixture.cashier.employeeId);
   assert.equal(order.acceptedById, fixture.cashier.employeeId);
   assert.equal(order.customerOrder, null);

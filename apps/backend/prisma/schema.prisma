@@ -853,6 +853,7 @@ model PriceHistory {
 model Order {
   id                 String        @id @default(cuid())
   branchId           String
+  shiftId            String?
   tableId            String?
   waiterId           String?
   servedById         String?
@@ -889,6 +890,7 @@ model Order {
   closedBy          Employee?            @relation("OrderClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
   createdBy         Employee?            @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   servedBy          Employee?            @relation("OrderServedBy", fields: [servedById], references: [id], onDelete: SetNull)
+  shift             Shift?               @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   table             RestaurantTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
   waiter            Employee?            @relation("OrderWaiter", fields: [waiterId], references: [id], onDelete: SetNull)
   cashTransactions  CashTransaction[]
@@ -903,6 +905,7 @@ model Order {
 
   @@index([branchId, createdAt])
   @@index([branchId, status])
+  @@index([shiftId])
   @@index([source])
   @@index([type])
   @@index([paymentStatus])
@@ -1308,6 +1311,7 @@ model Shift {
   employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   cashTransactions CashTransaction[]
   expenses         Expense[]
+  orders           Order[]
   revenueRecords   RevenueRecord[]
 
   @@unique([branchId, shiftNumber])
