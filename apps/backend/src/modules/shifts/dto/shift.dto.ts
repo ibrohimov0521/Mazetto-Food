@@ -2,8 +2,9 @@ import { CashTransactionType } from "@prisma/client";
 import { IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min } from "class-validator";
 
 export class OpenShiftDto {
+  @IsOptional()
   @IsString()
-  branchId!: string;
+  branchId?: string;
 
   @IsOptional()
   @IsString()

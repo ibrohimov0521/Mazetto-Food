@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 import { useAuth } from "../../components/auth/auth-provider";
@@ -35,6 +36,7 @@ type PosOrderResult = {
   order: { orderNumber: string; total: string; branch?: { name?: string | null } | null };
   payment: { cashReceived: string; change: string };
 };
+type CurrentShift = { id: string; status: "OPEN" | "CLOSED" };
 
 const formatter = new Intl.NumberFormat("uz-UZ");
 
@@ -53,8 +55,10 @@ export default function PosPage() {
 }
 
 function PosTerminal() {
+  const router = useRouter();
   const { user, logout } = useAuth();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [isCheckingShift, setIsCheckingShift] = useState(true);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [categoryId, setCategoryId] = useState("ALL");
   const [query, setQuery] = useState("");
@@ -68,10 +72,39 @@ function PosTerminal() {
   const [success, setSuccess] = useState<PosOrderResult | null>(null);
 
   useEffect(() => {
-    apiFetch<Catalog>("/pos/catalog")
-      .then(setCatalog)
-      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Katalog yuklanmadi"));
-  }, []);
+    let isMounted = true;
+
+    async function loadTerminal() {
+      try {
+        const currentShift = await apiFetch<CurrentShift | null>("/cash-register/shift");
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!currentShift || currentShift.status !== "OPEN") {
+          router.replace("/shift");
+          return;
+        }
+
+        setCatalog(await apiFetch<Catalog>("/pos/catalog"));
+      } catch (loadError) {
+        if (isMounted) {
+          setError(loadError instanceof Error ? loadError.message : "Katalog yuklanmadi");
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingShift(false);
+        }
+      }
+    }
+
+    void loadTerminal();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const products = catalog?.products ?? [];
   const filteredProducts = useMemo(() => {
@@ -172,6 +205,13 @@ function PosTerminal() {
           </div>
         </header>
 
+        {isCheckingShift ? (
+          <div className="grid flex-1 place-items-center p-6">
+            <p className="rounded-3xl bg-[#fffaf0] px-6 py-4 text-base font-black text-[#10233a] shadow-2xl">
+              Smena tekshirilmoqda...
+            </p>
+          </div>
+        ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[1fr_390px] gap-4 p-4 max-lg:grid-cols-1">
           <section className="min-h-0 overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl">
             <div className="flex flex-wrap items-center gap-3">
@@ -254,6 +294,7 @@ function PosTerminal() {
             </div>
           </aside>
         </div>
+        )}
       </div>
 
       {selectedProduct ? (

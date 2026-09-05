@@ -96,6 +96,8 @@ export class ShiftsService {
       const orderIds = new Set(payments.map((payment) => payment.orderId));
       const totals = this.calculateShiftTotals(payments, cashTransactions, orderIds.size);
       const closingBalance = new Prisma.Decimal(dto.closingBalance);
+      const expectedCash = this.calculateExpectedCash(shift.openingBalance, totals, cashTransactions);
+      const cashDifference = closingBalance.sub(expectedCash);
 
       await tx.cashTransaction.create({
         data: {
@@ -115,6 +117,8 @@ export class ShiftsService {
           status: ShiftStatus.CLOSED,
           closedAt: new Date(),
           closingBalance,
+          expectedCash,
+          cashDifference,
           ...totals,
         },
         include: this.shiftInclude(),
@@ -200,6 +204,29 @@ export class ShiftsService {
       refundsTotal,
       orderCount,
     };
+  }
+
+  private calculateExpectedCash(
+    openingBalance: Prisma.Decimal,
+    totals: {
+      cashTotal: Prisma.Decimal;
+      expensesTotal: Prisma.Decimal;
+      incomeTotal: Prisma.Decimal;
+      refundsTotal: Prisma.Decimal;
+    },
+    cashTransactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
+  ) {
+    const withdrawalsTotal = this.sumCashTransactions(cashTransactions, [
+      CashTransactionType.WITHDRAW,
+      CashTransactionType.CASH_OUT,
+    ]);
+
+    return openingBalance
+      .add(totals.cashTotal)
+      .add(totals.incomeTotal)
+      .sub(totals.expensesTotal)
+      .sub(totals.refundsTotal)
+      .sub(withdrawalsTotal);
   }
 
   private sumPaymentsByCodes(

@@ -6,6 +6,9 @@ import {
   OrderType,
   PaymentStatus,
   Prisma,
+  CashTransactionType,
+  RevenueRecordSource,
+  ShiftStatus,
 } from "@prisma/client";
 import * as assert from "node:assert/strict";
 import { InventoryService } from "../src/modules/inventory/inventory.service";
@@ -19,6 +22,7 @@ type Fixture = {
   runId: string;
   branchId: string;
   otherBranchId: string;
+  shiftId: string;
   cashier: AuthenticatedUser;
   kitchen: AuthenticatedUser;
   blockedCashier: AuthenticatedUser;
@@ -166,6 +170,26 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   const cashierEmployee = await prisma.employee.create({
     data: { branchId: branch.id, userId: cashierUser.id, employeeCode: `CASH-${runId}`, firstName: "Cashier", status: EmployeeStatus.ACTIVE },
   });
+  const shift = await prisma.shift.create({
+    data: {
+      branchId: branch.id,
+      employeeId: cashierEmployee.id,
+      shiftNumber: 1,
+      status: ShiftStatus.OPEN,
+      openingBalance: new Prisma.Decimal(100000),
+    },
+  });
+  await prisma.cashTransaction.create({
+    data: {
+      branchId: branch.id,
+      shiftId: shift.id,
+      employeeId: cashierEmployee.id,
+      type: CashTransactionType.OPENING_BALANCE,
+      amount: new Prisma.Decimal(100000),
+      reason: "POS DB validator opening balance",
+      createdById: cashierUser.id,
+    },
+  });
   const kitchenUser = await prisma.user.create({ data: { email: `kitchen-${runId}@example.test`, displayName: "Kitchen" } });
   const kitchenEmployee = await prisma.employee.create({
     data: { branchId: branch.id, userId: kitchenUser.id, employeeCode: `KIT-${runId}`, firstName: "Kitchen", status: EmployeeStatus.ACTIVE },
@@ -183,6 +207,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
     runId,
     branchId: branch.id,
     otherBranchId: otherBranch.id,
+    shiftId: shift.id,
     cashier: {
       id: cashierUser.id,
       employeeId: cashierEmployee.id,
@@ -350,6 +375,18 @@ async function assertPosOrderGraph(
   assert.equal(order.payments.length, 1);
   assert.equal(order.payments[0]?.methodCode, "CASH");
   assert.equal(order.payments[0]?.status, PaymentStatus.SUCCESS);
+  assert.equal(
+    await prisma.revenueRecord.count({
+      where: { orderId, shiftId: fixture.shiftId, source: RevenueRecordSource.ORDER },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.cashTransaction.count({
+      where: { orderId, shiftId: fixture.shiftId, type: CashTransactionType.SALE },
+    }),
+    1,
+  );
 }
 
 function simpleDto(

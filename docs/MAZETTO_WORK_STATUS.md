@@ -2836,3 +2836,60 @@ Rollback:
 Next:
 
 - Build the Shift / Kassa topshirish workflow.
+
+## Shift / Kassa Topshirish Local Readiness
+
+Status: ✅ VERIFIED LOCALLY.
+
+Local implementation:
+
+- Added additive Prisma migration `20260905120000_shift_cash_handover`.
+- `Shift` now stores server-calculated `expectedCash` and `cashDifference` on close.
+- PostgreSQL partial unique index prevents more than one `OPEN` shift for the same branch and employee.
+- POS checkout now requires an authenticated employee to have an open cashier shift before sale creation.
+- POS cash sale now writes `RevenueRecord` and `CashTransaction` linked to the open shift.
+- Shift open derives cashier and branch from authenticated staff context; POS frontend no longer asks cashier to submit `branchId`.
+- New `/shift` POS-web route handles open shift, current shift summary, kassa topshirish, and post-close summary.
+- `/pos` checks open shift first and redirects to `/shift` when no open shift exists.
+- Legacy `/pos/shifts` route redirects to `/shift`.
+
+Local isolated DB validation:
+
+- Fresh local PostgreSQL 17 database `mazetto_shift` on localhost only.
+- `prisma migrate deploy` applied 18 migrations including `20260905120000_shift_cash_handover`.
+- `validate-shift-kassa-db.ts` proved:
+  - POS sale is blocked without an open shift.
+  - shift opens without frontend-controlled branch or cashier id.
+  - duplicate open shift is rejected.
+  - POS sale creates one paid POS order.
+  - POS payment, revenue record, and cash transaction are linked to the shift.
+  - current shift summary reports order count, cash sales, and expected cash.
+  - close shift persists expected cash and cash difference.
+  - closed shift blocks further POS sale.
+  - new shift can be opened after close.
+- `validate-pos-kassa-db.ts` passed after POS validator was updated for mandatory open shift linkage.
+- Staff RBAC DB-backed validation passed after applying the existing seed to the isolated DB.
+- Kitchen DB-backed order-board validation passed on a separate guarded local `mazetto_kitchen` database.
+- Telegram staff lifecycle DB-backed validation passed on a separate guarded local `mazetto_step16` database.
+
+Validation:
+
+- Prisma format: passed.
+- Prisma validate: passed.
+- Prisma generate: passed.
+- Backend typecheck/lint/build: passed.
+- POS-web typecheck/lint/build: passed.
+- Shift/Kassa static validation: passed.
+- POS/Kassa static validation: passed.
+- Existing canonical catalog, Telegram catalog mapping, Telegram customer ordering, Telegram customer auth, and customer order history validators: passed.
+
+Production:
+
+- Production DB was not touched.
+- Production services were not redeployed.
+- No production order was created.
+- No push was performed during local readiness work.
+
+Next:
+
+- Controlled production release for Shift / Kassa topshirish with backup, migration deploy, backend deploy, POS-web deploy, and cashier smoke test.

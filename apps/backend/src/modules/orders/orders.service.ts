@@ -11,6 +11,9 @@ import {
   OrderType,
   PaymentStatus,
   Prisma,
+  CashTransactionType,
+  RevenueRecordSource,
+  ShiftStatus,
   StockMovementType,
   TableStatus,
 } from "@prisma/client";
@@ -189,6 +192,7 @@ export class OrdersService {
 
           await this.assertBranchExists(tx, branchId);
           await this.assertEmployeeInBranch(tx, employeeId, branchId);
+          const openShift = await this.assertOpenCashierShift(tx, branchId, employeeId);
           const cashMethod = await this.assertCashPaymentMethod(tx, branchId);
 
           const order = await tx.order.create({
@@ -265,7 +269,7 @@ export class OrdersService {
             throw new BadRequestException("Received cash is less than order total");
           }
 
-          await tx.payment.create({
+          const payment = await tx.payment.create({
             data: {
               orderId: order.id,
               paymentMethodId: cashMethod.id,
@@ -278,6 +282,33 @@ export class OrdersService {
               methodCode: cashMethod.code,
               reference: "POS cash payment",
               paidAt: new Date(),
+            },
+          });
+
+          await tx.revenueRecord.create({
+            data: {
+              branchId,
+              orderId: order.id,
+              paymentId: payment.id,
+              shiftId: openShift.id,
+              employeeId,
+              source: RevenueRecordSource.ORDER,
+              amount: payment.amount,
+              description: "POS cash payment",
+            },
+          });
+
+          await tx.cashTransaction.create({
+            data: {
+              branchId,
+              shiftId: openShift.id,
+              employeeId,
+              orderId: order.id,
+              paymentId: payment.id,
+              type: CashTransactionType.SALE,
+              amount: payment.amount,
+              reason: "POS cash sale",
+              createdById: user.id,
             },
           });
 
@@ -836,6 +867,28 @@ export class OrdersService {
     }
 
     return method;
+  }
+
+  private async assertOpenCashierShift(
+    tx: TransactionClient,
+    branchId: string,
+    employeeId: string,
+  ) {
+    const shift = await tx.shift.findFirst({
+      where: {
+        branchId,
+        employeeId,
+        status: ShiftStatus.OPEN,
+      },
+      orderBy: { openedAt: "desc" },
+      select: { id: true },
+    });
+
+    if (!shift) {
+      throw new BadRequestException("Open cashier shift is required before POS sales");
+    }
+
+    return shift;
   }
 
   private async resolveExistingPosCheckout(

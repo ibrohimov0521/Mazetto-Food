@@ -21,6 +21,7 @@ export class CashRegisterService {
         branch: true,
         employee: true,
         cashTransactions: { orderBy: { occurredAt: "desc" }, take: 50 },
+        revenueRecords: { include: { payment: { include: { method: true } } } },
       },
       orderBy: { openedAt: "desc" },
     });
@@ -31,7 +32,7 @@ export class CashRegisterService {
 
     return {
       ...shift,
-      currentBalance: await this.calculateCurrentBalance(shift.id),
+      ...this.calculateShiftSummary(shift),
     };
   }
 
@@ -63,13 +64,16 @@ export class CashRegisterService {
     });
   }
 
-  private async calculateCurrentBalance(shiftId: string) {
-    const transactions = await this.prisma.cashTransaction.findMany({
-      where: { shiftId },
-      select: { amount: true, type: true },
-    });
-
-    return transactions.reduce((total, transaction) => {
+  private calculateShiftSummary(shift: {
+    openingBalance: Prisma.Decimal;
+    cashTransactions: { amount: Prisma.Decimal; type: CashTransactionType }[];
+    revenueRecords: {
+      orderId: string | null;
+      amount: Prisma.Decimal;
+      payment: { method: { code: string } } | null;
+    }[];
+  }) {
+    const currentBalance = shift.cashTransactions.reduce((total, transaction) => {
       const amount = transaction.amount;
 
       if (
@@ -81,8 +85,28 @@ export class CashRegisterService {
         return total.sub(amount);
       }
 
+      if (
+        transaction.type === CashTransactionType.CLOSING ||
+        transaction.type === CashTransactionType.CLOSING_BALANCE
+      ) {
+        return total;
+      }
+
       return total.add(amount);
     }, new Prisma.Decimal(0));
+
+    const paidRevenue = shift.revenueRecords.filter((record) => record.payment);
+    const orderIds = new Set(paidRevenue.map((record) => record.orderId).filter(Boolean));
+    const cashSales = paidRevenue.reduce((total, record) => {
+      return record.payment?.method.code === "CASH" ? total.add(record.amount) : total;
+    }, new Prisma.Decimal(0));
+
+    return {
+      currentBalance,
+      expectedCash: currentBalance,
+      cashSales,
+      orderCount: orderIds.size,
+    };
   }
 
   private requireEmployee(user: AuthenticatedUser): string {

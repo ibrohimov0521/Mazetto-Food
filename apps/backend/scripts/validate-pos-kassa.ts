@@ -35,6 +35,9 @@ assert.match(ordersService, /paymentStatus: PaymentStatus\.PAID/);
 assert.match(ordersService, /this\.confirmOrderForPreparation/);
 assert.match(ordersService, /this\.createPosIdempotencyKey/);
 assert.match(ordersService, /paymentOperation\.findUnique/);
+assert.match(ordersService, /assertOpenCashierShift/);
+assert.match(ordersService, /tx\.revenueRecord\.create/);
+assert.match(ordersService, /tx\.cashTransaction\.create/);
 const posCheckoutBody = ordersService.match(/async createPosCheckout[\s\S]*?\n {2}async createOrder/)?.[0] ?? "";
 assert.match(posCheckoutBody, /resolveRequiredBranchScope\(user\)/);
 assert.doesNotMatch(posCheckoutBody, /dto\.branchId/);
@@ -44,6 +47,8 @@ assert.doesNotMatch(posCheckoutBody, /dto\.source/);
 
 assert.match(posPage, /PermissionGuard permission="POS_USE"/);
 assert.match(posPage, /RoleGuard roles=\{\["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"\]\}/);
+assert.match(posPage, /apiFetch<CurrentShift \| null>\("\/cash-register\/shift"\)/);
+assert.match(posPage, /router\.replace\("\/shift"\)/);
 assert.match(posPage, /apiFetch<Catalog>\("\/pos\/catalog"\)/);
 assert.match(posPage, /apiFetch<PosOrderResult>\("\/pos\/orders"/);
 assert.match(posPage, /const \[checkoutKey, setCheckoutKey\] = useState\(createCheckoutKey\)/);
@@ -53,7 +58,7 @@ assert.match(posOrderPayload, /productId/);
 assert.match(posOrderPayload, /quantity/);
 assert.doesNotMatch(posOrderPayload, /price:/);
 assert.doesNotMatch(posOrderPayload, /total:/);
-assert.match(posAuth, /CASHIER: "\/pos"/);
+assert.match(posAuth, /CASHIER: "\/shift"/);
 assert.match(posAuth, /KITCHEN: "\/kitchen"/);
 
 console.info("POS/Kassa static validation passed");

@@ -36,7 +36,7 @@ export const roleRedirects: Record<MazettoRole, string> = {
   SUPER_ADMIN: "/admin/dashboard",
   ADMIN: "/admin/dashboard",
   BRANCH_MANAGER: "/manager/dashboard",
-  CASHIER: "/pos",
+  CASHIER: "/shift",
   WAITER: "/waiter",
   KITCHEN: "/kitchen",
   ACCOUNTANT: "/accounting",
