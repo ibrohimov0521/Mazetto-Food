@@ -194,7 +194,7 @@ export function AdminReportsPage() {
           <option value="last7days">7 kun</option>
           <option value="thisMonth">Bu oy</option>
           <option value="year">Yil</option>
-          <option value="custom">Custom</option>
+          <option value="custom">Maxsus</option>
         </select>
         <TextInput disabled={preset !== "custom"} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
         <TextInput disabled={preset !== "custom"} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
@@ -235,8 +235,8 @@ export function AdminReportsPage() {
       {report ? (
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <Metric label="Sotuv tushumi" value={formatMoney(report.totalSales)} />
-            <Metric label="Buyurtmalar" value={`${report.orderCount} ta`} />
+            <Metric label="Jami savdo" value={formatMoney(report.totalSales)} />
+            <Metric label="Buyurtmalar soni" value={`${report.orderCount} ta`} />
             <Metric label="O'rtacha chek" value={formatMoney(report.averageOrderValue)} />
             <Metric label="Naqd sotuv" value={formatMoney(report.cashSales)} />
             <Metric label="Bekor qilingan" value={`${report.cancelledOrders} ta`} muted />
@@ -271,7 +271,7 @@ export function AdminReportsPage() {
                     key={row.source}
                     label={sourceLabels[row.source]}
                     value={formatMoney(row.amount)}
-                    detail={`${row.orderCount} order · ${row.paymentCount} to'lov`}
+                    detail={`${row.orderCount} buyurtma · ${row.paymentCount} to'lov`}
                   />
                 ))}
               </div>
@@ -282,7 +282,7 @@ export function AdminReportsPage() {
             <Panel title="Filiallar" subtitle="Branch scope qoidasi bilan cheklangan">
               <DataTable
                 empty="Bu davrda filial kesimida sotuv yo'q."
-                headers={["Filial", "Order", "Tushum"]}
+                headers={["Filial", "Buyurtma", "Tushum"]}
                 rows={report.branchBreakdown.map((row) => [
                   row.branch.name,
                   `${row.orderCount} ta`,
@@ -294,7 +294,7 @@ export function AdminReportsPage() {
             <Panel title="Kassirlar" subtitle="Faqat POS sotuvlar">
               <DataTable
                 empty="Bu davrda POS kassir sotuvi yo'q."
-                headers={["Kassir", "Order", "Tushum"]}
+                headers={["Kassir", "Buyurtma", "Tushum"]}
                 rows={report.cashierBreakdown.map((row) => [
                   employeeName(row.cashier),
                   `${row.orderCount} ta`,
@@ -307,7 +307,7 @@ export function AdminReportsPage() {
           <Panel title="Smenalar" subtitle="Yopilgan smenada snapshot, ochiq smenada live payment asosida">
             <DataTable
               empty="Bu davrda smena ma'lumoti yo'q."
-              headers={["Smena", "Kassir", "Holat", "Order", "Tushum", "Kutilgan", "Topshirildi", "Farq"]}
+              headers={["Smena", "Kassir", "Holat", "Buyurtma", "Tushum", "Kutilgan", "Topshirildi", "Farq"]}
               rows={report.shiftBreakdown.map((shift) => [
                 `${shift.branch.name} #${shift.shiftNumber}`,
                 employeeName(shift.cashier),
@@ -369,8 +369,8 @@ export function AdminReportsPage() {
               <Readiness
                 title="Hisoblash qoidasi"
                 items={[
-                  "Faqat PAID/SUCCESS paymentlar sotuvga kiradi",
-                  "Cancelled, failed, pending va unpaid orderlar tushumga kirmaydi",
+                  "Faqat PAID/SUCCESS to'lovlar sotuvga kiradi",
+                  "Bekor qilingan, failed, pending va unpaid buyurtmalar tushumga kirmaydi",
                   `Timezone: ${report.period.timezone}`,
                 ]}
               />

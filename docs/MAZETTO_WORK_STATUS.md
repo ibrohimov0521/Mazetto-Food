@@ -3132,7 +3132,7 @@ Next:
 
 ## Admin Sales Reports Hardening
 
-Status: 🟡 LOCAL IMPLEMENTATION READY; authenticated visual matrix remains pending.
+Status: ✅ LOCAL IMPLEMENTATION + AUTHENTICATED VISUAL QA PASSED; ready for owner review before controlled release gate.
 
 Scope completed locally:
 
@@ -3184,14 +3184,20 @@ Validation completed:
 - `pnpm typecheck`: passed.
 - `pnpm lint`: passed.
 - `git diff --check`: passed.
+- Authenticated `/admin/reports` visual QA: passed locally using a non-production SUPER_ADMIN session and local report API fixture.
+- Responsive screenshot QA: passed at 768, 1024, 1280, 1440, 1920, 1024x600, and 1366x768 for non-empty report data.
+- Empty-state screenshot QA: passed at 768, 1024, 1280, 1440, 1920, 1024x600, and 1366x768.
+- Admin reports browser QA confirmed production API calls: 0.
+- Admin reports browser QA confirmed console errors: 0.
+- RBAC visual check confirmed CASHIER and KITCHEN users are redirected to `/access-denied`.
+- Admin back button visual check confirmed `/admin/reports` falls back to `/admin`.
 
 Validation notes:
 
 - DB-backed POS/Shift validator runs emitted the existing `pg` deprecation warning about `client.query()` while a query is already executing. The validations passed; this remains a known adapter/driver warning.
-- Automated authenticated visual screenshot matrix for `/admin/reports` could not be completed in the current browser automation layer because local network mocking and localStorage injection were unavailable. POS-web production build verifies the route compiles; visual matrix should be completed before release gate with real admin login or a working browser test harness.
+- Visual QA artifacts are stored under `.qa-screenshots/admin-reports-*` and remain intentionally untracked.
 - No production DB, production service, Cloudflare route, Telegram webhook, media volume, push, deploy, migration, seed, fake shift, or fake order was touched.
 
 Next:
 
-- Complete authenticated `/admin/reports` visual QA at 768, 1024, 1280, 1440, and 1920.
 - After owner review, run an Admin Reports release gate with production backup, controlled backend/POS-web deploy, and read-only report smoke.

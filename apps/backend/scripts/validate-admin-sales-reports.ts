@@ -46,14 +46,15 @@ assert.match(service, /supported: false/);
 assert.doesNotMatch(service, /Math\.random|mock|fake/i);
 
 for (const uiText of [
-  "Sotuv tushumi",
+  "Jami savdo",
+  "Buyurtmalar soni",
   "Kanal kesimi",
   "Filiallar",
   "Kassirlar",
   "Smenalar",
   "Top mahsulotlar",
   "Kategoriya sotuvlari",
-  "Faqat PAID/SUCCESS paymentlar sotuvga kiradi",
+  "Faqat PAID/SUCCESS to'lovlar sotuvga kiradi",
 ]) {
   assert.match(reportsUi, new RegExp(escapeRegExp(uiText)));
 }
