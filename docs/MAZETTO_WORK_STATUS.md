@@ -2972,3 +2972,85 @@ Next:
 
 - Push the verified local release chain only after owner approval.
 - Controlled production release should run `prisma migrate deploy`, then deploy backend and POS-web, then run cashier shift smoke without creating fake production orders.
+
+## Shift / Kassa Topshirish Production Release
+
+Status: ✅ DEPLOYED WITH READ-ONLY SMOKE.
+
+Release revisions:
+
+- Application release chain pushed through `e466a165b545df7732f0048b3f306dbe4c601694`.
+- Backend production image: `mazetto-food-backend-pdslpm:0a459a9`.
+- POS-web production image: `mazetto-food-posweb:e466a16`.
+- POS-web includes the admin back-navigation UX fix and expired-session redirect hotfix.
+- Customer-web remained unchanged at `mazetto-food-customerweb-yvb3d0:0004277`.
+- Media service remained unchanged at `mazetto-food-media-btinws:latest`.
+
+Backup:
+
+- Production database backup created before migration deploy:
+  `/home/javohir/backups/mazetto/postgres/mazetto-shift-pre-release-20260905-20260905-070627.dump`
+- Backup size: 227,796 bytes.
+
+Production migrations:
+
+- Production had 17 applied migrations before release.
+- `prisma migrate deploy` applied:
+  - `20260905120000_shift_cash_handover`
+  - `20260905123000_order_shift_link`
+- Production now has 19 applied migrations and 0 failed migrations.
+- Verified `shifts.expectedCash`, `shifts.cashDifference`, nullable `orders.shiftId`, `shifts_one_open_employee_branch_idx`, and `orders_shiftId_idx`.
+
+Production data survival:
+
+- Products remained 91.
+- Product variants remained 100.
+- Categories remained 11.
+- ProductBundleItem remained 75.
+- Orders remained 24.
+- CustomerOrders remained 19.
+- CustomerOrderAttempts remained 19.
+- KitchenTickets remained 24.
+- RevenueRecord remained 0.
+- CashTransaction remained 0.
+- Shifts remained 0.
+- No fake production shift was created.
+- No fake production POS order was created.
+
+Smoke verification:
+
+- Backend service converged at 1/1 and health returned 200 with database `ok`.
+- POS-web service converged at 1/1 and `/login` returned 200.
+- Customer public routes `/`, `/menu`, `/cart`, `/checkout`, `/profile`, and `/orders` returned 200.
+- Customer menu APIs for branches, categories, and products returned 200.
+- Kitchen unauthenticated API remained protected with 401.
+- POS catalog and POS order creation remained protected with 401 when unauthenticated.
+- Telegram webhook remained healthy with pending updates 0 and no last error.
+- Browser smoke confirmed an expired POS session is redirected from `/pos` to `/login` instead of showing a raw token error.
+
+Admin back navigation:
+
+- Local POS-web typecheck, lint, build, and `git diff --check` passed for the Admin Back button.
+- Reusable back button is implemented in the shared POS-web `AuthShell`.
+- It is hidden on `/admin` and `/admin/dashboard`.
+- It is available for internal Admin pages such as products, categories, branches, staff, reports, and nested new/edit pages.
+- Direct-open fallback routes are `/admin`, `/admin/products`, or `/admin/staff` depending on route depth.
+- Authenticated browser verification is pending owner/admin credentials in the active browser session.
+
+Release notes:
+
+- Backend logs showed normal startup route mapping and database connection.
+- During release-window log review, two pre-existing/live staff callback warnings were observed: `Oshxona chiptasi yopilgan`. They did not create orders and did not affect release counts.
+- Cloudflare, media, customer-web, Telegram webhook configuration, credentials, Click, and Payme were not changed.
+
+Rollback:
+
+- Backend previous image before release: `mazetto-food-backend-pdslpm:ea250a9`.
+- POS-web previous image before release: `mazetto-food-posweb:4cf2241`.
+- Schema changes are additive; normal rollback is application image rollback, with DB backup reserved for emergency recovery.
+
+Next:
+
+- Complete authenticated Admin Back visual smoke with owner SUPER_ADMIN session.
+- Complete first real cashier shift smoke during real operation without creating fake production orders.
+- Next roadmap phase: Admin sales reports hardening.
