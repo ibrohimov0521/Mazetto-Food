@@ -3129,3 +3129,69 @@ Next:
 
 - Observe the next real cashier session during normal operations and confirm the pinned POS cart footer remains comfortable with real product mixes.
 - Continue with Admin sales reports hardening.
+
+## Admin Sales Reports Hardening
+
+Status: 🟡 LOCAL IMPLEMENTATION READY; authenticated visual matrix remains pending.
+
+Scope completed locally:
+
+- Existing `/reports/sales` API was hardened instead of creating a parallel reporting architecture.
+- Report date presets now support `today`, `yesterday`, `last7days`, `thisMonth`, `year`, and `custom`.
+- Report ranges are resolved with `Asia/Tashkent` day boundaries before querying UTC timestamps.
+- Authoritative successful-sales rule is payment-based:
+  - only `PaymentStatus.PAID` and `PaymentStatus.SUCCESS` payments with `paidAt` inside the selected range are counted
+  - related orders must be in active successful lifecycle statuses
+  - `CANCELLED`, failed, pending, unpaid, and refunded payments are excluded from successful sales
+- `/reports/sales` now returns total sales, order count, average check, cash sales, cancelled order count, payment breakdown, WEB/TELEGRAM/POS source breakdown, branch breakdown, POS cashier breakdown, shift breakdown, top products, category sales, and daily/monthly time series.
+- Shift reporting uses persisted closed-shift snapshot totals where available and live payment-derived totals for open shifts.
+- Category sales are supported with a documented limitation: `OrderItem` stores product snapshots but not category snapshots, so category aggregation uses the current product-category relation.
+- Refund, Click, Payme, and Card provider reconciliation remain marked as N/A / pending integration unless real provider records are implemented.
+- Admin `/admin/reports` UI now includes compact filters, summary cards, source chart, time-series chart, branch/cashier/shift tables, top product table, category table, and clear N/A notes.
+
+Access and scope:
+
+- Existing `REPORT_SALES_VIEW` controller protection is preserved.
+- Existing branch-scope resolver is reused.
+- Global report roles can query all allowed branches; branch-scoped admin users are restricted to their branch.
+- CASHIER and KITCHEN do not receive full reports through this change.
+
+Validation completed:
+
+- `prisma format`: passed with build-only placeholder `DATABASE_URL`.
+- `prisma validate`: passed with build-only placeholder `DATABASE_URL`.
+- `prisma generate`: passed with build-only placeholder `DATABASE_URL`.
+- `pnpm --filter backend typecheck`: passed.
+- `pnpm --filter backend lint`: passed.
+- `pnpm --filter backend build`: passed.
+- `pnpm --filter pos-web typecheck`: passed.
+- `pnpm --filter pos-web lint`: passed.
+- `pnpm --filter pos-web build`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-admin-sales-reports.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-admin-sales-reports-db.ts`: passed against fresh isolated PostgreSQL `mazetto_reports_isolated_20260905`.
+- `pnpm --filter backend exec tsx scripts/validate-pos-kassa.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-shift-kassa.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-staff-rbac.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-admin-catalog-core.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-canonical-catalog.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-telegram-catalog-mapping.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-telegram-customer-ordering.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-telegram-customer-auth.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-customer-order-history.ts`: passed.
+- `pnpm --filter backend exec tsx scripts/validate-kitchen-order-board.ts`: passed.
+- DB-backed POS/Kassa regression passed against fresh isolated PostgreSQL `mazetto_pos_shift_reports_20260905`.
+- DB-backed Shift/Kassa regression passed against fresh isolated PostgreSQL `mazetto_pos_shift_reports_20260905`.
+- `pnpm typecheck`: passed.
+- `pnpm lint`: passed.
+- `git diff --check`: passed.
+
+Validation notes:
+
+- DB-backed POS/Shift validator runs emitted the existing `pg` deprecation warning about `client.query()` while a query is already executing. The validations passed; this remains a known adapter/driver warning.
+- Automated authenticated visual screenshot matrix for `/admin/reports` could not be completed in the current browser automation layer because local network mocking and localStorage injection were unavailable. POS-web production build verifies the route compiles; visual matrix should be completed before release gate with real admin login or a working browser test harness.
+- No production DB, production service, Cloudflare route, Telegram webhook, media volume, push, deploy, migration, seed, fake shift, or fake order was touched.
+
+Next:
+
+- Complete authenticated `/admin/reports` visual QA at 768, 1024, 1280, 1440, and 1920.
+- After owner review, run an Admin Reports release gate with production backup, controlled backend/POS-web deploy, and read-only report smoke.
