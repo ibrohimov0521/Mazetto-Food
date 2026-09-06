@@ -4,7 +4,38 @@ Last updated: 2026-09-07
 
 This file is the persistent working checklist for the existing MAZETTO FOOD production project. Read this before continuing any Mazetto task.
 
-## Latest Verified Release (2026-09-06)
+## Latest Verified Release (2026-09-07)
+
+- Production backend, customer-web and POS/admin now run image revision
+  `de1f5655df3e9b8b8d2d1f9432a5d4b200d6ebf1`. PostgreSQL and media remain 1/1;
+  media was not redeployed.
+- Fresh PostgreSQL backup was created and restore-listed before migration:
+  `/home/javohir/backups/mazetto/postgres/mazetto-display-order-pre-release-20260907-003251.dump`
+  (`243553` bytes).
+- Production migration `20260906120000_order_display_numbers` was applied with
+  `prisma migrate deploy`.
+- Customer-facing daily order numbers are deployed. Technical `orderNumber`
+  remains for backend/admin tracing; visible numbers start at `WEB101`, `TG101`,
+  and `101` per source per Asia/Tashkent day.
+- Admin/POS/customer history screens prefer the short display number; admin order
+  list/detail still shows the technical order number for traceability.
+- Staff Telegram order messages now remember the sent group message and Kitchen UI
+  status changes refresh that Telegram group message instead of leaving it stale.
+- Production health after deploy: backend HTTP 200 with database ok, customer-web
+  HTTP 200, POS login HTTP 200. Public customer routes `/`, `/menu`, `/cart`,
+  `/checkout`, `/profile`, `/orders` and POS `/login`, `/pos`, `/kitchen` returned
+  HTTP 200.
+- Telegram webhook remained healthy: `pending_update_count = 0`, no last error.
+- Order graph counts were unchanged across release: orders `34`,
+  customer_orders `25`, customer_order_attempts `25`, kitchen_tickets `34`.
+- No production order, seed, product/catalog mutation, payment action, Cloudflare
+  change, Telegram webhook reset, or media change was performed.
+- Local validation before release passed for Prisma format/validate/generate,
+  backend/customer-web/POS typecheck-lint-build, realtime room auth, login
+  throttling, Telegram customer ordering/auth, customer order history, kitchen
+  board, display-order allocation, and DB-backed staff lifecycle.
+
+## Previous Verified Release (2026-09-06)
 
 - Production backend, customer-web and POS/admin all run image revision
   `13533a74c7f588339c7f3cdd770851933b3668fb`. All three report 1/1; postgres/media
@@ -49,20 +80,6 @@ This file is the persistent working checklist for the existing MAZETTO FOOD prod
   the docs-only push. Backend/customer auto-deploy remain at their original false.
 - Raw source-media replacement files, generated agent instructions and QA/tmp
   artifacts were not committed. Packaged canonical media remains intact.
-
-## Local Pending Changes (2026-09-07)
-
-- Implemented customer-facing daily display order numbers locally. Technical
-  `orderNumber` remains for backend/admin tracing; new visible numbers start at
-  `WEB101`, `TG101`, and `101` per source per Asia/Tashkent day.
-- Admin/POS/customer history screens prefer the short display number and keep the
-  technical order number visible in admin order detail/list context.
-- Staff Telegram order messages now remember the sent group message and Kitchen UI
-  status changes refresh that Telegram group message instead of leaving it stale.
-- Local validation passed for display-number allocation, realtime room auth, login
-  throttling, Telegram customer ordering/auth, customer order history, kitchen board,
-  and DB-backed staff lifecycle. Production has not been touched for this pending
-  change.
 
 ## Core Rule
 
