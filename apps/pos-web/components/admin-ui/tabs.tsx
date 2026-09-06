@@ -23,12 +23,22 @@ export function Tabs({
   active,
   onChange,
   label,
+  panelId,
 }: {
   items: TabItem[];
   active: string;
   onChange: (key: string) => void;
   /** `aria-label` — ekranda bir nechta tab guruhi bo'lsa ajratish uchun. */
   label: string;
+  /**
+   * Tab mazmuni turgan elementning `id` si.
+   *
+   * `role="tab"` ekran o'quvchiga "bu tab" deb aytadi va u bog'liq panelni
+   * qidiradi. Panel komponentdan tashqarida render qilingani uchun uning
+   * `id` sini chaqiruvchi beradi va o'sha elementga `role="tabpanel"`
+   * qo'yadi. Berilmasa — bog'lanish e'lon qilinmaydi.
+   */
+  panelId?: string;
 }) {
   return (
     <div
@@ -41,6 +51,7 @@ export function Tabs({
 
         return (
           <button
+            aria-controls={panelId}
             aria-selected={isActive}
             className={`flex shrink-0 items-center gap-2 rounded-mz-control px-3.5 py-1.5 text-sm transition ${
               isActive

@@ -372,13 +372,19 @@ export function AdminReportsPage() {
           items={visibleTabs}
           label="Hisobot turi"
           onChange={setTab}
+          panelId="report-panel"
         />
       ) : null}
 
-      {tab === "products" ? <ProductReportView query={currentQuery} /> : null}
-      {tab === "employees" ? <EmployeeReportView query={currentQuery} /> : null}
-      {tab === "expenses" ? <ExpenseReportView query={currentQuery} /> : null}
-      {tab === "z" ? <ZReportView query={currentQuery} /> : null}
+      {/* `role="tab"` bog'liq panelni talab qiladi — Tabs unga `aria-controls` bilan ishora qiladi. */}
+      <div id="report-panel" role="tabpanel">
+        {tab === "products" ? <ProductReportView query={currentQuery} /> : null}
+        {tab === "employees" ? (
+          <EmployeeReportView query={currentQuery} />
+        ) : null}
+        {tab === "expenses" ? <ExpenseReportView query={currentQuery} /> : null}
+        {tab === "z" ? <ZReportView query={currentQuery} /> : null}
+      </div>
 
       {tab === "sales" && isLoading && !report ? (
         <SkeletonRows rows={8} />

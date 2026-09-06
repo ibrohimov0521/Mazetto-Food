@@ -519,16 +519,23 @@ export function AdminBranchesPage() {
 
             return (
               <div
-                className="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-mz-border pb-2 last:border-b-0 sm:grid-cols-[8rem_1fr_auto]"
+                /*
+                 * Mobilda ustunga yig'iladi. `grid-cols-[1fr_auto]` da ikkita
+                 * `type="time"` input (brauzerda ~120px) kun nomi bilan yonma-yon
+                 * turib 320px ekranga sig'masdi — DESIGN_RULES gorizontal
+                 * overflow'ni taqiqlaydi.
+                 */
+                className="grid gap-2 border-b border-mz-border pb-3 last:border-b-0 sm:grid-cols-[8rem_1fr_auto] sm:items-center sm:gap-3 sm:pb-2"
                 key={hour.dayOfWeek}
               >
                 <span className="text-sm font-semibold text-mz-text">
                   {day?.label ?? hour.dayOfWeek}
                 </span>
 
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <TextInput
                     aria-label={`${day?.label} ochilish vaqti`}
+                    className="min-w-0 flex-1"
                     disabled={hour.isClosed}
                     onChange={(event) =>
                       setHours((current) =>
@@ -545,6 +552,7 @@ export function AdminBranchesPage() {
                   <span className="text-mz-text-faint">–</span>
                   <TextInput
                     aria-label={`${day?.label} yopilish vaqti`}
+                    className="min-w-0 flex-1"
                     disabled={hour.isClosed}
                     onChange={(event) =>
                       setHours((current) =>
