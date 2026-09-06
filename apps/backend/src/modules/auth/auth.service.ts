@@ -34,7 +34,8 @@ type LoginThrottleRecord = {
 
 const LOGIN_THROTTLE_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_THROTTLE_BLOCK_MS = 15 * 60 * 1000;
-const LOGIN_THROTTLE_MAX_FAILURES = 5;
+const LOGIN_THROTTLE_MAX_ADDRESS_FAILURES = 5;
+const LOGIN_THROTTLE_MAX_IDENTIFIER_FAILURES = 20;
 const LOGIN_THROTTLE_GC_MS = 60 * 60 * 1000;
 
 @Injectable()
@@ -48,9 +49,11 @@ export class AuthService {
 
   async login(dto: LoginDto, clientAddress = "unknown"): Promise<AuthResponse> {
     const identifier = this.normalizeIdentifier(dto.identifier);
-    const throttleKey = this.createLoginThrottleKey(identifier, clientAddress);
+    const throttleKeys = this.createLoginThrottleKeys(identifier, clientAddress);
 
-    this.assertLoginAllowed(throttleKey);
+    for (const throttle of throttleKeys) {
+      this.assertLoginAllowed(throttle.key);
+    }
 
     const userRecord = await this.prisma.user.findFirst({
       where: {
@@ -61,18 +64,20 @@ export class AuthService {
     });
 
     if (!userRecord?.passwordHash) {
-      this.registerFailedLogin(throttleKey);
+      this.registerFailedLogin(throttleKeys);
       throw new UnauthorizedException("Invalid credentials");
     }
 
     const passwordMatches = await compare(dto.password, userRecord.passwordHash);
 
     if (!passwordMatches) {
-      this.registerFailedLogin(throttleKey);
+      this.registerFailedLogin(throttleKeys);
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    this.loginThrottle.delete(throttleKey);
+    for (const throttle of throttleKeys) {
+      this.loginThrottle.delete(throttle.key);
+    }
 
     await this.prisma.user.update({
       where: { id: userRecord.id },
@@ -270,8 +275,17 @@ export class AuthService {
     return new Date(Date.now() + getJwtRefreshExpiresIn() * 1000);
   }
 
-  private createLoginThrottleKey(identifier: string, clientAddress: string): string {
-    return `${identifier}:${clientAddress}`;
+  private createLoginThrottleKeys(identifier: string, clientAddress: string): LoginThrottleKey[] {
+    return [
+      {
+        key: `login:${identifier}:address:${clientAddress}`,
+        maxFailures: LOGIN_THROTTLE_MAX_ADDRESS_FAILURES,
+      },
+      {
+        key: `login:${identifier}:account`,
+        maxFailures: LOGIN_THROTTLE_MAX_IDENTIFIER_FAILURES,
+      },
+    ];
   }
 
   private assertLoginAllowed(key: string): void {
@@ -294,8 +308,15 @@ export class AuthService {
     }
   }
 
-  private registerFailedLogin(key: string): void {
+  private registerFailedLogin(throttles: LoginThrottleKey[]): void {
+    for (const throttle of throttles) {
+      this.registerFailedLoginKey(throttle);
+    }
+  }
+
+  private registerFailedLoginKey(throttle: LoginThrottleKey): void {
     const now = Date.now();
+    const key = throttle.key;
     const current = this.loginThrottle.get(key);
     const record =
       current && now - current.firstFailureAt <= LOGIN_THROTTLE_WINDOW_MS
@@ -304,8 +325,13 @@ export class AuthService {
 
     record.failures += 1;
     record.blockedUntil =
-      record.failures >= LOGIN_THROTTLE_MAX_FAILURES ? now + LOGIN_THROTTLE_BLOCK_MS : null;
+      record.failures >= throttle.maxFailures ? now + LOGIN_THROTTLE_BLOCK_MS : null;
 
     this.loginThrottle.set(key, record);
   }
 }
+
+type LoginThrottleKey = {
+  key: string;
+  maxFailures: number;
+};

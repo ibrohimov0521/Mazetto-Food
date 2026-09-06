@@ -36,6 +36,12 @@ export class AuthController {
   }
 
   private getClientAddress(request: Request): string {
+    const cloudflareIp = request.headers["cf-connecting-ip"];
+
+    if (typeof cloudflareIp === "string" && cloudflareIp.trim()) {
+      return cloudflareIp.trim();
+    }
+
     const forwardedFor = request.headers["x-forwarded-for"];
 
     if (typeof forwardedFor === "string" && forwardedFor.trim()) {
