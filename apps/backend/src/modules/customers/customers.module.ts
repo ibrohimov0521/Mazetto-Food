@@ -6,7 +6,10 @@ import { KitchenModule } from "../kitchen/kitchen.module";
 import { OrdersModule } from "../orders/orders.module";
 import { TelegramModule } from "../telegram/telegram.module";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
-import { CustomerPublicController, CustomersAdminController } from "./customers.controller";
+import {
+  CustomerPublicController,
+  CustomersAdminController,
+} from "./customers.controller";
 import { CustomersService } from "./customers.service";
 
 @Module({

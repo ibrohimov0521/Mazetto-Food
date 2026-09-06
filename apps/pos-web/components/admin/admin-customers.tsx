@@ -13,6 +13,7 @@ import { Card } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select, TextInput } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 
 /*
@@ -24,9 +25,13 @@ import { InfoBox, StatGrid } from "../admin-ui/stat-box";
  * PII: telefon raqamlari ro'yxatda qisman yashirilgan. To'liq ko'rish uchun
  * qatordagi tugma bosiladi — bu ochish harakati ongli bo'lishi uchun.
  *
- * ESLATMA: `/customers` pagination'ni qo'llab-quvvatlamaydi. Baza o'sganda
- * backend'ga `limit`/`offset` qo'shilishi kerak.
+ * SAHIFALASH: `/customers` endi `limit`/`offset` qabul qiladi. Qidiruv va
+ * kanal filtri esa BRAUZERDA, ya'ni faqat joriy sahifa ichida ishlaydi —
+ * server tomonda qidiruv yo'q. Yorliqlar shuni ochiq aytadi, aks holda
+ * foydalanuvchi butun bazada qidiryapman deb o'ylardi.
  */
+
+const pageSize = 50;
 
 type Customer = {
   id: string;
@@ -54,6 +59,7 @@ export function AdminCustomersPage() {
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -61,7 +67,7 @@ export function AdminCustomersPage() {
 
     try {
       const [nextCustomers, nextStats] = await Promise.all([
-        apiFetch<Customer[]>("/customers"),
+        apiFetch<Customer[]>(`/customers?limit=${pageSize}&offset=${offset}`),
         apiFetch<CustomerStats>("/customers/statistics"),
       ]);
       setCustomers(nextCustomers);
@@ -79,7 +85,7 @@ export function AdminCustomersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [offset]);
 
   useEffect(() => {
     void load();
@@ -216,8 +222,8 @@ export function AdminCustomersPage() {
         <FilterBar>
           <div className="min-w-52 flex-1">
             <TextInput
-              aria-label="Mijoz qidirish"
-              placeholder="Ism, telefon yoki email"
+              aria-label="Shu sahifada mijoz qidirish"
+              placeholder="Shu sahifada: ism, telefon yoki email"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -243,6 +249,15 @@ export function AdminCustomersPage() {
           getRowKey={(customer) => customer.id}
           isLoading={isLoading}
           rows={filtered}
+        />
+
+        <Pagination
+          count={customers.length}
+          isLoading={isLoading}
+          noun="mijoz"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
         />
       </Card>
     </div>

@@ -17,6 +17,7 @@ import { Card } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select, TextInput } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 
 /*
@@ -24,10 +25,13 @@ import { InfoBox, StatGrid } from "../admin-ui/stat-box";
  *
  * Backend `/online-orders` tayyor edi, lekin admin panelda ekrani yo'q edi.
  *
- * ESLATMA: `/online-orders` pagination'ni qo'llab-quvvatlamaydi — barcha
- * yozuvlarni qaytaradi. Buyurtmalar soni o'sganda backend'ga `limit`/`offset`
- * qo'shilishi kerak (4-bosqich). Hozircha filtr/qidiruv brauzerda bajariladi.
+ * SAHIFALASH: `/online-orders` endi `limit`/`offset` qabul qiladi. Filial
+ * filtri serverda, qidiruv va holat filtri esa BRAUZERDA — ya'ni faqat joriy
+ * sahifa ichida. Server tomonda qidiruv yo'q, shuning uchun yorliq buni
+ * ochiq aytadi.
  */
+
+const pageSize = 50;
 
 type Branch = { id: string; code: string; name: string };
 
@@ -62,6 +66,7 @@ export function AdminOnlineOrdersPage() {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState("");
+  const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -83,9 +88,16 @@ export function AdminOnlineOrdersPage() {
     setIsLoading(true);
     setError("");
 
-    const path = branchId
-      ? `/online-orders?branchId=${encodeURIComponent(branchId)}`
-      : "/online-orders";
+    const params = new URLSearchParams({
+      limit: String(pageSize),
+      offset: String(offset),
+    });
+
+    if (branchId) {
+      params.set("branchId", branchId);
+    }
+
+    const path = `/online-orders?${params.toString()}`;
 
     try {
       setOrders(await apiFetch<CustomerOrder[]>(path));
@@ -102,7 +114,7 @@ export function AdminOnlineOrdersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [branchId]);
+  }, [branchId, offset]);
 
   useEffect(() => {
     void load();
@@ -240,8 +252,8 @@ export function AdminOnlineOrdersPage() {
         <FilterBar>
           <div className="min-w-52 flex-1">
             <TextInput
-              aria-label="Online buyurtma qidirish"
-              placeholder="Buyurtma raqami, mijoz yoki manzil"
+              aria-label="Shu sahifada buyurtma qidirish"
+              placeholder="Shu sahifada: buyurtma raqami, mijoz yoki manzil"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -288,6 +300,15 @@ export function AdminOnlineOrdersPage() {
           getRowKey={(item) => item.id}
           isLoading={isLoading}
           rows={filtered}
+        />
+
+        <Pagination
+          count={orders.length}
+          isLoading={isLoading}
+          noun="buyurtma"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
         />
       </Card>
     </div>

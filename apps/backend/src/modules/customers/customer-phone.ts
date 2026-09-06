@@ -25,7 +25,10 @@ export function normalizeCustomerPhone(phone: string): string {
     throw new BadRequestException("Phone number is invalid");
   }
 
-  if (hasInternationalPrefix && !trimmed.replace(/[^\d+]/g, "").startsWith("+998")) {
+  if (
+    hasInternationalPrefix &&
+    !trimmed.replace(/[^\d+]/g, "").startsWith("+998")
+  ) {
     throw new BadRequestException("Phone number is invalid");
   }
 
