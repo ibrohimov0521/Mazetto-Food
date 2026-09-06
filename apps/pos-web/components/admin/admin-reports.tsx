@@ -5,8 +5,17 @@ import { Button } from "../admin-ui/button";
 import { TextInput } from "../admin-ui/form";
 import { EmptyState } from "../admin-ui/feedback";
 import { apiFetch } from "../../lib/api";
+import { reportQueryParams, type ReportQuery } from "../../lib/report-query";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
-import { ChipGroup } from "../admin-ui/tabs";
+import { ChipGroup, Tabs, type TabItem } from "../admin-ui/tabs";
+import { hasPermission } from "../../lib/auth";
+import { useAuth } from "../auth/auth-provider";
+import {
+  EmployeeReportView,
+  ExpenseReportView,
+  ProductReportView,
+  ZReportView,
+} from "./admin-report-views";
 
 type Branch = {
   id: string;
@@ -129,6 +138,48 @@ const sourceLabels = {
   POS: "Kassa",
 };
 
+/*
+ * Beshta hisobot, beshta permission.
+ *
+ * `/reports/z` savdo hisobotining kengaytmasi, shuning uchun u ham
+ * `REPORT_SALES_VIEW` ostida — backend'da ham xuddi shunday.
+ *
+ * Ruxsati yo'q tab UMUMAN ko'rsatilmaydi: bo'sh tab ochib "ruxsat yo'q"
+ * deyish foydalanuvchini bekorga yuboradi.
+ */
+const reportTabs: (TabItem & { permission: string })[] = [
+  {
+    key: "sales",
+    label: "Savdo",
+    icon: "chart",
+    permission: "REPORT_SALES_VIEW",
+  },
+  {
+    key: "products",
+    label: "Mahsulotlar",
+    icon: "utensils",
+    permission: "REPORT_PRODUCTS_VIEW",
+  },
+  {
+    key: "employees",
+    label: "Xodimlar",
+    icon: "users",
+    permission: "REPORT_EMPLOYEES_VIEW",
+  },
+  {
+    key: "expenses",
+    label: "Xarajatlar",
+    icon: "banknote",
+    permission: "REPORT_EXPENSES_VIEW",
+  },
+  {
+    key: "z",
+    label: "Z-hisobot",
+    icon: "scroll",
+    permission: "REPORT_SALES_VIEW",
+  },
+];
+
 const reportPresets = [
   { key: "today", label: "Bugun" },
   { key: "yesterday", label: "Kecha" },
@@ -138,6 +189,11 @@ const reportPresets = [
 ];
 
 export function AdminReportsPage() {
+  const { user } = useAuth();
+  const visibleTabs = reportTabs.filter((tab) =>
+    hasPermission(user, tab.permission),
+  );
+  const [tab, setTab] = useState("sales");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [report, setReport] = useState<SalesReport | null>(null);
   const [branchId, setBranchId] = useState("");
@@ -213,7 +269,7 @@ export function AdminReportsPage() {
     }
   }
 
-  function buildQuery(nextPreset: string) {
+  function buildQuery(nextPreset: string): ReportQuery {
     return {
       preset: nextPreset,
       branchId,
@@ -223,6 +279,14 @@ export function AdminReportsPage() {
       year,
     };
   }
+
+  /*
+   * Filtr paneli barcha tablar uchun umumiy — sana oralig'ini almashtirib
+   * tabni o'zgartirsangiz, tanlov saqlanadi. Savdo hisoboti "Ko'rish"
+   * tugmasi bilan qo'lda yuklanadi, qolgan tablar esa so'rov o'zgarishi
+   * bilan o'zi qayta yuklanadi.
+   */
+  const currentQuery = buildQuery(preset);
 
   return (
     <div className="grid gap-5">
@@ -302,9 +366,25 @@ export function AdminReportsPage() {
         onChange={(key) => void choosePreset(key)}
       />
 
-      {isLoading && !report ? <SkeletonRows rows={8} /> : null}
+      {visibleTabs.length > 1 ? (
+        <Tabs
+          active={tab}
+          items={visibleTabs}
+          label="Hisobot turi"
+          onChange={setTab}
+        />
+      ) : null}
 
-      {report ? (
+      {tab === "products" ? <ProductReportView query={currentQuery} /> : null}
+      {tab === "employees" ? <EmployeeReportView query={currentQuery} /> : null}
+      {tab === "expenses" ? <ExpenseReportView query={currentQuery} /> : null}
+      {tab === "z" ? <ZReportView query={currentQuery} /> : null}
+
+      {tab === "sales" && isLoading && !report ? (
+        <SkeletonRows rows={8} />
+      ) : null}
+
+      {tab === "sales" && report ? (
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Metric label="Jami savdo" value={formatMoney(report.totalSales)} />
@@ -494,34 +574,8 @@ export function AdminReportsPage() {
   );
 }
 
-async function loadSalesReport(query: {
-  preset: string;
-  branchId?: string;
-  source?: string;
-  from?: string;
-  to?: string;
-  year?: string;
-}): Promise<SalesReport> {
-  const params = new URLSearchParams({ preset: query.preset });
-
-  if (query.branchId) {
-    params.set("branchId", query.branchId);
-  }
-
-  if (query.source) {
-    params.set("source", query.source);
-  }
-
-  if (query.preset === "custom" && query.from && query.to) {
-    params.set("from", query.from);
-    params.set("to", query.to);
-  }
-
-  if (query.preset === "year" && query.year) {
-    params.set("year", query.year);
-  }
-
-  return apiFetch<SalesReport>(`/reports/sales?${params.toString()}`);
+async function loadSalesReport(query: ReportQuery): Promise<SalesReport> {
+  return apiFetch<SalesReport>(`/reports/sales?${reportQueryParams(query)}`);
 }
 
 function toDateInput(date: Date): string {
