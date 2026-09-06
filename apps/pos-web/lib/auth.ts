@@ -30,6 +30,22 @@ export type AuthSession = {
   tokens: AuthTokens;
 };
 
+/**
+ * Rol nomlari — interfeysda ko'rsatish uchun.
+ *
+ * Backend rol kodlarini (`SUPER_ADMIN`) qaytaradi; foydalanuvchiga kod emas,
+ * lavozim ko'rsatiladi.
+ */
+export const roleLabels: Record<MazettoRole, string> = {
+  SUPER_ADMIN: "Bosh administrator",
+  ADMIN: "Administrator",
+  BRANCH_MANAGER: "Filial menejeri",
+  CASHIER: "Kassir",
+  WAITER: "Ofitsiant",
+  KITCHEN: "Oshxona",
+  ACCOUNTANT: "Buxgalter",
+};
+
 export const authStorageKey = "mazetto.auth.session";
 
 export const roleRedirects: Record<MazettoRole, string> = {
@@ -61,8 +77,13 @@ export function getPrimaryRedirect(roles: string[]): string {
   return role ? roleRedirects[role] : "/access-denied";
 }
 
-export function hasPermission(user: AuthUser | null, permission: string): boolean {
-  return Boolean(user?.permissions.includes("*") || user?.permissions.includes(permission));
+export function hasPermission(
+  user: AuthUser | null,
+  permission: string,
+): boolean {
+  return Boolean(
+    user?.permissions.includes("*") || user?.permissions.includes(permission),
+  );
 }
 
 export function hasRole(user: AuthUser | null, roles: string[]): boolean {

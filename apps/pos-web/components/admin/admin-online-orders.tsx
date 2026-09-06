@@ -17,6 +17,7 @@ import { Card } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select, TextInput } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 
 /*
@@ -24,10 +25,13 @@ import { InfoBox, StatGrid } from "../admin-ui/stat-box";
  *
  * Backend `/online-orders` tayyor edi, lekin admin panelda ekrani yo'q edi.
  *
- * ESLATMA: `/online-orders` pagination'ni qo'llab-quvvatlamaydi — barcha
- * yozuvlarni qaytaradi. Buyurtmalar soni o'sganda backend'ga `limit`/`offset`
- * qo'shilishi kerak (4-bosqich). Hozircha filtr/qidiruv brauzerda bajariladi.
+ * SAHIFALASH: `/online-orders` endi `limit`/`offset` qabul qiladi. Filial
+ * filtri serverda, qidiruv va holat filtri esa BRAUZERDA — ya'ni faqat joriy
+ * sahifa ichida. Server tomonda qidiruv yo'q, shuning uchun yorliq buni
+ * ochiq aytadi.
  */
+
+const pageSize = 50;
 
 type Branch = { id: string; code: string; name: string };
 
@@ -62,6 +66,7 @@ export function AdminOnlineOrdersPage() {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState("");
+  const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -83,9 +88,16 @@ export function AdminOnlineOrdersPage() {
     setIsLoading(true);
     setError("");
 
-    const path = branchId
-      ? `/online-orders?branchId=${encodeURIComponent(branchId)}`
-      : "/online-orders";
+    const params = new URLSearchParams({
+      limit: String(pageSize),
+      offset: String(offset),
+    });
+
+    if (branchId) {
+      params.set("branchId", branchId);
+    }
+
+    const path = `/online-orders?${params.toString()}`;
 
     try {
       setOrders(await apiFetch<CustomerOrder[]>(path));
@@ -94,11 +106,15 @@ export function AdminOnlineOrdersPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Online buyurtmalarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Online buyurtmalarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
-  }, [branchId]);
+  }, [branchId, offset]);
 
   useEffect(() => {
     void load();
@@ -119,7 +135,10 @@ export function AdminOnlineOrdersPage() {
         .join(" ")
         .toLowerCase();
 
-      return (!needle || identity.includes(needle)) && (!status || item.status === status);
+      return (
+        (!needle || identity.includes(needle)) &&
+        (!status || item.status === status)
+      );
     });
   }, [orders, query, status]);
 
@@ -157,8 +176,12 @@ export function AdminOnlineOrdersPage() {
       header: "Mijoz",
       render: (item) => (
         <div className="min-w-0">
-          <p className="truncate text-sm text-mz-text">{item.customer?.name ?? "—"}</p>
-          <p className="truncate text-xs text-mz-text-muted">{maskPhone(item.customer?.phone)}</p>
+          <p className="truncate text-sm text-mz-text">
+            {item.customer?.name ?? "—"}
+          </p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {maskPhone(item.customer?.phone)}
+          </p>
         </div>
       ),
     },
@@ -187,28 +210,50 @@ export function AdminOnlineOrdersPage() {
       header: "Summa",
       align: "right",
       render: (item) => (
-        <span className="font-semibold text-mz-text">{formatMoney(item.order?.total)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(item.order?.total)}
+        </span>
       ),
     },
   ];
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Jami online buyurtma" value={`${stats.total} ta`} />
-        <InfoBox label="Jarayonda" tone="warning" value={`${stats.active} ta`} />
-        <InfoBox label="Yetkazib berish" value={`${stats.delivery} ta`} />
-        <InfoBox label="Umumiy summa" tone="brand" value={formatMoney(stats.revenue)} />
+        <InfoBox
+          icon="globe"
+          label="Jami online buyurtma"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="clock"
+          label="Jarayonda"
+          tone="warning"
+          value={`${stats.active} ta`}
+        />
+        <InfoBox
+          icon="truck"
+          label="Yetkazib berish"
+          value={`${stats.delivery} ta`}
+        />
+        <InfoBox
+          icon="wallet"
+          label="Umumiy summa"
+          tone="brand"
+          value={formatMoney(stats.revenue)}
+        />
       </StatGrid>
 
       <Card>
         <FilterBar>
           <div className="min-w-52 flex-1">
             <TextInput
-              aria-label="Online buyurtma qidirish"
-              placeholder="Buyurtma raqami, mijoz yoki manzil"
+              aria-label="Shu sahifada buyurtma qidirish"
+              placeholder="Shu sahifada: buyurtma raqami, mijoz yoki manzil"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -255,6 +300,15 @@ export function AdminOnlineOrdersPage() {
           getRowKey={(item) => item.id}
           isLoading={isLoading}
           rows={filtered}
+        />
+
+        <Pagination
+          count={orders.length}
+          isLoading={isLoading}
+          noun="buyurtma"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
         />
       </Card>
     </div>

@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
-import { formatDateTime, formatMoney, maskPhone } from "../../lib/order-display";
+import {
+  formatDateTime,
+  formatMoney,
+  maskPhone,
+} from "../../lib/order-display";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select, TextInput } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 
 /*
@@ -20,9 +25,13 @@ import { InfoBox, StatGrid } from "../admin-ui/stat-box";
  * PII: telefon raqamlari ro'yxatda qisman yashirilgan. To'liq ko'rish uchun
  * qatordagi tugma bosiladi — bu ochish harakati ongli bo'lishi uchun.
  *
- * ESLATMA: `/customers` pagination'ni qo'llab-quvvatlamaydi. Baza o'sganda
- * backend'ga `limit`/`offset` qo'shilishi kerak.
+ * SAHIFALASH: `/customers` endi `limit`/`offset` qabul qiladi. Qidiruv va
+ * kanal filtri esa BRAUZERDA, ya'ni faqat joriy sahifa ichida ishlaydi —
+ * server tomonda qidiruv yo'q. Yorliqlar shuni ochiq aytadi, aks holda
+ * foydalanuvchi butun bazada qidiryapman deb o'ylardi.
  */
+
+const pageSize = 50;
 
 type Customer = {
   id: string;
@@ -50,6 +59,7 @@ export function AdminCustomersPage() {
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -57,7 +67,7 @@ export function AdminCustomersPage() {
 
     try {
       const [nextCustomers, nextStats] = await Promise.all([
-        apiFetch<Customer[]>("/customers"),
+        apiFetch<Customer[]>(`/customers?limit=${pageSize}&offset=${offset}`),
         apiFetch<CustomerStats>("/customers/statistics"),
       ]);
       setCustomers(nextCustomers);
@@ -67,11 +77,15 @@ export function AdminCustomersPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Mijozlarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Mijozlarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [offset]);
 
   useEffect(() => {
     void load();
@@ -107,7 +121,9 @@ export function AdminCustomersPage() {
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">{customer.name}</p>
           {customer.email ? (
-            <p className="truncate text-xs text-mz-text-muted">{customer.email}</p>
+            <p className="truncate text-xs text-mz-text-muted">
+              {customer.email}
+            </p>
           ) : null}
         </div>
       ),
@@ -120,8 +136,14 @@ export function AdminCustomersPage() {
           <span className="text-mz-text">{customer.phone}</span>
         ) : (
           <span className="inline-flex items-center gap-2">
-            <span className="text-mz-text-muted">{maskPhone(customer.phone)}</span>
-            <Button onClick={() => revealPhone(customer.id)} size="sm" variant="ghost">
+            <span className="text-mz-text-muted">
+              {maskPhone(customer.phone)}
+            </span>
+            <Button
+              onClick={() => revealPhone(customer.id)}
+              size="sm"
+              variant="ghost"
+            >
               Ko&apos;rsatish
             </Button>
           </span>
@@ -156,25 +178,40 @@ export function AdminCustomersPage() {
       align: "right",
       hideOnMobile: true,
       render: (customer) => (
-        <span className="text-xs text-mz-text-muted">{formatDateTime(customer.createdAt)}</span>
+        <span className="text-xs text-mz-text-muted">
+          {formatDateTime(customer.createdAt)}
+        </span>
       ),
     },
   ];
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       {stats ? (
         <StatGrid>
-          <InfoBox label="Jami mijoz" tone="brand" value={`${stats.customers} ta`} />
-          <InfoBox label="Online buyurtmalar" value={`${stats.onlineOrders} ta`} />
           <InfoBox
+            icon="users"
+            label="Jami mijoz"
+            tone="brand"
+            value={`${stats.customers} ta`}
+          />
+          <InfoBox
+            icon="globe"
+            label="Online buyurtmalar"
+            value={`${stats.onlineOrders} ta`}
+          />
+          <InfoBox
+            icon="wallet"
             label="Bonus majburiyati"
             tone="warning"
             value={formatMoney(stats.bonusLiability)}
           />
           <InfoBox
+            icon="send"
             label="Telegram orqali"
             value={`${customers.filter((customer) => customer.telegramUserId).length} ta`}
           />
@@ -185,8 +222,8 @@ export function AdminCustomersPage() {
         <FilterBar>
           <div className="min-w-52 flex-1">
             <TextInput
-              aria-label="Mijoz qidirish"
-              placeholder="Ism, telefon yoki email"
+              aria-label="Shu sahifada mijoz qidirish"
+              placeholder="Shu sahifada: ism, telefon yoki email"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -212,6 +249,15 @@ export function AdminCustomersPage() {
           getRowKey={(customer) => customer.id}
           isLoading={isLoading}
           rows={filtered}
+        />
+
+        <Pagination
+          count={customers.length}
+          isLoading={isLoading}
+          noun="mijoz"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
         />
       </Card>
     </div>

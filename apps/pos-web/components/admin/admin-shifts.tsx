@@ -6,11 +6,11 @@ import { canSwitchBranch } from "../../lib/admin-nav";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
-import { Button } from "../admin-ui/button";
 import { Card } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 
 /*
@@ -96,7 +96,11 @@ export function AdminShiftsPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Smenalarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Smenalarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -108,9 +112,14 @@ export function AdminShiftsPage() {
 
   const stats = useMemo(() => {
     const open = shifts.filter((shift) => shift.status === "OPEN").length;
-    const sales = shifts.reduce((sum, shift) => sum + Number(shift.salesTotal ?? 0), 0);
+    const sales = shifts.reduce(
+      (sum, shift) => sum + Number(shift.salesTotal ?? 0),
+      0,
+    );
     const mismatched = shifts.filter(
-      (shift) => shift.cashDifference != null && Math.abs(Number(shift.cashDifference)) > 0.01,
+      (shift) =>
+        shift.cashDifference != null &&
+        Math.abs(Number(shift.cashDifference)) > 0.01,
     ).length;
 
     return { open, sales, mismatched, total: shifts.length };
@@ -195,13 +204,30 @@ export function AdminShiftsPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Ko'rsatilgan smena" value={`${stats.total} ta`} />
-        <InfoBox label="Ochiq smena" tone="warning" value={`${stats.open} ta`} />
-        <InfoBox label="Savdo (sahifada)" tone="brand" value={formatMoney(stats.sales)} />
         <InfoBox
+          icon="clipboard"
+          label="Ko'rsatilgan smena"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="clock"
+          label="Ochiq smena"
+          tone="warning"
+          value={`${stats.open} ta`}
+        />
+        <InfoBox
+          icon="wallet"
+          label="Savdo (sahifada)"
+          tone="brand"
+          value={formatMoney(stats.sales)}
+        />
+        <InfoBox
+          icon="alert"
           label="Kassa farqi bor"
           tone={stats.mismatched > 0 ? "danger" : "success"}
           value={`${stats.mismatched} ta`}
@@ -256,29 +282,14 @@ export function AdminShiftsPage() {
           rows={shifts}
         />
 
-        <div className="flex items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-          <p className="text-xs text-mz-text-muted">
-            {offset + 1}–{offset + shifts.length}-smena
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
-              size="sm"
-              variant="ghost"
-            >
-              Oldingi
-            </Button>
-            <Button
-              disabled={shifts.length < pageSize || isLoading}
-              onClick={() => setOffset((current) => current + pageSize)}
-              size="sm"
-              variant="ghost"
-            >
-              Keyingi
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          count={shifts.length}
+          isLoading={isLoading}
+          noun="smena"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
+        />
       </Card>
     </div>
   );

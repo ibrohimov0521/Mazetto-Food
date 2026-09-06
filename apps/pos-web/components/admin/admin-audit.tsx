@@ -9,6 +9,7 @@ import { Card, CardBody } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 
 /*
  * Xavfsizlik audit jurnali.
@@ -73,7 +74,10 @@ function actorName(user: AuditLog["user"]): string {
 
 export function AdminAuditPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [facets, setFacets] = useState<AuditFacets>({ actions: [], entities: [] });
+  const [facets, setFacets] = useState<AuditFacets>({
+    actions: [],
+    entities: [],
+  });
   const [action, setAction] = useState("");
   const [entity, setEntity] = useState("");
   const [offset, setOffset] = useState(0);
@@ -108,7 +112,11 @@ export function AdminAuditPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Audit jurnalini yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Audit jurnalini yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +168,9 @@ export function AdminAuditPage() {
       render: (log) =>
         log.metadata ? (
           <Button
-            onClick={() => setExpandedId((current) => (current === log.id ? null : log.id))}
+            onClick={() =>
+              setExpandedId((current) => (current === log.id ? null : log.id))
+            }
             size="sm"
             variant="ghost"
           >
@@ -174,14 +184,16 @@ export function AdminAuditPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <CardBody>
           <p className="text-xs text-mz-text-muted">
-            Jurnal butun tizim bo&apos;yicha — filial bo&apos;yicha ajratilmaydi.
-            Yozuvlar faqat qo&apos;shiladi; bu ekrandan o&apos;chirib yoki
-            o&apos;zgartirib bo&apos;lmaydi.
+            Jurnal butun tizim bo&apos;yicha — filial bo&apos;yicha
+            ajratilmaydi. Yozuvlar faqat qo&apos;shiladi; bu ekrandan
+            o&apos;chirib yoki o&apos;zgartirib bo&apos;lmaydi.
           </p>
         </CardBody>
       </Card>
@@ -245,29 +257,14 @@ export function AdminAuditPage() {
           </div>
         ) : null}
 
-        <div className="flex items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-          <p className="text-xs text-mz-text-muted">
-            {offset + 1}–{offset + logs.length}-yozuv
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
-              size="sm"
-              variant="ghost"
-            >
-              Oldingi
-            </Button>
-            <Button
-              disabled={logs.length < pageSize || isLoading}
-              onClick={() => setOffset((current) => current + pageSize)}
-              size="sm"
-              variant="ghost"
-            >
-              Keyingi
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          count={logs.length}
+          isLoading={isLoading}
+          noun="yozuv"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
+        />
       </Card>
     </div>
   );

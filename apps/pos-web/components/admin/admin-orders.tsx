@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { canSwitchBranch } from "../../lib/admin-nav";
+import { hasPermission, type AuthUser } from "../../lib/auth";
 import {
   formatDateTime,
   formatMoney,
@@ -24,7 +25,10 @@ import { Button, ButtonLink } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
-import { FilterBar, Select } from "../admin-ui/form";
+import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
+import { Modal } from "../admin-ui/modal";
+import { Pagination } from "../admin-ui/pagination";
+import { useToast } from "../admin-ui/toast";
 
 /*
  * Admin buyurtmalar moduli.
@@ -85,7 +89,11 @@ export type AdminOrder = {
   createdAt: string;
   branch?: { id: string; code: string; name: string } | null;
   table?: { id: string; name: string } | null;
-  createdBy?: { id: string; firstName: string; lastName?: string | null } | null;
+  createdBy?: {
+    id: string;
+    firstName: string;
+    lastName?: string | null;
+  } | null;
   items?: OrderItem[];
   payments?: OrderPayment[];
   statusHistory?: OrderStatusHistory[];
@@ -140,7 +148,11 @@ export function AdminOrdersPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Buyurtmalarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Buyurtmalarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -175,8 +187,12 @@ export function AdminOrdersPage() {
       header: "Mijoz",
       render: (order) => (
         <div className="min-w-0">
-          <p className="truncate text-sm text-mz-text">{order.customerName ?? "—"}</p>
-          <p className="truncate text-xs text-mz-text-muted">{maskPhone(order.customerPhone)}</p>
+          <p className="truncate text-sm text-mz-text">
+            {order.customerName ?? "—"}
+          </p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {maskPhone(order.customerPhone)}
+          </p>
         </div>
       ),
     },
@@ -209,7 +225,9 @@ export function AdminOrdersPage() {
       header: "Summa",
       align: "right",
       render: (order) => (
-        <span className="font-semibold text-mz-text">{formatMoney(order.total)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(order.total)}
+        </span>
       ),
     },
     {
@@ -217,7 +235,11 @@ export function AdminOrdersPage() {
       header: "",
       align: "right",
       render: (order) => (
-        <ButtonLink href={`/admin/orders/${order.id}`} size="sm" variant="ghost">
+        <ButtonLink
+          href={`/admin/orders/${order.id}`}
+          size="sm"
+          variant="ghost"
+        >
           Ochish
         </ButtonLink>
       ),
@@ -226,7 +248,9 @@ export function AdminOrdersPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <FilterBar>
@@ -234,7 +258,9 @@ export function AdminOrdersPage() {
             <Select
               aria-label="Holat bo'yicha filtr"
               value={status}
-              onChange={(event) => changeFilter(() => setStatus(event.target.value))}
+              onChange={(event) =>
+                changeFilter(() => setStatus(event.target.value))
+              }
             >
               <option value="">Barcha holatlar</option>
               {Object.entries(orderStatusLabels).map(([value, label]) => (
@@ -249,7 +275,9 @@ export function AdminOrdersPage() {
             <Select
               aria-label="Tur bo'yicha filtr"
               value={type}
-              onChange={(event) => changeFilter(() => setType(event.target.value))}
+              onChange={(event) =>
+                changeFilter(() => setType(event.target.value))
+              }
             >
               <option value="">Barcha turlar</option>
               {Object.entries(orderTypeLabels).map(([value, label]) => (
@@ -264,7 +292,9 @@ export function AdminOrdersPage() {
             <Select
               aria-label="To'lov holati bo'yicha filtr"
               value={paymentStatus}
-              onChange={(event) => changeFilter(() => setPaymentStatus(event.target.value))}
+              onChange={(event) =>
+                changeFilter(() => setPaymentStatus(event.target.value))
+              }
             >
               <option value="">Barcha to'lovlar</option>
               {Object.entries(paymentStatusLabels).map(([value, label]) => (
@@ -284,7 +314,9 @@ export function AdminOrdersPage() {
               <Select
                 aria-label="Filial bo'yicha filtr"
                 value={branchId}
-                onChange={(event) => changeFilter(() => setBranchId(event.target.value))}
+                onChange={(event) =>
+                  changeFilter(() => setBranchId(event.target.value))
+                }
               >
                 <option value="">Barcha filiallar</option>
                 {branches.map((branch) => (
@@ -311,38 +343,73 @@ export function AdminOrdersPage() {
          * Backend jami sonni qaytarmaydi, shuning uchun sahifa raqamlari emas,
          * oldinga/orqaga navigatsiya ishlatiladi.
          */}
-        <div className="flex items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-          <p className="text-xs text-mz-text-muted">
-            {offset + 1}–{offset + orders.length}-buyurtma
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
-              size="sm"
-              variant="ghost"
-            >
-              Oldingi
-            </Button>
-            <Button
-              disabled={orders.length < pageSize || isLoading}
-              onClick={() => setOffset((current) => current + pageSize)}
-              size="sm"
-              variant="ghost"
-            >
-              Keyingi
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          count={orders.length}
+          isLoading={isLoading}
+          noun="buyurtma"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
+        />
       </Card>
     </div>
   );
 }
 
+/*
+ * Holat o'zgartirish uchun ruxsat.
+ *
+ * `PATCH /orders/:id/status` `ORDER_UPDATE` emas, `ORDER_SEND_KITCHEN`
+ * talab qiladi va bundan tashqari `orders.service.ts` ikki shart qo'yadi:
+ * chaqiruvchi xodim bo'lishi va o'sha buyurtma FILIALIDA faol bo'lishi kerak
+ * (`requireEmployee` + `assertEmployeeInBranch`). Super-admin uchun ham
+ * istisno yo'q.
+ *
+ * Shuning uchun bu yerda tugmalarni ko'rsatib, 403 ni kutib o'tirmaymiz —
+ * sababi bilan oldindan bloklaymiz.
+ */
+function statusChangeBlockReason(
+  user: AuthUser | null,
+  order: AdminOrder,
+): string | null {
+  if (order.status === "COMPLETED" || order.status === "CANCELLED") {
+    return "Yakunlangan va bekor qilingan buyurtma holati o'zgarmaydi.";
+  }
+
+  if (!user?.employeeId) {
+    return "Holatni faqat xodim hisobiga bog'langan foydalanuvchi o'zgartira oladi.";
+  }
+
+  if (!order.branch) {
+    return "Buyurtma filiali aniqlanmadi.";
+  }
+
+  if (user.branchId !== order.branch.id) {
+    return `Holatni ${order.branch.name} filialining faol xodimi o'zgartiradi.`;
+  }
+
+  return null;
+}
+
+/** Yakuniy holatlar tanlovda ko'rsatilmaydi — ular ortga qaytmaydi. */
+const changeableStatuses: OrderStatus[] = [
+  "CONFIRMED",
+  "PREPARING",
+  "READY",
+  "SERVED",
+  "COMPLETED",
+  "CANCELLED",
+];
+
 export function AdminOrderDetail({ orderId }: { orderId: string }) {
+  const { user } = useAuth();
+  const { showToast } = useToast();
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [statusReason, setStatusReason] = useState("");
+  const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null);
+  const [isChanging, setIsChanging] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -355,7 +422,11 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Buyurtmani yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Buyurtmani yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -365,13 +436,56 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     void load();
   }, [load]);
 
+  async function changeStatus(): Promise<void> {
+    if (!pendingStatus) {
+      return;
+    }
+
+    setIsChanging(true);
+
+    try {
+      await apiFetch(`/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: pendingStatus,
+          ...(statusReason.trim() ? { reason: statusReason.trim() } : {}),
+        }),
+      });
+
+      showToast("Buyurtma holati yangilandi.", "success");
+      setPendingStatus(null);
+      setStatusReason("");
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
+        caught instanceof Error
+          ? caught.message
+          : "Holatni o'zgartirib bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsChanging(false);
+    }
+  }
+
   if (isLoading) {
     return <SkeletonRows rows={8} />;
   }
 
   if (error || !order) {
-    return <ErrorState message={error || "Buyurtma topilmadi."} onRetry={() => void load()} />;
+    return (
+      <ErrorState
+        message={error || "Buyurtma topilmadi."}
+        onRetry={() => void load()}
+      />
+    );
   }
+
+  const statusBlockReason = statusChangeBlockReason(user, order);
 
   const itemColumns: DataTableColumn<OrderItem>[] = [
     {
@@ -390,7 +504,12 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         </div>
       ),
     },
-    { key: "qty", header: "Soni", align: "right", render: (item) => item.quantity },
+    {
+      key: "qty",
+      header: "Soni",
+      align: "right",
+      render: (item) => item.quantity,
+    },
     {
       key: "unit",
       header: "Narx",
@@ -403,7 +522,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
       header: "Jami",
       align: "right",
       render: (item) => (
-        <span className="font-semibold text-mz-text">{formatMoney(item.totalPrice)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(item.totalPrice)}
+        </span>
       ),
     },
   ];
@@ -423,10 +544,45 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             <Badge tone={paymentStatusTone(order.paymentStatus)}>
               {paymentStatusLabels[order.paymentStatus]}
             </Badge>
-            {order.table ? <Badge tone="neutral">{order.table.name}</Badge> : null}
-            {order.branch ? <Badge tone="neutral">{order.branch.name}</Badge> : null}
+            {order.table ? (
+              <Badge tone="neutral">{order.table.name}</Badge>
+            ) : null}
+            {order.branch ? (
+              <Badge tone="neutral">{order.branch.name}</Badge>
+            ) : null}
           </CardBody>
         </Card>
+
+        {hasPermission(user, "ORDER_SEND_KITCHEN") ? (
+          <Card>
+            <CardHeader
+              description="O'zgarish tarixga yoziladi va oshxonaga yetkaziladi"
+              title="Holatni o'zgartirish"
+            />
+            <CardBody>
+              {statusBlockReason ? (
+                <p className="text-sm text-mz-text-muted">
+                  {statusBlockReason}
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {changeableStatuses
+                    .filter((status) => status !== order.status)
+                    .map((status) => (
+                      <Button
+                        key={status}
+                        onClick={() => setPendingStatus(status)}
+                        size="sm"
+                        variant={status === "CANCELLED" ? "danger" : "ghost"}
+                      >
+                        {orderStatusLabels[status]}
+                      </Button>
+                    ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader title="Tarkib" />
@@ -445,7 +601,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             <CardBody>
               <ol className="grid gap-2">
                 {order.statusHistory.map((entry) => (
-                  <li className="flex flex-wrap items-center gap-2 text-sm" key={entry.id}>
+                  <li
+                    className="flex flex-wrap items-center gap-2 text-sm"
+                    key={entry.id}
+                  >
                     <Badge tone={orderStatusTone(entry.toStatus)}>
                       {orderStatusLabels[entry.toStatus]}
                     </Badge>
@@ -453,7 +612,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                       {formatDateTime(entry.createdAt)}
                     </span>
                     {entry.reason ? (
-                      <span className="text-xs text-mz-text-faint">{entry.reason}</span>
+                      <span className="text-xs text-mz-text-faint">
+                        {entry.reason}
+                      </span>
                     ) : null}
                   </li>
                 ))}
@@ -467,16 +628,27 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         <Card>
           <CardHeader title="Hisob" />
           <CardBody className="grid gap-2 text-sm">
-            <SummaryRow label="Oraliq summa" value={formatMoney(order.subtotal)} />
+            <SummaryRow
+              label="Oraliq summa"
+              value={formatMoney(order.subtotal)}
+            />
             {Number(order.discountTotal) > 0 ? (
-              <SummaryRow label="Chegirma" value={`− ${formatMoney(order.discountTotal)}`} />
+              <SummaryRow
+                label="Chegirma"
+                value={`− ${formatMoney(order.discountTotal)}`}
+              />
             ) : null}
             {Number(order.deliveryFeeTotal) > 0 ? (
-              <SummaryRow label="Yetkazib berish" value={formatMoney(order.deliveryFeeTotal)} />
+              <SummaryRow
+                label="Yetkazib berish"
+                value={formatMoney(order.deliveryFeeTotal)}
+              />
             ) : null}
             <div className="mt-1 flex items-center justify-between border-t border-mz-border pt-2">
               <span className="font-semibold text-mz-text">Jami</span>
-              <span className="text-lg font-bold text-mz-text">{formatMoney(order.total)}</span>
+              <span className="text-lg font-bold text-mz-text">
+                {formatMoney(order.total)}
+              </span>
             </div>
           </CardBody>
         </Card>
@@ -490,7 +662,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             {order.deliveryAddress ? (
               <SummaryRow label="Manzil" value={order.deliveryAddress} />
             ) : null}
-            {order.notes ? <SummaryRow label="Izoh" value={order.notes} /> : null}
+            {order.notes ? (
+              <SummaryRow label="Izoh" value={order.notes} />
+            ) : null}
           </CardBody>
         </Card>
 
@@ -522,6 +696,42 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           </Card>
         ) : null}
       </aside>
+
+      <Modal
+        description="Sabab ixtiyoriy, lekin u buyurtma tarixida qoladi."
+        footer={
+          <>
+            <Button onClick={() => setPendingStatus(null)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              disabled={isChanging}
+              onClick={() => void changeStatus()}
+              variant={pendingStatus === "CANCELLED" ? "danger" : "primary"}
+            >
+              {isChanging ? "Yuborilmoqda…" : "Tasdiqlash"}
+            </Button>
+          </>
+        }
+        isOpen={pendingStatus !== null}
+        onClose={() => setPendingStatus(null)}
+        title={
+          pendingStatus
+            ? `${order.orderNumber} → ${orderStatusLabels[pendingStatus]}`
+            : "Holatni o'zgartirish"
+        }
+      >
+        <FormField label="Sabab">
+          {(props) => (
+            <TextInput
+              {...props}
+              onChange={(event) => setStatusReason(event.target.value)}
+              placeholder="Masalan: mijoz bekor qildi"
+              value={statusReason}
+            />
+          )}
+        </FormField>
+      </Modal>
     </div>
   );
 }

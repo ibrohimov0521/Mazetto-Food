@@ -5,10 +5,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import {
-  OrderStatus,
-  Prisma,
-} from "@prisma/client";
+import { OrderStatus, Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -24,6 +21,10 @@ import { BranchesService } from "../branches/branches.service";
 import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
+import {
+  ListCustomersDto,
+  ListOnlineOrdersDto,
+} from "./dto/list-customers.dto";
 import {
   customerVisibleCategoryCodes,
   customerVisibleProductCodes,
@@ -263,7 +264,11 @@ export class CustomersService {
 
   async getProduct(id: string) {
     const product = await this.prisma.product.findFirst({
-      where: { id, isAvailable: true, code: { in: [...customerVisibleProductCodes] } },
+      where: {
+        id,
+        isAvailable: true,
+        code: { in: [...customerVisibleProductCodes] },
+      },
       include: this.productInclude(),
     });
 
@@ -289,10 +294,15 @@ export class CustomersService {
   }
 
   async createOnlineOrder(customerId: string, dto: CreateOnlineOrderDto) {
-    const result = await this.customerOrderEngine.createOnlineOrder(customerId, dto);
+    const result = await this.customerOrderEngine.createOnlineOrder(
+      customerId,
+      dto,
+    );
 
     if (result.order?.id) {
-      void this.telegramOrderNotificationService.notifyNewOrder(result.order.id);
+      void this.telegramOrderNotificationService.notifyNewOrder(
+        result.order.id,
+      );
     }
 
     return result;
@@ -472,27 +482,28 @@ export class CustomersService {
     return this.withDerivedCustomerOrderStatus(customerOrder);
   }
 
-  listCustomers(user: AuthenticatedUser) {
+  listCustomers(query: ListCustomersDto, user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user);
 
     return this.prisma.customer.findMany({
       where: branchId ? { customerOrders: { some: { branchId } } } : {},
       orderBy: { createdAt: "desc" },
+      skip: query.offset,
+      take: query.limit,
       include: {
         _count: { select: { customerOrders: true, favorites: true } },
       },
     });
   }
 
-  async listOnlineOrders(
-    requestedBranchId: string | undefined,
-    user: AuthenticatedUser,
-  ) {
-    const branchId = resolveBranchScope(user, requestedBranchId);
+  async listOnlineOrders(query: ListOnlineOrdersDto, user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user, query.branchId);
 
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: branchId ? { branchId } : {},
       orderBy: { createdAt: "desc" },
+      skip: query.offset,
+      take: query.limit,
       include: {
         customer: true,
         branch: true,

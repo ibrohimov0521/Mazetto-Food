@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -66,11 +67,14 @@ export class BranchesService {
     return this.toAdminBranch(branch);
   }
 
-  createBranch(dto: CreateBranchDto, user: AuthenticatedUser) {
+  async createBranch(dto: CreateBranchDto, user: AuthenticatedUser) {
     this.assertGlobalBranchManagement(user);
 
+    const data = this.branchCreateData(dto);
+    await this.assertCodeAvailable(data.code);
+
     return this.prisma.branch.create({
-      data: this.branchCreateData(dto),
+      data,
       include: { workingHours: true },
     });
   }
@@ -83,11 +87,41 @@ export class BranchesService {
     resolveBranchScope(user, id);
     await this.assertBranch(id);
 
+    const data = this.branchUpdateData(dto);
+
+    if (typeof data.code === "string") {
+      await this.assertCodeAvailable(data.code, id);
+    }
+
     return this.prisma.branch.update({
       where: { id },
-      data: this.branchUpdateData(dto),
+      data,
       include: { workingHours: { orderBy: { dayOfWeek: "asc" } } },
     });
+  }
+
+  /*
+   * Filial kodi yagona.
+   *
+   * Tekshiruvsiz Prisma P2002 tashlardi va u 500 "Internal server error"
+   * bo'lib chiqardi — admin panelda filial qo'shayotgan odam nima xato
+   * qilganini bila olmasdi. Naqsh `staff.service.ts` dagi bilan bir xil:
+   * oldindan tekshirib, aytib bo'ladigan xato qaytarish.
+   */
+  private async assertCodeAvailable(
+    code: string,
+    excludeId?: string,
+  ): Promise<void> {
+    const duplicate = await this.prisma.branch.findFirst({
+      where: { code, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { id: true, name: true },
+    });
+
+    if (duplicate) {
+      throw new ConflictException(
+        `Branch code "${code}" is already used by ${duplicate.name}`,
+      );
+    }
   }
 
   async setWorkingHours(
@@ -101,8 +135,8 @@ export class BranchesService {
     return this.prisma.$transaction(async (tx) => {
       for (const hour of hours) {
         this.assertWorkingHour(hour);
-        const opensAt = hour.isClosed ? null : hour.opensAt ?? null;
-        const closesAt = hour.isClosed ? null : hour.closesAt ?? null;
+        const opensAt = hour.isClosed ? null : (hour.opensAt ?? null);
+        const closesAt = hour.isClosed ? null : (hour.closesAt ?? null);
 
         await tx.branchWorkingHour.upsert({
           where: {
@@ -204,7 +238,9 @@ export class BranchesService {
     }
 
     if (type === "DELIVERY" && !customerBranch.deliveryEnabled) {
-      throw new BadRequestException("Delivery is not available for this branch");
+      throw new BadRequestException(
+        "Delivery is not available for this branch",
+      );
     }
 
     if (type === "PICKUP" && !customerBranch.pickupEnabled) {
@@ -237,7 +273,8 @@ export class BranchesService {
       name: dto.name,
       address: dto.address ?? null,
       phone: dto.phone ?? null,
-      latitude: dto.latitude === undefined ? null : new Prisma.Decimal(dto.latitude),
+      latitude:
+        dto.latitude === undefined ? null : new Prisma.Decimal(dto.latitude),
       longitude:
         dto.longitude === undefined ? null : new Prisma.Decimal(dto.longitude),
       timezone: dto.timezone ?? "Asia/Tashkent",
@@ -273,7 +310,9 @@ export class BranchesService {
       ...(dto.deliveryEnabled !== undefined
         ? { deliveryEnabled: dto.deliveryEnabled }
         : {}),
-      ...(dto.pickupEnabled !== undefined ? { pickupEnabled: dto.pickupEnabled } : {}),
+      ...(dto.pickupEnabled !== undefined
+        ? { pickupEnabled: dto.pickupEnabled }
+        : {}),
       ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
     };
   }

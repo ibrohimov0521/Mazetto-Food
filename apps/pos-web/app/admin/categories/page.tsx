@@ -1,6 +1,6 @@
 "use client";
 
-import { AdminCategoriesPage } from "../../../components/admin/admin-catalog";
+import { AdminCategoriesPage } from "../../../components/admin/admin-categories";
 import { AdminLayout } from "../../../components/admin-shell/admin-layout";
 import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
@@ -12,7 +12,11 @@ export default function CategoriesPage() {
       <PermissionGuard permission="MENU_VIEW">
         <AdminLayout>
           <AdminPageHeader
-            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Katalog" }, { label: "Kategoriyalar" }]}
+            breadcrumbs={[
+              { label: "Admin", href: "/admin/dashboard" },
+              { label: "Katalog" },
+              { label: "Kategoriyalar" },
+            ]}
             description="Menyu kategoriyalari, saralash tartibi va ommaviy ko'rinish"
             title="Kategoriyalar"
           />

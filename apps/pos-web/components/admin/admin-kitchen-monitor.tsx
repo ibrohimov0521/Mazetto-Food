@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
-import { formatDateTime, orderTypeLabels, type OrderType } from "../../lib/order-display";
+import {
+  formatDateTime,
+  orderTypeLabels,
+  type OrderType,
+} from "../../lib/order-display";
 import type { BadgeTone } from "../admin-ui/badge";
 import { Badge } from "../admin-ui/badge";
 import { Card } from "../admin-ui/card";
@@ -38,7 +42,12 @@ type KitchenTicket = {
     kitchenComment?: string | null;
     branch?: { id: string; name: string } | null;
     table?: { id: string; name: string; hall?: { name: string } | null } | null;
-    items?: { id: string; productName: string; variantName?: string | null; quantity: string }[];
+    items?: {
+      id: string;
+      productName: string;
+      variantName?: string | null;
+      quantity: string;
+    }[];
   } | null;
 };
 
@@ -64,7 +73,9 @@ function ticketStatusTone(status: KitchenTicketStatus): BadgeTone {
 function waitingMinutes(createdAt: string): number {
   const created = new Date(createdAt).getTime();
 
-  return Number.isNaN(created) ? 0 : Math.max(0, Math.round((Date.now() - created) / 60000));
+  return Number.isNaN(created)
+    ? 0
+    : Math.max(0, Math.round((Date.now() - created) / 60000));
 }
 
 export function AdminKitchenMonitor() {
@@ -82,7 +93,11 @@ export function AdminKitchenMonitor() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Oshxona holatini yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Oshxona holatini yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -117,7 +132,9 @@ export function AdminKitchenMonitor() {
       primary: true,
       render: (ticket) => (
         <div className="min-w-0">
-          <p className="truncate font-semibold text-mz-text">{ticket.ticketNumber}</p>
+          <p className="truncate font-semibold text-mz-text">
+            {ticket.ticketNumber}
+          </p>
           <p className="truncate text-xs text-mz-text-muted">
             {ticket.order?.displayOrderNumber ?? ticket.order?.orderNumber ?? "—"} · {formatDateTime(ticket.createdAt)}
           </p>
@@ -155,7 +172,11 @@ export function AdminKitchenMonitor() {
 
         return (
           <span
-            className={minutes >= 20 ? "font-semibold text-mz-danger" : "text-mz-text-muted"}
+            className={
+              minutes >= 20
+                ? "font-semibold text-mz-danger"
+                : "text-mz-text-muted"
+            }
           >
             {minutes} daq
           </span>
@@ -176,13 +197,33 @@ export function AdminKitchenMonitor() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Yangi" tone="warning" value={`${stats.NEW} ta`} />
-        <InfoBox label="Qabul qilingan" value={`${stats.ACCEPTED} ta`} />
-        <InfoBox label="Pishirilmoqda" value={`${stats.COOKING} ta`} />
-        <InfoBox label="Tayyor" tone="success" value={`${stats.READY} ta`} />
+        <InfoBox
+          icon="inbox"
+          label="Yangi"
+          tone="warning"
+          value={`${stats.NEW} ta`}
+        />
+        <InfoBox
+          icon="clipboard"
+          label="Qabul qilingan"
+          value={`${stats.ACCEPTED} ta`}
+        />
+        <InfoBox
+          icon="flame"
+          label="Pishirilmoqda"
+          value={`${stats.COOKING} ta`}
+        />
+        <InfoBox
+          icon="check"
+          label="Tayyor"
+          tone="success"
+          value={`${stats.READY} ta`}
+        />
       </StatGrid>
 
       <Card>
@@ -197,8 +238,8 @@ export function AdminKitchenMonitor() {
         />
         <p className="border-t border-mz-border px-4 py-2.5 text-xs text-mz-text-muted">
           Bu ekran faqat kuzatish uchun. Ticket holatini oshxona xodimi{" "}
-          <code className="rounded bg-mz-surface-sunken px-1">/kitchen</code> ekranida
-          o&apos;zgartiradi. Ro&apos;yxat har 15 soniyada yangilanadi.
+          <code className="rounded bg-mz-surface-sunken px-1">/kitchen</code>{" "}
+          ekranida o&apos;zgartiradi. Ro&apos;yxat har 15 soniyada yangilanadi.
         </p>
       </Card>
     </div>

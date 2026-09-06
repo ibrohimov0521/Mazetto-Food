@@ -8,6 +8,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
+import {
+  ListCustomersDto,
+  ListOnlineOrdersDto,
+} from "./dto/list-customers.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -138,8 +142,11 @@ export class CustomersAdminController {
 
   @Get("customers")
   @Permissions(PERMISSIONS.CUSTOMER_VIEW)
-  listCustomers(@CurrentUser() user: AuthenticatedUser) {
-    return this.customersService.listCustomers(user);
+  listCustomers(
+    @Query() query: ListCustomersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.listCustomers(query, user);
   }
 
   @Get("customers/statistics")
@@ -151,9 +158,9 @@ export class CustomersAdminController {
   @Get("online-orders")
   @Permissions(PERMISSIONS.ONLINE_ORDER_VIEW)
   listOnlineOrders(
-    @Query("branchId") branchId: string | undefined,
+    @Query() query: ListOnlineOrdersDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.customersService.listOnlineOrders(branchId, user);
+    return this.customersService.listOnlineOrders(query, user);
   }
 }

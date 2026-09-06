@@ -63,7 +63,11 @@ export function AdminSuppliersPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Yetkazib beruvchilarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Yetkazib beruvchilarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -123,7 +127,10 @@ export function AdminSuppliersPage() {
         });
         showToast("Yetkazib beruvchi yangilandi.", "success");
       } else {
-        await apiFetch("/suppliers", { method: "POST", body: JSON.stringify(payload) });
+        await apiFetch("/suppliers", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
         showToast("Yetkazib beruvchi qo'shildi.", "success");
       }
 
@@ -134,7 +141,10 @@ export function AdminSuppliersPage() {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "Saqlab bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Saqlab bo'lmadi.",
+        "danger",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -155,7 +165,10 @@ export function AdminSuppliersPage() {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "O'chirib bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "O'chirib bo'lmadi.",
+        "danger",
+      );
     }
   }
 
@@ -168,7 +181,11 @@ export function AdminSuppliersPage() {
         <span className="font-semibold text-mz-text">{supplier.name}</span>
       ),
     },
-    { key: "phone", header: "Telefon", render: (supplier) => supplier.phone ?? "—" },
+    {
+      key: "phone",
+      header: "Telefon",
+      render: (supplier) => supplier.phone ?? "—",
+    },
     {
       key: "address",
       header: "Manzil",
@@ -190,7 +207,11 @@ export function AdminSuppliersPage() {
           <Button onClick={() => openEdit(supplier)} size="sm" variant="ghost">
             Tahrir
           </Button>
-          <Button onClick={() => setPendingDelete(supplier)} size="sm" variant="danger">
+          <Button
+            onClick={() => setPendingDelete(supplier)}
+            size="sm"
+            variant="danger"
+          >
             Olib tashlash
           </Button>
         </span>
@@ -200,11 +221,15 @@ export function AdminSuppliersPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <CardHeader
-          actions={<Button onClick={openCreate}>Yangi yetkazib beruvchi</Button>}
+          actions={
+            <Button onClick={openCreate}>Yangi yetkazib beruvchi</Button>
+          }
           description="Faol yetkazib beruvchilar ro'yxati"
           title="Yetkazib beruvchilar"
         />
@@ -234,7 +259,11 @@ export function AdminSuppliersPage() {
       <Modal
         isOpen={isEditorOpen}
         onClose={() => setIsEditorOpen(false)}
-        title={editingId ? "Yetkazib beruvchini tahrirlash" : "Yangi yetkazib beruvchi"}
+        title={
+          editingId
+            ? "Yetkazib beruvchini tahrirlash"
+            : "Yangi yetkazib beruvchi"
+        }
       >
         <form className="grid gap-3" id="supplier-form" onSubmit={save}>
           <FormField label="Nomi" required>
@@ -243,7 +272,9 @@ export function AdminSuppliersPage() {
                 {...props}
                 required
                 value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, name: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -253,7 +284,9 @@ export function AdminSuppliersPage() {
                 {...props}
                 placeholder="+998901234567"
                 value={form.phone}
-                onChange={(event) => setForm({ ...form, phone: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, phone: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -262,7 +295,9 @@ export function AdminSuppliersPage() {
               <TextInput
                 {...props}
                 value={form.address}
-                onChange={(event) => setForm({ ...form, address: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, address: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -295,7 +330,8 @@ export function AdminSuppliersPage() {
         title="Tasdiqlang"
       >
         <p className="text-sm text-mz-text">
-          <span className="font-semibold">{pendingDelete?.name}</span> olib tashlanadi.
+          <span className="font-semibold">{pendingDelete?.name}</span> olib
+          tashlanadi.
         </p>
       </Modal>
     </div>

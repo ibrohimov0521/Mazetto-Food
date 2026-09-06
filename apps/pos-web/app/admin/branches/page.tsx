@@ -1,6 +1,6 @@
 "use client";
 
-import { AdminBranchesPage } from "../../../components/admin/admin-catalog";
+import { AdminBranchesPage } from "../../../components/admin/admin-branches";
 import { AdminLayout } from "../../../components/admin-shell/admin-layout";
 import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
@@ -12,7 +12,11 @@ export default function BranchesPage() {
       <PermissionGuard permission="BRANCH_VIEW">
         <AdminLayout>
           <AdminPageHeader
-            breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Sozlamalar" }, { label: "Filiallar" }]}
+            breadcrumbs={[
+              { label: "Admin", href: "/admin/dashboard" },
+              { label: "Sozlamalar" },
+              { label: "Filiallar" },
+            ]}
             description="Filial holati, ish vaqti va buyurtma qabuli"
             title="Filiallar"
           />

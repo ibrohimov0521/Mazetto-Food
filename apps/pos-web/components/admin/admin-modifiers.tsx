@@ -42,7 +42,12 @@ type ModifierForm = {
   isActive: boolean;
 };
 
-const emptyForm: ModifierForm = { name: "", price: "0", sortOrder: "0", isActive: true };
+const emptyForm: ModifierForm = {
+  name: "",
+  price: "0",
+  sortOrder: "0",
+  isActive: true,
+};
 
 export function AdminModifiersPage() {
   const { showToast } = useToast();
@@ -60,13 +65,19 @@ export function AdminModifiersPage() {
     setError("");
 
     try {
-      setModifiers(await apiFetch<Modifier[]>("/menu/modifiers?includeInactive=true"));
+      setModifiers(
+        await apiFetch<Modifier[]>("/menu/modifiers?includeInactive=true"),
+      );
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Qo'shimchalarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Qo'shimchalarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +144,10 @@ export function AdminModifiersPage() {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "Saqlab bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Saqlab bo'lmadi.",
+        "danger",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -145,14 +159,20 @@ export function AdminModifiersPage() {
         method: "PATCH",
         body: JSON.stringify({ isActive: !modifier.isActive }),
       });
-      showToast(modifier.isActive ? "Nofaol qilindi." : "Faollashtirildi.", "success");
+      showToast(
+        modifier.isActive ? "Nofaol qilindi." : "Faollashtirildi.",
+        "success",
+      );
       await load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "O'zgartirib bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "O'zgartirib bo'lmadi.",
+        "danger",
+      );
     }
   }
 
@@ -212,7 +232,9 @@ export function AdminModifiersPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <CardHeader
@@ -249,7 +271,9 @@ export function AdminModifiersPage() {
                 maxLength={80}
                 required
                 value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, name: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -260,7 +284,9 @@ export function AdminModifiersPage() {
                 min={0}
                 type="number"
                 value={form.price}
-                onChange={(event) => setForm({ ...form, price: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, price: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -274,7 +300,9 @@ export function AdminModifiersPage() {
                     min={0}
                     type="number"
                     value={form.sortOrder}
-                    onChange={(event) => setForm({ ...form, sortOrder: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, sortOrder: event.target.value })
+                    }
                   />
                 )}
               </FormField>
@@ -283,7 +311,9 @@ export function AdminModifiersPage() {
                   checked={form.isActive}
                   className="h-4 w-4 accent-mz-accent"
                   type="checkbox"
-                  onChange={(event) => setForm({ ...form, isActive: event.target.checked })}
+                  onChange={(event) =>
+                    setForm({ ...form, isActive: event.target.checked })
+                  }
                 />
                 Faol
               </label>

@@ -74,9 +74,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     <ToastProvider>
       <div className="mz-admin min-h-screen w-full max-w-full overflow-x-hidden bg-mz-canvas">
         <AdminSidebar
-        isCollapsed={isCollapsed}
-        isMobileOpen={isMobileOpen}
-        onNavigate={() => setIsMobileOpen(false)}
+          isCollapsed={isCollapsed}
+          isMobileOpen={isMobileOpen}
+          onNavigate={() => setIsMobileOpen(false)}
           user={user}
         />
 
@@ -105,7 +105,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             user={user}
           />
 
-          <main className="min-w-0 flex-1 px-3 py-4 sm:px-5 sm:py-6">{children}</main>
+          <main className="mx-auto w-full min-w-0 max-w-[1600px] flex-1 px-3 py-4 sm:px-5 sm:py-6">
+            {children}
+          </main>
         </div>
       </div>
     </ToastProvider>

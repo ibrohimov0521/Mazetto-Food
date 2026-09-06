@@ -52,7 +52,9 @@ type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
 const CUSTOMER_ORDER_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_ORDER_ATTEMPT_WAIT_MS = 15000;
 const CUSTOMER_ORDER_STALE_PENDING_MS = 2 * 60 * 1000;
-const operationalCustomerPaymentMethods = [OnlinePaymentMethodDto.CASH] as const;
+const operationalCustomerPaymentMethods = [
+  OnlinePaymentMethodDto.CASH,
+] as const;
 
 @Injectable()
 export class CustomerOrderEngineService {
@@ -258,13 +260,8 @@ export class CustomerOrderEngineService {
     const pricing = await this.prisma.$transaction(async (tx) =>
       this.composeCustomerOrderPricing(
         dto.type,
-        (
-          await this.calculateCustomerOrderPricing(
-            tx,
-            dto.branchId,
-            dto.items,
-          )
-        ).subtotal,
+        (await this.calculateCustomerOrderPricing(tx, dto.branchId, dto.items))
+          .subtotal,
       ),
     );
 
@@ -410,7 +407,8 @@ export class CustomerOrderEngineService {
     return (
       attempt.status === CustomerOrderAttemptStatus.PENDING &&
       !attempt.customerOrderId &&
-      Date.now() - attempt.createdAt.getTime() >= CUSTOMER_ORDER_STALE_PENDING_MS
+      Date.now() - attempt.createdAt.getTime() >=
+        CUSTOMER_ORDER_STALE_PENDING_MS
     );
   }
 
