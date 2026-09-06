@@ -1,10 +1,10 @@
 # MAZETTO FOOD Media Production Status
 
-Updated: 2026-09-01
+Updated: 2026-09-06
 
 ## Scope
 
-This status covers the 74-item media pipeline proof batch prepared from local source assets. It records media generation infrastructure and owner-review proof outputs; production media upload, database update, and seed image path changes are separate controlled actions.
+This status covers the 74-item media pipeline prepared from owner-provided local source assets. It records media generation infrastructure, source custody, and the production media release status.
 
 ## Source Assets
 
@@ -34,21 +34,18 @@ The local pipeline lives in `media-source/`.
 
 The same background file is used for every proof-batch output. It contains no logo, text, product name, price, or food object.
 
-## Proof Batch
+## Canonical Source Batch
 
-| File | Product label | Source object | Status | Notes |
-| --- | --- | --- | --- | --- |
-| `media-source/final/09-kurinniy-lavash.png` | Kurinniy Lavash | `chicken-lavash.webp` | Ready for owner review | Exact PDF-derived chicken lavash source. |
-| `media-source/final/10-kurinniy-big-lavash.png` | Kurinniy Big Lavash | `chicken-lavash.webp` | Ready for owner review | PDF does not provide a separate big chicken lavash image; same source is reused at a larger presentation scale. |
-| `media-source/final/11-kurinniy-lavash-pishloqli.png` | Kurinniy Lavash Pishloqli | `chicken-cheese-lavash.webp` | Ready for owner review | Exact PDF-derived chicken cheese lavash source. |
-| `media-source/final/12-kurinniy-big-lavash-pishloqli.png` | Kurinniy Big Lavash Pishloqli | `chicken-cheese-lavash.webp` | Ready for owner review | PDF does not provide a separate big chicken cheese lavash image; same source is reused at a larger presentation scale. |
+| Files | Catalog coverage | Status | Notes |
+| --- | --- | --- | --- |
+| `media-source/final/1.png` through `media-source/final/74.png` | 56 standalone products and 18 sets | Released and retained as source assets | Numbered in the owner-approved canonical menu order. Optimized WebP derivatives live under `apps/customer-web/public/menu-media/source/products/`. |
 
 ## Authenticity Notes
 
 - No ingredients were invented.
 - No fake product photos were generated.
-- The proof batch uses existing MAZETTO PDF-derived transparent product objects.
-- The two `big` chicken lavash proof images reuse the matching chicken/chicken-cheese visual because the PDF shows them as menu SKUs without a distinct separate product photo.
+- The canonical batch uses the owner-provided product/set images.
+- The numbered source files are retained for traceability; generated QA screenshots and temporary release artifacts are not application source.
 
 ## Manifest
 
@@ -60,11 +57,4 @@ It records source paths, final paths, hashes, canvas size, and local-only safety
 
 ## Remaining Work
 
-Before processing all 74 catalog items, owner review is needed for:
-
-1. Whether the locked background style is approved.
-2. Whether reused big-variant visuals are acceptable when the source menu has no separate big product image.
-3. Whether low-resolution PDF-derived objects should be accepted for production or replaced by new real photos.
-4. Whether unresolved products without source visuals should receive real product photography or explicitly approved generated assets later.
-
-Known unresolved media from previous audit remains separate from this proof batch and was not changed here.
+The canonical 74 product/set media release is complete for customer-visible catalog items. Future media work should preserve the numbered source batch and regenerate optimized derivatives from it when product imagery changes.
