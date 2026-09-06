@@ -1,8 +1,54 @@
 # MAZETTO FOOD Work Status
 
-Last updated: 2026-08-31
+Last updated: 2026-09-06
 
 This file is the persistent working checklist for the existing MAZETTO FOOD production project. Read this before continuing any Mazetto task.
+
+## Latest Verified Release (2026-09-06)
+
+- Production backend, customer-web and POS/admin all run image revision
+  `13533a74c7f588339c7f3cdd770851933b3668fb`. All three report 1/1; postgres/media
+  remain 1/1 and were not redeployed. This checkpoint supersedes older local-only
+  and production-revision notes below.
+- Integrated the partner's nine admin/backend commits through `97d5ed4` without
+  conflict. Pushed customer changes in `8a0cbab`, then the owner's corrected teal
+  carousel in `13533a7`. The rejected pale carousel was never deployed.
+- Original teal slide composition restored: large white heading, CTA/price row,
+  large rectangular desktop image, visible arrows/dots; no organic clipping or
+  hover zoom. Mobile contains the photo so its sides remain visible.
+- Backup: `/home/javohir/backups/mazetto/postgres/mazetto-combined-pre-release-20260906-113451.dump`
+  (237724 bytes; archive listing verified). Rollback tags for all three application
+  services: `rollback-20260906-113451`. Release evidence directory:
+  `/home/javohir/releases/combined-20260906-113451`.
+- Service environment hashes are unchanged. No migration, seed, business-DB write,
+  order creation, payment action, Telegram webhook change or Cloudflare change.
+- Backend health HTTP 200, database ok. Customer `/`, `/menu`, `/cart`, `/checkout`,
+  `/profile`, `/orders` and POS `/login`, `/admin/dashboard`, `/admin/expenses`,
+  `/pos`, `/kitchen` return HTTP 200. Protected admin APIs reject unauthenticated
+  reads with 401 (audit, expenses, shifts, payments, receipts, warehouses, modifiers).
+- Read-only production browser smoke passed at 390/430/768/1440: loaded hero and
+  first-viewport product images, arrow navigation, 74 products, no horizontal
+  overflow or page exceptions, guest customer routes and admin login redirect.
+  Analytics POSTs were blocked separately; no application mutation was sent.
+- Local backend/customer-web/POS typecheck, lint and build passed. Operational
+  listings, admin catalog, Telegram ordering/auth, customer history and catalog
+  cache validators passed. Local design/upsell QA passed at four widths; 26
+  fixture-authenticated admin page/viewport checks passed. These fixtures are not
+  production-authenticated financial or staff workflow proof.
+- Before/after counts unchanged: orders 28, customer_orders 20, attempts 20,
+  kitchen_tickets 28. Products: 91 internal, 74 returned by customer menu.
+- Telegram webhook: pending 0, no last error. Current-container 20-minute backend,
+  customer-web and POS log scan found zero selected error patterns; not a full log audit.
+- Remaining admin gate: new PAYMENT_VIEW, SHIFT_VIEW_BRANCH, EXPENSE_CREATE and
+  AUDIT_VIEW entries/grants are absent in production. SUPER_ADMIN wildcard support
+  is code-verified; real authenticated production admin/restricted-role smoke and
+  a narrowly approved permission sync remain pending. No general seed was run.
+- Expense creation currently records reporting data, not a cash-drawer withdrawal;
+  form wording now says so. Shift-close concurrency validation remains future work.
+- Release closeout restores media auto-deploy to its recorded true setting after
+  the docs-only push. Backend/customer auto-deploy remain at their original false.
+- Raw source-media replacement files, generated agent instructions and QA/tmp
+  artifacts were not committed. Packaged canonical media remains intact.
 
 ## Core Rule
 

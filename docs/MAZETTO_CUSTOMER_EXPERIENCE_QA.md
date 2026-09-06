@@ -2,7 +2,11 @@
 
 Date: 2026-09-06. Scope: customer-web only. Production inspected at
 https://mazettofood.uz, the deployed domain associated with the supplied screenshot.
-No production order, auth code, database write, deployment or push was performed.
+The original local audit below performed no production order, auth code, database
+write, deployment or push. Subsequent owner-authorized release: `13533a7` deployed
+on 2026-09-06 with the restored original teal carousel, not the intermediate pale
+hero described below. See the latest release checkpoint in MAZETTO_WORK_STATUS.md
+for production smoke evidence and remaining admin permission limitations.
 
 ## Findings and Fixes
 
