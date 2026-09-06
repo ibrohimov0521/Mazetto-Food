@@ -14,14 +14,21 @@ import {
   type PaymentStatus,
 } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
+import { hasPermission } from "../../lib/auth";
 import { Badge } from "../admin-ui/badge";
-import { ButtonLink } from "../admin-ui/button";
+import { Button, ButtonLink } from "../admin-ui/button";
 import { Card } from "../admin-ui/card";
-import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
-import { ErrorState } from "../admin-ui/feedback";
+import {
+  DataTable,
+  RowAction,
+  type DataTableColumn,
+} from "../admin-ui/data-table";
+import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
 import { FilterBar, Select } from "../admin-ui/form";
+import { Modal } from "../admin-ui/modal";
 import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
+import { useToast } from "../admin-ui/toast";
 
 /*
  * Cheklar ro'yxati.
@@ -29,8 +36,11 @@ import { InfoBox, StatGrid } from "../admin-ui/stat-box";
  * `GET /receipts` 4-bosqichda qo'shildi. Ro'yxat chek MAZMUNINI qaytarmaydi —
  * `content` va ESC/POS satri faqat bitta chek so'ralganda keladi.
  *
- * Bu ekran FAQAT O'QISH: chekni qayta chop etish kassa ishi
- * (`RECEIPT_PRINT`, POS ekranida).
+ * Detal `GET /receipts/:id` dan keladi va chek tarkibini beradi.
+ *
+ * `PATCH /receipts/:id/print` chekni "chop etilgan" deb BELGILAYDI, printerga
+ * yubormaydi — `PrintJob` modeli hali yo'q. Tugma matni shuni aytadi; "Qayta
+ * chop etish" deyish bo'lmagan ishni va'da qilardi.
  */
 
 type Branch = { id: string; code: string; name: string };
@@ -54,10 +64,39 @@ type Receipt = {
   } | null;
 };
 
+type ReceiptDetail = Receipt & {
+  content?: unknown;
+  order?: {
+    id: string;
+    orderNumber: string;
+    status: OrderStatus;
+    paymentStatus: PaymentStatus;
+    source: OrderSource;
+    items?: {
+      id: string;
+      productName: string;
+      variantName?: string | null;
+      quantity: string;
+      totalPrice: string;
+    }[];
+    payments?: {
+      id: string;
+      amount: string;
+      method?: { code: string; name: string } | null;
+    }[];
+  } | null;
+};
+
 const pageSize = 25;
 
 export function AdminReceiptsPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
+  const canMarkPrinted = hasPermission(user, "RECEIPT_PRINT");
+  const [detail, setDetail] = useState<ReceiptDetail | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isMarking, setIsMarking] = useState(false);
   const showBranchFilter = canSwitchBranch(user);
 
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -79,6 +118,31 @@ export function AdminReceiptsPage() {
         // Filial ro'yxati ixtiyoriy.
       });
   }, [showBranchFilter]);
+
+  const openDetail = useCallback(
+    async (receiptId: string) => {
+      setDetailId(receiptId);
+      setDetail(null);
+      setIsDetailLoading(true);
+
+      try {
+        setDetail(await apiFetch<ReceiptDetail>(`/receipts/${receiptId}`));
+      } catch (caught) {
+        if (caught instanceof SessionExpiredError) {
+          return;
+        }
+
+        showToast(
+          caught instanceof Error ? caught.message : "Chekni yuklab bo'lmadi.",
+          "danger",
+        );
+        setDetailId(null);
+      } finally {
+        setIsDetailLoading(false);
+      }
+    },
+    [showToast],
+  );
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +173,35 @@ export function AdminReceiptsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function markPrinted(): Promise<void> {
+    if (!detail) {
+      return;
+    }
+
+    setIsMarking(true);
+
+    try {
+      setDetail(
+        await apiFetch<ReceiptDetail>(`/receipts/${detail.id}/print`, {
+          method: "PATCH",
+        }),
+      );
+      showToast("Chek chop etilgan deb belgilandi.", "success");
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
+        caught instanceof Error ? caught.message : "Belgilab bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsMarking(false);
+    }
+  }
 
   /*
    * Backend `printed` bo'yicha filtrlashni qo'llab-quvvatlamaydi,
@@ -286,6 +379,13 @@ export function AdminReceiptsPage() {
           emptyTitle="Chek topilmadi"
           getRowKey={(receipt) => receipt.id}
           isLoading={isLoading}
+          rowActions={(receipt) => (
+            <RowAction
+              icon="eye"
+              label={`${receipt.receiptNumber} — ochish`}
+              onClick={() => void openDetail(receipt.id)}
+            />
+          )}
           rows={filtered}
         />
 
@@ -298,6 +398,123 @@ export function AdminReceiptsPage() {
           pageSize={pageSize}
         />
       </Card>
+
+      <Modal
+        footer={
+          <>
+            <Button onClick={() => setDetailId(null)} variant="ghost">
+              Yopish
+            </Button>
+            {canMarkPrinted && detail && !detail.printed ? (
+              <Button disabled={isMarking} onClick={() => void markPrinted()}>
+                {isMarking ? "Belgilanmoqda…" : "Chop etilgan deb belgilash"}
+              </Button>
+            ) : null}
+          </>
+        }
+        isOpen={detailId !== null}
+        onClose={() => setDetailId(null)}
+        title={detail ? detail.receiptNumber : "Chek"}
+      >
+        {isDetailLoading || !detail ? (
+          <SkeletonRows rows={5} />
+        ) : (
+          <div className="grid gap-4 text-sm">
+            <div className="flex flex-wrap gap-2">
+              <Badge tone={detail.printed ? "success" : "warning"} withDot>
+                {detail.printed ? "Chop etilgan" : "Chop etilmagan"}
+              </Badge>
+              {detail.branch ? (
+                <Badge tone="neutral">{detail.branch.name}</Badge>
+              ) : null}
+              {detail.order ? (
+                <Badge tone={orderStatusTone(detail.order.status)}>
+                  {orderStatusLabels[detail.order.status]}
+                </Badge>
+              ) : null}
+            </div>
+
+            <dl className="grid gap-1 text-xs">
+              <div className="flex justify-between gap-4">
+                <dt className="text-mz-text-muted">Buyurtma</dt>
+                <dd className="font-semibold text-mz-text">
+                  {detail.order?.orderNumber ?? "—"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-mz-text-muted">Yaratilgan</dt>
+                <dd className="text-mz-text">
+                  {formatDateTime(detail.createdAt)}
+                </dd>
+              </div>
+              {detail.printedAt ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-mz-text-muted">Chop etilgan</dt>
+                  <dd className="text-mz-text">
+                    {formatDateTime(detail.printedAt)}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+
+            {detail.order?.items && detail.order.items.length > 0 ? (
+              <div className="rounded-mz-control border border-mz-border">
+                <p className="border-b border-mz-border bg-mz-surface-sunken px-3 py-2 text-xs font-bold uppercase tracking-wide text-mz-text-muted">
+                  Tarkib
+                </p>
+                <ul className="divide-y divide-mz-border">
+                  {detail.order.items.map((item) => (
+                    <li
+                      className="flex items-baseline gap-3 px-3 py-2"
+                      key={item.id}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-mz-text">
+                        {item.productName}
+                        {item.variantName ? ` · ${item.variantName}` : ""}
+                      </span>
+                      <span className="shrink-0 text-xs text-mz-text-muted">
+                        ×{Number(item.quantity)}
+                      </span>
+                      <span className="shrink-0 font-semibold text-mz-text">
+                        {formatMoney(item.totalPrice)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {detail.order?.payments && detail.order.payments.length > 0 ? (
+              <dl className="grid gap-1 text-xs">
+                {detail.order.payments.map((payment) => (
+                  <div className="flex justify-between gap-4" key={payment.id}>
+                    <dt className="text-mz-text-muted">
+                      {payment.method?.name ?? payment.method?.code ?? "To'lov"}
+                    </dt>
+                    <dd className="text-mz-text">
+                      {formatMoney(payment.amount)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+
+            <div className="flex items-baseline justify-between border-t border-mz-border pt-3">
+              <span className="font-semibold text-mz-text">Jami</span>
+              <span className="text-lg font-bold text-mz-text">
+                {formatMoney(detail.total)}
+              </span>
+            </div>
+
+            {canMarkPrinted && !detail.printed ? (
+              <p className="text-xs text-mz-text-muted">
+                Belgilash chekni printerga yubormaydi — u faqat holatni yozadi.
+                Haqiqiy chop etish kassa terminalida bajariladi.
+              </p>
+            ) : null}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
