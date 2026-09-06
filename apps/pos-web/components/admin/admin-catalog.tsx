@@ -60,24 +60,6 @@ type Product = {
   bundleItems?: BundleItem[];
 };
 
-type Branch = {
-  id: string;
-  code: string;
-  name: string;
-  address?: string | null;
-  phone?: string | null;
-  isActive: boolean;
-  acceptsOrders: boolean;
-  deliveryEnabled: boolean;
-  pickupEnabled: boolean;
-  workingHours?: {
-    dayOfWeek: string;
-    opensAt?: string | null;
-    closesAt?: string | null;
-    isClosed: boolean;
-  }[];
-};
-
 const formatter = new Intl.NumberFormat("uz-UZ");
 
 export function AdminProductsPage() {
@@ -366,62 +348,6 @@ export function AdminCategoriesPage() {
           </article>
         ))}
       </section>
-    </div>
-  );
-}
-
-export function AdminBranchesPage() {
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    void apiFetch<Branch[]>("/branches")
-      .then(setBranches)
-      .catch(() => setError("Filiallarni yuklab bo'lmadi."));
-  }, []);
-
-  return (
-    <div className="grid gap-4">
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-      {branches.map((branch) => (
-        <article
-          className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card"
-          key={branch.id}
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h3 className="text-xl font-black text-mz-text">{branch.name}</h3>
-              <p className="mt-1 text-sm font-semibold text-mz-text-muted">
-                {branch.code} · {branch.address ?? "Manzil kiritilmagan"}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Badge tone={branch.isActive ? "green" : "red"}>
-                  {branch.isActive ? "Faol" : "Yopiq"}
-                </Badge>
-                <Badge tone={branch.acceptsOrders ? "green" : "amber"}>
-                  {branch.acceptsOrders ? "Buyurtma oladi" : "Buyurtma yopiq"}
-                </Badge>
-                <Badge tone={branch.deliveryEnabled ? "teal" : "slate"}>
-                  Yetkazish
-                </Badge>
-                <Badge tone={branch.pickupEnabled ? "teal" : "slate"}>
-                  Olib ketish
-                </Badge>
-              </div>
-            </div>
-            <div className="grid gap-1 text-sm font-semibold text-mz-text-muted">
-              {(branch.workingHours ?? []).slice(0, 7).map((hour) => (
-                <span key={hour.dayOfWeek}>
-                  {hour.dayOfWeek}:{" "}
-                  {hour.isClosed
-                    ? "Yopiq"
-                    : `${hour.opensAt ?? "--"}-${hour.closesAt ?? "--"}`}
-                </span>
-              ))}
-            </div>
-          </div>
-        </article>
-      ))}
     </div>
   );
 }
