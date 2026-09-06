@@ -91,9 +91,8 @@ export function AdminKitchenMonitor() {
     void load();
 
     /*
-     * Oshxona holati tez o'zgaradi. WebSocket hozircha autentifikatsiyasiz
-     * global broadcast qilgani uchun (loyiha tahlilidagi ochiq masala),
-     * bu ekranda oddiy polling ishlatiladi — POS oshxona ekranidagi kabi.
+     * Oshxona monitori faqat o'qish uchun polling ishlatadi; realtime kanal esa
+     * backendda token va branch/customer room'lari bilan himoyalangan.
      */
     const timer = window.setInterval(() => void load(), 15000);
 
