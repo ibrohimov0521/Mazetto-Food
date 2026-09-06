@@ -83,7 +83,8 @@
     "REPORT_SALES_VIEW",
     "REPORT_PRODUCTS_VIEW",
     "REPORT_EMPLOYEES_VIEW",
-    "REPORT_EXPENSES_VIEW"
+    "REPORT_EXPENSES_VIEW",
+    "AUDIT_VIEW"
   ],
   "roles": {
     "SUPER_ADMIN": {
@@ -459,7 +460,7 @@
     "click_payme": "PLANNED",
     "realtime": "PLANNED",
     "security_hardening": "PARTIAL",
-    "audit_hardening": "PARTIAL",
+    "audit_hardening": "PARTIAL_VIEW_IMPLEMENTED_LOCAL",
     "admin_operational_listings": "IMPLEMENTED_LOCAL",
     "admin_orders_ui": "IMPLEMENTED_LOCAL",
     "admin_customers_ui": "IMPLEMENTED_LOCAL",
@@ -496,7 +497,6 @@
       "PAYMENT_PROVIDER_MANAGE"
     ],
     "security_audit": [
-      "AUDIT_VIEW",
       "SECURITY_SETTINGS_MANAGE",
       "ROLE_MANAGE",
       "PERMISSION_MANAGE"
@@ -595,6 +595,18 @@
       "path": "/payments",
       "permission": "PAYMENT_VIEW",
       "note": "To'lov tarixi; branch scope buyurtma orqali. 4-bosqichda qo'shildi."
+    },
+    {
+      "method": "GET",
+      "path": "/audit-logs",
+      "permission": "AUDIT_VIEW",
+      "note": "Global xavfsizlik jurnali; AuditLog da branchId yo'q, shuning uchun branch scope qo'llanmaydi va permission faqat SUPER_ADMIN (*) da. Faqat o'qish."
+    },
+    {
+      "method": "GET",
+      "path": "/audit-logs/facets",
+      "permission": "AUDIT_VIEW",
+      "note": "Filtr tanlagichlari uchun mavjud action va entity qiymatlari."
     }
   ]
 }

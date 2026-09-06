@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { HealthController } from "./health.controller";
+import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { BranchesModule } from "./modules/branches/branches.module";
 import { CashRegisterModule } from "./modules/cash-register/cash-register.module";
@@ -34,6 +35,7 @@ import { PrismaModule } from "./prisma/prisma.module";
   imports: [
     PrismaModule,
     AuthModule,
+    AuditModule,
     UsersModule,
     RolesModule,
     EmployeesModule,

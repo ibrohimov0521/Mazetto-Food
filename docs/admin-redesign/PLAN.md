@@ -18,7 +18,7 @@ Boshlang'ich HEAD: `a72a73d`
 | **2-bosqich — qobiq va tokenlar** | ✅ | 17/17 admin route + 2 ta rol landing sahifasi |
 | **2-bosqich — struktura** | ✅ | 3 ta katta komponent `admin-ui` ga o'tkazildi |
 | **3-bosqich** | ✅ 10/11 | Bloklangan 3 modul 4-bosqichda ochildi |
-| **4-bosqich** | 🟡 | Operatsion ro'yxat endpointlari tayyor |
+| **4-bosqich** | 🟡 | Operatsion ro'yxatlar + audit jurnali tayyor |
 
 ### 4-bosqich — bajarilgan (backend + frontend)
 
@@ -56,11 +56,30 @@ bo'lganlar), controller himoyasi, branch scope va pagination chegarasini tekshir
 permission katalogi 48 → 50, `current_operational_listing_api` bo'limi qo'shildi,
 `module_status` yangilandi, `ACCOUNTANT_SHIFT_VISIBILITY` ochiq qarori qo'shildi.
 
-### 4-bosqichda qolgan
+### 4-bosqich — audit jurnali
 
-Audit log (`AUDIT_VIEW`) · Rol/permission boshqaruvi (`ROLE_MANAGE`) ·
-Moliya (`FINANCE_*`) · Katalog 2-bosqich · Printer/print job · Ombor kengaytmasi ·
-To'lov provayderlari
+`AuditLog` modeli va unga yozish (`StaffService`) allaqachon bor edi, lekin
+o'qish endpoint'i yo'q edi — 9 xil xavfsizlik hodisasi yozilardi va hech kimga
+ko'rinmasdi.
+
+- Yangi `AuditModule`: `GET /audit-logs` va `GET /audit-logs/facets`
+- Yangi `AUDIT_VIEW` permission — **hech qanday oddiy rolga berilmagan**,
+  faqat SUPER_ADMIN `*` orqali oladi
+- `AuditLog` da `branchId` yo'q → jurnal tabiatan global, branch scope
+  qo'llanmaydi va bu ekranda filial filtri yo'q
+- Kontrollerda faqat `@Get` bor — jurnal o'zgartirilmaydi (validator buni tekshiradi)
+- `/admin/audit`: amal/obyekt filtri, JSON tafsilot paneli, pagination
+
+### 4-bosqichda qolgan va NEGA qilinmagani
+
+| Modul | Sabab |
+|---|---|
+| **Rol/permission boshqaruvi** (`ROLE_MANAGE`) | Rollar `isSystem: true` va seed orqali boshqariladi. Runtime'da rol tahrirlash imkoni — xavfsizlik modelini buzish yo'li. Bu arxitektura qarori, uni bir tomonlama qabul qilmadim. |
+| **Moliya** (`FINANCE_*`, 7 permission) | Xarajat **ko'rish** allaqachon `/reports/expenses` da bor. Qolgani — tasdiqlash oqimi (kim tasdiqlaydi, necha bosqich), P&L formulasi, kassa solishtiruvi qoidalari. Bular biznes qarorlari. |
+| **To'lov provayderlari** (Click/Payme) | Haqiqiy provayder shartnomasi, kalitlar va settlement mantig'i kerak. Kod bilan hal qilinmaydi. |
+| **Printer / print job** | `PrintJob` modeli yo'q — schema o'zgarishi va migratsiya kerak. |
+| **Ombor kengaytmasi** (`STOCK_*`, 7 permission) | `Warehouse`/`Stock`/`StockMovement` bor, lekin transfer va write-off oqimlari yangi endpointlar va biznes qoidalarini talab qiladi. |
+| **Katalog 2-bosqich** | Variant/modifier/bundle boshqaruvi — eng yaqin nomzod, lekin `admin-catalog.tsx` ni jiddiy kengaytirishni talab qiladi. |
 
 ### 3-bosqichda bajarilgan modullar
 
@@ -125,6 +144,7 @@ semantikasi, pul va sana formatlash, telefon maskalash).
 
 | Ish | Izoh |
 |---|---|
+| **Seed ishga tushirish** | Lokal PostgreSQL 18 da `mazetto` roli yo'q va `scram-sha-256` parol talab qiladi. Qadamlar: [`docs/LOCAL_DATABASE_SETUP.md`](../LOCAL_DATABASE_SETUP.md). Seedsiz `/admin/shifts`, `/admin/payments`, `/admin/audit` **403** qaytaradi. |
 | Responsive QA (768–1920 + 1024×600, 1366×768) | Brauzer avtomatizatsiyasi kerak — bajarilmadi |
 | `erp-ui.tsx` ni butunlay o'chirish | Hali `/pos/payment`, `/pos/receipt`, `/waiter` ishlatadi — **reja doirasidan tashqarida** |
 
@@ -132,7 +152,7 @@ semantikasi, pul va sana formatlash, telefon maskalash).
 
 Validatsiya (2026-09-06):
 `pnpm typecheck` 12/12 · `pnpm lint` 12/12 · `pnpm --filter pos-web build` ✅ ·
-`git diff --check` ✅ · dev smoke: 27 route (barcha admin, POS, kassa, oshxona, ofitsiant) — hammasi 200,
+`git diff --check` ✅ · dev smoke: 28 route (barcha admin, POS, kassa, oshxona, ofitsiant) — hammasi 200,
 dev log'da xato 0.
 
 ---

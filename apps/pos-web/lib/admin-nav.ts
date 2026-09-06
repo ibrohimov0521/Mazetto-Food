@@ -182,6 +182,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         permission: "RECEIPT_PRINT",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
       },
+      {
+        // Jurnal global — faqat SUPER_ADMIN ko'radi (AuditLog da branchId yo'q).
+        label: "Audit jurnali",
+        href: "/admin/audit",
+        permission: "AUDIT_VIEW",
+        roles: ["SUPER_ADMIN"],
+      },
     ],
   },
   {

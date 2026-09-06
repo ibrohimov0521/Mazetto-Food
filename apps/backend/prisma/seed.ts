@@ -220,6 +220,7 @@ const permissionNames: Record<string, string> = {
   [PERMISSIONS.REPORT_PRODUCTS_VIEW]: "View product reports",
   [PERMISSIONS.REPORT_EMPLOYEES_VIEW]: "View employee reports",
   [PERMISSIONS.REPORT_EXPENSES_VIEW]: "View expense reports",
+  [PERMISSIONS.AUDIT_VIEW]: "View security audit log",
 };
 
 const paymentMethodDefinitions = [

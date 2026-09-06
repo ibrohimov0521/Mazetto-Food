@@ -34,8 +34,13 @@ const paymentsController = readSource("apps/backend/src/modules/payments/payment
 const paymentsService = readSource("apps/backend/src/modules/payments/payments.service.ts");
 const paymentsDto = readSource("apps/backend/src/modules/payments/dto/list-payments.dto.ts");
 
+const auditController = readSource("apps/backend/src/modules/audit/audit.controller.ts");
+const auditService = readSource("apps/backend/src/modules/audit/audit.service.ts");
+const auditDto = readSource("apps/backend/src/modules/audit/dto/list-audit-logs.dto.ts");
+const appModule = readSource("apps/backend/src/app.module.ts");
+
 // 1. Yangi permissionlar mavjud
-for (const permission of ["SHIFT_VIEW_BRANCH", "PAYMENT_VIEW"]) {
+for (const permission of ["SHIFT_VIEW_BRANCH", "PAYMENT_VIEW", "AUDIT_VIEW"]) {
   assert.match(permissions, new RegExp(`${permission}: "${permission}"`), `${permission} permissions.ts da yo'q`);
   assert.match(seed, new RegExp(`PERMISSIONS\\.${permission}`), `${permission} seed.ts da yo'q`);
   assert.match(seed, new RegExp(`\\[PERMISSIONS\\.${permission}\\]:`), `${permission} uchun nom yo'q`);
@@ -120,10 +125,34 @@ const listReceiptsBlock = receiptsService.match(/async listReceipts\([\s\S]*?\n 
 assert.doesNotMatch(listReceiptsBlock, /content: true/, "chek ro'yxatida `content` qaytarilmasin");
 assert.doesNotMatch(listReceiptsBlock, /escpos/, "chek ro'yxatida ESC/POS qaytarilmasin");
 
+// 8. Audit jurnali — global, faqat SUPER_ADMIN (`*`) ko'radi
+assert.match(appModule, /AuditModule/, "AuditModule app.module.ts ga ulanmagan");
+assert.match(auditController, /@Controller\("audit-logs"\)/, "audit-logs kontrolleri yo'q");
+assert.match(auditController, /@Permissions\(PERMISSIONS\.AUDIT_VIEW\)/, "audit-logs himoyalanmagan");
+assert.match(auditService, /take: query\.limit/, "audit ro'yxatida take yo'q");
+assert.match(auditService, /skip: query\.offset/, "audit ro'yxatida skip yo'q");
+assert.match(auditDto, /@Max\(100\)/, "audit DTO da limit chegarasi yo'q");
+
+// AUDIT_VIEW hech qanday oddiy rolga berilmagan — faqat SUPER_ADMIN `*` orqali
+for (const [name, block] of [
+  ["BRANCH_MANAGER", branchManagerBlock],
+  ["ADMIN", seed.match(/code: "ADMIN"[\s\S]*?\n {2}\},/)?.[0] ?? ""],
+  ["ACCOUNTANT", accountantBlock],
+  ["CASHIER", cashierBlock],
+  ["WAITER", waiterBlock],
+  ["KITCHEN", kitchenBlock],
+] as const) {
+  assert.doesNotMatch(block, /PERMISSIONS\.AUDIT_VIEW/, `${name} ga AUDIT_VIEW berilmasin — jurnal global`);
+}
+
+// Audit yozuvlari o'zgartirilmasligi kerak — faqat o'qish endpointlari
+assert.doesNotMatch(auditController, /@(Post|Patch|Put|Delete)\(/, "audit jurnali faqat o'qish uchun bo'lishi kerak");
+
 console.log("validate-operational-listings: OK");
 console.log("  GET /shifts    → SHIFT_VIEW_BRANCH (yangi)");
 console.log("  GET /receipts  → RECEIPT_VIEW");
 console.log("  GET /payments  → PAYMENT_VIEW (yangi)");
+console.log("  GET /audit-logs → AUDIT_VIEW (yangi, faqat SUPER_ADMIN)");
 
 function readSource(path: string): string {
   return readFileSync(join(repoRoot, path), "utf8");
