@@ -1,6 +1,7 @@
 "use client";
 
 import { EmptyState, SkeletonRows } from "./feedback";
+import { Icon, type IconName } from "./icon";
 
 /*
  * Jadval.
@@ -12,7 +13,18 @@ import { EmptyState, SkeletonRows } from "./feedback";
  * Shuning uchun ikki ko'rinish:
  *   >= md   haqiqiy <table>, `overflow-x-auto` konteyner ichida
  *   <  md   har bir qator kartochkaga aylanadi (label/value juftliklari)
+ *
+ * Saralash BOSHQARILADIGAN: ko'p ekranlarda ma'lumot serverdan sahifalab
+ * keladi, ya'ni jadval o'zi saralay olmaydi — u faqat holatni ko'rsatadi va
+ * bosilganini xabar qiladi. Tartibni chaqiruvchi hal qiladi.
  */
+
+export type SortDirection = "asc" | "desc";
+
+export type DataTableSort = {
+  key: string;
+  direction: SortDirection;
+};
 
 export type DataTableColumn<T> = {
   key: string;
@@ -23,7 +35,56 @@ export type DataTableColumn<T> = {
   primary?: boolean;
   /** Mobil kartochkada umuman ko'rsatilmaydi. */
   hideOnMobile?: boolean;
+  /** Sarlavhani bosish mumkin bo'ladi. `onSort` berilgan bo'lishi shart. */
+  sortable?: boolean;
 };
+
+/**
+ * Qator amali uchun ikonka tugmasi.
+ *
+ * 36px — sensorli ekranda (1024×600 POS) barmoq uchun; jadval katagi 44px
+ * balandlikda bo'lgani uchun sig'adi.
+ */
+export function RowAction({
+  icon,
+  label,
+  onClick,
+  href,
+  tone = "neutral",
+}: {
+  icon: IconName;
+  /** Ekran o'quvchi uchun — ikonka yolg'iz ma'no tashimaydi. */
+  label: string;
+  onClick?: () => void;
+  href?: string;
+  tone?: "neutral" | "danger";
+}) {
+  const className = `grid h-9 w-9 place-items-center rounded-mz-control transition ${
+    tone === "danger"
+      ? "text-mz-text-faint hover:bg-mz-danger-bg hover:text-mz-danger"
+      : "text-mz-text-faint hover:bg-mz-surface-sunken hover:text-mz-accent"
+  }`;
+
+  if (href) {
+    return (
+      <a aria-label={label} className={className} href={href} title={label}>
+        <Icon className="h-4 w-4" name={icon} />
+      </a>
+    );
+  }
+
+  return (
+    <button
+      aria-label={label}
+      className={className}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <Icon className="h-4 w-4" name={icon} />
+    </button>
+  );
+}
 
 export function DataTable<T>({
   columns,
@@ -33,7 +94,11 @@ export function DataTable<T>({
   emptyTitle = "Ma'lumot yo'q",
   emptyDescription,
   emptyAction,
+  emptyIcon,
   caption,
+  sort,
+  onSort,
+  rowActions,
 }: {
   columns: DataTableColumn<T>[];
   rows: T[];
@@ -42,7 +107,12 @@ export function DataTable<T>({
   emptyTitle?: string;
   emptyDescription?: string;
   emptyAction?: React.ReactNode;
+  emptyIcon?: IconName;
   caption?: string;
+  sort?: DataTableSort;
+  onSort?: (key: string) => void;
+  /** Qator amallari — o'ngdagi qo'shimcha ustun. */
+  rowActions?: (row: T) => React.ReactNode;
 }) {
   if (isLoading) {
     return (
@@ -60,6 +130,7 @@ export function DataTable<T>({
         title={emptyTitle}
         {...(emptyDescription ? { description: emptyDescription } : {})}
         {...(emptyAction ? { action: emptyAction } : {})}
+        {...(emptyIcon ? { icon: emptyIcon } : {})}
       />
     );
   }
@@ -77,16 +148,18 @@ export function DataTable<T>({
           <thead>
             <tr className="border-b border-mz-border bg-mz-surface-sunken">
               {columns.map((column) => (
-                <th
-                  className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-mz-text-muted ${
-                    column.align === "right" ? "text-right" : "text-left"
-                  }`}
+                <SortableHeader
+                  column={column}
                   key={column.key}
-                  scope="col"
-                >
-                  {column.header}
-                </th>
+                  {...(sort ? { sort } : {})}
+                  {...(onSort ? { onSort } : {})}
+                />
               ))}
+              {rowActions ? (
+                <th className="px-3 py-2.5 text-right text-xs font-bold uppercase tracking-wide text-mz-text-muted">
+                  Amal
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -97,7 +170,7 @@ export function DataTable<T>({
               >
                 {columns.map((column) => (
                   <td
-                    className={`px-3 py-2.5 align-middle text-mz-text ${
+                    className={`px-3 py-3 align-middle text-mz-text ${
                       column.align === "right" ? "text-right" : "text-left"
                     }`}
                     key={column.key}
@@ -105,6 +178,13 @@ export function DataTable<T>({
                     {column.render(row)}
                   </td>
                 ))}
+                {rowActions ? (
+                  <td className="px-3 py-3 align-middle">
+                    <div className="flex justify-end gap-1">
+                      {rowActions(row)}
+                    </div>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -123,15 +203,81 @@ export function DataTable<T>({
             </div>
             <dl className="space-y-1">
               {secondaryColumns.map((column) => (
-                <div className="flex items-start justify-between gap-3" key={column.key}>
-                  <dt className="text-xs font-medium text-mz-text-muted">{column.header}</dt>
-                  <dd className="text-right text-xs text-mz-text">{column.render(row)}</dd>
+                <div
+                  className="flex items-start justify-between gap-3"
+                  key={column.key}
+                >
+                  <dt className="text-xs font-medium text-mz-text-muted">
+                    {column.header}
+                  </dt>
+                  <dd className="text-right text-xs text-mz-text">
+                    {column.render(row)}
+                  </dd>
                 </div>
               ))}
             </dl>
+            {rowActions ? (
+              <div className="mt-3 flex justify-end gap-1 border-t border-mz-border pt-2">
+                {rowActions(row)}
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
     </>
+  );
+}
+
+function SortableHeader<T>({
+  column,
+  sort,
+  onSort,
+}: {
+  column: DataTableColumn<T>;
+  sort?: DataTableSort;
+  onSort?: (key: string) => void;
+}) {
+  const isSorted = sort?.key === column.key;
+  const canSort = Boolean(column.sortable && onSort);
+  const alignClass = column.align === "right" ? "text-right" : "text-left";
+
+  return (
+    <th
+      aria-sort={
+        isSorted && sort
+          ? sort.direction === "asc"
+            ? "ascending"
+            : "descending"
+          : undefined
+      }
+      className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide ${
+        isSorted ? "text-mz-accent" : "text-mz-text-muted"
+      } ${alignClass}`}
+      scope="col"
+    >
+      {canSort ? (
+        <button
+          className={`inline-flex items-center gap-1 rounded-mz-control transition hover:text-mz-accent ${
+            column.align === "right" ? "flex-row-reverse" : ""
+          }`}
+          onClick={() => onSort?.(column.key)}
+          type="button"
+        >
+          {column.header}
+          <Icon
+            className={`h-3 w-3 ${isSorted ? "" : "opacity-45"}`}
+            name={
+              isSorted && sort
+                ? sort.direction === "asc"
+                  ? "arrowUp"
+                  : "arrowDown"
+                : "sort"
+            }
+          />
+        </button>
+      ) : (
+        column.header
+      )}
+    </th>
   );
 }

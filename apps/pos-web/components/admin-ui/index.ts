@@ -7,7 +7,14 @@ export {
   type ButtonVariant,
 } from "./button";
 export { Card, CardBody, CardFooter, CardHeader } from "./card";
-export { DataTable, type DataTableColumn } from "./data-table";
+export {
+  DataTable,
+  RowAction,
+  type DataTableColumn,
+  type DataTableSort,
+  type SortDirection,
+} from "./data-table";
+export { Icon, iconNames, type IconName } from "./icon";
 export { EmptyState, ErrorState, Skeleton, SkeletonRows } from "./feedback";
 export { FilterBar, FormField, Select, Textarea, TextInput } from "./form";
 export { Modal } from "./modal";
