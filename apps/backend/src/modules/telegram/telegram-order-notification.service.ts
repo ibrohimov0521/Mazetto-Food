@@ -1,5 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, UnauthorizedException } from "@nestjs/common";
 import { CustomerOrderType, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
+import type { KitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
+import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
 import { PrismaService } from "../../prisma/prisma.service";
 
@@ -27,6 +29,9 @@ type TelegramUpdate = {
 type StaffOrderForMessage = {
   id: string;
   orderNumber: string;
+  displayOrderNumber: string | null;
+  staffTelegramChatId: string | null;
+  staffTelegramMessageId: number | null;
   customerName: string | null;
   customerPhone: string | null;
   deliveryAddress: string | null;
@@ -65,6 +70,13 @@ type StaffTransitionResult = {
   order: StaffOrderForMessage;
   requestedAction: StaffOrderAction;
 };
+type TelegramResponse = {
+  ok?: boolean;
+  result?: {
+    message_id?: number;
+    chat?: { id?: number | string };
+  };
+};
 
 const callbackPrefix = "mazetto_order";
 const telegramRequestMaxAttempts = 3;
@@ -83,13 +95,22 @@ const legacyStatusToAction: Record<LegacyCallbackStatus, StaffOrderAction> = {
 };
 
 @Injectable()
-export class TelegramOrderNotificationService {
+export class TelegramOrderNotificationService implements OnModuleDestroy {
   private readonly logger = new Logger(TelegramOrderNotificationService.name);
+  private readonly statusChangedListener = (event: KitchenOrderStatusChangedEvent) => {
+    void this.refreshStaffOrderMessageFromKitchen(event);
+  };
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
-  ) {}
+  ) {
+    kitchenEvents.on(kitchenOrderStatusChangedEvent, this.statusChangedListener);
+  }
+
+  onModuleDestroy(): void {
+    kitchenEvents.off(kitchenOrderStatusChangedEvent, this.statusChangedListener);
+  }
 
   async notifyNewOrder(orderId: string): Promise<void> {
     if (!this.isConfigured()) {
@@ -105,16 +126,47 @@ export class TelegramOrderNotificationService {
         return;
       }
 
-      await this.telegramRequest("sendMessage", {
+      const response = await this.telegramRequest("sendMessage", {
         chat_id: this.staffChatId(),
         text: this.formatStaffOrderMessage(order),
         parse_mode: "HTML",
         reply_markup: this.orderKeyboard(order),
       });
+      await this.rememberStaffMessage(order.id, response);
     } catch (error) {
       this.logger.error(
         `Telegram order notification failed for order ${orderId}`,
         error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  private async refreshStaffOrderMessageFromKitchen(event: KitchenOrderStatusChangedEvent): Promise<void> {
+    if (!this.isConfigured()) {
+      return;
+    }
+
+    try {
+      const order = await this.findOrderForMessage(event.orderId);
+
+      if (!order) {
+        return;
+      }
+
+      await this.renderStoredStaffOrderMessage(order);
+      if (event.action !== "complete") {
+        await this.notifyCustomerStatus({
+          changed: true,
+          customerTelegramChatId: order.customerOrder?.customer?.telegramChatId ?? null,
+          order,
+          requestedAction: event.action,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Telegram staff status refresh failed for order ${event.orderId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }
@@ -132,8 +184,8 @@ export class TelegramOrderNotificationService {
       const { orderId, action } = this.parseCallbackData(callback.data);
       const result = await this.applyStaffAction(orderId, action);
       const callbackText = result.changed
-        ? `${result.order.orderNumber}: ${actionLabels[action]}`
-        : `${result.order.orderNumber}: bu amal allaqachon bajarilgan`;
+        ? `${this.publicOrderNumber(result.order)}: ${actionLabels[action]}`
+        : `${this.publicOrderNumber(result.order)}: bu amal allaqachon bajarilgan`;
 
       await this.answerCallbackSafely(callback.id, callbackText, result.order, action);
       await this.renderStaffOrderMessageSafely(callback, result.order, action);
@@ -164,6 +216,7 @@ export class TelegramOrderNotificationService {
     const transition = await this.kitchenService.applyOrderAction(orderId, action, {
       reasonPrefix: "Telegram staff",
       cancellationReason: "Telegram staff orqali bekor qilindi",
+      suppressTelegramStaffRefresh: true,
     });
     const order = await this.findOrderForMessage(orderId);
 
@@ -202,7 +255,7 @@ export class TelegramOrderNotificationService {
     const lines = [
       this.staffOrderTitle(order.status),
       "",
-      `<b>Raqam:</b> ${this.escapeHtml(order.orderNumber)}`,
+      `<b>Raqam:</b> ${this.escapeHtml(this.publicOrderNumber(order))}`,
       `<b>Status:</b> ${this.orderStatusLabel(order.status)}${ticket ? ` / ${this.kitchenStatusLabel(ticket.status)}` : ""}`,
       `<b>Mijoz:</b> ${this.escapeHtml(order.customerName ?? "Noma'lum")}`,
       `<b>Telefon:</b> ${this.escapeHtml(order.customerPhone ?? "Kiritilmagan")}`,
@@ -397,6 +450,36 @@ export class TelegramOrderNotificationService {
     await this.telegramRequest("sendMessage", payload);
   }
 
+  private async renderStoredStaffOrderMessage(order: StaffOrderForMessage): Promise<void> {
+    const payload = {
+      chat_id: order.staffTelegramChatId ?? this.staffChatId(),
+      text: this.formatStaffOrderMessage(order),
+      parse_mode: "HTML",
+      reply_markup: this.orderKeyboard(order),
+    };
+
+    if (order.staffTelegramMessageId) {
+      try {
+        await this.telegramRequest("editMessageText", {
+          ...payload,
+          message_id: order.staffTelegramMessageId,
+        });
+        return;
+      } catch (error) {
+        if (this.isMessageNotModifiedError(error)) {
+          return;
+        }
+
+        if (!this.isMessageEditImpossibleError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    const response = await this.telegramRequest("sendMessage", payload);
+    await this.rememberStaffMessage(order.id, response);
+  }
+
   private async renderStaffOrderMessageSafely(
     callback: TelegramCallbackQuery,
     order: StaffOrderForMessage,
@@ -418,7 +501,7 @@ export class TelegramOrderNotificationService {
       return;
     }
 
-    const message = this.customerStatusMessage(result.order.orderNumber, result.order.status);
+    const message = this.customerStatusMessage(this.publicOrderNumber(result.order), result.order.status);
 
     if (!message) {
       return;
@@ -451,11 +534,11 @@ export class TelegramOrderNotificationService {
     return messages[status] ?? null;
   }
 
-  private async telegramRequest(method: string, payload: unknown): Promise<void> {
+  private async telegramRequest(method: string, payload: unknown): Promise<TelegramResponse | undefined> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
 
     if (!token) {
-      return;
+      return undefined;
     }
 
     let lastError: unknown;
@@ -469,7 +552,7 @@ export class TelegramOrderNotificationService {
         });
 
         if (response.ok) {
-          return;
+          return (await response.json()) as TelegramResponse;
         }
 
         const body = await response.text();
@@ -538,6 +621,27 @@ export class TelegramOrderNotificationService {
 
   private staffChatId(): string {
     return process.env.TELEGRAM_STAFF_CHAT_ID ?? "";
+  }
+
+  private async rememberStaffMessage(orderId: string, response: TelegramResponse | undefined): Promise<void> {
+    const messageId = response?.result?.message_id;
+    const chatId = response?.result?.chat?.id;
+
+    if (!messageId || chatId === undefined || chatId === null) {
+      return;
+    }
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        staffTelegramChatId: String(chatId),
+        staffTelegramMessageId: messageId,
+      },
+    });
+  }
+
+  private publicOrderNumber(order: Pick<StaffOrderForMessage, "displayOrderNumber" | "orderNumber">): string {
+    return order.displayOrderNumber ?? order.orderNumber;
   }
 
   private safeCallbackError(error: unknown): string {

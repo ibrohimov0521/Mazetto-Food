@@ -31,6 +31,7 @@ type KitchenTicket = {
   order: {
     id: string;
     orderNumber: string;
+    displayOrderNumber?: string | null;
     source: OrderSource;
     type: OrderType;
     notes?: string | null;
@@ -372,7 +373,7 @@ function KitchenTicketCard({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="rounded-full bg-[#082522] px-2 py-0.5 text-[10px] font-black text-[#ffc83d]">
-              #{ticket.order.orderNumber}
+              #{ticket.order.displayOrderNumber ?? ticket.order.orderNumber}
             </span>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${sourceClass(ticket.order.source)}`}>
               {sourceLabel(ticket.order.source)}

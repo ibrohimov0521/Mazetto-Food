@@ -33,6 +33,7 @@ type CustomerOrderDetail = {
   branch?: { name: string; address?: string | null } | null;
   order: {
     orderNumber: string;
+    displayOrderNumber?: string | null;
     total: string;
     status?: string;
     items: {
@@ -168,7 +169,7 @@ function OrderDetail() {
       <div className="grid min-w-0 gap-5">
         <section className="mf-checkout-card p-5">
           <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma tafsiloti</p>
-          <h1 className="mt-2 break-words text-3xl font-black text-[#17314A]">{order.order.orderNumber}</h1>
+          <h1 className="mt-2 break-words text-3xl font-black text-[#17314A]">{customerOrderNumber(order.order)}</h1>
           <p className="mt-2 text-sm font-semibold text-[#17314A]/60">
             {new Date(order.createdAt).toLocaleString("uz-UZ")} · {typeLabels[order.type] ?? order.type}
           </p>
@@ -258,6 +259,10 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 function statusLabel(status: string): string {
   return statusLabels[status] ?? status;
+}
+
+function customerOrderNumber(order: { displayOrderNumber?: string | null; orderNumber: string }): string {
+  return order.displayOrderNumber ?? order.orderNumber;
 }
 
 function modifiersFor(value: ModifierSnapshot[] | null | undefined): ModifierSnapshot[] {

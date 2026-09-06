@@ -17,6 +17,7 @@ type CustomerOrder = {
   branch?: { name: string; address?: string | null } | null;
   order: {
     orderNumber: string;
+    displayOrderNumber?: string | null;
     total: string;
     status?: string;
     items: { id: string; productName: string; quantity: string; totalPrice: string }[];
@@ -133,7 +134,7 @@ function OrderSuccess() {
           <div className="mx-auto mt-6 grid h-20 w-20 place-items-center rounded-full bg-[#F5CF00] text-4xl font-black text-[#07373A] shadow-[0_18px_48px_rgba(245,207,0,0.32)]">✓</div>
           <p className="mt-5 text-sm font-black uppercase text-[#F5CF00]">Buyurtma qabul qilindi</p>
           <h1 className="mt-2 text-3xl font-black sm:text-4xl">Buyurtmangiz qabul qilindi!</h1>
-          <p className="mt-2 text-sm font-bold text-white/70">{order.order.orderNumber}</p>
+          <p className="mt-2 text-sm font-bold text-white/70">{customerOrderNumber(order.order)}</p>
           <p className="mt-2 text-sm font-semibold text-white/74">Oshxonaga yuborildi, holatini real vaqtda kuzatishingiz mumkin.</p>
         </div>
 
@@ -189,4 +190,8 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function statusLabel(status: string): string {
   return statusLabels[status] ?? status;
+}
+
+function customerOrderNumber(order: { displayOrderNumber?: string | null; orderNumber: string }): string {
+  return order.displayOrderNumber ?? order.orderNumber;
 }

@@ -68,6 +68,7 @@ type OrderStatusHistory = {
 export type AdminOrder = {
   id: string;
   orderNumber: string;
+  displayOrderNumber?: string | null;
   source: OrderSource;
   type: OrderType;
   status: OrderStatus;
@@ -162,9 +163,9 @@ export function AdminOrdersPage() {
       primary: true,
       render: (order) => (
         <div className="min-w-0">
-          <p className="truncate font-semibold text-mz-text">{order.orderNumber}</p>
+          <p className="truncate font-semibold text-mz-text">{order.displayOrderNumber ?? order.orderNumber}</p>
           <p className="truncate text-xs text-mz-text-muted">
-            {formatDateTime(order.createdAt)} · {orderSourceLabels[order.source]}
+            {formatDateTime(order.createdAt)} · {orderSourceLabels[order.source]} · {order.orderNumber}
           </p>
         </div>
       ),
@@ -413,7 +414,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         <Card>
           <CardHeader
             description={`${orderSourceLabels[order.source]} · ${orderTypeLabels[order.type]}`}
-            title={order.orderNumber}
+            title={order.displayOrderNumber ? `${order.displayOrderNumber} · ${order.orderNumber}` : order.orderNumber}
           />
           <CardBody className="flex flex-wrap gap-2">
             <Badge tone={orderStatusTone(order.status)} withDot>

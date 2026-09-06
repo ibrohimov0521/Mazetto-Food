@@ -29,6 +29,7 @@ type CustomerOrder = {
   branch?: { name: string; address?: string | null } | null;
   order: {
     orderNumber: string;
+    displayOrderNumber?: string | null;
     total: string;
     status?: string;
     items: {
@@ -167,7 +168,7 @@ function OrdersDashboard() {
                     <StatusChip status={activeOrder.status} />
                   </div>
                   <Link className="mt-3 block break-words text-2xl font-black leading-tight text-[#07373A] transition hover:text-[#0B7F75] sm:text-3xl" href={`/orders/${activeOrder.id}`}>
-                    {activeOrder.order.orderNumber}
+                    {customerOrderNumber(activeOrder.order)}
                   </Link>
                   <div className="mt-3 flex min-w-0 flex-wrap gap-2">
                     <InfoChip label={typeLabels[activeOrder.type] ?? activeOrder.type} />
@@ -220,7 +221,7 @@ function OrdersDashboard() {
               <Link className="pressable mf-cart-row block min-w-0 p-4 transition hover:border-[#0B8F83]/36" href={`/orders/${order.id}`} key={order.id}>
                 <div className="grid min-w-0 gap-2 sm:flex sm:justify-between sm:gap-3">
                   <div className="min-w-0">
-                    <p className="break-words font-black leading-tight text-[#17314A]">{order.order.orderNumber}</p>
+                    <p className="break-words font-black leading-tight text-[#17314A]">{customerOrderNumber(order.order)}</p>
                     <p className="mt-1 text-sm leading-5 text-[#17314A]/52">
                       {new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}
                       {order.branch ? ` · ${order.branch.name}` : ""}
@@ -319,6 +320,10 @@ function InfoChip({ label }: { label: string }) {
 
 function statusLabel(status: string): string {
   return statusLabels[status] ?? status;
+}
+
+function customerOrderNumber(order: { displayOrderNumber?: string | null; orderNumber: string }): string {
+  return order.displayOrderNumber ?? order.orderNumber;
 }
 
 function getSocketBaseUrl(): string {

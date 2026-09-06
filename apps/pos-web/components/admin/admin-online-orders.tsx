@@ -44,6 +44,7 @@ type CustomerOrder = {
   order?: {
     id: string;
     orderNumber: string;
+    displayOrderNumber?: string | null;
     status: OrderStatus;
     total: string;
   } | null;
@@ -109,6 +110,7 @@ export function AdminOnlineOrdersPage() {
     return orders.filter((item) => {
       const identity = [
         item.order?.orderNumber,
+        item.order?.displayOrderNumber,
         item.customer?.name,
         item.customer?.phone,
         item.deliveryAddress,
@@ -141,9 +143,12 @@ export function AdminOnlineOrdersPage() {
       render: (item) => (
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">
-            {item.order?.orderNumber ?? "Raqamsiz"}
+            {item.order?.displayOrderNumber ?? item.order?.orderNumber ?? "Raqamsiz"}
           </p>
-          <p className="truncate text-xs text-mz-text-muted">{formatDateTime(item.createdAt)}</p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {formatDateTime(item.createdAt)}
+            {item.order?.displayOrderNumber ? ` · ${item.order.orderNumber}` : ""}
+          </p>
         </div>
       ),
     },

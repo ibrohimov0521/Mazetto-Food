@@ -33,7 +33,7 @@ type CartLine = {
   quantity: number;
 };
 type PosOrderResult = {
-  order: { orderNumber: string; total: string; branch?: { name?: string | null } | null };
+  order: { orderNumber: string; displayOrderNumber?: string | null; total: string; branch?: { name?: string | null } | null };
   payment: { cashReceived: string; change: string };
 };
 type CurrentShift = {
@@ -319,7 +319,7 @@ function PosTerminal() {
               <input className="min-h-12 w-full rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none" inputMode="numeric" onChange={(event) => setCashReceived(event.target.value)} placeholder="Qabul qilingan naqd pul" value={cashReceived} />
               <div className="flex justify-between font-black text-[#008678]"><span>Qaytim</span><span>{money(change)}</span></div>
               {error ? <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-600">{error}</p> : null}
-              {success ? <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-black text-emerald-700">Qabul qilindi: {success.order.orderNumber}</p> : null}
+              {success ? <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-black text-emerald-700">Qabul qilindi: {success.order.displayOrderNumber ?? success.order.orderNumber}</p> : null}
               <button className="min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50" disabled={isSubmitting || !cart.length} onClick={() => void submitOrder()} type="button">
                 {isSubmitting ? "Tasdiqlanmoqda..." : "Buyurtmani tasdiqlash"}
               </button>

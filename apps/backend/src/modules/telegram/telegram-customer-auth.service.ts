@@ -389,7 +389,7 @@ export class TelegramCustomerAuthService {
       take: 5,
       include: {
         branch: { select: { name: true } },
-        order: { select: { orderNumber: true, status: true, total: true } },
+        order: { select: { orderNumber: true, displayOrderNumber: true, status: true, total: true } },
       },
     });
 
@@ -401,7 +401,7 @@ export class TelegramCustomerAuthService {
             "",
             ...orders.map((order) =>
               [
-                `<b>${this.escapeHtml(order.order.orderNumber)}</b>`,
+                `<b>${this.escapeHtml(order.order.displayOrderNumber ?? order.order.orderNumber)}</b>`,
                 `${this.escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status)}`,
                 `Jami: ${this.formatMoney(order.order.total)}`,
               ].join("\n"),

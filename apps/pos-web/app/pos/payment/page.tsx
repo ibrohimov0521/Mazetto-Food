@@ -10,6 +10,7 @@ import { apiFetch } from "../../../lib/api";
 type Order = {
   id: string;
   orderNumber: string;
+  displayOrderNumber?: string | null;
   status: string;
   paymentStatus: string;
   total: string;
@@ -95,7 +96,7 @@ function PaymentTerminal() {
           .map((tender) => ({ paymentMethodCode: tender.code, amount: Number(tender.amount) })),
       }),
     });
-    setMessage(`Payment completed for ${selectedOrder.orderNumber}`);
+    setMessage(`Payment completed for ${selectedOrder.displayOrderNumber ?? selectedOrder.orderNumber}`);
     await loadOrders();
   }
 
@@ -114,7 +115,7 @@ function PaymentTerminal() {
                 onClick={() => setSelectedOrderId(order.id)}
                 type="button"
               >
-                <p className="font-semibold text-neutral-950">{order.orderNumber}</p>
+                <p className="font-semibold text-neutral-950">{order.displayOrderNumber ?? order.orderNumber}</p>
                 <p className="mt-1 text-sm text-neutral-500">{tableLabel(order)} · {formatMoney(order.total)}</p>
               </button>
             ))
@@ -131,7 +132,7 @@ function PaymentTerminal() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-emerald-700">Order</p>
-                  <h2 className="mt-1 text-2xl font-semibold text-neutral-950">{selectedOrder.orderNumber}</h2>
+                  <h2 className="mt-1 text-2xl font-semibold text-neutral-950">{selectedOrder.displayOrderNumber ?? selectedOrder.orderNumber}</h2>
                   <p className="mt-1 text-sm text-neutral-500">{tableLabel(selectedOrder)}</p>
                 </div>
                 <div className="text-right">

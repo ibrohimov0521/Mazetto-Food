@@ -77,6 +77,7 @@ export class PaymentsService {
           select: {
             id: true,
             orderNumber: true,
+            displayOrderNumber: true,
             source: true,
             status: true,
             total: true,

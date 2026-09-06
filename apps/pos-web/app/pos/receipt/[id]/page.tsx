@@ -17,6 +17,7 @@ type Receipt = {
   branch: { name: string; address?: string | null; phone?: string | null };
   order: {
     orderNumber: string;
+    displayOrderNumber?: string | null;
     items: { id: string; productName: string; variantName?: string | null; quantity: string; totalPrice: string }[];
     payments: { id: string; amount: string; method: { code: string; name: string }; acceptedBy?: { firstName: string; lastName: string } | null }[];
   };
@@ -64,7 +65,7 @@ function ReceiptPreview({ id }: { id: string }) {
         <div className="my-5 border-t border-dashed border-neutral-300" />
         <div className="grid gap-1 text-sm text-neutral-600">
           <p>Receipt: <span className="font-semibold text-neutral-950">{receipt.receiptNumber}</span></p>
-          <p>Order: <span className="font-semibold text-neutral-950">{receipt.order.orderNumber}</span></p>
+          <p>Order: <span className="font-semibold text-neutral-950">{receipt.order.displayOrderNumber ?? receipt.order.orderNumber}</span></p>
           <p>Date: {new Date(receipt.createdAt).toLocaleString()}</p>
         </div>
         <div className="my-5 border-t border-dashed border-neutral-300" />

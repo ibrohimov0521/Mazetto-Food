@@ -29,6 +29,7 @@ type Product = {
 type Order = {
   id: string;
   orderNumber: string;
+  displayOrderNumber?: string | null;
   status: string;
   total: string;
   items: { id: string; productName: string; quantity: string; totalPrice: string }[];
@@ -181,7 +182,7 @@ function WaiterFloor() {
             {currentOrder ? (
               <>
                 <div className="rounded-2xl bg-neutral-50 p-4">
-                  <p className="text-sm font-semibold text-neutral-700">{currentOrder.orderNumber}</p>
+                  <p className="text-sm font-semibold text-neutral-700">{currentOrder.displayOrderNumber ?? currentOrder.orderNumber}</p>
                   <p className="mt-1 text-sm text-neutral-500">{currentOrder.status} · {currentOrder.total}</p>
                 </div>
                 <div className="grid gap-2">

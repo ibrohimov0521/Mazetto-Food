@@ -47,6 +47,7 @@ export class ReceiptsService {
           select: {
             id: true,
             orderNumber: true,
+            displayOrderNumber: true,
             status: true,
             paymentStatus: true,
             source: true,

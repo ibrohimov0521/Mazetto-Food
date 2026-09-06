@@ -49,6 +49,7 @@ export class ReportsService {
             select: {
               id: true,
               orderNumber: true,
+              displayOrderNumber: true,
               source: true,
               status: true,
               total: true,
@@ -665,6 +666,7 @@ type ReportPayment = Prisma.PaymentGetPayload<{
       select: {
         id: true;
         orderNumber: true;
+        displayOrderNumber: true;
         source: true;
         status: true;
         total: true;

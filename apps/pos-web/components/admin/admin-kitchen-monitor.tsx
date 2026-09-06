@@ -33,6 +33,7 @@ type KitchenTicket = {
   order?: {
     id: string;
     orderNumber: string;
+    displayOrderNumber?: string | null;
     type: OrderType;
     kitchenComment?: string | null;
     branch?: { id: string; name: string } | null;
@@ -118,7 +119,7 @@ export function AdminKitchenMonitor() {
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">{ticket.ticketNumber}</p>
           <p className="truncate text-xs text-mz-text-muted">
-            {ticket.order?.orderNumber ?? "—"} · {formatDateTime(ticket.createdAt)}
+            {ticket.order?.displayOrderNumber ?? ticket.order?.orderNumber ?? "—"} · {formatDateTime(ticket.createdAt)}
           </p>
         </div>
       ),

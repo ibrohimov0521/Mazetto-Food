@@ -43,6 +43,7 @@ type Payment = {
   order?: {
     id: string;
     orderNumber: string;
+    displayOrderNumber?: string | null;
     source: OrderSource;
     total: string;
     branch?: { id: string; code: string; name: string } | null;
@@ -124,7 +125,7 @@ export function AdminPaymentsPage() {
       render: (payment) => (
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">
-            {payment.order?.orderNumber ?? "Buyurtmasiz"}
+            {payment.order ? payment.order.displayOrderNumber ?? payment.order.orderNumber : "Buyurtmasiz"}
           </p>
           <p className="truncate text-xs text-mz-text-muted">
             {formatDateTime(payment.paidAt ?? payment.createdAt)}

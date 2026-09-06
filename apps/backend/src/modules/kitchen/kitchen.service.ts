@@ -4,6 +4,7 @@ import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { kitchenEvents, kitchenOrderStatusChangedEvent } from "./kitchen-events";
 import { KitchenGateway } from "./kitchen.gateway";
 
 type TransactionClient = Prisma.TransactionClient;
@@ -12,6 +13,7 @@ type KitchenTransitionActor = {
   user?: AuthenticatedUser;
   reasonPrefix: string;
   cancellationReason?: string;
+  suppressTelegramStaffRefresh?: boolean;
 };
 type KitchenTransitionOrder = {
   id: string;
@@ -233,6 +235,9 @@ export class KitchenService {
 
     if (result.changed) {
       this.emitOrderStatusChanged({ action, order: result.order, ticket: result.ticket });
+      if (!actor.suppressTelegramStaffRefresh) {
+        kitchenEvents.emit(kitchenOrderStatusChangedEvent, { action, orderId });
+      }
     }
 
     return result;

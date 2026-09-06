@@ -21,7 +21,7 @@ type Dashboard = {
     type: string;
     address?: string | null;
     createdAt: string;
-    order: { orderNumber: string; total: string };
+    order: { orderNumber: string; displayOrderNumber?: string | null; total: string };
   }[];
   favorites: { product: { id: string; name: string; imageUrl?: string | null; sellingPrice: string } }[];
 };
@@ -148,7 +148,7 @@ function Profile() {
                 <Link className="pressable mf-cart-row block p-4 transition hover:border-[#22C55E]/36" href={`/orders/${order.id}`} key={order.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-black text-[#17314A]">{order.order.orderNumber}</p>
+                      <p className="font-black text-[#17314A]">{order.order.displayOrderNumber ?? order.order.orderNumber}</p>
                       <p className="mt-1 truncate text-sm font-semibold text-[#17314A]/56">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
                     </div>
                     <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>

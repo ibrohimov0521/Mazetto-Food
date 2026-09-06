@@ -29,6 +29,7 @@ import type { ListOrdersDto } from "./dto/list-orders.dto";
 import type { AddOrderItemDto, OrderItemModifierDto, UpdateOrderItemDto } from "./dto/order-item.dto";
 import { PosOrderStatus, type UpdateOrderStatusDto } from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
+import { allocateDisplayOrderNumber } from "./order-display-number";
 
 type TransactionClient = Prisma.TransactionClient;
 type ConfirmOrderForPreparationOptions = {
@@ -194,11 +195,13 @@ export class OrdersService {
           await this.assertEmployeeInBranch(tx, employeeId, branchId);
           const openShift = await this.assertOpenCashierShift(tx, branchId, employeeId);
           const cashMethod = await this.assertCashPaymentMethod(tx, branchId);
+          const displayOrder = await allocateDisplayOrderNumber(tx, OrderSource.POS);
 
           const order = await tx.order.create({
             data: {
               branchId,
               orderNumber: this.createOrderNumber(),
+              ...displayOrder,
               shiftId: openShift.id,
               source: OrderSource.POS,
               type: OrderType.TAKEAWAY,
@@ -392,11 +395,13 @@ export class OrdersService {
         await this.assertTableInBranch(tx, dto.tableId, branchId);
       }
 
+      const displayOrder = await allocateDisplayOrderNumber(tx, OrderSource.POS);
       const order = await tx.order.create({
         data: {
           branchId,
           tableId: dto.tableId ?? null,
           orderNumber: this.createOrderNumber(),
+          ...displayOrder,
           source: OrderSource.POS,
           type: dto.type,
           createdById: employeeId,

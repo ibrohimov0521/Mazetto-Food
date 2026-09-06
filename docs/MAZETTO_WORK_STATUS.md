@@ -1,6 +1,6 @@
 # MAZETTO FOOD Work Status
 
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 This file is the persistent working checklist for the existing MAZETTO FOOD production project. Read this before continuing any Mazetto task.
 
@@ -49,6 +49,20 @@ This file is the persistent working checklist for the existing MAZETTO FOOD prod
   the docs-only push. Backend/customer auto-deploy remain at their original false.
 - Raw source-media replacement files, generated agent instructions and QA/tmp
   artifacts were not committed. Packaged canonical media remains intact.
+
+## Local Pending Changes (2026-09-07)
+
+- Implemented customer-facing daily display order numbers locally. Technical
+  `orderNumber` remains for backend/admin tracing; new visible numbers start at
+  `WEB101`, `TG101`, and `101` per source per Asia/Tashkent day.
+- Admin/POS/customer history screens prefer the short display number and keep the
+  technical order number visible in admin order detail/list context.
+- Staff Telegram order messages now remember the sent group message and Kitchen UI
+  status changes refresh that Telegram group message instead of leaving it stale.
+- Local validation passed for display-number allocation, realtime room auth, login
+  throttling, Telegram customer ordering/auth, customer order history, kitchen board,
+  and DB-backed staff lifecycle. Production has not been touched for this pending
+  change.
 
 ## Core Rule
 

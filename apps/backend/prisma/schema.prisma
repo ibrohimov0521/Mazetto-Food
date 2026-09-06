@@ -851,38 +851,43 @@ model PriceHistory {
 }
 
 model Order {
-  id                 String        @id @default(cuid())
-  branchId           String
-  shiftId            String?
-  tableId            String?
-  waiterId           String?
-  servedById         String?
-  orderNumber        String        @unique
-  source             OrderSource
-  type               OrderType
-  status             OrderStatus   @default(NEW)
-  paymentStatus      PaymentStatus @default(PENDING)
-  customerName       String?
-  customerPhone      String?
-  deliveryAddress    String?
-  guestCount         Int?
-  subtotal           Decimal       @default(0) @db.Decimal(12, 2)
-  discountTotal      Decimal       @default(0) @db.Decimal(12, 2)
-  serviceFeeTotal    Decimal       @default(0) @db.Decimal(12, 2)
-  deliveryFeeTotal   Decimal       @default(0) @db.Decimal(12, 2)
-  total              Decimal       @default(0) @db.Decimal(12, 2)
-  notes              String?
-  kitchenComment     String?
-  createdById        String?
-  acceptedById       String?
-  closedById         String?
-  cancelledById      String?
-  cancellationReason String?
-  acceptedAt         DateTime?
-  closedAt           DateTime?
-  cancelledAt        DateTime?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  id                     String        @id @default(cuid())
+  branchId               String
+  shiftId                String?
+  tableId                String?
+  waiterId               String?
+  servedById             String?
+  orderNumber            String        @unique
+  displayOrderNumber     String?
+  displayOrderDate       DateTime?     @db.Date
+  displayOrderSequence   Int?
+  staffTelegramChatId    String?
+  staffTelegramMessageId Int?
+  source                 OrderSource
+  type                   OrderType
+  status                 OrderStatus   @default(NEW)
+  paymentStatus          PaymentStatus @default(PENDING)
+  customerName           String?
+  customerPhone          String?
+  deliveryAddress        String?
+  guestCount             Int?
+  subtotal               Decimal       @default(0) @db.Decimal(12, 2)
+  discountTotal          Decimal       @default(0) @db.Decimal(12, 2)
+  serviceFeeTotal        Decimal       @default(0) @db.Decimal(12, 2)
+  deliveryFeeTotal       Decimal       @default(0) @db.Decimal(12, 2)
+  total                  Decimal       @default(0) @db.Decimal(12, 2)
+  notes                  String?
+  kitchenComment         String?
+  createdById            String?
+  acceptedById           String?
+  closedById             String?
+  cancelledById          String?
+  cancellationReason     String?
+  acceptedAt             DateTime?
+  closedAt               DateTime?
+  cancelledAt            DateTime?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
   acceptedBy        Employee?            @relation("OrderAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
   branch            Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
@@ -903,10 +908,12 @@ model Order {
   revenueRecords    RevenueRecord[]
   statusHistory     OrderStatusHistory[]
 
+  @@unique([source, displayOrderDate, displayOrderSequence])
   @@index([branchId, createdAt])
   @@index([branchId, status])
   @@index([shiftId])
   @@index([source])
+  @@index([displayOrderDate, source])
   @@index([type])
   @@index([paymentStatus])
   @@index([tableId])

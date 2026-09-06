@@ -13,7 +13,7 @@ import { localizeMenuName } from "../../lib/customer-display";
 import { useCart } from "../../lib/cart";
 import type { Branch } from "../../lib/types";
 
-type OrderResult = { customerOrder: { id: string }; order: { orderNumber: string; id?: string } | null };
+type OrderResult = { customerOrder: { id: string }; order: { orderNumber: string; displayOrderNumber?: string | null; id?: string } | null };
 type OrderType = "DELIVERY" | "PICKUP";
 type PaymentMethod = "CASH";
 type CheckoutQuote = {

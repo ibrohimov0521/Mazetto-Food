@@ -5,6 +5,7 @@ import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/aut
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
+import { allocateDisplayOrderNumber } from "../orders/order-display-number";
 import type { CreateHallDto, CreateTableDto, CreateTableOrderDto, UpdateTableStatusDto } from "./dto/tables.dto";
 
 @Injectable()
@@ -128,6 +129,7 @@ export class TablesService {
         throw new BadRequestException("Table already has an active order");
       }
 
+      const displayOrder = await allocateDisplayOrderNumber(tx, OrderSource.POS);
       const order = await tx.order.create({
         data: {
           branchId: table.branchId,
@@ -135,6 +137,7 @@ export class TablesService {
           waiterId,
           createdById: waiterId,
           orderNumber: this.createOrderNumber(),
+          ...displayOrder,
           source: OrderSource.POS,
           type: dto.type ?? OrderType.DINE_IN,
           status: OrderStatus.NEW,

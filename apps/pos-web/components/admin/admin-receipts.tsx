@@ -46,6 +46,7 @@ type Receipt = {
   order?: {
     id: string;
     orderNumber: string;
+    displayOrderNumber?: string | null;
     status: OrderStatus;
     paymentStatus: PaymentStatus;
     source: OrderSource;
@@ -145,7 +146,7 @@ export function AdminReceiptsPage() {
     {
       key: "order",
       header: "Buyurtma",
-      render: (receipt) => receipt.order?.orderNumber ?? "—",
+      render: (receipt) => receipt.order ? receipt.order.displayOrderNumber ?? receipt.order.orderNumber : "—",
     },
     {
       key: "orderStatus",

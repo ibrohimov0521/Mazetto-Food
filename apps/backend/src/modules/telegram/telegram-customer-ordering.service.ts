@@ -409,7 +409,7 @@ export class TelegramCustomerOrderingService {
       take: 5,
       include: {
         branch: { select: { name: true } },
-        order: { select: { orderNumber: true, status: true, total: true } },
+        order: { select: { orderNumber: true, displayOrderNumber: true, status: true, total: true } },
       },
     });
 
@@ -420,7 +420,7 @@ export class TelegramCustomerOrderingService {
             "",
             ...orders.map((order) =>
               [
-                `<b>${this.escapeHtml(order.order.orderNumber)}</b>`,
+                `<b>${this.escapeHtml(order.order.displayOrderNumber ?? order.order.orderNumber)}</b>`,
                 `${this.escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status)}`,
                 `Jami: ${this.formatMoney(order.order.total)}`,
               ].join("\n"),
@@ -1350,7 +1350,7 @@ export class TelegramCustomerOrderingService {
         text: [
           "🎉 <b>Buyurtma qabul qilindi</b>",
           "",
-          `Raqam: <b>${this.escapeHtml(result.order?.orderNumber ?? "-")}</b>`,
+          `Raqam: <b>${this.escapeHtml(result.order?.displayOrderNumber ?? result.order?.orderNumber ?? "-")}</b>`,
           `Holat: <b>${this.statusLabel(result.order?.status ?? "NEW")}</b>`,
           "",
           "Buyurtmani web sayt yoki Telegramdagi Buyurtmalarim bo'limidan kuzatishingiz mumkin.",

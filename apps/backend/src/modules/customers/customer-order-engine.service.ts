@@ -17,6 +17,7 @@ import { createHash, randomInt } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
+import { allocateDisplayOrderNumber } from "../orders/order-display-number";
 import { OrdersService } from "../orders/orders.service";
 import { customerVisibleProductCodes } from "./customer-catalog-visibility";
 import type {
@@ -105,13 +106,16 @@ export class CustomerOrderEngineService {
 
       const result = await this.prisma.$transaction(
         async (tx) => {
+          const orderSource = options?.source ?? OrderSource.WEB;
+          const displayOrder = await allocateDisplayOrderNumber(tx, orderSource);
           const order = await tx.order.create({
             data: {
               branchId: dto.branchId,
               orderNumber: this.createOrderNumber(
                 options?.orderNumberPrefix ?? "WEB",
               ),
-              source: options?.source ?? OrderSource.WEB,
+              ...displayOrder,
+              source: orderSource,
               type:
                 dto.type === OnlineOrderTypeDto.DELIVERY
                   ? OrderType.DELIVERY

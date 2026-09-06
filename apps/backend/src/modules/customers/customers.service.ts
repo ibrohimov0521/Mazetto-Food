@@ -568,6 +568,7 @@ export class CustomersService {
         select: {
           id: true,
           orderNumber: true,
+          displayOrderNumber: true,
           status: true,
           total: true,
           items: {
