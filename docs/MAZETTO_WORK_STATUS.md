@@ -3358,6 +3358,13 @@ Status: LOCAL IMPLEMENTATION AND BROWSER QA VERIFIED; NOT DEPLOYED.
   remain outside this application release. Packaged canonical media is unchanged.
 - Deployment outcome will be recorded after service and read-only route verification.
 
+Owner clarification during build: pale/letterboxed carousel in 8a0cbab was rejected.
+Stopped the remote release before any service update; production image references
+remained unchanged. Restored the original teal carousel, large white heading,
+CTA/price row and large rectangular desktop image. Narrow mobile contains the
+photo to prevent side cropping. No organic image mask or hover zoom. All five
+slides remain available. The corrected revision supersedes 8a0cbab for deployment.
+
 ## Reference Element Contract And Shared Visual Foundation (2026-09-06)
 
 Status: LOCAL FOUNDATION IMPLEMENTED; FULL REFERENCE ALIGNMENT REMAINS PARTIAL.

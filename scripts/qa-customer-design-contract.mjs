@@ -27,8 +27,9 @@ try {
     await page.goto(base.href);
     await page.locator('.mf-home-hero-media img').waitFor();
     await page.waitForFunction(() => [...document.querySelectorAll('.mf-home-hero-media img')].every(i => i.complete && i.naturalWidth));
-    assert.equal(await page.locator('.mf-home-hero-media img').evaluate(i => getComputedStyle(i).objectFit), 'contain', 'Hero must show the complete food image');
-    assert.equal(await page.locator('.mf-home-hero-media').evaluate(i => getComputedStyle(i).borderRadius), '0px', 'Do not crop food with an organic mask');
+    assert.equal(await page.locator('.mf-home-hero-media img').evaluate(i => getComputedStyle(i).objectFit), width < 768 ? 'contain' : 'cover', 'Original desktop media; complete food image on narrow mobile');
+    assert.equal(await page.locator('[data-home-slider] h1').evaluate(i => getComputedStyle(i).color), 'rgb(255, 255, 255)', 'Original slide has a white heading on teal');
+    assert.equal(await page.locator('.mf-home-hero-media').evaluate(i => getComputedStyle(i).borderRadius), '0px', 'No organic media mask');
     const home = await page.evaluate(() => {
       const cta = document.querySelector('.mf-home-order-cta');
       const hero = document.querySelector('.mf-home-hero');
@@ -67,6 +68,8 @@ try {
         assert.equal(await dots.count(), 5, 'All existing home slides remain available');
         for (let index = 0; index < await dots.count(); index++) {
           await dots.nth(index).click();
+          await page.waitForFunction(() => [...document.querySelectorAll('.mf-home-hero-media img')].every(i => i.complete && i.naturalWidth));
+          await feature.screenshot({ path: `${output}/restored-slide-${index}-${width}.png` });
           const geometry = await feature.evaluate(e => {
             const copy = e.querySelector('.mf-hero-copy').getBoundingClientRect();
             const title = e.querySelector('h1').getBoundingClientRect();

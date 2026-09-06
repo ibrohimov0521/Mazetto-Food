@@ -105,9 +105,11 @@ artifacts to `.qa-screenshots/`. Existing 90-screen functional QA remains separa
 
 ## Change Gate
 
-Owner correction (2026-09-06): Home carousel media uses object-contain with no
-organic mask or rounded clipping. Entire canonical food image must remain visible;
-letterboxing is acceptable. Preserve manual arrows, dots and touch navigation.
+Owner clarification (2026-09-06): rejected the pale, letterboxed carousel.
+Restore the original teal split carousel: white large heading, optional real
+subtitle, gold CTA beside a compact price chip, edge-to-edge rectangular media,
+28px outer corners and navigation below the text. No organic image mask, image
+zoom or hover effect. Preserve manual arrows, dots and touch navigation.
 
 For future visual changes: inspect the matching reference, change the existing
 component/token, run the browser contract and relevant functional tests, inspect

@@ -30,15 +30,17 @@ export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading 
   const href = activeIndex === 0 ? menuHref : activeSlide?.targetUrl ?? (product ? `/product/${product.id}` : menuHref);
 
   return (
-    <section aria-label="MAZETTO taomlari" aria-roledescription="karusel" className="mf-home-hero mf-hero-compact" data-home-slider>
+    <section aria-label="MAZETTO taomlari" aria-roledescription="karusel" className="mf-home-hero mf-hero-restored" data-home-slider>
       <div className="mf-hero-copy">
         <p className="mf-hero-eyebrow">{activeSlide?.badge || "MAZETTO FOOD"}</p>
         <h1>{title}</h1>
         {subtitle ? <p className="mf-hero-description">{subtitle}</p> : null}
-        {product ? <p className="mf-hero-price">{formatMoney(product.sellingPrice)}</p> : null}
+        <div className="mf-hero-actions">
         <Link className="pressable mf-button-primary mf-home-order-cta" href={href}>
           {activeSlide?.ctaLabel ?? "Buyurtma berish"}
         </Link>
+        {product ? <p className="mf-hero-price">{formatMoney(product.sellingPrice)}</p> : null}
+        </div>
       </div>
       <div className="mf-home-hero-media" onTouchStart={(event) => {
         const touch = event.touches[0];
@@ -54,7 +56,8 @@ export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading 
         {loading ? <div className="skeleton h-full" /> : <MediaImage
           alt={product?.name ?? title}
           aspectClassName="h-full"
-          fit="contain"
+          fit="cover"
+          imageClassName="max-md:object-contain"
           priority
           sizes="(max-width: 767px) 55vw, (max-width: 1152px) 55vw, 616px"
           src={imageUrl}
