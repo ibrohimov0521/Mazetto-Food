@@ -16,6 +16,8 @@ const adminProductNew = readSource("apps/pos-web/app/admin/products/new/page.tsx
 const adminProductEdit = readSource("apps/pos-web/app/admin/products/[id]/page.tsx");
 const adminCategories = readSource("apps/pos-web/app/admin/categories/page.tsx");
 const adminBranches = readSource("apps/pos-web/app/admin/branches/page.tsx");
+const adminProductEditor = readSource("apps/pos-web/components/admin/admin-product-editor.tsx");
+const adminModifiers = readSource("apps/pos-web/components/admin/admin-modifiers.tsx");
 const posRouteVerifier = readSource("scripts/verify-pos-public-route.mjs");
 
 assert.match(listDto, /includeInactive\?: string/);
@@ -55,9 +57,37 @@ assert.match(adminBranches, /PermissionGuard permission="BRANCH_VIEW"/);
 assert.match(adminCatalog, /apiFetch<Product\[]>\("\/menu\/products\?includeInactive=true"\)/);
 assert.match(adminCatalog, /apiFetch<Category\[]>\("\/menu\/categories\?includeInactive=true"\)/);
 assert.match(adminCatalog, /catalogVisibility/);
-assert.match(adminCatalog, /Rasm boshqaruvi - media phase/);
-assert.match(adminCatalog, /Yangi mahsulot avtomatik canonical 74 ro'yxatiga kirmaydi/);
 assert.doesNotMatch(adminCatalog, /method: "DELETE"/);
+
+/*
+ * Mahsulot editori `admin-product-editor.tsx` ga ko'chirildi (katalog 2-bosqichi).
+ * Aniq matn emas, NIYAT tekshiriladi.
+ */
+// Media yuklash hali yo'qligi foydalanuvchiga aytilishi kerak
+assert.match(adminProductEditor, /Media yuklash|Rasm boshqaruvi/);
+// Yangi mahsulot ommaviy katalogga avtomatik kirmasligi aytilishi kerak
+assert.match(adminProductEditor, /avtomatik ommaviy katalogga kirmaydi|avtomatik canonical/);
+assert.doesNotMatch(adminProductEditor, /method: "DELETE"/);
+
+// Katalog 2-bosqichi: ko'p variant, modifier biriktirish, filial mavjudligi
+assert.match(adminProductEditor, /variants: cleanVariants\.map/, "editor bir nechta variant yubormayapti");
+assert.match(adminProductEditor, /isDefault: variant\.isDefault/, "standart variant yuborilmayapti");
+assert.match(adminProductEditor, /modifiers: selectedModifierIds\.map/, "modifier biriktirish yuborilmayapti");
+assert.match(adminProductEditor, /product-availability/, "filial mavjudligi boshqaruvi yo'q");
+assert.match(adminProductEditor, /hasPermission\(user, "BRANCH_EDIT"\)/, "filial mavjudligi BRANCH_EDIT bilan cheklanmagan");
+
+// Backend modifier katalogi
+assert.match(menuController, /@Get\("modifiers"\)/, "GET /menu/modifiers yo'q");
+assert.match(menuController, /@Patch\("modifiers\/:id"\)/, "PATCH /menu/modifiers/:id yo'q");
+assert.match(menuService, /listModifiers\(/, "listModifiers yo'q");
+assert.match(menuService, /branchAvailabilities: \{/, "getProduct filial mavjudligini qaytarmayapti");
+
+/*
+ * Modifier o'chirilmasligi kerak — buyurtma tarixidagi `modifierSnapshot`
+ * bilan bog'liq. Nofaol qilish tarixiy yaxlitlikni saqlaydi.
+ */
+assert.doesNotMatch(menuController, /@Delete\("modifiers/, "modifier o'chirish endpoint'i bo'lmasin");
+assert.doesNotMatch(adminModifiers, /method: "DELETE"/, "modifier ekranida o'chirish bo'lmasin");
 
 assert.match(posRouteVerifier, /pos\.mazettofood\.uz/);
 assert.match(posRouteVerifier, /Kitchen API public safety/);

@@ -98,6 +98,12 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
       },
       {
+        label: "Qo'shimchalar",
+        href: "/admin/modifiers",
+        permission: "MENU_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+      },
+      {
         label: "Bosh sahifa va aksiyalar",
         href: "/admin/homepage",
         permission: "HOMEPAGE_MANAGE",

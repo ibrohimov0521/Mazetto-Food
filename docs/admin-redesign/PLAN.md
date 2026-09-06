@@ -70,6 +70,45 @@ ko'rinmasdi.
 - Kontrollerda faqat `@Get` bor — jurnal o'zgartirilmaydi (validator buni tekshiradi)
 - `/admin/audit`: amal/obyekt filtri, JSON tafsilot paneli, pagination
 
+### 4-bosqich — katalog 2-bosqichi
+
+Oldingi editor faqat BITTA standart variantni tahrirlardi ("Asosiy" qattiq
+yozilgan edi) va `modifiers[]` ni umuman yubormasdi — garchi backend
+`POST/PATCH /menu/products` da ikkalasini ham qabul qilsa ham. Ya'ni ko'p
+variantli mahsulot va qo'shimcha biriktirish admin paneldan mumkin emas edi.
+
+Backend qo'shimchalari:
+
+| Endpoint | Permission | Izoh |
+|---|---|---|
+| `GET /menu/modifiers` | `MENU_VIEW` | Ro'yxat yo'q edi — tanlagich qurib bo'lmasdi |
+| `PATCH /menu/modifiers/:id` | `MENU_EDIT` | Nom, narx, tartib, faollik |
+
+`getProduct` endi `branchAvailabilities` ni ham qaytaradi.
+
+Frontend:
+
+- `admin-product-editor.tsx` — yangi fayl: ko'p variant (qo'shish/o'chirish,
+  narx/tannarx, standart tanlash), modifier biriktirish, filial bo'yicha
+  mavjudlik (`BRANCH_EDIT` bilan cheklangan)
+- `/admin/modifiers` — qo'shimchalar katalogi CRUD
+
+**Yangi permission qo'shilmadi.** Reja `VARIANT_MANAGE`, `MODIFIER_MANAGE`,
+`BUNDLE_MANAGE`, `BRANCH_AVAILABILITY_MANAGE`, `PRODUCT_MEDIA_MANAGE` ni
+ko'zda tutgan edi, lekin bularning hammasi mahsulot tahrirlashning qismi va
+`MENU_EDIT`/`MENU_CREATE` allaqachon qamrab oladi. Filial mavjudligi esa
+mavjud `BRANCH_EDIT` bilan himoyalangan. Beshta permission qo'shish seed
+churn'i va chalkashlik keltirardi — agar biznes narx o'zgartirish bilan
+mavjudlik o'zgartirishni **ajratmoqchi** bo'lsa, o'shanda qo'shiladi.
+
+**Modifier o'chirish endpoint'i ataylab qo'shilmadi:** modifier buyurtma
+tarixidagi `modifierSnapshot` bilan bog'liq. Nofaol qilish tarixiy
+yaxlitlikni saqlaydi — bu `policy_decisions_to_finalize.MENU_DELETE` dagi
+arxivlash tavsiyasiga mos. Validator buni tekshiradi.
+
+**Set tarkibi (`ProductBundleItem`) faqat ko'rish** — boshqaruv endpoint'i
+yo'q, u seed orqali to'ldiriladi.
+
 ### 4-bosqichda qolgan va NEGA qilinmagani
 
 | Modul | Sabab |
@@ -79,7 +118,7 @@ ko'rinmasdi.
 | **To'lov provayderlari** (Click/Payme) | Haqiqiy provayder shartnomasi, kalitlar va settlement mantig'i kerak. Kod bilan hal qilinmaydi. |
 | **Printer / print job** | `PrintJob` modeli yo'q — schema o'zgarishi va migratsiya kerak. |
 | **Ombor kengaytmasi** (`STOCK_*`, 7 permission) | `Warehouse`/`Stock`/`StockMovement` bor, lekin transfer va write-off oqimlari yangi endpointlar va biznes qoidalarini talab qiladi. |
-| **Katalog 2-bosqich** | Variant/modifier/bundle boshqaruvi — eng yaqin nomzod, lekin `admin-catalog.tsx` ni jiddiy kengaytirishni talab qiladi. |
+
 
 ### 3-bosqichda bajarilgan modullar
 
@@ -152,7 +191,7 @@ semantikasi, pul va sana formatlash, telefon maskalash).
 
 Validatsiya (2026-09-06):
 `pnpm typecheck` 12/12 · `pnpm lint` 12/12 · `pnpm --filter pos-web build` ✅ ·
-`git diff --check` ✅ · dev smoke: 28 route (barcha admin, POS, kassa, oshxona, ofitsiant) — hammasi 200,
+`git diff --check` ✅ · dev smoke: 30 route (barcha admin, POS, kassa, oshxona, ofitsiant) — hammasi 200,
 dev log'da xato 0.
 
 ---

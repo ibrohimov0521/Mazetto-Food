@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { AdminProductEditor } from "../../../../components/admin/admin-catalog";
+import { AdminProductEditor } from "../../../../components/admin/admin-product-editor";
 import { AdminLayout } from "../../../../components/admin-shell/admin-layout";
 import { AdminPageHeader } from "../../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../../components/auth/permission-guard";

@@ -11,6 +11,7 @@ import type {
   CreateModifierDto,
   CreateProductDto,
   UpdateCategoryDto,
+  UpdateModifierDto,
   UpdateProductDto,
 } from "./dto/menu-management.dto";
 
@@ -213,6 +214,21 @@ export class MenuService {
                 name: true,
               },
             },
+          },
+        },
+        /*
+         * Filial bo'yicha mavjudlik — admin mahsulot tahrirlash ekranida
+         * qaysi filialda mahsulot yopilganini ko'rsatish uchun.
+         * O'zgartirish `PATCH /branches/:id/product-availability` orqali.
+         */
+        branchAvailabilities: {
+          select: {
+            id: true,
+            branchId: true,
+            status: true,
+            reason: true,
+            updatedAt: true,
+            branch: { select: { id: true, code: true, name: true } },
           },
         },
       },
@@ -426,6 +442,44 @@ export class MenuService {
       where: { id },
       data: { isAvailable: false },
     });
+  }
+
+  /**
+   * Modifier katalogi.
+   *
+   * Ilgari faqat YARATISH endpoint'i bor edi, ro'yxat yo'q edi — shuning uchun
+   * mahsulot tahrirlashda modifier tanlash imkoniyati qurib bo'lmasdi.
+   */
+  listModifiers(includeInactive = false) {
+    return this.prisma.modifier.findMany({
+      where: includeInactive ? {} : { isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      include: {
+        _count: { select: { products: true } },
+      },
+    });
+  }
+
+  async updateModifier(id: string, dto: UpdateModifierDto) {
+    await this.assertModifier(id);
+
+    return this.prisma.modifier.update({
+      where: { id },
+      data: {
+        ...(dto.name === undefined ? {} : { name: dto.name }),
+        ...(dto.price === undefined ? {} : { price: new Prisma.Decimal(dto.price) }),
+        ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
+        ...(dto.sortOrder === undefined ? {} : { sortOrder: dto.sortOrder }),
+      },
+    });
+  }
+
+  private async assertModifier(id: string): Promise<void> {
+    const modifier = await this.prisma.modifier.findUnique({ where: { id }, select: { id: true } });
+
+    if (!modifier) {
+      throw new NotFoundException("Modifier not found");
+    }
   }
 
   async createModifier(dto: CreateModifierDto) {

@@ -16,6 +16,7 @@ import {
   CreateModifierDto,
   CreateProductDto,
   UpdateCategoryDto,
+  UpdateModifierDto,
   UpdateProductDto,
 } from "./dto/menu-management.dto";
 import { MenuService } from "./menu.service";
@@ -78,9 +79,21 @@ export class MenuController {
     return this.menuService.deleteProduct(id);
   }
 
+  @Get("modifiers")
+  @Permissions(PERMISSIONS.MENU_VIEW)
+  listModifiers(@Query("includeInactive") includeInactive?: string) {
+    return this.menuService.listModifiers(includeInactive === "true");
+  }
+
   @Post("modifiers")
   @Permissions(PERMISSIONS.MENU_CREATE)
   createModifier(@Body() dto: CreateModifierDto) {
     return this.menuService.createModifier(dto);
+  }
+
+  @Patch("modifiers/:id")
+  @Permissions(PERMISSIONS.MENU_EDIT)
+  updateModifier(@Param("id") id: string, @Body() dto: UpdateModifierDto) {
+    return this.menuService.updateModifier(id, dto);
   }
 }

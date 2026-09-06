@@ -454,7 +454,7 @@
     "cashier_shift_controls_ux": "CURRENT_NEXT_TASK",
     "printer_receipt_print_agent": "PLANNED",
     "desktop_offline_app": "PLANNED",
-    "admin_catalog_phase_2": "PLANNED",
+    "admin_catalog_phase_2": "IMPLEMENTED_LOCAL",
     "inventory_warehouse": "PLANNED",
     "finance": "PLANNED",
     "click_payme": "PLANNED",
@@ -534,6 +534,11 @@
       "id": "ACCOUNTANT_SHIFT_VISIBILITY",
       "current": "ACCOUNTANT ga SHIFT_VIEW_BRANCH berilmadi — smena boshqaruvi operatsion ish deb hisoblandi.",
       "recommended": "Buxgalter kassa solishtiruvini ko'rishi kerakmi yoki yo'qmi — biznes bo'yicha yakuniy qaror qilish."
+    },
+    {
+      "id": "CATALOG_PHASE_2_PERMISSIONS",
+      "current": "Variant, modifier va filial mavjudligi MENU_EDIT/MENU_CREATE va BRANCH_EDIT bilan himoyalangan; rejadagi 5 ta alohida permission qo'shilmadi.",
+      "recommended": "Agar narx o'zgartirish bilan mavjudlik o'zgartirishni turli rollarga ajratish kerak bo'lsa, VARIANT_MANAGE / BRANCH_AVAILABILITY_MANAGE qo'shilsin."
     }
   ],
   "recommended_role_hierarchy": [
@@ -607,6 +612,18 @@
       "path": "/audit-logs/facets",
       "permission": "AUDIT_VIEW",
       "note": "Filtr tanlagichlari uchun mavjud action va entity qiymatlari."
+    },
+    {
+      "method": "GET",
+      "path": "/menu/modifiers",
+      "permission": "MENU_VIEW",
+      "note": "Modifier katalogi. Ilgari faqat POST bor edi."
+    },
+    {
+      "method": "PATCH",
+      "path": "/menu/modifiers/:id",
+      "permission": "MENU_EDIT",
+      "note": "Nom, narx, tartib, faollik. O'chirish yo'q — modifierSnapshot yaxlitligi uchun."
     }
   ]
 }
