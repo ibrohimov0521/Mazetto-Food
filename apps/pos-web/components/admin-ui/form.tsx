@@ -43,7 +43,11 @@ export function FormField({
       {children({ id, "aria-describedby": describedBy })}
 
       {error ? (
-        <p className="text-xs font-medium text-mz-danger" id={`${id}-error`} role="alert">
+        <p
+          className="text-xs font-medium text-mz-danger"
+          id={`${id}-error`}
+          role="alert"
+        >
           {error}
         </p>
       ) : hint ? (
@@ -78,7 +82,9 @@ export function Textarea({
   className = "",
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={`${controlClass} min-h-24 ${className}`} {...props} />;
+  return (
+    <textarea className={`${controlClass} min-h-24 ${className}`} {...props} />
+  );
 }
 
 /**

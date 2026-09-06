@@ -18,6 +18,7 @@ import {
   Textarea,
 } from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
+import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
 
@@ -334,31 +335,14 @@ export function AdminExpensesPage() {
           rows={expenses}
         />
 
-        <div className="flex items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-          <p className="text-xs text-mz-text-muted">
-            {offset + 1}–{offset + expenses.length}-xarajat
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={offset === 0 || isLoading}
-              onClick={() =>
-                setOffset((current) => Math.max(0, current - pageSize))
-              }
-              size="sm"
-              variant="ghost"
-            >
-              Oldingi
-            </Button>
-            <Button
-              disabled={expenses.length < pageSize || isLoading}
-              onClick={() => setOffset((current) => current + pageSize)}
-              size="sm"
-              variant="ghost"
-            >
-              Keyingi
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          count={expenses.length}
+          isLoading={isLoading}
+          noun="xarajat"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
+        />
       </Card>
 
       <Modal

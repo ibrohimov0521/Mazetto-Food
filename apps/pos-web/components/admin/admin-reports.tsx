@@ -6,6 +6,7 @@ import { TextInput } from "../admin-ui/form";
 import { EmptyState } from "../admin-ui/feedback";
 import { apiFetch } from "../../lib/api";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
+import { ChipGroup } from "../admin-ui/tabs";
 
 type Branch = {
   id: string;
@@ -127,6 +128,14 @@ const sourceLabels = {
   TELEGRAM: "Telegram",
   POS: "Kassa",
 };
+
+const reportPresets = [
+  { key: "today", label: "Bugun" },
+  { key: "yesterday", label: "Kecha" },
+  { key: "last7days", label: "7 kun" },
+  { key: "thisMonth", label: "Bu oy" },
+  { key: "year", label: "Yil" },
+];
 
 export function AdminReportsPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -286,33 +295,12 @@ export function AdminReportsPage() {
         <Button type="submit">Ko'rish</Button>
       </form>
 
-      <div className="flex flex-wrap gap-2">
-        <QuickRange
-          active={preset === "today"}
-          label="Bugun"
-          onClick={() => void choosePreset("today")}
-        />
-        <QuickRange
-          active={preset === "yesterday"}
-          label="Kecha"
-          onClick={() => void choosePreset("yesterday")}
-        />
-        <QuickRange
-          active={preset === "last7days"}
-          label="7 kun"
-          onClick={() => void choosePreset("last7days")}
-        />
-        <QuickRange
-          active={preset === "thisMonth"}
-          label="Bu oy"
-          onClick={() => void choosePreset("thisMonth")}
-        />
-        <QuickRange
-          active={preset === "year"}
-          label="Yil"
-          onClick={() => void choosePreset("year")}
-        />
-      </div>
+      <ChipGroup
+        active={preset}
+        items={reportPresets}
+        label="Sana oralig'i"
+        onChange={(key) => void choosePreset(key)}
+      />
 
       {isLoading && !report ? <SkeletonRows rows={8} /> : null}
 
@@ -612,30 +600,6 @@ function Panel({
       </div>
       {children}
     </section>
-  );
-}
-
-function QuickRange({
-  active,
-  label,
-  onClick,
-}: {
-  active?: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={`rounded-full border px-4 py-2 text-sm font-black shadow-sm transition ${
-        active
-          ? "border-mz-primary bg-mz-primary text-mz-text"
-          : "border-mz-border bg-mz-surface text-mz-teal-700 hover:bg-mz-surface-sunken"
-      }`}
-      type="button"
-      onClick={onClick}
-    >
-      {label}
-    </button>
   );
 }
 

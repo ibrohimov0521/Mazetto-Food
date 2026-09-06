@@ -6,11 +6,11 @@ import { canSwitchBranch } from "../../lib/admin-nav";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
-import { Button } from "../admin-ui/button";
 import { Card } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 
 /*
@@ -282,31 +282,14 @@ export function AdminShiftsPage() {
           rows={shifts}
         />
 
-        <div className="flex items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-          <p className="text-xs text-mz-text-muted">
-            {offset + 1}–{offset + shifts.length}-smena
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={offset === 0 || isLoading}
-              onClick={() =>
-                setOffset((current) => Math.max(0, current - pageSize))
-              }
-              size="sm"
-              variant="ghost"
-            >
-              Oldingi
-            </Button>
-            <Button
-              disabled={shifts.length < pageSize || isLoading}
-              onClick={() => setOffset((current) => current + pageSize)}
-              size="sm"
-              variant="ghost"
-            >
-              Keyingi
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          count={shifts.length}
+          isLoading={isLoading}
+          noun="smena"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
+        />
       </Card>
     </div>
   );

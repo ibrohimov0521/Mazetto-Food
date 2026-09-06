@@ -34,7 +34,10 @@ export function Badge({
       className={`inline-flex items-center gap-1.5 rounded-mz-pill px-2.5 py-0.5 text-xs font-bold ${tones[tone]}`}
     >
       {withDot ? (
-        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-mz-pill bg-current" />
+        <span
+          aria-hidden="true"
+          className="h-1.5 w-1.5 rounded-mz-pill bg-current"
+        />
       ) : null}
       {children}
     </span>

@@ -20,11 +20,12 @@ import {
 } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
-import { Button, ButtonLink } from "../admin-ui/button";
+import { ButtonLink } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
 import { FilterBar, Select } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 
 /*
  * Admin buyurtmalar moduli.
@@ -339,31 +340,14 @@ export function AdminOrdersPage() {
          * Backend jami sonni qaytarmaydi, shuning uchun sahifa raqamlari emas,
          * oldinga/orqaga navigatsiya ishlatiladi.
          */}
-        <div className="flex items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-          <p className="text-xs text-mz-text-muted">
-            {offset + 1}–{offset + orders.length}-buyurtma
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={offset === 0 || isLoading}
-              onClick={() =>
-                setOffset((current) => Math.max(0, current - pageSize))
-              }
-              size="sm"
-              variant="ghost"
-            >
-              Oldingi
-            </Button>
-            <Button
-              disabled={orders.length < pageSize || isLoading}
-              onClick={() => setOffset((current) => current + pageSize)}
-              size="sm"
-              variant="ghost"
-            >
-              Keyingi
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          count={orders.length}
+          isLoading={isLoading}
+          noun="buyurtma"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
+        />
       </Card>
     </div>
   );

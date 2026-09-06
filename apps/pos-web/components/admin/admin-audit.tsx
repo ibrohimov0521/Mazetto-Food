@@ -9,6 +9,7 @@ import { Card, CardBody } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, Select } from "../admin-ui/form";
+import { Pagination } from "../admin-ui/pagination";
 
 /*
  * Xavfsizlik audit jurnali.
@@ -256,31 +257,14 @@ export function AdminAuditPage() {
           </div>
         ) : null}
 
-        <div className="flex items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-          <p className="text-xs text-mz-text-muted">
-            {offset + 1}–{offset + logs.length}-yozuv
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={offset === 0 || isLoading}
-              onClick={() =>
-                setOffset((current) => Math.max(0, current - pageSize))
-              }
-              size="sm"
-              variant="ghost"
-            >
-              Oldingi
-            </Button>
-            <Button
-              disabled={logs.length < pageSize || isLoading}
-              onClick={() => setOffset((current) => current + pageSize)}
-              size="sm"
-              variant="ghost"
-            >
-              Keyingi
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          count={logs.length}
+          isLoading={isLoading}
+          noun="yozuv"
+          offset={offset}
+          onOffsetChange={setOffset}
+          pageSize={pageSize}
+        />
       </Card>
     </div>
   );

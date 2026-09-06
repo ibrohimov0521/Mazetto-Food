@@ -19,7 +19,8 @@ const base =
 const variants: Record<ButtonVariant, string> = {
   primary: "bg-mz-primary text-mz-primary-fg hover:bg-mz-primary-hover",
   secondary: "bg-mz-accent text-mz-white hover:bg-mz-teal-600",
-  ghost: "border border-mz-border bg-mz-surface text-mz-text hover:bg-mz-surface-sunken",
+  ghost:
+    "border border-mz-border bg-mz-surface text-mz-text hover:bg-mz-surface-sunken",
   danger: "bg-mz-danger text-mz-white hover:bg-mz-danger-accent",
 };
 
@@ -28,8 +29,14 @@ const sizes: Record<ButtonSize, string> = {
   md: "px-4 py-2 text-sm",
 };
 
-function buttonClass(variant: ButtonVariant, size: ButtonSize, className: string): string {
-  return [base, variants[variant], sizes[size], className].filter(Boolean).join(" ");
+function buttonClass(
+  variant: ButtonVariant,
+  size: ButtonSize,
+  className: string,
+): string {
+  return [base, variants[variant], sizes[size], className]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function Button({
@@ -42,7 +49,13 @@ export function Button({
   variant?: ButtonVariant;
   size?: ButtonSize;
 }) {
-  return <button className={buttonClass(variant, size, className)} type={type} {...props} />;
+  return (
+    <button
+      className={buttonClass(variant, size, className)}
+      type={type}
+      {...props}
+    />
+  );
 }
 
 export function ButtonLink({
