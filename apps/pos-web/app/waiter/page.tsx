@@ -8,6 +8,7 @@ import { RoleGuard } from "../../components/auth/role-guard";
 import { EmptyState, PrimaryButton } from "../../components/erp/erp-ui";
 import { apiFetch } from "../../lib/api";
 import { getApiBaseUrl } from "../../lib/auth";
+import { readSession } from "../../lib/session";
 
 type TableStatus = "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING";
 type Table = {
@@ -66,7 +67,14 @@ function WaiterFloor() {
   }, [load]);
 
   useEffect(() => {
+    const session = readSession();
+
+    if (!session) {
+      return;
+    }
+
     const socket = io(getSocketBaseUrl(), {
+      auth: { token: session.tokens.accessToken, tokenType: "staff" },
       transports: ["websocket"],
     });
     const refresh = () => {

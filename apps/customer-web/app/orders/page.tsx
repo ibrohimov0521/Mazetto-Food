@@ -118,7 +118,10 @@ function OrdersDashboard() {
       return;
     }
 
-    const socket = io(getSocketBaseUrl(), { transports: ["websocket"] });
+    const socket = io(getSocketBaseUrl(), {
+      auth: { token: customer.accessToken, tokenType: "customer" },
+      transports: ["websocket"],
+    });
     const refresh = () => void load();
     socket.on("order.created", refresh);
     socket.on("order.confirmed", refresh);

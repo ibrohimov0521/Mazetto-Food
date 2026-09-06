@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req } from "@nestjs/common";
+import type { Request } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -13,8 +14,8 @@ export class AuthController {
 
   @Public()
   @Post("login")
-  login(@Body() dto: LoginDto): Promise<AuthResponse> {
-    return this.authService.login(dto);
+  login(@Body() dto: LoginDto, @Req() request: Request): Promise<AuthResponse> {
+    return this.authService.login(dto, this.getClientAddress(request));
   }
 
   @Public()
@@ -32,5 +33,19 @@ export class AuthController {
   @Get("me")
   getCurrentUser(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {
     return user;
+  }
+
+  private getClientAddress(request: Request): string {
+    const forwardedFor = request.headers["x-forwarded-for"];
+
+    if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+      return forwardedFor.split(",")[0]?.trim() || "unknown";
+    }
+
+    if (Array.isArray(forwardedFor) && forwardedFor[0]?.trim()) {
+      return forwardedFor[0].split(",")[0]?.trim() || "unknown";
+    }
+
+    return request.ip || request.socket.remoteAddress || "unknown";
   }
 }

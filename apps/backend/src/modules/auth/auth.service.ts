@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { HttpException, HttpStatus, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -26,15 +26,32 @@ type UserWithAuthRelations = {
   }[];
 };
 
+type LoginThrottleRecord = {
+  failures: number;
+  firstFailureAt: number;
+  blockedUntil: number | null;
+};
+
+const LOGIN_THROTTLE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_THROTTLE_BLOCK_MS = 15 * 60 * 1000;
+const LOGIN_THROTTLE_MAX_FAILURES = 5;
+const LOGIN_THROTTLE_GC_MS = 60 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
+  private readonly loginThrottle = new Map<string, LoginThrottleRecord>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
 
-  async login(dto: LoginDto): Promise<AuthResponse> {
+  async login(dto: LoginDto, clientAddress = "unknown"): Promise<AuthResponse> {
     const identifier = this.normalizeIdentifier(dto.identifier);
+    const throttleKey = this.createLoginThrottleKey(identifier, clientAddress);
+
+    this.assertLoginAllowed(throttleKey);
+
     const userRecord = await this.prisma.user.findFirst({
       where: {
         isActive: true,
@@ -44,14 +61,18 @@ export class AuthService {
     });
 
     if (!userRecord?.passwordHash) {
+      this.registerFailedLogin(throttleKey);
       throw new UnauthorizedException("Invalid credentials");
     }
 
     const passwordMatches = await compare(dto.password, userRecord.passwordHash);
 
     if (!passwordMatches) {
+      this.registerFailedLogin(throttleKey);
       throw new UnauthorizedException("Invalid credentials");
     }
+
+    this.loginThrottle.delete(throttleKey);
 
     await this.prisma.user.update({
       where: { id: userRecord.id },
@@ -247,5 +268,44 @@ export class AuthService {
 
   private getRefreshExpiresAt(): Date {
     return new Date(Date.now() + getJwtRefreshExpiresIn() * 1000);
+  }
+
+  private createLoginThrottleKey(identifier: string, clientAddress: string): string {
+    return `${identifier}:${clientAddress}`;
+  }
+
+  private assertLoginAllowed(key: string): void {
+    const record = this.loginThrottle.get(key);
+    const now = Date.now();
+
+    if (!record) {
+      return;
+    }
+
+    if (record.blockedUntil && record.blockedUntil > now) {
+      throw new HttpException(
+        "Too many login attempts. Please wait before trying again.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (record.blockedUntil || now - record.firstFailureAt > LOGIN_THROTTLE_GC_MS) {
+      this.loginThrottle.delete(key);
+    }
+  }
+
+  private registerFailedLogin(key: string): void {
+    const now = Date.now();
+    const current = this.loginThrottle.get(key);
+    const record =
+      current && now - current.firstFailureAt <= LOGIN_THROTTLE_WINDOW_MS
+        ? current
+        : { failures: 0, firstFailureAt: now, blockedUntil: null };
+
+    record.failures += 1;
+    record.blockedUntil =
+      record.failures >= LOGIN_THROTTLE_MAX_FAILURES ? now + LOGIN_THROTTLE_BLOCK_MS : null;
+
+    this.loginThrottle.set(key, record);
   }
 }

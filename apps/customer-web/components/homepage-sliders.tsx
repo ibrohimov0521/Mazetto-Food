@@ -57,7 +57,6 @@ export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading 
           alt={product?.name ?? title}
           aspectClassName="h-full"
           fit="cover"
-          imageClassName="max-md:object-contain"
           priority
           sizes="(max-width: 767px) 55vw, (max-width: 1152px) 55vw, 616px"
           src={imageUrl}
