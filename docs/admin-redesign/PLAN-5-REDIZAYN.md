@@ -301,16 +301,46 @@ Shoxobcha: `admin-redesign-phase-5` · 12 commit · **deploy qilinmagan**
 - `admin-catalog.tsx` uch ekranni (mahsulot, kategoriya, filial) saqlardi;
   endi faqat mahsulot.
 
-### QA — nima qilinmagan
+### QA — statik qismi bajarildi
 
-Lokal PostgreSQL 18 da `mazetto` roli yo'q, shuning uchun **hech bir ekran
-brauzerda ko'rilmagan**. Tekshirilgani: `typecheck`, `lint`, `build` va 7 ta
-validator skripti — bularning hammasi statik.
+DB'siz bajarish mumkin bo'lgani qilindi (2026-09-07):
 
-Ochilmagan savollar QA gacha:
+**1. Tur auditi.** Yangi ekranlarning TypeScript turlari backend javobiga
+solishtirildi. Typecheck buni ushlay olmaydi: turlar qo'lda yozilgani uchun
+ular o'zi bilan o'zi mos keladi, javob bilan emas.
 
-- Responsive tekshiruv (768 / 1024 / 1366 / 1440 / 1920 / 1024×600)
-- Yangi modallar (filial, kategoriya, ingredient, ombor, chek, buyurtma holati)
-  haqiqiy ma'lumotda sinalmagan
-- Hisobot tablari real javob bilan tekshirilmagan — turlar backend kodidan
-  o'qib yozilgan, javobdan emas
+Topilgani — **crash**: `ZReportView` `paymentBreakdown[].paymentMethod` ni satr
+deb e'lon qilgan va to'g'ridan-to'g'ri render qilgan edi. `reports.service.ts`
+u yerda butun `PaymentMethod` yozuvini saqlaydi, ya'ni to'lovi bor har qanday
+davrda React obyektni render qilishga urinib xato tashlardi.
+
+Shu usulda tekshirilgan va to'g'ri chiqqani: filial maydonlari va `String`
+ish vaqti, kategoriyada o'qishda `imageUrl` / yozishda `image`, chek tarkibi
+va to'lov usullari, ombor va buyurtma holati so'rov tanasi.
+
+**2. Statik responsive ko'rik.** Ish vaqti oynasidagi qator
+`grid-cols-[1fr_auto]` edi: ikkita `type="time"` input (Chrome'da ~120px)
+kun nomi bilan yonma-yon 320px ekranga sig'masdi. Grid elementlari o'z
+mazmunidan kichrayolmaydi, ya'ni bu kafolatlangan gorizontal overflow edi.
+
+**3. Tab semantikasi.** `Tabs` `role="tab"` e'lon qilardi, lekin bog'liq panel
+yo'q edi — ekran o'quvchi uchun bu oddiy tugmadan yomonroq.
+
+### QA — hali qilinmagan (DB kerak)
+
+Lokal PostgreSQL 18 da `mazetto` roli hali yo'q, shuning uchun **hech bir ekran
+brauzerda ochilmagan**:
+
+- Haqiqiy kengliklarda responsive tekshiruv (768 / 1024 / 1366 / 1440 / 1920 / 1024×600)
+- Olti rol uchun RBAC vizual tekshiruvi
+- Yangi modallarni haqiqiy ma'lumotda ishlatib ko'rish
+- Hisobot tablarini haqiqiy javob bilan tekshirish (turlar audit qilindi,
+  lekin javobning o'zi ko'rilmadi)
+
+Ikki yo'l bor:
+
+1. `docs/sql/create-local-dev-db.sql` ni `psql -U postgres` bilan ishga tushirish
+   (superuser parolini interaktiv so'raydi)
+2. Docker Desktop'ni ko'tarib, `docker-compose.yml` portini `5433:5432` ga
+   o'zgartirish va `.env` dagi `DATABASE_URL` ni moslash — 5432 ni Windows
+   servisi egallagan
