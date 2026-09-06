@@ -326,21 +326,47 @@ mazmunidan kichrayolmaydi, ya'ni bu kafolatlangan gorizontal overflow edi.
 **3. Tab semantikasi.** `Tabs` `role="tab"` e'lon qilardi, lekin bog'liq panel
 yo'q edi — ekran o'quvchi uchun bu oddiy tugmadan yomonroq.
 
-### QA — hali qilinmagan (DB kerak)
+### QA — API darajasida bajarildi (2026-09-07)
 
-Lokal PostgreSQL 18 da `mazetto` roli hali yo'q, shuning uchun **hech bir ekran
-brauzerda ochilmagan**:
+Lokal muhit Docker'ga ko'chirildi (`POSTGRES_PORT=5433`, `REDIS_PORT=6380` —
+5432 ni Windows servisi, 6379 ni boshqa loyihaning konteyneri egallagan).
+Migratsiya va seed qo'llandi, backend va pos-web ishga tushirildi.
+
+**Route smoke testi:** 34 route, hammasi kompilyatsiya bo'ldi, dev logda 0 xato.
+
+**API tekshiruvi:** yangi ekranlar chaqiradigan **27 endpoint** haqiqiy javob
+bilan sinaldi — 27/27 muvaffaqiyatli. B1–B7 oqimlari uchdan uchigacha ishladi:
+filial yaratildi, tahrirlandi va ish vaqti o'rnatildi; kategoriya PATCH
+qilindi; beshta hisobot ham javob qaytardi; ingredient, ombor va zaxira
+harakati yaratildi; `limit`/`offset` qabul qilindi.
+
+Javob kalitlari frontend turlariga solishtirildi va mos chiqdi — jumladan
+`/reports/z` ning 14 kaliti, `/inventory/*` ro'yxatlari, `/branches` dagi
+`isTemporarilyClosed` va `timezone`, `/menu/categories` dagi `imageUrl` va
+`_count`.
+
+**Bitta yo'l tekshirilmadi:** `paymentBreakdown` bo'sh bazada `[]` qaytaradi,
+ya'ni tuzatilgan crash yo'li jonli ishga tushmadi. Tuzatish servis kodiga va
+savdo hisobotining ancha oldindan mavjud tur e'loniga solishtirilib
+tekshirildi; buni jonli ko'rish uchun buyurtma va to'lov fixture'i kerak.
+
+### QA — hali qilinmagan (brauzer kerak)
+
+Chrome kengaytmasi ulanmagani uchun **piksel darajasida ko'rilmagan**:
 
 - Haqiqiy kengliklarda responsive tekshiruv (768 / 1024 / 1366 / 1440 / 1920 / 1024×600)
 - Olti rol uchun RBAC vizual tekshiruvi
-- Yangi modallarni haqiqiy ma'lumotda ishlatib ko'rish
-- Hisobot tablarini haqiqiy javob bilan tekshirish (turlar audit qilindi,
-  lekin javobning o'zi ko'rilmadi)
+- Modallarni sichqoncha bilan ishlatib ko'rish
 
-Ikki yo'l bor:
+Muhit tayyor turibdi, faqat brauzerni boshqarish yo'q.
 
-1. `docs/sql/create-local-dev-db.sql` ni `psql -U postgres` bilan ishga tushirish
-   (superuser parolini interaktiv so'raydi)
-2. Docker Desktop'ni ko'tarib, `docker-compose.yml` portini `5433:5432` ga
-   o'zgartirish va `.env` dagi `DATABASE_URL` ni moslash — 5432 ni Windows
-   servisi egallagan
+### Lokal muhit eslatmalari
+
+- Seed **filial yaratmaydi** (0 ta). Birinchi filial admin panelning o'zidan
+  yaratiladi — B1 ekrani aynan shuning uchun kerak edi.
+- Seed foydalanuvchi ham yaratmaydi; `pnpm --filter backend staff:bootstrap`
+  yoki `MAZETTO_BOOTSTRAP_ADMIN_*` o'zgaruvchilari bilan
+  `scripts/bootstrap-staff-admin.ts`.
+- `NEXT_PUBLIC_MEDIA_URL` 8080 ga ishora qiladi; bu mashinada 8080 ni boshqa
+  loyihaning konteyneri egallagan, ya'ni mahsulot rasmlari noto'g'ri
+  servisdan keladi. Media servisi compose faylida yo'q.
