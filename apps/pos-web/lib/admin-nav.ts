@@ -1,3 +1,4 @@
+import type { IconName } from "../components/admin-ui/icon";
 import { hasPermission, hasRole, type AuthUser } from "./auth";
 
 /*
@@ -18,6 +19,14 @@ export type AdminNavItem = {
   label: string;
   href: string;
   permission: string;
+  /**
+   * Menyu ikonkasi.
+   *
+   * Ilgari bu yerda ikonka yo'q edi va sidebar `label.slice(0, 1)` ni
+   * ko'rsatardi — 23 elementdan 13 tasi bir xil harfga tushardi, ya'ni
+   * yig'ilgan menyu navigatsiya sifatida ishlamasdi.
+   */
+  icon: IconName;
   /**
    * Route'ning `RoleGuard` ro'yxati.
    *
@@ -43,6 +52,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Dashboard",
+        icon: "gauge",
         href: "/admin/dashboard",
         permission: "DASHBOARD_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
@@ -55,6 +65,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Buyurtmalar",
+        icon: "receipt",
         href: "/admin/orders",
         permission: "ORDER_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
@@ -62,18 +73,21 @@ export const adminNavGroups: AdminNavGroup[] = [
       },
       {
         label: "Online buyurtmalar",
+        icon: "globe",
         href: "/admin/online-orders",
         permission: "ONLINE_ORDER_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
         label: "Stollar va zallar",
+        icon: "grid",
         href: "/admin/tables",
         permission: "TABLE_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
         label: "Oshxona monitoringi",
+        icon: "flame",
         href: "/admin/kitchen-monitor",
         permission: "KITCHEN_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
@@ -86,6 +100,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Mahsulotlar",
+        icon: "utensils",
         href: "/admin/products",
         permission: "MENU_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
@@ -93,18 +108,21 @@ export const adminNavGroups: AdminNavGroup[] = [
       },
       {
         label: "Kategoriyalar",
+        icon: "folder",
         href: "/admin/categories",
         permission: "MENU_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
       },
       {
         label: "Qo'shimchalar",
+        icon: "plusCircle",
         href: "/admin/modifiers",
         permission: "MENU_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
       },
       {
         label: "Bosh sahifa va aksiyalar",
+        icon: "megaphone",
         href: "/admin/homepage",
         permission: "HOMEPAGE_MANAGE",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
@@ -117,18 +135,21 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Zaxira",
+        icon: "boxes",
         href: "/admin/inventory",
         permission: "INVENTORY_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
         label: "Retseptlar",
+        icon: "book",
         href: "/admin/recipes",
         permission: "RECIPE_MANAGE",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
         label: "Yetkazib beruvchilar",
+        icon: "truck",
         href: "/admin/suppliers",
         permission: "INVENTORY_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
@@ -141,6 +162,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Xodimlar",
+        icon: "users",
         href: "/admin/staff",
         permission: "STAFF_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
@@ -148,12 +170,14 @@ export const adminNavGroups: AdminNavGroup[] = [
       },
       {
         label: "Mijozlar",
+        icon: "user",
         href: "/admin/customers",
         permission: "CUSTOMER_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
         label: "Rollar va permissionlar",
+        icon: "shield",
         href: "/admin/roles",
         permission: "ROLE_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
@@ -166,6 +190,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Savdo hisoboti",
+        icon: "chart",
         href: "/admin/reports",
         permission: "REPORT_SALES_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
@@ -178,12 +203,14 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Filiallar",
+        icon: "building",
         href: "/admin/branches",
         permission: "BRANCH_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
       },
       {
         label: "Printerlar",
+        icon: "printer",
         href: "/admin/printers",
         permission: "RECEIPT_PRINT",
         // ADMIN da RECEIPT_PRINT yo'q — route'ning RoleGuard'i bilan mos.
@@ -192,6 +219,7 @@ export const adminNavGroups: AdminNavGroup[] = [
       {
         // Jurnal global — faqat SUPER_ADMIN ko'radi (AuditLog da branchId yo'q).
         label: "Audit jurnali",
+        icon: "clipboard",
         href: "/admin/audit",
         permission: "AUDIT_VIEW",
         roles: ["SUPER_ADMIN"],
@@ -204,6 +232,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       {
         label: "Smenalar",
+        icon: "clock",
         href: "/admin/shifts",
         // 4-bosqichda qo'shilgan permission — `SHIFT_VIEW_OWN` dan farqli,
         // butun filial smenalarini ko'rish huquqini beradi.
@@ -212,18 +241,21 @@ export const adminNavGroups: AdminNavGroup[] = [
       },
       {
         label: "Cheklar",
+        icon: "scroll",
         href: "/admin/receipts",
         permission: "RECEIPT_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
         label: "To'lovlar",
+        icon: "wallet",
         href: "/admin/payments",
         permission: "PAYMENT_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
         label: "Xarajatlar",
+        icon: "banknote",
         href: "/admin/expenses",
         permission: "REPORT_EXPENSES_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
@@ -245,7 +277,8 @@ export function resolveAdminNav(user: AuthUser | null): AdminNavGroup[] {
     .map((group) => ({
       ...group,
       items: group.items.filter(
-        (item) => hasPermission(user, item.permission) && hasRole(user, item.roles),
+        (item) =>
+          hasPermission(user, item.permission) && hasRole(user, item.roles),
       ),
     }))
     .filter((group) => group.items.length > 0);
@@ -255,9 +288,15 @@ export function resolveAdminNav(user: AuthUser | null): AdminNavGroup[] {
  * Joriy yo'l uchun faol menyu elementini aniqlaydi.
  * `matchPrefix` berilgan bo'lsa, ichki sahifalar ham (`/admin/staff/new`) faol hisoblanadi.
  */
-export function isAdminNavItemActive(item: AdminNavItem, pathname: string): boolean {
+export function isAdminNavItemActive(
+  item: AdminNavItem,
+  pathname: string,
+): boolean {
   if (item.matchPrefix) {
-    return pathname === item.matchPrefix || pathname.startsWith(`${item.matchPrefix}/`);
+    return (
+      pathname === item.matchPrefix ||
+      pathname.startsWith(`${item.matchPrefix}/`)
+    );
   }
 
   return pathname === item.href;
@@ -282,7 +321,13 @@ export function findAdminNavItem(pathname: string): AdminNavItem | null {
  * Branch-scoped rollar — bularga filial TANLAGICHI ko'rsatilmaydi
  * (RBAC JSON core_rules.branch_scoped_roles).
  */
-const branchScopedRoles = ["ADMIN", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN"];
+const branchScopedRoles = [
+  "ADMIN",
+  "BRANCH_MANAGER",
+  "CASHIER",
+  "WAITER",
+  "KITCHEN",
+];
 
 /**
  * Foydalanuvchi filiallar orasida almasha oladimi.

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { isAdminNavItemActive, resolveAdminNav } from "../../lib/admin-nav";
+import { Icon } from "../admin-ui/icon";
 import type { AuthUser } from "../../lib/auth";
 
 /*
@@ -45,7 +46,9 @@ export function AdminSidebar({
       ].join(" ")}
       style={{
         width: isCollapsed ? "var(--mz-sidebar-mini-w)" : "var(--mz-sidebar-w)",
-        minWidth: isCollapsed ? "var(--mz-sidebar-mini-w)" : "var(--mz-sidebar-w)",
+        minWidth: isCollapsed
+          ? "var(--mz-sidebar-mini-w)"
+          : "var(--mz-sidebar-w)",
         zIndex: "var(--mz-z-sidebar)",
       }}
     >
@@ -60,7 +63,9 @@ export function AdminSidebar({
           M
         </span>
         {!isCollapsed ? (
-          <span className="truncate text-sm font-bold tracking-wide">MAZETTO ADMIN</span>
+          <span className="truncate text-sm font-bold tracking-wide">
+            MAZETTO ADMIN
+          </span>
         ) : null}
       </div>
 
@@ -72,7 +77,10 @@ export function AdminSidebar({
                 {group.label}
               </p>
             ) : (
-              <div aria-hidden="true" className="mx-3 mb-2 border-t border-mz-shell-border" />
+              <div
+                aria-hidden="true"
+                className="mx-3 mb-2 border-t border-mz-shell-border"
+              />
             )}
 
             <ul className="space-y-0.5">
@@ -85,8 +93,9 @@ export function AdminSidebar({
                       aria-current={isActive ? "page" : undefined}
                       className={[
                         "relative flex items-center gap-3 rounded-mz-control px-3 py-2 text-sm transition",
+                        isCollapsed ? "justify-center" : "",
                         isActive
-                          ? "bg-mz-shell-active font-semibold text-mz-shell-fg"
+                          ? "bg-mz-shell-deep font-semibold text-mz-white"
                           : "font-medium text-mz-shell-fg-muted hover:bg-mz-shell-raised hover:text-mz-shell-fg",
                       ].join(" ")}
                       href={item.href}
@@ -96,16 +105,16 @@ export function AdminSidebar({
                       {isActive ? (
                         <span
                           aria-hidden="true"
-                          className="absolute inset-y-1 left-0 w-1 rounded-mz-pill bg-mz-primary"
+                          className="absolute inset-y-1 -left-2 w-[3px] rounded-r-mz-pill bg-mz-primary"
                         />
                       ) : null}
-                      <span
-                        aria-hidden="true"
-                        className="grid h-5 w-5 shrink-0 place-items-center text-xs font-bold"
-                      >
-                        {item.label.slice(0, 1)}
-                      </span>
-                      {!isCollapsed ? <span className="truncate">{item.label}</span> : null}
+                      <Icon
+                        className="h-[18px] w-[18px] shrink-0"
+                        name={item.icon}
+                      />
+                      {!isCollapsed ? (
+                        <span className="truncate">{item.label}</span>
+                      ) : null}
                     </Link>
                   </li>
                 );

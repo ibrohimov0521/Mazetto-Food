@@ -5,27 +5,51 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 
-const menuController = readSource("apps/backend/src/modules/menu/menu.controller.ts");
+const menuController = readSource(
+  "apps/backend/src/modules/menu/menu.controller.ts",
+);
 const menuService = readSource("apps/backend/src/modules/menu/menu.service.ts");
-const listDto = readSource("apps/backend/src/modules/menu/dto/list-menu.dto.ts");
-const managementDto = readSource("apps/backend/src/modules/menu/dto/menu-management.dto.ts");
-const adminCatalog = readSource("apps/pos-web/components/admin/admin-catalog.tsx");
+const listDto = readSource(
+  "apps/backend/src/modules/menu/dto/list-menu.dto.ts",
+);
+const managementDto = readSource(
+  "apps/backend/src/modules/menu/dto/menu-management.dto.ts",
+);
+const adminCatalog = readSource(
+  "apps/pos-web/components/admin/admin-catalog.tsx",
+);
 const adminDashboard = readSource("apps/pos-web/app/admin/dashboard/page.tsx");
 const adminProducts = readSource("apps/pos-web/app/admin/products/page.tsx");
-const adminProductNew = readSource("apps/pos-web/app/admin/products/new/page.tsx");
-const adminProductEdit = readSource("apps/pos-web/app/admin/products/[id]/page.tsx");
-const adminCategories = readSource("apps/pos-web/app/admin/categories/page.tsx");
+const adminProductNew = readSource(
+  "apps/pos-web/app/admin/products/new/page.tsx",
+);
+const adminProductEdit = readSource(
+  "apps/pos-web/app/admin/products/[id]/page.tsx",
+);
+const adminCategories = readSource(
+  "apps/pos-web/app/admin/categories/page.tsx",
+);
 const adminBranches = readSource("apps/pos-web/app/admin/branches/page.tsx");
-const adminProductEditor = readSource("apps/pos-web/components/admin/admin-product-editor.tsx");
-const adminModifiers = readSource("apps/pos-web/components/admin/admin-modifiers.tsx");
+const adminProductEditor = readSource(
+  "apps/pos-web/components/admin/admin-product-editor.tsx",
+);
+const adminModifiers = readSource(
+  "apps/pos-web/components/admin/admin-modifiers.tsx",
+);
 const posRouteVerifier = readSource("scripts/verify-pos-public-route.mjs");
 
 assert.match(listDto, /includeInactive\?: string/);
 assert.match(menuController, /@Get\("products\/:id"\)/);
 assert.match(menuController, /PERMISSIONS\.MENU_VIEW/);
-assert.match(menuService, /query\.includeInactive === "true" \? \{\} : \{ isAvailable: true \}/);
+assert.match(
+  menuService,
+  /query\.includeInactive === "true" \? \{\} : \{ isAvailable: true \}/,
+);
 assert.match(menuService, /async getProduct\(id: string\)/);
-assert.match(menuService, /catalogVisibility: this\.getCatalogVisibility\(product\.code\)/);
+assert.match(
+  menuService,
+  /catalogVisibility: this\.getCatalogVisibility\(product\.code\)/,
+);
 assert.match(menuService, /customerVisibleProductCodeSet/);
 assert.match(menuService, /legacyProductCodeSet/);
 assert.match(menuService, /isRecommended: dto\.isRecommended \?\? false/);
@@ -44,18 +68,41 @@ for (const source of [
   adminCategories,
   adminBranches,
 ]) {
-  assert.match(source, /RoleGuard roles=\{\["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"\]\}/);
+  assert.match(
+    source,
+    /RoleGuard roles=\{\["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"\]\}/,
+  );
 }
 
-assert.match(adminDashboard, /PermissionGuard permission="ADMIN_ACCESS"/);
+/*
+ * `/admin/dashboard` ADMIN_ACCESS emas, DASHBOARD_VIEW talab qiladi.
+ *
+ * Sahifa `GET /dashboard/summary` dan ma'lumot oladi, u esa DASHBOARD_VIEW
+ * bilan himoyalangan; `admin-dashboard.tsx` ham `hasPermission(user,
+ * "DASHBOARD_VIEW")` bilan tekshiradi va `lib/admin-nav.ts` menyu elementini
+ * shu permission bilan e'lon qiladi. ADMIN_ACCESS — admin ish maydoniga kirish
+ * darvozasi, bitta sahifaning emas.
+ *
+ * Seed'dagi hech bir rolda ADMIN_ACCESS bor-u DASHBOARD_VIEW yo'q emas, ya'ni
+ * amaldagi kirish huquqi o'zgarmadi — faqat qaysi invariant qayd etilgani
+ * to'g'rilandi. `validate-admin-nav-rbac.ts` menyu va route mosligini
+ * majburlaydi.
+ */
+assert.match(adminDashboard, /PermissionGuard permission="DASHBOARD_VIEW"/);
 assert.match(adminProducts, /PermissionGuard permission="MENU_VIEW"/);
 assert.match(adminProductNew, /PermissionGuard permission="MENU_CREATE"/);
 assert.match(adminProductEdit, /PermissionGuard permission="MENU_EDIT"/);
 assert.match(adminCategories, /PermissionGuard permission="MENU_VIEW"/);
 assert.match(adminBranches, /PermissionGuard permission="BRANCH_VIEW"/);
 
-assert.match(adminCatalog, /apiFetch<Product\[]>\("\/menu\/products\?includeInactive=true"\)/);
-assert.match(adminCatalog, /apiFetch<Category\[]>\("\/menu\/categories\?includeInactive=true"\)/);
+assert.match(
+  adminCatalog,
+  /apiFetch<Product\[]>\("\/menu\/products\?includeInactive=true"\)/,
+);
+assert.match(
+  adminCatalog,
+  /apiFetch<Category\[]>\("\/menu\/categories\?includeInactive=true"\)/,
+);
 assert.match(adminCatalog, /catalogVisibility/);
 assert.doesNotMatch(adminCatalog, /method: "DELETE"/);
 
@@ -66,32 +113,74 @@ assert.doesNotMatch(adminCatalog, /method: "DELETE"/);
 // Media yuklash hali yo'qligi foydalanuvchiga aytilishi kerak
 assert.match(adminProductEditor, /Media yuklash|Rasm boshqaruvi/);
 // Yangi mahsulot ommaviy katalogga avtomatik kirmasligi aytilishi kerak
-assert.match(adminProductEditor, /avtomatik ommaviy katalogga kirmaydi|avtomatik canonical/);
+assert.match(
+  adminProductEditor,
+  /avtomatik ommaviy katalogga kirmaydi|avtomatik canonical/,
+);
 assert.doesNotMatch(adminProductEditor, /method: "DELETE"/);
 
 // Katalog 2-bosqichi: ko'p variant, modifier biriktirish, filial mavjudligi
-assert.match(adminProductEditor, /variants: cleanVariants\.map/, "editor bir nechta variant yubormayapti");
-assert.match(adminProductEditor, /isDefault: variant\.isDefault/, "standart variant yuborilmayapti");
-assert.match(adminProductEditor, /modifiers: selectedModifierIds\.map/, "modifier biriktirish yuborilmayapti");
-assert.match(adminProductEditor, /product-availability/, "filial mavjudligi boshqaruvi yo'q");
-assert.match(adminProductEditor, /hasPermission\(user, "BRANCH_EDIT"\)/, "filial mavjudligi BRANCH_EDIT bilan cheklanmagan");
+assert.match(
+  adminProductEditor,
+  /variants: cleanVariants\.map/,
+  "editor bir nechta variant yubormayapti",
+);
+assert.match(
+  adminProductEditor,
+  /isDefault: variant\.isDefault/,
+  "standart variant yuborilmayapti",
+);
+assert.match(
+  adminProductEditor,
+  /modifiers: selectedModifierIds\.map/,
+  "modifier biriktirish yuborilmayapti",
+);
+assert.match(
+  adminProductEditor,
+  /product-availability/,
+  "filial mavjudligi boshqaruvi yo'q",
+);
+assert.match(
+  adminProductEditor,
+  /hasPermission\(user, "BRANCH_EDIT"\)/,
+  "filial mavjudligi BRANCH_EDIT bilan cheklanmagan",
+);
 
 // Backend modifier katalogi
 assert.match(menuController, /@Get\("modifiers"\)/, "GET /menu/modifiers yo'q");
-assert.match(menuController, /@Patch\("modifiers\/:id"\)/, "PATCH /menu/modifiers/:id yo'q");
+assert.match(
+  menuController,
+  /@Patch\("modifiers\/:id"\)/,
+  "PATCH /menu/modifiers/:id yo'q",
+);
 assert.match(menuService, /listModifiers\(/, "listModifiers yo'q");
-assert.match(menuService, /branchAvailabilities: \{/, "getProduct filial mavjudligini qaytarmayapti");
+assert.match(
+  menuService,
+  /branchAvailabilities: \{/,
+  "getProduct filial mavjudligini qaytarmayapti",
+);
 
 /*
  * Modifier o'chirilmasligi kerak — buyurtma tarixidagi `modifierSnapshot`
  * bilan bog'liq. Nofaol qilish tarixiy yaxlitlikni saqlaydi.
  */
-assert.doesNotMatch(menuController, /@Delete\("modifiers/, "modifier o'chirish endpoint'i bo'lmasin");
-assert.doesNotMatch(adminModifiers, /method: "DELETE"/, "modifier ekranida o'chirish bo'lmasin");
+assert.doesNotMatch(
+  menuController,
+  /@Delete\("modifiers/,
+  "modifier o'chirish endpoint'i bo'lmasin",
+);
+assert.doesNotMatch(
+  adminModifiers,
+  /method: "DELETE"/,
+  "modifier ekranida o'chirish bo'lmasin",
+);
 
 assert.match(posRouteVerifier, /pos\.mazettofood\.uz/);
 assert.match(posRouteVerifier, /Kitchen API public safety/);
-assert.match(posRouteVerifier, /status === 401 \|\| kitchenApi\.status === 403/);
+assert.match(
+  posRouteVerifier,
+  /status === 401 \|\| kitchenApi\.status === 403/,
+);
 
 console.info("Admin catalog core validation passed");
 
@@ -106,7 +195,9 @@ function findRepoRoot(startPath: string): string {
     const packageJsonPath = join(current, "package.json");
 
     if (existsSync(packageJsonPath)) {
-      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { name?: string };
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+        name?: string;
+      };
 
       if (packageJson.name === "mazetto-food") {
         return current;

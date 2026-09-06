@@ -51,6 +51,12 @@
 
   /* Qobiq — sidebar va header (to'q teal) */
   --color-mz-shell: #004f55;
+  /*
+   * Faol menyu elementi foni. Ilgari `--color-mz-shell-active` (#08686a)
+   * ishlatilardi — qobiq foni bilan farqi atigi 4% yorug'lik edi va faol
+   * holat amalda ko'rinmasdi. To'q variant qarama-qarshilikni oshiradi.
+   */
+  --color-mz-shell-deep: #003b40;
   --color-mz-shell-raised: #06616a;
   --color-mz-shell-fg: #f5f5ef;
   --color-mz-shell-fg-muted: #a9c6c5;

@@ -9,7 +9,7 @@ import { RoleGuard } from "../../../components/auth/role-guard";
 export default function AdminDashboardPage() {
   return (
     <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="ADMIN_ACCESS">
+      <PermissionGuard permission="DASHBOARD_VIEW">
         <AdminLayout>
           <AdminPageHeader
             breadcrumbs={[{ label: "Admin" }, { label: "Dashboard" }]}
