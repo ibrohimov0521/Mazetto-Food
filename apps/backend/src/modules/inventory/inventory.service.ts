@@ -21,6 +21,45 @@ import type {
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Ombor ro'yxati.
+   *
+   * Ilgari faqat YARATISH endpoint'i bor edi — shuning uchun admin ekranida
+   * foydalanuvchi ombor ID sini qo'lda yozishga majbur edi.
+   */
+  listWarehouses(user: AuthenticatedUser, requestedBranchId?: string) {
+    const branchId = resolveBranchScope(user, requestedBranchId);
+
+    return this.prisma.warehouse.findMany({
+      where: {
+        isActive: true,
+        ...(branchId ? { branchId } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        branchId: true,
+        branch: { select: { id: true, code: true, name: true } },
+      },
+    });
+  }
+
+  /** Ingredient ro'yxati — ombor harakati formasidagi tanlagich uchun. */
+  listIngredients() {
+    return this.prisma.ingredient.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        unit: true,
+        minimumStock: true,
+        costPerUnit: true,
+      },
+    });
+  }
+
   async createIngredient(dto: CreateIngredientDto) {
     return this.prisma.ingredient.create({
       data: {

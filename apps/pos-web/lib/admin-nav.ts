@@ -221,6 +221,12 @@ export const adminNavGroups: AdminNavGroup[] = [
         permission: "PAYMENT_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
+      {
+        label: "Xarajatlar",
+        href: "/admin/expenses",
+        permission: "REPORT_EXPENSES_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+      },
     ],
   },
 ];

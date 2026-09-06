@@ -68,6 +68,7 @@ const roleDefinitions = [
       PERMISSIONS.SHIFT_OPEN,
       PERMISSIONS.SHIFT_CLOSE,
       PERMISSIONS.CASH_TRANSACTION_CREATE,
+      PERMISSIONS.EXPENSE_CREATE,
       PERMISSIONS.CUSTOMER_VIEW,
       PERMISSIONS.ONLINE_ORDER_VIEW,
       PERMISSIONS.REPORT_SALES_VIEW,
@@ -220,7 +221,8 @@ const permissionNames: Record<string, string> = {
   [PERMISSIONS.REPORT_PRODUCTS_VIEW]: "View product reports",
   [PERMISSIONS.REPORT_EMPLOYEES_VIEW]: "View employee reports",
   [PERMISSIONS.REPORT_EXPENSES_VIEW]: "View expense reports",
-  [PERMISSIONS.AUDIT_VIEW]: "View security audit log",
+    [PERMISSIONS.EXPENSE_CREATE]: "Record branch expenses",
+[PERMISSIONS.AUDIT_VIEW]: "View security audit log",
 };
 
 const paymentMethodDefinitions = [

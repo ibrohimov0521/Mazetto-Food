@@ -109,15 +109,48 @@ arxivlash tavsiyasiga mos. Validator buni tekshiradi.
 **Set tarkibi (`ProductBundleItem`) faqat ko'rish** — boshqaruv endpoint'i
 yo'q, u seed orqali to'ldiriladi.
 
+### 4-bosqich — ombor va xarajatlar
+
+**Ombor.** Oldingi ekran foydalanuvchidan ombor va ingredient **UUID sini
+qo'lda yozishni** talab qilardi va harakat turini `IN` ga qotirgan edi —
+chunki backend'da ro'yxat endpoint'lari yo'q edi.
+
+| Endpoint | Permission |
+|---|---|
+| `GET /inventory/warehouses` | `INVENTORY_VIEW` |
+| `GET /inventory/ingredients` | `INVENTORY_VIEW` |
+
+Yangi `/admin/inventory`: tanlagichlar, to'rtala harakat turi
+(kirim/chiqim/tuzatish/yo'qotish), zaxira qiymati KPI'si, o'zbekcha yorliqlar.
+`StockMovementType` allaqachon `IN/OUT/ADJUSTMENT/WASTE` ni qo'llab-quvvatlagan —
+yangi enum qiymati kerak bo'lmadi.
+
+**Xarajatlar.** `Expense` modeli va `/reports/expenses` hisoboti bor edi, lekin
+xarajat **yozish** endpoint'i yo'q edi.
+
+| Endpoint | Permission |
+|---|---|
+| `GET /expenses`, `GET /expenses/categories` | `REPORT_EXPENSES_VIEW` |
+| `POST /expenses` | `EXPENSE_CREATE` 🆕 |
+
+`EXPENSE_CREATE` faqat `BRANCH_MANAGER` ga berildi — filial kassasini u
+boshqaradi. `CASHIER`, `WAITER`, `KITCHEN`, `ACCOUNTANT` ga berilmadi
+(validator buni tekshiradi).
+
+Ikkita qat'iy qoida:
+- **Yopilgan smenaga xarajat qo'shib bo'lmaydi** — yakunlangan kassa hisobi buzilmasin
+- **Xarajat tahrirlanmaydi va o'chirilmaydi** — moliyaviy yozuv yaxlitligi;
+  kontrollerda `@Patch`/`@Delete` yo'qligini validator tekshiradi
+
 ### 4-bosqichda qolgan va NEGA qilinmagani
 
 | Modul | Sabab |
 |---|---|
 | **Rol/permission boshqaruvi** (`ROLE_MANAGE`) | Rollar `isSystem: true` va seed orqali boshqariladi. Runtime'da rol tahrirlash imkoni — xavfsizlik modelini buzish yo'li. Bu arxitektura qarori, uni bir tomonlama qabul qilmadim. |
-| **Moliya** (`FINANCE_*`, 7 permission) | Xarajat **ko'rish** allaqachon `/reports/expenses` da bor. Qolgani — tasdiqlash oqimi (kim tasdiqlaydi, necha bosqich), P&L formulasi, kassa solishtiruvi qoidalari. Bular biznes qarorlari. |
+| **Moliya — tasdiqlash va P&L** | Xarajat yozish/ko'rish qilindi. Qolgani — tasdiqlash oqimi (kim tasdiqlaydi, necha bosqich) va P&L formulasi. Bular biznes qarorlari, `EXPENSE_APPROVAL_WORKFLOW` sifatida qayd etildi. |
 | **To'lov provayderlari** (Click/Payme) | Haqiqiy provayder shartnomasi, kalitlar va settlement mantig'i kerak. Kod bilan hal qilinmaydi. |
 | **Printer / print job** | `PrintJob` modeli yo'q — schema o'zgarishi va migratsiya kerak. |
-| **Ombor kengaytmasi** (`STOCK_*`, 7 permission) | `Warehouse`/`Stock`/`StockMovement` bor, lekin transfer va write-off oqimlari yangi endpointlar va biznes qoidalarini talab qiladi. |
+
 
 
 ### 3-bosqichda bajarilgan modullar
@@ -191,7 +224,7 @@ semantikasi, pul va sana formatlash, telefon maskalash).
 
 Validatsiya (2026-09-06):
 `pnpm typecheck` 12/12 · `pnpm lint` 12/12 · `pnpm --filter pos-web build` ✅ ·
-`git diff --check` ✅ · dev smoke: 30 route (barcha admin, POS, kassa, oshxona, ofitsiant) — hammasi 200,
+`git diff --check` ✅ · dev smoke: 31 route (barcha admin, POS, kassa, oshxona, ofitsiant) — hammasi 200,
 dev log'da xato 0.
 
 ---

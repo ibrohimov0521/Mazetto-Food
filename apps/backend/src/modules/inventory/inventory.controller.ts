@@ -42,6 +42,21 @@ export class InventoryController {
     return this.inventoryService.getCost(query, user);
   }
 
+  @Get("warehouses")
+  @Permissions(PERMISSIONS.INVENTORY_VIEW)
+  listWarehouses(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("branchId") branchId?: string,
+  ) {
+    return this.inventoryService.listWarehouses(user, branchId);
+  }
+
+  @Get("ingredients")
+  @Permissions(PERMISSIONS.INVENTORY_VIEW)
+  listIngredients() {
+    return this.inventoryService.listIngredients();
+  }
+
   @Post("ingredients")
   @Permissions(PERMISSIONS.INVENTORY_CREATE)
   createIngredient(@Body() dto: CreateIngredientDto) {

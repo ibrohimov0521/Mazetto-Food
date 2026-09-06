@@ -84,7 +84,8 @@
     "REPORT_PRODUCTS_VIEW",
     "REPORT_EMPLOYEES_VIEW",
     "REPORT_EXPENSES_VIEW",
-    "AUDIT_VIEW"
+    "AUDIT_VIEW",
+    "EXPENSE_CREATE"
   ],
   "roles": {
     "SUPER_ADMIN": {
@@ -154,7 +155,8 @@
         "REPORT_SALES_VIEW",
         "REPORT_PRODUCTS_VIEW",
         "REPORT_EMPLOYEES_VIEW",
-        "REPORT_EXPENSES_VIEW"
+        "REPORT_EXPENSES_VIEW",
+        "EXPENSE_CREATE"
       ],
       "purpose": "Biriktirilgan filialning kundalik operatsion boshqaruvchisi.",
       "main_tasks": [
@@ -455,8 +457,8 @@
     "printer_receipt_print_agent": "PLANNED",
     "desktop_offline_app": "PLANNED",
     "admin_catalog_phase_2": "IMPLEMENTED_LOCAL",
-    "inventory_warehouse": "PLANNED",
-    "finance": "PLANNED",
+    "inventory_warehouse": "IMPLEMENTED_LOCAL",
+    "finance": "PARTIAL_EXPENSES_IMPLEMENTED_LOCAL",
     "click_payme": "PLANNED",
     "realtime": "PLANNED",
     "security_hardening": "PARTIAL",
@@ -484,7 +486,6 @@
     ],
     "finance": [
       "FINANCE_VIEW",
-      "EXPENSE_CREATE",
       "EXPENSE_EDIT",
       "EXPENSE_APPROVE",
       "CASH_RECONCILE",
@@ -539,6 +540,11 @@
       "id": "CATALOG_PHASE_2_PERMISSIONS",
       "current": "Variant, modifier va filial mavjudligi MENU_EDIT/MENU_CREATE va BRANCH_EDIT bilan himoyalangan; rejadagi 5 ta alohida permission qo'shilmadi.",
       "recommended": "Agar narx o'zgartirish bilan mavjudlik o'zgartirishni turli rollarga ajratish kerak bo'lsa, VARIANT_MANAGE / BRANCH_AVAILABILITY_MANAGE qo'shilsin."
+    },
+    {
+      "id": "EXPENSE_APPROVAL_WORKFLOW",
+      "current": "Xarajat yozib olinadi, tasdiqlash oqimi yo'q. EXPENSE_APPROVE permission'i qo'shilmagan.",
+      "recommended": "Tasdiqlash kerakmi, kim tasdiqlaydi va necha bosqich — biznes qarori. Kerak bo'lsa EXPENSE_APPROVE va Expense.approvedBy qo'shiladi."
     }
   ],
   "recommended_role_hierarchy": [
@@ -624,6 +630,30 @@
       "path": "/menu/modifiers/:id",
       "permission": "MENU_EDIT",
       "note": "Nom, narx, tartib, faollik. O'chirish yo'q — modifierSnapshot yaxlitligi uchun."
+    },
+    {
+      "method": "GET",
+      "path": "/expenses",
+      "permission": "REPORT_EXPENSES_VIEW",
+      "note": "Xarajat ro'yxati; branch scope va pagination."
+    },
+    {
+      "method": "POST",
+      "path": "/expenses",
+      "permission": "EXPENSE_CREATE",
+      "note": "Xarajat yozish. Yopilgan smenaga qo'shib bo'lmaydi. Tahrirlash/o'chirish YO'Q — moliyaviy yaxlitlik."
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/warehouses",
+      "permission": "INVENTORY_VIEW",
+      "note": "Ombor tanlagichi uchun. Ilgari faqat POST bor edi."
+    },
+    {
+      "method": "GET",
+      "path": "/inventory/ingredients",
+      "permission": "INVENTORY_VIEW",
+      "note": "Ingredient tanlagichi uchun."
     }
   ]
 }

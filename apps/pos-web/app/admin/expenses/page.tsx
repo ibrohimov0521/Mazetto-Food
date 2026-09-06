@@ -1,26 +1,26 @@
 "use client";
 
-import { AdminInventoryPage } from "../../../components/admin/admin-inventory";
+import { AdminExpensesPage } from "../../../components/admin/admin-expenses";
 import { AdminLayout } from "../../../components/admin-shell/admin-layout";
 import { AdminPageHeader } from "../../../components/admin-shell/admin-page-header";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
 
-export default function AdminInventoryRoute() {
+export default function ExpensesPage() {
   return (
-    <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="INVENTORY_VIEW">
+    <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"]}>
+      <PermissionGuard permission="REPORT_EXPENSES_VIEW">
         <AdminLayout>
           <AdminPageHeader
             breadcrumbs={[
               { label: "Admin", href: "/admin/dashboard" },
-              { label: "Ombor" },
-              { label: "Zaxira" },
+              { label: "Kassa va moliya" },
+              { label: "Xarajatlar" },
             ]}
-            description="Ingredient qoldiqlari va zaxira harakatlari"
-            title="Ombor zaxirasi"
+            description="Filial xarajatlari va smena kassa hisobiga bog'lash"
+            title="Xarajatlar"
           />
-          <AdminInventoryPage />
+          <AdminExpensesPage />
         </AdminLayout>
       </PermissionGuard>
     </RoleGuard>

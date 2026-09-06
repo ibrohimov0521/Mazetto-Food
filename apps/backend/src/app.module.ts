@@ -11,6 +11,7 @@ import { CashRegisterModule } from "./modules/cash-register/cash-register.module
 import { CustomersModule } from "./modules/customers/customers.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { EmployeesModule } from "./modules/employees/employees.module";
+import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { HomepageModule } from "./modules/homepage/homepage.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { KitchenModule } from "./modules/kitchen/kitchen.module";
@@ -39,6 +40,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     UsersModule,
     RolesModule,
     EmployeesModule,
+    ExpensesModule,
     BranchesModule,
     CashRegisterModule,
     CustomersModule,

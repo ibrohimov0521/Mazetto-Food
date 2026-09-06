@@ -39,8 +39,14 @@ const auditService = readSource("apps/backend/src/modules/audit/audit.service.ts
 const auditDto = readSource("apps/backend/src/modules/audit/dto/list-audit-logs.dto.ts");
 const appModule = readSource("apps/backend/src/app.module.ts");
 
+const expensesController = readSource("apps/backend/src/modules/expenses/expenses.controller.ts");
+const expensesService = readSource("apps/backend/src/modules/expenses/expenses.service.ts");
+const expensesDto = readSource("apps/backend/src/modules/expenses/dto/expense.dto.ts");
+const inventoryController = readSource("apps/backend/src/modules/inventory/inventory.controller.ts");
+const inventoryService = readSource("apps/backend/src/modules/inventory/inventory.service.ts");
+
 // 1. Yangi permissionlar mavjud
-for (const permission of ["SHIFT_VIEW_BRANCH", "PAYMENT_VIEW", "AUDIT_VIEW"]) {
+for (const permission of ["SHIFT_VIEW_BRANCH", "PAYMENT_VIEW", "AUDIT_VIEW", "EXPENSE_CREATE"]) {
   assert.match(permissions, new RegExp(`${permission}: "${permission}"`), `${permission} permissions.ts da yo'q`);
   assert.match(seed, new RegExp(`PERMISSIONS\\.${permission}`), `${permission} seed.ts da yo'q`);
   assert.match(seed, new RegExp(`\\[PERMISSIONS\\.${permission}\\]:`), `${permission} uchun nom yo'q`);
@@ -148,11 +154,54 @@ for (const [name, block] of [
 // Audit yozuvlari o'zgartirilmasligi kerak — faqat o'qish endpointlari
 assert.doesNotMatch(auditController, /@(Post|Patch|Put|Delete)\(/, "audit jurnali faqat o'qish uchun bo'lishi kerak");
 
+// 9. Xarajatlar — o'qish REPORT_EXPENSES_VIEW, yozish EXPENSE_CREATE
+assert.match(appModule, /ExpensesModule/, "ExpensesModule ulanmagan");
+assert.match(
+  expensesController,
+  /@Get\(\)\s*\n\s*@Permissions\(PERMISSIONS\.REPORT_EXPENSES_VIEW\)/,
+  "GET /expenses noto'g'ri himoyalangan",
+);
+assert.match(
+  expensesController,
+  /@Post\(\)\s*\n\s*@Permissions\(PERMISSIONS\.EXPENSE_CREATE\)/,
+  "POST /expenses noto'g'ri himoyalangan",
+);
+assert.match(expensesService, /resolveBranchScope\(user, query\.branchId\)/, "xarajat ro'yxatida branch scope yo'q");
+assert.match(expensesService, /take: query\.limit/, "xarajat ro'yxatida take yo'q");
+assert.match(expensesDto, /@Max\(100\)/, "xarajat DTO da limit chegarasi yo'q");
+
+// Yopilgan smenaga xarajat qo'shilmasligi kerak — yakunlangan hisob buzilmasin
+assert.match(expensesService, /Cannot add an expense to a closed shift/, "yopiq smena tekshiruvi yo'q");
+assert.match(expensesService, /shift\.branchId !== branchId/, "smena filial tekshiruvi yo'q");
+
+// Xarajat o'zgartirilmaydi/o'chirilmaydi — moliyaviy yozuv yaxlitligi
+assert.doesNotMatch(expensesController, /@(Patch|Put|Delete)\(/, "xarajat o'zgartirish/o'chirish endpoint'i bo'lmasin");
+
+// EXPENSE_CREATE faqat filial kassasini boshqaradigan rolga
+assert.match(branchManagerBlock, /PERMISSIONS\.EXPENSE_CREATE/, "BRANCH_MANAGER da EXPENSE_CREATE yo'q");
+for (const [name, block] of [
+  ["CASHIER", cashierBlock],
+  ["WAITER", waiterBlock],
+  ["KITCHEN", kitchenBlock],
+  ["ACCOUNTANT", accountantBlock],
+] as const) {
+  assert.doesNotMatch(block, /PERMISSIONS\.EXPENSE_CREATE/, `${name} ga EXPENSE_CREATE berilmasin`);
+}
+
+// 10. Ombor tanlagichlari — UUID qo'lda yozilmasligi uchun
+assert.match(inventoryController, /@Get\("warehouses"\)/, "GET /inventory/warehouses yo'q");
+assert.match(inventoryController, /@Get\("ingredients"\)/, "GET /inventory/ingredients yo'q");
+assert.match(inventoryService, /listWarehouses\(/, "listWarehouses yo'q");
+assert.match(inventoryService, /listIngredients\(/, "listIngredients yo'q");
+assert.match(inventoryService, /resolveBranchScope\(user, requestedBranchId\)/, "ombor ro'yxatida branch scope yo'q");
+
 console.log("validate-operational-listings: OK");
 console.log("  GET /shifts    → SHIFT_VIEW_BRANCH (yangi)");
 console.log("  GET /receipts  → RECEIPT_VIEW");
 console.log("  GET /payments  → PAYMENT_VIEW (yangi)");
 console.log("  GET /audit-logs → AUDIT_VIEW (yangi, faqat SUPER_ADMIN)");
+console.log("  GET/POST /expenses → REPORT_EXPENSES_VIEW / EXPENSE_CREATE (yangi)");
+console.log("  GET /inventory/warehouses, /inventory/ingredients → INVENTORY_VIEW (yangi)");
 
 function readSource(path: string): string {
   return readFileSync(join(repoRoot, path), "utf8");
