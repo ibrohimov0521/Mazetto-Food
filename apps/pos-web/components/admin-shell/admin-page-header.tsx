@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Icon } from "../admin-ui/icon";
 
 /*
  * Sahifa sarlavhasi + breadcrumb + harakat tugmalari.
@@ -35,7 +36,10 @@ export function AdminPageHeader({
                 const isLast = index === breadcrumbs.length - 1;
 
                 return (
-                  <li className="flex items-center gap-1" key={`${crumb.label}-${index}`}>
+                  <li
+                    className="flex items-center gap-1"
+                    key={`${crumb.label}-${index}`}
+                  >
                     {crumb.href && !isLast ? (
                       <Link
                         className="rounded-mz-control px-1 py-0.5 transition hover:text-mz-accent hover:underline"
@@ -44,14 +48,18 @@ export function AdminPageHeader({
                         {crumb.label}
                       </Link>
                     ) : (
-                      <span aria-current={isLast ? "page" : undefined} className="px-1 py-0.5">
+                      <span
+                        aria-current={isLast ? "page" : undefined}
+                        className="px-1 py-0.5"
+                      >
                         {crumb.label}
                       </span>
                     )}
                     {!isLast ? (
-                      <span aria-hidden="true" className="text-mz-text-faint">
-                        /
-                      </span>
+                      <Icon
+                        className="h-3 w-3 text-mz-text-faint"
+                        name="chevronRight"
+                      />
                     ) : null}
                   </li>
                 );
@@ -60,14 +68,18 @@ export function AdminPageHeader({
           </nav>
         ) : null}
 
-        <h1 className="truncate text-2xl font-bold tracking-tight text-mz-text">{title}</h1>
+        <h1 className="truncate text-2xl font-bold tracking-tight text-mz-text">
+          {title}
+        </h1>
 
         {description ? (
           <p className="mt-1 text-sm text-mz-text-muted">{description}</p>
         ) : null}
       </div>
 
-      {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }
