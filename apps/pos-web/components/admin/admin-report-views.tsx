@@ -159,7 +159,7 @@ export function ProductReportView({ query }: { query: ReportQuery }) {
         />
         <InfoBox
           icon="chart"
-          label="Eng ko'p sotilgan"
+          label="Eng ko'p tushum"
           value={products[0]?.productName ?? "—"}
         />
       </StatGrid>
@@ -456,7 +456,16 @@ type ZReport = {
   averageOrder: string;
   expenses: string;
   profit: string;
-  paymentBreakdown: { paymentMethod: string; amount: string }[];
+  /*
+   * `paymentMethod` — satr emas, PaymentMethod yozuvi. `reports.service.ts`
+   * dagi `paymentBreakdown` butun obyektni saqlaydi va Z hisoboti uni
+   * o'zgartirmasdan uzatadi; savdo hisoboti ham shu shaklni ishlatadi.
+   * Obyektni to'g'ridan-to'g'ri render qilish React'da xato tashlaydi.
+   */
+  paymentBreakdown: {
+    paymentMethod: { id: string; code: string; name: string };
+    amount: string;
+  }[];
   unavailableMetrics: string[];
 };
 
@@ -484,7 +493,14 @@ export function ZReportView({ query }: { query: ReportQuery }) {
       header: "To'lov usuli",
       primary: true,
       render: (row) => (
-        <span className="font-semibold text-mz-text">{row.paymentMethod}</span>
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-mz-text">
+            {row.paymentMethod.name}
+          </p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {row.paymentMethod.code}
+          </p>
+        </div>
       ),
     },
     {
@@ -530,7 +546,7 @@ export function ZReportView({ query }: { query: ReportQuery }) {
           columns={columns}
           emptyIcon="wallet"
           emptyTitle="To'lov yo'q"
-          getRowKey={(row) => row.paymentMethod}
+          getRowKey={(row) => row.paymentMethod.id}
           rows={data.paymentBreakdown}
         />
       </Card>
