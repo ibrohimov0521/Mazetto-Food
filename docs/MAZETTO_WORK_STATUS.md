@@ -6,6 +6,29 @@ This file is the persistent working checklist for the existing MAZETTO FOOD prod
 
 ## Latest Verified Release (2026-09-07)
 
+- Production backend and POS/admin now run revision
+  `a85a07b14c7814426ae037caf7651b780b041597` from the merged admin redesign
+  Phase 5 chain. Customer-web remains on `de1f5655df3e9b8b8d2d1f9432a5d4b200d6ebf1`;
+  PostgreSQL and media remain 1/1.
+- This release added/updated admin navigation, icon primitives, pagination/tabs/
+  toggles, branch and category management screens, report views, receipt/order
+  admin improvements, customer listing pagination, duplicate branch-code conflict
+  handling, and related validators.
+- No Prisma schema change or migration was included in `a85a07b`; no seed,
+  catalog mutation, production order, payment action, Telegram webhook reset,
+  Cloudflare change, or customer-web redeploy was performed.
+- Production health after deploy: backend HTTP 200 with database ok; POS routes
+  `/login`, `/admin/dashboard`, `/admin/branches`, `/admin/categories`,
+  `/admin/reports`, `/pos`, and `/kitchen` returned HTTP 200. Customer home still
+  returned HTTP 200.
+- Order graph counts stayed unchanged across this deploy: orders `35`,
+  customer_orders `25`, kitchen_tickets `35`.
+- Local validation before deploy passed for backend typecheck/lint/build,
+  POS/admin typecheck/lint/build, admin nav/RBAC validator, admin catalog core
+  validator, and `git diff --check`.
+
+## Previous Verified Release (2026-09-07)
+
 - Production backend, customer-web and POS/admin now run image revision
   `de1f5655df3e9b8b8d2d1f9432a5d4b200d6ebf1`. PostgreSQL and media remain 1/1;
   media was not redeployed.
@@ -35,7 +58,7 @@ This file is the persistent working checklist for the existing MAZETTO FOOD prod
   throttling, Telegram customer ordering/auth, customer order history, kitchen
   board, display-order allocation, and DB-backed staff lifecycle.
 
-## Previous Verified Release (2026-09-06)
+## Earlier Verified Release (2026-09-06)
 
 - Production backend, customer-web and POS/admin all run image revision
   `13533a74c7f588339c7f3cdd770851933b3668fb`. All three report 1/1; postgres/media
