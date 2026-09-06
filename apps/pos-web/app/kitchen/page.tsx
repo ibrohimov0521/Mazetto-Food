@@ -362,84 +362,86 @@ function KitchenTicketCard({
   const canCancel = ticket.status === "NEW" || ticket.status === "ACCEPTED" || ticket.status === "COOKING";
   const itemsCount = ticket.order.items.reduce((total, item) => total + Number(item.quantity), 0);
 
-  const visibleItems = isExpanded ? ticket.order.items : ticket.order.items.slice(0, 2);
+  const visibleItems = isExpanded ? ticket.order.items : ticket.order.items.slice(0, 1);
   const hiddenItemCount = Math.max(0, ticket.order.items.length - visibleItems.length);
-  const hasDetails = ticket.order.items.length > 2 || ticket.order.kitchenComment || ticket.order.notes;
+  const hasDetails = ticket.order.items.length > 1 || ticket.order.kitchenComment || ticket.order.notes;
 
   return (
-    <article className="rounded-[20px] border border-white/10 bg-[#fff7e8] p-3 text-[#132724] shadow-[0_14px_34px_rgba(0,0,0,0.2)]">
-      <div className="flex items-start justify-between gap-3">
+    <article className="rounded-[16px] border border-white/10 bg-[#fff7e8] p-2.5 text-[#132724] shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-[#082522] px-2.5 py-1 text-[11px] font-black text-[#ffc83d]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-full bg-[#082522] px-2 py-0.5 text-[10px] font-black text-[#ffc83d]">
               #{ticket.order.orderNumber}
             </span>
-            <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${sourceClass(ticket.order.source)}`}>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${sourceClass(ticket.order.source)}`}>
               {sourceLabel(ticket.order.source)}
             </span>
           </div>
-          <h3 className="mt-2 text-xl font-black tracking-tight text-[#102724]">{placeLabel(ticket)}</h3>
-          <p className="mt-0.5 text-xs font-extrabold text-[#42605c]">
+          <h3 className="mt-1.5 text-base font-black tracking-tight text-[#102724]">{placeLabel(ticket)}</h3>
+          <p className="mt-0.5 truncate text-[11px] font-extrabold text-[#42605c]">
             {ticket.order.branch?.name ?? "Filial"} · {orderTypeLabel(ticket.order.type)}
           </p>
         </div>
 
-        <div className={`shrink-0 rounded-xl px-2.5 py-1.5 text-center ${urgencyClass(elapsedMinutes)}`}>
-          <p className="text-2xl font-black tabular-nums">{elapsedMinutes}</p>
-          <p className="text-[10px] font-black uppercase tracking-[0.12em]">daq</p>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {hasDetails ? (
+            <button
+              className="text-[11px] font-black leading-none text-[#087d73] underline-offset-2 hover:underline active:scale-[0.98]"
+              onClick={() => onToggleDetails(ticket.id)}
+              type="button"
+            >
+              {isExpanded ? "Yig'ish" : "Tafsilot"}
+            </button>
+          ) : null}
+          <div className={`rounded-[10px] px-2 py-1 text-center ${urgencyClass(elapsedMinutes)}`}>
+            <p className="text-lg font-black tabular-nums">{elapsedMinutes}</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.08em]">daq</p>
+          </div>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
+      <div className="mt-2 flex flex-wrap gap-1">
         <Chip>{statusLabel(ticket.status)}</Chip>
         <Chip>{formatQuantity(String(itemsCount))} ta mahsulot</Chip>
         <Chip>{new Date(ticket.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}</Chip>
       </div>
 
-      <div className="mt-3 grid gap-1.5">
+      <div className={`mt-2 grid gap-1.5 ${isExpanded ? "max-h-52 overflow-y-auto pr-1" : ""}`}>
         {visibleItems.map((item) => (
-          <div className="rounded-[14px] border border-[#d9cda8] bg-white/70 p-2" key={item.id}>
-            <div className="flex items-start gap-2">
-              <span className="grid h-8 min-w-8 place-items-center rounded-xl bg-[#ffc83d] px-1.5 text-sm font-black text-[#221600]">
+          <div className="rounded-[12px] border border-[#d9cda8] bg-white/70 p-1.5" key={item.id}>
+            <div className="flex items-start gap-1.5">
+              <span className="grid h-7 min-w-7 place-items-center rounded-[10px] bg-[#ffc83d] px-1 text-xs font-black text-[#221600]">
                 {formatQuantity(item.quantity)}x
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-black leading-snug text-[#142a27]">
+                <p className="truncate text-xs font-black leading-snug text-[#142a27]">
                   {item.productName}
                   {item.variantName ? <span className="text-[#5d746f]"> · {item.variantName}</span> : null}
                 </p>
                 {isExpanded ? <Modifiers value={item.modifierSnapshot} /> : null}
-                {isExpanded && item.notes ? <p className="mt-1 rounded-xl bg-[#fff1bc] px-2 py-1.5 text-xs font-bold text-[#5a4300]">{item.notes}</p> : null}
+                {isExpanded && item.notes ? <p className="mt-1 rounded-[10px] bg-[#fff1bc] px-2 py-1 text-[11px] font-bold text-[#5a4300]">{item.notes}</p> : null}
               </div>
             </div>
           </div>
         ))}
         {hiddenItemCount ? (
-          <p className="rounded-[14px] bg-[#102724]/8 px-3 py-2 text-xs font-black text-[#42605c]">
+          <p className="rounded-[12px] bg-[#102724]/8 px-2.5 py-1.5 text-[11px] font-black text-[#42605c]">
             + {hiddenItemCount} ta mahsulot yashirilgan
           </p>
         ) : null}
       </div>
 
       {isExpanded && (ticket.order.kitchenComment || ticket.order.notes) ? (
-        <p className="mt-2 rounded-[14px] bg-[#102724] px-3 py-2 text-xs font-bold text-[#fff7e8]">
+        <p className="mt-2 rounded-[12px] bg-[#102724] px-2.5 py-1.5 text-[11px] font-bold text-[#fff7e8]">
           Izoh: {ticket.order.kitchenComment ?? ticket.order.notes}
         </p>
       ) : null}
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {hasDetails ? (
-          <button
-            className="min-h-10 rounded-[14px] border border-[#0b4b46]/18 bg-white/80 px-3 text-sm font-black text-[#0b4b46] transition hover:bg-white active:scale-[0.98]"
-            onClick={() => onToggleDetails(ticket.id)}
-            type="button"
-          >
-            {isExpanded ? "Yig'ish" : "Tafsilot"}
-          </button>
-        ) : null}
+      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
         {primaryAction ? (
           <button
-            className="min-h-10 rounded-[14px] bg-[#ffc83d] px-3 text-sm font-black text-[#211600] shadow-[0_10px_24px_rgba(255,200,61,0.22)] transition hover:bg-[#ffda69] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-9 rounded-[12px] bg-[#ffc83d] px-2.5 text-xs font-black text-[#211600] shadow-[0_8px_18px_rgba(255,200,61,0.2)] transition hover:bg-[#ffda69] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isBusy}
             onClick={() => void onAction(ticket, primaryAction.action)}
             type="button"
@@ -450,7 +452,7 @@ function KitchenTicketCard({
 
         {canCancel ? (
           <button
-            className="min-h-10 rounded-[14px] border border-red-200 bg-red-50 px-3 text-sm font-black text-red-700 transition hover:bg-red-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-9 rounded-[12px] border border-red-200 bg-red-50 px-2.5 text-xs font-black text-red-700 transition hover:bg-red-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isBusy}
             onClick={() => void onAction(ticket, "cancel")}
             type="button"
@@ -502,7 +504,7 @@ function Modifiers({ value }: { value: unknown }) {
 }
 
 function Chip({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-full bg-[#e9e1c8] px-3 py-1 text-xs font-black text-[#42605c]">{children}</span>;
+  return <span className="rounded-full bg-[#e9e1c8] px-2 py-0.5 text-[10px] font-black text-[#42605c]">{children}</span>;
 }
 
 function summarizeTickets(tickets: KitchenTicket[]) {
