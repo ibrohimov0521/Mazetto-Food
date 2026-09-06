@@ -24,9 +24,15 @@ type Printer = {
 const printerTypes: PrinterType[] = ["THERMAL", "A4", "RECEIPT", "KITCHEN", "BAR", "OTHER"];
 const printerStatuses: PrinterStatus[] = ["ONLINE", "OFFLINE", "ERROR"];
 
+/*
+ * ADMIN ataylab yo'q: RBAC spetsifikatsiyasida unga hech qanday `RECEIPT_*`
+ * permission berilmagan va printer boshqaruvi uning vazifalari orasida emas.
+ * Ilgari RoleGuard uni ro'yxatga olgan edi, lekin PermissionGuard baribir
+ * rad etardi — ya'ni ADMIN menyudan bosib `/access-denied` ga tushardi.
+ */
 export default function PrintersPage() {
   return (
-    <RoleGuard roles={["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
+    <RoleGuard roles={["SUPER_ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="RECEIPT_PRINT">
         <AdminLayout>
           <AdminPageHeader

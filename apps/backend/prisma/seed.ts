@@ -156,6 +156,7 @@ const roleDefinitions = [
     name: "Accountant",
     description: "Finance, payments, expenses, reports, and exports.",
     permissions: [
+      PERMISSIONS.BRANCH_VIEW,
       PERMISSIONS.DASHBOARD_VIEW,
       PERMISSIONS.INVENTORY_VIEW,
       PERMISSIONS.CUSTOMER_VIEW,

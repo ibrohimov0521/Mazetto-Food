@@ -277,6 +277,7 @@
       "scope": "GLOBAL",
       "branch_required": false,
       "permissions": [
+        "BRANCH_VIEW",
         "DASHBOARD_VIEW",
         "INVENTORY_VIEW",
         "CUSTOMER_VIEW",
@@ -545,6 +546,11 @@
       "id": "EXPENSE_APPROVAL_WORKFLOW",
       "current": "Xarajat yozib olinadi, tasdiqlash oqimi yo'q. EXPENSE_APPROVE permission'i qo'shilmagan.",
       "recommended": "Tasdiqlash kerakmi, kim tasdiqlaydi va necha bosqich — biznes qarori. Kerak bo'lsa EXPENSE_APPROVE va Expense.approvedBy qo'shiladi."
+    },
+    {
+      "id": "ACCOUNTANT_BRANCH_VIEW",
+      "current": "ACCOUNTANT ga BRANCH_VIEW berildi.",
+      "recommended": "Sabab: ACCOUNTANT GLOBAL scope'ga ega va hisobot/to'lov/chek ekranlarida filial bo'yicha filtrlashi kerak, lekin GET /branches BRANCH_VIEW talab qiladi. Usiz filial tanlagichi jimgina bo'sh qolardi."
     }
   ],
   "recommended_role_hierarchy": [

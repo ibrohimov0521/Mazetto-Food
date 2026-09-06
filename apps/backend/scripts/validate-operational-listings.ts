@@ -82,6 +82,17 @@ for (const [name, block] of [
 // ACCOUNTANT global read-only — smena boshqaruvi uning ishi emas
 assert.doesNotMatch(accountantBlock, /PERMISSIONS\.SHIFT_OPEN|PERMISSIONS\.SHIFT_CLOSE/, "ACCOUNTANT smena ocha/yopa olmasligi kerak");
 
+/*
+ * ACCOUNTANT GLOBAL scope'ga ega va hisobot/to'lov/chek/xarajat ekranlarida
+ * filial bo'yicha filtrlaydi. `GET /branches` esa BRANCH_VIEW talab qiladi —
+ * usiz filial tanlagichi jimgina bo'sh qolardi.
+ */
+assert.match(
+  accountantBlock,
+  /PERMISSIONS\.BRANCH_VIEW/,
+  "ACCOUNTANT ga BRANCH_VIEW kerak — aks holda filial filtri bo'sh qoladi",
+);
+
 // 4. Kontrollerlar to'g'ri permission bilan himoyalangan
 assert.match(shiftsController, /@Get\(\)\s*\n\s*@Permissions\(PERMISSIONS\.SHIFT_VIEW_BRANCH\)/, "GET /shifts noto'g'ri himoyalangan");
 assert.match(receiptsController, /@Get\(\)\s*\n\s*@Permissions\(PERMISSIONS\.RECEIPT_VIEW\)/, "GET /receipts noto'g'ri himoyalangan");

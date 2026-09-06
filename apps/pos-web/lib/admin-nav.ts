@@ -186,7 +186,8 @@ export const adminNavGroups: AdminNavGroup[] = [
         label: "Printerlar",
         href: "/admin/printers",
         permission: "RECEIPT_PRINT",
-        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+        // ADMIN da RECEIPT_PRINT yo'q — route'ning RoleGuard'i bilan mos.
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
         // Jurnal global — faqat SUPER_ADMIN ko'radi (AuditLog da branchId yo'q).
