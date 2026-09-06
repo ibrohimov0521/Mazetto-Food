@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
+import { hasPermission } from "../../lib/auth";
+import { useAuth } from "../auth/auth-provider";
 import { Badge, type BadgeTone } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
@@ -15,6 +17,7 @@ import {
   TextInput,
   Textarea,
 } from "../admin-ui/form";
+import { Icon } from "../admin-ui/icon";
 import { Modal } from "../admin-ui/modal";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
@@ -27,6 +30,11 @@ import { useToast } from "../admin-ui/toast";
  * backend'da ro'yxat endpoint'lari yo'q edi. Endi `GET /inventory/warehouses`
  * va `GET /inventory/ingredients` qo'shildi, shuning uchun tanlagichlar bor
  * va to'rtala harakat turi mavjud.
+ *
+ * Ingredient va ombor YARATISH ham shu ekranda: `POST /inventory/ingredients`
+ * va `POST /inventory/warehouses` tayyor edi, lekin ekrani yo'q edi — ya'ni
+ * yangi ingredient faqat seed orqali qo'shilardi va zaxira harakati uchun
+ * tanlagich bo'sh qolaverardi.
  */
 
 type StockStatus = "NORMAL" | "LOW_STOCK" | "OUT_OF_STOCK";
@@ -51,6 +59,8 @@ type Movement = {
   warehouse?: { id: string; name: string } | null;
   createdBy?: { id: string; displayName?: string | null } | null;
 };
+
+type InventoryBranch = { id: string; name: string };
 
 type Warehouse = {
   id: string;
@@ -79,6 +89,22 @@ const movementTypeLabels: Record<MovementType, string> = {
   WASTE: "Yo'qotish",
 };
 
+/** `IngredientUnit` enum qiymatlari — backend shu to'rttasini qabul qiladi. */
+const ingredientUnits = [
+  { value: "KG", label: "Kilogramm" },
+  { value: "GRAM", label: "Gramm" },
+  { value: "LITER", label: "Litr" },
+  { value: "PIECE", label: "Dona" },
+];
+
+const emptyIngredientDraft = {
+  name: "",
+  unit: "KG",
+  minimumStock: "0",
+  costPerUnit: "0",
+};
+const emptyWarehouseDraft = { branchId: "", name: "" };
+
 function stockTone(status: StockStatus): BadgeTone {
   if (status === "NORMAL") return "success";
   if (status === "LOW_STOCK") return "warning";
@@ -93,10 +119,13 @@ function movementTone(type: MovementType): BadgeTone {
 }
 
 export function AdminInventoryPage() {
+  const { user } = useAuth();
   const { showToast } = useToast();
+  const canCreate = hasPermission(user, "INVENTORY_CREATE");
   const [stock, setStock] = useState<StockRow[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [branches, setBranches] = useState<InventoryBranch[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -104,6 +133,11 @@ export function AdminInventoryPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isIngredientOpen, setIsIngredientOpen] = useState(false);
+  const [isWarehouseOpen, setIsWarehouseOpen] = useState(false);
+  const [ingredientDraft, setIngredientDraft] = useState(emptyIngredientDraft);
+  const [warehouseDraft, setWarehouseDraft] = useState(emptyWarehouseDraft);
+  const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState({
     warehouseId: "",
@@ -118,17 +152,28 @@ export function AdminInventoryPage() {
     setError("");
 
     try {
-      const [nextStock, nextMovements, nextWarehouses, nextIngredients] =
-        await Promise.all([
-          apiFetch<StockRow[]>("/inventory/stock"),
-          apiFetch<Movement[]>("/inventory/movements"),
-          apiFetch<Warehouse[]>("/inventory/warehouses"),
-          apiFetch<Ingredient[]>("/inventory/ingredients"),
-        ]);
+      const [
+        nextStock,
+        nextMovements,
+        nextWarehouses,
+        nextIngredients,
+        nextBranches,
+      ] = await Promise.all([
+        apiFetch<StockRow[]>("/inventory/stock"),
+        apiFetch<Movement[]>("/inventory/movements"),
+        apiFetch<Warehouse[]>("/inventory/warehouses"),
+        apiFetch<Ingredient[]>("/inventory/ingredients"),
+        apiFetch<InventoryBranch[]>("/branches"),
+      ]);
       setStock(nextStock);
       setMovements(nextMovements);
       setWarehouses(nextWarehouses);
       setIngredients(nextIngredients);
+      setBranches(nextBranches);
+      setWarehouseDraft((current) => ({
+        ...current,
+        branchId: current.branchId || (nextBranches[0]?.id ?? ""),
+      }));
       setForm((current) => ({
         ...current,
         warehouseId: current.warehouseId || (nextWarehouses[0]?.id ?? ""),
@@ -152,6 +197,78 @@ export function AdminInventoryPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function createIngredient(): Promise<void> {
+    if (!ingredientDraft.name.trim()) {
+      showToast("Ingredient nomi kerak.", "danger");
+      return;
+    }
+
+    setIsCreating(true);
+
+    try {
+      await apiFetch("/inventory/ingredients", {
+        method: "POST",
+        body: JSON.stringify({
+          name: ingredientDraft.name.trim(),
+          unit: ingredientDraft.unit,
+          minimumStock: Number(ingredientDraft.minimumStock) || 0,
+          costPerUnit: Number(ingredientDraft.costPerUnit) || 0,
+        }),
+      });
+
+      showToast("Ingredient qo'shildi.", "success");
+      setIngredientDraft(emptyIngredientDraft);
+      setIsIngredientOpen(false);
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
+        caught instanceof Error ? caught.message : "Qo'shib bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  async function createWarehouse(): Promise<void> {
+    if (!warehouseDraft.name.trim() || !warehouseDraft.branchId) {
+      showToast("Ombor nomi va filial kerak.", "danger");
+      return;
+    }
+
+    setIsCreating(true);
+
+    try {
+      await apiFetch("/inventory/warehouses", {
+        method: "POST",
+        body: JSON.stringify({
+          branchId: warehouseDraft.branchId,
+          name: warehouseDraft.name.trim(),
+        }),
+      });
+
+      showToast("Ombor qo'shildi.", "success");
+      setWarehouseDraft(emptyWarehouseDraft);
+      setIsWarehouseOpen(false);
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
+        caught instanceof Error ? caught.message : "Qo'shib bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
 
   const filteredStock = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -352,12 +469,39 @@ export function AdminInventoryPage() {
       <Card>
         <CardHeader
           actions={
-            <Button
-              disabled={warehouses.length === 0 || ingredients.length === 0}
-              onClick={() => setIsFormOpen(true)}
-            >
-              Harakat qo&apos;shish
-            </Button>
+            <>
+              {canCreate ? (
+                <>
+                  <Button
+                    onClick={() => setIsIngredientOpen(true)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Icon className="h-4 w-4" name="plus" />
+                    Ingredient
+                  </Button>
+                  <Button
+                    onClick={() => setIsWarehouseOpen(true)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Icon className="h-4 w-4" name="plus" />
+                    Ombor
+                  </Button>
+                </>
+              ) : null}
+              <Button
+                disabled={warehouses.length === 0 || ingredients.length === 0}
+                onClick={() => setIsFormOpen(true)}
+                title={
+                  warehouses.length === 0 || ingredients.length === 0
+                    ? "Avval kamida bitta ombor va ingredient qo'shing"
+                    : undefined
+                }
+              >
+                Harakat qo&apos;shish
+              </Button>
+            </>
           }
           description="Ombor bo'yicha ingredient qoldiqlari"
           title="Zaxira"
@@ -525,6 +669,163 @@ export function AdminInventoryPage() {
           <Button disabled={isSaving} form="movement-form" type="submit">
             {isSaving ? "Yozilmoqda..." : "Yozish"}
           </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        footer={
+          <>
+            <Button onClick={() => setIsIngredientOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              disabled={isCreating}
+              onClick={() => void createIngredient()}
+            >
+              {isCreating ? "Qo'shilmoqda…" : "Qo'shish"}
+            </Button>
+          </>
+        }
+        isOpen={isIngredientOpen}
+        onClose={() => setIsIngredientOpen(false)}
+        title="Yangi ingredient"
+      >
+        <div className="grid gap-3">
+          <FormField label="Nomi" required>
+            {(props) => (
+              <TextInput
+                {...props}
+                onChange={(event) =>
+                  setIngredientDraft((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+                value={ingredientDraft.name}
+              />
+            )}
+          </FormField>
+
+          <FormField label="O'lchov birligi" required>
+            {(props) => (
+              <Select
+                {...props}
+                onChange={(event) =>
+                  setIngredientDraft((current) => ({
+                    ...current,
+                    unit: event.target.value,
+                  }))
+                }
+                value={ingredientDraft.unit}
+              >
+                {ingredientUnits.map((unit) => (
+                  <option key={unit.value} value={unit.value}>
+                    {unit.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
+
+          <FormField
+            hint="Shu miqdordan pastda 'Kam qoldi' deb belgilanadi"
+            label="Minimal zaxira"
+          >
+            {(props) => (
+              <TextInput
+                {...props}
+                min="0"
+                onChange={(event) =>
+                  setIngredientDraft((current) => ({
+                    ...current,
+                    minimumStock: event.target.value,
+                  }))
+                }
+                step="0.001"
+                type="number"
+                value={ingredientDraft.minimumStock}
+              />
+            )}
+          </FormField>
+
+          <FormField
+            hint="Zaxira qiymatini hisoblashda ishlatiladi"
+            label="Birlik tannarxi"
+          >
+            {(props) => (
+              <TextInput
+                {...props}
+                min="0"
+                onChange={(event) =>
+                  setIngredientDraft((current) => ({
+                    ...current,
+                    costPerUnit: event.target.value,
+                  }))
+                }
+                step="0.01"
+                type="number"
+                value={ingredientDraft.costPerUnit}
+              />
+            )}
+          </FormField>
+        </div>
+      </Modal>
+
+      <Modal
+        footer={
+          <>
+            <Button onClick={() => setIsWarehouseOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              disabled={isCreating}
+              onClick={() => void createWarehouse()}
+            >
+              {isCreating ? "Qo'shilmoqda…" : "Qo'shish"}
+            </Button>
+          </>
+        }
+        isOpen={isWarehouseOpen}
+        onClose={() => setIsWarehouseOpen(false)}
+        title="Yangi ombor"
+      >
+        <div className="grid gap-3">
+          <FormField label="Filial" required>
+            {(props) => (
+              <Select
+                {...props}
+                onChange={(event) =>
+                  setWarehouseDraft((current) => ({
+                    ...current,
+                    branchId: event.target.value,
+                  }))
+                }
+                value={warehouseDraft.branchId}
+              >
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
+
+          <FormField label="Nomi" required>
+            {(props) => (
+              <TextInput
+                {...props}
+                onChange={(event) =>
+                  setWarehouseDraft((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="Masalan: Asosiy ombor"
+                value={warehouseDraft.name}
+              />
+            )}
+          </FormField>
         </div>
       </Modal>
     </div>
