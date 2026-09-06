@@ -187,7 +187,15 @@ console.log(
 );
 
 function readSource(path: string): string {
-  return readFileSync(join(repoRoot, path), "utf8");
+  /*
+   * CR belgilarini olib tashlaymiz.
+   *
+   * Bu fayldagi naqshlar qator boshi va oxiriga bog'langan. Windows'da git
+   * checkout fayllarni CRLF bilan yozadi, o'shanda qator oxiriga tayangan
+   * har bir naqsh jimgina 0 ta moslik topadi va validator buni haqiqiy
+   * nuqson deb ko'rsatadi.
+   */
+  return readFileSync(join(repoRoot, path), "utf8").replace(/\r/g, "");
 }
 
 function findRepoRoot(startPath: string): string {
