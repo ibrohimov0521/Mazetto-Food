@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
-import { formatDateTime, formatMoney, maskPhone } from "../../lib/order-display";
+import {
+  formatDateTime,
+  formatMoney,
+  maskPhone,
+} from "../../lib/order-display";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card } from "../admin-ui/card";
@@ -67,7 +71,11 @@ export function AdminCustomersPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Mijozlarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Mijozlarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -107,7 +115,9 @@ export function AdminCustomersPage() {
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">{customer.name}</p>
           {customer.email ? (
-            <p className="truncate text-xs text-mz-text-muted">{customer.email}</p>
+            <p className="truncate text-xs text-mz-text-muted">
+              {customer.email}
+            </p>
           ) : null}
         </div>
       ),
@@ -120,8 +130,14 @@ export function AdminCustomersPage() {
           <span className="text-mz-text">{customer.phone}</span>
         ) : (
           <span className="inline-flex items-center gap-2">
-            <span className="text-mz-text-muted">{maskPhone(customer.phone)}</span>
-            <Button onClick={() => revealPhone(customer.id)} size="sm" variant="ghost">
+            <span className="text-mz-text-muted">
+              {maskPhone(customer.phone)}
+            </span>
+            <Button
+              onClick={() => revealPhone(customer.id)}
+              size="sm"
+              variant="ghost"
+            >
               Ko&apos;rsatish
             </Button>
           </span>
@@ -156,25 +172,40 @@ export function AdminCustomersPage() {
       align: "right",
       hideOnMobile: true,
       render: (customer) => (
-        <span className="text-xs text-mz-text-muted">{formatDateTime(customer.createdAt)}</span>
+        <span className="text-xs text-mz-text-muted">
+          {formatDateTime(customer.createdAt)}
+        </span>
       ),
     },
   ];
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       {stats ? (
         <StatGrid>
-          <InfoBox label="Jami mijoz" tone="brand" value={`${stats.customers} ta`} />
-          <InfoBox label="Online buyurtmalar" value={`${stats.onlineOrders} ta`} />
           <InfoBox
+            icon="users"
+            label="Jami mijoz"
+            tone="brand"
+            value={`${stats.customers} ta`}
+          />
+          <InfoBox
+            icon="globe"
+            label="Online buyurtmalar"
+            value={`${stats.onlineOrders} ta`}
+          />
+          <InfoBox
+            icon="wallet"
             label="Bonus majburiyati"
             tone="warning"
             value={formatMoney(stats.bonusLiability)}
           />
           <InfoBox
+            icon="send"
             label="Telegram orqali"
             value={`${customers.filter((customer) => customer.telegramUserId).length} ta`}
           />

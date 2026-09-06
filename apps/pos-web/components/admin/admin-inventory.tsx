@@ -8,7 +8,13 @@ import { Button } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
-import { FilterBar, FormField, Select, TextInput, Textarea } from "../admin-ui/form";
+import {
+  FilterBar,
+  FormField,
+  Select,
+  TextInput,
+  Textarea,
+} from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
@@ -46,8 +52,19 @@ type Movement = {
   createdBy?: { id: string; displayName?: string | null } | null;
 };
 
-type Warehouse = { id: string; name: string; branchId: string; branch?: { name: string } | null };
-type Ingredient = { id: string; name: string; unit: string; minimumStock: string; costPerUnit: string };
+type Warehouse = {
+  id: string;
+  name: string;
+  branchId: string;
+  branch?: { name: string } | null;
+};
+type Ingredient = {
+  id: string;
+  name: string;
+  unit: string;
+  minimumStock: string;
+  costPerUnit: string;
+};
 
 const stockStatusLabels: Record<StockStatus, string> = {
   NORMAL: "Yetarli",
@@ -101,12 +118,13 @@ export function AdminInventoryPage() {
     setError("");
 
     try {
-      const [nextStock, nextMovements, nextWarehouses, nextIngredients] = await Promise.all([
-        apiFetch<StockRow[]>("/inventory/stock"),
-        apiFetch<Movement[]>("/inventory/movements"),
-        apiFetch<Warehouse[]>("/inventory/warehouses"),
-        apiFetch<Ingredient[]>("/inventory/ingredients"),
-      ]);
+      const [nextStock, nextMovements, nextWarehouses, nextIngredients] =
+        await Promise.all([
+          apiFetch<StockRow[]>("/inventory/stock"),
+          apiFetch<Movement[]>("/inventory/movements"),
+          apiFetch<Warehouse[]>("/inventory/warehouses"),
+          apiFetch<Ingredient[]>("/inventory/ingredients"),
+        ]);
       setStock(nextStock);
       setMovements(nextMovements);
       setWarehouses(nextWarehouses);
@@ -121,7 +139,11 @@ export function AdminInventoryPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Ombor ma'lumotlarini yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Ombor ma'lumotlarini yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -148,14 +170,17 @@ export function AdminInventoryPage() {
     const low = stock.filter((row) => row.status === "LOW_STOCK").length;
     const out = stock.filter((row) => row.status === "OUT_OF_STOCK").length;
     const value = stock.reduce(
-      (sum, row) => sum + Number(row.currentQuantity) * Number(row.ingredient.costPerUnit),
+      (sum, row) =>
+        sum + Number(row.currentQuantity) * Number(row.ingredient.costPerUnit),
       0,
     );
 
     return { low, out, value, total: stock.length };
   }, [stock]);
 
-  async function submitMovement(event: FormEvent<HTMLFormElement>): Promise<void> {
+  async function submitMovement(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
     event.preventDefault();
 
     const quantity = Number(form.quantity);
@@ -187,7 +212,10 @@ export function AdminInventoryPage() {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "Harakat yozilmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Harakat yozilmadi.",
+        "danger",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -200,8 +228,12 @@ export function AdminInventoryPage() {
       primary: true,
       render: (row) => (
         <div className="min-w-0">
-          <p className="truncate font-semibold text-mz-text">{row.ingredient.name}</p>
-          <p className="truncate text-xs text-mz-text-muted">{row.warehouse.name}</p>
+          <p className="truncate font-semibold text-mz-text">
+            {row.ingredient.name}
+          </p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {row.warehouse.name}
+          </p>
         </div>
       ),
     },
@@ -224,7 +256,9 @@ export function AdminInventoryPage() {
       align: "right",
       hideOnMobile: true,
       render: (row) =>
-        formatMoney(Number(row.currentQuantity) * Number(row.ingredient.costPerUnit)),
+        formatMoney(
+          Number(row.currentQuantity) * Number(row.ingredient.costPerUnit),
+        ),
     },
     {
       key: "status",
@@ -249,7 +283,8 @@ export function AdminInventoryPage() {
             {movement.ingredient?.name ?? "—"}
           </p>
           <p className="truncate text-xs text-mz-text-muted">
-            {formatDateTime(movement.createdAt)} · {movement.warehouse?.name ?? "—"}
+            {formatDateTime(movement.createdAt)} ·{" "}
+            {movement.warehouse?.name ?? "—"}
           </p>
         </div>
       ),
@@ -258,42 +293,60 @@ export function AdminInventoryPage() {
       key: "type",
       header: "Turi",
       render: (movement) => (
-        <Badge tone={movementTone(movement.type)}>{movementTypeLabels[movement.type]}</Badge>
+        <Badge tone={movementTone(movement.type)}>
+          {movementTypeLabels[movement.type]}
+        </Badge>
       ),
     },
     {
       key: "quantity",
       header: "Miqdor",
       align: "right",
-      render: (movement) => `${movement.quantity} ${movement.ingredient?.unit ?? ""}`,
+      render: (movement) =>
+        `${movement.quantity} ${movement.ingredient?.unit ?? ""}`,
     },
     {
       key: "reason",
       header: "Sabab",
       hideOnMobile: true,
       render: (movement) => (
-        <span className="text-xs text-mz-text-muted">{movement.reason ?? "—"}</span>
+        <span className="text-xs text-mz-text-muted">
+          {movement.reason ?? "—"}
+        </span>
       ),
     },
   ];
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Zaxira qatorlari" value={`${stats.total} ta`} />
         <InfoBox
+          icon="boxes"
+          label="Zaxira qatorlari"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="alert"
           label="Kam qolgan"
           tone={stats.low > 0 ? "warning" : "neutral"}
           value={`${stats.low} ta`}
         />
         <InfoBox
+          icon="inbox"
           label="Tugagan"
           tone={stats.out > 0 ? "danger" : "success"}
           value={`${stats.out} ta`}
         />
-        <InfoBox label="Zaxira qiymati" tone="brand" value={formatMoney(stats.value)} />
+        <InfoBox
+          icon="wallet"
+          label="Zaxira qiymati"
+          tone="brand"
+          value={formatMoney(stats.value)}
+        />
       </StatGrid>
 
       <Card>
@@ -347,7 +400,10 @@ export function AdminInventoryPage() {
       </Card>
 
       <Card>
-        <CardHeader description="Oxirgi kirim, chiqim, tuzatish va yo'qotishlar" title="Harakatlar" />
+        <CardHeader
+          description="Oxirgi kirim, chiqim, tuzatish va yo'qotishlar"
+          title="Harakatlar"
+        />
         <DataTable
           caption="Zaxira harakatlari"
           columns={movementColumns}
@@ -363,14 +419,20 @@ export function AdminInventoryPage() {
         onClose={() => setIsFormOpen(false)}
         title="Zaxira harakati"
       >
-        <form className="grid gap-3" id="movement-form" onSubmit={submitMovement}>
+        <form
+          className="grid gap-3"
+          id="movement-form"
+          onSubmit={submitMovement}
+        >
           <FormField label="Ombor" required>
             {(props) => (
               <Select
                 {...props}
                 required
                 value={form.warehouseId}
-                onChange={(event) => setForm({ ...form, warehouseId: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, warehouseId: event.target.value })
+                }
               >
                 {warehouses.map((warehouse) => (
                   <option key={warehouse.id} value={warehouse.id}>
@@ -388,7 +450,9 @@ export function AdminInventoryPage() {
                 {...props}
                 required
                 value={form.ingredientId}
-                onChange={(event) => setForm({ ...form, ingredientId: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, ingredientId: event.target.value })
+                }
               >
                 {ingredients.map((ingredient) => (
                   <option key={ingredient.id} value={ingredient.id}>
@@ -406,7 +470,10 @@ export function AdminInventoryPage() {
                   {...props}
                   value={form.type}
                   onChange={(event) =>
-                    setForm({ ...form, type: event.target.value as MovementType })
+                    setForm({
+                      ...form,
+                      type: event.target.value as MovementType,
+                    })
                   }
                 >
                   {Object.entries(movementTypeLabels).map(([value, label]) => (
@@ -426,7 +493,9 @@ export function AdminInventoryPage() {
                   step={0.001}
                   type="number"
                   value={form.quantity}
-                  onChange={(event) => setForm({ ...form, quantity: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, quantity: event.target.value })
+                  }
                 />
               )}
             </FormField>
@@ -441,7 +510,9 @@ export function AdminInventoryPage() {
                 {...props}
                 maxLength={500}
                 value={form.reason}
-                onChange={(event) => setForm({ ...form, reason: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, reason: event.target.value })
+                }
               />
             )}
           </FormField>

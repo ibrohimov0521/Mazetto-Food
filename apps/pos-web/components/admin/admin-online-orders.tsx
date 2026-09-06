@@ -94,7 +94,11 @@ export function AdminOnlineOrdersPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Online buyurtmalarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Online buyurtmalarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -119,7 +123,10 @@ export function AdminOnlineOrdersPage() {
         .join(" ")
         .toLowerCase();
 
-      return (!needle || identity.includes(needle)) && (!status || item.status === status);
+      return (
+        (!needle || identity.includes(needle)) &&
+        (!status || item.status === status)
+      );
     });
   }, [orders, query, status]);
 
@@ -157,8 +164,12 @@ export function AdminOnlineOrdersPage() {
       header: "Mijoz",
       render: (item) => (
         <div className="min-w-0">
-          <p className="truncate text-sm text-mz-text">{item.customer?.name ?? "—"}</p>
-          <p className="truncate text-xs text-mz-text-muted">{maskPhone(item.customer?.phone)}</p>
+          <p className="truncate text-sm text-mz-text">
+            {item.customer?.name ?? "—"}
+          </p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {maskPhone(item.customer?.phone)}
+          </p>
         </div>
       ),
     },
@@ -187,20 +198,42 @@ export function AdminOnlineOrdersPage() {
       header: "Summa",
       align: "right",
       render: (item) => (
-        <span className="font-semibold text-mz-text">{formatMoney(item.order?.total)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(item.order?.total)}
+        </span>
       ),
     },
   ];
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Jami online buyurtma" value={`${stats.total} ta`} />
-        <InfoBox label="Jarayonda" tone="warning" value={`${stats.active} ta`} />
-        <InfoBox label="Yetkazib berish" value={`${stats.delivery} ta`} />
-        <InfoBox label="Umumiy summa" tone="brand" value={formatMoney(stats.revenue)} />
+        <InfoBox
+          icon="globe"
+          label="Jami online buyurtma"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="clock"
+          label="Jarayonda"
+          tone="warning"
+          value={`${stats.active} ta`}
+        />
+        <InfoBox
+          icon="truck"
+          label="Yetkazib berish"
+          value={`${stats.delivery} ta`}
+        />
+        <InfoBox
+          icon="wallet"
+          label="Umumiy summa"
+          tone="brand"
+          value={formatMoney(stats.revenue)}
+        />
       </StatGrid>
 
       <Card>

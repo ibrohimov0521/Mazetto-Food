@@ -97,7 +97,9 @@ export function AdminReceiptsPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Cheklarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error ? caught.message : "Cheklarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -123,7 +125,10 @@ export function AdminReceiptsPage() {
 
   const stats = useMemo(() => {
     const printedCount = receipts.filter((receipt) => receipt.printed).length;
-    const amount = receipts.reduce((sum, receipt) => sum + Number(receipt.total ?? 0), 0);
+    const amount = receipts.reduce(
+      (sum, receipt) => sum + Number(receipt.total ?? 0),
+      0,
+    );
 
     return { printedCount, amount, total: receipts.length };
   }, [receipts]);
@@ -135,10 +140,14 @@ export function AdminReceiptsPage() {
       primary: true,
       render: (receipt) => (
         <div className="min-w-0">
-          <p className="truncate font-semibold text-mz-text">{receipt.receiptNumber}</p>
+          <p className="truncate font-semibold text-mz-text">
+            {receipt.receiptNumber}
+          </p>
           <p className="truncate text-xs text-mz-text-muted">
             {formatDateTime(receipt.createdAt)}
-            {receipt.order ? ` · ${orderSourceLabels[receipt.order.source]}` : ""}
+            {receipt.order
+              ? ` · ${orderSourceLabels[receipt.order.source]}`
+              : ""}
           </p>
         </div>
       ),
@@ -181,7 +190,9 @@ export function AdminReceiptsPage() {
       header: "Summa",
       align: "right",
       render: (receipt) => (
-        <span className="font-semibold text-mz-text">{formatMoney(receipt.total)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(receipt.total)}
+        </span>
       ),
     },
     {
@@ -189,7 +200,11 @@ export function AdminReceiptsPage() {
       header: "",
       align: "right",
       render: (receipt) => (
-        <ButtonLink href={`/admin/orders/${receipt.orderId}`} size="sm" variant="ghost">
+        <ButtonLink
+          href={`/admin/orders/${receipt.orderId}`}
+          size="sm"
+          variant="ghost"
+        >
           Buyurtma
         </ButtonLink>
       ),
@@ -198,17 +213,34 @@ export function AdminReceiptsPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Ko'rsatilgan chek" value={`${stats.total} ta`} />
-        <InfoBox label="Chop etilgan" tone="success" value={`${stats.printedCount} ta`} />
         <InfoBox
+          icon="scroll"
+          label="Ko'rsatilgan chek"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="printer"
+          label="Chop etilgan"
+          tone="success"
+          value={`${stats.printedCount} ta`}
+        />
+        <InfoBox
+          icon="alert"
           label="Chop etilmagan"
           tone={stats.total - stats.printedCount > 0 ? "warning" : "neutral"}
           value={`${stats.total - stats.printedCount} ta`}
         />
-        <InfoBox label="Summa (sahifada)" tone="brand" value={formatMoney(stats.amount)} />
+        <InfoBox
+          icon="banknote"
+          label="Summa (sahifada)"
+          tone="brand"
+          value={formatMoney(stats.amount)}
+        />
       </StatGrid>
 
       <Card>
@@ -263,7 +295,9 @@ export function AdminReceiptsPage() {
           <div className="flex gap-2">
             <Button
               disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
+              onClick={() =>
+                setOffset((current) => Math.max(0, current - pageSize))
+              }
               size="sm"
               variant="ghost"
             >

@@ -70,7 +70,12 @@ type Branch = {
   acceptsOrders: boolean;
   deliveryEnabled: boolean;
   pickupEnabled: boolean;
-  workingHours?: { dayOfWeek: string; opensAt?: string | null; closesAt?: string | null; isClosed: boolean }[];
+  workingHours?: {
+    dayOfWeek: string;
+    opensAt?: string | null;
+    closesAt?: string | null;
+    isClosed: boolean;
+  }[];
 };
 
 const formatter = new Intl.NumberFormat("uz-UZ");
@@ -118,8 +123,10 @@ export function AdminProductsPage() {
         !needle ||
         product.name.toLowerCase().includes(needle) ||
         product.code.toLowerCase().includes(needle);
-      const matchesCategory = categoryId === "ALL" || product.categoryId === categoryId;
-      const matchesVisibility = visibility === "ALL" || product.catalogVisibility === visibility;
+      const matchesCategory =
+        categoryId === "ALL" || product.categoryId === categoryId;
+      const matchesVisibility =
+        visibility === "ALL" || product.catalogVisibility === visibility;
 
       return matchesSearch && matchesCategory && matchesVisibility;
     });
@@ -147,9 +154,15 @@ export function AdminProductsPage() {
               {product.catalogVisibility}
             </UiBadge>
             {product.isCombo ? <UiBadge tone="info">SET</UiBadge> : null}
-            {!product.isAvailable ? <UiBadge tone="danger">Yopiq</UiBadge> : null}
-            {product.isRecommended ? <UiBadge tone="warning">Tavsiya</UiBadge> : null}
-            {!product.imageUrl ? <UiBadge tone="neutral">Rasmsiz</UiBadge> : null}
+            {!product.isAvailable ? (
+              <UiBadge tone="danger">Yopiq</UiBadge>
+            ) : null}
+            {product.isRecommended ? (
+              <UiBadge tone="warning">Tavsiya</UiBadge>
+            ) : null}
+            {!product.imageUrl ? (
+              <UiBadge tone="neutral">Rasmsiz</UiBadge>
+            ) : null}
           </div>
         </div>
       ),
@@ -170,7 +183,9 @@ export function AdminProductsPage() {
       header: "Narx",
       align: "right",
       render: (product) => (
-        <span className="font-semibold text-mz-text">{formatMoney(product.sellingPrice)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(product.sellingPrice)}
+        </span>
       ),
     },
     {
@@ -178,7 +193,11 @@ export function AdminProductsPage() {
       header: "",
       align: "right",
       render: (product) => (
-        <ButtonLink href={`/admin/products/${product.id}`} size="sm" variant="ghost">
+        <ButtonLink
+          href={`/admin/products/${product.id}`}
+          size="sm"
+          variant="ghost"
+        >
           Tahrir
         </ButtonLink>
       ),
@@ -187,7 +206,9 @@ export function AdminProductsPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <FilterBar>
@@ -245,10 +266,17 @@ export function AdminProductsPage() {
 export function AdminCategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ name: "", description: "", image: "", sortOrder: "0" });
+  const [form, setForm] = useState({
+    name: "",
+    description: "",
+    image: "",
+    sortOrder: "0",
+  });
 
   async function load() {
-    setCategories(await apiFetch<Category[]>("/menu/categories?includeInactive=true"));
+    setCategories(
+      await apiFetch<Category[]>("/menu/categories?includeInactive=true"),
+    );
   }
 
   useEffect(() => {
@@ -278,25 +306,62 @@ export function AdminCategoriesPage() {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-      <form className="grid content-start gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" onSubmit={create}>
+      <form
+        className="grid content-start gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card"
+        onSubmit={create}
+      >
         <h3 className="text-xl font-black text-mz-text">Yangi kategoriya</h3>
         {error ? <Notice tone="danger">{error}</Notice> : null}
-        <TextInput placeholder="Nomi" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-        <TextInput placeholder="Tavsif" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
-        <TextInput placeholder="/categories/lavash.webp" value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} />
-        <TextInput min="0" placeholder="Saralash" type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: event.target.value })} />
+        <TextInput
+          placeholder="Nomi"
+          value={form.name}
+          onChange={(event) => setForm({ ...form, name: event.target.value })}
+          required
+        />
+        <TextInput
+          placeholder="Tavsif"
+          value={form.description}
+          onChange={(event) =>
+            setForm({ ...form, description: event.target.value })
+          }
+        />
+        <TextInput
+          placeholder="/categories/lavash.webp"
+          value={form.image}
+          onChange={(event) => setForm({ ...form, image: event.target.value })}
+        />
+        <TextInput
+          min="0"
+          placeholder="Saralash"
+          type="number"
+          value={form.sortOrder}
+          onChange={(event) =>
+            setForm({ ...form, sortOrder: event.target.value })
+          }
+        />
         <Button type="submit">Qo'shish</Button>
       </form>
       <section className="grid gap-3">
         {categories.map((category) => (
-          <article className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" key={category.id}>
+          <article
+            className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card"
+            key={category.id}
+          >
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 className="text-lg font-black text-mz-text">{category.name}</h3>
-                <p className="text-sm font-semibold text-mz-text-muted">{category.code} · {category._count?.products ?? 0} mahsulot</p>
-                <p className="mt-2 text-sm text-mz-text-muted">{category.description ?? "Tavsif yo'q"}</p>
+                <h3 className="text-lg font-black text-mz-text">
+                  {category.name}
+                </h3>
+                <p className="text-sm font-semibold text-mz-text-muted">
+                  {category.code} · {category._count?.products ?? 0} mahsulot
+                </p>
+                <p className="mt-2 text-sm text-mz-text-muted">
+                  {category.description ?? "Tavsif yo'q"}
+                </p>
               </div>
-              <Badge tone={category.isActive === false ? "red" : "green"}>{category.isActive === false ? "Yopiq" : "Faol"}</Badge>
+              <Badge tone={category.isActive === false ? "red" : "green"}>
+                {category.isActive === false ? "Yopiq" : "Faol"}
+              </Badge>
             </div>
           </article>
         ))}
@@ -310,29 +375,47 @@ export function AdminBranchesPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    void apiFetch<Branch[]>("/branches").then(setBranches).catch(() => setError("Filiallarni yuklab bo'lmadi."));
+    void apiFetch<Branch[]>("/branches")
+      .then(setBranches)
+      .catch(() => setError("Filiallarni yuklab bo'lmadi."));
   }, []);
 
   return (
     <div className="grid gap-4">
       {error ? <Notice tone="danger">{error}</Notice> : null}
       {branches.map((branch) => (
-        <article className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" key={branch.id}>
+        <article
+          className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card"
+          key={branch.id}
+        >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h3 className="text-xl font-black text-mz-text">{branch.name}</h3>
-              <p className="mt-1 text-sm font-semibold text-mz-text-muted">{branch.code} · {branch.address ?? "Manzil kiritilmagan"}</p>
+              <p className="mt-1 text-sm font-semibold text-mz-text-muted">
+                {branch.code} · {branch.address ?? "Manzil kiritilmagan"}
+              </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Badge tone={branch.isActive ? "green" : "red"}>{branch.isActive ? "Faol" : "Yopiq"}</Badge>
-                <Badge tone={branch.acceptsOrders ? "green" : "amber"}>{branch.acceptsOrders ? "Buyurtma oladi" : "Buyurtma yopiq"}</Badge>
-                <Badge tone={branch.deliveryEnabled ? "teal" : "slate"}>Yetkazish</Badge>
-                <Badge tone={branch.pickupEnabled ? "teal" : "slate"}>Olib ketish</Badge>
+                <Badge tone={branch.isActive ? "green" : "red"}>
+                  {branch.isActive ? "Faol" : "Yopiq"}
+                </Badge>
+                <Badge tone={branch.acceptsOrders ? "green" : "amber"}>
+                  {branch.acceptsOrders ? "Buyurtma oladi" : "Buyurtma yopiq"}
+                </Badge>
+                <Badge tone={branch.deliveryEnabled ? "teal" : "slate"}>
+                  Yetkazish
+                </Badge>
+                <Badge tone={branch.pickupEnabled ? "teal" : "slate"}>
+                  Olib ketish
+                </Badge>
               </div>
             </div>
             <div className="grid gap-1 text-sm font-semibold text-mz-text-muted">
               {(branch.workingHours ?? []).slice(0, 7).map((hour) => (
                 <span key={hour.dayOfWeek}>
-                  {hour.dayOfWeek}: {hour.isClosed ? "Yopiq" : `${hour.opensAt ?? "--"}-${hour.closesAt ?? "--"}`}
+                  {hour.dayOfWeek}:{" "}
+                  {hour.isClosed
+                    ? "Yopiq"
+                    : `${hour.opensAt ?? "--"}-${hour.closesAt ?? "--"}`}
                 </span>
               ))}
             </div>
@@ -343,9 +426,13 @@ export function AdminBranchesPage() {
   );
 }
 
-
-
-function Badge({ children, tone }: { children: React.ReactNode; tone: "green" | "amber" | "slate" | "red" | "teal" | "gold" }) {
+function Badge({
+  children,
+  tone,
+}: {
+  children: React.ReactNode;
+  tone: "green" | "amber" | "slate" | "red" | "teal" | "gold";
+}) {
   const tones = {
     green: "bg-mz-info-bg text-mz-info",
     amber: "bg-mz-warning-bg text-mz-warning",
@@ -355,18 +442,30 @@ function Badge({ children, tone }: { children: React.ReactNode; tone: "green" | 
     gold: "bg-mz-gold-100 text-mz-warning",
   };
 
-  return <span className={`rounded-full px-3 py-1 text-xs font-black ${tones[tone]}`}>{children}</span>;
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-black ${tones[tone]}`}
+    >
+      {children}
+    </span>
+  );
 }
 
-function Notice({ children, tone = "success" }: { children: React.ReactNode; tone?: "success" | "danger" }) {
+function Notice({
+  children,
+  tone = "success",
+}: {
+  children: React.ReactNode;
+  tone?: "success" | "danger";
+}) {
   return (
-    <div className={`rounded-mz-control px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-mz-danger-bg text-mz-danger" : "bg-mz-info-bg text-mz-info"}`}>
+    <div
+      className={`rounded-mz-control px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-mz-danger-bg text-mz-danger" : "bg-mz-info-bg text-mz-info"}`}
+    >
       {children}
     </div>
   );
 }
-
-
 
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (

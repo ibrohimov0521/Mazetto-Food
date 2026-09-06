@@ -10,7 +10,13 @@ import { Button } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
-import { FilterBar, FormField, Select, TextInput, Textarea } from "../admin-ui/form";
+import {
+  FilterBar,
+  FormField,
+  Select,
+  TextInput,
+  Textarea,
+} from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
@@ -116,7 +122,11 @@ export function AdminExpensesPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Xarajatlarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Xarajatlarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -127,9 +137,14 @@ export function AdminExpensesPage() {
   }, [load]);
 
   const stats = useMemo(() => {
-    const total = expenses.reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0);
+    const total = expenses.reduce(
+      (sum, expense) => sum + Number(expense.amount ?? 0),
+      0,
+    );
     const linkedToShift = expenses.filter((expense) => expense.shiftId).length;
-    const uniqueCategories = new Set(expenses.map((expense) => expense.category)).size;
+    const uniqueCategories = new Set(
+      expenses.map((expense) => expense.category),
+    ).size;
 
     return { total, linkedToShift, uniqueCategories, count: expenses.length };
   }, [expenses]);
@@ -166,7 +181,10 @@ export function AdminExpensesPage() {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "Xarajat yozilmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Xarajat yozilmadi.",
+        "danger",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -179,7 +197,9 @@ export function AdminExpensesPage() {
       primary: true,
       render: (expense) => (
         <div className="min-w-0">
-          <p className="truncate font-semibold text-mz-text">{expense.category}</p>
+          <p className="truncate font-semibold text-mz-text">
+            {expense.category}
+          </p>
           <p className="truncate text-xs text-mz-text-muted">
             {formatDateTime(expense.expenseDate)}
             {expense.description ? ` · ${expense.description}` : ""}
@@ -199,7 +219,9 @@ export function AdminExpensesPage() {
       hideOnMobile: true,
       render: (expense) =>
         expense.employee
-          ? [expense.employee.firstName, expense.employee.lastName].filter(Boolean).join(" ")
+          ? [expense.employee.firstName, expense.employee.lastName]
+              .filter(Boolean)
+              .join(" ")
           : "—",
     },
     {
@@ -212,26 +234,51 @@ export function AdminExpensesPage() {
       header: "Summa",
       align: "right",
       render: (expense) => (
-        <span className="font-semibold text-mz-text">{formatMoney(expense.amount)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(expense.amount)}
+        </span>
       ),
     },
   ];
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Ko'rsatilgan xarajat" value={`${stats.count} ta`} />
-        <InfoBox label="Summa (sahifada)" tone="brand" value={formatMoney(stats.total)} />
-        <InfoBox label="Smenaga bog'langan" value={`${stats.linkedToShift} ta`} />
-        <InfoBox label="Kategoriya" value={`${stats.uniqueCategories} ta`} />
+        <InfoBox
+          icon="banknote"
+          label="Ko'rsatilgan xarajat"
+          value={`${stats.count} ta`}
+        />
+        <InfoBox
+          icon="wallet"
+          label="Summa (sahifada)"
+          tone="brand"
+          value={formatMoney(stats.total)}
+        />
+        <InfoBox
+          icon="clock"
+          label="Smenaga bog'langan"
+          value={`${stats.linkedToShift} ta`}
+        />
+        <InfoBox
+          icon="folder"
+          label="Kategoriya"
+          value={`${stats.uniqueCategories} ta`}
+        />
       </StatGrid>
 
       <Card>
         <CardHeader
           actions={
-            canCreate ? <Button onClick={() => setIsFormOpen(true)}>Xarajat qo&apos;shish</Button> : undefined
+            canCreate ? (
+              <Button onClick={() => setIsFormOpen(true)}>
+                Xarajat qo&apos;shish
+              </Button>
+            ) : undefined
           }
           description="Filial xarajatlari; ochiq smenaga bog'langani kassa hisobiga kiradi"
           title="Xarajatlar"
@@ -294,7 +341,9 @@ export function AdminExpensesPage() {
           <div className="flex gap-2">
             <Button
               disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
+              onClick={() =>
+                setOffset((current) => Math.max(0, current - pageSize))
+              }
               size="sm"
               variant="ghost"
             >
@@ -319,7 +368,11 @@ export function AdminExpensesPage() {
         title="Yangi xarajat"
       >
         <form className="grid gap-3" id="expense-form" onSubmit={submit}>
-          <FormField hint="Masalan: Kommunal, Transport, Ta'mirlash" label="Kategoriya" required>
+          <FormField
+            hint="Masalan: Kommunal, Transport, Ta'mirlash"
+            label="Kategoriya"
+            required
+          >
             {(props) => (
               <TextInput
                 {...props}
@@ -327,7 +380,9 @@ export function AdminExpensesPage() {
                 maxLength={80}
                 required
                 value={form.category}
-                onChange={(event) => setForm({ ...form, category: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, category: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -345,7 +400,9 @@ export function AdminExpensesPage() {
                 required
                 type="number"
                 value={form.amount}
-                onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, amount: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -359,7 +416,9 @@ export function AdminExpensesPage() {
                 <Select
                   {...props}
                   value={form.shiftId}
-                  onChange={(event) => setForm({ ...form, shiftId: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, shiftId: event.target.value })
+                  }
                 >
                   <option value="">Bog&apos;lanmasin</option>
                   {openShifts.map((shift) => (
@@ -381,7 +440,9 @@ export function AdminExpensesPage() {
                 {...props}
                 maxLength={500}
                 value={form.description}
-                onChange={(event) => setForm({ ...form, description: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, description: event.target.value })
+                }
               />
             )}
           </FormField>

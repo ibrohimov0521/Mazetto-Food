@@ -85,7 +85,11 @@ export type AdminOrder = {
   createdAt: string;
   branch?: { id: string; code: string; name: string } | null;
   table?: { id: string; name: string } | null;
-  createdBy?: { id: string; firstName: string; lastName?: string | null } | null;
+  createdBy?: {
+    id: string;
+    firstName: string;
+    lastName?: string | null;
+  } | null;
   items?: OrderItem[];
   payments?: OrderPayment[];
   statusHistory?: OrderStatusHistory[];
@@ -140,7 +144,11 @@ export function AdminOrdersPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Buyurtmalarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Buyurtmalarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -175,8 +183,12 @@ export function AdminOrdersPage() {
       header: "Mijoz",
       render: (order) => (
         <div className="min-w-0">
-          <p className="truncate text-sm text-mz-text">{order.customerName ?? "—"}</p>
-          <p className="truncate text-xs text-mz-text-muted">{maskPhone(order.customerPhone)}</p>
+          <p className="truncate text-sm text-mz-text">
+            {order.customerName ?? "—"}
+          </p>
+          <p className="truncate text-xs text-mz-text-muted">
+            {maskPhone(order.customerPhone)}
+          </p>
         </div>
       ),
     },
@@ -209,7 +221,9 @@ export function AdminOrdersPage() {
       header: "Summa",
       align: "right",
       render: (order) => (
-        <span className="font-semibold text-mz-text">{formatMoney(order.total)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(order.total)}
+        </span>
       ),
     },
     {
@@ -217,7 +231,11 @@ export function AdminOrdersPage() {
       header: "",
       align: "right",
       render: (order) => (
-        <ButtonLink href={`/admin/orders/${order.id}`} size="sm" variant="ghost">
+        <ButtonLink
+          href={`/admin/orders/${order.id}`}
+          size="sm"
+          variant="ghost"
+        >
           Ochish
         </ButtonLink>
       ),
@@ -226,7 +244,9 @@ export function AdminOrdersPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <FilterBar>
@@ -234,7 +254,9 @@ export function AdminOrdersPage() {
             <Select
               aria-label="Holat bo'yicha filtr"
               value={status}
-              onChange={(event) => changeFilter(() => setStatus(event.target.value))}
+              onChange={(event) =>
+                changeFilter(() => setStatus(event.target.value))
+              }
             >
               <option value="">Barcha holatlar</option>
               {Object.entries(orderStatusLabels).map(([value, label]) => (
@@ -249,7 +271,9 @@ export function AdminOrdersPage() {
             <Select
               aria-label="Tur bo'yicha filtr"
               value={type}
-              onChange={(event) => changeFilter(() => setType(event.target.value))}
+              onChange={(event) =>
+                changeFilter(() => setType(event.target.value))
+              }
             >
               <option value="">Barcha turlar</option>
               {Object.entries(orderTypeLabels).map(([value, label]) => (
@@ -264,7 +288,9 @@ export function AdminOrdersPage() {
             <Select
               aria-label="To'lov holati bo'yicha filtr"
               value={paymentStatus}
-              onChange={(event) => changeFilter(() => setPaymentStatus(event.target.value))}
+              onChange={(event) =>
+                changeFilter(() => setPaymentStatus(event.target.value))
+              }
             >
               <option value="">Barcha to'lovlar</option>
               {Object.entries(paymentStatusLabels).map(([value, label]) => (
@@ -284,7 +310,9 @@ export function AdminOrdersPage() {
               <Select
                 aria-label="Filial bo'yicha filtr"
                 value={branchId}
-                onChange={(event) => changeFilter(() => setBranchId(event.target.value))}
+                onChange={(event) =>
+                  changeFilter(() => setBranchId(event.target.value))
+                }
               >
                 <option value="">Barcha filiallar</option>
                 {branches.map((branch) => (
@@ -318,7 +346,9 @@ export function AdminOrdersPage() {
           <div className="flex gap-2">
             <Button
               disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
+              onClick={() =>
+                setOffset((current) => Math.max(0, current - pageSize))
+              }
               size="sm"
               variant="ghost"
             >
@@ -355,7 +385,11 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Buyurtmani yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Buyurtmani yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -370,7 +404,12 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   }
 
   if (error || !order) {
-    return <ErrorState message={error || "Buyurtma topilmadi."} onRetry={() => void load()} />;
+    return (
+      <ErrorState
+        message={error || "Buyurtma topilmadi."}
+        onRetry={() => void load()}
+      />
+    );
   }
 
   const itemColumns: DataTableColumn<OrderItem>[] = [
@@ -390,7 +429,12 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         </div>
       ),
     },
-    { key: "qty", header: "Soni", align: "right", render: (item) => item.quantity },
+    {
+      key: "qty",
+      header: "Soni",
+      align: "right",
+      render: (item) => item.quantity,
+    },
     {
       key: "unit",
       header: "Narx",
@@ -403,7 +447,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
       header: "Jami",
       align: "right",
       render: (item) => (
-        <span className="font-semibold text-mz-text">{formatMoney(item.totalPrice)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(item.totalPrice)}
+        </span>
       ),
     },
   ];
@@ -423,8 +469,12 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             <Badge tone={paymentStatusTone(order.paymentStatus)}>
               {paymentStatusLabels[order.paymentStatus]}
             </Badge>
-            {order.table ? <Badge tone="neutral">{order.table.name}</Badge> : null}
-            {order.branch ? <Badge tone="neutral">{order.branch.name}</Badge> : null}
+            {order.table ? (
+              <Badge tone="neutral">{order.table.name}</Badge>
+            ) : null}
+            {order.branch ? (
+              <Badge tone="neutral">{order.branch.name}</Badge>
+            ) : null}
           </CardBody>
         </Card>
 
@@ -445,7 +495,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             <CardBody>
               <ol className="grid gap-2">
                 {order.statusHistory.map((entry) => (
-                  <li className="flex flex-wrap items-center gap-2 text-sm" key={entry.id}>
+                  <li
+                    className="flex flex-wrap items-center gap-2 text-sm"
+                    key={entry.id}
+                  >
                     <Badge tone={orderStatusTone(entry.toStatus)}>
                       {orderStatusLabels[entry.toStatus]}
                     </Badge>
@@ -453,7 +506,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                       {formatDateTime(entry.createdAt)}
                     </span>
                     {entry.reason ? (
-                      <span className="text-xs text-mz-text-faint">{entry.reason}</span>
+                      <span className="text-xs text-mz-text-faint">
+                        {entry.reason}
+                      </span>
                     ) : null}
                   </li>
                 ))}
@@ -467,16 +522,27 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         <Card>
           <CardHeader title="Hisob" />
           <CardBody className="grid gap-2 text-sm">
-            <SummaryRow label="Oraliq summa" value={formatMoney(order.subtotal)} />
+            <SummaryRow
+              label="Oraliq summa"
+              value={formatMoney(order.subtotal)}
+            />
             {Number(order.discountTotal) > 0 ? (
-              <SummaryRow label="Chegirma" value={`− ${formatMoney(order.discountTotal)}`} />
+              <SummaryRow
+                label="Chegirma"
+                value={`− ${formatMoney(order.discountTotal)}`}
+              />
             ) : null}
             {Number(order.deliveryFeeTotal) > 0 ? (
-              <SummaryRow label="Yetkazib berish" value={formatMoney(order.deliveryFeeTotal)} />
+              <SummaryRow
+                label="Yetkazib berish"
+                value={formatMoney(order.deliveryFeeTotal)}
+              />
             ) : null}
             <div className="mt-1 flex items-center justify-between border-t border-mz-border pt-2">
               <span className="font-semibold text-mz-text">Jami</span>
-              <span className="text-lg font-bold text-mz-text">{formatMoney(order.total)}</span>
+              <span className="text-lg font-bold text-mz-text">
+                {formatMoney(order.total)}
+              </span>
             </div>
           </CardBody>
         </Card>
@@ -490,7 +556,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             {order.deliveryAddress ? (
               <SummaryRow label="Manzil" value={order.deliveryAddress} />
             ) : null}
-            {order.notes ? <SummaryRow label="Izoh" value={order.notes} /> : null}
+            {order.notes ? (
+              <SummaryRow label="Izoh" value={order.notes} />
+            ) : null}
           </CardBody>
         </Card>
 

@@ -63,7 +63,9 @@ export function AdminDashboard() {
 
         setCatalog({
           products: products.length,
-          canonical: products.filter((item) => item.catalogVisibility === "CANONICAL").length,
+          canonical: products.filter(
+            (item) => item.catalogVisibility === "CANONICAL",
+          ).length,
           categories: categories.length,
           activeBranches: branches.filter((branch) => branch.isActive).length,
         });
@@ -74,7 +76,11 @@ export function AdminDashboard() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Ma'lumotlarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Ma'lumotlarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -97,16 +103,23 @@ export function AdminDashboard() {
       {summary ? (
         <StatGrid>
           <StatBox
+            icon="wallet"
             label="Bugungi tushum"
             tone="brand"
             value={formatMoney(summary.todayRevenue)}
           />
           <StatBox
+            icon="receipt"
             label="Bugungi buyurtmalar"
             value={`${summary.todayOrdersCount} ta`}
           />
-          <StatBox label="O'rtacha chek" value={formatMoney(summary.averageOrderValue)} />
           <StatBox
+            icon="chart"
+            label="O'rtacha chek"
+            value={formatMoney(summary.averageOrderValue)}
+          />
+          <StatBox
+            icon="clock"
             label="Ochiq smenalar"
             tone={summary.activeShifts > 0 ? "success" : "neutral"}
             value={`${summary.activeShifts} ta`}
@@ -121,7 +134,10 @@ export function AdminDashboard() {
             <CatalogCount label="Ommaviy menyu" value={catalog.canonical} />
             <CatalogCount label="Ichki mahsulotlar" value={catalog.products} />
             <CatalogCount label="Kategoriyalar" value={catalog.categories} />
-            <CatalogCount label="Faol filiallar" value={catalog.activeBranches} />
+            <CatalogCount
+              label="Faol filiallar"
+              value={catalog.activeBranches}
+            />
           </CardBody>
         </Card>
       ) : null}
@@ -134,7 +150,9 @@ export function AdminDashboard() {
 function CatalogCount({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-mz-text-muted">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-mz-text-muted">
+        {label}
+      </p>
       <p className="mt-1 text-2xl font-bold text-mz-text">{value}</p>
     </div>
   );
@@ -144,12 +162,42 @@ function QuickLinks() {
   const { user } = useAuth();
 
   const links = [
-    { href: "/admin/products", title: "Mahsulotlar", detail: "Narx, holat, set tarkibi", permission: "MENU_VIEW" },
-    { href: "/admin/categories", title: "Kategoriyalar", detail: "Saralash va katalog tuzilmasi", permission: "MENU_VIEW" },
-    { href: "/admin/staff", title: "Xodimlar", detail: "Rol, filial, parol, bloklash", permission: "STAFF_VIEW" },
-    { href: "/admin/reports", title: "Hisobotlar", detail: "Sana bo'yicha sotuvlar", permission: "REPORT_SALES_VIEW" },
-    { href: "/admin/branches", title: "Filiallar", detail: "Buyurtma holati va ish vaqti", permission: "BRANCH_VIEW" },
-    { href: "/admin/tables", title: "Stollar", detail: "Zal va stol boshqaruvi", permission: "TABLE_VIEW" },
+    {
+      href: "/admin/products",
+      title: "Mahsulotlar",
+      detail: "Narx, holat, set tarkibi",
+      permission: "MENU_VIEW",
+    },
+    {
+      href: "/admin/categories",
+      title: "Kategoriyalar",
+      detail: "Saralash va katalog tuzilmasi",
+      permission: "MENU_VIEW",
+    },
+    {
+      href: "/admin/staff",
+      title: "Xodimlar",
+      detail: "Rol, filial, parol, bloklash",
+      permission: "STAFF_VIEW",
+    },
+    {
+      href: "/admin/reports",
+      title: "Hisobotlar",
+      detail: "Sana bo'yicha sotuvlar",
+      permission: "REPORT_SALES_VIEW",
+    },
+    {
+      href: "/admin/branches",
+      title: "Filiallar",
+      detail: "Buyurtma holati va ish vaqti",
+      permission: "BRANCH_VIEW",
+    },
+    {
+      href: "/admin/tables",
+      title: "Stollar",
+      detail: "Zal va stol boshqaruvi",
+      permission: "TABLE_VIEW",
+    },
   ].filter((link) => hasPermission(user, link.permission));
 
   if (links.length === 0) {

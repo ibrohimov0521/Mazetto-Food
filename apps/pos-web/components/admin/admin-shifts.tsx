@@ -96,7 +96,11 @@ export function AdminShiftsPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Smenalarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Smenalarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -108,9 +112,14 @@ export function AdminShiftsPage() {
 
   const stats = useMemo(() => {
     const open = shifts.filter((shift) => shift.status === "OPEN").length;
-    const sales = shifts.reduce((sum, shift) => sum + Number(shift.salesTotal ?? 0), 0);
+    const sales = shifts.reduce(
+      (sum, shift) => sum + Number(shift.salesTotal ?? 0),
+      0,
+    );
     const mismatched = shifts.filter(
-      (shift) => shift.cashDifference != null && Math.abs(Number(shift.cashDifference)) > 0.01,
+      (shift) =>
+        shift.cashDifference != null &&
+        Math.abs(Number(shift.cashDifference)) > 0.01,
     ).length;
 
     return { open, sales, mismatched, total: shifts.length };
@@ -195,13 +204,30 @@ export function AdminShiftsPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Ko'rsatilgan smena" value={`${stats.total} ta`} />
-        <InfoBox label="Ochiq smena" tone="warning" value={`${stats.open} ta`} />
-        <InfoBox label="Savdo (sahifada)" tone="brand" value={formatMoney(stats.sales)} />
         <InfoBox
+          icon="clipboard"
+          label="Ko'rsatilgan smena"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="clock"
+          label="Ochiq smena"
+          tone="warning"
+          value={`${stats.open} ta`}
+        />
+        <InfoBox
+          icon="wallet"
+          label="Savdo (sahifada)"
+          tone="brand"
+          value={formatMoney(stats.sales)}
+        />
+        <InfoBox
+          icon="alert"
           label="Kassa farqi bor"
           tone={stats.mismatched > 0 ? "danger" : "success"}
           value={`${stats.mismatched} ta`}
@@ -263,7 +289,9 @@ export function AdminShiftsPage() {
           <div className="flex gap-2">
             <Button
               disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
+              onClick={() =>
+                setOffset((current) => Math.max(0, current - pageSize))
+              }
               size="sm"
               variant="ghost"
             >

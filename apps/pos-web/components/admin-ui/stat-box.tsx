@@ -1,10 +1,16 @@
 "use client";
 
+import { Icon, type IconName } from "./icon";
+
 /*
  * KPI kartochkalari — AdminLTE `_small-box.scss` / `_info-box.scss` anatomiyasidan.
  *
  * AdminLTE responsive qoidasi saqlangan: katta raqam `lg` da kichrayadi,
  * `xl` da yana kattalashadi — 4 ustunli qatorda raqam sig'ishi uchun.
+ *
+ * `icon` MAJBURIY. Ilgari u ixtiyoriy edi va berilmaganda yorliqning birinchi
+ * harfi 64px kvadratda ko'rsatilardi — 32 ta chaqiruvning hech biri ikonka
+ * bermagan, ya'ni butun panel bo'ylab harf kvadratlari turardi.
  */
 
 export type StatTone = "brand" | "neutral" | "success" | "danger" | "warning";
@@ -17,6 +23,15 @@ const statTones: Record<StatTone, string> = {
   warning: "bg-mz-warning-bg text-mz-warning",
 };
 
+/** Ikonka chipi — `brand` ohangda oltin, qolganida ohang rangida. */
+const iconTones: Record<StatTone, string> = {
+  brand: "bg-mz-shell-deep text-mz-primary",
+  neutral: "bg-mz-surface-sunken text-mz-accent",
+  success: "bg-mz-success-bg text-mz-success",
+  danger: "bg-mz-danger-bg text-mz-danger",
+  warning: "bg-mz-warning-bg text-mz-warning",
+};
+
 /**
  * Katta KPI bloki (AdminLTE `small-box`).
  */
@@ -24,17 +39,33 @@ export function StatBox({
   label,
   value,
   hint,
+  icon,
   tone = "neutral",
 }: {
   label: string;
   value: string;
   hint?: string;
+  icon?: IconName;
   tone?: StatTone;
 }) {
   return (
     <div className={`rounded-mz-card p-4 shadow-mz-card ${statTones[tone]}`}>
-      <p className="text-xs font-semibold uppercase tracking-wide opacity-80">{label}</p>
-      <p className="mt-2 text-3xl font-bold leading-none lg:text-2xl xl:text-3xl">{value}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+          {label}
+        </p>
+        {icon ? (
+          <span
+            aria-hidden="true"
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded-mz-control ${iconTones[tone]}`}
+          >
+            <Icon className="h-[18px] w-[18px]" name={icon} />
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-2 text-3xl font-bold leading-none lg:text-2xl xl:text-3xl">
+        {value}
+      </p>
       {hint ? <p className="mt-2 text-xs opacity-75">{hint}</p> : null}
     </div>
   );
@@ -52,7 +83,7 @@ export function InfoBox({
 }: {
   label: string;
   value: string;
-  icon?: React.ReactNode;
+  icon: IconName;
   tone?: StatTone;
   description?: string;
 }) {
@@ -60,15 +91,17 @@ export function InfoBox({
     <div className="flex min-h-20 items-center gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-2 shadow-mz-card">
       <span
         aria-hidden="true"
-        className={`grid h-16 w-16 shrink-0 place-items-center rounded-mz-card text-2xl font-bold ${statTones[tone]}`}
+        className={`grid h-16 w-16 shrink-0 place-items-center rounded-mz-card ${statTones[tone]}`}
       >
-        {icon ?? label.slice(0, 1)}
+        <Icon className="h-6 w-6" name={icon} />
       </span>
       <div className="min-w-0 flex-1 px-1">
         <p className="truncate text-xs font-semibold uppercase tracking-wide text-mz-text-muted">
           {label}
         </p>
-        <p className="mt-0.5 truncate text-xl font-bold text-mz-text">{value}</p>
+        <p className="mt-0.5 truncate text-xl font-bold text-mz-text">
+          {value}
+        </p>
         {description ? (
           <p className="truncate text-xs text-mz-text-faint">{description}</p>
         ) : null}
@@ -82,5 +115,9 @@ export function InfoBox({
  * DESIGN_RULES: kichik ekranda gorizontal overflow bo'lmasligi kerak.
  */
 export function StatGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>;
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {children}
+    </div>
+  );
 }

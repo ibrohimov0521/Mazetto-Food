@@ -62,14 +62,24 @@ type SalesReport = {
     orderCount: number;
   }[];
   cashierBreakdown: {
-    cashier: { id: string; employeeCode: string; firstName: string; lastName?: string | null };
+    cashier: {
+      id: string;
+      employeeCode: string;
+      firstName: string;
+      lastName?: string | null;
+    };
     amount: string;
     orderCount: number;
   }[];
   shiftBreakdown: {
     id: string;
     branch: { id: string; code: string; name: string };
-    cashier: { id: string; employeeCode: string; firstName: string; lastName?: string | null };
+    cashier: {
+      id: string;
+      employeeCode: string;
+      firstName: string;
+      lastName?: string | null;
+    };
     shiftNumber: number;
     status: "OPEN" | "CLOSED";
     openedAt: string;
@@ -108,7 +118,10 @@ type SalesReport = {
 };
 
 const formatter = new Intl.NumberFormat("uz-UZ");
-const yearOptions = Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - index);
+const yearOptions = Array.from(
+  { length: 5 },
+  (_, index) => new Date().getFullYear() - index,
+);
 const sourceLabels = {
   WEB: "Web",
   TELEGRAM: "Telegram",
@@ -128,7 +141,10 @@ export function AdminReportsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void Promise.all([apiFetch<Branch[]>("/branches"), loadSalesReport({ preset: "today" })])
+    void Promise.all([
+      apiFetch<Branch[]>("/branches"),
+      loadSalesReport({ preset: "today" }),
+    ])
       .then(([nextBranches, nextReport]) => {
         setBranches(nextBranches);
         setReport(nextReport);
@@ -138,10 +154,15 @@ export function AdminReportsPage() {
   }, []);
 
   const branchName = useMemo(
-    () => branches.find((branch) => branch.id === branchId)?.name ?? "Barcha ruxsat berilgan filiallar",
+    () =>
+      branches.find((branch) => branch.id === branchId)?.name ??
+      "Barcha ruxsat berilgan filiallar",
     [branchId, branches],
   );
-  const maxChartAmount = Math.max(...(report?.timeSeries.data.map((row) => Number(row.amount)) ?? [0]), 1);
+  const maxChartAmount = Math.max(
+    ...(report?.timeSeries.data.map((row) => Number(row.amount)) ?? [0]),
+    1,
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -156,7 +177,11 @@ export function AdminReportsPage() {
     try {
       setReport(await loadSalesReport(buildQuery(nextPreset)));
     } catch (reportError) {
-      setError(reportError instanceof Error ? reportError.message : "Hisobot yuklanmadi.");
+      setError(
+        reportError instanceof Error
+          ? reportError.message
+          : "Hisobot yuklanmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -169,7 +194,11 @@ export function AdminReportsPage() {
     try {
       setReport(await loadSalesReport(buildQuery(preset)));
     } catch (reportError) {
-      setError(reportError instanceof Error ? reportError.message : "Hisobot yuklanmadi.");
+      setError(
+        reportError instanceof Error
+          ? reportError.message
+          : "Hisobot yuklanmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -188,10 +217,19 @@ export function AdminReportsPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void reloadReport()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void reloadReport()} />
+      ) : null}
 
-      <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-4 shadow-mz-card xl:grid-cols-[150px_150px_130px_1fr_150px_auto]" onSubmit={submit}>
-        <select className="report-select" value={preset} onChange={(event) => setPreset(event.target.value)}>
+      <form
+        className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-4 shadow-mz-card xl:grid-cols-[150px_150px_130px_1fr_150px_auto]"
+        onSubmit={submit}
+      >
+        <select
+          className="report-select"
+          value={preset}
+          onChange={(event) => setPreset(event.target.value)}
+        >
           <option value="today">Bugun</option>
           <option value="yesterday">Kecha</option>
           <option value="last7days">7 kun</option>
@@ -199,9 +237,23 @@ export function AdminReportsPage() {
           <option value="year">Yil</option>
           <option value="custom">Maxsus</option>
         </select>
-        <TextInput disabled={preset !== "custom"} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        <TextInput disabled={preset !== "custom"} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-        <select className="report-select" value={branchId} onChange={(event) => setBranchId(event.target.value)}>
+        <TextInput
+          disabled={preset !== "custom"}
+          type="date"
+          value={from}
+          onChange={(event) => setFrom(event.target.value)}
+        />
+        <TextInput
+          disabled={preset !== "custom"}
+          type="date"
+          value={to}
+          onChange={(event) => setTo(event.target.value)}
+        />
+        <select
+          className="report-select"
+          value={branchId}
+          onChange={(event) => setBranchId(event.target.value)}
+        >
           <option value="">Barcha ruxsat berilgan filiallar</option>
           {branches.map((branch) => (
             <option key={branch.id} value={branch.id}>
@@ -209,13 +261,22 @@ export function AdminReportsPage() {
             </option>
           ))}
         </select>
-        <select className="report-select" value={source} onChange={(event) => setSource(event.target.value)}>
+        <select
+          className="report-select"
+          value={source}
+          onChange={(event) => setSource(event.target.value)}
+        >
           <option value="">Barcha kanallar</option>
           <option value="WEB">Web</option>
           <option value="TELEGRAM">Telegram</option>
           <option value="POS">Kassa</option>
         </select>
-        <select className="report-select" disabled={preset !== "year"} value={year} onChange={(event) => setYear(event.target.value)}>
+        <select
+          className="report-select"
+          disabled={preset !== "year"}
+          value={year}
+          onChange={(event) => setYear(event.target.value)}
+        >
           {yearOptions.map((yearOption) => (
             <option key={yearOption} value={yearOption}>
               {yearOption}
@@ -226,11 +287,31 @@ export function AdminReportsPage() {
       </form>
 
       <div className="flex flex-wrap gap-2">
-        <QuickRange active={preset === "today"} label="Bugun" onClick={() => void choosePreset("today")} />
-        <QuickRange active={preset === "yesterday"} label="Kecha" onClick={() => void choosePreset("yesterday")} />
-        <QuickRange active={preset === "last7days"} label="7 kun" onClick={() => void choosePreset("last7days")} />
-        <QuickRange active={preset === "thisMonth"} label="Bu oy" onClick={() => void choosePreset("thisMonth")} />
-        <QuickRange active={preset === "year"} label="Yil" onClick={() => void choosePreset("year")} />
+        <QuickRange
+          active={preset === "today"}
+          label="Bugun"
+          onClick={() => void choosePreset("today")}
+        />
+        <QuickRange
+          active={preset === "yesterday"}
+          label="Kecha"
+          onClick={() => void choosePreset("yesterday")}
+        />
+        <QuickRange
+          active={preset === "last7days"}
+          label="7 kun"
+          onClick={() => void choosePreset("last7days")}
+        />
+        <QuickRange
+          active={preset === "thisMonth"}
+          label="Bu oy"
+          onClick={() => void choosePreset("thisMonth")}
+        />
+        <QuickRange
+          active={preset === "year"}
+          label="Yil"
+          onClick={() => void choosePreset("year")}
+        />
       </div>
 
       {isLoading && !report ? <SkeletonRows rows={8} /> : null}
@@ -239,10 +320,20 @@ export function AdminReportsPage() {
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Metric label="Jami savdo" value={formatMoney(report.totalSales)} />
-            <Metric label="Buyurtmalar soni" value={`${report.orderCount} ta`} />
-            <Metric label="O'rtacha chek" value={formatMoney(report.averageOrderValue)} />
+            <Metric
+              label="Buyurtmalar soni"
+              value={`${report.orderCount} ta`}
+            />
+            <Metric
+              label="O'rtacha chek"
+              value={formatMoney(report.averageOrderValue)}
+            />
             <Metric label="Naqd sotuv" value={formatMoney(report.cashSales)} />
-            <Metric label="Bekor qilingan" value={`${report.cancelledOrders} ta`} muted />
+            <Metric
+              label="Bekor qilingan"
+              value={`${report.cancelledOrders} ta`}
+              muted
+            />
           </section>
 
           <section className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">
@@ -282,7 +373,10 @@ export function AdminReportsPage() {
           </section>
 
           <section className="grid gap-5 xl:grid-cols-2">
-            <Panel title="Filiallar" subtitle="Branch scope qoidasi bilan cheklangan">
+            <Panel
+              title="Filiallar"
+              subtitle="Branch scope qoidasi bilan cheklangan"
+            >
               <DataTable
                 empty="Bu davrda filial kesimida sotuv yo'q."
                 headers={["Filial", "Buyurtma", "Tushum"]}
@@ -307,10 +401,22 @@ export function AdminReportsPage() {
             </Panel>
           </section>
 
-          <Panel title="Smenalar" subtitle="Yopilgan smenada snapshot, ochiq smenada live payment asosida">
+          <Panel
+            title="Smenalar"
+            subtitle="Yopilgan smenada snapshot, ochiq smenada live payment asosida"
+          >
             <DataTable
               empty="Bu davrda smena ma'lumoti yo'q."
-              headers={["Smena", "Kassir", "Holat", "Buyurtma", "Tushum", "Kutilgan", "Topshirildi", "Farq"]}
+              headers={[
+                "Smena",
+                "Kassir",
+                "Holat",
+                "Buyurtma",
+                "Tushum",
+                "Kutilgan",
+                "Topshirildi",
+                "Farq",
+              ]}
               rows={report.shiftBreakdown.map((shift) => [
                 `${shift.branch.name} #${shift.shiftNumber}`,
                 employeeName(shift.cashier),
@@ -325,7 +431,10 @@ export function AdminReportsPage() {
           </Panel>
 
           <section className="grid gap-5 xl:grid-cols-2">
-            <Panel title="Top mahsulotlar" subtitle="OrderItem snapshot nomlari asosida">
+            <Panel
+              title="Top mahsulotlar"
+              subtitle="OrderItem snapshot nomlari asosida"
+            >
               <DataTable
                 empty="Bu davrda mahsulot sotuvlari yo'q."
                 headers={["Mahsulot", "Soni", "Tushum"]}
@@ -337,7 +446,10 @@ export function AdminReportsPage() {
               />
             </Panel>
 
-            <Panel title="Kategoriya sotuvlari" subtitle="Joriy product-category bog'lanishi asosida">
+            <Panel
+              title="Kategoriya sotuvlari"
+              subtitle="Joriy product-category bog'lanishi asosida"
+            >
               <DataTable
                 empty="Bu davrda kategoriya sotuvlari yo'q."
                 headers={["Kategoriya", "Soni", "Tushum"]}
@@ -379,7 +491,11 @@ export function AdminReportsPage() {
               />
               <Readiness
                 title="N/A"
-                items={[report.refundHandling.note, report.limitations.onlinePayments, report.limitations.categorySales]}
+                items={[
+                  report.refundHandling.note,
+                  report.limitations.onlinePayments,
+                  report.limitations.categorySales,
+                ]}
                 muted
               />
             </aside>
@@ -441,26 +557,57 @@ function formatQuantity(value: string | number): string {
   return `${formatter.format(Number.isInteger(numeric) ? numeric : Number(numeric.toFixed(3)))} ta`;
 }
 
-function employeeName(employee: { employeeCode: string; firstName: string; lastName?: string | null }) {
-  return [employee.firstName, employee.lastName].filter(Boolean).join(" ") || employee.employeeCode;
+function employeeName(employee: {
+  employeeCode: string;
+  firstName: string;
+  lastName?: string | null;
+}) {
+  return (
+    [employee.firstName, employee.lastName].filter(Boolean).join(" ") ||
+    employee.employeeCode
+  );
 }
 
-function Metric({ label, muted, value }: { label: string; muted?: boolean; value: string }) {
+function Metric({
+  label,
+  muted,
+  value,
+}: {
+  label: string;
+  muted?: boolean;
+  value: string;
+}) {
   return (
     <article className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
       <p className="text-sm font-bold text-mz-text-muted">{label}</p>
-      <p className={`mt-3 text-2xl font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}>{value}</p>
+      <p
+        className={`mt-3 text-2xl font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}
+      >
+        {value}
+      </p>
     </article>
   );
 }
 
-function Panel({ children, subtitle, title }: { children: React.ReactNode; subtitle?: string; title: string }) {
+function Panel({
+  children,
+  subtitle,
+  title,
+}: {
+  children: React.ReactNode;
+  subtitle?: string;
+  title: string;
+}) {
   return (
     <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-black text-mz-text">{title}</p>
-          {subtitle ? <p className="mt-1 text-sm font-semibold text-mz-text-muted">{subtitle}</p> : null}
+          {subtitle ? (
+            <p className="mt-1 text-sm font-semibold text-mz-text-muted">
+              {subtitle}
+            </p>
+          ) : null}
         </div>
       </div>
       {children}
@@ -468,7 +615,15 @@ function Panel({ children, subtitle, title }: { children: React.ReactNode; subti
   );
 }
 
-function QuickRange({ active, label, onClick }: { active?: boolean; label: string; onClick: () => void }) {
+function QuickRange({
+  active,
+  label,
+  onClick,
+}: {
+  active?: boolean;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       className={`rounded-full border px-4 py-2 text-sm font-black shadow-sm transition ${
@@ -484,7 +639,15 @@ function QuickRange({ active, label, onClick }: { active?: boolean; label: strin
   );
 }
 
-function BreakdownRow({ detail, label, value }: { detail: string; label: string; value: string }) {
+function BreakdownRow({
+  detail,
+  label,
+  value,
+}: {
+  detail: string;
+  label: string;
+  value: string;
+}) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-mz-control bg-mz-surface-sunken px-4 py-3 text-sm">
       <div>
@@ -496,7 +659,17 @@ function BreakdownRow({ detail, label, value }: { detail: string; label: string;
   );
 }
 
-function ChartRow({ detail, label, value, width }: { detail: string; label: string; value: string; width: string }) {
+function ChartRow({
+  detail,
+  label,
+  value,
+  width,
+}: {
+  detail: string;
+  label: string;
+  value: string;
+  width: string;
+}) {
   return (
     <div className="grid gap-1 rounded-mz-control bg-mz-surface-sunken p-3">
       <div className="flex items-center justify-between gap-4 text-sm">
@@ -518,7 +691,15 @@ function ChartRow({ detail, label, value, width }: { detail: string; label: stri
  * transformatsiya qilinishi kerak — shuning uchun `md` dan pastda
  * har bir qator label/value kartochkasiga aylanadi.
  */
-function DataTable({ empty, headers, rows }: { empty: string; headers: string[]; rows: string[][] }) {
+function DataTable({
+  empty,
+  headers,
+  rows,
+}: {
+  empty: string;
+  headers: string[];
+  rows: string[][];
+}) {
   if (!rows.length) {
     return <EmptyState title={empty} />;
   }
@@ -530,7 +711,10 @@ function DataTable({ empty, headers, rows }: { empty: string; headers: string[];
           <thead className="text-xs uppercase tracking-wide text-mz-text-muted">
             <tr>
               {headers.map((header) => (
-                <th className="whitespace-nowrap border-b border-mz-border px-3 py-2 font-black" key={header}>
+                <th
+                  className="whitespace-nowrap border-b border-mz-border px-3 py-2 font-black"
+                  key={header}
+                >
                   {header}
                 </th>
               ))}
@@ -538,9 +722,15 @@ function DataTable({ empty, headers, rows }: { empty: string; headers: string[];
           </thead>
           <tbody>
             {rows.map((row, rowIndex) => (
-              <tr className="border-b border-mz-border last:border-0" key={`${row[0]}-${rowIndex}`}>
+              <tr
+                className="border-b border-mz-border last:border-0"
+                key={`${row[0]}-${rowIndex}`}
+              >
                 {row.map((cell, cellIndex) => (
-                  <td className={`px-3 py-3 ${cellIndex === 0 ? "font-black text-mz-text" : "font-semibold text-mz-text-muted"}`} key={`${cell}-${cellIndex}`}>
+                  <td
+                    className={`px-3 py-3 ${cellIndex === 0 ? "font-black text-mz-text" : "font-semibold text-mz-text-muted"}`}
+                    key={`${cell}-${cellIndex}`}
+                  >
                     {cell}
                   </td>
                 ))}
@@ -559,11 +749,16 @@ function DataTable({ empty, headers, rows }: { empty: string; headers: string[];
             <p className="mb-1.5 text-sm font-bold text-mz-text">{row[0]}</p>
             <dl className="grid gap-1">
               {row.slice(1).map((cell, cellIndex) => (
-                <div className="flex items-start justify-between gap-3" key={`${cell}-${cellIndex}`}>
+                <div
+                  className="flex items-start justify-between gap-3"
+                  key={`${cell}-${cellIndex}`}
+                >
                   <dt className="text-xs font-medium text-mz-text-muted">
                     {headers[cellIndex + 1] ?? ""}
                   </dt>
-                  <dd className="text-right text-xs font-semibold text-mz-text">{cell}</dd>
+                  <dd className="text-right text-xs font-semibold text-mz-text">
+                    {cell}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -574,10 +769,22 @@ function DataTable({ empty, headers, rows }: { empty: string; headers: string[];
   );
 }
 
-function Readiness({ items, muted, title }: { items: string[]; muted?: boolean; title: string }) {
+function Readiness({
+  items,
+  muted,
+  title,
+}: {
+  items: string[];
+  muted?: boolean;
+  title: string;
+}) {
   return (
     <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-      <p className={`text-sm font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}>{title}</p>
+      <p
+        className={`text-sm font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}
+      >
+        {title}
+      </p>
       <ul className="mt-3 grid gap-2 text-sm font-semibold text-mz-text-muted">
         {items.map((item) => (
           <li key={item}>{item}</li>

@@ -146,12 +146,20 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
       }
 
       if (productId) {
-        const nextProduct = await apiFetch<Product>(`/menu/products/${productId}`);
+        const nextProduct = await apiFetch<Product>(
+          `/menu/products/${productId}`,
+        );
         setProduct(nextProduct);
         setVariants(
           nextProduct.variants.length > 0
             ? nextProduct.variants
-            : [{ name: "Asosiy", sellingPrice: nextProduct.sellingPrice, isDefault: true }],
+            : [
+                {
+                  name: "Asosiy",
+                  sellingPrice: nextProduct.sellingPrice,
+                  isDefault: true,
+                },
+              ],
         );
         setSelectedModifierIds(
           (nextProduct.modifiers ?? []).map((entry) => entry.modifier.id),
@@ -168,14 +176,21 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
         });
       } else {
         setVariants([{ name: "Asosiy", sellingPrice: "0", isDefault: true }]);
-        setForm((current) => ({ ...current, categoryId: nextCategories[0]?.id ?? "" }));
+        setForm((current) => ({
+          ...current,
+          categoryId: nextCategories[0]?.id ?? "",
+        }));
       }
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Forma ma'lumotlarini yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Forma ma'lumotlarini yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -196,7 +211,10 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   /** Standart variant faqat bitta bo'lishi mumkin. */
   function makeDefault(index: number): void {
     setVariants((current) =>
-      current.map((variant, position) => ({ ...variant, isDefault: position === index })),
+      current.map((variant, position) => ({
+        ...variant,
+        isDefault: position === index,
+      })),
     );
   }
 
@@ -244,7 +262,10 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
     }
 
     for (const variant of cleanVariants) {
-      if (!Number.isFinite(Number(variant.sellingPrice)) || Number(variant.sellingPrice) < 0) {
+      if (
+        !Number.isFinite(Number(variant.sellingPrice)) ||
+        Number(variant.sellingPrice) < 0
+      ) {
         showToast(`"${variant.name}" variantining narxi noto'g'ri.`, "danger");
         return;
       }
@@ -296,7 +317,10 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "Saqlab bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Saqlab bo'lmadi.",
+        "danger",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -322,7 +346,10 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "O'zgartirib bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "O'zgartirib bo'lmadi.",
+        "danger",
+      );
     }
   }
 
@@ -347,7 +374,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                     {...props}
                     required
                     value={form.name}
-                    onChange={(event) => setForm({ ...form, name: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, name: event.target.value })
+                    }
                   />
                 )}
               </FormField>
@@ -357,7 +386,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                   <Textarea
                     {...props}
                     value={form.description}
-                    onChange={(event) => setForm({ ...form, description: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, description: event.target.value })
+                    }
                   />
                 )}
               </FormField>
@@ -369,7 +400,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                       {...props}
                       required
                       value={form.categoryId}
-                      onChange={(event) => setForm({ ...form, categoryId: event.target.value })}
+                      onChange={(event) =>
+                        setForm({ ...form, categoryId: event.target.value })
+                      }
                     >
                       {categories.map((category) => (
                         <option key={category.id} value={category.id}>
@@ -387,7 +420,10 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                       type="number"
                       value={form.preparationTime}
                       onChange={(event) =>
-                        setForm({ ...form, preparationTime: event.target.value })
+                        setForm({
+                          ...form,
+                          preparationTime: event.target.value,
+                        })
                       }
                     />
                   )}
@@ -399,17 +435,24 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                       min={0}
                       type="number"
                       value={form.sortOrder}
-                      onChange={(event) => setForm({ ...form, sortOrder: event.target.value })}
+                      onChange={(event) =>
+                        setForm({ ...form, sortOrder: event.target.value })
+                      }
                     />
                   )}
                 </FormField>
-                <FormField hint="Media serveridagi nisbiy yo'l" label="Rasm yo'li">
+                <FormField
+                  hint="Media serveridagi nisbiy yo'l"
+                  label="Rasm yo'li"
+                >
                   {(props) => (
                     <TextInput
                       {...props}
                       placeholder="/products/lavash-big.webp"
                       value={form.image}
-                      onChange={(event) => setForm({ ...form, image: event.target.value })}
+                      onChange={(event) =>
+                        setForm({ ...form, image: event.target.value })
+                      }
                     />
                   )}
                 </FormField>
@@ -419,12 +462,16 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                 <CheckBox
                   checked={form.isActive}
                   label="Faol"
-                  onChange={(checked) => setForm({ ...form, isActive: checked })}
+                  onChange={(checked) =>
+                    setForm({ ...form, isActive: checked })
+                  }
                 />
                 <CheckBox
                   checked={form.isRecommended}
                   label="Tavsiya qilingan"
-                  onChange={(checked) => setForm({ ...form, isRecommended: checked })}
+                  onChange={(checked) =>
+                    setForm({ ...form, isRecommended: checked })
+                  }
                 />
               </div>
             </CardBody>
@@ -452,7 +499,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                         {...props}
                         placeholder="Katta / Kichik"
                         value={variant.name}
-                        onChange={(event) => updateVariant(index, { name: event.target.value })}
+                        onChange={(event) =>
+                          updateVariant(index, { name: event.target.value })
+                        }
                       />
                     )}
                   </FormField>
@@ -464,7 +513,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                         type="number"
                         value={variant.sellingPrice}
                         onChange={(event) =>
-                          updateVariant(index, { sellingPrice: event.target.value })
+                          updateVariant(index, {
+                            sellingPrice: event.target.value,
+                          })
                         }
                       />
                     )}
@@ -477,7 +528,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                         type="number"
                         value={variant.costPrice ?? ""}
                         onChange={(event) =>
-                          updateVariant(index, { costPrice: event.target.value })
+                          updateVariant(index, {
+                            costPrice: event.target.value,
+                          })
                         }
                       />
                     )}
@@ -507,7 +560,11 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
 
           <Card>
             <CardHeader
-              actions={<ButtonLink href="/admin/modifiers" size="sm" variant="ghost">Katalogni ochish</ButtonLink>}
+              actions={
+                <ButtonLink href="/admin/modifiers" size="sm" variant="ghost">
+                  Katalogni ochish
+                </ButtonLink>
+              }
               description={`${selectedModifierIds.length} ta tanlangan`}
               title="Qo'shimchalar (modifier)"
             />
@@ -519,7 +576,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {modifierCatalog.map((modifier) => {
-                    const isSelected = selectedModifierIds.includes(modifier.id);
+                    const isSelected = selectedModifierIds.includes(
+                      modifier.id,
+                    );
 
                     return (
                       <button
@@ -534,7 +593,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                         type="button"
                       >
                         {modifier.name}
-                        {Number(modifier.price) > 0 ? ` · ${formatMoney(modifier.price)}` : ""}
+                        {Number(modifier.price) > 0
+                          ? ` · ${formatMoney(modifier.price)}`
+                          : ""}
                         {modifier.isActive ? "" : " (nofaol)"}
                       </button>
                     );
@@ -568,8 +629,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                 {product?.isCombo ? <Badge tone="info">SET</Badge> : null}
               </div>
               <p className="text-xs text-mz-text-muted">
-                Yangi mahsulot avtomatik ommaviy katalogga kirmaydi. Katalog siyosati
-                alohida tasdiqlanadi.
+                Yangi mahsulot avtomatik ommaviy katalogga kirmaydi. Katalog
+                siyosati alohida tasdiqlanadi.
               </p>
             </CardBody>
           </Card>
@@ -590,7 +651,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                   return (
                     <div className="grid gap-1.5" key={branch.id}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm text-mz-text">{branch.name}</span>
+                        <span className="truncate text-sm text-mz-text">
+                          {branch.name}
+                        </span>
                         <Badge tone={availabilityTone(current)}>
                           {availabilityLabels[current]}
                         </Badge>
@@ -605,11 +668,13 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                           )
                         }
                       >
-                        {Object.entries(availabilityLabels).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
+                        {Object.entries(availabilityLabels).map(
+                          ([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ),
+                        )}
                       </Select>
                     </div>
                   );
@@ -620,7 +685,10 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
 
           {product?.bundleItems && product.bundleItems.length > 0 ? (
             <Card>
-              <CardHeader description="Faqat ko'rish — seed orqali boshqariladi" title="Set tarkibi" />
+              <CardHeader
+                description="Faqat ko'rish — seed orqali boshqariladi"
+                title="Set tarkibi"
+              />
               <CardBody className="grid gap-1.5">
                 {product.bundleItems.map((item) => (
                   <div
@@ -641,8 +709,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
             <CardHeader title="Rasm boshqaruvi" />
             <CardBody>
               <p className="text-xs text-mz-text-muted">
-                Media yuklash endpoint&apos;i hali yo&apos;q. Hozircha faqat mavjud rasm
-                yo&apos;li tahrirlanadi.
+                Media yuklash endpoint&apos;i hali yo&apos;q. Hozircha faqat
+                mavjud rasm yo&apos;li tahrirlanadi.
               </p>
             </CardBody>
           </Card>

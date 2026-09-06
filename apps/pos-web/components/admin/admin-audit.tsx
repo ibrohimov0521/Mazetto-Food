@@ -73,7 +73,10 @@ function actorName(user: AuditLog["user"]): string {
 
 export function AdminAuditPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [facets, setFacets] = useState<AuditFacets>({ actions: [], entities: [] });
+  const [facets, setFacets] = useState<AuditFacets>({
+    actions: [],
+    entities: [],
+  });
   const [action, setAction] = useState("");
   const [entity, setEntity] = useState("");
   const [offset, setOffset] = useState(0);
@@ -108,7 +111,11 @@ export function AdminAuditPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Audit jurnalini yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Audit jurnalini yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +167,9 @@ export function AdminAuditPage() {
       render: (log) =>
         log.metadata ? (
           <Button
-            onClick={() => setExpandedId((current) => (current === log.id ? null : log.id))}
+            onClick={() =>
+              setExpandedId((current) => (current === log.id ? null : log.id))
+            }
             size="sm"
             variant="ghost"
           >
@@ -174,14 +183,16 @@ export function AdminAuditPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <CardBody>
           <p className="text-xs text-mz-text-muted">
-            Jurnal butun tizim bo&apos;yicha — filial bo&apos;yicha ajratilmaydi.
-            Yozuvlar faqat qo&apos;shiladi; bu ekrandan o&apos;chirib yoki
-            o&apos;zgartirib bo&apos;lmaydi.
+            Jurnal butun tizim bo&apos;yicha — filial bo&apos;yicha
+            ajratilmaydi. Yozuvlar faqat qo&apos;shiladi; bu ekrandan
+            o&apos;chirib yoki o&apos;zgartirib bo&apos;lmaydi.
           </p>
         </CardBody>
       </Card>
@@ -252,7 +263,9 @@ export function AdminAuditPage() {
           <div className="flex gap-2">
             <Button
               disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
+              onClick={() =>
+                setOffset((current) => Math.max(0, current - pageSize))
+              }
               size="sm"
               variant="ghost"
             >

@@ -39,7 +39,11 @@ type Payment = {
   paidAt?: string | null;
   createdAt: string;
   method?: { id: string; code: string; name: string } | null;
-  acceptedBy?: { id: string; firstName: string; lastName?: string | null } | null;
+  acceptedBy?: {
+    id: string;
+    firstName: string;
+    lastName?: string | null;
+  } | null;
   order?: {
     id: string;
     orderNumber: string;
@@ -95,7 +99,11 @@ export function AdminPaymentsPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "To'lovlarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "To'lovlarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -109,12 +117,22 @@ export function AdminPaymentsPage() {
     const successful = payments.filter(
       (payment) => payment.status === "PAID" || payment.status === "SUCCESS",
     );
-    const amount = successful.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
+    const amount = successful.reduce(
+      (sum, payment) => sum + Number(payment.amount ?? 0),
+      0,
+    );
     const refunded = payments.filter(
-      (payment) => payment.status === "REFUNDED" || payment.status === "PARTIALLY_REFUNDED",
+      (payment) =>
+        payment.status === "REFUNDED" ||
+        payment.status === "PARTIALLY_REFUNDED",
     ).length;
 
-    return { successful: successful.length, amount, refunded, total: payments.length };
+    return {
+      successful: successful.length,
+      amount,
+      refunded,
+      total: payments.length,
+    };
   }, [payments]);
 
   const columns: DataTableColumn<Payment>[] = [
@@ -129,7 +147,9 @@ export function AdminPaymentsPage() {
           </p>
           <p className="truncate text-xs text-mz-text-muted">
             {formatDateTime(payment.paidAt ?? payment.createdAt)}
-            {payment.order ? ` · ${orderSourceLabels[payment.order.source]}` : ""}
+            {payment.order
+              ? ` · ${orderSourceLabels[payment.order.source]}`
+              : ""}
           </p>
         </div>
       ),
@@ -170,7 +190,9 @@ export function AdminPaymentsPage() {
       header: "Summa",
       align: "right",
       render: (payment) => (
-        <span className="font-semibold text-mz-text">{formatMoney(payment.amount)}</span>
+        <span className="font-semibold text-mz-text">
+          {formatMoney(payment.amount)}
+        </span>
       ),
     },
     {
@@ -179,7 +201,11 @@ export function AdminPaymentsPage() {
       align: "right",
       render: (payment) =>
         payment.order ? (
-          <ButtonLink href={`/admin/orders/${payment.order.id}`} size="sm" variant="ghost">
+          <ButtonLink
+            href={`/admin/orders/${payment.order.id}`}
+            size="sm"
+            variant="ghost"
+          >
             Buyurtma
           </ButtonLink>
         ) : null,
@@ -188,13 +214,30 @@ export function AdminPaymentsPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <StatGrid>
-        <InfoBox label="Ko'rsatilgan to'lov" value={`${stats.total} ta`} />
-        <InfoBox label="Muvaffaqiyatli" tone="success" value={`${stats.successful} ta`} />
-        <InfoBox label="Summa (sahifada)" tone="brand" value={formatMoney(stats.amount)} />
         <InfoBox
+          icon="wallet"
+          label="Ko'rsatilgan to'lov"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="check"
+          label="Muvaffaqiyatli"
+          tone="success"
+          value={`${stats.successful} ta`}
+        />
+        <InfoBox
+          icon="banknote"
+          label="Summa (sahifada)"
+          tone="brand"
+          value={formatMoney(stats.amount)}
+        />
+        <InfoBox
+          icon="arrowDown"
           label="Qaytarilgan"
           tone={stats.refunded > 0 ? "warning" : "neutral"}
           value={`${stats.refunded} ta`}
@@ -259,7 +302,9 @@ export function AdminPaymentsPage() {
           <div className="flex gap-2">
             <Button
               disabled={offset === 0 || isLoading}
-              onClick={() => setOffset((current) => Math.max(0, current - pageSize))}
+              onClick={() =>
+                setOffset((current) => Math.max(0, current - pageSize))
+              }
               size="sm"
               variant="ghost"
             >

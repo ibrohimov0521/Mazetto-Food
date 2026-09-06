@@ -99,9 +99,11 @@ export function AdminHomepagePage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [pendingDelete, setPendingDelete] = useState<
-    { kind: EntityKind; id: string; title: string } | null
-  >(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    kind: EntityKind;
+    id: string;
+    title: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -119,7 +121,11 @@ export function AdminHomepagePage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Bosh sahifa kontentini yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Bosh sahifa kontentini yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -169,7 +175,8 @@ export function AdminHomepagePage() {
      */
     const payload: Record<string, unknown> = {
       title: form.title.trim(),
-      [editorKind === "hero" ? "subtitle" : "description"]: form.body.trim() || undefined,
+      [editorKind === "hero" ? "subtitle" : "description"]:
+        form.body.trim() || undefined,
       imageUrl: form.imageUrl.trim() || undefined,
       ctaLabel: form.ctaLabel.trim() || undefined,
       badge: form.badge.trim() || undefined,
@@ -183,13 +190,19 @@ export function AdminHomepagePage() {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
-        showToast("Saqlandi. O'zgarish mijoz saytida darhol ko'rinadi.", "success");
+        showToast(
+          "Saqlandi. O'zgarish mijoz saytida darhol ko'rinadi.",
+          "success",
+        );
       } else {
         await apiFetch(endpoints[editorKind], {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        showToast("Yaratildi. O'zgarish mijoz saytida darhol ko'rinadi.", "success");
+        showToast(
+          "Yaratildi. O'zgarish mijoz saytida darhol ko'rinadi.",
+          "success",
+        );
       }
 
       closeEditor();
@@ -199,7 +212,10 @@ export function AdminHomepagePage() {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "Saqlab bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Saqlab bo'lmadi.",
+        "danger",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -211,7 +227,9 @@ export function AdminHomepagePage() {
     }
 
     try {
-      await apiFetch(`${endpoints[pendingDelete.kind]}/${pendingDelete.id}`, { method: "DELETE" });
+      await apiFetch(`${endpoints[pendingDelete.kind]}/${pendingDelete.id}`, {
+        method: "DELETE",
+      });
       showToast("O'chirildi.", "success");
       setPendingDelete(null);
       await load();
@@ -220,7 +238,10 @@ export function AdminHomepagePage() {
         return;
       }
 
-      showToast(caught instanceof Error ? caught.message : "O'chirib bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "O'chirib bo'lmadi.",
+        "danger",
+      );
     }
   }
 
@@ -271,11 +292,17 @@ export function AdminHomepagePage() {
         align: "right",
         render: (item) => (
           <span className="inline-flex gap-2">
-            <Button onClick={() => openEdit(kind, item)} size="sm" variant="ghost">
+            <Button
+              onClick={() => openEdit(kind, item)}
+              size="sm"
+              variant="ghost"
+            >
               Tahrir
             </Button>
             <Button
-              onClick={() => setPendingDelete({ kind, id: item.id, title: item.title })}
+              onClick={() =>
+                setPendingDelete({ kind, id: item.id, title: item.title })
+              }
               size="sm"
               variant="danger"
             >
@@ -289,11 +316,15 @@ export function AdminHomepagePage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <CardHeader
-          actions={<Button onClick={() => openCreate("hero")}>Yangi slayd</Button>}
+          actions={
+            <Button onClick={() => openCreate("hero")}>Yangi slayd</Button>
+          }
           description="Mijoz saytining yuqorisidagi aylanuvchi banner"
           title="Hero slaydlar"
         />
@@ -310,7 +341,11 @@ export function AdminHomepagePage() {
 
       <Card>
         <CardHeader
-          actions={<Button onClick={() => openCreate("promotion")}>Yangi aksiya</Button>}
+          actions={
+            <Button onClick={() => openCreate("promotion")}>
+              Yangi aksiya
+            </Button>
+          }
           description="Faol aksiya bo'lmasa, bo'lim mijoz saytida avtomatik yashiriladi"
           title="Aksiyalar"
         />
@@ -347,28 +382,39 @@ export function AdminHomepagePage() {
                 maxLength={120}
                 required
                 value={form.title}
-                onChange={(event) => setForm({ ...form, title: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, title: event.target.value })
+                }
               />
             )}
           </FormField>
 
-          <FormField label={editorKind === "hero" ? "Qo'shimcha matn" : "Tavsif"}>
+          <FormField
+            label={editorKind === "hero" ? "Qo'shimcha matn" : "Tavsif"}
+          >
             {(props) => (
               <Textarea
                 {...props}
                 maxLength={500}
                 value={form.body}
-                onChange={(event) => setForm({ ...form, body: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, body: event.target.value })
+                }
               />
             )}
           </FormField>
 
-          <FormField hint="Media serveridagi nisbiy yo'l, masalan /products/lavash.webp" label="Rasm manzili">
+          <FormField
+            hint="Media serveridagi nisbiy yo'l, masalan /products/lavash.webp"
+            label="Rasm manzili"
+          >
             {(props) => (
               <TextInput
                 {...props}
                 value={form.imageUrl}
-                onChange={(event) => setForm({ ...form, imageUrl: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, imageUrl: event.target.value })
+                }
               />
             )}
           </FormField>
@@ -380,7 +426,9 @@ export function AdminHomepagePage() {
                   {...props}
                   maxLength={40}
                   value={form.ctaLabel}
-                  onChange={(event) => setForm({ ...form, ctaLabel: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, ctaLabel: event.target.value })
+                  }
                 />
               )}
             </FormField>
@@ -390,7 +438,9 @@ export function AdminHomepagePage() {
                   {...props}
                   maxLength={40}
                   value={form.badge}
-                  onChange={(event) => setForm({ ...form, badge: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, badge: event.target.value })
+                  }
                 />
               )}
             </FormField>
@@ -401,7 +451,9 @@ export function AdminHomepagePage() {
                   min={0}
                   type="number"
                   value={form.sortOrder}
-                  onChange={(event) => setForm({ ...form, sortOrder: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, sortOrder: event.target.value })
+                  }
                 />
               )}
             </FormField>
@@ -412,7 +464,9 @@ export function AdminHomepagePage() {
               checked={form.isActive}
               className="h-4 w-4 accent-mz-accent"
               type="checkbox"
-              onChange={(event) => setForm({ ...form, isActive: event.target.checked })}
+              onChange={(event) =>
+                setForm({ ...form, isActive: event.target.checked })
+              }
             />
             Faol (mijoz saytida ko&apos;rinadi)
           </label>
@@ -445,7 +499,8 @@ export function AdminHomepagePage() {
         title="O'chirishni tasdiqlang"
       >
         <p className="text-sm text-mz-text">
-          <span className="font-semibold">{pendingDelete?.title}</span> o&apos;chiriladi.
+          <span className="font-semibold">{pendingDelete?.title}</span>{" "}
+          o&apos;chiriladi.
         </p>
       </Modal>
     </div>

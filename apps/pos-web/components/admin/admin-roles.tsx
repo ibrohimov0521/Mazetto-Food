@@ -57,7 +57,9 @@ export function AdminRolesPage() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Rollarni yuklab bo'lmadi.");
+      setError(
+        caught instanceof Error ? caught.message : "Rollarni yuklab bo'lmadi.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -100,7 +102,9 @@ export function AdminRolesPage() {
       header: "Tavsif",
       hideOnMobile: true,
       render: (permission) => (
-        <span className="text-xs text-mz-text-muted">{permission.description ?? "—"}</span>
+        <span className="text-xs text-mz-text-muted">
+          {permission.description ?? "—"}
+        </span>
       ),
     },
     {
@@ -109,7 +113,9 @@ export function AdminRolesPage() {
       align: "right",
       render: (permission) => {
         const count = roles.filter((role) =>
-          role.permissions.some((item) => item.permission.code === permission.code),
+          role.permissions.some(
+            (item) => item.permission.code === permission.code,
+          ),
         ).length;
 
         return `${count} ta`;
@@ -123,15 +129,19 @@ export function AdminRolesPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <CardBody>
           <p className="text-xs text-mz-text-muted">
-            Bu ekran faqat ko&apos;rish uchun. Rollar va permissionlar hozircha seed orqali
-            boshqariladi; boshqaruv interfeysi keyingi bosqichda{" "}
-            <code className="rounded bg-mz-surface-sunken px-1">ROLE_MANAGE</code> permission&apos;i
-            bilan qo&apos;shiladi.
+            Bu ekran faqat ko&apos;rish uchun. Rollar va permissionlar hozircha
+            seed orqali boshqariladi; boshqaruv interfeysi keyingi bosqichda{" "}
+            <code className="rounded bg-mz-surface-sunken px-1">
+              ROLE_MANAGE
+            </code>{" "}
+            permission&apos;i bilan qo&apos;shiladi.
           </p>
         </CardBody>
       </Card>
