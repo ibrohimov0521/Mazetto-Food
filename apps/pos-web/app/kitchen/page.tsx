@@ -100,6 +100,7 @@ function KitchenDisplay() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyTicketId, setBusyTicketId] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [expandedTicketIds, setExpandedTicketIds] = useState<Set<string>>(new Set());
   const loadedOnceRef = useRef(false);
   const knownTicketIdsRef = useRef<Set<string>>(new Set());
 
@@ -183,6 +184,20 @@ function KitchenDisplay() {
     }
   }
 
+  function toggleTicket(ticketId: string) {
+    setExpandedTicketIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(ticketId)) {
+        next.delete(ticketId);
+      } else {
+        next.add(ticketId);
+      }
+
+      return next;
+    });
+  }
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#071f1d] text-[#fff7e8]">
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[#071f1d]/95 px-4 py-4 backdrop-blur md:px-6">
@@ -242,11 +257,13 @@ function KitchenDisplay() {
           {groupedTickets.map((column) => (
             <KitchenColumn
               column={column}
+              expandedTicketIds={expandedTicketIds}
               isLoading={isLoading}
               key={column.title}
               now={now}
               onAction={runAction}
               busyTicketId={busyTicketId}
+              onToggleDetails={toggleTicket}
             />
           ))}
         </div>
@@ -273,15 +290,19 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: "n
 function KitchenColumn({
   busyTicketId,
   column,
+  expandedTicketIds,
   isLoading,
   now,
   onAction,
+  onToggleDetails,
 }: {
   busyTicketId: string | null;
   column: Column & { tickets: KitchenTicket[] };
+  expandedTicketIds: Set<string>;
   isLoading: boolean;
   now: number;
   onAction: (ticket: KitchenTicket, action: KitchenAction) => Promise<void>;
+  onToggleDetails: (ticketId: string) => void;
 }) {
   return (
     <section className="min-h-[420px] rounded-[30px] border border-white/10 bg-[#0c302d] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
@@ -302,9 +323,11 @@ function KitchenColumn({
           column.tickets.map((ticket) => (
             <KitchenTicketCard
               isBusy={busyTicketId === ticket.id}
+              isExpanded={expandedTicketIds.has(ticket.id)}
               key={ticket.id}
               now={now}
               onAction={onAction}
+              onToggleDetails={onToggleDetails}
               ticket={ticket}
             />
           ))
@@ -321,13 +344,17 @@ function KitchenColumn({
 
 function KitchenTicketCard({
   isBusy,
+  isExpanded,
   now,
   onAction,
+  onToggleDetails,
   ticket,
 }: {
   isBusy: boolean;
+  isExpanded: boolean;
   now: number;
   onAction: (ticket: KitchenTicket, action: KitchenAction) => Promise<void>;
+  onToggleDetails: (ticketId: string) => void;
   ticket: KitchenTicket;
 }) {
   const elapsedMinutes = Math.floor(Math.max(0, now - new Date(ticket.createdAt).getTime()) / 60000);
@@ -335,66 +362,84 @@ function KitchenTicketCard({
   const canCancel = ticket.status === "NEW" || ticket.status === "ACCEPTED" || ticket.status === "COOKING";
   const itemsCount = ticket.order.items.reduce((total, item) => total + Number(item.quantity), 0);
 
+  const visibleItems = isExpanded ? ticket.order.items : ticket.order.items.slice(0, 2);
+  const hiddenItemCount = Math.max(0, ticket.order.items.length - visibleItems.length);
+  const hasDetails = ticket.order.items.length > 2 || ticket.order.kitchenComment || ticket.order.notes;
+
   return (
-    <article className="rounded-[28px] border border-white/10 bg-[#fff7e8] p-4 text-[#132724] shadow-[0_20px_50px_rgba(0,0,0,0.24)]">
+    <article className="rounded-[20px] border border-white/10 bg-[#fff7e8] p-3 text-[#132724] shadow-[0_14px_34px_rgba(0,0,0,0.2)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-[#082522] px-3 py-1 text-xs font-black text-[#ffc83d]">
+            <span className="rounded-full bg-[#082522] px-2.5 py-1 text-[11px] font-black text-[#ffc83d]">
               #{ticket.order.orderNumber}
             </span>
-            <span className={`rounded-full px-3 py-1 text-xs font-black ${sourceClass(ticket.order.source)}`}>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${sourceClass(ticket.order.source)}`}>
               {sourceLabel(ticket.order.source)}
             </span>
           </div>
-          <h3 className="mt-3 text-3xl font-black tracking-tight text-[#102724]">{placeLabel(ticket)}</h3>
-          <p className="mt-1 text-sm font-extrabold text-[#42605c]">
+          <h3 className="mt-2 text-xl font-black tracking-tight text-[#102724]">{placeLabel(ticket)}</h3>
+          <p className="mt-0.5 text-xs font-extrabold text-[#42605c]">
             {ticket.order.branch?.name ?? "Filial"} · {orderTypeLabel(ticket.order.type)}
           </p>
         </div>
 
-        <div className={`shrink-0 rounded-2xl px-3 py-2 text-center ${urgencyClass(elapsedMinutes)}`}>
-          <p className="text-3xl font-black tabular-nums">{elapsedMinutes}</p>
-          <p className="text-[11px] font-black uppercase tracking-[0.12em]">daq</p>
+        <div className={`shrink-0 rounded-xl px-2.5 py-1.5 text-center ${urgencyClass(elapsedMinutes)}`}>
+          <p className="text-2xl font-black tabular-nums">{elapsedMinutes}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em]">daq</p>
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-1.5">
         <Chip>{statusLabel(ticket.status)}</Chip>
         <Chip>{formatQuantity(String(itemsCount))} ta mahsulot</Chip>
         <Chip>{new Date(ticket.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}</Chip>
       </div>
 
-      <div className="mt-4 grid gap-2">
-        {ticket.order.items.map((item) => (
-          <div className="rounded-[20px] border border-[#d9cda8] bg-white/70 p-3" key={item.id}>
-            <div className="flex items-start gap-3">
-              <span className="grid h-11 min-w-11 place-items-center rounded-2xl bg-[#ffc83d] px-2 text-lg font-black text-[#221600]">
+      <div className="mt-3 grid gap-1.5">
+        {visibleItems.map((item) => (
+          <div className="rounded-[14px] border border-[#d9cda8] bg-white/70 p-2" key={item.id}>
+            <div className="flex items-start gap-2">
+              <span className="grid h-8 min-w-8 place-items-center rounded-xl bg-[#ffc83d] px-1.5 text-sm font-black text-[#221600]">
                 {formatQuantity(item.quantity)}x
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-lg font-black leading-snug text-[#142a27]">
+                <p className="text-sm font-black leading-snug text-[#142a27]">
                   {item.productName}
                   {item.variantName ? <span className="text-[#5d746f]"> · {item.variantName}</span> : null}
                 </p>
-                <Modifiers value={item.modifierSnapshot} />
-                {item.notes ? <p className="mt-2 rounded-2xl bg-[#fff1bc] px-3 py-2 text-sm font-bold text-[#5a4300]">{item.notes}</p> : null}
+                {isExpanded ? <Modifiers value={item.modifierSnapshot} /> : null}
+                {isExpanded && item.notes ? <p className="mt-1 rounded-xl bg-[#fff1bc] px-2 py-1.5 text-xs font-bold text-[#5a4300]">{item.notes}</p> : null}
               </div>
             </div>
           </div>
         ))}
+        {hiddenItemCount ? (
+          <p className="rounded-[14px] bg-[#102724]/8 px-3 py-2 text-xs font-black text-[#42605c]">
+            + {hiddenItemCount} ta mahsulot yashirilgan
+          </p>
+        ) : null}
       </div>
 
-      {ticket.order.kitchenComment || ticket.order.notes ? (
-        <p className="mt-3 rounded-[20px] bg-[#102724] px-4 py-3 text-sm font-bold text-[#fff7e8]">
+      {isExpanded && (ticket.order.kitchenComment || ticket.order.notes) ? (
+        <p className="mt-2 rounded-[14px] bg-[#102724] px-3 py-2 text-xs font-bold text-[#fff7e8]">
           Izoh: {ticket.order.kitchenComment ?? ticket.order.notes}
         </p>
       ) : null}
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {hasDetails ? (
+          <button
+            className="min-h-10 rounded-[14px] border border-[#0b4b46]/18 bg-white/80 px-3 text-sm font-black text-[#0b4b46] transition hover:bg-white active:scale-[0.98]"
+            onClick={() => onToggleDetails(ticket.id)}
+            type="button"
+          >
+            {isExpanded ? "Yig'ish" : "Tafsilot"}
+          </button>
+        ) : null}
         {primaryAction ? (
           <button
-            className="min-h-14 rounded-[20px] bg-[#ffc83d] px-4 text-base font-black text-[#211600] shadow-[0_14px_34px_rgba(255,200,61,0.28)] transition hover:bg-[#ffda69] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-10 rounded-[14px] bg-[#ffc83d] px-3 text-sm font-black text-[#211600] shadow-[0_10px_24px_rgba(255,200,61,0.22)] transition hover:bg-[#ffda69] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isBusy}
             onClick={() => void onAction(ticket, primaryAction.action)}
             type="button"
@@ -405,7 +450,7 @@ function KitchenTicketCard({
 
         {canCancel ? (
           <button
-            className="min-h-14 rounded-[20px] border border-red-200 bg-red-50 px-4 text-base font-black text-red-700 transition hover:bg-red-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-10 rounded-[14px] border border-red-200 bg-red-50 px-3 text-sm font-black text-red-700 transition hover:bg-red-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isBusy}
             onClick={() => void onAction(ticket, "cancel")}
             type="button"

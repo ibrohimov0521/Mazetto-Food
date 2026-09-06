@@ -52,7 +52,7 @@ type StaffFormState = {
   email: string;
   phone: string;
   password: string;
-  roleCode: string;
+  roleCodes: string[];
   branchId: string;
   isActive: boolean;
 };
@@ -235,7 +235,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
     email: "",
     phone: "",
     password: "",
-    roleCode: "CASHIER",
+    roleCodes: ["CASHIER"],
     branchId: "",
     isActive: true,
   });
@@ -257,14 +257,13 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
 
       if (staffId) {
         const nextStaff = await apiFetch<Staff>(`/staff/${staffId}`);
-        const primaryRole = nextStaff.roles[0]?.code ?? "CASHIER";
         setStaff(nextStaff);
         setForm({
           name: nextStaff.displayName ?? "",
           email: nextStaff.email ?? "",
           phone: nextStaff.phone ?? "",
           password: "",
-          roleCode: primaryRole,
+          roleCodes: nextStaff.roles.map((role) => role.code),
           branchId: nextStaff.employee?.branchId ?? "",
           isActive: nextStaff.isActive,
         });
@@ -293,8 +292,8 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             email: form.email.trim() || undefined,
             phone: form.phone.trim() || undefined,
             password: form.password,
-            roleCode: form.roleCode,
-            branchId: needsBranch(form.roleCode) ? form.branchId : undefined,
+            roleCodes: form.roleCodes,
+            branchId: needsBranch(form.roleCodes) ? form.branchId : undefined,
             isActive: form.isActive,
           }),
         });
@@ -309,14 +308,14 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       }
 
       let nextStaff: Staff = staff;
-      const currentRole = staff?.roles[0]?.code;
+      const currentRoles = staff.roles.map((role) => role.code);
 
-      if (currentRole && currentRole !== form.roleCode) {
+      if (!sameRoles(currentRoles, form.roleCodes)) {
         nextStaff = await apiFetch<Staff>(`/staff/${staffId}/role`, {
           method: "PATCH",
           body: JSON.stringify({
-            roleCode: form.roleCode,
-            branchId: needsBranch(form.roleCode) ? form.branchId : null,
+            roleCodes: form.roleCodes,
+            branchId: needsBranch(form.roleCodes) ? form.branchId : null,
           }),
         });
       }
@@ -328,8 +327,8 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           email: form.email.trim() || null,
           phone: form.phone.trim() || null,
           branchId:
-            currentRole === form.roleCode
-              ? needsBranch(form.roleCode)
+            sameRoles(currentRoles, form.roleCodes)
+              ? needsBranch(form.roleCodes)
                 ? form.branchId
                 : null
               : undefined,
@@ -408,18 +407,26 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             </Field>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Rol">
-              <Select
-                disabled={Boolean(roleChangeBlock)}
-                value={form.roleCode}
-                onChange={(event) => setForm({ ...form, roleCode: event.target.value })}
-              >
+            <Field label="Rollar">
+              <div className="grid gap-2 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2">
                 {roles.map((role) => (
-                  <option key={role.id} value={role.code}>
-                    {role.name} ({role.code})
-                  </option>
+                  <label
+                    className={`flex items-center gap-2 rounded-mz-control px-3 py-2 text-xs font-black ${
+                      roleChangeBlock ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-mz-surface"
+                    }`}
+                    key={role.id}
+                  >
+                    <input
+                      checked={form.roleCodes.includes(role.code)}
+                      className="h-4 w-4 accent-mz-accent"
+                      disabled={Boolean(roleChangeBlock)}
+                      type="checkbox"
+                      onChange={(event) => setForm((current) => toggleRole(current, role.code, event.target.checked))}
+                    />
+                    <span>{role.name} ({role.code})</span>
+                  </label>
                 ))}
-              </Select>
+              </div>
               {roleChangeBlock ? (
                 <p className="text-xs font-semibold text-mz-warning">{roleChangeBlock}</p>
               ) : !isNew ? (
@@ -430,7 +437,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             </Field>
             <Field label="Filial">
               <Select
-                disabled={!needsBranch(form.roleCode)}
+                disabled={!needsBranch(form.roleCodes)}
                 value={form.branchId}
                 onChange={(event) => setForm({ ...form, branchId: event.target.value })}
               >
@@ -553,8 +560,24 @@ function OwnPasswordPanel() {
   );
 }
 
-function needsBranch(roleCode: string): boolean {
-  return branchScopedRoles.has(roleCode);
+function needsBranch(roleCodes: string[] | string): boolean {
+  const codes = Array.isArray(roleCodes) ? roleCodes : [roleCodes];
+  return codes.some((roleCode) => branchScopedRoles.has(roleCode));
+}
+
+function sameRoles(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((role) => right.includes(role));
+}
+
+function toggleRole(form: StaffFormState, roleCode: string, checked: boolean): StaffFormState {
+  const nextRoles = checked
+    ? [...new Set([...form.roleCodes, roleCode])]
+    : form.roleCodes.filter((item) => item !== roleCode);
+
+  return {
+    ...form,
+    roleCodes: nextRoles.length ? nextRoles : form.roleCodes,
+  };
 }
 
 function formatDate(value?: string | null): string {

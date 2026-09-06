@@ -118,14 +118,15 @@ export class StaffService {
   async createStaff(dto: CreateStaffDto, actor: AuthenticatedUser) {
     const normalized = this.normalizeLogin(dto.email, dto.phone);
     this.assertHasLogin(normalized);
-    this.assertCanAssignRole(actor, dto.roleCode);
+    const roleCodes = this.resolveRequestedRoleCodes(dto);
+    this.assertCanAssignRoles(actor, roleCodes);
 
-    const branchId = await this.resolveBranchForRole(actor, dto.roleCode, dto.branchId);
+    const branchId = await this.resolveBranchForRoles(actor, roleCodes, dto.branchId);
     const passwordHash = await hash(dto.password, 12);
 
     const user = await this.prisma.$transaction(async (tx) => {
       await this.assertUniqueLogin(tx, normalized);
-      const role = await this.findActiveRole(tx, dto.roleCode);
+      const roles = await this.findActiveRoles(tx, roleCodes);
       const created = await tx.user.create({
         data: {
           displayName: dto.name.trim(),
@@ -136,16 +137,16 @@ export class StaffService {
         },
       });
 
-      await tx.userRole.create({
-        data: {
+      await tx.userRole.createMany({
+        data: roles.map((role) => ({
           userId: created.id,
           roleId: role.id,
           assignedById: actor.id,
-        },
+        })),
       });
       await this.syncEmployee(tx, created.id, branchId, dto.name, dto.isActive);
       await this.createAuditLog(tx, actor.id, "STAFF_CREATED", created.id, {
-        roleCode: dto.roleCode,
+        roleCodes,
         branchId,
         isActive: dto.isActive,
       });
@@ -169,11 +170,11 @@ export class StaffService {
 
     this.assertHasLogin({ email: nextEmail, phone: nextPhone });
 
-    const primaryRoleCode = this.primaryRoleCode(existing);
+    const currentRoleCodes = this.roleCodesFromStaff(existing);
     const nextBranchId =
       dto.branchId === undefined
         ? existing.employee?.branchId ?? null
-        : await this.resolveBranchForRole(actor, primaryRoleCode, dto.branchId);
+        : await this.resolveBranchForRoles(actor, currentRoleCodes, dto.branchId);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.assertUniqueLogin(tx, { email: nextEmail, phone: nextPhone }, id);
@@ -216,25 +217,26 @@ export class StaffService {
   async updateRole(id: string, dto: UpdateStaffRoleDto, actor: AuthenticatedUser) {
     const existing = await this.findStaffOrThrow(id);
     this.assertCanManageStaffRecord(actor, existing);
-    this.assertCanAssignRole(actor, dto.roleCode);
-    await this.assertCanRemoveCurrentSuperAdmin(existing, dto.roleCode !== "SUPER_ADMIN");
+    const roleCodes = this.resolveRequestedRoleCodes(dto);
+    this.assertCanAssignRoles(actor, roleCodes);
+    await this.assertCanRemoveCurrentSuperAdmin(existing, !roleCodes.includes("SUPER_ADMIN"));
 
-    const branchId = await this.resolveBranchForRole(
+    const branchId = await this.resolveBranchForRoles(
       actor,
-      dto.roleCode,
+      roleCodes,
       dto.branchId ?? existing.employee?.branchId ?? null,
     );
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const role = await this.findActiveRole(tx, dto.roleCode);
+      const roles = await this.findActiveRoles(tx, roleCodes);
 
       await tx.userRole.deleteMany({ where: { userId: id } });
-      await tx.userRole.create({
-        data: {
+      await tx.userRole.createMany({
+        data: roles.map((role) => ({
           userId: id,
           roleId: role.id,
           assignedById: actor.id,
-        },
+        })),
       });
       await this.syncEmployee(
         tx,
@@ -245,7 +247,7 @@ export class StaffService {
       );
       await this.revokeUserSessions(tx, id);
       await this.createAuditLog(tx, actor.id, "STAFF_ROLE_CHANGED", id, {
-        roleCode: dto.roleCode,
+        roleCodes,
         branchId,
       });
 
@@ -528,10 +530,8 @@ export class StaffService {
   }
 
   private async findActiveRole(tx: Prisma.TransactionClient, code: StaffRoleCode) {
-    const role = await tx.role.findFirst({
-      where: { code, isActive: true },
-      select: { id: true, code: true },
-    });
+    const roles = await this.findActiveRoles(tx, [code]);
+    const role = roles[0];
 
     if (!role) {
       throw new NotFoundException(`Role ${code} is not available`);
@@ -540,12 +540,34 @@ export class StaffService {
     return role;
   }
 
+  private async findActiveRoles(tx: Prisma.TransactionClient, codes: StaffRoleCode[]) {
+    const roles = await tx.role.findMany({
+      where: { code: { in: codes }, isActive: true },
+      select: { id: true, code: true },
+    });
+
+    const found = new Set(roles.map((role) => role.code));
+    const missing = codes.filter((code) => !found.has(code));
+
+    if (missing.length) {
+      throw new NotFoundException(`Role ${missing.join(", ")} is not available`);
+    }
+
+    return codes.map((code) => roles.find((role) => role.code === code)!);
+  }
+
   private assertCanAssignRole(actor: AuthenticatedUser, roleCode: StaffRoleCode): void {
-    if (roleCode === "SUPER_ADMIN" && !actor.roles.includes("SUPER_ADMIN")) {
+    this.assertCanAssignRoles(actor, [roleCode]);
+  }
+
+  private assertCanAssignRoles(actor: AuthenticatedUser, roleCodes: StaffRoleCode[]): void {
+    if (roleCodes.includes("SUPER_ADMIN") && !actor.roles.includes("SUPER_ADMIN")) {
       throw new ForbiddenException("Only SUPER_ADMIN can assign SUPER_ADMIN");
     }
 
-    if (!actor.roles.includes("SUPER_ADMIN") && !branchScopedStaffRoles.has(roleCode)) {
+    const hasGlobalRole = roleCodes.some((roleCode) => !branchScopedStaffRoles.has(roleCode));
+
+    if (!actor.roles.includes("SUPER_ADMIN") && hasGlobalRole) {
       throw new ForbiddenException("Only SUPER_ADMIN can assign global staff roles");
     }
   }
@@ -555,13 +577,21 @@ export class StaffService {
     roleCode: StaffRoleCode,
     requestedBranchId?: string | null,
   ): Promise<string | null> {
+    return this.resolveBranchForRoles(actor, [roleCode], requestedBranchId);
+  }
+
+  private async resolveBranchForRoles(
+    actor: AuthenticatedUser,
+    roleCodes: StaffRoleCode[],
+    requestedBranchId?: string | null,
+  ): Promise<string | null> {
     const branchId = requestedBranchId?.trim() || null;
 
-    if (branchScopedStaffRoles.has(roleCode)) {
+    if (roleCodes.some((roleCode) => branchScopedStaffRoles.has(roleCode))) {
       const resolvedBranchId = resolveBranchScope(actor, branchId ?? undefined);
 
       if (!resolvedBranchId) {
-        throw new BadRequestException(`${roleCode} requires an assigned branch`);
+        throw new BadRequestException("Branch-scoped staff roles require an assigned branch");
       }
 
       await this.assertBranchExists(resolvedBranchId);
@@ -651,13 +681,30 @@ export class StaffService {
   }
 
   private primaryRoleCode(staff: StaffRecord): StaffRoleCode {
-    const roleCode = staff.roles[0]?.role.code;
+    const roleCode = this.roleCodesFromStaff(staff)[0];
 
     if (!roleCode || !this.isStaffRoleCode(roleCode)) {
       throw new BadRequestException("Staff user does not have a manageable role");
     }
 
     return roleCode;
+  }
+
+  private roleCodesFromStaff(staff: StaffRecord): StaffRoleCode[] {
+    return staff.roles
+      .map((userRole) => userRole.role.code)
+      .filter((roleCode): roleCode is StaffRoleCode => this.isStaffRoleCode(roleCode));
+  }
+
+  private resolveRequestedRoleCodes(dto: { roleCode?: StaffRoleCode; roleCodes?: StaffRoleCode[] }): StaffRoleCode[] {
+    const requested = dto.roleCodes?.length ? dto.roleCodes : dto.roleCode ? [dto.roleCode] : [];
+    const unique = [...new Set(requested)];
+
+    if (!unique.length) {
+      throw new BadRequestException("At least one staff role is required");
+    }
+
+    return unique;
   }
 
   private isStaffRoleCode(value: string): value is StaffRoleCode {

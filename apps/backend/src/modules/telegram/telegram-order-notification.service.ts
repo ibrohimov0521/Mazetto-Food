@@ -200,7 +200,7 @@ export class TelegramOrderNotificationService {
   private formatStaffOrderMessage(order: StaffOrderForMessage): string {
     const ticket = order.kitchenTickets[0] ?? null;
     const lines = [
-      "🔥 <b>Yangi buyurtma</b>",
+      this.staffOrderTitle(order.status),
       "",
       `<b>Raqam:</b> ${this.escapeHtml(order.orderNumber)}`,
       `<b>Status:</b> ${this.orderStatusLabel(order.status)}${ticket ? ` / ${this.kitchenStatusLabel(ticket.status)}` : ""}`,
@@ -279,6 +279,20 @@ export class TelegramOrderNotificationService {
     }
 
     return { inline_keyboard: buttons };
+  }
+
+  private staffOrderTitle(status: OrderStatus): string {
+    const titles: Record<OrderStatus, string> = {
+      NEW: "🔥 <b>Yangi buyurtma</b>",
+      CONFIRMED: "✅ <b>Buyurtma qabul qilindi</b>",
+      PREPARING: "👨‍🍳 <b>Buyurtma tayyorlanmoqda</b>",
+      READY: "✨ <b>Buyurtma tayyor</b>",
+      SERVED: "🤝 <b>Buyurtma topshirildi</b>",
+      COMPLETED: "✅ <b>Buyurtma yakunlandi</b>",
+      CANCELLED: "⚠️ <b>Buyurtma bekor qilindi</b>",
+    };
+
+    return titles[status];
   }
 
   private callbackData(orderId: string, action: StaffOrderAction): string {

@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { staffRoleCodes, type StaffRoleCode } from "../staff-role-codes";
 
 export class CreateStaffDto {
@@ -21,8 +21,16 @@ export class CreateStaffDto {
   @MaxLength(128)
   password!: string;
 
+  @IsOptional()
   @IsIn(staffRoleCodes)
-  roleCode!: StaffRoleCode;
+  roleCode?: StaffRoleCode;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsIn(staffRoleCodes, { each: true })
+  roleCodes?: StaffRoleCode[];
 
   @IsOptional()
   @IsString()
@@ -55,8 +63,16 @@ export class UpdateStaffDto {
 }
 
 export class UpdateStaffRoleDto {
+  @IsOptional()
   @IsIn(staffRoleCodes)
-  roleCode!: StaffRoleCode;
+  roleCode?: StaffRoleCode;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsIn(staffRoleCodes, { each: true })
+  roleCodes?: StaffRoleCode[];
 
   @IsOptional()
   @IsString()

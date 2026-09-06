@@ -423,13 +423,13 @@ function CheckoutFlow() {
         </button>
       </aside>
 
-      <div className="mf-mobile-action-bar mazetto-glass fixed inset-x-3 z-30 rounded-[1.5rem] p-3 lg:hidden">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-black uppercase text-white/50">Jami</p>
-            <p className="text-lg font-black text-white"><AnimatedMoney value={total} /></p>
+      <div className="mf-mobile-action-bar fixed inset-x-3 z-30 rounded-[1.2rem] p-2.5 lg:hidden">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2.5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-wide text-[#0B7F75]">Jami</p>
+            <p className="truncate text-base font-black text-[#17314A]"><AnimatedMoney value={total} /></p>
           </div>
-          <button className="pressable ripple mf-button-primary rounded-2xl px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
+          <button className="pressable ripple mf-button-primary grid h-11 shrink-0 place-items-center rounded-[1.05rem] px-4 text-sm font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
             {submitting ? "Yuborilmoqda..." : "Tasdiqlash"}
           </button>
         </div>
