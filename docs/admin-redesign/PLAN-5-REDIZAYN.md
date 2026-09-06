@@ -258,3 +258,59 @@ Bu yagona backend o'zgarishi — shuning uchun **oxirgi** va alohida commit.
 ```
 
 **Deploy qilinmaydi.** Barcha ish lokal, har commit mustaqil tekshiriladi.
+
+---
+
+## Bajarilish holati (2026-09-06)
+
+Shoxobcha: `admin-redesign-phase-5` · 12 commit · **deploy qilinmagan**
+
+| Bosqich | Holat | Izoh |
+|---|---|---|
+| 5.1 Ikonka tizimi | ✅ | 45 ikonka, `validate-admin-nav-rbac.ts` |
+| 5.2 Shell | ✅ | Header, `max-w-[1600px]` |
+| 5.3a Primitivlarni yangilash | ✅ | stat-box, feedback, data-table |
+| 5.3b Yangi primitivlar | ✅ | pagination, tabs, chip-group, toggle |
+| 5.4 Ekranlarni ko'chirish | ✅ | 6 fayldagi pagination takrori yechildi |
+| B1 Filiallar | ✅ | CRUD + ish vaqti |
+| B2 Kategoriyalar | ✅ | Tahrirlash + arxivlash |
+| B3 Buyurtma holati | ✅ | Filial cheklovi bilan |
+| B4 Cheklar | ✅ | Detal + chop etilgan deb belgilash |
+| B5 Hisobotlar | ✅ | 5 tab, har biri o'z permission'i ostida |
+| B6 Ombor | ✅ | Ingredient va ombor yaratish |
+| B7 Sahifalash | ✅ | Yagona backend o'zgarishi |
+| 5.6 QA | ⛔ | **Bajarilmadi** — lokal DB yo'q |
+
+### Rejadan chetlashishlar va sabablari
+
+| Reja | Amalda | Sabab |
+|---|---|---|
+| `date-range.tsx` yozish | Yozilmadi | Hisobot ekranida preset chiplari va sana inputlari allaqachon ishlaydi; hech kim so'ramagan kalendar komponenti taxminiy ish bo'lardi. Lokal `QuickRange` o'rniga umumiy `ChipGroup` qo'shildi |
+| KPI trend ko'rsatkichi | Qo'shilmadi | `GET /dashboard/summary` faqat bugungi raqamni beradi, solishtirish manbai yo'q. Foizni o'ylab topish mumkin emas |
+| B3 `ORDER_UPDATE` bilan | `ORDER_SEND_KITCHEN` + filial sharti | Endpoint boshqa permission ostida; `orders.service.ts` chaqiruvchidan buyurtma filialining faol xodimi bo'lishni talab qiladi, super-admin uchun ham istisno yo'q |
+| B2 "o'chirish" | "arxivlash" | `menu.service.ts:deleteCategory` `isActive: false` qo'yadi — bu `MENU_DELETE` bo'yicha ochiq qarorni amalda hal qilgan |
+| 5.3b va 5.4 alohida commit | Bitta commit | Primitivni ishlatuvchisiz qo'shish bir commit davomida o'lik kod qoldirardi |
+
+### Yo'l-yo'lakay topilgan va tuzatilgan
+
+- `/admin/dashboard` route `ADMIN_ACCESS` talab qilardi, menyu va backend esa
+  `DASHBOARD_VIEW`. Route to'g'rilandi; seed'da `ADMIN_ACCESS` bor-u
+  `DASHBOARD_VIEW` yo'q rol bo'lmagani uchun kirish huquqi o'zgarmadi.
+- `admin-catalog.tsx` dagi lokal `Badge` "green" va "teal" ni bir xil rangga
+  solardi — olib tashlandi.
+- `admin-catalog.tsx` uch ekranni (mahsulot, kategoriya, filial) saqlardi;
+  endi faqat mahsulot.
+
+### QA — nima qilinmagan
+
+Lokal PostgreSQL 18 da `mazetto` roli yo'q, shuning uchun **hech bir ekran
+brauzerda ko'rilmagan**. Tekshirilgani: `typecheck`, `lint`, `build` va 7 ta
+validator skripti — bularning hammasi statik.
+
+Ochilmagan savollar QA gacha:
+
+- Responsive tekshiruv (768 / 1024 / 1366 / 1440 / 1920 / 1024×600)
+- Yangi modallar (filial, kategoriya, ingredient, ombor, chek, buyurtma holati)
+  haqiqiy ma'lumotda sinalmagan
+- Hisobot tablari real javob bilan tekshirilmagan — turlar backend kodidan
+  o'qib yozilgan, javobdan emas
