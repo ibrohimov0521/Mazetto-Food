@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { BrandLogo } from "./brand-logo";
 
@@ -8,27 +8,28 @@ const splashKey = "mazetto.customer.splash.seen";
 
 export function BrandSplash({ enabled }: { enabled: boolean }) {
   const [visible, setVisible] = useState(false);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!enabled || window.localStorage.getItem(splashKey)) {
+    if (!enabled || reducedMotion || window.localStorage.getItem(splashKey)) {
       return;
     }
 
     setVisible(true);
     window.localStorage.setItem(splashKey, "1");
-    const timeout = window.setTimeout(() => setVisible(false), 1750);
+    const timeout = window.setTimeout(() => setVisible(false), 650);
     return () => window.clearTimeout(timeout);
-  }, [enabled]);
+  }, [enabled, reducedMotion]);
 
   return (
     <AnimatePresence>
       {visible ? (
         <motion.div
           animate={{ opacity: 1 }}
-          className="fixed inset-0 z-[80] grid place-items-center bg-[#0B0B0B]"
+          className="pointer-events-none fixed inset-0 z-[80] grid place-items-center bg-[#0B0B0B]"
           exit={{ opacity: 0, scale: 1.02 }}
           initial={{ opacity: 0 }}
-          transition={{ duration: 0.42, ease: "easeOut" }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
         >
           <motion.div
             animate={{ opacity: 1, scale: 1, y: 0 }}

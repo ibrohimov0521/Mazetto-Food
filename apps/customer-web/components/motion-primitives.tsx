@@ -4,16 +4,15 @@ import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 import { useEffect } from "react";
 
 export const pageMotion = {
-  initial: { opacity: 0, y: 18 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
+  initial: false,
+  animate: { opacity: 1 },
+  transition: { duration: 0.16 },
 } as const;
 
 export const sectionMotion = {
-  initial: { opacity: 0, y: 22 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: "-80px" },
-  transition: { duration: 0.48, ease: [0.22, 1, 0.36, 1] },
+  initial: false,
+  animate: { opacity: 1 },
+  transition: { duration: 0.16 },
 } as const;
 
 export const cardMotion = {
@@ -39,11 +38,11 @@ export const MotionArticle = motion.article;
 export const MotionButton = motion.button;
 
 export function AnimatedNumber({ value }: { value: number }) {
-  const motionValue = useMotionValue(0);
+  const motionValue = useMotionValue(value);
   const rounded = useTransform(motionValue, (latest) => Math.round(latest).toLocaleString("uz-UZ"));
 
   useEffect(() => {
-    const controls = animate(motionValue, value, { duration: 0.7, ease: "easeOut" });
+    const controls = animate(motionValue, value, { duration: 0.18, ease: "easeOut" });
     return controls.stop;
   }, [motionValue, value]);
 

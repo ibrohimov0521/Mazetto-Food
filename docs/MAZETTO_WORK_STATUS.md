@@ -3316,3 +3316,129 @@ Production data safety:
 Next:
 
 - Continue with the next POS/Kassa roadmap phase after owner approval. No Shift Controls rollback is required.
+
+## Customer Web Experience and Performance Fixes (2026-09-06)
+
+Status: LOCAL IMPLEMENTATION AND BROWSER QA VERIFIED; NOT DEPLOYED.
+
+- Compact Home hero, independent 44px order CTA, redundant branch chips/covered decoration removed.
+- Primary hero hover tilt and continuous floating effect removed as requested.
+- Sticky category gap fixed using actual header height. Owner follow-up removed the dark blurred backing and strip drop-shadow.
+- Navigation gap at 640-767px fixed; bottom spacing matches navigation visibility.
+- Public catalog cache (30 seconds, branch/query scoped) and request deduplication added; no auth/order/quote caching.
+- Media cached-load race fixed, responsive logo/card loading improved, viewport-hidden card animations and duplicate layout IDs removed.
+- Branch picker now renders above page content with close/keyboard controls.
+- Profile request failure now has a visible retry state.
+- Customer-web typecheck/lint/build and focused cache validator passed.
+- Browser QA: 90 page/viewport screenshots, plus authenticated checkout at 390/1440. No runtime exceptions or horizontal overflow; no production order created.
+- Catalog count remains 74, all 74 packaged product source files exist. Media assets were not changed.
+- Menu revisit public requests reduced from 2 to 0 in browser measurement; production-wide speed guarantees remain unverified.
+- Detailed evidence and limitations: `docs/MAZETTO_CUSTOMER_EXPERIENCE_QA.md`.
+- Owner reference comparison: functional QA passed, but full reference visual alignment is NOT complete. Five reference images were re-opened; composition, foliage, density and surface hierarchy mismatches are documented in the QA report. Slider arrow contrast was corrected locally.
+- No push, deploy, backend, database, Telegram, payment or production configuration changes.
+
+## Combined Customer/Admin Release Preparation (2026-09-06)
+
+- Starting local HEAD: 76a4aa6. Integrated partner commits through 97d5ed4 by
+  fast-forward, preserving all local customer work. No schema/migration/lockfile change.
+- Owner requested complete hero images: removed organic clipping, switched hero
+  to object-contain. Four-width browser contract passed with explicit no-crop assertions.
+- Partner backend adds operational lists, audit, modifiers and expense recording;
+  POS includes the admin redesign. Customer ordering/payment engine is unchanged.
+- Clarified expense form: attaching a shift is reporting metadata, not an automatic
+  cash-drawer withdrawal. No cash calculation or lifecycle rule changed here.
+- Preflight services 1/1; backend/customer/POS HTTP 200. Baseline order graph:
+  orders 28, customer_orders 20, attempts 20, kitchen_tickets 28.
+- New PAYMENT_VIEW, SHIFT_VIEW_BRANCH, EXPENSE_CREATE, AUDIT_VIEW permissions are
+  absent in production. SUPER_ADMIN wildcard access works; permission sync for
+  restricted roles is a separate prerequisite. No general seed will run in this release.
+- No authenticated production admin mutation or financial E2E is claimed. Expense
+  shift-close concurrency and real restricted-role access remain follow-up checks.
+- Raw media-source originals, generated agent instructions and QA/tmp artifacts
+  remain outside this application release. Packaged canonical media is unchanged.
+- Deployment outcome will be recorded after service and read-only route verification.
+
+## Reference Element Contract And Shared Visual Foundation (2026-09-06)
+
+Status: LOCAL FOUNDATION IMPLEMENTED; FULL REFERENCE ALIGNMENT REMAINS PARTIAL.
+
+- Re-opened all five approved reference images. Recorded their actual background,
+  logo, foliage, hero, branch row, category, product card, CTA, quantity, cart,
+  checkout, success, profile/history and bottom-navigation elements in
+  `docs/design/MAZETTO_VISUAL_COMPONENT_CONTRACT.md`.
+- Clearly separated the raster's observed properties from responsive token choices;
+  exact font identity and pixel equivalence are not claimed.
+- Shared palette/radius/shadow/control baseline now lives in customer globals.
+  Form reset moved into the base cascade layer so button typography is not overridden.
+- Replaced primary-button oval splotches with a static botanical mask. Small product,
+  cart-upsell and category controls have no botanical print. No food asset edited.
+- Added a lightweight local decorative vector sprig with inert, bounded placement.
+  This is a stylized approximation, not photorealistic reference foliage extraction.
+- Home now has a continuous ivory content background, compact unframed hero,
+  independent branch row below, light shared product-card variant and pale category band.
+- Menu preserves teal cards, full-width two-line names, add controls at image corner,
+  all 74 products, sticky categories, and the owner's no-black-blur correction.
+- Header uses one shared optimized logo. Removed the repeated Menu intro logo.
+  Cart rows use separators rather than separate floating row cards. Core light
+  surfaces have reduced shadows and stable radius tokens.
+- No backend, pricing, cart state, auth, checkout submission, Telegram, canonical
+  media or production change. No commit/push/deploy performed for this foundation.
+
+Validation:
+
+- Customer-web typecheck, lint, build and public catalog-cache validator passed.
+- `scripts/qa-customer-design-contract.mjs` passed at 390/430/768/1440: tokens,
+  botanical mask, CTA weight/height, slider arrows, branch position, full-width
+  names, 74 cards, no horizontal overflow, sticky/no-blur and bottom-nav stability.
+- QA script itself passed ESLint. Screenshots/results remain in `.qa-screenshots/`.
+- Final rebuilt preview also passed the 90-screen functional regression at
+  390/430/640/768/1024/1440: no page exceptions, horizontal overflow or broken
+  visible images, 74 menu cards, cart feedback, sticky navigation and profile retry.
+  These are functional/geometry checks, not proof of complete reference matching.
+- `git diff --check` passed; existing LF/CRLF conversion warnings remain warnings.
+- Existing authenticated checkout fixture smoke passed at 390/1440: delivery/pickup
+  address preservation and zero order requests. Production auth/order mutation was not used.
+
+Next scoped work: reference-level Product Detail configuration and menu handoff,
+then Checkout/Profile/Orders internal spacing and hierarchy. Preserve the contract
+and existing functional behavior; do not declare whole-site pixel-lock complete.
+
+### Product Card Hover Sharpness Follow-up
+
+- Owner reported blurred image/text/buttons on hover. Browser inspection confirmed
+  a 1.012 scaled/3D-rotated card plus a 1.055 nested media zoom (not opacity loss).
+- ProductCard now uses translation-only hover (-5px) and press (+1px); removed
+  nested image zoom. Other components' motion presets and cart actions unchanged.
+- Browser measurement: hovered card remains 271px wide and 373.671875px high,
+  moves exactly -5px, and media/image transforms are none. Opacity remains 1.
+- Typecheck/lint/build passed; sharp-hover assertions added to the local design
+  contract QA. No production change or push/deploy.
+
+### Home Density And Cart Upsell Scroll Correction
+
+Status: LOCAL IMPLEMENTATION AND BROWSER REGRESSION PASSED; NOT DEPLOYED.
+
+- Owner rejected the consecutive oversized banners and the horizontal-only upsell.
+- CartUpsell now uses a bounded 340px vertical 2/3/4-column responsive grid, with
+  hidden scrollbar and a named keyboard-focusable region. No full-cart scrollbar
+  or wheel interception introduced. Existing filtering and add/configuration actions preserved.
+- Mouse-wheel and keyboard scroll tests passed at 390/430/768/1440; recommendations
+  scroll internally with no horizontal overflow. Native touch scrolling remains
+  enabled, but a physical-device touch test has not been performed.
+- Home now has ONE compact manual hero carousel containing all five real slides,
+  rather than primary hero plus a second oversized carousel. Secondary slide target
+  links and horizontal touch-swipe navigation are preserved. No fake promotions.
+- Branch row then actual recommended products now precede category navigation.
+  Four actual recommendations/sets fill the desktop row instead of leaving a blank
+  fourth grid cell. All canonical media remains unchanged.
+- First recommended cards start at y=549 at 390/430, y=534 at 768, and y=538 at
+  1440 (900px browser height); previously another large banner occupied this area.
+- All five slides passed title/button/image non-overlap checks at four widths.
+  Sticky/no-blur, 74-product count, hover sharpness, bottom-nav stability preserved.
+- Customer-web typecheck, lint, build and QA-script lint passed. Existing 90-screen
+  functional regression passed during this correction. `git diff --check` passed
+  with existing LF/CRLF warnings only.
+- Evidence: `.qa-screenshots/design-contract-*`, `upsell-vertical-scroll-*` and
+  existing `customer-ux-*`. No commit, push, deploy, production mutation or order creation.
+- Exact reference visual matching still remains partial: real photo backgrounds,
+  foliage fidelity and other route compositions are not claimed pixel-perfect.

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { forwardRef, useEffect, useMemo, useState } from "react";
+import { forwardRef, useMemo, useState } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { productImage, sourceMenuImage } from "../lib/cart";
 
@@ -20,7 +20,12 @@ type MediaImageProps = {
 
 const mediaOrigin = process.env.NEXT_PUBLIC_MEDIA_URL?.replace(/\/$/, "");
 
-export const MediaImage = forwardRef<HTMLDivElement, MediaImageProps>(function MediaImage({
+export const MediaImage = forwardRef<HTMLDivElement, MediaImageProps>(function MediaImage(props, ref) {
+  // A source change resets loading atomically, including when an image is already cached.
+  return <MediaImageContent {...props} key={props.src ?? "missing"} ref={ref} />;
+});
+
+const MediaImageContent = forwardRef<HTMLDivElement, MediaImageProps>(function MediaImageContent({
   alt,
   src,
   aspectClassName = "aspect-[4/3]",
@@ -39,12 +44,6 @@ export const MediaImage = forwardRef<HTMLDivElement, MediaImageProps>(function M
   const sourceFallbackSrc = useMemo(() => sourceMenuImage(src), [src]);
   const activeSrc = useSourceFallback && sourceFallbackSrc ? sourceFallbackSrc : resolvedSrc;
   const canUseNextImage = isNextImageCompatible(activeSrc);
-
-  useEffect(() => {
-    setLoaded(false);
-    setFailed(false);
-    setUseSourceFallback(false);
-  }, [resolvedSrc, sourceFallbackSrc]);
 
   function handleImageError() {
     if (!useSourceFallback && sourceFallbackSrc) {
@@ -79,6 +78,8 @@ export const MediaImage = forwardRef<HTMLDivElement, MediaImageProps>(function M
       ) : (
         <img
           alt={alt}
+          decoding="async"
+          fetchPriority={priority ? "high" : "auto"}
           className={`h-full w-full transition-opacity duration-300 ease-out ${fit === "cover" ? "object-cover" : "object-contain"} ${loaded ? "opacity-100" : "opacity-0"} ${imageClassName}`}
           loading={priority ? "eager" : "lazy"}
           onError={handleImageError}

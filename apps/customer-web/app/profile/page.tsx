@@ -50,13 +50,19 @@ export default function ProfilePage() {
 function Profile() {
   const { customer, favoriteIds, setCustomer, showToast } = useCart();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!customer?.accessToken) {
       return;
     }
 
-    setDashboard(await apiFetch<Dashboard>("/customer/me/dashboard", { accessToken: customer.accessToken }));
+    setLoadError(null);
+    try {
+      setDashboard(await apiFetch<Dashboard>("/customer/me/dashboard", { accessToken: customer.accessToken }));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Profilni yuklab bo'lmadi.");
+    }
   }, [customer]);
 
   useEffect(() => {
@@ -87,6 +93,12 @@ function Profile() {
 
   return (
     <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-5">
+      {loadError ? (
+        <div className="mf-card mb-4 p-4" role="alert">
+          <p className="text-sm font-bold">{loadError}</p>
+          <button className="pressable mf-button-primary mt-3 px-4 py-2 text-sm font-black" onClick={() => void load()} type="button">Qayta urinish</button>
+        </div>
+      ) : null}
       <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
         <div className="mf-checkout-card min-w-0 p-4">
           <p className="text-xs font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>

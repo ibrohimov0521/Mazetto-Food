@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 
 type BrandLogoProps = {
   className?: string;
@@ -27,11 +28,10 @@ export function BrandLogo({
   }
 
   return (
-    <img
+    <Image
       alt="MAZETTO FOOD"
       className={`object-contain ${className}`}
-      decoding={priority ? "sync" : "async"}
-      fetchPriority={priority ? "high" : "auto"}
+      priority={priority}
       height={895}
       onError={() => setFailed(true)}
       sizes={sizes}

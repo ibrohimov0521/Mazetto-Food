@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { BrandSplash } from "./brand-splash";
 import { BrandLogo } from "./brand-logo";
+import { BrandBotanical } from "./brand-botanical";
 import { useCart, type CartFlight } from "../lib/cart";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
@@ -23,12 +24,13 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <main className="mf-shell mf-app-shell min-h-screen">
+    <main className="mf-shell mf-app-shell min-h-screen" data-customer-surface={pathname === "/" ? "home" : pathname.startsWith("/menu") ? "menu" : "account"}>
+        <BrandBotanical />
         <BrandSplash enabled={pathname === "/"} />
         <header className="mf-topbar inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)] md:fixed">
           <div className="relative mx-auto flex h-[3.75rem] max-w-6xl items-center justify-center px-4 md:h-14 md:justify-between md:gap-3">
-            <Link aria-label="MAZETTO FOOD bosh sahifa" className="pressable absolute left-1/2 top-1/2 w-[12.2rem] -translate-x-1/2 -translate-y-1/2 shrink-0 md:static md:w-auto md:translate-x-0 md:translate-y-0" href="/">
-              <BrandLogo className="h-12 w-full scale-[1.55] md:h-10 md:w-[10rem] md:scale-100 lg:h-11 lg:w-[11rem]" priority sizes="200px" />
+            <Link aria-label="MAZETTO FOOD bosh sahifa" className="mf-header-logo shrink-0" href="/">
+              <BrandLogo className="h-full w-full" priority sizes="(max-width: 767px) 240px, 220px" />
             </Link>
             <nav className="hidden min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden text-xs font-black text-white/72 md:flex md:gap-2 md:text-sm">
               <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">Menyu</Link>
@@ -45,18 +47,19 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
         <LayoutGroup id="customer-page-content">
           <AnimatePresence initial={false} mode="wait">
             <motion.div
+              className="mf-route-content"
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              initial={{ opacity: 0 }}
+              initial={false}
               key={pathname}
-              transition={{ duration: 0.22, ease: "easeOut" }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
             >
               {children}
             </motion.div>
           </AnimatePresence>
         </LayoutGroup>
         <LayoutGroup id="customer-bottom-nav">
-          <nav className="mf-bottom-nav mazetto-glass-nav fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-gap)+env(safe-area-inset-bottom))] z-40 h-[var(--mf-bottom-nav-height)] rounded-[1.25rem] px-1 py-1 sm:hidden">
+          <nav className="mf-bottom-nav mazetto-glass-nav fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-gap)+env(safe-area-inset-bottom))] z-40 h-[var(--mf-bottom-nav-height)] rounded-[1.25rem] px-1 py-1 md:hidden">
             <div className="grid h-full grid-cols-5 gap-0.5">
               {navItems.map((item) => {
                 const active = isNavActive(pathname, item.href);

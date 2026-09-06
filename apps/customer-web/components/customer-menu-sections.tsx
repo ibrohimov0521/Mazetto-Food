@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ProductCard } from "./product-card";
 import { MotionDiv, pageMotion } from "./motion-primitives";
-import { BrandLogo } from "./brand-logo";
 import { apiFetch } from "../lib/api";
 import { displayCategory, displayProducts } from "../lib/customer-display";
 import type { Category, Product } from "../lib/types";
@@ -28,6 +27,7 @@ export function CustomerMenuSections({
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const tabScrollerRef = useRef<HTMLDivElement | null>(null);
+  const categoryNavRef = useRef<HTMLDivElement | null>(null);
   const initialCategoryHandledRef = useRef(false);
   const manualScrollRef = useRef<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -177,7 +177,8 @@ export function CustomerMenuSections({
 
     manualScrollRef.current = Date.now() + 650;
     setActiveCategoryId(nextCategoryId);
-    const stickyOffset = window.matchMedia("(min-width: 768px)").matches ? 120 : 76;
+    const nav = categoryNavRef.current;
+    const stickyOffset = nav ? (parseFloat(getComputedStyle(nav).top) || 0) + nav.offsetHeight + 8 : 76;
     const top = target.getBoundingClientRect().top + window.scrollY - stickyOffset;
     window.scrollTo({ behavior, top: Math.max(0, top) });
   }
@@ -186,14 +187,10 @@ export function CustomerMenuSections({
     <div className={`mx-auto w-full max-w-6xl px-4 pb-8 ${compactTop ? "pt-1" : "pt-3 md:pt-5"}`}>
       {intro ? (
         <MotionDiv {...pageMotion} className="mf-menu-intro mf-organic px-4 pb-4 pt-3 sm:p-5">
-          <div className="mx-auto mb-2 flex max-w-[20rem] justify-center md:hidden">
-            <BrandLogo className="h-auto w-full drop-shadow-[0_18px_34px_rgba(0,0,0,0.26)]" priority sizes="320px" />
-          </div>
           <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,360px)] lg:items-end">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">MAZETTO FOOD menyusi</p>
               <h1 className="mt-1 text-[1.65rem] font-black leading-[1.02] text-white sm:text-4xl">{title}</h1>
-              <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-white/70">Lavash, burger, setlar va ichimliklar. Tez tanlang, issiq holda buyurtma qiling.</p>
             </div>
             <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
           </div>
@@ -209,7 +206,7 @@ export function CustomerMenuSections({
       )}
 
       {!loading && !error && menuSections.length ? (
-        <div className="sticky top-[env(safe-area-inset-top)] z-20 -mx-4 mt-3 min-w-0 px-4 py-2 md:top-24" data-menu-category-nav="true">
+        <div className="mf-menu-sticky sticky z-10 -mx-4 mt-3 min-w-0 px-4 pb-2" data-menu-category-nav="true" ref={categoryNavRef}>
           <div className="no-scrollbar mf-category-strip flex w-full min-w-0 max-w-full gap-2 overflow-x-auto rounded-[1.25rem] p-1.5" ref={tabScrollerRef}>
             {menuSections.map(({ category }) => (
               <button

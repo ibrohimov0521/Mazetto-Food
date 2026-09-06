@@ -1,6 +1,15 @@
 # MAZETTO FOOD Design Lock
 
-Last updated: 2026-08-27
+Last updated: 2026-09-06
+
+## Current Component Contract
+
+The owner-requested detailed element analysis and stable implementation baseline
+is in [MAZETTO_VISUAL_COMPONENT_CONTRACT.md](MAZETTO_VISUAL_COMPONENT_CONTRACT.md).
+It takes precedence over provisional visual claims below. Reference matching is
+PARTIAL, not pixel-perfect. The old 35-product/missing-media statements below are
+historical checkpoints, not the current catalog: the current canonical catalog
+has 74 items and owner-approved source media must be preserved.
 
 This document is the permanent visual source of truth for the MAZETTO FOOD customer experience. It supersedes the earlier generic green, mint, and liquid-glass direction where those choices conflict with the approved MAZETTO brand references.
 

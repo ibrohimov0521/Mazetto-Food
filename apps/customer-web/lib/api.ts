@@ -27,19 +27,45 @@ type ApiFetchInit = RequestInit & {
   accessToken?: string;
 };
 
+const catalogCache = new Map<string, { expiresAt: number; data: unknown }>();
+const catalogRequests = new Map<string, Promise<unknown>>();
+const catalogTtl = 30_000;
+
 export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
+  // Cache only public browsing data. Quotes, branch availability, auth and orders stay fresh.
+  const cacheable = typeof window !== "undefined" && init === undefined &&
+    /^\/customer\/(?:home|menu\/(?:categories|products)(?:\/[^/?]+)?)(?:\?[^#]*)?$/.test(path);
+  if (!cacheable) return requestApi<T>(path, init);
+
+  const key = `${getApiBaseUrl()}${path}`;
+  const cached = catalogCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.data as T;
+  const pending = catalogRequests.get(key);
+  if (pending) return pending as Promise<T>;
+
+  const request = requestApi<T>(path).then((data) => {
+    if (catalogCache.size >= 100) catalogCache.delete(catalogCache.keys().next().value!);
+    catalogCache.set(key, { data, expiresAt: Date.now() + catalogTtl });
+    return data;
+  }).finally(() => catalogRequests.delete(key));
+  catalogRequests.set(key, request);
+  return request;
+}
+
+async function requestApi<T>(path: string, init?: ApiFetchInit): Promise<T> {
   const { accessToken, headers, ...requestInit } = init ?? {};
+  const requestHeaders = new Headers(headers);
+  if (requestInit.body != null && !requestHeaders.has("Content-Type")) {
+    requestHeaders.set("Content-Type", "application/json");
+  }
+  if (accessToken) requestHeaders.set("Authorization", `Bearer ${accessToken}`);
   let response: Response;
 
   try {
     response = await fetch(`${getApiBaseUrl()}${path}`, {
       ...requestInit,
       cache: requestInit.cache ?? "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        ...headers,
-      },
+      headers: requestHeaders,
     });
   } catch {
     throw new Error("Server bilan aloqa uzildi. Qayta urinib ko'ring.");

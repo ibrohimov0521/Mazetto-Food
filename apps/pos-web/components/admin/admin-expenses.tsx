@@ -352,7 +352,7 @@ export function AdminExpensesPage() {
 
           {canSeeShifts && openShifts.length > 0 ? (
             <FormField
-              hint="Bog'lansa, xarajat smena kassa hisobiga kiradi. Faqat ochiq smenalar."
+              hint="Smena bo'yicha hisobot uchun. Kassa chiqimi alohida qayd etiladi."
               label="Smena"
             >
               {(props) => (

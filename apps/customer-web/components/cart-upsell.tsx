@@ -79,9 +79,9 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
     return (
       <section className="mt-5">
         <div className="skeleton h-6 w-56 rounded-full" />
-        <div className="no-scrollbar mt-3 flex max-w-full snap-x gap-2.5 overflow-x-auto overflow-y-visible overscroll-x-contain pb-4">
+        <div className="mf-upsell-scroll no-scrollbar mt-3">
           {Array.from({ length: 4 }, (_, index) => (
-            <div className="skeleton h-36 min-w-[9.5rem] rounded-[1.2rem]" key={index} />
+            <div className="skeleton h-48 min-w-0 rounded-2xl" key={index} />
           ))}
         </div>
       </section>
@@ -102,8 +102,11 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
         <Link className="hidden text-sm font-black text-[#0B7F75] sm:inline" href="/menu">Menyu</Link>
       </div>
       <div
-        className="no-scrollbar -mx-1 flex max-w-full snap-x gap-2.5 overflow-x-auto overflow-y-visible overscroll-x-contain px-1 pb-5 pt-1"
+        aria-label="Qo'shimcha mahsulotlar"
+        className="mf-upsell-scroll no-scrollbar"
         data-upsell-rail
+        role="region"
+        tabIndex={0}
       >
         {recommended.map((product) => (
           <UpsellCard addItem={addItem} key={product.id} product={product} triggerCartFlight={triggerCartFlight} />
@@ -128,11 +131,10 @@ function UpsellCard({
   const canQuickAdd = product.variants.length <= 1 && !product.modifiers.length;
 
   return (
-    <article className="mf-cart-upsell-card grid w-[9.6rem] shrink-0 snap-start overflow-hidden rounded-[1.15rem] sm:w-[10.5rem]">
+    <article className="mf-cart-upsell-card grid min-w-0 overflow-hidden rounded-2xl">
       <MediaImage
         alt={product.name}
         aspectClassName="h-24 sm:h-[6.5rem]"
-        imageClassName="transition-transform duration-300 hover:scale-[1.04]"
         ref={imageRef}
         sizes="168px"
         src={product.imageUrl}

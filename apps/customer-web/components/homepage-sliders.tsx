@@ -1,133 +1,80 @@
 "use client";
 
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { MediaImage } from "./media-image";
-import { MotionDiv, buttonMotion, sectionMotion } from "./motion-primitives";
+import { MotionDiv, sectionMotion } from "./motion-primitives";
 import { formatMoney } from "../lib/cart";
-import type { HomepageHeroSlide, HomepagePromotion } from "../lib/types";
+import type { HomepageHeroSlide, HomepagePromotion, Product } from "../lib/types";
 
-export function HomepageHeroSlider({ slides }: { slides: HomepageHeroSlide[] }) {
+export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading }: {
+  slides: HomepageHeroSlide[];
+  fallbackProduct: Product | undefined;
+  menuHref: string;
+  loading: boolean;
+}) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const safeSlides = useMemo(() => slides.filter((slide) => slide.title), [slides]);
   const activeSlide = safeSlides[activeIndex] ?? safeSlides[0];
 
-  useEffect(() => {
-    if (safeSlides.length < 2) {
-      return;
-    }
-
-    const timer = window.setInterval(
-      () => setActiveIndex((current) => (current + 1) % safeSlides.length),
-      5200,
-    );
-    return () => window.clearInterval(timer);
-  }, [safeSlides.length]);
-
-  if (!activeSlide) {
-    return null;
-  }
-
   function goTo(index: number) {
+    if (!safeSlides.length) return;
     setActiveIndex((index + safeSlides.length) % safeSlides.length);
   }
 
-  const href = activeSlide.targetUrl ?? (activeSlide.product ? `/product/${activeSlide.product.id}` : "/menu");
+  const product = activeSlide?.product ?? fallbackProduct;
+  const title = activeSlide?.title ?? fallbackProduct?.name ?? "MAZETTO FOOD";
+  const imageUrl = activeSlide?.imageUrl ?? product?.imageUrl;
+  const subtitle = activeSlide?.subtitle?.trim() || "";
+  const href = activeIndex === 0 ? menuHref : activeSlide?.targetUrl ?? (product ? `/product/${product.id}` : menuHref);
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-5 lg:py-8">
-      <div className="mf-home-feature grid min-w-0 overflow-hidden rounded-[1.75rem] lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <div className="relative z-10 flex min-w-0 flex-col justify-between gap-5 p-5 sm:p-7 lg:p-8">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={activeSlide.id}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -18 }}
-              initial={{ opacity: 0, x: 18 }}
-              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-            >
-              {activeSlide.badge ? (
-                <span className="mazetto-glass-chip inline-flex rounded-full px-4 py-2 text-xs font-black uppercase text-[#67E8F9]">
-                  {activeSlide.badge}
-                </span>
-              ) : null}
-              <h1 className="mt-4 break-words text-3xl font-black leading-tight text-white sm:text-5xl lg:text-6xl">
-                {activeSlide.title}
-              </h1>
-              <p className="mt-3 max-w-xl text-sm font-semibold leading-6 text-white/68 sm:text-lg sm:leading-7">
-                {activeSlide.subtitle ?? "MAZETTO FOOD menyusidan issiq va tez tayyorlanadigan taom."}
-              </p>
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <motion.div {...buttonMotion}>
-                  <Link className="pressable ripple mf-button-primary inline-flex px-5 py-3 text-sm font-black sm:px-6 sm:py-4" href={href}>
-                    {activeSlide.ctaLabel ?? "Buyurtma berish"}
-                  </Link>
-                </motion.div>
-                {activeSlide.product ? (
-                  <span className="mazetto-glass-chip rounded-full px-4 py-3 text-sm font-black text-[#67E8F9]">
-                    {formatMoney(activeSlide.product.sellingPrice)}
-                  </span>
-                ) : null}
-              </div>
-            </motion.div>
-          </AnimatePresence>
-
-          <div className="flex min-w-0 items-center justify-between gap-4">
-            <div className="flex gap-2">
-              {safeSlides.map((slide, index) => (
-                <button
-                  aria-label={`${index + 1}-slayd`}
-                  className={`h-2.5 rounded-full transition-all ${index === activeIndex ? "w-9 bg-[#67E8F9]" : "w-2.5 bg-white/24"}`}
-                  key={slide.id}
-                  onClick={() => goTo(index)}
-                  type="button"
-                />
-              ))}
-            </div>
-            {safeSlides.length > 1 ? (
-              <div className="hidden gap-2 sm:flex">
-                <button aria-label="Oldingi slayd" className="pressable mazetto-glass-button grid h-11 w-11 place-items-center rounded-full text-white" onClick={() => goTo(activeIndex - 1)} type="button">
-                  ‹
-                </button>
-                <button aria-label="Keyingi slayd" className="pressable mazetto-glass-button grid h-11 w-11 place-items-center rounded-full text-white" onClick={() => goTo(activeIndex + 1)} type="button">
-                  ›
-                </button>
-              </div>
-            ) : null}
-          </div>
+    <section aria-label="MAZETTO taomlari" aria-roledescription="karusel" className="mf-home-hero mf-hero-compact" data-home-slider>
+      <div className="mf-hero-copy">
+        <p className="mf-hero-eyebrow">{activeSlide?.badge || "MAZETTO FOOD"}</p>
+        <h1>{title}</h1>
+        {subtitle ? <p className="mf-hero-description">{subtitle}</p> : null}
+        {product ? <p className="mf-hero-price">{formatMoney(product.sellingPrice)}</p> : null}
+        <Link className="pressable mf-button-primary mf-home-order-cta" href={href}>
+          {activeSlide?.ctaLabel ?? "Buyurtma berish"}
+        </Link>
+      </div>
+      <div className="mf-home-hero-media" onTouchStart={(event) => {
+        const touch = event.touches[0];
+        touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+      }} onTouchCancel={() => { touchStart.current = null; }} onTouchEnd={(event) => {
+        const start = touchStart.current;
+        const end = event.changedTouches[0];
+        touchStart.current = null;
+        if (!start || !end) return;
+        const dx = end.clientX - start.x;
+        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(end.clientY - start.y)) goTo(activeIndex + (dx < 0 ? 1 : -1));
+      }}>
+        {loading ? <div className="skeleton h-full" /> : <MediaImage
+          alt={product?.name ?? title}
+          aspectClassName="h-full"
+          fit="contain"
+          priority
+          sizes="(max-width: 767px) 55vw, (max-width: 1152px) 55vw, 616px"
+          src={imageUrl}
+        />}
+      </div>
+      <div className="mf-hero-navigation">
+        <div className="flex min-w-0 flex-wrap">
+          {safeSlides.map((slide, index) => <button
+            aria-label={`${index + 1}-slayd`}
+            aria-pressed={index === activeIndex}
+            className="mf-hero-dot"
+            key={slide.id}
+            onClick={() => goTo(index)}
+            type="button"
+          ><span /></button>)}
         </div>
-
-        <div className="relative min-h-[15rem] overflow-hidden sm:min-h-[18rem] lg:min-h-full">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={0.16}
-              key={activeSlide.id}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 1.02, x: -24 }}
-              initial={{ opacity: 0, scale: 1.03, x: 24 }}
-              onDragEnd={(_, info) => {
-                if (Math.abs(info.offset.x) > 48) {
-                  goTo(activeIndex + (info.offset.x < 0 ? 1 : -1));
-                }
-              }}
-              transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <MediaImage
-                alt={activeSlide.title}
-                aspectClassName="min-h-[15rem] sm:min-h-[18rem] lg:min-h-[26rem]"
-                className="h-full"
-                imageClassName="scale-[1.02]"
-                priority
-                sizes="(max-width: 1024px) 100vw, 58vw"
-                src={activeSlide.imageUrl ?? activeSlide.product?.imageUrl}
-              />
-            </motion.div>
-          </AnimatePresence>
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0B0B0B]/72 via-transparent to-transparent lg:bg-gradient-to-r lg:from-[#111111]/48 lg:to-transparent" />
-        </div>
+        {safeSlides.length > 1 ? <div className="flex gap-2">
+          <button aria-label="Oldingi slayd" className="pressable mf-slider-arrow grid h-11 w-11 place-items-center rounded-full" onClick={() => goTo(activeIndex - 1)} type="button">‹</button>
+          <button aria-label="Keyingi slayd" className="pressable mf-slider-arrow grid h-11 w-11 place-items-center rounded-full" onClick={() => goTo(activeIndex + 1)} type="button">›</button>
+        </div> : null}
       </div>
     </section>
   );
@@ -142,10 +89,10 @@ export function PromotionSlider({ promotions }: { promotions: HomepagePromotion[
     <MotionDiv {...sectionMotion} className="mx-auto max-w-6xl px-4 pb-8">
       <div className="mb-4 flex items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-black uppercase text-[#67E8F9]">Aksiyalar</p>
-          <h2 className="text-2xl font-black text-white">Bugungi foydali takliflar</h2>
+          <p className="mf-section-link text-sm font-black uppercase">Aksiyalar</p>
+          <h2 className="mf-section-heading">Bugungi foydali takliflar</h2>
         </div>
-        <Link className="pressable text-sm font-black text-[#67E8F9]" href="/menu">Menyuga o'tish</Link>
+        <Link className="pressable mf-section-link text-sm font-black" href="/menu">Menyuga o'tish</Link>
       </div>
       <div className="no-scrollbar flex max-w-full snap-x gap-3 overflow-x-auto pb-2">
         {promotions.map((promotion) => {

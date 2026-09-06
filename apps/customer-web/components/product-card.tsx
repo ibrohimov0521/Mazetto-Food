@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { MediaImage } from "./media-image";
-import { MotionArticle, MotionButton, buttonMotion, cardMotion, hapticTap, imageMotion } from "./motion-primitives";
+import { MotionArticle, MotionButton, buttonMotion, hapticTap } from "./motion-primitives";
 import { cartItemKey, formatMoney, useCart } from "../lib/cart";
 import type { Product } from "../lib/types";
 
@@ -72,27 +72,22 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
 
   return (
     <MotionArticle
-      {...cardMotion}
+      // Lift without scaling/tilting the text and image's rasterized layer.
+      whileHover={{ y: -5 }}
+      whileTap={{ y: 1 }}
+      transition={{ type: "spring", stiffness: 420, damping: 30 }}
       data-product-card="true"
-      className={`mf-product-card mf-product-card-locked mf-leaf-corner group min-w-0 overflow-hidden [transform-style:preserve-3d] ${compact ? "is-compact" : ""}`}
-      initial={{ opacity: 0, y: 18 }}
-      viewport={{ once: true, margin: "-48px" }}
-      whileInView={{ opacity: 1, y: 0 }}
+      className={`mf-product-card mf-product-card-locked mf-leaf-corner group min-w-0 overflow-hidden ${compact ? "is-compact" : ""}`}
     >
       <div className="mf-product-media-shell relative">
         <Link href={`/product/${product.id}`}>
           <MediaImage
             alt={product.name}
             aspectClassName={compact ? "aspect-[1.22/1]" : "aspect-[4/3]"}
-            className="mf-product-media will-change-transform"
-            imageClassName="group-hover:scale-[1.03]"
-            motionProps={{
-              ...imageMotion,
-              layoutId: `product-image-${product.id}`,
-            }}
+            className="mf-product-media"
             ref={imageRef}
             src={product.imageUrl}
-            sizes={compact ? "(max-width: 767px) 50vw, (max-width: 1280px) 33vw, 25vw" : "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"}
+            sizes={compact ? "(max-width: 767px) 50vw, (max-width: 1152px) 33vw, (max-width: 1279px) 360px, 270px" : "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 360px"}
           />
         </Link>
         <button
@@ -116,11 +111,11 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
         </div>
       </div>
       <div className={compact ? "grid min-h-0 grid-rows-[2.35rem_2.35rem_2.75rem] gap-1.5 p-2.5" : "grid gap-2 p-4"}>
-        <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
+        <div className="relative min-w-0">
           <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} mf-product-title min-w-0 break-words font-black leading-tight text-white transition hover:text-[#F5CF00]`} href={`/product/${product.id}`}>
             {product.name}
           </Link>
-          <span className={`${compact ? "hidden min-[390px]:inline-flex" : "inline-flex"} mf-product-badge shrink-0 rounded-full bg-white/12 px-2 py-1 text-[10px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
+          <span className={`${compact ? "hidden" : "inline-flex mt-1"} mf-product-badge shrink-0 rounded-full bg-white/12 px-2 py-1 text-[10px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
             {product.preparationTime ?? 10} daq
           </span>
         </div>
@@ -130,7 +125,6 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
         <div className="mf-product-price-row flex min-w-0 items-center justify-between gap-2 sm:gap-3">
           <motion.span
             className={`${compact ? "text-[14px] min-[390px]:text-[15px] sm:text-base" : "text-lg"} mf-product-price min-w-0 font-black text-[#F5CF00]`}
-            layout
             transition={{ type: "spring", stiffness: 520, damping: 34 }}
           >
             {formatMoney(price)}

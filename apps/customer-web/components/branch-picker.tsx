@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Branch } from "../lib/types";
 
 type OrderType = "DELIVERY" | "PICKUP";
@@ -23,6 +24,10 @@ export function BranchPicker({
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelId = useId();
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
   const selectedBranch = useMemo(() => branches.find((branch) => branch.id === value), [branches, value]);
 
   useEffect(() => {
@@ -31,22 +36,47 @@ export function BranchPicker({
     }
 
     function onPointerDown(event: PointerEvent) {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
+      if (!wrapperRef.current?.contains(event.target as Node) && !panelRef.current?.contains(event.target as Node)) {
         setOpen(false);
+        triggerRef.current?.focus();
       }
     }
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
+        triggerRef.current?.focus();
+      }
+      if (event.key === "Tab") {
+        const buttons = panelRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+        const first = buttons?.[0];
+        const last = buttons?.[buttons.length - 1];
+        if (first && last && (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
       }
     }
 
+    function positionPanel() {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      if (window.innerWidth < 640) { setAnchor(null); return; }
+      const width = Math.min(Math.max(rect.width, 320), window.innerWidth - 24);
+      setAnchor({ width, left: Math.min(Math.max(12, rect.left), window.innerWidth - width - 12), top: Math.max(12, Math.min(rect.bottom + 8, window.innerHeight - 260)) });
+    }
+    positionPanel();
+    const frame = requestAnimationFrame(() => panelRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus());
+    window.addEventListener("resize", positionPanel);
+    window.addEventListener("scroll", positionPanel, true);
     window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", positionPanel);
+      window.removeEventListener("scroll", positionPanel, true);
+      cancelAnimationFrame(frame);
     };
   }, [open]);
 
@@ -57,12 +87,16 @@ export function BranchPicker({
 
     onChange(branch.id);
     setOpen(false);
+    triggerRef.current?.focus();
   }
 
   return (
     <div className="relative min-w-0" ref={wrapperRef}>
       <button
         aria-expanded={open}
+        aria-controls={panelId}
+        aria-haspopup="dialog"
+        ref={triggerRef}
         className="pressable ripple mf-branch-trigger flex w-full min-w-0 items-center justify-between gap-3 px-3 py-2.5 text-left font-bold"
         disabled={disabled || !branches.length}
         onClick={() => setOpen((current) => !current)}
@@ -77,7 +111,7 @@ export function BranchPicker({
         <span className={`mf-branch-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
       </button>
 
-      <AnimatePresence>
+      {open ? createPortal(<AnimatePresence>
         {open ? (
           <>
             <motion.div
@@ -88,12 +122,21 @@ export function BranchPicker({
             />
             <motion.div
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="mf-branch-menu fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-space)+0.75rem)] z-50 max-h-[70vh] overflow-hidden rounded-[1.7rem] p-2 sm:absolute sm:bottom-auto sm:left-0 sm:right-auto sm:top-[calc(100%+0.5rem)] sm:w-full sm:min-w-[22rem]"
+              className="mf-branch-menu fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-space)+0.75rem+env(safe-area-inset-bottom))] z-50 max-h-[70vh] overflow-hidden rounded-[1.7rem] p-2"
+              style={anchor ? { position: "fixed", top: anchor.top, left: anchor.left, width: anchor.width, minWidth: 0, bottom: "auto", right: "auto" } : {}}
+              id={panelId}
+              ref={panelRef}
+              role="dialog"
+              aria-label="Filial tanlash"
               exit={{ opacity: 0, y: 12, scale: 0.98 }}
               initial={{ opacity: 0, y: 12, scale: 0.98 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
-              <div className="max-h-[calc(70vh-1rem)] overflow-y-auto pr-1">
+              <div className="flex items-center justify-between px-3 py-1">
+                <span className="text-sm font-black">Filial tanlash</span>
+                <button aria-label="Filial oynasini yopish" className="grid h-11 w-11 place-items-center text-xl" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} type="button">×</button>
+              </div>
+              <div className="max-h-[calc(70vh-4.5rem)] overflow-y-auto pr-1">
                 {branches.map((branch) => {
                   const active = branch.id === value;
                   const enabled = canUseBranch(branch, orderType);
@@ -119,7 +162,7 @@ export function BranchPicker({
             </motion.div>
           </>
         ) : null}
-      </AnimatePresence>
+      </AnimatePresence>, document.body) : null}
     </div>
   );
 }
