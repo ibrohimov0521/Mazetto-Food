@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { canSwitchBranch } from "../../lib/admin-nav";
+import { hasPermission, type AuthUser } from "../../lib/auth";
 import {
   formatDateTime,
   formatMoney,
@@ -20,12 +21,14 @@ import {
 } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
-import { ButtonLink } from "../admin-ui/button";
+import { Button, ButtonLink } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
-import { FilterBar, Select } from "../admin-ui/form";
+import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
+import { Modal } from "../admin-ui/modal";
 import { Pagination } from "../admin-ui/pagination";
+import { useToast } from "../admin-ui/toast";
 
 /*
  * Admin buyurtmalar moduli.
@@ -353,10 +356,60 @@ export function AdminOrdersPage() {
   );
 }
 
+/*
+ * Holat o'zgartirish uchun ruxsat.
+ *
+ * `PATCH /orders/:id/status` `ORDER_UPDATE` emas, `ORDER_SEND_KITCHEN`
+ * talab qiladi va bundan tashqari `orders.service.ts` ikki shart qo'yadi:
+ * chaqiruvchi xodim bo'lishi va o'sha buyurtma FILIALIDA faol bo'lishi kerak
+ * (`requireEmployee` + `assertEmployeeInBranch`). Super-admin uchun ham
+ * istisno yo'q.
+ *
+ * Shuning uchun bu yerda tugmalarni ko'rsatib, 403 ni kutib o'tirmaymiz —
+ * sababi bilan oldindan bloklaymiz.
+ */
+function statusChangeBlockReason(
+  user: AuthUser | null,
+  order: AdminOrder,
+): string | null {
+  if (order.status === "COMPLETED" || order.status === "CANCELLED") {
+    return "Yakunlangan va bekor qilingan buyurtma holati o'zgarmaydi.";
+  }
+
+  if (!user?.employeeId) {
+    return "Holatni faqat xodim hisobiga bog'langan foydalanuvchi o'zgartira oladi.";
+  }
+
+  if (!order.branch) {
+    return "Buyurtma filiali aniqlanmadi.";
+  }
+
+  if (user.branchId !== order.branch.id) {
+    return `Holatni ${order.branch.name} filialining faol xodimi o'zgartiradi.`;
+  }
+
+  return null;
+}
+
+/** Yakuniy holatlar tanlovda ko'rsatilmaydi — ular ortga qaytmaydi. */
+const changeableStatuses: OrderStatus[] = [
+  "CONFIRMED",
+  "PREPARING",
+  "READY",
+  "SERVED",
+  "COMPLETED",
+  "CANCELLED",
+];
+
 export function AdminOrderDetail({ orderId }: { orderId: string }) {
+  const { user } = useAuth();
+  const { showToast } = useToast();
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [statusReason, setStatusReason] = useState("");
+  const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null);
+  const [isChanging, setIsChanging] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -383,6 +436,42 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     void load();
   }, [load]);
 
+  async function changeStatus(): Promise<void> {
+    if (!pendingStatus) {
+      return;
+    }
+
+    setIsChanging(true);
+
+    try {
+      await apiFetch(`/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: pendingStatus,
+          ...(statusReason.trim() ? { reason: statusReason.trim() } : {}),
+        }),
+      });
+
+      showToast("Buyurtma holati yangilandi.", "success");
+      setPendingStatus(null);
+      setStatusReason("");
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
+        caught instanceof Error
+          ? caught.message
+          : "Holatni o'zgartirib bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsChanging(false);
+    }
+  }
+
   if (isLoading) {
     return <SkeletonRows rows={8} />;
   }
@@ -395,6 +484,8 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
       />
     );
   }
+
+  const statusBlockReason = statusChangeBlockReason(user, order);
 
   const itemColumns: DataTableColumn<OrderItem>[] = [
     {
@@ -461,6 +552,37 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             ) : null}
           </CardBody>
         </Card>
+
+        {hasPermission(user, "ORDER_SEND_KITCHEN") ? (
+          <Card>
+            <CardHeader
+              description="O'zgarish tarixga yoziladi va oshxonaga yetkaziladi"
+              title="Holatni o'zgartirish"
+            />
+            <CardBody>
+              {statusBlockReason ? (
+                <p className="text-sm text-mz-text-muted">
+                  {statusBlockReason}
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {changeableStatuses
+                    .filter((status) => status !== order.status)
+                    .map((status) => (
+                      <Button
+                        key={status}
+                        onClick={() => setPendingStatus(status)}
+                        size="sm"
+                        variant={status === "CANCELLED" ? "danger" : "ghost"}
+                      >
+                        {orderStatusLabels[status]}
+                      </Button>
+                    ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader title="Tarkib" />
@@ -574,6 +696,42 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           </Card>
         ) : null}
       </aside>
+
+      <Modal
+        description="Sabab ixtiyoriy, lekin u buyurtma tarixida qoladi."
+        footer={
+          <>
+            <Button onClick={() => setPendingStatus(null)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              disabled={isChanging}
+              onClick={() => void changeStatus()}
+              variant={pendingStatus === "CANCELLED" ? "danger" : "primary"}
+            >
+              {isChanging ? "Yuborilmoqda…" : "Tasdiqlash"}
+            </Button>
+          </>
+        }
+        isOpen={pendingStatus !== null}
+        onClose={() => setPendingStatus(null)}
+        title={
+          pendingStatus
+            ? `${order.orderNumber} → ${orderStatusLabels[pendingStatus]}`
+            : "Holatni o'zgartirish"
+        }
+      >
+        <FormField label="Sabab">
+          {(props) => (
+            <TextInput
+              {...props}
+              onChange={(event) => setStatusReason(event.target.value)}
+              placeholder="Masalan: mijoz bekor qildi"
+              value={statusReason}
+            />
+          )}
+        </FormField>
+      </Modal>
     </div>
   );
 }
