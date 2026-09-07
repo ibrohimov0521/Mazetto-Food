@@ -7,14 +7,14 @@ export type ApiEnvelope<T> = {
 };
 
 export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined" && window.location.hostname.endsWith("mazettofood.uz")) {
+    return "/api/v1";
+  }
+
   const configuredUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "");
 
   if (configuredUrl) {
     return configuredUrl;
-  }
-
-  if (typeof window !== "undefined" && window.location.hostname.endsWith("mazettofood.uz")) {
-    return "https://api.mazettofood.uz/api/v1";
   }
 
   const developmentHost =

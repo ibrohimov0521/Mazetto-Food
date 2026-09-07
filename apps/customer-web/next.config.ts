@@ -16,6 +16,14 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(configDir, "../.."),
   transpilePackages: ["@mazetto/api-client", "@mazetto/ui"],
+  async rewrites() {
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: "https://api.mazettofood.uz/api/v1/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
