@@ -1,19 +1,43 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { BranchPicker } from "../../components/branch-picker";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Banknote,
+  Check,
+  MapPin,
+  Pencil,
+  ShoppingBag,
+  Truck,
+  UserRound,
+} from "lucide-react";
+
+import { deliveryAddressText } from "../../lib/delivery-location";
+
+import "leaflet/dist/leaflet.css";
+import "./checkout.css";
+import "../../components/fulfillment-dialog.css";
+
 import { CustomerAuthPanel } from "../../components/customer-auth-panel";
-import { AnimatedMoney, MotionDiv, hapticTap, pageMotion, sectionMotion } from "../../components/motion-primitives";
+import { AnimatedMoney, hapticTap } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
-import { apiFetch } from "../../lib/api";
+import { useCheckoutRuntime } from "../../lib/checkout-runtime";
 import { localizeMenuName } from "../../lib/customer-display";
-import { useCart } from "../../lib/cart";
+
 import type { Branch } from "../../lib/types";
 
-type OrderResult = { customerOrder: { id: string }; order: { orderNumber: string; displayOrderNumber?: string | null; id?: string } | null };
+type OrderResult = {
+  customerOrder: { id: string };
+  order: {
+    orderNumber: string;
+    displayOrderNumber?: string | null;
+    id?: string;
+  } | null;
+};
 type OrderType = "DELIVERY" | "PICKUP";
 type PaymentMethod = "CASH";
 type CheckoutQuote = {
@@ -22,14 +46,18 @@ type CheckoutQuote = {
   total: string;
   paymentMethods: { code: PaymentMethod; label: string; status: "AVAILABLE" }[];
 };
-type FormErrors = Partial<Record<"name" | "phone" | "address" | "branchId" | "items" | "customer", string>>;
-const branchStorageKey = "mazetto.customer.branchId";
+type FormErrors = Partial<
+  Record<
+    "name" | "phone" | "address" | "branchId" | "items" | "customer",
+    string
+  >
+>;
+
 const checkoutAttemptKey = "mazetto.customer.checkoutAttemptId";
 const checkoutAttemptPayloadKey = "mazetto.customer.checkoutAttemptPayload";
 
-const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] = [
-  { value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" },
-];
+const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] =
+  [{ value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" }];
 
 export default function CheckoutPage() {
   return (
@@ -41,14 +69,29 @@ export default function CheckoutPage() {
 
 function CheckoutFlow() {
   const router = useRouter();
-  const { clearCart, customer, items, refreshCustomer, showToast, subtotal } = useCart();
+  const {
+    clearCart,
+    customer,
+    items,
+    refreshCustomer,
+    showToast,
+    subtotal,
+    request: apiFetch,
+    preview,
+    fulfillment,
+    fulfillmentConfirmed,
+    openFulfillment,
+  } = useCheckoutRuntime();
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchId, setBranchId] = useState("");
+  const branchId = fulfillment?.branchId ?? "";
   const [name, setName] = useState(customer?.name ?? "");
   const [phone, setPhone] = useState(customer?.phone ?? "");
-  const [address, setAddress] = useState("");
+  const deliveryLocation = fulfillmentConfirmed
+    ? (fulfillment?.location ?? null)
+    : null;
+  const submitLock = useRef(false);
   const [comment, setComment] = useState("");
-  const [type, setType] = useState<OrderType>("DELIVERY");
+  const type: OrderType = fulfillment?.type ?? "DELIVERY";
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -57,12 +100,16 @@ function CheckoutFlow() {
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const branchRequest = useRef(0);
+  const quoteRequest = useRef(0);
   const deliveryFee = quote ? Number(quote.deliveryFee) : 0;
   const total = quote ? Number(quote.total) : subtotal;
-  const estimatedTime = useMemo(() => `${Math.min(35, 15 + items.length * 5)}-${Math.min(45, 25 + items.length * 5)} daqiqa`, [items.length]);
   const selectedBranch = branches.find((branch) => branch.id === branchId);
   const availablePaymentOptions = useMemo(() => {
-    const allowedCodes = new Set((quote?.paymentMethods ?? []).map((method) => method.code));
+    const allowedCodes = new Set(
+      (quote?.paymentMethods ?? []).map((method) => method.code),
+    );
     return allowedCodes.size
       ? paymentOptions.filter((option) => allowedCodes.has(option.value))
       : paymentOptions;
@@ -74,33 +121,37 @@ function CheckoutFlow() {
         variantId: item.variantId,
         quantity: item.quantity,
         notes: item.notes,
-        modifiers: item.modifiers.map((modifier) => ({ modifierId: modifier.modifierId, quantity: 1 })),
+        modifiers: item.modifiers.map((modifier) => ({
+          modifierId: modifier.modifierId,
+          quantity: 1,
+        })),
       })),
     [items],
   );
 
   const loadBranches = useCallback(async () => {
+    const version = ++branchRequest.current;
     setLoadingBranches(true);
+    setBranchError(null);
     try {
       const nextBranches = await apiFetch<Branch[]>("/customer/branches");
-      const storedBranchId = window.localStorage.getItem(branchStorageKey);
-      const nextBranchId =
-        nextBranches.find((branch) => branch.id === storedBranchId && canUseBranchForType(branch, type))?.id ??
-        nextBranches.find((branch) => canUseBranchForType(branch, type))?.id ??
-        nextBranches[0]?.id ??
-        "";
+      if (version !== branchRequest.current) return;
       setBranches(nextBranches);
-      setBranchId((current) => current || nextBranchId);
-      if (nextBranchId) {
-        window.localStorage.setItem(branchStorageKey, nextBranchId);
-      }
+    } catch (error) {
+      if (version === branchRequest.current)
+        setBranchError(
+          error instanceof Error ? error.message : "Filiallar yuklanmadi.",
+        );
     } finally {
-      setLoadingBranches(false);
+      if (version === branchRequest.current) setLoadingBranches(false);
     }
-  }, [type]);
+  }, [apiFetch]);
 
   useEffect(() => {
     void loadBranches();
+    return () => {
+      branchRequest.current++;
+    };
   }, [loadBranches]);
 
   useEffect(() => {
@@ -111,9 +162,12 @@ function CheckoutFlow() {
   }, [customer]);
 
   const loadQuote = useCallback(async () => {
+    const version = ++quoteRequest.current;
+    setQuote(null);
     if (!customer?.accessToken || !branchId || !items.length) {
       setQuote(null);
       setQuoteError(null);
+      setLoadingQuote(false);
       return;
     }
 
@@ -132,7 +186,10 @@ function CheckoutFlow() {
       let nextQuote: CheckoutQuote;
 
       try {
-        nextQuote = await apiFetch<CheckoutQuote>("/customer/checkout/quote", request);
+        nextQuote = await apiFetch<CheckoutQuote>(
+          "/customer/checkout/quote",
+          request,
+        );
       } catch (error) {
         if (!isCustomerSessionError(error)) {
           throw error;
@@ -150,33 +207,47 @@ function CheckoutFlow() {
         });
       }
 
-      setQuote(nextQuote);
+      if (version === quoteRequest.current) setQuote(nextQuote);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Narxni hisoblab bo'lmadi";
+      if (version !== quoteRequest.current) return;
+      const message =
+        error instanceof Error ? error.message : "Narxni hisoblab bo'lmadi";
       setQuote(null);
       setQuoteError(message);
     } finally {
-      setLoadingQuote(false);
+      if (version === quoteRequest.current) setLoadingQuote(false);
     }
-  }, [branchId, customer?.accessToken, items.length, orderItemsPayload, refreshCustomer, type]);
+  }, [
+    branchId,
+    customer?.accessToken,
+    items.length,
+    orderItemsPayload,
+    apiFetch,
+    refreshCustomer,
+    type,
+  ]);
 
   useEffect(() => {
     void loadQuote();
+    return () => {
+      quoteRequest.current++;
+    };
   }, [loadQuote]);
 
   function validate() {
     const nextErrors: FormErrors = {};
 
     if (!customer?.accessToken) {
-      nextErrors.customer = "Buyurtma berish uchun telefon raqamingizni tasdiqlang.";
+      nextErrors.customer =
+        "Buyurtma berish uchun telefon raqamingizni tasdiqlang.";
     }
 
     if (!items.length) {
       nextErrors.items = "Savatingiz bo'sh.";
     }
 
-    if (!branchId) {
-      nextErrors.branchId = "Filialni tanlang.";
+    if (!branchId || !fulfillmentConfirmed) {
+      nextErrors.address = "Qabul qilish usuli va manzilni tasdiqlang.";
     }
 
     if (branchId && !selectedBranch) {
@@ -187,7 +258,11 @@ function CheckoutFlow() {
       nextErrors.branchId = "Bu filial hozir buyurtma qabul qilmayapti.";
     }
 
-    if (selectedBranch && type === "DELIVERY" && !selectedBranch.deliveryEnabled) {
+    if (
+      selectedBranch &&
+      type === "DELIVERY" &&
+      !selectedBranch.deliveryEnabled
+    ) {
       nextErrors.branchId = "Bu filialda yetkazib berish mavjud emas.";
     }
 
@@ -199,41 +274,51 @@ function CheckoutFlow() {
       nextErrors.name = "Ismingizni kiriting.";
     }
 
-    if (!phone.trim() || phone.trim().replace(/[^\d+]/g, "").length < 7) {
+    if (!/^(?:998)?\d{9}$/.test(phone.replace(/\D/g, ""))) {
       nextErrors.phone = "Telefon raqamni to'g'ri kiriting.";
     }
 
-    if (type === "DELIVERY" && !address.trim()) {
-      nextErrors.address = "Yetkazib berish manzilini kiriting.";
+    if (type === "DELIVERY" && !deliveryLocation) {
+      nextErrors.address = "Yetkazish manzilini belgilang va tasdiqlang.";
     }
 
     setErrors(nextErrors);
+    const firstField = Object.keys(nextErrors)[0];
+    if (firstField)
+      requestAnimationFrame(() => {
+        const target = document.getElementById(
+          firstField === "address"
+            ? "delivery-address"
+            : "checkout-" + firstField,
+        );
+        target?.scrollIntoView({ block: "center", behavior: "instant" });
+        target?.focus({ preventScroll: true });
+      });
     return !Object.keys(nextErrors).length;
   }
 
-  function selectBranch(nextBranchId: string) {
-    setBranchId(nextBranchId);
-    window.localStorage.setItem(branchStorageKey, nextBranchId);
-  }
-
-  function selectType(nextType: OrderType) {
-    setType(nextType);
-    const firstAllowed = branches.find((branch) => canUseBranchForType(branch, nextType));
-    if (branchId && selectedBranch && canUseBranchForType(selectedBranch, nextType)) {
-      return;
-    }
-
-    if (firstAllowed) {
-      selectBranch(firstAllowed.id);
-    }
-  }
-
   async function submitOrder() {
+    if (
+      submitLock.current ||
+      submitting ||
+      loadingBranches ||
+      loadingQuote ||
+      branchError ||
+      !quote
+    )
+      return;
     if (!validate() || !customer?.accessToken) {
       showToast("Ma'lumotlarni tekshirib chiqing");
       return;
     }
 
+    if (preview) {
+      showToast(
+        "Sinov muvaffaqiyatli: ma'lumotlar tayyor. Haqiqiy buyurtma yuborilmadi.",
+      );
+      return;
+    }
+    submitLock.current = true;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -242,7 +327,12 @@ function CheckoutFlow() {
         name: name.trim(),
         phone: phone.trim(),
         type,
-        address: type === "DELIVERY" ? address.trim() : undefined,
+        address:
+          type === "DELIVERY" && deliveryLocation
+            ? deliveryAddressText(deliveryLocation)
+            : undefined,
+        deliveryLocation:
+          type === "DELIVERY" ? (deliveryLocation ?? undefined) : undefined,
         paymentMethod,
         notes: comment.trim() || undefined,
         items: orderItemsPayload,
@@ -261,6 +351,7 @@ function CheckoutFlow() {
       try {
         result = await apiFetch<OrderResult>("/customer/orders", request);
       } catch (error) {
+        if (!isCustomerSessionError(error)) throw error;
         const refreshed = await refreshCustomer();
 
         if (!refreshed) {
@@ -279,10 +370,12 @@ function CheckoutFlow() {
       showToast("Buyurtma muvaffaqiyatli yuborildi");
       router.push(`/order-success/${result.customerOrder.id}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Buyurtmani yuborib bo'lmadi";
+      const message =
+        error instanceof Error ? error.message : "Buyurtmani yuborib bo'lmadi";
       setSubmitError(message);
       showToast(message);
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   }
@@ -291,219 +384,400 @@ function CheckoutFlow() {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-checkout-card p-8">
-          <p className="text-sm font-black uppercase text-[#0B7F75]">Rasmiylashtirish</p>
+          <p className="text-sm font-black uppercase text-[#0B7F75]">
+            Rasmiylashtirish
+          </p>
           <CustomerAuthPanel
-            description="Buyurtmani yakunlash uchun telefon raqamingizni shu yerda tasdiqlang. Tasdiqlangandan keyin checkout sahifasi saqlanib qoladi."
+            description="Buyurtmani yakunlash uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
             title="Telefonni tasdiqlang"
           />
+          {process.env.NODE_ENV === "development" ? (
+            <Link
+              className="mf-location-button is-primary mt-5"
+              href="/checkout/preview"
+            >
+              Dizaynni loginsiz ko'rish
+              <ArrowRight size={18} />
+            </Link>
+          ) : null}
         </div>
       </section>
     );
   }
 
+  if (!items.length) {
+    return (
+      <section className="mf-checkout-empty">
+        <ShoppingBag size={40} />
+        <h1>Savatingiz bo'sh</h1>
+        <Link className="mf-location-button is-primary" href="/menu">
+          Menyuga o'tish
+          <ArrowRight size={18} />
+        </Link>
+      </section>
+    );
+  }
+
+  const locked =
+    submitting ||
+    loadingBranches ||
+    loadingQuote ||
+    Boolean(branchError) ||
+    !quote;
+
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,390px)] lg:pb-8">
-      <div className="grid min-w-0 gap-4">
-        <div className="mf-checkout-card p-5">
-          <p className="text-sm font-black uppercase text-[#0B7F75]">Rasmiylashtirish</p>
-          <h1 className="mt-1 text-3xl font-black text-[#17314A]">Buyurtmani yakunlash</h1>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <StepBadge number="1" label="Filial" active />
-            <StepBadge number="2" label="Manzil" active={type === "DELIVERY"} />
-            <StepBadge number="3" label="To'lov" active />
-          </div>
-
-          <div className="mt-5 grid gap-3">
-            <FieldError message={errors.customer} />
-            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
-              Ism va familiya
-              <motion.input className={inputClass(Boolean(errors.name))} placeholder="Masalan: Javohir Aliyev" value={name} onChange={(event) => setName(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
-              <FieldError message={errors.name} />
-            </label>
-            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
-              Telefon raqam
-              <motion.input className={inputClass(Boolean(errors.phone))} placeholder="+998 90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
-              <FieldError message={errors.phone} />
-            </label>
-            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
-              Filial
-              {loadingBranches ? (
-                <div className="skeleton h-12 rounded-2xl" />
+    <div className="mf-checkout-page">
+      <header className="mf-checkout-heading">
+        <Link href="/cart" className="mf-checkout-back">
+          <ArrowLeft size={18} />
+          Savatcha
+        </Link>
+        <h1>Buyurtmani rasmiylashtirish</h1>
+        <ol className="mf-checkout-progress" aria-label="Buyurtma bosqichlari">
+          <li className="is-complete">
+            <Check size={15} />
+            <span>Savatcha</span>
+          </li>
+          <li aria-current="step">
+            <span className="mf-progress-number">2</span>
+            <span>Rasmiylashtirish</span>
+          </li>
+          <li>
+            <span className="mf-progress-number">3</span>
+            <span>Tayyor</span>
+          </li>
+        </ol>
+      </header>
+      <div className="mf-checkout-layout">
+        <div className="mf-checkout-main">
+          <section
+            className="mf-checkout-section"
+            id="delivery-address"
+            tabIndex={-1}
+            aria-labelledby="delivery-title"
+          >
+            <h2 className="mf-checkout-section-title" id="delivery-title">
+              {type === "PICKUP" ? (
+                <ShoppingBag size={21} />
               ) : (
-                <BranchPicker branches={branches} onChange={selectBranch} orderType={type} value={branchId} />
+                <Truck size={21} />
               )}
-              <FieldError message={errors.branchId} />
-              {selectedBranch?.address ? <p className="text-xs font-bold text-[#17314A]/56">{selectedBranch.address}{branchLabelSuffix(selectedBranch, type)}</p> : null}
-            </label>
-
-            <div className="grid min-w-0 grid-cols-2 gap-2">
-              <button className={choiceClass(type === "DELIVERY")} onClick={() => selectType("DELIVERY")} type="button">Yetkazib berish</button>
-              <button className={choiceClass(type === "PICKUP")} onClick={() => selectType("PICKUP")} type="button">Olib ketish</button>
-            </div>
-
-            {type === "DELIVERY" ? (
-              <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
-                Yetkazib berish manzili
-                <motion.textarea className={`${inputClass(Boolean(errors.address))} min-h-28`} placeholder="Ko'cha, uy, mo'ljal" value={address} onChange={(event) => setAddress(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
-                <FieldError message={errors.address} />
-              </label>
+              {type === "PICKUP" ? "Olib ketish" : "Yetkazish manzili"}
+            </h2>
+            {fulfillment ? (
+              <div className="mf-selected-fulfillment">
+                <MapPin size={21} />
+                <div>
+                  <strong>
+                    {type === "PICKUP"
+                      ? fulfillment.branchName
+                      : fulfillment.location?.address}
+                  </strong>
+                  <p>
+                    {type === "PICKUP"
+                      ? fulfillment.branchAddress
+                      : fulfillment.location
+                        ? deliveryAddressText(fulfillment.location)
+                        : ""}
+                  </p>
+                  {type === "DELIVERY" ? <p>{fulfillment.branchName}</p> : null}
+                  {fulfillmentConfirmed ? (
+                    <small>
+                      <Check size={14} />
+                      Manzil tanlangan
+                    </small>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="mf-location-button is-primary mf-address-change"
+                  disabled={submitting}
+                  onClick={openFulfillment}
+                >
+                  <Pencil size={17} aria-hidden="true" />
+                  {fulfillmentConfirmed
+                    ? "O'zgartirish"
+                    : "Manzilni tasdiqlash"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="mf-location-button is-primary"
+                onClick={openFulfillment}
+              >
+                <MapPin size={18} />
+                Qabul qilish usulini tanlash
+              </button>
+            )}
+            <FieldError message={errors.address ?? errors.branchId} />
+            {branchError ? (
+              <div role="alert">
+                <FieldError message={branchError} />
+                <button
+                  className="mf-text-command"
+                  onClick={() => void loadBranches()}
+                  type="button"
+                >
+                  Qayta urinish
+                </button>
+              </div>
             ) : null}
+          </section>
 
-            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
-              Buyurtma izohi
-              <motion.textarea className={`${inputClass(false)} min-h-24`} placeholder="Masalan: piyozsiz, qo'ng'iroq qilmang" value={comment} onChange={(event) => setComment(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
+          <fieldset disabled={submitting} className="mf-checkout-section">
+            <legend className="mf-checkout-section-title">
+              <UserRound size={21} />
+              <span>Aloqa ma'lumotlari</span>
+            </legend>
+            <div className="mf-contact-fields">
+              <label className="mf-checkout-field">
+                Ism va familiya
+                <input
+                  id="checkout-name"
+                  autoComplete="name"
+                  maxLength={120}
+                  aria-invalid={Boolean(errors.name)}
+                  className="mf-input"
+                  placeholder="Ismingiz"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+                <FieldError message={errors.name} />
+              </label>
+              <label className="mf-checkout-field">
+                Telefon raqam
+                <input
+                  id="checkout-phone"
+                  autoComplete="tel"
+                  type="tel"
+                  maxLength={40}
+                  aria-invalid={Boolean(errors.phone)}
+                  className="mf-input"
+                  placeholder="+998 90 123 45 67"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                />
+                <FieldError message={errors.phone} />
+              </label>
+            </div>
+            <label className="mf-checkout-field mf-order-comment">
+              Buyurtmaga izoh
+              <textarea
+                className="mf-input"
+                maxLength={1000}
+                placeholder="Qo'shimcha istaklar (ixtiyoriy)"
+                rows={2}
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+              />
             </label>
-          </div>
+          </fieldset>
+
+          <fieldset disabled={submitting} className="mf-checkout-section">
+            <legend className="mf-checkout-section-title">
+              <Banknote size={21} />
+              <span>To'lov usuli</span>
+            </legend>
+            {availablePaymentOptions.map((option) => (
+              <label className="mf-checkout-payment" key={option.value}>
+                <Banknote size={24} />
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>
+                    {type === "DELIVERY"
+                      ? "Buyurtmani olganda kuryerga"
+                      : "Buyurtmani olganda kassada"}
+                  </small>
+                </span>
+                <input
+                  type="radio"
+                  name="payment"
+                  value={option.value}
+                  checked={paymentMethod === option.value}
+                  onChange={() => setPaymentMethod(option.value)}
+                />
+              </label>
+            ))}
+          </fieldset>
         </div>
 
-        <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
-          <h2 className="text-2xl font-black text-[#17314A]">To'lov turi</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {availablePaymentOptions.map((option) => (
-              <motion.button className={`pressable ripple mf-payment-option rounded-2xl px-4 py-4 text-left ${paymentMethod === option.value ? "is-active" : ""}`} key={option.value} layout onClick={() => { hapticTap(8); setPaymentMethod(option.value); }} type="button" whileTap={{ scale: 0.97 }}>
-                <span className="block font-black text-[#17314A]">{option.label}</span>
-                <span className="mt-1 block text-xs font-bold text-[#17314A]/58">{option.hint}</span>
-              </motion.button>
+        <aside className="mf-checkout-summary" aria-labelledby="summary-title">
+          <div className="mf-summary-heading">
+            <h2 id="summary-title">Sizning buyurtmangiz</h2>
+            <Link href="/cart" className="mf-text-command">
+              Tahrirlash
+            </Link>
+          </div>
+          <div className="mf-checkout-items">
+            {items.map((item) => (
+              <div className="mf-checkout-item" key={item.key}>
+                <MediaImage
+                  alt={item.productName}
+                  aspectClassName="h-14 w-14"
+                  className="rounded-lg"
+                  sizes="56px"
+                  src={item.imageUrl}
+                />
+                <div>
+                  <strong>{localizeMenuName(item.productName)}</strong>
+                  <small>
+                    {item.quantity} dona
+                    {item.variantName
+                      ? " / " + localizeMenuName(item.variantName)
+                      : ""}
+                  </small>
+                </div>
+                <span>
+                  <AnimatedMoney
+                    value={
+                      item.quantity *
+                      (Number(item.unitPrice) +
+                        item.modifiers.reduce(
+                          (sum, modifier) => sum + Number(modifier.price),
+                          0,
+                        ))
+                    }
+                  />
+                </span>
+              </div>
             ))}
           </div>
-          <p className="mt-3 text-xs font-bold text-[#17314A]/58">
-            Click va Payme real integratsiyasi yoqilgandan keyin ko'rsatiladi.
-          </p>
-        </MotionDiv>
-      </div>
-
-      <aside className="mf-checkout-card min-w-0 h-fit p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma</p>
-            <h2 className="mt-1 text-2xl font-black text-[#17314A]">Xulosa</h2>
-          </div>
-          <span className="rounded-full bg-[#0B7F75]/10 px-3 py-2 text-xs font-black text-[#0B7F75]">{estimatedTime}</span>
-        </div>
-
-        <div className="mt-4 grid gap-3">
-          {items.length ? items.map((item) => (
-            <div className="mf-cart-row grid min-w-0 grid-cols-[58px_minmax(0,1fr)] gap-3 p-2" key={item.key}>
-              <MediaImage
-                alt={item.productName}
-                aspectClassName="h-14 w-14"
-                className="rounded-xl"
-                sizes="56px"
-                src={item.imageUrl}
-              />
-              <div className="min-w-0">
-                <p className="truncate font-black text-[#17314A]">{item.quantity}x {localizeMenuName(item.productName)}</p>
-                <p className="text-xs font-semibold text-[#17314A]/56">{localizeMenuName(item.variantName) || "Oddiy"}</p>
-              </div>
+          <dl className="mf-checkout-totals">
+            <div>
+              <dt>Mahsulotlar</dt>
+              <dd>
+                <AnimatedMoney
+                  value={quote ? Number(quote.subtotal) : subtotal}
+                />
+              </dd>
             </div>
-          )) : <FieldError message={errors.items ?? "Savat bo'sh."} />}
-        </div>
-
-        <div className="mf-card-soft mt-5 grid gap-3 p-4">
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
-            <span>Mahsulotlar</span>
-            <span className="min-w-0 break-words text-right"><AnimatedMoney value={quote ? Number(quote.subtotal) : subtotal} /></span>
-          </div>
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
-            <span>Yetkazib berish</span>
-            <span className="min-w-0 break-words text-right">{loadingQuote ? "Hisoblanmoqda..." : deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
-          </div>
-          <div className="h-px bg-[#0B7F75]/12" />
-          <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-[#17314A]">
-            <span>Jami</span>
-            <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>
-          </div>
-        </div>
-
-        {submitError ? <p className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-300">{submitError}</p> : null}
-        {quoteError ? <p className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-300">{quoteError}</p> : null}
-
-        <button className="pressable ripple mf-button-primary mt-4 w-full px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
-          {submitting ? "Yuborilmoqda..." : "Buyurtmani tasdiqlash"}
-        </button>
-      </aside>
-
-      <div className="mf-mobile-action-bar fixed inset-x-3 z-30 rounded-[1.2rem] p-2.5 lg:hidden">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2.5">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-wide text-[#0B7F75]">Jami</p>
-            <p className="truncate text-base font-black text-[#17314A]"><AnimatedMoney value={total} /></p>
-          </div>
-          <button className="pressable ripple mf-button-primary grid h-11 shrink-0 place-items-center rounded-[1.05rem] px-4 text-sm font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
-            {submitting ? "Yuborilmoqda..." : "Tasdiqlash"}
+            <div>
+              <dt>{type === "DELIVERY" ? "Yetkazib berish" : "Olib ketish"}</dt>
+              <dd>
+                {loadingQuote ? (
+                  "Hisoblanmoqda..."
+                ) : !quote ? (
+                  "Hisoblanmagan"
+                ) : deliveryFee ? (
+                  <AnimatedMoney value={deliveryFee} />
+                ) : (
+                  "Bepul"
+                )}
+              </dd>
+            </div>
+            <div className="mf-checkout-grand-total">
+              <dt>Jami</dt>
+              <dd>
+                <AnimatedMoney value={total} />
+              </dd>
+            </div>
+          </dl>
+          {type === "DELIVERY" && deliveryLocation ? (
+            <p className="mf-summary-destination">
+              <MapPin size={17} />
+              <span>
+                {deliveryLocation.address}, {deliveryLocation.house}
+              </span>
+            </p>
+          ) : null}
+          {submitError ? (
+            <p role="alert" className="mf-checkout-error">
+              {submitError}
+            </p>
+          ) : null}
+          {quoteError ? (
+            <div role="alert" className="mf-checkout-error">
+              <p>{quoteError}</p>
+              <button
+                className="mf-text-command"
+                onClick={() => void loadQuote()}
+                type="button"
+              >
+                Qayta hisoblash
+              </button>
+            </div>
+          ) : null}
+          <button
+            className="mf-checkout-submit mf-desktop-submit"
+            disabled={locked}
+            onClick={() => void submitOrder()}
+            type="button"
+          >
+            <span>
+              {submitting ? "Yuborilmoqda..." : "Buyurtmani tasdiqlash"}
+            </span>
+            <ArrowRight size={19} />
           </button>
-        </div>
+        </aside>
       </div>
-    </MotionDiv>
-  );
-}
-
-function inputClass(error: boolean): string {
-  return `mf-input px-4 py-3 font-semibold ${error ? "border-red-400 bg-red-500/10" : ""}`;
-}
-
-function choiceClass(active: boolean): string {
-  return `pressable ripple rounded-2xl px-4 py-3 text-sm font-bold ${active ? "mf-button-primary" : "mf-button-secondary"}`;
-}
-
-function FieldError({ message }: { message: string | undefined }) {
-  return message ? <p className="text-xs font-bold text-red-600">{message}</p> : null;
-}
-
-function StepBadge({ active, label, number }: { active: boolean; label: string; number: string }) {
-  return (
-    <div className={`mf-checkout-step ${active ? "is-active" : ""}`}>
-      <span>{number}</span>
-      <p>{label}</p>
+      <div className="mf-checkout-mobile-bar">
+        <div>
+          <span>Jami</span>
+          <strong>
+            <AnimatedMoney value={total} />
+          </strong>
+        </div>
+        <button
+          className="mf-checkout-submit"
+          disabled={locked}
+          onClick={() => void submitOrder()}
+          type="button"
+        >
+          <span>{submitting ? "Yuborilmoqda..." : "Tasdiqlash"}</span>
+          <ArrowRight size={18} />
+        </button>
+      </div>
     </div>
   );
 }
 
-function canUseBranchForType(branch: Branch, type: OrderType): boolean {
-  if (branch.acceptsOrders === false) {
-    return false;
-  }
-
-  return type === "DELIVERY" ? branch.deliveryEnabled !== false : branch.pickupEnabled !== false;
+function FieldError({ message }: { message: string | undefined }) {
+  return message ? <p className="mf-checkout-error">{message}</p> : null;
 }
 
-function branchLabelSuffix(branch: Branch, type: OrderType): string {
-  if (!branch.acceptsOrders) {
-    return " - hozir yopiq";
-  }
-
-  if (type === "DELIVERY" && !branch.deliveryEnabled) {
-    return " - yetkazish yo'q";
-  }
-
-  if (type === "PICKUP" && !branch.pickupEnabled) {
-    return " - olib ketish yo'q";
-  }
-
-  return "";
-}
+let memoryAttempt: { id: string; signature: string } | null = null;
 
 function getCheckoutAttemptId(payloadSignature: string): string {
-  const storedSignature = window.localStorage.getItem(checkoutAttemptPayloadKey);
-  const storedAttemptId = window.localStorage.getItem(checkoutAttemptKey);
+  let storedSignature: string | null = null;
+  let storedAttemptId: string | null = null;
+  try {
+    storedSignature = window.localStorage.getItem(checkoutAttemptPayloadKey);
+    storedAttemptId = window.localStorage.getItem(checkoutAttemptKey);
+  } catch {
+    /* The in-memory attempt below also protects retries in this tab. */
+  }
+  if (memoryAttempt?.signature === payloadSignature) return memoryAttempt.id;
 
   if (storedAttemptId && storedSignature === payloadSignature) {
     return storedAttemptId;
   }
 
   const nextAttemptId = createClientId();
-  window.localStorage.setItem(checkoutAttemptKey, nextAttemptId);
-  window.localStorage.setItem(checkoutAttemptPayloadKey, payloadSignature);
+  memoryAttempt = { id: nextAttemptId, signature: payloadSignature };
+  try {
+    window.localStorage.setItem(checkoutAttemptKey, nextAttemptId);
+    window.localStorage.setItem(checkoutAttemptPayloadKey, payloadSignature);
+  } catch {
+    /* Storage can be unavailable in private browsers. */
+  }
   return nextAttemptId;
 }
 
 function clearCheckoutAttempt() {
-  window.localStorage.removeItem(checkoutAttemptKey);
-  window.localStorage.removeItem(checkoutAttemptPayloadKey);
+  memoryAttempt = null;
+  try {
+    window.localStorage.removeItem(checkoutAttemptKey);
+    window.localStorage.removeItem(checkoutAttemptPayloadKey);
+  } catch {
+    /* A completed order must not appear failed because storage is blocked. */
+  }
 }
 
 function isCustomerSessionError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("Sessiya muddati tugagan");
+  return (
+    error instanceof Error && error.message.includes("Sessiya muddati tugagan")
+  );
 }
 
 function createClientId(): string {

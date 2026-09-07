@@ -42,10 +42,12 @@ function CartReview() {
 
     let cancelled = false;
     setCatalogLoading(true);
+    const branchId = window.localStorage.getItem("mazetto.customer.branchId");
+    const branchQuery = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
 
     Promise.all([
-      apiFetch<Category[]>("/customer/menu/categories"),
-      apiFetch<Product[]>("/customer/menu/products"),
+      apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
+      apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
     ])
       .then(([nextCategories, nextProducts]) => {
         if (cancelled) {
@@ -79,16 +81,15 @@ function CartReview() {
       <div className="mf-checkout-card min-w-0 p-5">
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black uppercase text-[#0B7F75]">Savat</p>
-            <h1 className="mt-1 text-3xl font-black text-[#17314A]">Savatcha</h1>
+            <h1 className="text-2xl font-black text-[#17314A]">Savatcha</h1>
           </div>
-          <span className="basis-full rounded-2xl bg-[#F5CF00]/26 px-4 py-2 text-sm font-black text-[#0A4F55] sm:basis-auto">{items.length} ta mahsulot</span>
+          <span className="text-sm font-bold text-[#087d78]">{items.reduce((count, item) => count + item.quantity, 0)} ta mahsulot</span>
         </div>
 
         {items.length ? (
           <MotionDiv {...sectionMotion} className="mt-5 grid gap-3">
             {items.map((item) => (
-              <div className="mf-cart-row grid min-w-0 grid-cols-[76px_minmax(0,1fr)] gap-3 p-3 sm:grid-cols-[96px_minmax(0,1fr)]" key={item.key}>
+              <div className="mf-cart-row grid min-w-0 grid-cols-[80px_minmax(0,1fr)] gap-3 py-3 sm:grid-cols-[96px_minmax(0,1fr)]" key={item.key}>
                 <MediaImage
                   alt={item.productName}
                   aspectClassName="h-20 w-20 sm:h-24 sm:w-24"
@@ -99,11 +100,11 @@ function CartReview() {
                 <div className="min-w-0">
                   <div className="flex min-w-0 justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="truncate font-bold text-[#17314A]">{localizeMenuName(item.productName)}</h2>
+                      <h2 className="break-words font-bold leading-snug text-[#17314A]">{localizeMenuName(item.productName)}</h2>
                       <p className="text-sm text-[#17314A]/52">{localizeMenuName(item.variantName) || "Oddiy"}</p>
                     </div>
-                    <button className="pressable shrink-0 text-sm font-bold text-red-400" onClick={() => removeItem(item.key)} type="button">
-                      O'chirish
+                    <button aria-label={`${item.productName} savatdan olib tashlash`} title="Savatdan olib tashlash" className="pressable grid h-11 w-11 shrink-0 place-items-center rounded-xl text-xl text-[#087d78]" onClick={() => removeItem(item.key)} type="button">
+                      &#215;
                     </button>
                   </div>
                   {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#0B7F75]">{item.modifiers.map((modifier) => localizeMenuName(modifier.name)).join(", ")}</p> : null}
@@ -121,7 +122,7 @@ function CartReview() {
             ))}
           </MotionDiv>
         ) : (
-          <div className="mf-card-soft mt-5 p-8 text-center">
+          <div className="mt-5 py-8 text-center">
             <p className="font-bold text-[#17314A]">Savatchangiz hozircha bo'sh.</p>
             <Link className="pressable ripple mf-button-primary mt-4 inline-flex px-5 py-3 font-bold" href="/menu">
               Menyuga o'tish
@@ -132,7 +133,7 @@ function CartReview() {
         <CartUpsell categories={catalogCategories} loading={catalogLoading} products={catalogProducts} />
       </div>
 
-      <aside className="mf-checkout-card min-w-0 h-fit p-5">
+      {items.length ? <aside className="mf-checkout-card min-w-0 h-fit p-5">
         <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
         {!customer?.accessToken ? (
           <div className="mf-surface-note mt-4 rounded-2xl px-4 py-3 text-sm font-bold">
@@ -163,9 +164,9 @@ function CartReview() {
             Telefonni tasdiqlash
           </Link>
         )}
-      </aside>
+      </aside> : null}
 
-      <div className="mf-mobile-action-bar fixed inset-x-3 z-30 rounded-[1.2rem] p-2.5 lg:hidden">
+      {items.length ? <div className="mf-mobile-action-bar fixed inset-x-3 z-30 rounded-[1.2rem] p-2.5 lg:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2.5">
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-wide text-[#0B7F75]">Jami</p>
@@ -175,7 +176,7 @@ function CartReview() {
             {customer?.accessToken ? "Davom etish" : "Tasdiqlash"}
           </Link>
         </div>
-      </div>
+      </div> : null}
     </MotionDiv>
   );
 }

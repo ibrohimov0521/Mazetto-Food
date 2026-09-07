@@ -100,7 +100,7 @@ export function PromotionSlider({ promotions }: { promotions: HomepagePromotion[
         {promotions.map((promotion) => {
           const href = promotion.targetUrl ?? (promotion.product ? `/product/${promotion.product.id}` : promotion.category ? `/menu?category=${promotion.category.id}` : "/menu");
           return (
-            <Link className="mazetto-liquid-surface grid w-[min(19rem,82vw)] shrink-0 snap-start overflow-hidden rounded-[1.6rem] sm:w-[24rem] sm:grid-cols-[minmax(0,1fr)_9rem]" href={href} key={promotion.id}>
+            <Link className="mf-promotion grid w-[min(19rem,82vw)] shrink-0 snap-start overflow-hidden rounded-2xl border border-white/20 bg-[#08686a] sm:w-[24rem] sm:grid-cols-[minmax(0,1fr)_9rem]" href={href} key={promotion.id}>
               <div className="min-w-0 p-4">
                 {promotion.badge ?? promotion.discountPercent ? (
                   <span className="mazetto-glass-chip inline-flex rounded-full px-3 py-1.5 text-xs font-black text-[#67E8F9]">

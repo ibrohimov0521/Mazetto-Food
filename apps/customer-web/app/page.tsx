@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BranchPicker } from "../components/branch-picker";
 import { CustomerAuthPanel } from "../components/customer-auth-panel";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
@@ -11,13 +11,11 @@ import { ProductCard } from "../components/product-card";
 import { SiteShell } from "../components/site-shell";
 import { apiFetch } from "../lib/api";
 import { displayCategory, displayCustomerHome, displayProducts } from "../lib/customer-display";
-import { useCart } from "../lib/cart";
 import type { Branch, Category, CustomerHome, Product } from "../lib/types";
 
 const branchStorageKey = "mazetto.customer.branchId";
 
 export default function Home() {
-  const { customer } = useCart();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -25,8 +23,10 @@ export default function Home() {
   const [branchId, setBranchId] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const loadVersion = useRef(0);
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
     setLoadError(null);
     try {
@@ -43,21 +43,24 @@ export default function Home() {
         apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
         apiFetch<CustomerHome>(`/customer/home${branchQuery}`),
       ]);
+      if (version !== loadVersion.current) return;
       setBranches(nextBranches);
       setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
       setProducts(displayProducts(nextProducts));
       setHome(displayCustomerHome(nextHome));
-      setBranchId((current) => current || nextBranchId);
+      setBranchId(nextBranchId);
       if (nextBranchId) window.localStorage.setItem(branchStorageKey, nextBranchId);
     } catch (error) {
+      if (version !== loadVersion.current) return;
       setLoadError(error instanceof Error ? error.message : "Ma'lumotlarni yuklab bo'lmadi.");
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
+    return () => { loadVersion.current++; };
   }, [load]);
 
   const featured = useMemo(() => products.filter((product) => product.isRecommended).slice(0, 4), [products]);
@@ -74,19 +77,25 @@ export default function Home() {
   }
 
   async function loadBranchContent(nextBranchId: string) {
+    const version = ++loadVersion.current;
     const branchQuery = nextBranchId ? `?branchId=${encodeURIComponent(nextBranchId)}` : "";
     setLoadError(null);
+    setLoading(true);
     try {
       const [nextCategories, nextProducts, nextHome] = await Promise.all([
         apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
         apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
         apiFetch<CustomerHome>(`/customer/home${branchQuery}`),
       ]);
+      if (version !== loadVersion.current) return;
       setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
       setProducts(displayProducts(nextProducts));
       setHome(displayCustomerHome(nextHome));
     } catch (error) {
+      if (version !== loadVersion.current) return;
       setLoadError(error instanceof Error ? error.message : "Filial ma'lumotlari yuklanmadi.");
+    } finally {
+      if (version === loadVersion.current) setLoading(false);
     }
   }
 
@@ -116,7 +125,7 @@ export default function Home() {
 
       <PromotionSlider promotions={home.promotions} />
 
-      {loading ? <SkeletonProductSection title="Tavsiya qilamiz" /> : <ProductSection products={featured.length ? featured : popular.slice(0, 4)} title="Tavsiya qilamiz" />}
+      {loading ? <SkeletonProductSection title="Tavsiya qilamiz" /> : <ProductSection priority products={featured.length ? featured : popular.slice(0, 4)} title="Tavsiya qilamiz" />}
 
       <MotionDiv {...sectionMotion} className="mx-auto w-full max-w-6xl px-4 pb-8">
         <div className="no-scrollbar mf-home-category-row flex max-w-full gap-2.5 overflow-x-auto pb-2 sm:gap-3">
@@ -148,20 +157,7 @@ export default function Home() {
       )}
 
       <MotionDiv {...sectionMotion} className="mx-auto max-w-6xl px-4 pb-12">
-        <div className="mf-card mazetto-liquid-surface grid min-w-0 gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,360px)]">
-          <div className="min-w-0">
-            <p className="text-sm font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>
-            <h2 className="mt-2 text-3xl font-black text-[#17314A]">Sevimlilarni saqlang va buyurtmani kuzating.</h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[#17314A]/72">Telefon raqamingizni kiriting, keyin MAZETTO Telegram boti yuborgan qisqa kodni tasdiqlang.</p>
-          </div>
-          <div className="grid min-w-0 gap-3">
-            {customer ? (
-              <CustomerAuthPanel />
-            ) : (
-              <CustomerAuthPanel />
-            )}
-          </div>
-        </div>
+        <section className="mx-auto max-w-lg border-t border-[#0B7F75]/15 pt-6"><CustomerAuthPanel /></section>
       </MotionDiv>
     </SiteShell>
   );
@@ -179,7 +175,7 @@ function getCategoryRank(category: Category): number {
   return 0;
 }
 
-function ProductSection({ products, title }: { products: Product[]; title: string }) {
+function ProductSection({ products, title, priority = false }: { products: Product[]; title: string; priority?: boolean }) {
   if (!products.length) {
     return null;
   }
@@ -191,7 +187,7 @@ function ProductSection({ products, title }: { products: Product[]; title: strin
         <Link className="pressable mf-section-link text-sm font-black" href="/menu">Menyuni ko'rish</Link>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
-        {products.map((product) => <ProductCard compact key={product.id} product={product} />)}
+        {products.map((product, index) => <ProductCard compact key={product.id} priority={priority && index < 4} product={product} />)}
       </div>
     </MotionDiv>
   );
@@ -205,7 +201,7 @@ function SkeletonProductSection({ title }: { title: string }) {
         <div className="skeleton h-5 w-24 rounded-full" />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
-        {Array.from({ length: 3 }, (_, index) => (
+        {Array.from({ length: 4 }, (_, index) => (
           <div className="mf-card overflow-hidden" key={index}>
             <div className="skeleton aspect-square w-full" />
             <div className="grid gap-2 p-3">

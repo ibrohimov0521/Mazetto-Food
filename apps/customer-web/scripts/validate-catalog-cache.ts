@@ -5,6 +5,7 @@ async function main() {
   const originalFetch = globalThis.fetch;
   const originalNow = Date.now;
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const originalTimeout = AbortSignal.timeout;
   let now = 1_000;
   let calls = 0;
   let fail = false;
@@ -49,10 +50,26 @@ async function main() {
     await assert.rejects(apiFetch("/customer/menu/products?branchId=retry"));
     fail = false;
     await apiFetch("/customer/menu/products?branchId=retry");
-    console.log("PASS: catalog deduplication, expiry, branch isolation, retries, fresh auth/checkout/order data");
+    AbortSignal.timeout = () => originalTimeout(10);
+    globalThis.fetch = async (_input, init) => new Promise((_resolve, reject) => {
+      const signal = init?.signal;
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+    const keepAlive = setTimeout(() => {}, 1000);
+    try {
+      await assert.rejects(apiFetch("/customer/menu/products?branchId=timeout"), /Server javobi kechikmoqda/);
+      const controller = new AbortController();
+      const request = apiFetch("/customer/branches", { signal: controller.signal });
+      controller.abort(new Error("cancelled by caller"));
+      await assert.rejects(request, /cancelled by caller/);
+    } finally {
+      clearTimeout(keepAlive);
+    }
+    console.log("PASS: catalog deduplication, expiry, branch isolation, retries, fresh auth/checkout/order data, request timeout and caller cancellation");
   } finally {
     globalThis.fetch = originalFetch;
     Date.now = originalNow;
+    AbortSignal.timeout = originalTimeout;
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
     else Reflect.deleteProperty(globalThis, "window");
   }

@@ -4,19 +4,22 @@ import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { CustomerMenuSections } from "../../../components/customer-menu-sections";
 import { MediaImage } from "../../../components/media-image";
-import { MotionButton, MotionDiv, buttonMotion, cardMotion, hapticTap, imageMotion, pageMotion } from "../../../components/motion-primitives";
+import { hapticTap } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
 import { displayProduct } from "../../../lib/customer-display";
 import { formatMoney, useCart } from "../../../lib/cart";
 import type { Product } from "../../../lib/types";
 
-export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ProductPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
-
   return (
     <SiteShell>
-      <ProductDetails id={id} />
+      <ProductDetails id={id} key={id} />
     </SiteShell>
   );
 }
@@ -25,235 +28,297 @@ function ProductDetails({ id }: { id: string }) {
   const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, toggleFavorite, triggerCartFlight } = useCart();
   const [product, setProduct] = useState<Product | null>(null);
-  const [variantId, setVariantId] = useState<string | undefined>();
+  const [variantId, setVariantId] = useState<string>();
   const [modifierIds, setModifierIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    async function load() {
-      setError(null);
-      try {
-        const nextProduct = await apiFetch<Product>(`/customer/menu/products/${id}`);
-        setProduct(displayProduct(nextProduct));
-        setVariantId(nextProduct.variants.find((variant) => variant.isDefault)?.id ?? nextProduct.variants[0]?.id);
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "Mahsulot topilmadi.");
-      }
-    }
-
-    void load();
-  }, [id]);
+    let active = true;
+    setError(null);
+    const branchId = window.localStorage.getItem("mazetto.customer.branchId");
+    const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
+    void apiFetch<Product>(`/customer/menu/products/${id}${query}`)
+      .then((data) => {
+        if (!active) return;
+        setProduct(displayProduct(data));
+        setVariantId(
+          data.variants.find((variant) => variant.isDefault)?.id ??
+            data.variants[0]?.id,
+        );
+        setModifierIds(
+          data.modifiers
+            .filter((link) => link.isRequired)
+            .map((link) => link.modifier.id),
+        );
+      })
+      .catch((caught: unknown) => {
+        if (active)
+          setError(
+            caught instanceof Error ? caught.message : "Mahsulot topilmadi.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [attempt, id]);
 
   const variant = useMemo(
-    () => product?.variants.find((candidate) => candidate.id === variantId) ?? product?.variants[0],
+    () => product?.variants.find((item) => item.id === variantId),
     [product, variantId],
   );
-  const selectedModifiers = product?.modifiers.filter((link) => modifierIds.includes(link.modifier.id)) ?? [];
-  const ingredientHints = useMemo(() => {
-    const words = (product?.description ?? "")
-      .split(/[,.+]/)
-      .map((value) => value.trim())
-      .filter((value) => value.length > 2)
-      .slice(0, 4);
-    const options = product?.modifiers.map((link) => link.modifier.name).slice(0, 4) ?? [];
-    return [...words, ...options].slice(0, 6);
-  }, [product]);
-  const total =
-    ((Number(variant?.sellingPrice ?? product?.sellingPrice ?? 0) +
-      selectedModifiers.reduce((sum, link) => sum + Number(link.modifier.price), 0)) *
-      quantity);
+  const selectedModifiers =
+    product?.modifiers.filter((link) =>
+      modifierIds.includes(link.modifier.id),
+    ) ?? [];
+  const unitTotal =
+    Number(variant?.sellingPrice ?? product?.sellingPrice ?? 0) +
+    selectedModifiers.reduce(
+      (sum, link) => sum + Number(link.modifier.price),
+      0,
+    );
+  const total = unitTotal * quantity;
 
-  if (error) {
+  if (error)
     return (
-      <section className="mx-auto max-w-3xl px-4 py-10 text-center">
-        <div className="mf-card p-8">
-          <h1 className="text-3xl font-black text-white">Mahsulot ochilmadi</h1>
-          <p className="mt-3 text-white/60">{error}</p>
-          <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/menu">
+      <section className="mx-auto max-w-3xl px-4 py-6">
+        <div className="mf-card p-6 text-center" role="alert">
+          <h1 className="text-2xl font-black">Mahsulot ochilmadi</h1>
+          <p className="mt-3 text-sm">{error}</p>
+          <button
+            className="mf-button-primary mt-5 px-5 py-3 font-bold"
+            onClick={() => setAttempt((value) => value + 1)}
+            type="button"
+          >
+            Qayta urinish
+          </button>
+          <Link className="mt-4 block font-bold" href="/menu">
             Menyuga qaytish
           </Link>
         </div>
       </section>
     );
-  }
 
-  if (!product) {
+  if (!product)
     return (
-      <main className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div className="mf-card overflow-hidden">
-          <div className="skeleton aspect-[4/3] w-full" />
-          <div className="grid grid-cols-3 gap-2 p-3 sm:gap-3 sm:p-5">
-            <div className="skeleton h-20 rounded-xl" />
-            <div className="skeleton h-20 rounded-xl" />
-            <div className="skeleton h-20 rounded-xl" />
-          </div>
-        </div>
-        <div className="mf-card p-5">
-          <div className="skeleton h-5 w-32 rounded-full" />
-          <div className="skeleton mt-5 h-12 w-4/5 rounded-full" />
-          <div className="skeleton mt-4 h-5 w-full rounded-full" />
-          <div className="skeleton mt-2 h-5 w-2/3 rounded-full" />
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <>
-      <MotionDiv {...pageMotion} className="mf-product-detail-stage mx-auto grid w-full max-w-6xl gap-4 px-3 py-5 sm:px-4 lg:grid-cols-[minmax(0,1.02fr)_minmax(20rem,0.98fr)]">
-      <div className="mf-product-config min-w-0 p-4 sm:p-5 lg:p-6">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <Link className="pressable grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#0B7F75]/16 bg-[#0B7F75]/8 text-2xl font-black text-[#0A4F55]" href="/menu" aria-label="Menyuga qaytish">
-            ‹
-          </Link>
-          <button
-            aria-label="Sevimlilarga qo'shish"
-            className={`pressable grid h-10 w-10 shrink-0 place-items-center rounded-full border text-lg font-black shadow ${isFavorite(product.id) ? "border-[#F5CF00]/45 bg-[#F5CF00] text-[#07373A]" : "border-[#0B7F75]/16 bg-[#0B7F75]/8 text-[#0A4F55]"}`}
-            onClick={() => {
-              hapticTap(8);
-              toggleFavorite(product.id);
-            }}
-            type="button"
-          >
-            ♥
-          </button>
-        </div>
-
-        <div className="mt-5 flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#0B7F75]">Issiq tayyorlanadi</p>
-            <h1 className="mt-2 break-words text-[2.35rem] font-black leading-[0.98] text-[#0A4F55] sm:text-4xl lg:text-5xl">{product.name}</h1>
-          </div>
-          <div className="shrink-0 rounded-2xl bg-[#F5CF00] px-3 py-2 text-right text-sm font-black text-[#07373A] shadow-[0_12px_28px_rgba(245,207,0,0.24)]">
-            {formatMoney(total)}
-          </div>
-        </div>
-        <p className="mt-3 text-sm font-semibold leading-6 text-[#17314A]/68 sm:text-base sm:leading-7">{product.description?.trim() || "Buyurtmadan keyin issiq tayyorlanadi."}</p>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {(ingredientHints.length ? ingredientHints : ["Yangi", "Buyurtma bilan tayyorlanadi", "Oshxonaga yuboriladi"]).map((item) => (
-            <span className="rounded-full bg-[#0B8F83]/10 px-3 py-2 text-xs font-black text-[#0B7F75]" key={item}>{item}</span>
-          ))}
-        </div>
-
-        <div className="mt-5 grid gap-4">
-          <div>
-            <h2 className="text-sm font-black uppercase text-[#0A4F55]/62">Turini tanlang</h2>
-            <div className="mt-2 flex min-w-0 flex-wrap gap-2">
-              {product.variants.map((item) => (
-                <button className={pillClass(variantId === item.id)} key={item.id} onClick={() => setVariantId(item.id)} type="button">
-                  {item.name} · {formatMoney(item.sellingPrice)}
-                </button>
-              ))}
+      <section
+        aria-busy="true"
+        aria-label="Mahsulot yuklanmoqda"
+        className="mf-product-detail-stage mx-auto w-full max-w-6xl px-3 py-4 sm:px-4"
+      >
+        <div className="mf-product-config p-4 sm:p-6">
+          <div className="mf-product-overview">
+            <div className="skeleton aspect-square rounded-2xl" />
+            <div className="grid content-center gap-4">
+              <div className="skeleton h-12 rounded-lg" />
+              <div className="skeleton h-16 rounded-lg" />
+              <div className="skeleton h-8 w-24 rounded-lg" />
             </div>
           </div>
-
-          <div>
-            <h2 className="text-sm font-black uppercase text-[#0A4F55]/62">Qo'shimchalar</h2>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {product.modifiers.map(({ modifier }) => (
-                <label className="pressable mf-option-row flex min-w-0 items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold text-[#17314A]" key={modifier.id}>
-                  <span className="min-w-0 break-words">{modifier.name}</span>
-                  <span className="flex shrink-0 items-center gap-2 text-[#0B7F75]">
-                    {formatMoney(modifier.price)}
-                    <input checked={modifierIds.includes(modifier.id)} onChange={(event) => setModifierIds((current) => event.target.checked ? [...current, modifier.id] : current.filter((value) => value !== modifier.id))} type="checkbox" />
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <textarea className="mf-input min-h-24 px-4 py-3" placeholder="Oshxonaga izoh" value={notes} onChange={(event) => setNotes(event.target.value)} />
-
-          <div className="mf-product-action sticky bottom-[calc(var(--mf-bottom-nav-space)+0.75rem)] z-10 flex min-w-0 flex-wrap items-center justify-between gap-3 p-3 shadow-[0_18px_45px_rgba(0,0,0,0.18)] backdrop-blur md:bottom-3">
-            <div className="flex shrink-0 items-center gap-2">
-              <button className="pressable mf-quantity-button h-11 w-11 rounded-full text-xl font-bold" onClick={() => setQuantity(Math.max(1, quantity - 1))} type="button">-</button>
-              <span className="w-10 text-center text-lg font-black text-[#07373A]">{quantity}</span>
-              <button className="pressable mf-quantity-button h-11 w-11 rounded-full text-xl font-bold" onClick={() => setQuantity(quantity + 1)} type="button">+</button>
-            </div>
-            <MotionButton
-              {...buttonMotion}
-              className="pressable ripple mf-button-primary min-w-0 rounded-2xl px-5 py-4 text-sm font-bold sm:text-base"
-              onClick={() => {
-                const rect = imageRef.current?.getBoundingClientRect();
-                if (rect) {
-                  triggerCartFlight(product.imageUrl, rect);
-                }
-
-                hapticTap([10, 24, 10]);
-                addItem({
-                  productId: product.id,
-                  productName: product.name,
-                  imageUrl: product.imageUrl,
-                  variantId: variant?.id,
-                  variantName: variant?.name,
-                  unitPrice: variant?.sellingPrice ?? product.sellingPrice,
-                  quantity,
-                  notes,
-                  modifiers: selectedModifiers.map(({ modifier }) => ({
-                    modifierId: modifier.id,
-                    name: modifier.name,
-                    price: modifier.price,
-                  })),
-                });
-              }}
-              type="button"
-            >
-              Savatchaga qo'shish · {formatMoney(total)}
-            </MotionButton>
-          </div>
-        </div>
-      </div>
-        <MotionDiv {...cardMotion} className="mf-product-media-panel min-w-0 overflow-hidden">
-          <div className="relative">
-            <MediaImage
-              alt={product.name}
-              aspectClassName="aspect-[1.08/1] sm:aspect-[16/10] lg:aspect-[1.08/1]"
-              className="floating-image rounded-[1.7rem] will-change-transform"
-              fallbackLabel={product.name}
-              fit="contain"
-              motionProps={{
-                ...imageMotion,
-                layoutId: `product-detail-image-${product.id}`,
-              }}
-              priority
-              imageClassName="p-4"
-              ref={imageRef}
-              sizes="(max-width: 1024px) 100vw, 45vw"
-              src={product.imageUrl}
-            />
-            <div className="absolute bottom-3 right-3 rounded-2xl bg-[#F5CF00] px-3 py-2 text-sm font-black text-[#07373A] shadow-[0_14px_32px_rgba(0,0,0,0.24)]">
-              {formatMoney(variant?.sellingPrice ?? product.sellingPrice)}
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-2 p-2.5 sm:p-3">
-            <Metric label="Tayyorlanish" value={`${product.preparationTime ?? 10} daq`} />
-            <Metric label="Bo'lim" value={product.category?.name ?? "Menyu"} />
-            <Metric label="Narx" value={formatMoney(product.sellingPrice)} />
-          </div>
-        </MotionDiv>
-      </MotionDiv>
-      <section className="mf-product-menu-bridge mx-auto w-full max-w-6xl px-4 pb-2 pt-1">
-        <div className="rounded-[1.5rem] border border-white/12 bg-white/8 px-4 py-3 text-center text-sm font-black text-[#F5CF00] backdrop-blur">
-          To'liq menyudan davom eting
+          <div className="skeleton mt-5 h-36 rounded-xl" />
         </div>
       </section>
-      <CustomerMenuSections compactTop intro={false} title="Yana nimalar buyurtma qilamiz?" />
-    </>
-  );
-}
+    );
 
-function pillClass(active: boolean): string {
-  return `pressable ripple rounded-2xl px-3 py-2 text-sm font-bold ${active ? "mf-button-primary" : "mf-option-row text-[#17314A]"}`;
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
+  const favorite = isFavorite(product.id);
   return (
-    <div className="mf-card-soft min-w-0 p-2 sm:p-3">
-      <p className="truncate text-[10px] font-black uppercase text-[#0B7F75] sm:text-xs">{label}</p>
-      <p className="mt-1 truncate text-sm font-black text-[#17314A] sm:text-base">{value}</p>
-    </div>
+    <>
+      <section className="mf-product-detail-stage mx-auto w-full max-w-6xl px-3 py-4 sm:px-4">
+        <div className="mf-product-config p-4 sm:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <Link
+              aria-label="Menyuga qaytish"
+              className="mf-button-secondary grid h-11 w-11 place-items-center text-2xl"
+              href="/menu"
+            >
+              &#8249;
+            </Link>
+            <button
+              aria-label={
+                favorite
+                  ? "Sevimlilardan olib tashlash"
+                  : "Sevimlilarga qo'shish"
+              }
+              aria-pressed={favorite}
+              title={
+                favorite
+                  ? "Sevimlilardan olib tashlash"
+                  : "Sevimlilarga qo'shish"
+              }
+              className={`mf-favorite-button grid h-11 w-11 place-items-center rounded-xl text-xl ${favorite ? "is-active" : ""}`}
+              onClick={() => toggleFavorite(product.id)}
+              type="button"
+            >
+              &#9829;
+            </button>
+          </div>
+          <div className="mf-product-overview">
+            <MediaImage
+              alt={product.name}
+              aspectClassName="aspect-square"
+              className="mf-product-detail-image rounded-2xl"
+              fallbackLabel={product.name}
+              fit="contain"
+              priority
+              ref={imageRef}
+              sizes="(max-width: 639px) 45vw, (max-width: 1152px) 48vw, 520px"
+              src={product.imageUrl}
+            />
+            <div className="mf-product-summary min-w-0">
+              {product.category?.name ? (
+                <p className="text-xs font-bold text-[#087d78]">
+                  {product.category.name}
+                </p>
+              ) : null}
+              <h1 className="mt-2 font-black text-[#07373a]">{product.name}</h1>
+              {product.description?.trim() ? (
+                <p className="mf-product-detail-description mt-3 text-sm leading-6 text-[#07373a]/75">
+                  {product.description}
+                </p>
+              ) : null}
+              <p className="mf-product-detail-price mt-4 font-black text-[#087d78]">
+                {formatMoney(unitTotal)}
+              </p>
+              {product.preparationTime != null ? (
+                <p className="mt-2 text-xs font-semibold text-[#07373a]/70">
+                  {product.preparationTime} daq
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-5 grid gap-5">
+            {product.variants.length ? (
+              <fieldset>
+                <legend className="text-sm font-bold">Turini tanlang</legend>
+                <div className="mf-product-variants mt-2">
+                  {product.variants.map((item) => (
+                    <label
+                      className={`mf-option-row mf-variant-option ${variantId === item.id ? "is-selected" : ""}`}
+                      key={item.id}
+                    >
+                      <input
+                        checked={variantId === item.id}
+                        name={`variant-${product.id}`}
+                        onChange={() => setVariantId(item.id)}
+                        type="radio"
+                        value={item.id}
+                      />
+                      <span className="min-w-0">
+                        <span className="block font-bold">{item.name}</span>
+                        <span className="mt-1 block text-xs text-[#087d78]">
+                          {formatMoney(item.sellingPrice)}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
+            {product.modifiers.length ? (
+              <fieldset>
+                <legend className="text-sm font-bold">Qo'shimchalar</legend>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {product.modifiers.map(({ modifier, isRequired }) => (
+                    <label
+                      className="mf-option-row flex min-w-0 items-center gap-3 px-3 py-3 text-sm"
+                      key={modifier.id}
+                    >
+                      <input
+                        checked={modifierIds.includes(modifier.id)}
+                        disabled={isRequired}
+                        onChange={(event) =>
+                          setModifierIds((current) =>
+                            event.target.checked
+                              ? [...current, modifier.id]
+                              : current.filter(
+                                  (value) => value !== modifier.id,
+                                ),
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      <span className="min-w-0">
+                        <span className="block break-words font-semibold">
+                          {modifier.name}
+                          {isRequired ? " (majburiy)" : ""}
+                        </span>
+                        <span className="mt-1 block text-xs text-[#087d78]">
+                          +{formatMoney(modifier.price)}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
+            <label className="grid gap-2 text-sm font-bold">
+              Izoh (ixtiyoriy)
+              <textarea
+                className="mf-input min-h-20 resize-y px-3 py-3 font-normal"
+                placeholder="Oshxonaga izoh"
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </label>
+            <div className="mf-product-action">
+              <div aria-label="Mahsulot miqdori" className="mf-detail-quantity">
+                <button
+                  aria-label="Miqdorni kamaytirish"
+                  className="mf-quantity-button"
+                  disabled={quantity <= 1}
+                  onClick={() => setQuantity((value) => Math.max(1, value - 1))}
+                  type="button"
+                >
+                  -
+                </button>
+                <output aria-live="polite">{quantity}</output>
+                <button
+                  aria-label="Miqdorni oshirish"
+                  className="mf-quantity-button"
+                  onClick={() => setQuantity((value) => value + 1)}
+                  type="button"
+                >
+                  +
+                </button>
+              </div>
+              <button
+                className="mf-button-primary mf-detail-add"
+                onClick={() => {
+                  const rect = imageRef.current?.getBoundingClientRect();
+                  hapticTap([10, 24, 10]);
+                  const added = addItem({
+                    productId: product.id,
+                    productName: product.name,
+                    imageUrl: product.imageUrl,
+                    variantId: variant?.id,
+                    variantName: variant?.name,
+                    unitPrice: variant?.sellingPrice ?? product.sellingPrice,
+                    quantity,
+                    notes,
+                    modifiers: selectedModifiers.map(({ modifier }) => ({
+                      modifierId: modifier.id,
+                      name: modifier.name,
+                      price: modifier.price,
+                    })),
+                  });
+                  if (added && rect) triggerCartFlight(product.imageUrl, rect);
+                }}
+                type="button"
+              >
+                <span>Savatchaga qo'shish</span>
+                <span>{formatMoney(total)}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <CustomerMenuSections
+        compactTop
+        intro={false}
+        title="Yana nimalar buyurtma qilamiz?"
+      />
+    </>
   );
 }

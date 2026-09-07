@@ -95,7 +95,11 @@ function OrderDetail() {
     setNotFound(false);
     try {
       setOrder(await apiFetch<CustomerOrderDetail>(`/customer/me/orders/${params.id}`, { accessToken: customer.accessToken }));
-    } catch {
+    } catch (error) {
+      if (!(error instanceof Error && error.message.includes("Sessiya muddati tugagan"))) {
+        setNotFound(true);
+        return;
+      }
       const refreshed = await refreshCustomer();
       if (!refreshed) {
         setNotFound(true);
@@ -173,7 +177,7 @@ function OrderDetail() {
           <p className="mt-2 text-sm font-semibold text-[#17314A]/60">
             {new Date(order.createdAt).toLocaleString("uz-UZ")} · {typeLabels[order.type] ?? order.type}
           </p>
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="mf-order-metrics mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Metric label="Holat" value={statusLabel(order.status)} />
             <Metric label="Mahsulot" value={`${itemCount} dona`} />
             <Metric label="Jami" value={formatMoney(order.order.total)} />

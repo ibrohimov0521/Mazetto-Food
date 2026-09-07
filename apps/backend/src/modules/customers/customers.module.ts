@@ -11,6 +11,7 @@ import {
   CustomersAdminController,
 } from "./customers.controller";
 import { CustomersService } from "./customers.service";
+import { CustomerAddressesService } from "./customer-addresses.service";
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { CustomersService } from "./customers.service";
     TelegramModule,
   ],
   controllers: [CustomerPublicController, CustomersAdminController],
-  providers: [CustomersService, CustomerOrderEngineService],
+  providers: [CustomersService, CustomerOrderEngineService, CustomerAddressesService],
   exports: [CustomerOrderEngineService],
 })
 export class CustomersModule {}
