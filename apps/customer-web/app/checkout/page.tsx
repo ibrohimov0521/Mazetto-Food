@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { BranchPicker } from "../../components/branch-picker";
 import { CustomerAuthPanel } from "../../components/customer-auth-panel";
@@ -57,9 +57,11 @@ function CheckoutFlow() {
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const branchRequest = useRef(0);
+  const quoteRequest = useRef(0);
   const deliveryFee = quote ? Number(quote.deliveryFee) : 0;
   const total = quote ? Number(quote.total) : subtotal;
-  const estimatedTime = useMemo(() => `${Math.min(35, 15 + items.length * 5)}-${Math.min(45, 25 + items.length * 5)} daqiqa`, [items.length]);
   const selectedBranch = branches.find((branch) => branch.id === branchId);
   const availablePaymentOptions = useMemo(() => {
     const allowedCodes = new Set((quote?.paymentMethods ?? []).map((method) => method.code));
@@ -80,9 +82,12 @@ function CheckoutFlow() {
   );
 
   const loadBranches = useCallback(async () => {
+    const version = ++branchRequest.current;
     setLoadingBranches(true);
+    setBranchError(null);
     try {
       const nextBranches = await apiFetch<Branch[]>("/customer/branches");
+      if (version !== branchRequest.current) return;
       const storedBranchId = window.localStorage.getItem(branchStorageKey);
       const nextBranchId =
         nextBranches.find((branch) => branch.id === storedBranchId && canUseBranchForType(branch, type))?.id ??
@@ -90,17 +95,20 @@ function CheckoutFlow() {
         nextBranches[0]?.id ??
         "";
       setBranches(nextBranches);
-      setBranchId((current) => current || nextBranchId);
+      setBranchId((current) => nextBranches.some((branch) => branch.id === current && canUseBranchForType(branch, type)) ? current : nextBranchId);
       if (nextBranchId) {
         window.localStorage.setItem(branchStorageKey, nextBranchId);
       }
+    } catch (error) {
+      if (version === branchRequest.current) setBranchError(error instanceof Error ? error.message : "Filiallar yuklanmadi.");
     } finally {
-      setLoadingBranches(false);
+      if (version === branchRequest.current) setLoadingBranches(false);
     }
   }, [type]);
 
   useEffect(() => {
     void loadBranches();
+    return () => { branchRequest.current++; };
   }, [loadBranches]);
 
   useEffect(() => {
@@ -111,9 +119,12 @@ function CheckoutFlow() {
   }, [customer]);
 
   const loadQuote = useCallback(async () => {
+    const version = ++quoteRequest.current;
+    setQuote(null);
     if (!customer?.accessToken || !branchId || !items.length) {
       setQuote(null);
       setQuoteError(null);
+      setLoadingQuote(false);
       return;
     }
 
@@ -150,18 +161,20 @@ function CheckoutFlow() {
         });
       }
 
-      setQuote(nextQuote);
+      if (version === quoteRequest.current) setQuote(nextQuote);
     } catch (error) {
+      if (version !== quoteRequest.current) return;
       const message = error instanceof Error ? error.message : "Narxni hisoblab bo'lmadi";
       setQuote(null);
       setQuoteError(message);
     } finally {
-      setLoadingQuote(false);
+      if (version === quoteRequest.current) setLoadingQuote(false);
     }
   }, [branchId, customer?.accessToken, items.length, orderItemsPayload, refreshCustomer, type]);
 
   useEffect(() => {
     void loadQuote();
+    return () => { quoteRequest.current++; };
   }, [loadQuote]);
 
   function validate() {
@@ -229,6 +242,7 @@ function CheckoutFlow() {
   }
 
   async function submitOrder() {
+    if (submitting || loadingBranches || loadingQuote || branchError || !quote) return;
     if (!validate() || !customer?.accessToken) {
       showToast("Ma'lumotlarni tekshirib chiqing");
       return;
@@ -293,7 +307,7 @@ function CheckoutFlow() {
         <div className="mf-checkout-card p-8">
           <p className="text-sm font-black uppercase text-[#0B7F75]">Rasmiylashtirish</p>
           <CustomerAuthPanel
-            description="Buyurtmani yakunlash uchun telefon raqamingizni shu yerda tasdiqlang. Tasdiqlangandan keyin checkout sahifasi saqlanib qoladi."
+            description="Buyurtmani yakunlash uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
             title="Telefonni tasdiqlang"
           />
         </div>
@@ -306,7 +320,7 @@ function CheckoutFlow() {
       <div className="grid min-w-0 gap-4">
         <div className="mf-checkout-card p-5">
           <p className="text-sm font-black uppercase text-[#0B7F75]">Rasmiylashtirish</p>
-          <h1 className="mt-1 text-3xl font-black text-[#17314A]">Buyurtmani yakunlash</h1>
+          <h1 className="mt-1 text-2xl font-black text-[#17314A]">Buyurtmani yakunlash</h1>
           <div className="mt-4 grid grid-cols-3 gap-2">
             <StepBadge number="1" label="Filial" active />
             <StepBadge number="2" label="Manzil" active={type === "DELIVERY"} />
@@ -317,41 +331,41 @@ function CheckoutFlow() {
             <FieldError message={errors.customer} />
             <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
               Ism va familiya
-              <motion.input className={inputClass(Boolean(errors.name))} placeholder="Masalan: Javohir Aliyev" value={name} onChange={(event) => setName(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
+              <input autoComplete="name" className={inputClass(Boolean(errors.name))} placeholder="Ism va familiya" value={name} onChange={(event) => setName(event.target.value)} />
               <FieldError message={errors.name} />
             </label>
             <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
               Telefon raqam
-              <motion.input className={inputClass(Boolean(errors.phone))} placeholder="+998 90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
+              <input autoComplete="tel" type="tel" className={inputClass(Boolean(errors.phone))} placeholder="+998 90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} />
               <FieldError message={errors.phone} />
             </label>
-            <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
-              Filial
+            <div className="grid gap-2 text-sm font-black text-[#17314A]/76">
               {loadingBranches ? (
                 <div className="skeleton h-12 rounded-2xl" />
               ) : (
                 <BranchPicker branches={branches} onChange={selectBranch} orderType={type} value={branchId} />
               )}
               <FieldError message={errors.branchId} />
+              {branchError ? <div role="alert"><FieldError message={branchError} /><button className="mf-button-secondary mt-2 px-4 py-2 text-sm" onClick={() => void loadBranches()} type="button">Qayta urinish</button></div> : null}
               {selectedBranch?.address ? <p className="text-xs font-bold text-[#17314A]/56">{selectedBranch.address}{branchLabelSuffix(selectedBranch, type)}</p> : null}
-            </label>
+            </div>
 
             <div className="grid min-w-0 grid-cols-2 gap-2">
-              <button className={choiceClass(type === "DELIVERY")} onClick={() => selectType("DELIVERY")} type="button">Yetkazib berish</button>
-              <button className={choiceClass(type === "PICKUP")} onClick={() => selectType("PICKUP")} type="button">Olib ketish</button>
+              <button aria-pressed={type === "DELIVERY"} className={choiceClass(type === "DELIVERY")} onClick={() => selectType("DELIVERY")} type="button">Yetkazib berish</button>
+              <button aria-pressed={type === "PICKUP"} className={choiceClass(type === "PICKUP")} onClick={() => selectType("PICKUP")} type="button">Olib ketish</button>
             </div>
 
             {type === "DELIVERY" ? (
               <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
                 Yetkazib berish manzili
-                <motion.textarea className={`${inputClass(Boolean(errors.address))} min-h-28`} placeholder="Ko'cha, uy, mo'ljal" value={address} onChange={(event) => setAddress(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
+                <textarea autoComplete="street-address" className={`${inputClass(Boolean(errors.address))} min-h-24`} placeholder="Ko'cha, uy, mo'ljal" value={address} onChange={(event) => setAddress(event.target.value)} />
                 <FieldError message={errors.address} />
               </label>
             ) : null}
 
             <label className="grid gap-2 text-sm font-black text-[#17314A]/76">
               Buyurtma izohi
-              <motion.textarea className={`${inputClass(false)} min-h-24`} placeholder="Masalan: piyozsiz, qo'ng'iroq qilmang" value={comment} onChange={(event) => setComment(event.target.value)} whileFocus={{ scale: 1.01 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} />
+              <textarea className={`${inputClass(false)} min-h-20`} placeholder="Buyurtmaga izoh (ixtiyoriy)" value={comment} onChange={(event) => setComment(event.target.value)} />
             </label>
           </div>
         </div>
@@ -366,9 +380,6 @@ function CheckoutFlow() {
               </motion.button>
             ))}
           </div>
-          <p className="mt-3 text-xs font-bold text-[#17314A]/58">
-            Click va Payme real integratsiyasi yoqilgandan keyin ko'rsatiladi.
-          </p>
         </MotionDiv>
       </div>
 
@@ -378,7 +389,6 @@ function CheckoutFlow() {
             <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma</p>
             <h2 className="mt-1 text-2xl font-black text-[#17314A]">Xulosa</h2>
           </div>
-          <span className="rounded-full bg-[#0B7F75]/10 px-3 py-2 text-xs font-black text-[#0B7F75]">{estimatedTime}</span>
         </div>
 
         <div className="mt-4 grid gap-3">
@@ -406,7 +416,7 @@ function CheckoutFlow() {
           </div>
           <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
             <span>Yetkazib berish</span>
-            <span className="min-w-0 break-words text-right">{loadingQuote ? "Hisoblanmoqda..." : deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
+            <span className="min-w-0 break-words text-right">{loadingQuote ? "Hisoblanmoqda..." : !quote ? "Hisoblanmagan" : deliveryFee ? <AnimatedMoney value={deliveryFee} /> : "Bepul"}</span>
           </div>
           <div className="h-px bg-[#0B7F75]/12" />
           <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-[#17314A]">
@@ -415,10 +425,10 @@ function CheckoutFlow() {
           </div>
         </div>
 
-        {submitError ? <p className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-300">{submitError}</p> : null}
-        {quoteError ? <p className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-300">{quoteError}</p> : null}
+        {submitError ? <p role="alert" className="mt-4 rounded-xl bg-red-500/12 px-4 py-3 text-sm font-bold text-red-700">{submitError}</p> : null}
+        {quoteError ? <div role="alert" className="mt-4 rounded-xl bg-red-500/12 px-4 py-3 text-sm text-red-700"><p>{quoteError}</p><button className="mf-button-secondary mt-2 px-3 py-2 font-bold" onClick={() => void loadQuote()} type="button">Qayta hisoblash</button></div> : null}
 
-        <button className="pressable ripple mf-button-primary mt-4 w-full px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
+        <button className="pressable ripple mf-button-primary mt-4 w-full px-5 py-4 font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(branchError) || !quote || !items.length} onClick={() => void submitOrder()} type="button">
           {submitting ? "Yuborilmoqda..." : "Buyurtmani tasdiqlash"}
         </button>
       </aside>
@@ -429,7 +439,7 @@ function CheckoutFlow() {
             <p className="text-[10px] font-black uppercase tracking-wide text-[#0B7F75]">Jami</p>
             <p className="truncate text-base font-black text-[#17314A]"><AnimatedMoney value={total} /></p>
           </div>
-          <button className="pressable ripple mf-button-primary grid h-11 shrink-0 place-items-center rounded-[1.05rem] px-4 text-sm font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(quoteError)} onClick={() => void submitOrder()} type="button">
+          <button className="pressable ripple mf-button-primary grid h-11 shrink-0 place-items-center rounded-[1.05rem] px-4 text-sm font-black disabled:opacity-50" disabled={submitting || loadingBranches || loadingQuote || Boolean(branchError) || !quote || !items.length} onClick={() => void submitOrder()} type="button">
             {submitting ? "Yuborilmoqda..." : "Tasdiqlash"}
           </button>
         </div>

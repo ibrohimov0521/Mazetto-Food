@@ -12,7 +12,7 @@ const branchStorageKey = "mazetto.customer.branchId";
 export function CustomerMenuSections({
   compactTop = false,
   intro = true,
-  title = "Bugun nima buyurtma qilamiz?",
+  title = "Menyu",
 }: {
   compactTop?: boolean;
   intro?: boolean;
@@ -102,21 +102,23 @@ export function CustomerMenuSections({
       return;
     }
 
+    const nav = categoryNavRef.current;
+    const stickyOffset = nav ? (parseFloat(getComputedStyle(nav).top) || 0) + nav.offsetHeight + 8 : 84;
+    const visibleSections = new Set<Element>();
     const observer = new IntersectionObserver(
       (entries) => {
+        entries.forEach((entry) => entry.isIntersecting ? visibleSections.add(entry.target) : visibleSections.delete(entry.target));
         if (manualScrollRef.current && Date.now() < manualScrollRef.current) {
           return;
         }
 
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => Math.abs(a.boundingClientRect.top - 84) - Math.abs(b.boundingClientRect.top - 84));
-        const nextId = visible[0]?.target.getAttribute("data-category-id");
+        const visible = [...visibleSections].sort((a, b) => Math.abs(a.getBoundingClientRect().top - stickyOffset) - Math.abs(b.getBoundingClientRect().top - stickyOffset));
+        const nextId = visible[0]?.getAttribute("data-category-id");
         if (nextId) {
           setActiveCategoryId(nextId);
         }
       },
-      { rootMargin: "-84px 0px -62% 0px", threshold: [0, 0.2, 0.45] },
+      { rootMargin: `-${stickyOffset}px 0px -50% 0px`, threshold: [0, 0.01] },
     );
 
     for (const section of menuSections) {
@@ -137,9 +139,12 @@ export function CustomerMenuSections({
       return;
     }
 
-    const nextLeft = tab.offsetLeft - scroller.clientWidth / 2 + tab.clientWidth / 2;
+    const tabRect = tab.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    if (tabRect.left >= scrollerRect.left && tabRect.right <= scrollerRect.right) return;
+    const nextLeft = scroller.scrollLeft + tabRect.left - scrollerRect.left - (scroller.clientWidth - tab.clientWidth) / 2;
     scroller.scrollTo({
-      behavior: "smooth",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       left: Math.max(0, nextLeft),
     });
   }, [activeCategoryId]);
@@ -180,7 +185,7 @@ export function CustomerMenuSections({
     const nav = categoryNavRef.current;
     const stickyOffset = nav ? (parseFloat(getComputedStyle(nav).top) || 0) + nav.offsetHeight + 8 : 76;
     const top = target.getBoundingClientRect().top + window.scrollY - stickyOffset;
-    window.scrollTo({ behavior, top: Math.max(0, top) });
+    window.scrollTo({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : behavior, top: Math.max(0, top) });
   }
 
   return (
@@ -210,6 +215,7 @@ export function CustomerMenuSections({
           <div className="no-scrollbar mf-category-strip flex w-full min-w-0 max-w-full gap-2 overflow-x-auto rounded-[1.25rem] p-1.5" ref={tabScrollerRef}>
             {menuSections.map(({ category }) => (
               <button
+                aria-pressed={activeCategoryId === category.id}
                 className={tabClass(activeCategoryId === category.id)}
                 key={category.id}
                 onClick={() => scrollToCategory(category.id)}
@@ -240,7 +246,7 @@ export function CustomerMenuSections({
                 {Array.from({ length: 8 }, (_, index) => <ProductSkeleton key={index} />)}
               </div>
             )
-          : !error && menuSections.map(({ category, products }) => (
+          : !error && menuSections.map(({ category, products }, sectionIndex) => (
               <section
                 className="scroll-mt-20 md:scroll-mt-32"
                 data-category-id={category.id}
@@ -255,7 +261,7 @@ export function CustomerMenuSections({
                   {category.description ? <p className="mf-menu-section-description hidden max-w-md text-right text-sm font-semibold text-white/56 md:block">{category.description}</p> : null}
                 </div>
                 <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
-                  {products.map((product) => <ProductCard compact key={product.id} product={product} />)}
+                  {products.map((product, index) => <ProductCard compact key={product.id} priority={intro && sectionIndex === 0 && index < 4} product={product} />)}
                 </div>
               </section>
             ))}
@@ -284,6 +290,9 @@ function SearchBox({
   return (
     <div className="relative min-w-0">
       <input
+        aria-label="Menyudan qidirish"
+        type="search"
+        autoComplete="off"
         className="mf-input w-full px-12 py-3.5 font-semibold"
         placeholder="Taom yoki ichimlik qidiring..."
         ref={inputRef}
@@ -331,7 +340,7 @@ function ProductSkeleton() {
   return (
     <div className="mf-product-card mf-product-card-locked is-compact overflow-hidden">
       <div className="skeleton aspect-[1.22/1] w-full" />
-      <div className="grid grid-rows-[2.35rem_2.35rem_2.75rem] gap-1.5 p-2.5">
+      <div className="mf-product-copy grid gap-1.5 p-2.5">
         <div className="skeleton h-5 w-3/4 rounded-full" />
         <div className="skeleton h-3 w-full rounded-full" />
         <div className="flex items-center justify-between">

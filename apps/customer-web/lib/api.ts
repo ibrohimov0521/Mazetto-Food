@@ -59,19 +59,24 @@ async function requestApi<T>(path: string, init?: ApiFetchInit): Promise<T> {
     requestHeaders.set("Content-Type", "application/json");
   }
   if (accessToken) requestHeaders.set("Authorization", `Bearer ${accessToken}`);
+  const timeout = AbortSignal.timeout(15_000);
+  const signal = requestInit.signal ? AbortSignal.any([requestInit.signal, timeout]) : timeout;
   let response: Response;
+  let payload: ApiEnvelope<T>;
 
   try {
     response = await fetch(`${getApiBaseUrl()}${path}`, {
       ...requestInit,
       cache: requestInit.cache ?? "no-store",
       headers: requestHeaders,
+      signal,
     });
+    payload = await parseEnvelope<T>(response);
   } catch {
+    if (requestInit.signal?.aborted) throw requestInit.signal.reason;
+    if (timeout.aborted) throw new Error("Server javobi kechikmoqda. Qayta urinib ko'ring.");
     throw new Error("Server bilan aloqa uzildi. Qayta urinib ko'ring.");
   }
-
-  const payload = await parseEnvelope<T>(response);
 
   if (!response.ok || !payload.success || payload.data === undefined) {
     throw new Error(getCustomerErrorMessage(response, payload));

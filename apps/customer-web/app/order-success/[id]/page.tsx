@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { BrandLogo } from "../../../components/brand-logo";
 import { MotionDiv, hapticTap, pageMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
@@ -59,7 +58,11 @@ function OrderSuccess() {
     setNotFound(false);
     try {
       setOrder(await apiFetch<CustomerOrder>(`/customer/me/orders/${params.id}`, { accessToken: customer.accessToken }));
-    } catch {
+    } catch (error) {
+      if (!(error instanceof Error && error.message.includes("Sessiya muddati tugagan"))) {
+        setNotFound(true);
+        return;
+      }
       const refreshed = await refreshCustomer();
       if (!refreshed) {
         setNotFound(true);
@@ -127,19 +130,16 @@ function OrderSuccess() {
   }
 
   return (
-      <section className="mx-auto max-w-3xl px-4 py-8">
-      <MotionDiv {...pageMotion} className="overflow-hidden rounded-[2rem] border border-white/14 bg-[#005B5E] shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
-        <div className="px-6 py-8 text-center text-white">
-          <BrandLogo className="mx-auto h-auto w-[min(17rem,72vw)]" priority sizes="280px" />
-          <div className="mx-auto mt-6 grid h-20 w-20 place-items-center rounded-full bg-[#F5CF00] text-4xl font-black text-[#07373A] shadow-[0_18px_48px_rgba(245,207,0,0.32)]">✓</div>
-          <p className="mt-5 text-sm font-black uppercase text-[#F5CF00]">Buyurtma qabul qilindi</p>
-          <h1 className="mt-2 text-3xl font-black sm:text-4xl">Buyurtmangiz qabul qilindi!</h1>
+      <section className="mx-auto max-w-3xl px-4 py-5">
+      <MotionDiv {...pageMotion}>
+        <div className="px-4 pb-6 pt-2 text-center text-white">
+          <div aria-hidden="true" className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#F5CF00] text-3xl font-black text-[#07373A]">{order.status === "CANCELLED" ? "×" : "✓"}</div>
+          <h1 className="mt-4 text-2xl font-black">{order.status === "CANCELLED" ? "Buyurtma bekor qilingan" : "Buyurtmangiz qabul qilindi!"}</h1>
           <p className="mt-2 text-sm font-bold text-white/70">{customerOrderNumber(order.order)}</p>
-          <p className="mt-2 text-sm font-semibold text-white/74">Oshxonaga yuborildi, holatini real vaqtda kuzatishingiz mumkin.</p>
         </div>
 
-        <div className="mf-success-content grid gap-4 rounded-t-[2rem] bg-[#F5F5EF] p-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+        <div className="mf-success-content grid gap-4 rounded-2xl bg-[#F5F5EF] p-4 sm:p-5">
+          <div className="mf-order-metrics grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Metric label="Holat" value={statusLabel(order.order.status ?? order.status)} />
             <Metric label="Mahsulot" value={`${itemCount} dona`} />
             <Metric label="Jami" value={formatMoney(order.order.total)} />
@@ -157,9 +157,9 @@ function OrderSuccess() {
             <h2 className="text-lg font-black text-[#17314A]">Mahsulotlar</h2>
             <div className="mt-3 grid gap-2">
               {order.order.items.map((item) => (
-                <div className="flex justify-between rounded-xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-bold text-[#17314A]" key={item.id}>
-                  <span>{Number(item.quantity)}x {item.productName}</span>
-                  <span className="text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-[#0B7F75]/12 py-3 text-sm font-bold text-[#17314A]" key={item.id}>
+                  <span className="break-words">{Number(item.quantity)}x {item.productName}</span>
+                  <span className="whitespace-nowrap text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
                 </div>
               ))}
             </div>
@@ -181,9 +181,9 @@ function OrderSuccess() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-cart-row p-4">
-      <p className="text-xs font-black uppercase text-[#0B7F75]">{label}</p>
-      <p className="mt-2 text-lg font-black text-[#17314A]">{value}</p>
+    <div className="min-w-0 border-b border-[#0B7F75]/12 py-3">
+      <p className="text-[10px] font-bold uppercase text-[#0B7F75]">{label}</p>
+      <p className="mt-2 break-words text-sm font-bold text-[#17314A]">{value}</p>
     </div>
   );
 }

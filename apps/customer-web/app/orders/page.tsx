@@ -89,6 +89,10 @@ function OrdersDashboard() {
       setDashboard(nextDashboard);
       setOrders(nextOrders);
     } catch (caught) {
+      if (!(caught instanceof Error && caught.message.includes("Sessiya muddati tugagan"))) {
+        setError(caught instanceof Error ? caught.message : "Buyurtmalarni yuklab bo'lmadi.");
+        return;
+      }
       const refreshed = await refreshCustomer();
       if (!refreshed) {
         setError(caught instanceof Error ? caught.message : "Buyurtmalarni yuklab bo'lmadi.");
@@ -160,7 +164,7 @@ function OrdersDashboard() {
           <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtmani kuzatish</p>
           <h1 className="mt-1 text-[1.65rem] font-black leading-tight text-[#17314A] sm:text-3xl">Buyurtmalarim</h1>
           {activeOrder ? (
-            <div className="mf-active-order-card mt-4 min-w-0 overflow-hidden p-4 sm:mt-5 sm:p-5">
+            <div className="mf-active-order-card mt-4 min-w-0 pt-4">
               <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                 <div className="min-w-0">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -175,15 +179,15 @@ function OrdersDashboard() {
                     {activeOrder.branch ? <InfoChip label={activeOrder.branch.name} /> : null}
                   </div>
                 </div>
-                <div className="mf-active-order-total min-w-0 rounded-[1.35rem] px-4 py-3 text-left lg:min-w-[11rem] lg:text-right">
+                <div className="mf-active-order-total flex min-w-0 items-center justify-between gap-3 py-2 lg:block lg:text-right">
                   <p className="text-[10px] font-black uppercase tracking-wide text-[#07373A]/58">Jami</p>
-                  <p className="mt-1 whitespace-nowrap text-2xl font-black text-[#07373A] sm:text-3xl">{formatMoney(activeOrder.order.total)}</p>
+                  <p className="whitespace-nowrap text-xl font-black text-[#07373A]">{formatMoney(activeOrder.order.total)}</p>
                 </div>
               </div>
               <StatusTracker status={activeOrder.order.status ?? activeOrder.status} />
               <div className="mt-5 grid min-w-0 gap-2.5">
                 {activeOrder.order.items.map((item) => (
-                  <div className="mf-active-order-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-[1.15rem] px-3 py-3 text-sm text-[#17314A] sm:px-4" key={item.id}>
+                  <div className="mf-active-order-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-3 text-sm text-[#17314A]" key={item.id}>
                     <div className="min-w-0">
                       <p className="break-words font-black leading-snug">
                         <span className="text-[#0B7F75]">{Number(item.quantity)}x</span> {localizeMenuName(item.productName)}
@@ -199,9 +203,9 @@ function OrdersDashboard() {
                 ))}
               </div>
             </div>
-          ) : (
+          ) : loading ? <div className="skeleton mt-4 h-28 rounded-xl" /> : !error ? (
             <div className="mf-cart-row mt-5 p-6 text-sm font-semibold text-[#17314A]/56">Hozir faol buyurtma yo'q.</div>
-          )}
+          ) : null}
         </div>
 
         <MotionDiv {...sectionMotion} className="mf-checkout-card min-w-0 p-4 sm:p-5">
@@ -286,14 +290,14 @@ function StatusTracker({ status }: { status: string }) {
   const activeIndex = Math.max(0, trackingSteps.indexOf(normalized));
 
   return (
-    <div className="mt-5 grid min-w-0 grid-cols-5 gap-1.5 rounded-[1.35rem] bg-white/58 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] sm:gap-2 sm:p-3">
+    <div aria-label={`Buyurtma holati: ${statusLabel(status)}`} className="mt-4 grid min-w-0 grid-cols-5 gap-1.5 sm:gap-2">
       {trackingSteps.map((step, index) => {
         const active = index <= activeIndex;
         const current = index === activeIndex;
         return (
           <div className="grid min-w-0 gap-1.5 text-center" key={step}>
             <div className={`h-2 rounded-full transition-colors ${active ? "bg-[#F5CF00]" : "bg-[#0B7F75]/12"} ${current ? "shadow-[0_0_18px_rgba(245,207,0,0.48)]" : ""}`} />
-            <p className={`min-w-0 break-words text-[8.5px] font-black leading-[1.05] sm:text-xs ${active ? "text-[#0B7F75]" : "text-[#17314A]/46"}`}>{statusLabel(step)}</p>
+            <p className={`min-w-0 text-[9px] font-bold leading-4 sm:text-xs ${active ? "text-[#0B7F75]" : "text-[#17314A]/65"}`}>{({ NEW: "Yangi", CONFIRMED: "Tasdiq", PREPARING: "Tayyorlash", READY: "Tayyor", COMPLETED: "Yakun" } as Record<string, string>)[step]}</p>
           </div>
         );
       })}

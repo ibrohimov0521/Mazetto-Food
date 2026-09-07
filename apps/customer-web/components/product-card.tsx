@@ -8,7 +8,7 @@ import { MotionArticle, MotionButton, buttonMotion, hapticTap } from "./motion-p
 import { cartItemKey, formatMoney, useCart } from "../lib/cart";
 import type { Product } from "../lib/types";
 
-export function ProductCard({ compact = false, product }: { compact?: boolean; product: Product }) {
+export function ProductCard({ compact = false, priority = false, product }: { compact?: boolean; priority?: boolean; product: Product }) {
   const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, items, toggleFavorite, triggerCartFlight, updateQuantity } = useCart();
   const variant = product.variants.find((candidate) => candidate.isDefault) ?? product.variants[0];
@@ -38,7 +38,7 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
       quantity={cartLine.quantity}
     />
   ) : requiresConfiguration ? (
-    <Link className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
+    <Link aria-label={`${product.name} turini tanlash`} className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
       {compact ? "+" : "Tanlash"}
     </Link>
   ) : (
@@ -86,13 +86,16 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
             aspectClassName={compact ? "aspect-[1.22/1]" : "aspect-[4/3]"}
             className="mf-product-media"
             ref={imageRef}
+            priority={priority}
             src={product.imageUrl}
             sizes={compact ? "(max-width: 767px) 50vw, (max-width: 1152px) 33vw, (max-width: 1279px) 360px, 270px" : "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 360px"}
           />
         </Link>
         <button
-          aria-label="Sevimlilarga qo'shish"
-          className={`pressable absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full text-sm font-black shadow-lg ${isFavorite(product.id) ? "bg-[#22C55E] text-[#04130B]" : "bg-black/45 text-white backdrop-blur hover:bg-white/16"}`}
+          aria-label={`${product.name}: ${isFavorite(product.id) ? "sevimlilardan olib tashlash" : "sevimlilarga qo'shish"}`}
+          aria-pressed={isFavorite(product.id)}
+          title={isFavorite(product.id) ? "Sevimlilardan olib tashlash" : "Sevimlilarga qo'shish"}
+          className={`pressable mf-favorite-button absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-xl text-lg ${isFavorite(product.id) ? "is-active" : ""}`}
           onClick={() => {
             hapticTap(8);
             toggleFavorite(product.id);
@@ -110,13 +113,13 @@ export function ProductCard({ compact = false, product }: { compact?: boolean; p
           {actionControl}
         </div>
       </div>
-      <div className={compact ? "grid min-h-0 grid-rows-[2.35rem_2.35rem_2.75rem] gap-1.5 p-2.5" : "grid gap-2 p-4"}>
+      <div className={compact ? "mf-product-copy grid min-h-0 gap-1.5 p-2.5" : "grid gap-2 p-4"}>
         <div className="relative min-w-0">
           <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} mf-product-title min-w-0 break-words font-black leading-tight text-white transition hover:text-[#F5CF00]`} href={`/product/${product.id}`}>
             {product.name}
           </Link>
           <span className={`${compact ? "hidden" : "inline-flex mt-1"} mf-product-badge shrink-0 rounded-full bg-white/12 px-2 py-1 text-[10px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
-            {product.preparationTime ?? 10} daq
+            {product.preparationTime != null ? `${product.preparationTime} daq` : ""}
           </span>
         </div>
         <p className={`${compact ? "line-clamp-2 text-[10px] leading-4 sm:text-[11px]" : "line-clamp-2 min-h-11 text-sm leading-5"} mf-product-description text-white/64`}>
@@ -147,6 +150,7 @@ function ProductQuantityControl({
   quantity: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const stepperRef = useRef<HTMLDivElement | null>(null);
   const collapseTimer = useRef<number | null>(null);
 
   const clearCollapseTimer = useCallback(() => {
@@ -159,6 +163,7 @@ function ProductQuantityControl({
   const scheduleCollapse = useCallback(() => {
     clearCollapseTimer();
     collapseTimer.current = window.setTimeout(() => {
+      if (stepperRef.current?.contains(document.activeElement)) return;
       setExpanded(false);
       collapseTimer.current = null;
     }, 2000);
@@ -178,11 +183,11 @@ function ProductQuantityControl({
   }, [expanded, quantity, scheduleCollapse]);
 
   return (
-    <motion.div
-      animate={{ scale: expanded ? 1 : 0.98 }}
+    <div
+      ref={stepperRef}
       className={`mf-product-stepper mf-button-primary ${expanded ? "is-expanded" : "is-collapsed"} items-center overflow-hidden rounded-full text-sm font-black`}
-      initial={false}
-      transition={{ type: "spring", stiffness: 520, damping: 38 }}
+      onFocusCapture={() => { setExpanded(true); clearCollapseTimer(); }}
+      onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) scheduleCollapse(); }}
     >
       <AnimatePresence initial={false} mode="popLayout">
         {expanded ? (
@@ -241,6 +246,6 @@ function ProductQuantityControl({
           </motion.button>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

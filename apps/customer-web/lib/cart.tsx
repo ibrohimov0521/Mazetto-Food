@@ -159,20 +159,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [cartPulseId, setCartPulseId] = useState(0);
   const [cartFlight, setCartFlight] = useState<CartFlight | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     setItems(readStoredValue<CartItem[]>(storageKey, []));
     setCustomerState(readStoredValue<CustomerSession | null>(customerKey, null));
     setFavoriteIds(readStoredValue<string[]>(favoritesKey, []));
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(storageKey, JSON.stringify(items));
-  }, [items]);
+    if (hydrated) window.localStorage.setItem(storageKey, JSON.stringify(items));
+  }, [hydrated, items]);
 
   useEffect(() => {
-    window.localStorage.setItem(favoritesKey, JSON.stringify(favoriteIds));
-  }, [favoriteIds]);
+    if (hydrated) window.localStorage.setItem(favoritesKey, JSON.stringify(favoriteIds));
+  }, [favoriteIds, hydrated]);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -204,6 +206,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
       });
       const payload = (await response.json()) as {
         success: boolean;
@@ -284,6 +287,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setToastMessage(message);
     },
     triggerCartFlight(imageUrl, source) {
+      if (!imageUrl || window.matchMedia("(prefers-reduced-motion: reduce)").matches || source.bottom < 0 || source.top > window.innerHeight) return;
       setCartFlight({
         id: Date.now(),
         imageUrl: productImage(imageUrl),

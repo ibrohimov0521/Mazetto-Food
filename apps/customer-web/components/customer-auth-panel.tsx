@@ -107,11 +107,11 @@ export function CustomerAuthPanel({
         <h2 className="text-2xl font-black text-[#17314A]">{title}</h2>
         <p className="mt-2 text-sm font-semibold leading-6 text-[#17314A]/64">{description}</p>
       </div>
-      <input className="mf-input px-4 py-3" placeholder="Ismingiz" value={name} onChange={(event) => setName(event.target.value)} />
-      <input className="mf-input px-4 py-3" inputMode="tel" placeholder="+998 telefon raqam" value={phone} onChange={(event) => setPhone(event.target.value)} />
+      <label className="grid gap-1.5 text-sm font-semibold">Ismingiz<input autoComplete="name" className="mf-input px-4 py-3" placeholder="Ismingiz" value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <label className="grid gap-1.5 text-sm font-semibold">Telefon raqam<input autoComplete="tel" className="mf-input px-4 py-3" type="tel" placeholder="+998 telefon raqam" value={phone} disabled={requestingCode || verifyingCode} onChange={(event) => { setPhone(event.target.value); setPendingVerification(false); setCode(""); setMessage(null); }} /></label>
       {pendingVerification ? (
         <>
-          <input className="mf-input px-4 py-3" inputMode="numeric" maxLength={6} placeholder="Telegram tasdiqlash kodi" value={code} onChange={(event) => setCode(event.target.value)} />
+          <input aria-label="Telegram tasdiqlash kodi" autoComplete="one-time-code" className="mf-input px-4 py-3" inputMode="numeric" maxLength={6} placeholder="Telegram tasdiqlash kodi" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} />
           <button className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50" disabled={!phone || !code || verifyingCode} onClick={() => void verifyCode()} type="button">
             {verifyingCode ? "Tekshirilmoqda..." : "Kodni tasdiqlash"}
           </button>
@@ -129,7 +129,7 @@ export function CustomerAuthPanel({
           {requestingCode ? "Yuborilmoqda..." : "Kod olish"}
         </button>
       )}
-      {message ? <p className="mf-surface-note rounded-2xl px-4 py-3 text-sm font-bold">{message}</p> : null}
+      {message ? <p role="status" className="mf-surface-note rounded-xl px-4 py-3 text-sm font-bold">{message}</p> : null}
     </div>
   );
 }
