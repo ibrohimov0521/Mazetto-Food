@@ -7,8 +7,6 @@ import { apiFetch } from "../lib/api";
 import { displayCategory, displayProducts } from "../lib/customer-display";
 import type { Category, Product } from "../lib/types";
 
-const branchStorageKey = "mazetto.customer.branchId";
-
 export function CustomerMenuSections({
   compactTop = false,
   intro = true,
@@ -36,16 +34,10 @@ export function CustomerMenuSections({
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams(window.location.search);
-      const nextBranchId = params.get("branchId") ?? window.localStorage.getItem(branchStorageKey) ?? "";
-      const branchQuery = nextBranchId ? `?branchId=${encodeURIComponent(nextBranchId)}` : "";
       const [nextCategories, nextProducts] = await Promise.all([
-        apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
-        apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
+        apiFetch<Category[]>("/customer/menu/categories"),
+        apiFetch<Product[]>("/customer/menu/products"),
       ]);
-      if (nextBranchId) {
-        window.localStorage.setItem(branchStorageKey, nextBranchId);
-      }
       const localizedCategories = sortSetsFirst(nextCategories.map(displayCategory));
       setCategories(localizedCategories);
       setProducts(displayProducts(nextProducts));

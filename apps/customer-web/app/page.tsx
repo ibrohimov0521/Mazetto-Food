@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BranchPicker } from "../components/branch-picker";
 import { CustomerAuthPanel } from "../components/customer-auth-panel";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
 import { MediaImage } from "../components/media-image";
@@ -11,16 +10,12 @@ import { ProductCard } from "../components/product-card";
 import { SiteShell } from "../components/site-shell";
 import { apiFetch } from "../lib/api";
 import { displayCategory, displayCustomerHome, displayProducts } from "../lib/customer-display";
-import type { Branch, Category, CustomerHome, Product } from "../lib/types";
-
-const branchStorageKey = "mazetto.customer.branchId";
+import type { Category, CustomerHome, Product } from "../lib/types";
 
 export default function Home() {
-  const [branches, setBranches] = useState<Branch[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [home, setHome] = useState<CustomerHome>({ heroSlides: [], promotions: [] });
-  const [branchId, setBranchId] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadVersion = useRef(0);
@@ -30,26 +25,15 @@ export default function Home() {
     setLoading(true);
     setLoadError(null);
     try {
-      const nextBranches = await apiFetch<Branch[]>("/customer/branches");
-      const storedBranchId = window.localStorage.getItem(branchStorageKey);
-      const nextBranchId =
-        nextBranches.find((branch) => branch.id === storedBranchId && branch.acceptsOrders !== false)?.id ??
-        nextBranches.find((branch) => branch.acceptsOrders !== false)?.id ??
-        nextBranches[0]?.id ??
-        "";
-      const branchQuery = nextBranchId ? `?branchId=${encodeURIComponent(nextBranchId)}` : "";
       const [nextCategories, nextProducts, nextHome] = await Promise.all([
-        apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
-        apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
-        apiFetch<CustomerHome>(`/customer/home${branchQuery}`),
+        apiFetch<Category[]>("/customer/menu/categories"),
+        apiFetch<Product[]>("/customer/menu/products"),
+        apiFetch<CustomerHome>("/customer/home"),
       ]);
       if (version !== loadVersion.current) return;
-      setBranches(nextBranches);
       setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
       setProducts(displayProducts(nextProducts));
       setHome(displayCustomerHome(nextHome));
-      setBranchId(nextBranchId);
-      if (nextBranchId) window.localStorage.setItem(branchStorageKey, nextBranchId);
     } catch (error) {
       if (version !== loadVersion.current) return;
       setLoadError(error instanceof Error ? error.message : "Ma'lumotlarni yuklab bo'lmadi.");
@@ -66,49 +50,13 @@ export default function Home() {
   const featured = useMemo(() => products.filter((product) => product.isRecommended).slice(0, 4), [products]);
   const combos = useMemo(() => products.filter((product) => product.isCombo).slice(0, 4), [products]);
   const popular = useMemo(() => products.filter((product) => !product.isCombo).slice(0, 6), [products]);
-  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId), [branchId, branches]);
   const primaryHero = home.heroSlides[0];
   const heroProduct = products.find((product) => product.id === primaryHero?.product?.id) ?? featured[0] ?? popular[0] ?? products[0];
-
-  function selectBranch(nextBranchId: string) {
-    setBranchId(nextBranchId);
-    window.localStorage.setItem(branchStorageKey, nextBranchId);
-    void loadBranchContent(nextBranchId);
-  }
-
-  async function loadBranchContent(nextBranchId: string) {
-    const version = ++loadVersion.current;
-    const branchQuery = nextBranchId ? `?branchId=${encodeURIComponent(nextBranchId)}` : "";
-    setLoadError(null);
-    setLoading(true);
-    try {
-      const [nextCategories, nextProducts, nextHome] = await Promise.all([
-        apiFetch<Category[]>(`/customer/menu/categories${branchQuery}`),
-        apiFetch<Product[]>(`/customer/menu/products${branchQuery}`),
-        apiFetch<CustomerHome>(`/customer/home${branchQuery}`),
-      ]);
-      if (version !== loadVersion.current) return;
-      setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
-      setProducts(displayProducts(nextProducts));
-      setHome(displayCustomerHome(nextHome));
-    } catch (error) {
-      if (version !== loadVersion.current) return;
-      setLoadError(error instanceof Error ? error.message : "Filial ma'lumotlari yuklanmadi.");
-    } finally {
-      if (version === loadVersion.current) setLoading(false);
-    }
-  }
 
   return (
     <SiteShell>
       <MotionDiv {...pageMotion} className="mx-auto w-full max-w-6xl px-3 pb-3 pt-4 sm:px-4 lg:pt-5">
-        <HomepageHeroSlider fallbackProduct={heroProduct} key={branchId} loading={loading} menuHref={branchId ? `/menu?branchId=${branchId}` : "/menu"} slides={home.heroSlides} />
-        <div className="mf-home-branch-row mt-4 grid min-w-0 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-          <BranchPicker branches={branches} disabled={loading} onChange={selectBranch} value={branchId} />
-          <p className="text-xs font-bold text-[#07373A]">
-            {selectedBranch?.deliveryEnabled === false ? "Olib ketish" : selectedBranch?.pickupEnabled === false ? "Yetkazib berish" : "Yetkazib berish yoki olib ketish"}
-          </p>
-        </div>
+        <HomepageHeroSlider fallbackProduct={heroProduct} loading={loading} menuHref="/menu" slides={home.heroSlides} />
       </MotionDiv>
 
       {loadError ? (

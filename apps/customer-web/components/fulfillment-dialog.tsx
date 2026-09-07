@@ -45,11 +45,13 @@ export default function FulfillmentDialog({
   const [saving, setSaving] = useState(false);
   const version = useRef(0);
   const branch = branches.find((item) => item.id === branchId);
-  const available = (item: Branch) =>
-    item.acceptsOrders !== false &&
-    (type === "DELIVERY"
+  const supportsMode = (item: Branch) =>
+    type === "DELIVERY"
       ? item.deliveryEnabled !== false
-      : item.pickupEnabled !== false);
+      : item.pickupEnabled !== false;
+  const available = (item: Branch) =>
+    supportsMode(item);
+  const isClosedNow = (item: Branch) => item.acceptsOrders === false;
   const enabled = Boolean(branch && available(branch));
   const load = useCallback(async () => {
     const current = ++version.current;
@@ -79,21 +81,12 @@ export default function FulfillmentDialog({
     if (loading) return;
     if (
       branches.some(
-        (item) =>
-          item.id === branchId &&
-          item.acceptsOrders !== false &&
-          (type === "DELIVERY"
-            ? item.deliveryEnabled !== false
-            : item.pickupEnabled !== false),
+        (item) => item.id === branchId && supportsMode(item),
       )
     )
       return;
     const next = branches.find(
-      (item) =>
-        item.acceptsOrders !== false &&
-        (type === "DELIVERY"
-          ? item.deliveryEnabled !== false
-          : item.pickupEnabled !== false),
+      (item) => supportsMode(item),
     );
     setBranchId(next?.id ?? "");
   }, [branches, branchId, type, loading]);
@@ -220,7 +213,9 @@ export default function FulfillmentDialog({
                   <strong>{item.name}</strong>
                   <small>
                     {item.address ?? ""}
-                    {!available(item) ? " - hozir mavjud emas" : ""}
+                    {!available(item)
+                      ? " - bu usul mavjud emas"
+                      : isClosedNow(item) ? " - hozir yopiq" : ""}
                   </small>
                 </span>
               </label>
