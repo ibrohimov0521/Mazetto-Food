@@ -1,6 +1,6 @@
 # Customer Checkout and Delivery Location Handoff
 
-Status: implemented and verified on the server development environment, 2026-09-07.
+Status: deployed to production and verified on 2026-09-07 (application release f5aa81c).
 Repository: /home/javohir/dev/mazetto-food
 This change does not implement admin or courier screens.
 
@@ -101,7 +101,7 @@ The existing backend currently returns a zero delivery fee. Synthetic UI QA uses
 
 New additive migration: 20260907130000_customer_delivery_locations.
 Adds nullable deliveryLocation JSONB fields to orders/customer_orders and the customer_addresses table.
-Applied to mazetto_dev only.
+Applied to mazetto_dev and then production mazetto after a verified, protected database backup.
 For production, apply the migration and deploy backend before deploying the new customer web.
 No admin or POS files were edited.
 Do not deploy only the web against the old backend: address saving needs the new endpoints and schema.

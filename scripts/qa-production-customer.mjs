@@ -58,6 +58,24 @@ try {
       .getByRole("button", { name: "Joylashuvimni aniqlash", exact: true })
       .click();
     await dialog.getByText("Nuqta belgilandi", { exact: true }).waitFor();
+    await page.waitForFunction(
+      () => {
+        const tiles = [
+          ...document.querySelectorAll('dialog img.leaflet-tile[src*="/17/"]'),
+        ];
+        return (
+          tiles.length > 0 &&
+          tiles.every(
+            (tile) =>
+              tile.complete &&
+              tile.naturalWidth > 0 &&
+              tile.classList.contains("leaflet-tile-loaded"),
+          )
+        );
+      },
+      null,
+      { timeout: 30000 },
+    );
     await page.screenshot({ path: output + "/gps-" + width + ".png" });
     await dialog
       .getByLabel("Ko'cha yoki mahalla", { exact: true })
