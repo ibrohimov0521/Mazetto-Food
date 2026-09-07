@@ -150,12 +150,9 @@ function UpsellCard({
               className="pressable ripple mf-button-primary grid h-9 w-9 shrink-0 place-items-center rounded-xl text-base font-black"
               onClick={() => {
                 const rect = imageRef.current?.getBoundingClientRect();
-                if (rect) {
-                  triggerCartFlight(product.imageUrl, rect);
-                }
 
                 hapticTap([8, 20, 8]);
-                addItem({
+                const added = addItem({
                   productId: product.id,
                   productName: product.name,
                   imageUrl: product.imageUrl,
@@ -165,6 +162,7 @@ function UpsellCard({
                   quantity: 1,
                   modifiers: [],
                 });
+                if (added && rect) triggerCartFlight(product.imageUrl, rect);
               }}
               type="button"
             >

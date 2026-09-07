@@ -287,9 +287,8 @@ function ProductDetails({ id }: { id: string }) {
                 className="mf-button-primary mf-detail-add"
                 onClick={() => {
                   const rect = imageRef.current?.getBoundingClientRect();
-                  if (rect) triggerCartFlight(product.imageUrl, rect);
                   hapticTap([10, 24, 10]);
-                  addItem({
+                  const added = addItem({
                     productId: product.id,
                     productName: product.name,
                     imageUrl: product.imageUrl,
@@ -304,6 +303,7 @@ function ProductDetails({ id }: { id: string }) {
                       price: modifier.price,
                     })),
                   });
+                  if (added && rect) triggerCartFlight(product.imageUrl, rect);
                 }}
                 type="button"
               >

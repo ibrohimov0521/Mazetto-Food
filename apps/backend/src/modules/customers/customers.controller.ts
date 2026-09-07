@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  Delete,
+  Put,
   Get,
   Param,
   Post,
@@ -28,10 +30,40 @@ import {
   CustomerVerifyCodeDto,
 } from "./dto/customer.dto";
 import { CustomersService } from "./customers.service";
+import { CustomerAddressesService } from "./customer-addresses.service";
+import { SaveCustomerAddressDto } from "./dto/delivery-location.dto";
 
 @Controller("customer")
 export class CustomerPublicController {
-  constructor(private readonly customersService: CustomersService) {}
+  constructor(
+    private readonly customersService: CustomersService,
+    private readonly addressesService: CustomerAddressesService,
+  ) {}
+
+  @UseGuards(CustomerAuthGuard)
+  @Public()
+  @Get("me/addresses")
+  listAddresses(@CurrentCustomer() customer: AuthenticatedCustomer) {
+    return this.addressesService.list(customer.id);
+  }
+
+  @UseGuards(CustomerAuthGuard)
+  @Public()
+  @Put("me/addresses/:id")
+  saveAddress(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Param("id") id: string,
+    @Body() dto: SaveCustomerAddressDto,
+  ) {
+    return this.addressesService.save(customer.id, id, dto);
+  }
+
+  @UseGuards(CustomerAuthGuard)
+  @Public()
+  @Delete("me/addresses/:id")
+  deleteAddress(@CurrentCustomer() customer: AuthenticatedCustomer, @Param("id") id: string) {
+    return this.addressesService.remove(customer.id, id);
+  }
 
   @Public()
   @Post("auth/request-code")

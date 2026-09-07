@@ -27,6 +27,8 @@ import type {
   OnlineOrderModifierDto,
 } from "./dto/customer.dto";
 import { OnlineOrderTypeDto, OnlinePaymentMethodDto } from "./dto/customer.dto";
+import { normalizeDeliveryLocation, deliveryAddressText } from "./delivery-location";
+import { normalizeCustomerPhone } from "./customer-phone";
 
 type TransactionClient = Prisma.TransactionClient;
 type ModifierSnapshot = {
@@ -73,6 +75,12 @@ export class CustomerOrderEngineService {
     let kitchenTicket: Awaited<
       ReturnType<KitchenService["createTicketForOrder"]>
     > | null = null;
+    const deliveryLocation = dto.type === OnlineOrderTypeDto.DELIVERY && dto.deliveryLocation
+      ? normalizeDeliveryLocation(dto.deliveryLocation)
+      : undefined;
+    const deliveryAddress = dto.type === OnlineOrderTypeDto.DELIVERY
+      ? deliveryLocation ? deliveryAddressText(deliveryLocation) : dto.address?.trim()
+      : undefined;
     const requestHash = this.hashCheckoutRequest(dto);
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
@@ -102,7 +110,7 @@ export class CustomerOrderEngineService {
         dto.type,
       );
 
-      if (dto.type === OnlineOrderTypeDto.DELIVERY && !dto.address) {
+      if (dto.type === OnlineOrderTypeDto.DELIVERY && !deliveryAddress) {
         throw new BadRequestException("Delivery address is required");
       }
 
@@ -124,12 +132,13 @@ export class CustomerOrderEngineService {
                   : OrderType.TAKEAWAY,
               status: OrderStatus.NEW,
               customerName: dto.name ?? customer.name,
-              customerPhone: customer.phone,
-              deliveryAddress: dto.address ?? null,
+              customerPhone: dto.phone ? normalizeCustomerPhone(dto.phone) : customer.phone,
+              deliveryAddress: deliveryAddress ?? null,
+              ...(deliveryLocation ? { deliveryLocation } : {}),
               notes: dto.notes ?? null,
               kitchenComment:
                 dto.type === OnlineOrderTypeDto.DELIVERY
-                  ? `Delivery: ${dto.address}`
+                  ? `Delivery: ${deliveryAddress}`
                   : "Pickup order",
             },
           });
@@ -192,7 +201,8 @@ export class CustomerOrderEngineService {
                   ? CustomerOrderType.DELIVERY
                   : CustomerOrderType.PICKUP,
               paymentMethod: dto.paymentMethod,
-              deliveryAddress: dto.address ?? null,
+              deliveryAddress: deliveryAddress ?? null,
+              ...(deliveryLocation ? { deliveryLocation } : {}),
               notes: dto.notes ?? null,
             },
           });
@@ -453,6 +463,7 @@ export class CustomerOrderEngineService {
       phone: dto.phone?.trim() ?? null,
       type: dto.type,
       address: dto.address?.trim() ?? null,
+      ...(dto.deliveryLocation ? { deliveryLocation: normalizeDeliveryLocation(dto.deliveryLocation) } : {}),
       paymentMethod: dto.paymentMethod,
       notes: dto.notes?.trim() ?? null,
       items: dto.items.map((item) => ({

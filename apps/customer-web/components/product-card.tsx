@@ -48,12 +48,9 @@ export function ProductCard({ compact = false, priority = false, product }: { co
       className="pressable ripple mf-button-primary mf-product-plus justify-self-end font-black"
       onClick={() => {
         const rect = imageRef.current?.getBoundingClientRect();
-        if (rect) {
-          triggerCartFlight(product.imageUrl, rect);
-        }
 
         hapticTap([10, 24, 10]);
-        addItem({
+        const added = addItem({
           productId: product.id,
           productName: product.name,
           imageUrl: product.imageUrl,
@@ -63,6 +60,7 @@ export function ProductCard({ compact = false, priority = false, product }: { co
           quantity: 1,
           modifiers: [],
         });
+        if (added && rect) triggerCartFlight(product.imageUrl, rect);
       }}
       type="button"
     >

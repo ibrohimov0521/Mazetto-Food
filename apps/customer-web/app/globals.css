@@ -97,17 +97,17 @@ img {
 .mf-botanical-frame {
   position: absolute;
   inset: 0 0 auto;
-  height: 240px;
+  height: 520px;
   overflow: hidden;
   pointer-events: none;
-  z-index: -1;
+  z-index: 0;
 }
 
 .mf-botanical-frame span {
   position: absolute;
-  top: -40px;
-  width: 120px;
-  height: 220px;
+  top: 68px;
+  width: 160px;
+  height: 310px;
   background: url('/brand/botanical-sprig.svg') center / contain no-repeat;
 }
 
@@ -133,7 +133,7 @@ img {
   height: 10rem;
   content: "";
   background: url('/brand/botanical-sprig.svg') center / contain no-repeat;
-  opacity: 0.12;
+  opacity: 0.24;
   pointer-events: none;
 }
 
@@ -163,6 +163,7 @@ img {
 .mf-header-spacer { height: calc(var(--mf-header-height) + 1px + env(safe-area-inset-top)); }
 
 @media (max-width: 767px) {
+  .mf-topbar { position: relative; }
   .mf-header-logo { width: 240px; }
 }
 
@@ -192,6 +193,32 @@ img {
   background: rgba(245, 245, 239, 0.86);
   color: #07373a;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 24px rgba(0, 32, 35, 0.12);
+}
+
+.mf-topbar::before,
+.mf-topbar::after {
+  position: absolute;
+  top: -26px;
+  width: 90px;
+  height: 120px;
+  z-index: -1;
+  content: "";
+  background: url('/brand/botanical-sprig.svg') center / contain no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.mf-topbar::before { left: -12px; transform: rotate(22deg); }
+.mf-topbar::after { right: -12px; transform: scaleX(-1) rotate(22deg); }
+
+.mf-menu-section-heading::after {
+  display: inline-block;
+  content: "";
+  width: 18px;
+  height: 24px;
+  margin-left: 9px;
+  vertical-align: middle;
+  background: url('/brand/botanical-sprig.svg') center / contain no-repeat;
+  pointer-events: none;
 }
 
 .mf-top-nav-link:hover {
@@ -524,7 +551,7 @@ img {
   content: "";
   border-radius: 58% 42% 68% 32% / 42% 58% 42% 58%;
   background: url('/brand/botanical-sprig.svg') center / contain no-repeat;
-  opacity: 0.12;
+  opacity: 0.36;
   transform: rotate(-18deg);
   pointer-events: none;
 }

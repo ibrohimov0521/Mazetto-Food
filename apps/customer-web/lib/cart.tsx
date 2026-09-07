@@ -1,7 +1,21 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { getApiBaseUrl } from "./api";
+import dynamic from "next/dynamic";
+import { useFulfillmentState, type Fulfillment } from "./fulfillment";
+const FulfillmentDialog = dynamic(
+  () => import("../components/fulfillment-dialog"),
+  { ssr: false },
+);
 
 export type CustomerSession = {
   id: string;
@@ -49,14 +63,20 @@ type CartContextValue = {
   cartFlight: CartFlight | null;
   setCustomer: (customer: CustomerSession | null) => void;
   refreshCustomer: () => Promise<CustomerSession | null>;
-  addItem: (item: Omit<CartItem, "key">) => void;
+  addItem: (item: Omit<CartItem, "key">) => boolean;
+  fulfillment: Fulfillment | null;
+  fulfillmentConfirmed: boolean;
+  openFulfillment: () => void;
   updateQuantity: (key: string, quantity: number) => void;
   removeItem: (key: string) => void;
   clearCart: () => void;
   toggleFavorite: (productId: string) => void;
   isFavorite: (productId: string) => boolean;
   showToast: (message: string) => void;
-  triggerCartFlight: (imageUrl: string | null | undefined, source: DOMRect) => void;
+  triggerCartFlight: (
+    imageUrl: string | null | undefined,
+    source: DOMRect,
+  ) => void;
   finishCartFlight: () => void;
   subtotal: number;
 };
@@ -160,20 +180,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartPulseId, setCartPulseId] = useState(0);
   const [cartFlight, setCartFlight] = useState<CartFlight | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const fulfillment = useFulfillmentState(customer?.id);
+  const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
+  const pendingItem = useRef<Omit<CartItem, "key"> | null>(null);
+  const pendingQuantity = useRef<{ key: string; quantity: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     setItems(readStoredValue<CartItem[]>(storageKey, []));
-    setCustomerState(readStoredValue<CustomerSession | null>(customerKey, null));
+    setCustomerState(
+      readStoredValue<CustomerSession | null>(customerKey, null),
+    );
     setFavoriteIds(readStoredValue<string[]>(favoritesKey, []));
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (hydrated) window.localStorage.setItem(storageKey, JSON.stringify(items));
+    if (hydrated)
+      window.localStorage.setItem(storageKey, JSON.stringify(items));
   }, [hydrated, items]);
 
   useEffect(() => {
-    if (hydrated) window.localStorage.setItem(favoritesKey, JSON.stringify(favoriteIds));
+    if (hydrated)
+      window.localStorage.setItem(favoritesKey, JSON.stringify(favoriteIds));
   }, [favoriteIds, hydrated]);
 
   useEffect(() => {
@@ -185,7 +215,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(timeout);
   }, [toastMessage]);
 
-  const setCustomer = useCallback(function setCustomer(customer: CustomerSession | null) {
+  const setCustomer = useCallback(function setCustomer(
+    customer: CustomerSession | null,
+  ) {
     setCustomerState(customer);
 
     if (customer) {
@@ -201,18 +233,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const response = await fetch(`${getCustomerApiBaseUrl()}/customer/auth/refresh`, {
-        body: JSON.stringify({ refreshToken: customer.refreshToken }),
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-        signal: AbortSignal.timeout(15_000),
-      });
+      const response = await fetch(
+        `${getCustomerApiBaseUrl()}/customer/auth/refresh`,
+        {
+          body: JSON.stringify({ refreshToken: customer.refreshToken }),
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
       const payload = (await response.json()) as {
         success: boolean;
         data?: {
-          customer: Omit<CustomerSession, "accessToken" | "refreshToken" | "tokenType">;
-          tokens: Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType">;
+          customer: Omit<
+            CustomerSession,
+            "accessToken" | "refreshToken" | "tokenType"
+          >;
+          tokens: Pick<
+            CustomerSession,
+            "accessToken" | "refreshToken" | "tokenType"
+          >;
         };
       };
 
@@ -235,11 +276,35 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const subtotal = useMemo(
     () =>
       items.reduce((total, item) => {
-        const modifiersTotal = item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0);
-        return total + (Number(item.unitPrice) + modifiersTotal) * item.quantity;
+        const modifiersTotal = item.modifiers.reduce(
+          (sum, modifier) => sum + Number(modifier.price),
+          0,
+        );
+        return (
+          total + (Number(item.unitPrice) + modifiersTotal) * item.quantity
+        );
       }, 0),
     [items],
   );
+
+  function commitItem(item: Omit<CartItem, "key">) {
+    const key = cartItemKey(item);
+    setItems((current) => {
+      const existing = current.find((candidate) => candidate.key === key);
+
+      if (existing) {
+        return current.map((candidate) =>
+          candidate.key === key
+            ? { ...candidate, quantity: candidate.quantity + item.quantity }
+            : candidate,
+        );
+      }
+
+      return [...current, { ...item, key }];
+    });
+    setCartPulseId((current) => current + 1);
+    setToastMessage(`${item.productName} savatga qo'shildi`);
+  }
 
   const value: CartContextValue = {
     customer,
@@ -250,34 +315,62 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     cartFlight,
     setCustomer,
     refreshCustomer,
+    fulfillment: fulfillment.fulfillment,
+    fulfillmentConfirmed: fulfillment.fulfillmentConfirmed,
+    openFulfillment() {
+      setFulfillmentOpen(true);
+    },
     addItem(item) {
-      const key = cartItemKey(item);
-      setItems((current) => {
-        const existing = current.find((candidate) => candidate.key === key);
-
-        if (existing) {
-          return current.map((candidate) => (candidate.key === key ? { ...candidate, quantity: candidate.quantity + item.quantity } : candidate));
-        }
-
-        return [...current, { ...item, key }];
-      });
-      setCartPulseId((current) => current + 1);
-      setToastMessage(`${item.productName} savatga qo'shildi`);
+      let catalogBranch: string | null = null;
+      try {
+        catalogBranch = localStorage.getItem("mazetto.customer.branchId");
+      } catch {
+        /* Optional preference. */
+      }
+      if (
+        !fulfillment.fulfillmentConfirmed ||
+        (catalogBranch && catalogBranch !== fulfillment.fulfillment?.branchId)
+      ) {
+        if (!pendingItem.current) pendingItem.current = item;
+        setFulfillmentOpen(true);
+        return false;
+      }
+      commitItem(item);
+      return true;
     },
     updateQuantity(key, quantity) {
-      setItems((current) => current.map((item) => (item.key === key ? { ...item, quantity } : item)).filter((item) => item.quantity > 0));
+      const current = items.find((item) => item.key === key);
+      if (
+        current &&
+        quantity > current.quantity &&
+        !fulfillment.fulfillmentConfirmed
+      ) {
+        pendingQuantity.current = { key, quantity };
+        setFulfillmentOpen(true);
+        return;
+      }
+      setItems((current) =>
+        current
+          .map((item) => (item.key === key ? { ...item, quantity } : item))
+          .filter((item) => item.quantity > 0),
+      );
     },
     removeItem(key) {
       setItems((current) => current.filter((item) => item.key !== key));
     },
     clearCart() {
       setItems([]);
+      fulfillment.resetFulfillment();
     },
     toggleFavorite(productId) {
       setFavoriteIds((current) => {
         const saved = !current.includes(productId);
-        setToastMessage(saved ? "Sevimlilarga qo'shildi" : "Sevimlilardan olib tashlandi");
-        return saved ? [...current, productId] : current.filter((id) => id !== productId);
+        setToastMessage(
+          saved ? "Sevimlilarga qo'shildi" : "Sevimlilardan olib tashlandi",
+        );
+        return saved
+          ? [...current, productId]
+          : current.filter((id) => id !== productId);
       });
     },
     isFavorite(productId) {
@@ -287,7 +380,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setToastMessage(message);
     },
     triggerCartFlight(imageUrl, source) {
-      if (!imageUrl || window.matchMedia("(prefers-reduced-motion: reduce)").matches || source.bottom < 0 || source.top > window.innerHeight) return;
+      if (
+        !imageUrl ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        source.bottom < 0 ||
+        source.top > window.innerHeight
+      )
+        return;
       setCartFlight({
         id: Date.now(),
         imageUrl: productImage(imageUrl),
@@ -305,7 +404,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     subtotal,
   };
 
-  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
+  return (
+    <CartContext.Provider value={value}>
+      {children}
+      {fulfillmentOpen ? (
+        <FulfillmentDialog
+          initial={fulfillment.fulfillment}
+          onClose={() => {
+            pendingItem.current = null;
+            pendingQuantity.current = null;
+            setFulfillmentOpen(false);
+          }}
+          onConfirm={(selection) => {
+            fulfillment.selectFulfillment(selection);
+            const item = pendingItem.current;
+            pendingItem.current = null;
+            setFulfillmentOpen(false);
+            if (item) commitItem(item);
+            const update = pendingQuantity.current;
+            pendingQuantity.current = null;
+            if (update)
+              setItems((current) =>
+                current.map((line) =>
+                  line.key === update.key
+                    ? { ...line, quantity: update.quantity }
+                    : line,
+                ),
+              );
+          }}
+        />
+      ) : null}
+    </CartContext.Provider>
+  );
 }
 
 export function useCart() {
@@ -384,7 +514,9 @@ function getSourceMenuPath(imageUrl?: string | null): string {
     }
 
     const parsedMediaUrl = new URL(mediaUrl);
-    return parsedImageUrl.origin === parsedMediaUrl.origin ? parsedImageUrl.pathname : "";
+    return parsedImageUrl.origin === parsedMediaUrl.origin
+      ? parsedImageUrl.pathname
+      : "";
   } catch {
     return "";
   }

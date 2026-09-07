@@ -10,6 +10,7 @@ import {
   MaxLength,
   ValidateNested,
 } from "class-validator";
+import { DeliveryLocationDto } from "./delivery-location.dto";
 
 export enum OnlineOrderTypeDto {
   DELIVERY = "DELIVERY",
@@ -114,6 +115,11 @@ export class CreateOnlineOrderDto {
   @IsString()
   @MaxLength(500)
   address?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeliveryLocationDto)
+  deliveryLocation?: DeliveryLocationDto;
 
   @IsEnum(OnlinePaymentMethodDto)
   paymentMethod!: OnlinePaymentMethodDto;

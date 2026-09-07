@@ -50,6 +50,7 @@ export function CustomerAuthPanel({
       }
 
       if (result.delivery.status === "PENDING_INTEGRATION") {
+        setPendingVerification(false);
         setMessage("Telegram orqali kod yuborish hozircha sozlanmagan. Keyinroq qayta urinib ko'ring.");
         return;
       }
