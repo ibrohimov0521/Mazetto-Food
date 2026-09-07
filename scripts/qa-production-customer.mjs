@@ -23,7 +23,15 @@ try {
     );
     await context.route("**/*", (route) => {
       if (!["GET", "HEAD", "OPTIONS"].includes(route.request().method())) {
-        blocked.push(new URL(route.request().url()).pathname);
+        const url = new URL(route.request().url());
+        // Block analytics too, but do not classify its beacon as an order mutation.
+        if (
+          !(
+            url.origin === new URL(base).origin &&
+            url.pathname === "/cdn-cgi/rum"
+          )
+        )
+          blocked.push(url.pathname);
         return route.abort();
       }
       return route.continue();
