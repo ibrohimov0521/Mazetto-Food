@@ -1,3 +1,8 @@
+import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
+import {
+  kitchenEvents,
+  kitchenOrderStatusChangedEvent,
+} from "../kitchen/kitchen-events";
 import {
   BadRequestException,
   ForbiddenException,
@@ -576,6 +581,7 @@ export class CustomersService {
     const nextStatus = dto.status as OrderStatus;
 
     const customerOrder = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id WHERE c.id = ${customerOrderId} FOR UPDATE OF o`;
       const existing = await tx.customerOrder.findUnique({
         where: { id: customerOrderId },
         include: { order: true },
@@ -605,6 +611,15 @@ export class CustomersService {
       }
 
       if (existing.order.status !== nextStatus) {
+        if (
+          nextStatus !== OrderStatus.CANCELLED &&
+          existing.order.status !== OrderStatus.READY &&
+          existing.order.status !== OrderStatus.SERVED
+        ) {
+          throw new BadRequestException(
+            "Buyurtma hali oshxonada tayyor bo'lmagan.",
+          );
+        }
         await tx.order.update({
           where: { id: existing.orderId },
           data: {
@@ -629,6 +644,7 @@ export class CustomersService {
           },
         });
 
+        await syncKitchenTickets(tx, existing.orderId, nextStatus);
         await tx.orderStatusHistory.create({
           data: {
             orderId: existing.orderId,
@@ -671,6 +687,10 @@ export class CustomersService {
       });
     });
 
+    kitchenEvents.emit(kitchenOrderStatusChangedEvent, {
+      orderId: customerOrder.orderId,
+      action: "refresh",
+    });
     return this.withDerivedCustomerOrderStatus(customerOrder);
   }
 

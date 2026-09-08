@@ -529,7 +529,8 @@ export function useCart() {
 }
 
 export function formatMoney(value: string | number): string {
-  return `${Number(value || 0).toLocaleString("uz-UZ")} so'm`;
+  // Use stable separators across the server and browser ICU locale versions.
+  return `${Number(value || 0).toLocaleString("en-US")} so'm`;
 }
 
 export function cartItemKey(item: {

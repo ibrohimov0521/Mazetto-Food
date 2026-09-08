@@ -11,16 +11,18 @@ export function CustomerMenuSections({
   compactTop = false,
   intro = true,
   title = "Menyu",
+  initial,
 }: {
   compactTop?: boolean;
   intro?: boolean;
   title?: string;
+  initial?: { categories: Category[]; products: Product[] };
 }) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>(() => sortSetsFirst((initial?.categories ?? []).map(displayCategory)));
+  const [products, setProducts] = useState<Product[]>(() => displayProducts(initial?.products ?? []));
   const [activeCategoryId, setActiveCategoryId] = useState<string>("");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initial);
   const [error, setError] = useState<string | null>(null);
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -31,7 +33,7 @@ export function CustomerMenuSections({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!initial) setLoading(true);
     setError(null);
     try {
       const [nextCategories, nextProducts] = await Promise.all([
@@ -47,7 +49,7 @@ export function CustomerMenuSections({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [initial]);
 
   useEffect(() => {
     void load();

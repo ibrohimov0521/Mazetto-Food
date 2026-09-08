@@ -16,6 +16,14 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(configDir, "../.."),
   transpilePackages: ["@mazetto/api-client", "@mazetto/ui"],
+  async headers() {
+    return [
+      {
+        source: "/design-options.html",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

@@ -1,3 +1,5 @@
+import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
+import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import {
   BadRequestException,
   ForbiddenException,
@@ -564,6 +566,7 @@ export class OrdersService {
     const nextStatus = this.toStoredStatus(dto.status);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
       const order = await tx.order.findUnique({ where: { id: orderId } });
 
       if (!order) {
@@ -633,6 +636,8 @@ export class OrdersService {
 
       await tx.order.update({ where: { id: orderId }, data });
 
+      await syncKitchenTickets(tx, orderId, nextStatus);
+
       if (
         order.tableId &&
         (nextStatus === OrderStatus.COMPLETED || nextStatus === OrderStatus.CANCELLED)
@@ -669,6 +674,7 @@ export class OrdersService {
     }
 
     this.kitchenService.emitOrderStatusChanged(result.order);
+    kitchenEvents.emit(kitchenOrderStatusChangedEvent, { orderId, action: "refresh" });
     return result.order;
   }
 

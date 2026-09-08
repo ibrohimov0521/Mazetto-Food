@@ -18,6 +18,10 @@ import {
   kitchenOrderStatusChangedEvent,
 } from "./kitchen-events";
 import { KitchenGateway } from "./kitchen.gateway";
+import {
+  kitchenStatusForOrder,
+  syncKitchenTickets,
+} from "./kitchen-status-sync";
 
 type TransactionClient = Prisma.TransactionClient;
 export type KitchenStaffAction =
@@ -56,14 +60,20 @@ export class KitchenService {
     private readonly gateway: KitchenGateway,
   ) {}
 
-  listOrders(user: AuthenticatedUser) {
+  async listOrders(user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user);
 
-    return this.prisma.kitchenTicket.findMany({
+    const tickets = await this.prisma.kitchenTicket.findMany({
       where: {
         order: {
           ...(branchId ? { branchId } : {}),
-          status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+          status: {
+            notIn: [
+              OrderStatus.SERVED,
+              OrderStatus.COMPLETED,
+              OrderStatus.CANCELLED,
+            ],
+          },
         },
         status: {
           in: [
@@ -77,6 +87,10 @@ export class KitchenService {
       include: this.ticketInclude(),
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
     });
+    return tickets.map((ticket) => ({
+      ...ticket,
+      status: kitchenStatusForOrder(ticket.order.status) ?? ticket.status,
+    }));
   }
 
   async createTicketForOrder(tx: TransactionClient, orderId: string) {
@@ -177,7 +191,20 @@ export class KitchenService {
         resolveBranchScope(actor.user, order.branchId);
       }
 
-      const ticket = order.kitchenTickets[0] ?? null;
+      await syncKitchenTickets(tx, orderId, order.status);
+      const storedTicket = order.kitchenTickets[0] ?? null;
+      const ticket =
+        storedTicket &&
+        ![
+          KitchenTicketStatus.COMPLETED,
+          KitchenTicketStatus.CANCELLED,
+        ].includes(storedTicket.status as "COMPLETED" | "CANCELLED")
+          ? {
+              ...storedTicket,
+              status:
+                kitchenStatusForOrder(order.status) ?? storedTicket.status,
+            }
+          : storedTicket;
 
       if (!ticket) {
         throw new BadRequestException("Oshxona chiptasi topilmadi");
@@ -305,11 +332,25 @@ export class KitchenService {
     ticketStatus: KitchenTicketStatus;
   } {
     if (
+      (action === "cancel" && order.status === OrderStatus.CANCELLED) ||
+      (action === "complete" &&
+        ticket.status === KitchenTicketStatus.COMPLETED &&
+        order.status !== OrderStatus.CANCELLED)
+    ) {
+      return {
+        changed: false,
+        orderStatus: order.status,
+        ticketStatus: ticket.status,
+      };
+    }
+    if (
       order.status === OrderStatus.COMPLETED ||
       order.status === OrderStatus.CANCELLED
     ) {
       throw new BadRequestException(
-        `Buyurtma allaqachon ${order.status.toLowerCase()}`,
+        order.status === OrderStatus.CANCELLED
+          ? "Buyurtma bekor qilingan. Holat yangilandi."
+          : "Buyurtma yakunlangan. Holat yangilandi.",
       );
     }
 

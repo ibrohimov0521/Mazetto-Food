@@ -72,7 +72,7 @@ const columns: Column[] = [
     tone: "new",
   },
   {
-    title: "Tasdiqlandi",
+    title: "Qabul qilindi",
     helper: "Tayyorlashni boshlash kerak",
     statuses: ["ACCEPTED"],
     tone: "accepted",
@@ -107,6 +107,7 @@ function KitchenDisplay() {
   const [now, setNow] = useState(() => Date.now());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [busyTicketId, setBusyTicketId] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -114,39 +115,66 @@ function KitchenDisplay() {
     new Set(),
   );
   const loadedOnceRef = useRef(false);
+  const loadVersion = useRef(0);
+  const loadRequest = useRef<AbortController | null>(null);
+  const actionLock = useRef(false);
   const knownTicketIdsRef = useRef<Set<string>>(new Set());
 
-  const loadTickets = useCallback(async () => {
-    try {
-      const nextTickets = await apiFetch<KitchenTicket[]>("/kitchen/orders");
-      const nextTicketIds = new Set(nextTickets.map((ticket) => ticket.id));
-      const hasNewTicket =
-        loadedOnceRef.current &&
-        nextTickets.some((ticket) => !knownTicketIdsRef.current.has(ticket.id));
+  const loadTickets = useCallback(
+    async (force = false) => {
+      if (loadRequest.current && !force) return;
+      loadRequest.current?.abort();
+      const controller = new AbortController();
+      loadRequest.current = controller;
+      const version = ++loadVersion.current;
+      try {
+        const nextTickets = await apiFetch<KitchenTicket[]>("/kitchen/orders", {
+          cache: "no-store",
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(12000),
+          ]),
+        });
+        if (version !== loadVersion.current) return;
+        const nextTicketIds = new Set(nextTickets.map((ticket) => ticket.id));
+        const hasNewTicket =
+          loadedOnceRef.current &&
+          nextTickets.some(
+            (ticket) => !knownTicketIdsRef.current.has(ticket.id),
+          );
 
-      setTickets(nextTickets);
-      setError(null);
-      setLastUpdatedAt(new Date());
+        setTickets(nextTickets);
+        setError(null);
+        setLastUpdatedAt(new Date());
 
-      if (hasNewTicket && isSoundEnabled) {
-        playKitchenTone();
+        if (hasNewTicket && isSoundEnabled) {
+          playKitchenTone();
+        }
+
+        knownTicketIdsRef.current = nextTicketIds;
+        loadedOnceRef.current = true;
+      } catch (nextError) {
+        if (version !== loadVersion.current) return;
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Oshxona buyurtmalari yuklanmadi",
+        );
+      } finally {
+        if (loadRequest.current === controller) loadRequest.current = null;
+        if (version === loadVersion.current) setIsLoading(false);
       }
-
-      knownTicketIdsRef.current = nextTicketIds;
-      loadedOnceRef.current = true;
-    } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Oshxona buyurtmalari yuklanmadi",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isSoundEnabled]);
+    },
+    [isSoundEnabled],
+  );
 
   useEffect(() => {
     void loadTickets();
+    return () => {
+      loadVersion.current++;
+      loadRequest.current?.abort();
+      loadRequest.current = null;
+    };
   }, [loadTickets]);
 
   useEffect(() => {
@@ -156,7 +184,8 @@ function KitchenDisplay() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      void loadTickets();
+      if (!actionLock.current && document.visibilityState === "visible")
+        void loadTickets();
     }, pollIntervalMs);
 
     return () => window.clearInterval(timer);
@@ -187,26 +216,42 @@ function KitchenDisplay() {
   const totals = useMemo(() => summarizeTickets(tickets), [tickets]);
 
   async function runAction(ticket: KitchenTicket, action: KitchenAction) {
-    if (busyTicketId) {
+    if (actionLock.current) {
       return;
     }
 
+    actionLock.current = true;
+    loadVersion.current++;
     setBusyTicketId(ticket.id);
-    setError(null);
+    setActionError(null);
 
     try {
-      await apiFetch(`/kitchen/orders/${ticket.id}/${action}`, {
-        method: "PATCH",
-      });
-      await loadTickets();
+      const updated = await apiFetch<KitchenTicket>(
+        `/kitchen/orders/${ticket.id}/${action}`,
+        {
+          method: "PATCH",
+          signal: AbortSignal.timeout(12000),
+        },
+      );
+      setTickets((current) =>
+        current.flatMap((entry) =>
+          entry.id !== ticket.id
+            ? [entry]
+            : ["COMPLETED", "CANCELLED"].includes(updated.status)
+              ? []
+              : [updated],
+        ),
+      );
+      await loadTickets(true);
     } catch (actionError) {
-      setError(
+      setActionError(
         actionError instanceof Error
           ? actionError.message
           : "Amal bajarilmadi. Holatni yangilab qayta urinib ko'ring.",
       );
-      await loadTickets();
+      await loadTickets(true);
     } finally {
+      actionLock.current = false;
       setBusyTicketId(null);
     }
   }
@@ -294,9 +339,9 @@ function KitchenDisplay() {
           </button>
         </div>
 
-        {error ? (
+        {error || actionError ? (
           <div className="rounded-[24px] border border-red-400/25 bg-red-500/12 px-5 py-4 text-sm font-bold text-red-50">
-            {error}
+            {actionError ?? error}
           </div>
         ) : null}
 
@@ -646,7 +691,7 @@ function primaryActionForStatus(
     NEW: { action: "accept", label: "Qabul qilish" },
     ACCEPTED: { action: "start", label: "Tayyorlash" },
     COOKING: { action: "ready", label: "Tayyor" },
-    READY: { action: "complete", label: "Yopish" },
+    READY: { action: "complete", label: "Topshirish" },
   };
 
   return actions[status] ?? null;
@@ -686,11 +731,11 @@ function sourceLabel(source: OrderSource): string {
 function statusLabel(status: KitchenTicketStatus): string {
   const labels: Record<KitchenTicketStatus, string> = {
     NEW: "Yangi",
-    ACCEPTED: "Qabul qilingan",
+    ACCEPTED: "Qabul qilindi",
     COOKING: "Tayyorlanmoqda",
     READY: "Tayyor",
-    COMPLETED: "Yopilgan",
-    CANCELLED: "Bekor qilingan",
+    COMPLETED: "Oshxonadan topshirildi",
+    CANCELLED: "Bekor qilindi",
   };
 
   return labels[status];
