@@ -15,10 +15,12 @@ export default function FulfillmentDialog({
   initial,
   onConfirm,
   onClose,
+  onInvalidate,
 }: {
   initial: Fulfillment | null;
   onConfirm: (value: Fulfillment) => void;
   onClose: () => void;
+  onInvalidate?: () => void;
 }) {
   const { request: apiFetch, customer, preview } = useCheckoutRuntime();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -49,8 +51,7 @@ export default function FulfillmentDialog({
     type === "DELIVERY"
       ? item.deliveryEnabled !== false
       : item.pickupEnabled !== false;
-  const available = (item: Branch) =>
-    supportsMode(item);
+  const available = (item: Branch) => supportsMode(item);
   const isClosedNow = (item: Branch) => item.acceptsOrders === false;
   const enabled = Boolean(branch && available(branch));
   const load = useCallback(async () => {
@@ -79,15 +80,9 @@ export default function FulfillmentDialog({
   }, [load]);
   useEffect(() => {
     if (loading) return;
-    if (
-      branches.some(
-        (item) => item.id === branchId && supportsMode(item),
-      )
-    )
+    if (branches.some((item) => item.id === branchId && supportsMode(item)))
       return;
-    const next = branches.find(
-      (item) => supportsMode(item),
-    );
+    const next = branches.find((item) => supportsMode(item));
     setBranchId(next?.id ?? "");
   }, [branches, branchId, type, loading]);
 
@@ -215,7 +210,9 @@ export default function FulfillmentDialog({
                     {item.address ?? ""}
                     {!available(item)
                       ? " - bu usul mavjud emas"
-                      : isClosedNow(item) ? " - hozir yopiq" : ""}
+                      : isClosedNow(item)
+                        ? " - hozir yopiq"
+                        : ""}
                   </small>
                 </span>
               </label>
@@ -233,6 +230,18 @@ export default function FulfillmentDialog({
             value={location}
             center={branch?.coordinates}
             onBusyChange={setSaving}
+            onRemove={(removed) => {
+              if (
+                location &&
+                removed.latitude === location.latitude &&
+                removed.longitude === location.longitude &&
+                removed.address === location.address &&
+                removed.house === location.house
+              ) {
+                setLocation(null);
+                onInvalidate?.();
+              }
+            }}
             onChange={(value) => {
               setLocation(value);
               if (value) confirm(value);
@@ -257,19 +266,6 @@ export default function FulfillmentDialog({
           >
             <Check size={18} />
             Shu filialdan olaman
-          </button>
-        </footer>
-      ) : null}
-      {type === "DELIVERY" && location && enabled ? (
-        <footer className="mf-fulfillment-footer">
-          <button
-            className="mf-checkout-submit"
-            type="button"
-            disabled={saving}
-            onClick={() => confirm(location)}
-          >
-            <Check size={18} />
-            Shu manzilga
           </button>
         </footer>
       ) : null}

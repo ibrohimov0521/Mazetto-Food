@@ -28,10 +28,10 @@ function isSelection(value: unknown): value is Fulfillment {
 function read(key: string): State {
   try {
     const item = JSON.parse(
-      sessionStorage.getItem(key) ?? "null",
+      localStorage.getItem(key) ?? sessionStorage.getItem(key) ?? "null",
     ) as State | null;
     return item && isSelection(item.selection)
-      ? { selection: item.selection, confirmed: item.confirmed === true }
+      ? { selection: item.selection, confirmed: true }
       : empty;
   } catch {
     return empty;
@@ -39,7 +39,8 @@ function read(key: string): State {
 }
 function persist(key: string, state: State) {
   try {
-    sessionStorage.setItem(key, JSON.stringify(state));
+    localStorage.setItem(key, JSON.stringify(state));
+    sessionStorage.removeItem(key);
   } catch {
     /* In-memory checkout still works. */
   }
@@ -64,6 +65,7 @@ export function useFulfillmentState(customerId?: string, preview = false) {
     const state = transferringGuest ? previous.current!.state : read(key);
     if (transferringGuest) {
       try {
+        localStorage.removeItem(prefix + "guest");
         sessionStorage.removeItem(prefix + "guest");
       } catch {
         /* Optional session persistence. */
@@ -91,15 +93,13 @@ export function useFulfillmentState(customerId?: string, preview = false) {
     [key, owner, preview],
   );
   const reset = useCallback(() => {
-    const state = {
-      selection: previous.current?.state.selection ?? null,
-      confirmed: false,
-    };
+    const state = empty;
     previous.current = { owner, state };
     setRecord({ key, state });
     persist(key, state);
   }, [key, owner]);
   return {
+    fulfillmentReady: record?.key === key,
     fulfillment: state.selection,
     fulfillmentConfirmed: state.confirmed,
     selectFulfillment: select,

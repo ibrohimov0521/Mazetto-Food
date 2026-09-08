@@ -4,6 +4,9 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { CartUpsell } from "../../components/cart-upsell";
+import { OrderActionBar } from "../../components/order-action-bar";
+import { MapPin, Pencil, ShoppingBag } from "lucide-react";
+import "../checkout/checkout.css";
 import { AnimatedMoney, MotionDiv, hapticTap, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
@@ -21,7 +24,7 @@ export default function CartPage() {
 }
 
 function CartReview() {
-  const { customer, items, removeItem, subtotal, updateQuantity } = useCart();
+  const { customer, items, removeItem, subtotal, updateQuantity, fulfillment, openFulfillment } = useCart();
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Category[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -77,8 +80,8 @@ function CartReview() {
   }, [cartProductKey, items.length]);
 
   return (
-    <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-4 px-3 pb-[calc(9.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,380px)] lg:pb-6">
-      <div className="mf-checkout-card min-w-0 p-5">
+    <MotionDiv {...pageMotion} className="mf-cart-page mx-auto grid w-full max-w-6xl gap-5 px-4 pt-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,360px)]">
+      <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-black text-[#17314A]">Savatcha</h1>
@@ -133,14 +136,14 @@ function CartReview() {
         <CartUpsell categories={catalogCategories} loading={catalogLoading} products={catalogProducts} />
       </div>
 
-      {items.length ? <aside className="mf-checkout-card min-w-0 h-fit p-5">
+      {items.length ? <aside className="mf-cart-summary min-w-0 h-fit">
         <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
         {!customer?.accessToken ? (
           <div className="mf-surface-note mt-4 rounded-2xl px-4 py-3 text-sm font-bold">
             Buyurtma berish uchun telefon raqamingizni tasdiqlang.
           </div>
         ) : null}
-        <div className="mf-card-soft mt-5 grid gap-3 p-4">
+        <div className="mt-5 grid gap-3 py-4">
           <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
             <span>Mahsulotlar</span>
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={subtotal} /></span>
@@ -155,28 +158,17 @@ function CartReview() {
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>
           </div>
         </div>
-        {customer?.accessToken ? (
-          <Link className={`pressable ripple mt-4 flex w-full justify-center rounded-2xl px-5 py-4 font-black ${items.length ? "mf-button-primary" : "pointer-events-none bg-white/10 text-white/40"}`} href="/checkout">
-            Rasmiylashtirish
-          </Link>
-        ) : (
-          <Link className="pressable ripple mf-button-primary mt-4 flex w-full justify-center px-5 py-4 font-black" href="/checkout?auth=1">
-            Telefonni tasdiqlash
-          </Link>
-        )}
+        <div className="mf-cart-destination">
+          {fulfillment?.type === "PICKUP" ? <ShoppingBag size={22} /> : <MapPin size={22} />}
+          <div>
+            <strong>{fulfillment?.type === "PICKUP" ? "Olib ketish" : "Yetkazish manzili"}</strong>
+            <p>{fulfillment?.type === "PICKUP" ? fulfillment.branchAddress : fulfillment?.location ? `${fulfillment.location.address}, ${fulfillment.location.house}` : "Manzil hali tanlanmagan"}</p>
+          </div>
+          <button className="mf-icon-control" type="button" onClick={openFulfillment} title="Manzilni o'zgartirish" aria-label="Manzilni o'zgartirish"><Pencil size={18} /></button>
+        </div>
       </aside> : null}
 
-      {items.length ? <div className="mf-mobile-action-bar fixed inset-x-3 z-30 rounded-[1.2rem] p-2.5 lg:hidden">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2.5">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-wide text-[#0B7F75]">Jami</p>
-            <p className="truncate text-base font-black text-[#17314A]"><AnimatedMoney value={total} /></p>
-          </div>
-          <Link className={`pressable ripple grid h-11 shrink-0 place-items-center rounded-[1.05rem] px-4 text-sm font-black ${items.length ? "mf-button-primary" : "pointer-events-none bg-[#07373A]/10 text-[#07373A]/40"}`} href={customer?.accessToken ? "/checkout" : "/checkout?auth=1"}>
-            {customer?.accessToken ? "Davom etish" : "Tasdiqlash"}
-          </Link>
-        </div>
-      </div> : null}
+      {items.length ? <OrderActionBar total={total} label="Rasmiylashtirish" href={customer?.accessToken ? "/checkout" : "/checkout?auth=1"} /> : null}
     </MotionDiv>
   );
 }

@@ -6,7 +6,6 @@ import {
   Check,
   ChevronDown,
   Home,
-  MapPin,
   Pencil,
   Plus,
   RotateCw,
@@ -51,6 +50,7 @@ export function DeliveryAddressPicker({
   error,
   disabled = false,
   onBusyChange,
+  onRemove,
 }: {
   value: DeliveryLocation | null;
   onChange: (value: DeliveryLocation | null) => void;
@@ -58,6 +58,7 @@ export function DeliveryAddressPicker({
   error?: string | undefined;
   disabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
+  onRemove?: (location: DeliveryLocation) => void;
 }) {
   const { customer, refreshCustomer, request: apiFetch } = useCheckoutRuntime();
   const [saved, setSaved] = useState<SavedAddress[]>([]);
@@ -83,7 +84,28 @@ export function DeliveryAddressPicker({
   }, []);
   const operation = useRef(false);
   const draftId = useRef<string | null>(null);
-  const selected = saved.find((entry) => entry.id === selectedId);
+  const currentIsSaved =
+    value &&
+    saved.some(
+      (entry) =>
+        entry.location.latitude === value.latitude &&
+        entry.location.longitude === value.longitude &&
+        entry.location.address === value.address &&
+        entry.location.house === value.house,
+    );
+  const entries: SavedAddress[] =
+    value && !currentIsSaved
+      ? [
+          {
+            id: "current-address",
+            label: "Tanlangan manzil",
+            location: value,
+            updatedAt: "",
+          },
+          ...saved,
+        ]
+      : saved;
+  const selected = entries.find((entry) => entry.id === selectedId);
   const customerId = customer?.id ?? "guest";
   const currentValue = useRef(value);
   currentValue.current = value;
@@ -146,7 +168,7 @@ export function DeliveryAddressPicker({
         : null;
       setSelectedId((current) =>
         active
-          ? (matching?.id ?? null)
+          ? (matching?.id ?? "current-address")
           : valid.some((entry) => entry.id === current)
             ? current
             : (preferred?.id ?? null),
@@ -157,7 +179,7 @@ export function DeliveryAddressPicker({
         setLoadError(
           error instanceof Error ? error.message : "Manzillar yuklanmadi.",
         );
-        setEditing(true);
+        setEditing(!currentValue.current);
       }
     } finally {
       if (version === request.current) setLoading(false);
@@ -172,10 +194,10 @@ export function DeliveryAddressPicker({
   }, [load]);
 
   function edit(entry?: SavedAddress) {
-    onChange(null);
     setFormError(null);
-    setEditingId(entry?.id ?? null);
-    draftId.current = entry?.id ?? null;
+    const id = entry?.id === "current-address" ? null : (entry?.id ?? null);
+    setEditingId(id);
+    draftId.current = id;
     setDetails(
       entry
         ? {
@@ -266,9 +288,15 @@ export function DeliveryAddressPicker({
     setBusy(true);
     setFormError(null);
     try {
-      await addressRequest("/customer/me/addresses/" + encodeURIComponent(id), {
-        method: "DELETE",
-      });
+      const removed = entries.find((entry) => entry.id === id);
+      if (id !== "current-address") {
+        await addressRequest(
+          "/customer/me/addresses/" + encodeURIComponent(id),
+          {
+            method: "DELETE",
+          },
+        );
+      }
       if (!mounted.current) return;
       request.current++;
       setLoading(false);
@@ -276,6 +304,7 @@ export function DeliveryAddressPicker({
       const remaining = saved.filter((entry) => entry.id !== id);
       setSaved(remaining);
       setDeleteId(null);
+      if (removed) onRemove?.(removed.location);
       if (selectedId === id) {
         setSelectedId(remaining[0]?.id ?? null);
         onChange(null);
@@ -316,45 +345,15 @@ export function DeliveryAddressPicker({
           Manzillar yuklanmoqda...
         </div>
       ) : null}
-      {!editing && value ? (
-        <div className="mf-confirmed-address">
-          <span className="mf-address-symbol">
-            <MapPin size={22} />
-          </span>
-          <div className="mf-address-copy">
-            <strong>{selected?.label ?? "Yetkazish manzili"}</strong>
-            <p>{deliveryAddressText(value)}</p>
-            <span className="mf-address-confirmed">
-              <Check size={15} />
-              Manzil tasdiqlandi
-            </span>
-          </div>
-          <button
-            type="button"
-            className="mf-icon-control"
-            aria-label="Manzilni almashtirish"
-            title="Manzilni almashtirish"
-            onClick={() => {
-              onChange(null);
-              if (!saved.length) edit();
-              else setSelectedId(saved[0]!.id);
-            }}
-          >
-            <Pencil size={18} />
-          </button>
-        </div>
-      ) : null}
-      {!editing && !value && saved.length > 0 ? (
+      {!loading && !editing && entries.length > 0 ? (
         <div className="mf-saved-addresses">
-          <p className="mf-address-question">
-            Buyurtmani shu manzilga yetkazaylikmi?
-          </p>
+          <p className="mf-address-question">Yetkazish manzili</p>
           <div
             role="radiogroup"
             aria-label="Saqlangan manzillar"
             className="mf-saved-list"
           >
-            {saved.map((entry) => (
+            {entries.map((entry) => (
               <div
                 className={
                   "mf-saved-row" +
@@ -453,7 +452,6 @@ export function DeliveryAddressPicker({
             onChange={(next) => {
               setPoint(next);
               setFormError(null);
-              onChange(null);
             }}
           />
           <div className="mf-address-fields">
@@ -581,7 +579,7 @@ export function DeliveryAddressPicker({
               <Check size={18} />
               {busy ? "Saqlanmoqda..." : "Manzilni tasdiqlash"}
             </button>
-            {saved.length ? (
+            {entries.length ? (
               <button
                 type="button"
                 className="mf-text-command"

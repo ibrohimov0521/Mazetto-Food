@@ -25,6 +25,7 @@ import { CustomerAuthPanel } from "../../components/customer-auth-panel";
 import { AnimatedMoney, hapticTap } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
+import { OrderActionBar } from "../../components/order-action-bar";
 import { useCheckoutRuntime } from "../../lib/checkout-runtime";
 import { localizeMenuName } from "../../lib/customer-display";
 
@@ -426,7 +427,7 @@ function CheckoutFlow() {
     !quote;
 
   return (
-    <div className="mf-checkout-page">
+    <div className="mf-checkout-page mf-order-checkout">
       <header className="mf-checkout-heading">
         <Link href="/cart" className="mf-checkout-back">
           <ArrowLeft size={18} />
@@ -698,36 +699,22 @@ function CheckoutFlow() {
               </button>
             </div>
           ) : null}
-          <button
-            className="mf-checkout-submit mf-desktop-submit"
-            disabled={locked}
-            onClick={() => void submitOrder()}
-            type="button"
-          >
-            <span>
-              {submitting ? "Yuborilmoqda..." : "Buyurtmani tasdiqlash"}
-            </span>
-            <ArrowRight size={19} />
-          </button>
+          <p className="mf-summary-payment">
+            <Banknote size={18} /> Buyurtmani olganda naqd to'lov
+          </p>
         </aside>
       </div>
-      <div className="mf-checkout-mobile-bar">
-        <div>
-          <span>Jami</span>
-          <strong>
-            <AnimatedMoney value={total} />
-          </strong>
-        </div>
-        <button
-          className="mf-checkout-submit"
-          disabled={locked}
-          onClick={() => void submitOrder()}
-          type="button"
-        >
-          <span>{submitting ? "Yuborilmoqda..." : "Tasdiqlash"}</span>
-          <ArrowRight size={18} />
-        </button>
-      </div>
+      <OrderActionBar
+        total={total}
+        totalLabel={
+          loadingQuote ? "Hisoblanmoqda..." : quote ? "Jami" : "Mahsulotlar"
+        }
+        label={submitting ? "Yuborilmoqda..." : "Tasdiqlash"}
+        disabled={locked}
+        busy={submitting || loadingQuote}
+        notice={submitError ?? quoteError}
+        onConfirm={() => void submitOrder()}
+      />
     </div>
   );
 }

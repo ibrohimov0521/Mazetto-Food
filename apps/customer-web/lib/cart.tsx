@@ -9,7 +9,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { getApiBaseUrl } from "./api";
+import { apiFetch, getApiBaseUrl } from "./api";
+import { guestApiFetch } from "./guest-addresses";
+import {
+  isDeliveryLocation,
+  readLastAddressId,
+  type SavedAddress,
+} from "./delivery-location";
+import type { Branch } from "./types";
 import dynamic from "next/dynamic";
 import { useFulfillmentState, type Fulfillment } from "./fulfillment";
 const FulfillmentDialog = dynamic(
@@ -186,6 +193,61 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const pendingQuantity = useRef<{ key: string; quantity: number } | null>(
     null,
   );
+  const owner = customer?.id ?? "guest";
+  const [restoredOwner, setRestoredOwner] = useState<string | null>(null);
+  const [awaitingAddress, setAwaitingAddress] = useState(false);
+  const addressReady =
+    fulfillment.fulfillmentReady &&
+    (Boolean(fulfillment.fulfillment) || restoredOwner === owner);
+  const { fulfillmentReady, selectFulfillment } = fulfillment;
+
+  useEffect(() => {
+    if (!hydrated || !fulfillmentReady || fulfillment.fulfillment) return;
+    let cancelled = false;
+    const request = customer?.accessToken ? apiFetch : guestApiFetch;
+    void Promise.all([
+      request<SavedAddress[]>("/customer/me/addresses", {
+        ...(customer?.accessToken ? { accessToken: customer.accessToken } : {}),
+      }),
+      apiFetch<Branch[]>("/customer/branches"),
+    ])
+      .then(([addresses, branches]) => {
+        if (cancelled) return;
+        const valid = addresses.filter((entry) =>
+          isDeliveryLocation(entry.location),
+        );
+        const address =
+          valid.find((entry) => entry.id === readLastAddressId(owner)) ??
+          valid[0];
+        const branch = branches.find(
+          (entry) => entry.deliveryEnabled !== false,
+        );
+        if (address && branch)
+          selectFulfillment({
+            type: "DELIVERY",
+            branchId: branch.id,
+            branchName: branch.name,
+            branchAddress: branch.address ?? "",
+            location: address.location,
+          });
+      })
+      .catch(() => {
+        // The address dialog provides retry and manual selection if restoration fails.
+      })
+      .finally(() => {
+        if (!cancelled) setRestoredOwner(owner);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hydrated,
+    fulfillmentReady,
+    fulfillment.fulfillment,
+    customer?.accessToken,
+    owner,
+    selectFulfillment,
+  ]);
 
   useEffect(() => {
     setItems(readStoredValue<CartItem[]>(storageKey, []));
@@ -287,7 +349,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [items],
   );
 
-  function commitItem(item: Omit<CartItem, "key">) {
+  const commitItem = useCallback((item: Omit<CartItem, "key">) => {
     const key = cartItemKey(item);
     setItems((current) => {
       const existing = current.find((candidate) => candidate.key === key);
@@ -304,7 +366,34 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
     setCartPulseId((current) => current + 1);
     setToastMessage(`${item.productName} savatga qo'shildi`);
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!awaitingAddress || !addressReady) return;
+    setAwaitingAddress(false);
+    if (!fulfillment.fulfillmentConfirmed) {
+      setFulfillmentOpen(true);
+      return;
+    }
+    const item = pendingItem.current;
+    pendingItem.current = null;
+    if (item) commitItem(item);
+    const update = pendingQuantity.current;
+    pendingQuantity.current = null;
+    if (update)
+      setItems((current) =>
+        current.map((line) =>
+          line.key === update.key
+            ? { ...line, quantity: update.quantity }
+            : line,
+        ),
+      );
+  }, [
+    awaitingAddress,
+    addressReady,
+    fulfillment.fulfillmentConfirmed,
+    commitItem,
+  ]);
 
   const value: CartContextValue = {
     customer,
@@ -321,18 +410,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setFulfillmentOpen(true);
     },
     addItem(item) {
-      let catalogBranch: string | null = null;
-      try {
-        catalogBranch = localStorage.getItem("mazetto.customer.branchId");
-      } catch {
-        /* Optional preference. */
-      }
-      if (
-        !fulfillment.fulfillmentConfirmed ||
-        (catalogBranch && catalogBranch !== fulfillment.fulfillment?.branchId)
-      ) {
+      if (!addressReady || !fulfillment.fulfillmentConfirmed) {
         if (!pendingItem.current) pendingItem.current = item;
-        setFulfillmentOpen(true);
+        setAwaitingAddress(true);
         return false;
       }
       commitItem(item);
@@ -343,10 +423,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (
         current &&
         quantity > current.quantity &&
-        !fulfillment.fulfillmentConfirmed
+        (!addressReady || !fulfillment.fulfillmentConfirmed)
       ) {
         pendingQuantity.current = { key, quantity };
-        setFulfillmentOpen(true);
+        setAwaitingAddress(true);
         return;
       }
       setItems((current) =>
@@ -360,7 +440,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     },
     clearCart() {
       setItems([]);
-      fulfillment.resetFulfillment();
     },
     toggleFavorite(productId) {
       setFavoriteIds((current) => {
@@ -410,6 +489,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       {fulfillmentOpen ? (
         <FulfillmentDialog
           initial={fulfillment.fulfillment}
+          onInvalidate={fulfillment.resetFulfillment}
           onClose={() => {
             pendingItem.current = null;
             pendingQuantity.current = null;
