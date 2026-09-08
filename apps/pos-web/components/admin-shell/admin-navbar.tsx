@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { hasPermission, hasRole, roleLabels } from "../../lib/auth";
+import { roleLabels } from "../../lib/auth";
 import type { AuthUser, MazettoRole } from "../../lib/auth";
 import { Icon } from "../admin-ui/icon";
+import { PanelSwitcher } from "../auth/panel-switcher";
 import { BranchScopeBadge } from "./branch-scope-badge";
 
 /*
@@ -64,7 +65,6 @@ export function AdminNavbar({
   onToggleCollapse: () => void;
   onLogout: () => void;
 }) {
-  const shortcuts = resolveTopbarShortcuts(user);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -121,20 +121,11 @@ export function AdminNavbar({
         <Icon name={isCollapsed ? "chevronRight" : "chevronLeft"} />
       </button>
 
-      <nav
-        aria-label="Tezkor bo'limlar"
-        className="mz-thin-scrollbar hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto xl:flex"
-      >
-        {shortcuts.map((item) => (
-          <a
-            className="shrink-0 rounded-mz-control border border-mz-shell-border px-3 py-1.5 text-xs font-black text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg"
-            href={item.href}
-            key={item.href}
-          >
-            {item.label}
-          </a>
-        ))}
-      </nav>
+      <PanelSwitcher
+        className="hidden flex-1 xl:flex"
+        user={user}
+        variant="dark"
+      />
 
       <div className="min-w-0 flex-1 xl:hidden" />
 
@@ -179,15 +170,11 @@ export function AdminNavbar({
                 {primaryRoleLabel(user)}
               </p>
             </div>
-            <a
-              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-text transition hover:bg-mz-surface-sunken"
-              href="/workspace"
-              role="menuitem"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              <Icon className="h-4 w-4" name="grid" />
-              Ish joylari
-            </a>
+            <PanelSwitcher
+              className="border-b border-mz-border px-3 py-2 xl:hidden"
+              user={user}
+              variant="light"
+            />
             <button
               className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-danger transition hover:bg-mz-danger-bg"
               onClick={() => {
@@ -204,61 +191,5 @@ export function AdminNavbar({
         ) : null}
       </div>
     </header>
-  );
-}
-
-type TopbarShortcut = {
-  label: string;
-  href: string;
-  roles: string[];
-  permission: string;
-};
-
-const topbarShortcuts: TopbarShortcut[] = [
-  {
-    label: "Kassa",
-    href: "/pos",
-    permission: "ORDER_CREATE",
-    roles: ["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"],
-  },
-  {
-    label: "Oshxona",
-    href: "/kitchen",
-    permission: "KITCHEN_VIEW",
-    roles: ["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
-  },
-  {
-    label: "Kuryer",
-    href: "/courier",
-    permission: "COURIER_DELIVERY_VIEW",
-    roles: ["COURIER", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
-  },
-  {
-    label: "Smena",
-    href: "/shift",
-    permission: "SHIFT_VIEW_OWN",
-    roles: ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"],
-  },
-  {
-    label: "Admin",
-    href: "/admin/dashboard",
-    permission: "DASHBOARD_VIEW",
-    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
-  },
-  {
-    label: "Hisobot",
-    href: "/admin/reports",
-    permission: "REPORT_SALES_VIEW",
-    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-  },
-];
-
-function resolveTopbarShortcuts(user: AuthUser | null): TopbarShortcut[] {
-  if (!user) {
-    return [];
-  }
-
-  return topbarShortcuts.filter(
-    (item) => hasRole(user, item.roles) && hasPermission(user, item.permission),
   );
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PanelSwitcher } from "../../components/auth/panel-switcher";
 import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 import { useAuth } from "../../components/auth/auth-provider";
@@ -58,13 +59,17 @@ function ShiftConsole() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const expectedCash = Number(shift?.expectedCash ?? shift?.currentBalance ?? shift?.openingBalance ?? 0);
+  const expectedCash = Number(
+    shift?.expectedCash ?? shift?.currentBalance ?? shift?.openingBalance ?? 0,
+  );
   const closingValue = Number(closingCash || 0);
   const differencePreview = closingCash ? closingValue - expectedCash : 0;
 
   const cashierName = useMemo(() => {
     if (shift?.employee) {
-      return [shift.employee.firstName, shift.employee.lastName].filter(Boolean).join(" ");
+      return [shift.employee.firstName, shift.employee.lastName]
+        .filter(Boolean)
+        .join(" ");
     }
 
     return user?.email ?? user?.phone ?? "Kassir";
@@ -83,7 +88,11 @@ function ShiftConsole() {
         return;
       }
 
-      setError(loadError instanceof Error ? loadError.message : "Smena ma'lumoti yuklanmadi");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Smena ma'lumoti yuklanmadi",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +117,9 @@ function ShiftConsole() {
       setMessage("Smena ochildi. Endi savdo qilish mumkin.");
       router.replace("/pos");
     } catch (openError) {
-      setError(openError instanceof Error ? openError.message : "Smena ochilmadi");
+      setError(
+        openError instanceof Error ? openError.message : "Smena ochilmadi",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -124,17 +135,22 @@ function ShiftConsole() {
     setMessage(null);
 
     try {
-      const closed = await apiFetch<Shift>(`/cash-register/shift/${shift.id}/close`, {
-        method: "POST",
-        body: JSON.stringify({ closingBalance: Number(closingCash || 0) }),
-      });
+      const closed = await apiFetch<Shift>(
+        `/cash-register/shift/${shift.id}/close`,
+        {
+          method: "POST",
+          body: JSON.stringify({ closingBalance: Number(closingCash || 0) }),
+        },
+      );
       setClosedShift(closed);
       setShift(null);
       setClosingCash("");
       setIsConfirmingClose(false);
       setMessage("Smena yopildi. Yangi savdo uchun yangi smena oching.");
     } catch (closeError) {
-      setError(closeError instanceof Error ? closeError.message : "Smena yopilmadi");
+      setError(
+        closeError instanceof Error ? closeError.message : "Smena yopilmadi",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -145,53 +161,104 @@ function ShiftConsole() {
       <div className="mx-auto flex max-w-6xl flex-col gap-5">
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-[28px] border border-white/10 bg-[#073f3b] px-5 py-4 text-white shadow-2xl">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ffd52e]">MAZETTO FOOD</p>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ffd52e]">
+              MAZETTO FOOD
+            </p>
             <h1 className="text-2xl font-black">Kassa smenasi</h1>
-            <p className="mt-1 text-sm font-bold text-white/70">{cashierName}</p>
+            <p className="mt-1 text-sm font-bold text-white/70">
+              {cashierName}
+            </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex min-w-0 flex-wrap justify-end gap-2">
+            <PanelSwitcher
+              className="flex max-w-full"
+              user={user}
+              variant="dark"
+            />
             {shift ? (
-              <button className="rounded-full bg-[#ffd52e] px-5 py-3 text-sm font-black text-[#10233a]" onClick={() => router.push("/pos")} type="button">
+              <button
+                className="rounded-full bg-[#ffd52e] px-5 py-3 text-sm font-black text-[#10233a]"
+                onClick={() => router.push("/pos")}
+                type="button"
+              >
                 POSga o'tish
               </button>
             ) : null}
-            <button className="rounded-full bg-white/10 px-4 py-3 text-sm font-black" onClick={() => void logout()} type="button">
+            <button
+              className="rounded-full bg-white/10 px-4 py-3 text-sm font-black"
+              onClick={() => void logout()}
+              type="button"
+            >
               Chiqish
             </button>
           </div>
         </header>
 
         {isLoading ? (
-          <section className="rounded-[30px] bg-[#fffaf0] p-6 text-lg font-black shadow-2xl">Smena tekshirilmoqda...</section>
+          <section className="rounded-[30px] bg-[#fffaf0] p-6 text-lg font-black shadow-2xl">
+            Smena tekshirilmoqda...
+          </section>
         ) : null}
 
-        {error ? <p className="rounded-3xl bg-red-50 px-5 py-4 text-sm font-black text-red-700">{error}</p> : null}
-        {message ? <p className="rounded-3xl bg-emerald-50 px-5 py-4 text-sm font-black text-emerald-700">{message}</p> : null}
+        {error ? (
+          <p className="rounded-3xl bg-red-50 px-5 py-4 text-sm font-black text-red-700">
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p className="rounded-3xl bg-emerald-50 px-5 py-4 text-sm font-black text-emerald-700">
+            {message}
+          </p>
+        ) : null}
 
         {shift ? (
           <section className="grid gap-4 lg:grid-cols-[1fr_380px]">
             <article className="rounded-[30px] bg-[#fffaf0] p-5 shadow-2xl">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">Ochiq smena</p>
-                  <h2 className="mt-2 text-4xl font-black">#{shift.shiftNumber}</h2>
-                  <p className="mt-2 text-sm font-bold text-slate-500">{shift.branch.name}</p>
-                  {shift.branch.address ? <p className="mt-1 text-sm font-bold text-slate-500">{shift.branch.address}</p> : null}
+                  <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
+                    Ochiq smena
+                  </p>
+                  <h2 className="mt-2 text-4xl font-black">
+                    #{shift.shiftNumber}
+                  </h2>
+                  <p className="mt-2 text-sm font-bold text-slate-500">
+                    {shift.branch.name}
+                  </p>
+                  {shift.branch.address ? (
+                    <p className="mt-1 text-sm font-bold text-slate-500">
+                      {shift.branch.address}
+                    </p>
+                  ) : null}
                   <p className="mt-3 inline-flex rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-800">
                     Status: Ochiq
                   </p>
                 </div>
                 <div className="rounded-[24px] bg-[#ffe86b] px-5 py-4 text-right">
-                  <p className="text-xs font-black uppercase text-[#00796f]">Kutilgan naqd</p>
+                  <p className="text-xs font-black uppercase text-[#00796f]">
+                    Kutilgan naqd
+                  </p>
                   <p className="text-2xl font-black">{money(expectedCash)}</p>
                 </div>
               </div>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Metric label="Boshlang'ich naqd" value={money(shift.openingBalance)} />
-                <Metric label="Naqd savdo" value={money(shift.cashSales ?? 0)} />
-                <Metric label="Buyurtmalar" value={`${shift.orderCount ?? 0} ta`} />
-                <Metric label="Ochilgan vaqt" value={new Date(shift.openedAt).toLocaleString("uz-UZ")} />
+                <Metric
+                  label="Boshlang'ich naqd"
+                  value={money(shift.openingBalance)}
+                />
+                <Metric
+                  label="Naqd savdo"
+                  value={money(shift.cashSales ?? 0)}
+                />
+                <Metric
+                  label="Buyurtmalar"
+                  value={`${shift.orderCount ?? 0} ta`}
+                />
+                <Metric
+                  label="Ochilgan vaqt"
+                  value={new Date(shift.openedAt).toLocaleString("uz-UZ")}
+                />
               </div>
 
               <div className="mt-6 rounded-[24px] bg-white p-4">
@@ -199,30 +266,61 @@ function ShiftConsole() {
                 <div className="mt-3 grid gap-2">
                   {shift.cashTransactions?.length ? (
                     shift.cashTransactions.map((transaction) => (
-                      <div className="flex justify-between rounded-2xl bg-[#f3f8f5] px-4 py-3 text-sm font-bold" key={transaction.id}>
+                      <div
+                        className="flex justify-between rounded-2xl bg-[#f3f8f5] px-4 py-3 text-sm font-bold"
+                        key={transaction.id}
+                      >
                         <span>{transaction.type}</span>
                         <span>{money(transaction.amount)}</span>
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm font-bold text-slate-500">Hali kassa harakati yo'q.</p>
+                    <p className="text-sm font-bold text-slate-500">
+                      Hali kassa harakati yo'q.
+                    </p>
                   )}
                 </div>
               </div>
             </article>
 
             <aside className="rounded-[30px] bg-[#fffaf0] p-5 shadow-2xl">
-              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">Kassa topshirish</p>
+              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
+                Kassa topshirish
+              </p>
               <h2 className="mt-2 text-2xl font-black">Smenani yopish</h2>
               <label className="mt-5 grid gap-2 text-sm font-black">
                 Haqiqiy naqd summa
-                <input className="min-h-14 rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none focus:border-[#008678]" inputMode="numeric" onChange={(event) => setClosingCash(event.target.value)} value={closingCash} />
+                <input
+                  className="min-h-14 rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none focus:border-[#008678]"
+                  inputMode="numeric"
+                  onChange={(event) => setClosingCash(event.target.value)}
+                  value={closingCash}
+                />
               </label>
               <div className="mt-4 grid gap-2 rounded-2xl bg-white p-4 text-sm font-black">
-                <div className="flex justify-between"><span>Kutilgan</span><span>{money(expectedCash)}</span></div>
-                <div className="flex justify-between"><span>Farq</span><span className={differencePreview === 0 ? "text-[#008678]" : "text-red-600"}>{money(differencePreview)}</span></div>
+                <div className="flex justify-between">
+                  <span>Kutilgan</span>
+                  <span>{money(expectedCash)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Farq</span>
+                  <span
+                    className={
+                      differencePreview === 0
+                        ? "text-[#008678]"
+                        : "text-red-600"
+                    }
+                  >
+                    {money(differencePreview)}
+                  </span>
+                </div>
               </div>
-              <button className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50" disabled={isSaving || !closingCash} onClick={() => setIsConfirmingClose(true)} type="button">
+              <button
+                className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50"
+                disabled={isSaving || !closingCash}
+                onClick={() => setIsConfirmingClose(true)}
+                type="button"
+              >
                 {isSaving ? "Yopilmoqda..." : "Kassa topshirish"}
               </button>
             </aside>
@@ -230,26 +328,52 @@ function ShiftConsole() {
         ) : !isLoading ? (
           <section className="grid gap-4 lg:grid-cols-[1fr_380px]">
             <article className="rounded-[30px] bg-[#fffaf0] p-6 shadow-2xl">
-              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">Smena yopiq</p>
-              <h2 className="mt-2 text-4xl font-black">Savdoni boshlash uchun smena oching</h2>
+              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
+                Smena yopiq
+              </p>
+              <h2 className="mt-2 text-4xl font-black">
+                Savdoni boshlash uchun smena oching
+              </h2>
               <p className="mt-3 max-w-2xl text-sm font-bold text-slate-600">
-                Smena ochilmaguncha POS savdo oynasi ishlamaydi. Filial va kassir serverdagi xodim profilingizdan olinadi.
+                Smena ochilmaguncha POS savdo oynasi ishlamaydi. Filial va
+                kassir serverdagi xodim profilingizdan olinadi.
               </p>
               {closedShift ? (
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <Metric label="Yopilgan smena" value={`#${closedShift.shiftNumber}`} />
-                  <Metric label="Kutilgan naqd" value={money(closedShift.expectedCash ?? 0)} />
-                  <Metric label="Farq" value={money(closedShift.cashDifference ?? 0)} />
+                  <Metric
+                    label="Yopilgan smena"
+                    value={`#${closedShift.shiftNumber}`}
+                  />
+                  <Metric
+                    label="Kutilgan naqd"
+                    value={money(closedShift.expectedCash ?? 0)}
+                  />
+                  <Metric
+                    label="Farq"
+                    value={money(closedShift.cashDifference ?? 0)}
+                  />
                 </div>
               ) : null}
             </article>
             <aside className="rounded-[30px] bg-[#fffaf0] p-5 shadow-2xl">
-              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">Smenani ochish</p>
+              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
+                Smenani ochish
+              </p>
               <label className="mt-5 grid gap-2 text-sm font-black">
                 Boshlang'ich naqd summa
-                <input className="min-h-14 rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none focus:border-[#008678]" inputMode="numeric" onChange={(event) => setOpeningCash(event.target.value)} value={openingCash} />
+                <input
+                  className="min-h-14 rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none focus:border-[#008678]"
+                  inputMode="numeric"
+                  onChange={(event) => setOpeningCash(event.target.value)}
+                  value={openingCash}
+                />
               </label>
-              <button className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50" disabled={isSaving} onClick={() => void openShift()} type="button">
+              <button
+                className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50"
+                disabled={isSaving}
+                onClick={() => void openShift()}
+                type="button"
+              >
                 {isSaving ? "Ochilmoqda..." : "Smenani ochish"}
               </button>
             </aside>
@@ -260,15 +384,37 @@ function ShiftConsole() {
       {shift && isConfirmingClose ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
           <section className="w-full max-w-md rounded-[30px] bg-[#fffaf0] p-5 text-[#10233a] shadow-2xl">
-            <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">Tasdiqlash</p>
+            <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
+              Tasdiqlash
+            </p>
             <h2 className="mt-2 text-2xl font-black">Smenani yakunlaysizmi?</h2>
             <p className="mt-2 text-sm font-bold text-slate-600">
-              Bu amal kassani yopadi va POS savdo oynasi yangi smena ochilmaguncha ishlamaydi.
+              Bu amal kassani yopadi va POS savdo oynasi yangi smena
+              ochilmaguncha ishlamaydi.
             </p>
             <div className="mt-4 grid gap-2 rounded-2xl bg-white p-4 text-sm font-black">
-              <div className="flex justify-between"><span>Kutilgan naqd</span><span>{money(expectedCash)}</span></div>
-              <div className="flex justify-between"><span>Haqiqiy naqd</span><span>{money(closingValue)}</span></div>
-              <div className="flex justify-between"><span>Farq</span><span className={differencePreview === 0 ? "text-[#008678]" : differencePreview > 0 ? "text-emerald-700" : "text-red-600"}>{differenceText(differencePreview)}</span></div>
+              <div className="flex justify-between">
+                <span>Kutilgan naqd</span>
+                <span>{money(expectedCash)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Haqiqiy naqd</span>
+                <span>{money(closingValue)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Farq</span>
+                <span
+                  className={
+                    differencePreview === 0
+                      ? "text-[#008678]"
+                      : differencePreview > 0
+                        ? "text-emerald-700"
+                        : "text-red-600"
+                  }
+                >
+                  {differenceText(differencePreview)}
+                </span>
+              </div>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <button
@@ -321,5 +467,8 @@ function differenceText(value: number): string {
 }
 
 function isAuthenticationError(error: unknown): boolean {
-  return error instanceof Error && /invalid or expired access token|unauthorized|jwt/i.test(error.message);
+  return (
+    error instanceof Error &&
+    /invalid or expired access token|unauthorized|jwt/i.test(error.message)
+  );
 }

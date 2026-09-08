@@ -10,7 +10,6 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
-  getAccessiblePanels,
   getApiBaseUrl,
   getPrimaryRedirect,
   type AuthSession,
@@ -118,14 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 async function getLoginRedirect(session: AuthSession): Promise<string> {
-  const panels = getAccessiblePanels(session.user);
-
-  if (panels.length > 1) {
-    return "/workspace";
-  }
-
-  const fallbackRedirect =
-    panels[0]?.href ?? getPrimaryRedirect(session.user.roles);
+  const fallbackRedirect = getPrimaryRedirect(session.user.roles);
 
   if (fallbackRedirect !== "/shift") {
     return fallbackRedirect;

@@ -1,11 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanelSwitcher } from "../../components/auth/panel-switcher";
 import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 import { apiFetch } from "../../lib/api";
+import { useAuth } from "../../components/auth/auth-provider";
 
-type KitchenTicketStatus = "NEW" | "ACCEPTED" | "COOKING" | "READY" | "COMPLETED" | "CANCELLED";
+type KitchenTicketStatus =
+  | "NEW"
+  | "ACCEPTED"
+  | "COOKING"
+  | "READY"
+  | "COMPLETED"
+  | "CANCELLED";
 type OrderSource = "POS" | "WEB" | "TELEGRAM";
 type OrderType = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
 type KitchenAction = "accept" | "start" | "ready" | "complete" | "cancel";
@@ -94,6 +102,7 @@ export default function KitchenPage() {
 }
 
 function KitchenDisplay() {
+  const { user } = useAuth();
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
@@ -101,7 +110,9 @@ function KitchenDisplay() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyTicketId, setBusyTicketId] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [expandedTicketIds, setExpandedTicketIds] = useState<Set<string>>(new Set());
+  const [expandedTicketIds, setExpandedTicketIds] = useState<Set<string>>(
+    new Set(),
+  );
   const loadedOnceRef = useRef(false);
   const knownTicketIdsRef = useRef<Set<string>>(new Set());
 
@@ -109,7 +120,9 @@ function KitchenDisplay() {
     try {
       const nextTickets = await apiFetch<KitchenTicket[]>("/kitchen/orders");
       const nextTicketIds = new Set(nextTickets.map((ticket) => ticket.id));
-      const hasNewTicket = loadedOnceRef.current && nextTickets.some((ticket) => !knownTicketIdsRef.current.has(ticket.id));
+      const hasNewTicket =
+        loadedOnceRef.current &&
+        nextTickets.some((ticket) => !knownTicketIdsRef.current.has(ticket.id));
 
       setTickets(nextTickets);
       setError(null);
@@ -122,7 +135,11 @@ function KitchenDisplay() {
       knownTicketIdsRef.current = nextTicketIds;
       loadedOnceRef.current = true;
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Oshxona buyurtmalari yuklanmadi");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Oshxona buyurtmalari yuklanmadi",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -153,14 +170,17 @@ function KitchenDisplay() {
     };
 
     document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
+    return () =>
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
   }, [loadTickets]);
 
   const groupedTickets = useMemo(
     () =>
       columns.map((column) => ({
         ...column,
-        tickets: tickets.filter((ticket) => column.statuses.includes(ticket.status)),
+        tickets: tickets.filter((ticket) =>
+          column.statuses.includes(ticket.status),
+        ),
       })),
     [tickets],
   );
@@ -175,10 +195,16 @@ function KitchenDisplay() {
     setError(null);
 
     try {
-      await apiFetch(`/kitchen/orders/${ticket.id}/${action}`, { method: "PATCH" });
+      await apiFetch(`/kitchen/orders/${ticket.id}/${action}`, {
+        method: "PATCH",
+      });
       await loadTickets();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Amal bajarilmadi. Holatni yangilab qayta urinib ko'ring.");
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "Amal bajarilmadi. Holatni yangilab qayta urinib ko'ring.",
+      );
       await loadTickets();
     } finally {
       setBusyTicketId(null);
@@ -203,17 +229,31 @@ function KitchenDisplay() {
     <main className="min-h-screen overflow-x-hidden bg-[#071f1d] text-[#fff7e8]">
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[#071f1d]/95 px-4 py-4 backdrop-blur md:px-6">
         <div className="mx-auto flex max-w-[1900px] flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ffc83d]">MAZETTO FOOD</p>
-            <h1 className="mt-1 text-3xl font-black tracking-normal text-white md:text-5xl">Oshxona paneli</h1>
+          <div className="min-w-0">
+            <PanelSwitcher
+              className="mb-3 flex max-w-full"
+              user={user}
+              variant="dark"
+            />
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ffc83d]">
+              MAZETTO FOOD
+            </p>
+            <h1 className="mt-1 text-3xl font-black tracking-normal text-white md:text-5xl">
+              Oshxona paneli
+            </h1>
             <p className="mt-2 max-w-2xl text-sm font-semibold text-white/65">
-              Faol buyurtmalar, tayyorlash va topshirish holatlari bitta ekranda.
+              Faol buyurtmalar, tayyorlash va topshirish holatlari bitta
+              ekranda.
             </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[620px]">
             <Metric label="Faol" value={totals.active} tone="neutral" />
-            <Metric label="Tayyorlanmoqda" value={totals.cooking} tone="warning" />
+            <Metric
+              label="Tayyorlanmoqda"
+              value={totals.cooking}
+              tone="warning"
+            />
             <Metric label="Tayyor" value={totals.ready} tone="success" />
           </div>
         </div>
@@ -222,7 +262,9 @@ function KitchenDisplay() {
       <section className="mx-auto flex max-w-[1900px] flex-col gap-4 px-4 py-4 md:px-6">
         <div className="flex flex-col gap-3 rounded-[28px] border border-white/10 bg-white/[0.06] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.22)] sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2 text-sm font-bold">
-            <span className={`rounded-full px-4 py-2 ${error ? "bg-red-500/20 text-red-100" : "bg-emerald-400/15 text-emerald-100"}`}>
+            <span
+              className={`rounded-full px-4 py-2 ${error ? "bg-red-500/20 text-red-100" : "bg-emerald-400/15 text-emerald-100"}`}
+            >
               {error ? "Ulanishda xatolik" : "Avtomatik yangilanadi"}
             </span>
             <span className="rounded-full bg-white/10 px-4 py-2 text-white/70">
@@ -230,7 +272,11 @@ function KitchenDisplay() {
             </span>
             {lastUpdatedAt ? (
               <span className="rounded-full bg-white/10 px-4 py-2 text-white/70">
-                Yangilandi: {lastUpdatedAt.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}
+                Yangilandi:{" "}
+                {lastUpdatedAt.toLocaleTimeString("uz-UZ", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
               </span>
             ) : null}
           </div>
@@ -273,7 +319,15 @@ function KitchenDisplay() {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone: "neutral" | "warning" | "success" }) {
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "neutral" | "warning" | "success";
+}) {
   const toneClass = {
     neutral: "bg-white/10 text-white",
     warning: "bg-[#ffc83d]/18 text-[#ffe39a]",
@@ -282,7 +336,9 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: "n
 
   return (
     <div className={`rounded-[22px] px-4 py-3 ${toneClass}`}>
-      <p className="text-xs font-extrabold uppercase tracking-[0.14em] opacity-70">{label}</p>
+      <p className="text-xs font-extrabold uppercase tracking-[0.14em] opacity-70">
+        {label}
+      </p>
       <p className="mt-1 text-3xl font-black tabular-nums">{value}</p>
     </div>
   );
@@ -310,9 +366,13 @@ function KitchenColumn({
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
         <div>
           <h2 className="text-2xl font-black text-white">{column.title}</h2>
-          <p className="mt-1 text-sm font-semibold text-white/55">{column.helper}</p>
+          <p className="mt-1 text-sm font-semibold text-white/55">
+            {column.helper}
+          </p>
         </div>
-        <span className={`grid h-12 min-w-12 place-items-center rounded-2xl px-3 text-xl font-black ${columnCountClass(column.tone)}`}>
+        <span
+          className={`grid h-12 min-w-12 place-items-center rounded-2xl px-3 text-xl font-black ${columnCountClass(column.tone)}`}
+        >
           {column.tickets.length}
         </span>
       </div>
@@ -334,8 +394,12 @@ function KitchenColumn({
           ))
         ) : (
           <div className="rounded-[24px] border border-dashed border-white/15 bg-black/15 px-4 py-12 text-center">
-            <p className="text-base font-black text-white/60">Faol buyurtma yo'q</p>
-            <p className="mt-1 text-sm font-semibold text-white/40">Yangi buyurtma tushsa shu yerda ko'rinadi.</p>
+            <p className="text-base font-black text-white/60">
+              Faol buyurtma yo'q
+            </p>
+            <p className="mt-1 text-sm font-semibold text-white/40">
+              Yangi buyurtma tushsa shu yerda ko'rinadi.
+            </p>
           </div>
         )}
       </div>
@@ -358,14 +422,30 @@ function KitchenTicketCard({
   onToggleDetails: (ticketId: string) => void;
   ticket: KitchenTicket;
 }) {
-  const elapsedMinutes = Math.floor(Math.max(0, now - new Date(ticket.createdAt).getTime()) / 60000);
+  const elapsedMinutes = Math.floor(
+    Math.max(0, now - new Date(ticket.createdAt).getTime()) / 60000,
+  );
   const primaryAction = primaryActionForStatus(ticket.status);
-  const canCancel = ticket.status === "NEW" || ticket.status === "ACCEPTED" || ticket.status === "COOKING";
-  const itemsCount = ticket.order.items.reduce((total, item) => total + Number(item.quantity), 0);
+  const canCancel =
+    ticket.status === "NEW" ||
+    ticket.status === "ACCEPTED" ||
+    ticket.status === "COOKING";
+  const itemsCount = ticket.order.items.reduce(
+    (total, item) => total + Number(item.quantity),
+    0,
+  );
 
-  const visibleItems = isExpanded ? ticket.order.items : ticket.order.items.slice(0, 1);
-  const hiddenItemCount = Math.max(0, ticket.order.items.length - visibleItems.length);
-  const hasDetails = ticket.order.items.length > 1 || ticket.order.kitchenComment || ticket.order.notes;
+  const visibleItems = isExpanded
+    ? ticket.order.items
+    : ticket.order.items.slice(0, 1);
+  const hiddenItemCount = Math.max(
+    0,
+    ticket.order.items.length - visibleItems.length,
+  );
+  const hasDetails =
+    ticket.order.items.length > 1 ||
+    ticket.order.kitchenComment ||
+    ticket.order.notes;
 
   return (
     <article className="rounded-[16px] border border-white/10 bg-[#fff7e8] p-2.5 text-[#132724] shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
@@ -375,13 +455,18 @@ function KitchenTicketCard({
             <span className="rounded-full bg-[#082522] px-2 py-0.5 text-[10px] font-black text-[#ffc83d]">
               #{ticket.order.displayOrderNumber ?? ticket.order.orderNumber}
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${sourceClass(ticket.order.source)}`}>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-black ${sourceClass(ticket.order.source)}`}
+            >
               {sourceLabel(ticket.order.source)}
             </span>
           </div>
-          <h3 className="mt-1.5 text-base font-black tracking-tight text-[#102724]">{placeLabel(ticket)}</h3>
+          <h3 className="mt-1.5 text-base font-black tracking-tight text-[#102724]">
+            {placeLabel(ticket)}
+          </h3>
           <p className="mt-0.5 truncate text-[11px] font-extrabold text-[#42605c]">
-            {ticket.order.branch?.name ?? "Filial"} · {orderTypeLabel(ticket.order.type)}
+            {ticket.order.branch?.name ?? "Filial"} ·{" "}
+            {orderTypeLabel(ticket.order.type)}
           </p>
         </div>
 
@@ -395,9 +480,13 @@ function KitchenTicketCard({
               {isExpanded ? "Yig'ish" : "Tafsilot"}
             </button>
           ) : null}
-          <div className={`rounded-[10px] px-2 py-1 text-center ${urgencyClass(elapsedMinutes)}`}>
+          <div
+            className={`rounded-[10px] px-2 py-1 text-center ${urgencyClass(elapsedMinutes)}`}
+          >
             <p className="text-lg font-black tabular-nums">{elapsedMinutes}</p>
-            <p className="text-[9px] font-black uppercase tracking-[0.08em]">daq</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.08em]">
+              daq
+            </p>
           </div>
         </div>
       </div>
@@ -405,12 +494,22 @@ function KitchenTicketCard({
       <div className="mt-2 flex flex-wrap gap-1">
         <Chip>{statusLabel(ticket.status)}</Chip>
         <Chip>{formatQuantity(String(itemsCount))} ta mahsulot</Chip>
-        <Chip>{new Date(ticket.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}</Chip>
+        <Chip>
+          {new Date(ticket.createdAt).toLocaleTimeString("uz-UZ", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </Chip>
       </div>
 
-      <div className={`mt-2 grid gap-1.5 ${isExpanded ? "max-h-52 overflow-y-auto pr-1" : ""}`}>
+      <div
+        className={`mt-2 grid gap-1.5 ${isExpanded ? "max-h-52 overflow-y-auto pr-1" : ""}`}
+      >
         {visibleItems.map((item) => (
-          <div className="rounded-[12px] border border-[#d9cda8] bg-white/70 p-1.5" key={item.id}>
+          <div
+            className="rounded-[12px] border border-[#d9cda8] bg-white/70 p-1.5"
+            key={item.id}
+          >
             <div className="flex items-start gap-1.5">
               <span className="grid h-7 min-w-7 place-items-center rounded-[10px] bg-[#ffc83d] px-1 text-xs font-black text-[#221600]">
                 {formatQuantity(item.quantity)}x
@@ -418,10 +517,21 @@ function KitchenTicketCard({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-black leading-snug text-[#142a27]">
                   {item.productName}
-                  {item.variantName ? <span className="text-[#5d746f]"> · {item.variantName}</span> : null}
+                  {item.variantName ? (
+                    <span className="text-[#5d746f]">
+                      {" "}
+                      · {item.variantName}
+                    </span>
+                  ) : null}
                 </p>
-                {isExpanded ? <Modifiers value={item.modifierSnapshot} /> : null}
-                {isExpanded && item.notes ? <p className="mt-1 rounded-[10px] bg-[#fff1bc] px-2 py-1 text-[11px] font-bold text-[#5a4300]">{item.notes}</p> : null}
+                {isExpanded ? (
+                  <Modifiers value={item.modifierSnapshot} />
+                ) : null}
+                {isExpanded && item.notes ? (
+                  <p className="mt-1 rounded-[10px] bg-[#fff1bc] px-2 py-1 text-[11px] font-bold text-[#5a4300]">
+                    {item.notes}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -470,7 +580,10 @@ function LoadingTickets() {
   return (
     <>
       {[0, 1, 2].map((index) => (
-        <div className="animate-pulse rounded-[28px] bg-[#fff7e8] p-4" key={index}>
+        <div
+          className="animate-pulse rounded-[28px] bg-[#fff7e8] p-4"
+          key={index}
+        >
           <div className="h-5 w-32 rounded-full bg-[#d9cda8]" />
           <div className="mt-4 h-9 w-44 rounded-full bg-[#d9cda8]" />
           <div className="mt-5 grid gap-2">
@@ -485,7 +598,9 @@ function LoadingTickets() {
 
 function Modifiers({ value }: { value: unknown }) {
   const modifiers = Array.isArray(value)
-    ? (value.filter((modifier): modifier is ModifierSnapshot => Boolean(modifier && typeof modifier === "object")) as ModifierSnapshot[])
+    ? (value.filter((modifier): modifier is ModifierSnapshot =>
+        Boolean(modifier && typeof modifier === "object"),
+      ) as ModifierSnapshot[])
     : [];
 
   if (!modifiers.length) {
@@ -497,7 +612,9 @@ function Modifiers({ value }: { value: unknown }) {
       {modifiers.map((modifier, index) => (
         <li key={`${modifier.name ?? "modifier"}-${index}`}>
           + {modifier.name ?? "Qo'shimcha"}
-          {modifier.quantity && Number(modifier.quantity) > 1 ? ` x${formatQuantity(modifier.quantity)}` : ""}
+          {modifier.quantity && Number(modifier.quantity) > 1
+            ? ` x${formatQuantity(modifier.quantity)}`
+            : ""}
         </li>
       ))}
     </ul>
@@ -505,7 +622,11 @@ function Modifiers({ value }: { value: unknown }) {
 }
 
 function Chip({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-full bg-[#e9e1c8] px-2 py-0.5 text-[10px] font-black text-[#42605c]">{children}</span>;
+  return (
+    <span className="rounded-full bg-[#e9e1c8] px-2 py-0.5 text-[10px] font-black text-[#42605c]">
+      {children}
+    </span>
+  );
 }
 
 function summarizeTickets(tickets: KitchenTicket[]) {
@@ -516,8 +637,12 @@ function summarizeTickets(tickets: KitchenTicket[]) {
   };
 }
 
-function primaryActionForStatus(status: KitchenTicketStatus): { action: KitchenAction; label: string } | null {
-  const actions: Partial<Record<KitchenTicketStatus, { action: KitchenAction; label: string }>> = {
+function primaryActionForStatus(
+  status: KitchenTicketStatus,
+): { action: KitchenAction; label: string } | null {
+  const actions: Partial<
+    Record<KitchenTicketStatus, { action: KitchenAction; label: string }>
+  > = {
     NEW: { action: "accept", label: "Qabul qilish" },
     ACCEPTED: { action: "start", label: "Tayyorlash" },
     COOKING: { action: "ready", label: "Tayyor" },
@@ -529,7 +654,10 @@ function primaryActionForStatus(status: KitchenTicketStatus): { action: KitchenA
 
 function placeLabel(ticket: KitchenTicket): string {
   if (ticket.order.table) {
-    return ticket.order.table.name ?? `Stol ${ticket.order.table.number ?? ""}`.trim();
+    return (
+      ticket.order.table.name ??
+      `Stol ${ticket.order.table.number ?? ""}`.trim()
+    );
   }
 
   return ticket.order.type === "DELIVERY" ? "Yetkazib berish" : "Olib ketish";
