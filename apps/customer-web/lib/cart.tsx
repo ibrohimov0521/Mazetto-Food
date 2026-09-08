@@ -547,6 +547,11 @@ export function productImage(imageUrl?: string | null): string {
     return "";
   }
 
+  const sourcePath = getSourceMenuPath(imageUrl);
+  if (sourcePath && sourceMenuMediaPaths.has(sourcePath)) {
+    return `/menu-media/source${sourcePath}`;
+  }
+
   if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
     return imageUrl;
   }
