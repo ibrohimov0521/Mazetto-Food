@@ -37,7 +37,7 @@ const MediaImageContent = forwardRef<HTMLDivElement, MediaImageProps>(function M
   fallbackLabel = "Rasm tayyorlanmoqda",
   motionProps,
 }: MediaImageProps, ref) {
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(priority);
   const [failed, setFailed] = useState(false);
   const [useSourceFallback, setUseSourceFallback] = useState(false);
   const resolvedSrc = useMemo(() => productImage(src), [src]);
@@ -68,6 +68,7 @@ const MediaImageContent = forwardRef<HTMLDivElement, MediaImageProps>(function M
         <Image
           alt={alt}
           className={`transition-opacity duration-300 ease-out ${fit === "cover" ? "object-cover" : "object-contain"} ${loaded ? "opacity-100" : "opacity-0"} ${imageClassName}`}
+          fetchPriority={priority ? "high" : "auto"}
           fill
           onError={handleImageError}
           onLoad={() => setLoaded(true)}
