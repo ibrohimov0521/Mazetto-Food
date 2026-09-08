@@ -32,11 +32,11 @@ export function BrandLogo({
       alt="MAZETTO FOOD"
       className={`object-contain ${className}`}
       priority={priority}
-      height={895}
+      height={227}
       onError={() => setFailed(true)}
       sizes={sizes}
-      src="/brand/mazetto-food-logo.webp"
-      width={2048}
+      src="/brand/header-logo.webp"
+      width={520}
     />
   );
 }

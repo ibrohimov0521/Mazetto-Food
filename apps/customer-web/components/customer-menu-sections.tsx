@@ -52,8 +52,14 @@ export function CustomerMenuSections({
   }, [initial]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!initial) {
+      void load();
+      return;
+    }
+
+    const timeout = window.setTimeout(() => void load(), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [initial, load]);
 
   const menuSections = useMemo(() => {
     const normalized = query.trim().toLowerCase();

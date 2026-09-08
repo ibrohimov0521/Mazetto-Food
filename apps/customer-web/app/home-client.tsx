@@ -43,9 +43,17 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
   }, [initial]);
 
   useEffect(() => {
-    void load();
-    return () => { loadVersion.current++; };
-  }, [load]);
+    if (!initial) {
+      void load();
+      return () => { loadVersion.current++; };
+    }
+
+    const timeout = window.setTimeout(() => void load(), 2500);
+    return () => {
+      window.clearTimeout(timeout);
+      loadVersion.current++;
+    };
+  }, [initial, load]);
 
   const featured = useMemo(() => products.filter((product) => product.isRecommended).slice(0, 4), [products]);
   const combos = useMemo(() => products.filter((product) => product.isCombo).slice(0, 4), [products]);
