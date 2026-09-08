@@ -7,6 +7,7 @@ export type MazettoRole =
   | "CASHIER"
   | "WAITER"
   | "KITCHEN"
+  | "COURIER"
   | "ACCOUNTANT";
 
 export type AuthUser = {
@@ -43,6 +44,7 @@ export const roleLabels: Record<MazettoRole, string> = {
   CASHIER: "Kassir",
   WAITER: "Ofitsiant",
   KITCHEN: "Oshxona",
+  COURIER: "Kuryer",
   ACCOUNTANT: "Buxgalter",
 };
 
@@ -55,6 +57,7 @@ export const roleRedirects: Record<MazettoRole, string> = {
   CASHIER: "/shift",
   WAITER: "/waiter",
   KITCHEN: "/kitchen",
+  COURIER: "/courier",
   ACCOUNTANT: "/accounting",
 };
 
@@ -78,6 +81,7 @@ export function getPrimaryRedirect(roles: string[]): string {
     "CASHIER",
     "WAITER",
     "KITCHEN",
+    "COURIER",
     "ACCOUNTANT",
   ];
   const role = orderedRoles.find((candidate) => roles.includes(candidate));
@@ -96,4 +100,84 @@ export function hasPermission(
 
 export function hasRole(user: AuthUser | null, roles: string[]): boolean {
   return Boolean(user && roles.some((role) => user.roles.includes(role)));
+}
+
+export type WorkspacePanel = {
+  title: string;
+  description: string;
+  href: string;
+  permission: string;
+  roles: string[];
+};
+
+const workspacePanels: WorkspacePanel[] = [
+  {
+    title: "Admin boshqaruv",
+    description: "Filial, xodim, menyu va hisobotlarni boshqarish",
+    href: "/admin/dashboard",
+    permission: "DASHBOARD_VIEW",
+    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+  },
+  {
+    title: "Kassa",
+    description: "Smena ochish, POS va to'lovlarni yuritish",
+    href: "/shift",
+    permission: "SHIFT_VIEW_OWN",
+    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "CASHIER"],
+  },
+  {
+    title: "POS terminal",
+    description: "Buyurtma yaratish va mahsulotlarni tez tanlash",
+    href: "/pos",
+    permission: "POS_USE",
+    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "CASHIER"],
+  },
+  {
+    title: "Oshxona",
+    description: "Tayyorlash jarayoni va oshxona statuslari",
+    href: "/kitchen",
+    permission: "KITCHEN_VIEW",
+    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "KITCHEN"],
+  },
+  {
+    title: "Ofitsiant",
+    description: "Stol buyurtmalari va zal xizmatlari",
+    href: "/waiter",
+    permission: "TABLE_VIEW",
+    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "WAITER"],
+  },
+  {
+    title: "Kuryer",
+    description: "Yetkazish manzillari, aloqa va navigatsiya",
+    href: "/courier",
+    permission: "COURIER_DELIVERY_VIEW",
+    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "COURIER"],
+  },
+  {
+    title: "Buxgalteriya",
+    description: "Moliyaviy ko'rsatkichlar va hisobotlar",
+    href: "/accounting",
+    permission: "DASHBOARD_VIEW",
+    roles: ["SUPER_ADMIN", "ACCOUNTANT"],
+  },
+];
+
+export function getAccessiblePanels(user: AuthUser | null): WorkspacePanel[] {
+  if (!user) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+
+  return workspacePanels.filter((panel) => {
+    const allowed =
+      hasRole(user, panel.roles) && hasPermission(user, panel.permission);
+
+    if (!allowed || seen.has(panel.href)) {
+      return false;
+    }
+
+    seen.add(panel.href);
+    return true;
+  });
 }

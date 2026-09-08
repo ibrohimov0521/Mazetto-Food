@@ -179,6 +179,15 @@ export function AdminNavbar({
                 {primaryRoleLabel(user)}
               </p>
             </div>
+            <a
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-text transition hover:bg-mz-surface-sunken"
+              href="/workspace"
+              role="menuitem"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <Icon className="h-4 w-4" name="grid" />
+              Ish joylari
+            </a>
             <button
               className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-danger transition hover:bg-mz-danger-bg"
               onClick={() => {
@@ -217,6 +226,12 @@ const topbarShortcuts: TopbarShortcut[] = [
     href: "/kitchen",
     permission: "KITCHEN_VIEW",
     roles: ["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+  },
+  {
+    label: "Kuryer",
+    href: "/courier",
+    permission: "COURIER_DELIVERY_VIEW",
+    roles: ["COURIER", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
   },
   {
     label: "Smena",

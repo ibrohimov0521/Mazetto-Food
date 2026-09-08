@@ -5,6 +5,7 @@ export const staffRoleCodes = [
   "CASHIER",
   "WAITER",
   "KITCHEN",
+  "COURIER",
   "ACCOUNTANT",
 ] as const;
 
@@ -16,4 +17,5 @@ export const branchScopedStaffRoles = new Set<StaffRoleCode>([
   "CASHIER",
   "WAITER",
   "KITCHEN",
+  "COURIER",
 ]);

@@ -71,6 +71,8 @@ const roleDefinitions = [
       PERMISSIONS.EXPENSE_CREATE,
       PERMISSIONS.CUSTOMER_VIEW,
       PERMISSIONS.ONLINE_ORDER_VIEW,
+      PERMISSIONS.COURIER_DELIVERY_VIEW,
+      PERMISSIONS.COURIER_DELIVERY_UPDATE,
       PERMISSIONS.REPORT_SALES_VIEW,
       PERMISSIONS.REPORT_PRODUCTS_VIEW,
       PERMISSIONS.REPORT_EMPLOYEES_VIEW,
@@ -103,6 +105,8 @@ const roleDefinitions = [
       PERMISSIONS.HOMEPAGE_MANAGE,
       PERMISSIONS.CUSTOMER_VIEW,
       PERMISSIONS.ONLINE_ORDER_VIEW,
+      PERMISSIONS.COURIER_DELIVERY_VIEW,
+      PERMISSIONS.COURIER_DELIVERY_UPDATE,
       PERMISSIONS.REPORT_SALES_VIEW,
       PERMISSIONS.REPORT_PRODUCTS_VIEW,
       PERMISSIONS.REPORT_EMPLOYEES_VIEW,
@@ -149,6 +153,17 @@ const roleDefinitions = [
       PERMISSIONS.KITCHEN_VIEW,
       PERMISSIONS.KITCHEN_ACCEPT,
       PERMISSIONS.KITCHEN_STATUS_UPDATE,
+    ],
+  },
+  {
+    code: "COURIER",
+    name: "Courier",
+    description:
+      "Delivery workspace access, customer address visibility, and delivery completion.",
+    permissions: [
+      PERMISSIONS.ONLINE_ORDER_VIEW,
+      PERMISSIONS.COURIER_DELIVERY_VIEW,
+      PERMISSIONS.COURIER_DELIVERY_UPDATE,
     ],
   },
   {
@@ -218,12 +233,14 @@ const permissionNames: Record<string, string> = {
   [PERMISSIONS.CASH_TRANSACTION_CREATE]: "Create cash drawer transactions",
   [PERMISSIONS.CUSTOMER_VIEW]: "View customers",
   [PERMISSIONS.ONLINE_ORDER_VIEW]: "View online orders",
+  [PERMISSIONS.COURIER_DELIVERY_VIEW]: "View courier delivery orders",
+  [PERMISSIONS.COURIER_DELIVERY_UPDATE]: "Update courier delivery orders",
   [PERMISSIONS.REPORT_SALES_VIEW]: "View sales reports",
   [PERMISSIONS.REPORT_PRODUCTS_VIEW]: "View product reports",
   [PERMISSIONS.REPORT_EMPLOYEES_VIEW]: "View employee reports",
   [PERMISSIONS.REPORT_EXPENSES_VIEW]: "View expense reports",
-    [PERMISSIONS.EXPENSE_CREATE]: "Record branch expenses",
-[PERMISSIONS.AUDIT_VIEW]: "View security audit log",
+  [PERMISSIONS.EXPENSE_CREATE]: "Record branch expenses",
+  [PERMISSIONS.AUDIT_VIEW]: "View security audit log",
 };
 
 const paymentMethodDefinitions = [

@@ -5,6 +5,7 @@ import {
   Put,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -13,6 +14,7 @@ import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   ListCustomersDto,
   ListOnlineOrdersDto,
+  UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -61,7 +63,10 @@ export class CustomerPublicController {
   @UseGuards(CustomerAuthGuard)
   @Public()
   @Delete("me/addresses/:id")
-  deleteAddress(@CurrentCustomer() customer: AuthenticatedCustomer, @Param("id") id: string) {
+  deleteAddress(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Param("id") id: string,
+  ) {
     return this.addressesService.remove(customer.id, id);
   }
 
@@ -194,5 +199,24 @@ export class CustomersAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.customersService.listOnlineOrders(query, user);
+  }
+
+  @Get("courier/orders")
+  @Permissions(PERMISSIONS.COURIER_DELIVERY_VIEW)
+  listCourierOrders(
+    @Query() query: ListOnlineOrdersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.listCourierDeliveryOrders(query, user);
+  }
+
+  @Patch("courier/orders/:id/status")
+  @Permissions(PERMISSIONS.COURIER_DELIVERY_UPDATE)
+  updateCourierOrderStatus(
+    @Param("id") id: string,
+    @Body() dto: UpdateCourierOrderStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.updateCourierOrderStatus(id, dto, user);
   }
 }

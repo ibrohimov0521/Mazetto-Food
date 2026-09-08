@@ -6,7 +6,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../admin-ui/button";
 import { TextInput } from "../admin-ui/form";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
-import { isSuperAdminStaff, resolveStaffActionBlock } from "../../lib/staff-guards";
+import {
+  isSuperAdminStaff,
+  resolveStaffActionBlock,
+} from "../../lib/staff-guards";
 import { useAuth } from "../auth/auth-provider";
 import { Badge as UiBadge } from "../admin-ui/badge";
 import { ButtonLink, GuardedButton } from "../admin-ui/button";
@@ -57,8 +60,18 @@ type StaffFormState = {
   isActive: boolean;
 };
 
-const branchScopedRoles = new Set(["ADMIN", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN"]);
-const formatter = new Intl.DateTimeFormat("uz-UZ", { dateStyle: "medium", timeStyle: "short" });
+const branchScopedRoles = new Set([
+  "ADMIN",
+  "BRANCH_MANAGER",
+  "CASHIER",
+  "WAITER",
+  "KITCHEN",
+  "COURIER",
+]);
+const formatter = new Intl.DateTimeFormat("uz-UZ", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 export function AdminStaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -122,7 +135,8 @@ export function AdminStaffPage() {
             {item.displayName ?? item.email ?? item.phone ?? "Xodim"}
           </p>
           <p className="truncate text-xs text-mz-text-muted">
-            {[item.email, item.phone].filter(Boolean).join(" · ") || "Login kiritilmagan"}
+            {[item.email, item.phone].filter(Boolean).join(" · ") ||
+              "Login kiritilmagan"}
           </p>
         </div>
       ),
@@ -133,7 +147,10 @@ export function AdminStaffPage() {
       render: (item) => (
         <div className="flex flex-wrap justify-end gap-1 md:justify-start">
           {item.roles.map((role) => (
-            <UiBadge key={role.id} tone={role.code === "SUPER_ADMIN" ? "warning" : "info"}>
+            <UiBadge
+              key={role.id}
+              tone={role.code === "SUPER_ADMIN" ? "warning" : "info"}
+            >
               {role.code}
             </UiBadge>
           ))}
@@ -159,7 +176,9 @@ export function AdminStaffPage() {
       header: "Yaratilgan",
       hideOnMobile: true,
       render: (item) => (
-        <span className="text-xs text-mz-text-muted">{formatDate(item.createdAt)}</span>
+        <span className="text-xs text-mz-text-muted">
+          {formatDate(item.createdAt)}
+        </span>
       ),
     },
     {
@@ -176,7 +195,9 @@ export function AdminStaffPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? (
+        <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
 
       <Card>
         <FilterBar>
@@ -326,12 +347,11 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           name: form.name.trim(),
           email: form.email.trim() || null,
           phone: form.phone.trim() || null,
-          branchId:
-            sameRoles(currentRoles, form.roleCodes)
-              ? needsBranch(form.roleCodes)
-                ? form.branchId
-                : null
-              : undefined,
+          branchId: sameRoles(currentRoles, form.roleCodes)
+            ? needsBranch(form.roleCodes)
+              ? form.branchId
+              : null
+            : undefined,
         }),
       });
 
@@ -346,7 +366,11 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       setMessage("Xodim ma'lumotlari saqlandi.");
     } catch (saveError) {
       setMessage("");
-      setError(saveError instanceof Error ? saveError.message : "Saqlashda xatolik yuz berdi.");
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Saqlashda xatolik yuz berdi.",
+      );
     }
   }
 
@@ -363,9 +387,16 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       });
       setPasswordReset("");
       setMessage("Parol reset qilindi. Xodim yangi parol bilan qayta kiradi.");
-      showToast("Parol reset qilindi. Xodimning barcha sessiyalari bekor qilindi.", "success");
+      showToast(
+        "Parol reset qilindi. Xodimning barcha sessiyalari bekor qilindi.",
+        "success",
+      );
     } catch (resetError) {
-      setError(resetError instanceof Error ? resetError.message : "Parol reset qilinmadi.");
+      setError(
+        resetError instanceof Error
+          ? resetError.message
+          : "Parol reset qilinmadi.",
+      );
     }
   }
 
@@ -374,13 +405,28 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
    * Haqiqiy cheklov backend'da; bu yerda foydalanuvchi sababni oldindan ko'radi.
    */
   const roleChangeBlock = staff
-    ? resolveStaffActionBlock({ actor: user, target: staff, action: "role", allStaff })
+    ? resolveStaffActionBlock({
+        actor: user,
+        target: staff,
+        action: "role",
+        allStaff,
+      })
     : null;
   const statusChangeBlock = staff
-    ? resolveStaffActionBlock({ actor: user, target: staff, action: "status", allStaff })
+    ? resolveStaffActionBlock({
+        actor: user,
+        target: staff,
+        action: "status",
+        allStaff,
+      })
     : null;
   const passwordResetBlock = staff
-    ? resolveStaffActionBlock({ actor: user, target: staff, action: "password", allStaff })
+    ? resolveStaffActionBlock({
+        actor: user,
+        target: staff,
+        action: "password",
+        allStaff,
+      })
     : null;
   const isProtectedSuperAdmin = staff ? isSuperAdminStaff(staff) : false;
 
@@ -391,19 +437,45 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       <form className="grid gap-5 lg:grid-cols-[1fr_320px]" onSubmit={save}>
         <section className="grid gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
           <Field label="Ism familiya">
-            <TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+            <TextInput
+              value={form.name}
+              onChange={(event) =>
+                setForm({ ...form, name: event.target.value })
+              }
+              required
+            />
           </Field>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Email">
-              <TextInput type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <TextInput
+                type="email"
+                value={form.email}
+                onChange={(event) =>
+                  setForm({ ...form, email: event.target.value })
+                }
+              />
             </Field>
             <Field label="Telefon">
-              <TextInput placeholder="+998901234567" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+              <TextInput
+                placeholder="+998901234567"
+                value={form.phone}
+                onChange={(event) =>
+                  setForm({ ...form, phone: event.target.value })
+                }
+              />
             </Field>
           </div>
           {isNew ? (
             <Field label="Boshlang'ich parol">
-              <TextInput minLength={8} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+              <TextInput
+                minLength={8}
+                type="password"
+                value={form.password}
+                onChange={(event) =>
+                  setForm({ ...form, password: event.target.value })
+                }
+                required
+              />
             </Field>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
@@ -412,7 +484,9 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                 {roles.map((role) => (
                   <label
                     className={`flex items-center gap-2 rounded-mz-control px-3 py-2 text-xs font-black ${
-                      roleChangeBlock ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-mz-surface"
+                      roleChangeBlock
+                        ? "cursor-not-allowed opacity-60"
+                        : "cursor-pointer hover:bg-mz-surface"
                     }`}
                     key={role.id}
                   >
@@ -421,14 +495,22 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                       className="h-4 w-4 accent-mz-accent"
                       disabled={Boolean(roleChangeBlock)}
                       type="checkbox"
-                      onChange={(event) => setForm((current) => toggleRole(current, role.code, event.target.checked))}
+                      onChange={(event) =>
+                        setForm((current) =>
+                          toggleRole(current, role.code, event.target.checked),
+                        )
+                      }
                     />
-                    <span>{role.name} ({role.code})</span>
+                    <span>
+                      {role.name} ({role.code})
+                    </span>
                   </label>
                 ))}
               </div>
               {roleChangeBlock ? (
-                <p className="text-xs font-semibold text-mz-warning">{roleChangeBlock}</p>
+                <p className="text-xs font-semibold text-mz-warning">
+                  {roleChangeBlock}
+                </p>
               ) : !isNew ? (
                 <p className="text-xs font-normal text-mz-text-muted">
                   Rol o'zgarsa, xodimning barcha sessiyalari bekor qilinadi.
@@ -439,7 +521,9 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
               <Select
                 disabled={!needsBranch(form.roleCodes)}
                 value={form.branchId}
-                onChange={(event) => setForm({ ...form, branchId: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, branchId: event.target.value })
+                }
               >
                 <option value="">Global</option>
                 {branches.map((branch) => (
@@ -458,7 +542,9 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
               onChange={(checked) => setForm({ ...form, isActive: checked })}
             />
             {statusChangeBlock ? (
-              <p className="text-xs font-semibold text-mz-warning">{statusChangeBlock}</p>
+              <p className="text-xs font-semibold text-mz-warning">
+                {statusChangeBlock}
+              </p>
             ) : !isNew ? (
               <p className="text-xs text-mz-text-muted">
                 Bloklansa, xodimning barcha sessiyalari bekor qilinadi.
@@ -471,7 +557,8 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
             <p className="text-sm font-black text-mz-text">Xavfsizlik</p>
             <p className="mt-2 text-sm leading-6 text-mz-text-muted">
-              Parol hash ko'rinishida saqlanadi. Bu sahifada parol hash yoki token ko'rsatilmaydi.
+              Parol hash ko'rinishida saqlanadi. Bu sahifada parol hash yoki
+              token ko'rsatilmaydi.
             </p>
             {isProtectedSuperAdmin ? (
               <div className="mt-3 rounded-mz-control bg-mz-warning-bg px-3 py-2">
@@ -501,7 +588,9 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                 Parolni reset qilish
               </GuardedButton>
               {passwordResetBlock ? (
-                <p className="text-xs font-semibold text-mz-warning">{passwordResetBlock}</p>
+                <p className="text-xs font-semibold text-mz-warning">
+                  {passwordResetBlock}
+                </p>
               ) : (
                 <p className="text-xs text-mz-text-muted">
                   Reset qilinsa, xodimning barcha sessiyalari bekor qilinadi.
@@ -512,7 +601,10 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
         </aside>
 
         <div className="flex flex-wrap justify-end gap-3 lg:col-span-2">
-          <Link className="rounded-mz-control border border-mz-border px-5 py-3 text-sm font-black text-mz-text-muted" href="/admin/staff">
+          <Link
+            className="rounded-mz-control border border-mz-border px-5 py-3 text-sm font-black text-mz-text-muted"
+            href="/admin/staff"
+          >
             Bekor qilish
           </Link>
           <Button type="submit">Saqlash</Button>
@@ -542,20 +634,57 @@ function OwnPasswordPanel() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmation("");
-      setMessage("Parolingiz yangilandi. Keyingi kirishda yangi paroldan foydalaning.");
+      setMessage(
+        "Parolingiz yangilandi. Keyingi kirishda yangi paroldan foydalaning.",
+      );
     } catch (passwordError) {
-      setError(passwordError instanceof Error ? passwordError.message : "Parol o'zgartirilmadi.");
+      setError(
+        passwordError instanceof Error
+          ? passwordError.message
+          : "Parol o'zgartirilmadi.",
+      );
     }
   }
 
   return (
-    <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card lg:grid-cols-[1fr_1fr_1fr_auto]" onSubmit={submit}>
-      <TextInput placeholder="Joriy parol" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
-      <TextInput placeholder="Yangi parol" type="password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
-      <TextInput placeholder="Yangi parolni takrorlang" type="password" minLength={8} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required />
+    <form
+      className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card lg:grid-cols-[1fr_1fr_1fr_auto]"
+      onSubmit={submit}
+    >
+      <TextInput
+        placeholder="Joriy parol"
+        type="password"
+        value={currentPassword}
+        onChange={(event) => setCurrentPassword(event.target.value)}
+        required
+      />
+      <TextInput
+        placeholder="Yangi parol"
+        type="password"
+        minLength={8}
+        value={newPassword}
+        onChange={(event) => setNewPassword(event.target.value)}
+        required
+      />
+      <TextInput
+        placeholder="Yangi parolni takrorlang"
+        type="password"
+        minLength={8}
+        value={confirmation}
+        onChange={(event) => setConfirmation(event.target.value)}
+        required
+      />
       <Button type="submit">Parolni yangilash</Button>
-      {message ? <p className="text-sm font-bold text-mz-info lg:col-span-4">{message}</p> : null}
-      {error ? <p className="text-sm font-bold text-mz-danger lg:col-span-4">{error}</p> : null}
+      {message ? (
+        <p className="text-sm font-bold text-mz-info lg:col-span-4">
+          {message}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="text-sm font-bold text-mz-danger lg:col-span-4">
+          {error}
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -566,10 +695,16 @@ function needsBranch(roleCodes: string[] | string): boolean {
 }
 
 function sameRoles(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((role) => right.includes(role));
+  return (
+    left.length === right.length && left.every((role) => right.includes(role))
+  );
 }
 
-function toggleRole(form: StaffFormState, roleCode: string, checked: boolean): StaffFormState {
+function toggleRole(
+  form: StaffFormState,
+  roleCode: string,
+  checked: boolean,
+): StaffFormState {
   const nextRoles = checked
     ? [...new Set([...form.roleCodes, roleCode])]
     : form.roleCodes.filter((item) => item !== roleCode);
@@ -584,7 +719,13 @@ function formatDate(value?: string | null): string {
   return value ? formatter.format(new Date(value)) : "Mavjud emas";
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="grid gap-2 text-sm font-black text-mz-text">
       {label}
@@ -631,10 +772,17 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   );
 }
 
-
-function Notice({ children, tone = "success" }: { children: React.ReactNode; tone?: "success" | "danger" }) {
+function Notice({
+  children,
+  tone = "success",
+}: {
+  children: React.ReactNode;
+  tone?: "success" | "danger";
+}) {
   return (
-    <div className={`rounded-mz-control px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-mz-danger-bg text-mz-danger" : "bg-mz-info-bg text-mz-info"}`}>
+    <div
+      className={`rounded-mz-control px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-mz-danger-bg text-mz-danger" : "bg-mz-info-bg text-mz-info"}`}
+    >
       {children}
     </div>
   );

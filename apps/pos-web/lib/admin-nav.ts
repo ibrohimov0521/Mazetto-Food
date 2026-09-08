@@ -79,6 +79,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
+        label: "Kuryer paneli",
+        icon: "truck",
+        href: "/courier",
+        permission: "COURIER_DELIVERY_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "COURIER"],
+      },
+      {
         label: "Stollar va zallar",
         icon: "grid",
         href: "/admin/tables",
@@ -327,6 +334,7 @@ const branchScopedRoles = [
   "CASHIER",
   "WAITER",
   "KITCHEN",
+  "COURIER",
 ];
 
 /**

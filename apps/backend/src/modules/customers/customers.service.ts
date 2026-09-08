@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -24,6 +25,7 @@ import { CustomerOrderEngineService } from "./customer-order-engine.service";
 import {
   ListCustomersDto,
   ListOnlineOrdersDto,
+  UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 import {
   customerVisibleCategoryCodes,
@@ -514,6 +516,162 @@ export class CustomersService {
     return customerOrders.map((customerOrder) =>
       this.withDerivedCustomerOrderStatus(customerOrder),
     );
+  }
+
+  async listCourierDeliveryOrders(
+    query: ListOnlineOrdersDto,
+    user: AuthenticatedUser,
+  ) {
+    const branchId = resolveBranchScope(user, query.branchId);
+
+    const customerOrders = await this.prisma.customerOrder.findMany({
+      where: {
+        type: "DELIVERY",
+        ...(branchId ? { branchId } : {}),
+        order: {
+          status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      skip: query.offset,
+      take: query.limit,
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+        order: {
+          include: {
+            items: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                productName: true,
+                quantity: true,
+                totalPrice: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return customerOrders.map((customerOrder) =>
+      this.withDerivedCustomerOrderStatus(customerOrder),
+    );
+  }
+
+  async updateCourierOrderStatus(
+    customerOrderId: string,
+    dto: UpdateCourierOrderStatusDto,
+    user: AuthenticatedUser,
+  ) {
+    const scopedBranchId = resolveBranchScope(user);
+    const nextStatus = dto.status as OrderStatus;
+
+    const customerOrder = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.customerOrder.findUnique({
+        where: { id: customerOrderId },
+        include: { order: true },
+      });
+
+      if (!existing) {
+        throw new NotFoundException("Online order not found");
+      }
+
+      if (existing.type !== "DELIVERY") {
+        throw new BadRequestException(
+          "Only delivery orders can be updated by courier",
+        );
+      }
+
+      if (scopedBranchId && existing.branchId !== scopedBranchId) {
+        throw new ForbiddenException("Cannot access another branch");
+      }
+
+      if (
+        existing.order.status === OrderStatus.COMPLETED ||
+        existing.order.status === OrderStatus.CANCELLED
+      ) {
+        throw new BadRequestException(
+          "Completed or cancelled orders cannot change status",
+        );
+      }
+
+      if (existing.order.status !== nextStatus) {
+        await tx.order.update({
+          where: { id: existing.orderId },
+          data: {
+            status: nextStatus,
+            ...(nextStatus === OrderStatus.COMPLETED
+              ? {
+                  closedAt: new Date(),
+                  ...(user.employeeId
+                    ? { closedBy: { connect: { id: user.employeeId } } }
+                    : {}),
+                }
+              : {}),
+            ...(nextStatus === OrderStatus.CANCELLED
+              ? {
+                  cancelledAt: new Date(),
+                  cancellationReason: "Courier cancelled delivery",
+                  ...(user.employeeId
+                    ? { cancelledBy: { connect: { id: user.employeeId } } }
+                    : {}),
+                }
+              : {}),
+          },
+        });
+
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: existing.orderId,
+            fromStatus: existing.order.status,
+            toStatus: nextStatus,
+            changedByUserId: user.id,
+            changedByEmployeeId: user.employeeId ?? null,
+            reason: `Courier status requested: ${dto.status}`,
+          },
+        });
+      }
+
+      return tx.customerOrder.findUniqueOrThrow({
+        where: { id: customerOrderId },
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          branch: {
+            select: {
+              id: true,
+              name: true,
+              address: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
+          order: {
+            include: {
+              items: {
+                orderBy: { createdAt: "asc" },
+                select: {
+                  id: true,
+                  productName: true,
+                  quantity: true,
+                  totalPrice: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    return this.withDerivedCustomerOrderStatus(customerOrder);
   }
 
   async getCustomerStats(user: AuthenticatedUser) {
