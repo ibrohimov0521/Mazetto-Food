@@ -133,10 +133,7 @@ function CartReview() {
           </div>
         )}
 
-        <CartUpsell categories={catalogCategories} loading={catalogLoading} products={catalogProducts} />
-      </div>
-
-      {items.length ? <aside className="mf-cart-summary min-w-0 h-fit">
+      {items.length ? <section className="mf-cart-summary min-w-0 h-fit" aria-label="Buyurtma xulosasi">
         <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
         {!customer?.accessToken ? (
           <div className="mf-surface-note mt-4 rounded-2xl px-4 py-3 text-sm font-bold">
@@ -166,6 +163,11 @@ function CartReview() {
           </div>
           <button className="mf-icon-control" type="button" onClick={openFulfillment} title="Manzilni o'zgartirish" aria-label="Manzilni o'zgartirish"><Pencil size={18} /></button>
         </div>
+      </section> : null}
+      </div>
+
+      {items.length ? <aside className="mf-cart-recommendations min-w-0" aria-label="Tavsiyalar">
+        <CartUpsell categories={catalogCategories} loading={catalogLoading} products={catalogProducts} />
       </aside> : null}
 
       {items.length ? <OrderActionBar total={total} label="Rasmiylashtirish" href={customer?.accessToken ? "/checkout" : "/checkout?auth=1"} /> : null}

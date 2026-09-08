@@ -204,7 +204,7 @@ export function CustomerMenuSections({
         </div>
       )}
 
-      {!loading && !error && menuSections.length ? (
+      {!loading && menuSections.length ? (
         <div className="mf-menu-sticky sticky z-10 -mx-4 mt-3 min-w-0 px-4 pb-2" data-menu-category-nav="true" ref={categoryNavRef}>
           <div className="no-scrollbar mf-category-strip flex w-full min-w-0 max-w-full gap-2 overflow-x-auto rounded-[1.25rem] p-1.5" ref={tabScrollerRef}>
             {menuSections.map(({ category }) => (
@@ -223,13 +223,20 @@ export function CustomerMenuSections({
         </div>
       ) : null}
 
-      {error ? (
+      {error && !products.length ? (
         <div className="mf-card mt-5 p-6 text-center">
           <h2 className="text-2xl font-black text-white">Menyu yuklanmadi</h2>
           <p className="mt-2 text-sm font-semibold text-white/60">{error}</p>
           <button className="pressable ripple mf-button-primary mt-5 px-5 py-3 font-black" onClick={() => void load()} type="button">
             Qayta urinish
           </button>
+        </div>
+      ) : null}
+
+      {error && products.length > 0 ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-white/20 py-3 text-sm text-white" role="status">
+          <span>Menyu yangilanmadi. Oxirgi yuklangan mahsulotlar ko'rsatilmoqda.</span>
+          <button className="pressable mf-button-primary px-4 py-2 font-bold" onClick={() => void load()} type="button">Qayta urinish</button>
         </div>
       ) : null}
 
@@ -240,7 +247,7 @@ export function CustomerMenuSections({
                 {Array.from({ length: 8 }, (_, index) => <ProductSkeleton key={index} />)}
               </div>
             )
-          : !error && menuSections.map(({ category, products }, sectionIndex) => (
+          : menuSections.map(({ category, products }, sectionIndex) => (
               <section
                 className="scroll-mt-20 md:scroll-mt-32"
                 data-category-id={category.id}

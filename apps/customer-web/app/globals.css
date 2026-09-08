@@ -904,26 +904,21 @@ img {
   box-shadow: 0 10px 24px rgba(0, 79, 85, 0.12);
 }
 
-.mf-upsell-scroll {
+.mf-upsell-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
   gap: 12px;
-  max-height: 340px;
   min-width: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
   padding: 4px 4px 12px;
 }
 
-.mf-upsell-scroll:focus-visible { outline: 2px solid #087d78; outline-offset: 2px; border-radius: 8px; }
-
 @media (min-width: 640px) {
-  .mf-upsell-scroll { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mf-upsell-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1280px) {
-  .mf-upsell-scroll { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .mf-upsell-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .mf-profile-bonus-panel {
@@ -1650,9 +1645,8 @@ img {
     border-radius: 0.95rem;
   }
 
-  .mf-upsell-scroll {
+  .mf-upsell-grid {
     gap: 0.55rem;
-    max-height: 300px;
     padding: 2px 2px 8px;
   }
 

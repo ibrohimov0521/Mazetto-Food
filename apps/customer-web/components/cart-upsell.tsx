@@ -79,7 +79,7 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
     return (
       <section className="mt-5">
         <div className="skeleton h-6 w-56 rounded-full" />
-        <div className="mf-upsell-scroll no-scrollbar mt-3">
+        <div className="mf-upsell-grid mt-3">
           {Array.from({ length: 4 }, (_, index) => (
             <div className="skeleton h-48 min-w-0 rounded-2xl" key={index} />
           ))}
@@ -103,10 +103,9 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
       </div>
       <div
         aria-label="Qo'shimcha mahsulotlar"
-        className="mf-upsell-scroll no-scrollbar"
+        className="mf-upsell-grid"
         data-upsell-rail
         role="region"
-        tabIndex={0}
       >
         {recommended.map((product) => (
           <UpsellCard addItem={addItem} key={product.id} product={product} triggerCartFlight={triggerCartFlight} />
