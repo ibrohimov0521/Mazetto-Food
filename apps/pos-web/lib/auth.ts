@@ -59,6 +59,14 @@ export const roleRedirects: Record<MazettoRole, string> = {
 };
 
 export function getApiBaseUrl(): string {
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "pos.mazettofood.uz" ||
+      window.location.hostname.endsWith(".mazettofood.uz"))
+  ) {
+    return "/api/v1";
+  }
+
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
 }
 
