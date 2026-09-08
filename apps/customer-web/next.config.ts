@@ -29,6 +29,14 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
       {
+        source: "/products/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+      {
+        source: "/categories/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+      {
         source: "/design-options.html",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
@@ -36,6 +44,14 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      {
+        source: "/products/:path*",
+        destination: "/menu-media/source/products/:path*",
+      },
+      {
+        source: "/categories/:path*",
+        destination: "/menu-media/source/categories/:path*",
+      },
       {
         source: "/api/v1/:path*",
         destination: `${apiOrigin}/api/v1/:path*`,
