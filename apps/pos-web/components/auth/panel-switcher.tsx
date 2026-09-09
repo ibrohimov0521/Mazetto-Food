@@ -35,7 +35,7 @@ export function PanelSwitcher({
     <nav
       aria-label="Ruxsat berilgan panellar"
       className={[
-        "mz-thin-scrollbar min-w-0 items-center gap-1.5 overflow-x-auto",
+        "mz-panel-nav mz-thin-scrollbar min-w-0 items-center gap-1.5 overflow-x-auto",
         className,
       ]
         .filter(Boolean)

@@ -121,12 +121,9 @@ export function AdminNavbar({
         <Icon name={isCollapsed ? "chevronRight" : "chevronLeft"} />
       </button>
 
-      <a
-        className="hidden shrink-0 rounded-mz-control bg-mz-shell-deep px-2 py-1 text-[11px] font-black tracking-[0.12em] text-mz-primary transition hover:bg-mz-primary hover:text-mz-primary-fg sm:inline-flex"
-        href="/admin/dashboard"
-      >
+      <span className="hidden shrink-0 px-1 text-xs font-black text-mz-primary sm:inline-flex">
         MAZETTO
-      </a>
+      </span>
 
       <PanelSwitcher
         className="hidden min-w-0 flex-1 xl:flex"
@@ -148,7 +145,7 @@ export function AdminNavbar({
         >
           <span
             aria-hidden="true"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-mz-pill bg-mz-primary text-[10px] font-black text-mz-white"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-mz-pill bg-mz-primary text-[10px] font-black text-mz-primary-fg"
           >
             {initialsOf(user)}
           </span>

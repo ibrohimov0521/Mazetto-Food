@@ -46,7 +46,7 @@
   --border: #d5e2dd;
   --gold: #ffd83d;
   min-height: 100dvh;
-  background: #f0f5f2;
+  background: #f0f5f4;
   color: var(--ink);
   font-family: Arial, Helvetica, sans-serif;
   font-size: 14px;
@@ -80,10 +80,11 @@
 .header {
   flex-shrink: 0;
   position: relative;
-  background: var(--green);
+  background: #003e43;
   color: #fff;
   padding: 6px 16px 0;
-  border-bottom: 3px solid var(--gold);
+  border-bottom: 2px solid var(--gold);
+  box-shadow: 0 4px 16px #002e321c;
 }
 .header::before {
   content: "";
@@ -190,6 +191,8 @@
   font-size: 22px;
   font-weight: 800;
   margin: 0;
+  border-left: 4px solid var(--gold);
+  padding-left: 12px;
 }
 .muted {
   color: var(--muted, #53706e);
@@ -205,8 +208,11 @@
 }
 .stat {
   min-width: 0;
-  border-left: 3px solid #9db7ac;
-  padding-left: 14px;
+  border-left: 3px solid #629788;
+  padding: 12px 14px;
+  background: white;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 0 6px 18px -12px #003e4340;
 }
 .stat[data-tone="ready"] {
   border-color: #29996a;
@@ -579,9 +585,11 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 0 0 13px;
+  padding: 12px;
   margin-bottom: 14px;
-  border-bottom: 3px solid #dbb629;
+  border-bottom: 3px solid #ffd83d;
+  background: #003e43;
+  color: white;
 }
 .columnHeading[data-tone="accepted"] {
   border-color: #72909a;
@@ -605,7 +613,8 @@
   height: 25px;
   min-width: 25px;
   padding: 0 6px;
-  background: white;
+  background: #ffd83d;
+  color: #07373a;
   border-radius: 4px;
   margin-left: auto;
   font-size: 12px;
@@ -621,7 +630,7 @@
   background: white;
   border: 1px solid #d5e2dd;
   border-radius: 8px;
-  box-shadow: 0 3px 9px #123b2610;
+  box-shadow: 0 2px 3px #003e4308, 0 8px 20px -10px #003e4333;
 }
 .ticketHeader {
   display: flex;
@@ -737,7 +746,7 @@
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 3px 10px #123b2610;
+  box-shadow: 0 2px 3px #003e4308, 0 8px 20px -10px #003e4333;
   overflow: hidden;
 }
 .deliveryTop {
@@ -747,7 +756,8 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
-  background: #f7faf8;
+  background: #eef5f1;
+  border-top: 3px solid #00645f;
 }
 .deliveryBody {
   padding: 18px;
@@ -1402,6 +1412,23 @@
 }
 .desktopRoleNav > div {
   justify-content: center;
+}
+.desktopRoleNav > nav {
+  justify-content: flex-start;
+}
+.desktopRoleNav a {
+  white-space: nowrap;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .ticket,
+  .deliveryCard {
+    transition: border-color 150ms, box-shadow 150ms;
+  }
+  .ticket:hover,
+  .deliveryCard:hover {
+    border-color: #75a597;
+    box-shadow: 0 4px 6px #003e4308, 0 12px 24px -12px #003e4347;
+  }
 }
 .desktopRoleNav a {
   min-height: 32px;

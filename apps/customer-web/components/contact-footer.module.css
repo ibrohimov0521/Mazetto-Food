@@ -1,15 +1,17 @@
 .footer {
-  max-width: 1120px;
-  margin: 12px auto 8px;
-  padding: 20px 20px 8px;
-  border: 1px solid #358482;
-  border-top: 3px solid #f5cf00;
-  border-radius: 12px;
-  background: #004f55;
-  box-shadow: 0 6px 16px rgb(0 35 38 / 20%);
+  position: relative;
+  isolation: isolate;
+  max-width: 1200px;
+  margin: 28px auto 24px;
+  padding: 22px 24px 8px;
+  border: 1px solid #36807a;
+  border-radius: 8px;
+  background: #003e43;
+  box-shadow: 0 2px 0 #75b2a440 inset, 0 8px 0 -3px #002e32, 0 20px 30px -12px #001f32a6;
   color: #f5faf6;
 }
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -21,7 +23,7 @@
 }
 .heading {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
   line-height: 1.4;
 }
@@ -36,10 +38,10 @@
   justify-content: center;
   gap: 7px;
   min-height: 44px;
-  padding: 8px 11px;
-  border: 1px solid #4a9591;
+  padding: 8px 13px;
+  border: 1px solid #74a99d66;
   border-radius: 8px;
-  background: #08686a;
+  background: #ffffff0a;
   color: #f5faf6;
   font-size: 12px;
   font-weight: 700;
@@ -53,12 +55,47 @@
 }
 .link svg {
   flex-shrink: 0;
+  color: #ffd83d;
 }
 .link:hover,
 .link:focus-visible {
   border-color: #ffdf39;
   background: #ffdf39;
   color: #003c40;
+}
+.link:hover svg,
+.link:focus-visible svg,
+.link:active svg {
+  color: inherit;
+}
+.footer::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: 14px;
+  top: 10px;
+  width: 130px;
+  height: 110px;
+  background: url("/brand/botanical-sprig.svg") center / contain no-repeat;
+  opacity: 0.12;
+  pointer-events: none;
+}
+.heading::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 12px;
+  margin-right: 8px;
+  border-radius: 2px;
+  background: #ffd83d;
+}
+.profile .heading::before {
+  display: none;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .link:hover {
+    transform: translateY(-2px);
+  }
 }
 .link:active {
   border-color: #e4bd06;
@@ -110,7 +147,7 @@
   gap: 6px;
   min-height: 44px;
   font-size: 10px;
-  color: #b2ccc4;
+  color: #acc9c1;
   text-decoration: none;
 }
 .credit img {
@@ -136,7 +173,8 @@
     margin-left: auto;
   }
   .footer {
-    padding: 16px 14px 6px;
+    padding: 18px 16px 6px;
+    margin: 22px auto;
   }
 }
 @media (max-width: 359px) {
