@@ -12,7 +12,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { OrderStatus, Prisma } from "@prisma/client";
+import { OrderStatus, Prisma, ShiftStatus } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -529,6 +529,7 @@ export class CustomersService {
     query: ListOnlineOrdersDto,
     user: AuthenticatedUser,
   ) {
+    const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user, query.branchId);
 
     const customerOrders = await this.prisma.customerOrder.findMany({
@@ -537,9 +538,67 @@ export class CustomersService {
         ...(branchId ? { branchId } : {}),
         order: {
           status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+          OR: [{ servedById: null }, { servedById: employeeId }],
         },
       },
       orderBy: { createdAt: "asc" },
+      skip: query.offset,
+      take: query.limit,
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+        order: {
+          include: {
+            items: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                productName: true,
+                quantity: true,
+                totalPrice: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return customerOrders.map((customerOrder) =>
+      this.withDerivedCustomerOrderStatus(customerOrder),
+    );
+  }
+
+  async listCourierDeliveryOrderHistory(
+    query: ListOnlineOrdersDto,
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const branchId = resolveBranchScope(user, query.branchId);
+    const startedAt = await this.getStaffHistoryStart(employeeId);
+
+    const customerOrders = await this.prisma.customerOrder.findMany({
+      where: {
+        type: "DELIVERY",
+        ...(branchId ? { branchId } : {}),
+        order: {
+          servedById: employeeId,
+          statusHistory: {
+            some: {
+              changedByEmployeeId: employeeId,
+              createdAt: { gte: startedAt },
+            },
+          },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
       skip: query.offset,
       take: query.limit,
       include: {
@@ -579,6 +638,7 @@ export class CustomersService {
     dto: UpdateCourierOrderStatusDto,
     user: AuthenticatedUser,
   ) {
+    const employeeId = this.requireEmployee(user);
     const scopedBranchId = resolveBranchScope(user);
     const nextStatus = dto.status as OrderStatus;
 
@@ -612,6 +672,13 @@ export class CustomersService {
         );
       }
 
+      if (
+        existing.order.servedById &&
+        existing.order.servedById !== employeeId
+      ) {
+        throw new ForbiddenException("Bu buyurtmani boshqa kuryer olib ketgan.");
+      }
+
       if (existing.order.status !== nextStatus) {
         if (existing.order.status === OrderStatus.SERVED && nextStatus === OrderStatus.READY) {
           throw new BadRequestException("Yo'ldagi buyurtmani tayyor holatiga qaytarib bo'lmaydi.");
@@ -629,21 +696,21 @@ export class CustomersService {
           where: { id: existing.orderId },
           data: {
             status: nextStatus,
+            ...(nextStatus === OrderStatus.SERVED ||
+            nextStatus === OrderStatus.COMPLETED
+              ? { servedBy: { connect: { id: employeeId } } }
+              : {}),
             ...(nextStatus === OrderStatus.COMPLETED
               ? {
                   closedAt: new Date(),
-                  ...(user.employeeId
-                    ? { closedBy: { connect: { id: user.employeeId } } }
-                    : {}),
+                  closedBy: { connect: { id: employeeId } },
                 }
               : {}),
             ...(nextStatus === OrderStatus.CANCELLED
               ? {
                   cancelledAt: new Date(),
                   cancellationReason: "Courier cancelled delivery",
-                  ...(user.employeeId
-                    ? { cancelledBy: { connect: { id: user.employeeId } } }
-                    : {}),
+                  cancelledBy: { connect: { id: employeeId } },
                 }
               : {}),
           },
@@ -739,6 +806,30 @@ export class CustomersService {
     }
 
     return status;
+  }
+
+  private requireEmployee(user: AuthenticatedUser): string {
+    if (!user.employeeId) {
+      throw new ForbiddenException("Authenticated user is not linked to an employee");
+    }
+
+    return user.employeeId;
+  }
+
+  private async getStaffHistoryStart(employeeId: string): Promise<Date> {
+    const shift = await this.prisma.shift.findFirst({
+      where: { employeeId, status: ShiftStatus.OPEN },
+      orderBy: { openedAt: "desc" },
+      select: { openedAt: true },
+    });
+
+    if (shift?.openedAt) {
+      return shift.openedAt;
+    }
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return start;
   }
 
   private productInclude() {

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -8,6 +9,7 @@ import {
   OrderItemStatus,
   OrderStatus,
   Prisma,
+  ShiftStatus,
 } from "@prisma/client";
 import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -87,6 +89,52 @@ export class KitchenService {
       include: this.ticketInclude(),
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
     });
+    return tickets.map((ticket) => ({
+      ...ticket,
+      status: kitchenStatusForOrder(ticket.order.status) ?? ticket.status,
+    }));
+  }
+
+  async listHistory(
+    query: { status?: string; search?: string; limit?: string; offset?: string },
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const branchId = resolveBranchScope(user);
+    const startedAt = await this.getStaffHistoryStart(employeeId);
+    const status = this.toKitchenTicketStatus(query.status);
+    const search = query.search?.trim();
+
+    const tickets = await this.prisma.kitchenTicket.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        order: {
+          ...(branchId ? { branchId } : {}),
+          statusHistory: {
+            some: {
+              changedByEmployeeId: employeeId,
+              createdAt: { gte: startedAt },
+            },
+          },
+          ...(search
+            ? {
+                OR: [
+                  { orderNumber: { contains: search, mode: "insensitive" } },
+                  { displayOrderNumber: { contains: search, mode: "insensitive" } },
+                  { customerName: { contains: search, mode: "insensitive" } },
+                  { customerPhone: { contains: search, mode: "insensitive" } },
+                  { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+                ],
+              }
+            : {}),
+        },
+      },
+      include: this.ticketInclude(),
+      orderBy: { updatedAt: "desc" },
+      skip: this.parseOffset(query.offset),
+      take: this.parseLimit(query.limit),
+    });
+
     return tickets.map((ticket) => ({
       ...ticket,
       status: kitchenStatusForOrder(ticket.order.status) ?? ticket.status,
@@ -532,6 +580,46 @@ export class KitchenService {
         },
       },
     } satisfies Prisma.KitchenTicketInclude;
+  }
+
+  private requireEmployee(user: AuthenticatedUser): string {
+    if (!user.employeeId) {
+      throw new ForbiddenException("Authenticated user is not linked to an employee");
+    }
+
+    return user.employeeId;
+  }
+
+  private async getStaffHistoryStart(employeeId: string): Promise<Date> {
+    const shift = await this.prisma.shift.findFirst({
+      where: { employeeId, status: ShiftStatus.OPEN },
+      orderBy: { openedAt: "desc" },
+      select: { openedAt: true },
+    });
+
+    if (shift?.openedAt) {
+      return shift.openedAt;
+    }
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  private toKitchenTicketStatus(status?: string): KitchenTicketStatus | undefined {
+    return Object.values(KitchenTicketStatus).includes(status as KitchenTicketStatus)
+      ? (status as KitchenTicketStatus)
+      : undefined;
+  }
+
+  private parseLimit(value?: string): number {
+    const parsed = Number(value ?? 50);
+    return Number.isFinite(parsed) ? Math.min(100, Math.max(1, Math.trunc(parsed))) : 50;
+  }
+
+  private parseOffset(value?: string): number {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   }
 
   private createTicketNumber(): string {

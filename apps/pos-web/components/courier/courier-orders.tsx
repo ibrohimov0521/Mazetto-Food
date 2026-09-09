@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  History,
   MapPin,
   Navigation,
   PackageCheck,
@@ -58,6 +59,7 @@ type CourierOrder = {
 type DeliveryAction = "SERVED" | "COMPLETED" | "CANCELLED";
 const readyForDelivery = (order: CourierOrder) =>
   ["READY", "SERVED"].includes(order.order?.status ?? order.status);
+const courierHistoryStatuses = ["SERVED", "COMPLETED", "CANCELLED"] as const;
 
 export function CourierOrdersPage() {
   const { user } = useAuth();
@@ -69,6 +71,12 @@ export function CourierOrdersPage() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOrders, setHistoryOrders] = useState<CourierOrder[]>([]);
+  const [historyStatus, setHistoryStatus] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const [confirmation, setConfirmation] = useState<{
     order: CourierOrder;
     status: DeliveryAction;
@@ -115,6 +123,27 @@ export function CourierOrdersPage() {
     }
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      setHistoryOrders(
+        await apiFetch<CourierOrder[]>("/courier/orders/history?limit=100&offset=0", {
+          cache: "no-store",
+          signal: AbortSignal.timeout(12000),
+        }),
+      );
+    } catch (caught) {
+      setHistoryError(caught instanceof Error ? caught.message : "Tarix yuklanmadi.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (historyOpen) void loadHistory();
+  }, [historyOpen, loadHistory]);
+
   useEffect(() => {
     void load();
     const refresh = () => {
@@ -149,6 +178,24 @@ export function CourierOrdersPage() {
       );
     });
   }, [orders, filter, query]);
+
+  const historyVisible = useMemo(() => {
+    const term = historySearch.trim().toLocaleLowerCase();
+    return historyOrders.filter((order) => {
+      const status = order.order?.status ?? order.status;
+      if (historyStatus && status !== historyStatus) return false;
+      return (
+        !term ||
+        [
+          order.deliveryAddress,
+          order.customer?.name,
+          order.customer?.phone,
+          order.order?.displayOrderNumber,
+          order.order?.orderNumber,
+        ].some((value) => value?.toLocaleLowerCase().includes(term))
+      );
+    });
+  }, [historyOrders, historySearch, historyStatus]);
 
   async function updateStatus() {
     if (!confirmation || actionLock.current || !canUpdate) return;
@@ -186,12 +233,18 @@ export function CourierOrdersPage() {
     <div className={`${styles.content} ${styles.narrowContent}`}>
       <div className={styles.overview}>
         <h2 className={styles.pageHeading}>Yetkazib berishlar</h2>
+        <div className={styles.inlineActions}>
+          <button className={styles.button} onClick={() => setHistoryOpen(true)} type="button">
+            <History size={17} />
+            Tarix
+          </button>
         <StaffSync
           updatedAt={updatedAt}
           error={!!error}
           refreshing={refreshing || !!busyOrderId}
           onRefresh={() => void load()}
         />
+        </div>
       </div>
       <section className={styles.stats} aria-label="Yetkazishlar xulosasi">
         <div className={styles.stat}>
@@ -286,6 +339,58 @@ export function CourierOrdersPage() {
             ? "Boshqa manzil yoki buyurtma raqamini tekshiring."
             : "Yangi buyurtmalar shu yerda ko'rinadi."}
         </StaffEmpty>
+      )}
+      {historyOpen && (
+        <StaffDialog title="Smenadagi yetkazish tarixi" busy={historyLoading} onClose={() => setHistoryOpen(false)}>
+          <div className={styles.historyControls}>
+            <label className={styles.search}>
+              <Search size={17} />
+              <input
+                aria-label="Tarixdan qidirish"
+                placeholder="Buyurtma, mijoz yoki manzil"
+                value={historySearch}
+                onChange={(event) => setHistorySearch(event.target.value)}
+              />
+            </label>
+            <select
+              className={styles.historySelect}
+              aria-label="Yetkazish holati"
+              value={historyStatus}
+              onChange={(event) => setHistoryStatus(event.target.value)}
+            >
+              <option value="">Barcha holatlar</option>
+              {courierHistoryStatuses.map((status) => (
+                <option key={status} value={status}>{status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}</option>
+              ))}
+            </select>
+            <button className={styles.button} onClick={() => void loadHistory()} disabled={historyLoading} type="button">
+              Yangilash
+            </button>
+          </div>
+          {historyError && <div className={styles.error} role="alert">{historyError}</div>}
+          <div className={styles.historyList}>
+            {historyLoading ? (
+              <div className={styles.skeleton} />
+            ) : historyVisible.length ? (
+              historyVisible.map((order) => {
+                const status = order.order?.status ?? order.status;
+                return (
+                  <article className={styles.historyOrder} key={order.id}>
+                    <div>
+                      <strong>#{order.order?.displayOrderNumber ?? order.order?.orderNumber}</strong>
+                      <span className={styles.muted}>{order.customer?.name ?? "Mijoz"} · {formatMoney(order.order?.total)}</span>
+                    </div>
+                    <span className={styles.badge} data-tone={status === "CANCELLED" ? "late" : status === "COMPLETED" ? "ready" : "waiting"}>
+                      {status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}
+                    </span>
+                  </article>
+                );
+              })
+            ) : (
+              <StaffEmpty title="Tarix bo'sh">Siz olib ketgan buyurtmalar shu yerda saqlanadi.</StaffEmpty>
+            )}
+          </div>
+        </StaffDialog>
       )}
       {confirmation && (
         <StaffDialog

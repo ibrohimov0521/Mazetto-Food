@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch } from "@nestjs/common";
+import { Controller, Get, Param, Patch, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -13,6 +13,15 @@ export class KitchenController {
   @Permissions(PERMISSIONS.KITCHEN_VIEW)
   listOrders(@CurrentUser() user: AuthenticatedUser) {
     return this.kitchenService.listOrders(user);
+  }
+
+  @Get("orders/history")
+  @Permissions(PERMISSIONS.KITCHEN_VIEW)
+  listHistory(
+    @Query() query: { status?: string; search?: string; limit?: string; offset?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.kitchenService.listHistory(query, user);
   }
 
   @Patch("orders/:id/accept")

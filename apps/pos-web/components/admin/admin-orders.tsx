@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission, type AuthUser } from "../../lib/auth";
@@ -69,6 +69,13 @@ type OrderStatusHistory = {
   createdAt: string;
 };
 
+type BulkOrderStatusResult = {
+  requested: number;
+  updatedCount: number;
+  failedCount: number;
+  failed: { id: string; message: string }[];
+};
+
 export type AdminOrder = {
   id: string;
   orderNumber: string;
@@ -114,6 +121,10 @@ export function AdminOrdersPage() {
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkOrderStatusResult | null>(null);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -162,6 +173,72 @@ export function AdminOrdersPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setSelectedOrderIds((current) => {
+      const pageIds = new Set(orders.map((order) => order.id));
+      return new Set([...current].filter((id) => pageIds.has(id)));
+    });
+  }, [orders]);
+
+  const selectedOrders = useMemo(
+    () => orders.filter((order) => selectedOrderIds.has(order.id)),
+    [orders, selectedOrderIds],
+  );
+  const selectableOrders = orders.filter(
+    (order) => order.status !== "COMPLETED" && order.status !== "CANCELLED",
+  );
+  const allSelectableChecked =
+    selectableOrders.length > 0 &&
+    selectableOrders.every((order) => selectedOrderIds.has(order.id));
+
+  function toggleSelected(orderId: string, checked: boolean): void {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(orderId);
+      else next.delete(orderId);
+      return next;
+    });
+    setBulkResult(null);
+  }
+
+  function toggleCurrentPage(checked: boolean): void {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      for (const order of selectableOrders) {
+        if (checked) next.add(order.id);
+        else next.delete(order.id);
+      }
+      return next;
+    });
+    setBulkResult(null);
+  }
+
+  async function bulkCancelSelected(): Promise<void> {
+    setBulkBusy(true);
+    setError("");
+    setBulkResult(null);
+
+    try {
+      const result = await apiFetch<BulkOrderStatusResult>("/orders/bulk/status", {
+        method: "PATCH",
+        body: JSON.stringify({
+          orderIds: [...selectedOrderIds],
+          status: "CANCELLED",
+          reason: "Admin bulk action: cancelled from orders list",
+          confirm: true,
+        }),
+      });
+      setBulkResult(result);
+      setBulkConfirmOpen(false);
+      setSelectedOrderIds(new Set());
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Ommaviy amal bajarilmadi.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   /** Filtr o'zgarganda birinchi sahifaga qaytamiz. */
   function changeFilter(apply: () => void): void {
     apply();
@@ -169,6 +246,19 @@ export function AdminOrdersPage() {
   }
 
   const columns: DataTableColumn<AdminOrder>[] = [
+    {
+      key: "select",
+      header: "Tanlash",
+      render: (order) => (
+        <input
+          aria-label={`${order.displayOrderNumber ?? order.orderNumber} buyurtmani tanlash`}
+          checked={selectedOrderIds.has(order.id)}
+          disabled={order.status === "COMPLETED" || order.status === "CANCELLED"}
+          onChange={(event) => toggleSelected(order.id, event.target.checked)}
+          type="checkbox"
+        />
+      ),
+    },
     {
       key: "order",
       header: "Buyurtma",
@@ -329,6 +419,34 @@ export function AdminOrdersPage() {
           ) : null}
         </FilterBar>
 
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
+          <label className="inline-flex items-center gap-2 text-sm font-semibold text-mz-text">
+            <input
+              checked={allSelectableChecked}
+              disabled={!selectableOrders.length || isLoading}
+              onChange={(event) => toggleCurrentPage(event.target.checked)}
+              type="checkbox"
+            />
+            Joriy sahifadagi amaldagi buyurtmalar
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            {bulkResult ? (
+              <span className="text-xs font-semibold text-mz-text-muted">
+                {bulkResult.updatedCount} ta bajarildi
+                {bulkResult.failedCount ? `, ${bulkResult.failedCount} ta o'tmadi` : ""}
+              </span>
+            ) : null}
+            <Button
+              disabled={!selectedOrderIds.size || bulkBusy}
+              onClick={() => setBulkConfirmOpen(true)}
+              size="sm"
+              variant="danger"
+            >
+              Tanlanganlarni bekor qilish
+            </Button>
+          </div>
+        </div>
+
         <DataTable
           caption="Buyurtmalar ro'yxati"
           columns={columns}
@@ -352,6 +470,48 @@ export function AdminOrdersPage() {
           pageSize={pageSize}
         />
       </Card>
+
+      <Modal
+        description="Bu amal tanlangan buyurtmalarni bekor qilingan holatiga o'tkazadi. Davom etish uchun ikkinchi marta tasdiqlang."
+        footer={
+          <>
+            <Button
+              disabled={bulkBusy}
+              onClick={() => setBulkConfirmOpen(false)}
+              variant="ghost"
+            >
+              Ortga
+            </Button>
+            <Button
+              disabled={bulkBusy}
+              onClick={() => void bulkCancelSelected()}
+              variant="danger"
+            >
+              {bulkBusy ? "Bajarilmoqda..." : `${selectedOrders.length} ta buyurtmani bekor qilish`}
+            </Button>
+          </>
+        }
+        isOpen={bulkConfirmOpen}
+        onClose={() => setBulkConfirmOpen(false)}
+        title="Ommaviy amalni tasdiqlang"
+      >
+        <div className="grid gap-2 text-sm text-mz-text">
+          {selectedOrders.slice(0, 8).map((order) => (
+            <div
+              className="flex items-center justify-between gap-3 rounded-mz-control border border-mz-border bg-mz-surface-sunken px-3 py-2"
+              key={order.id}
+            >
+              <span className="font-semibold">
+                {order.displayOrderNumber ?? order.orderNumber}
+              </span>
+              <span className="text-mz-text-muted">{formatMoney(order.total)}</span>
+            </div>
+          ))}
+          {selectedOrders.length > 8 ? (
+            <p className="text-xs text-mz-text-muted">Yana {selectedOrders.length - 8} ta buyurtma tanlangan.</p>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   );
 }

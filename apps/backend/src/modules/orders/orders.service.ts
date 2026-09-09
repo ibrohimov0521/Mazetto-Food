@@ -29,7 +29,11 @@ import { KitchenService } from "../kitchen/kitchen.service";
 import type { CreateOrderDto } from "./dto/create-order.dto";
 import type { ListOrdersDto } from "./dto/list-orders.dto";
 import type { AddOrderItemDto, OrderItemModifierDto, UpdateOrderItemDto } from "./dto/order-item.dto";
-import { PosOrderStatus, type UpdateOrderStatusDto } from "./dto/order-status.dto";
+import {
+  PosOrderStatus,
+  type BulkUpdateOrderStatusDto,
+  type UpdateOrderStatusDto,
+} from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
 import { allocateDisplayOrderNumber } from "./order-display-number";
 
@@ -676,6 +680,44 @@ export class OrdersService {
     this.kitchenService.emitOrderStatusChanged(result.order);
     kitchenEvents.emit(kitchenOrderStatusChangedEvent, { orderId, action: "refresh" });
     return result.order;
+  }
+
+  async bulkUpdateStatus(dto: BulkUpdateOrderStatusDto, user: AuthenticatedUser) {
+    if (!dto.confirm) {
+      throw new BadRequestException("Bulk action requires confirmation");
+    }
+
+    const uniqueIds = [...new Set(dto.orderIds.map((id) => id.trim()).filter(Boolean))];
+    const updated: unknown[] = [];
+    const failed: { id: string; message: string }[] = [];
+
+    for (const orderId of uniqueIds) {
+      try {
+        updated.push(
+          await this.updateStatus(
+            orderId,
+            {
+              status: dto.status,
+              reason: dto.reason ?? `Bulk action requested: ${dto.status}`,
+            },
+            user,
+          ),
+        );
+      } catch (caught) {
+        failed.push({
+          id: orderId,
+          message: caught instanceof Error ? caught.message : "Amal bajarilmadi",
+        });
+      }
+    }
+
+    return {
+      requested: uniqueIds.length,
+      updatedCount: updated.length,
+      failedCount: failed.length,
+      updated,
+      failed,
+    };
   }
 
   async confirmOrderForPreparation(

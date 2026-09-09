@@ -1,4 +1,13 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from "class-validator";
 
 export enum PosOrderStatus {
   NEW = "NEW",
@@ -18,4 +27,15 @@ export class UpdateOrderStatusDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+}
+
+export class BulkUpdateOrderStatusDto extends UpdateOrderStatusDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  orderIds!: string[];
+
+  @IsBoolean()
+  confirm!: boolean;
 }

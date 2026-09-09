@@ -14,7 +14,10 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { ListOrdersDto } from "./dto/list-orders.dto";
 import { AddOrderItemDto, UpdateOrderItemDto } from "./dto/order-item.dto";
-import { UpdateOrderStatusDto } from "./dto/order-status.dto";
+import {
+  BulkUpdateOrderStatusDto,
+  UpdateOrderStatusDto,
+} from "./dto/order-status.dto";
 import { OrdersService } from "./orders.service";
 
 @Controller("orders")
@@ -37,6 +40,15 @@ export class OrdersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.ordersService.listOrders(query, user);
+  }
+
+  @Patch("bulk/status")
+  @Permissions(PERMISSIONS.ORDER_SEND_KITCHEN)
+  bulkUpdateStatus(
+    @Body() dto: BulkUpdateOrderStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ordersService.bulkUpdateStatus(dto, user);
   }
 
   @Get(":id")

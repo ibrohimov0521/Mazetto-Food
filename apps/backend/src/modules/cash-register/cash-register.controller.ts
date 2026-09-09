@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -18,6 +18,15 @@ export class CashRegisterController {
   @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
   getCurrentShift(@CurrentUser() user: AuthenticatedUser) {
     return this.cashRegisterService.getCurrentShift(user);
+  }
+
+  @Get("shift/orders")
+  @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
+  getCurrentShiftOrders(
+    @Query() query: { status?: string; search?: string; limit?: string; offset?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.getCurrentShiftOrders(query, user);
   }
 
   @Post("shift/open")

@@ -210,6 +210,15 @@ export class CustomersAdminController {
     return this.customersService.listCourierDeliveryOrders(query, user);
   }
 
+  @Get("courier/orders/history")
+  @Permissions(PERMISSIONS.COURIER_DELIVERY_VIEW)
+  listCourierOrderHistory(
+    @Query() query: ListOnlineOrdersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.listCourierDeliveryOrderHistory(query, user);
+  }
+
   @Patch("courier/orders/:id/status")
   @Permissions(PERMISSIONS.COURIER_DELIVERY_UPDATE)
   updateCourierOrderStatus(
