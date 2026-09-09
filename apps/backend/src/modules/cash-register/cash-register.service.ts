@@ -85,10 +85,12 @@ export class CashRegisterService {
 
     const status = this.toOrderStatus(query.status);
     const search = query.search?.trim();
+    const day = this.todayTashkentRange();
 
     return this.prisma.order.findMany({
       where: {
         shiftId: shift.id,
+        createdAt: { gte: day.start, lt: day.end },
         ...(status ? { status } : {}),
         ...(search
           ? {
@@ -171,6 +173,21 @@ export class CashRegisterService {
     }
 
     throw new ForbiddenException("Cannot access another cashier shift");
+  }
+
+  private todayTashkentRange(): { start: Date; end: Date } {
+    const offsetMs = 5 * 60 * 60 * 1000;
+    const shifted = new Date(Date.now() + offsetMs);
+    const startUtcMs = Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+    ) - offsetMs;
+
+    return {
+      start: new Date(startUtcMs),
+      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+    };
   }
 
   private toOrderStatus(status?: string): OrderStatus | undefined {

@@ -12,7 +12,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { OrderStatus, Prisma, ShiftStatus } from "@prisma/client";
+import { OrderStatus, Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -531,12 +531,14 @@ export class CustomersService {
   ) {
     const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user, query.branchId);
+    const day = this.todayTashkentRange();
 
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
         type: "DELIVERY",
         ...(branchId ? { branchId } : {}),
         order: {
+          createdAt: { gte: day.start, lt: day.end },
           status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
           OR: [{ servedById: null }, { servedById: employeeId }],
         },
@@ -582,7 +584,7 @@ export class CustomersService {
   ) {
     const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user, query.branchId);
-    const startedAt = await this.getStaffHistoryStart(employeeId);
+    const day = this.todayTashkentRange();
 
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
@@ -590,10 +592,11 @@ export class CustomersService {
         ...(branchId ? { branchId } : {}),
         order: {
           servedById: employeeId,
+          createdAt: { gte: day.start, lt: day.end },
           statusHistory: {
             some: {
               changedByEmployeeId: employeeId,
-              createdAt: { gte: startedAt },
+              createdAt: { gte: day.start, lt: day.end },
             },
           },
         },
@@ -816,20 +819,19 @@ export class CustomersService {
     return user.employeeId;
   }
 
-  private async getStaffHistoryStart(employeeId: string): Promise<Date> {
-    const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, status: ShiftStatus.OPEN },
-      orderBy: { openedAt: "desc" },
-      select: { openedAt: true },
-    });
+  private todayTashkentRange(): { start: Date; end: Date } {
+    const offsetMs = 5 * 60 * 60 * 1000;
+    const shifted = new Date(Date.now() + offsetMs);
+    const startUtcMs = Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+    ) - offsetMs;
 
-    if (shift?.openedAt) {
-      return shift.openedAt;
-    }
-
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    return start;
+    return {
+      start: new Date(startUtcMs),
+      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+    };
   }
 
   private productInclude() {

@@ -9,7 +9,6 @@ import {
   OrderItemStatus,
   OrderStatus,
   Prisma,
-  ShiftStatus,
 } from "@prisma/client";
 import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -63,12 +62,15 @@ export class KitchenService {
   ) {}
 
   async listOrders(user: AuthenticatedUser) {
+    const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user);
+    const day = this.todayTashkentRange();
 
     const tickets = await this.prisma.kitchenTicket.findMany({
       where: {
         order: {
           ...(branchId ? { branchId } : {}),
+          createdAt: { gte: day.start, lt: day.end },
           status: {
             notIn: [
               OrderStatus.SERVED,
@@ -85,6 +87,19 @@ export class KitchenService {
             KitchenTicketStatus.READY,
           ],
         },
+        OR: [
+          { status: KitchenTicketStatus.NEW },
+          {
+            order: {
+              statusHistory: {
+                some: {
+                  changedByEmployeeId: employeeId,
+                  createdAt: { gte: day.start, lt: day.end },
+                },
+              },
+            },
+          },
+        ],
       },
       include: this.ticketInclude(),
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
@@ -101,7 +116,7 @@ export class KitchenService {
   ) {
     const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user);
-    const startedAt = await this.getStaffHistoryStart(employeeId);
+    const day = this.todayTashkentRange();
     const status = this.toKitchenTicketStatus(query.status);
     const search = query.search?.trim();
 
@@ -110,10 +125,11 @@ export class KitchenService {
         ...(status ? { status } : {}),
         order: {
           ...(branchId ? { branchId } : {}),
+          createdAt: { gte: day.start, lt: day.end },
           statusHistory: {
             some: {
               changedByEmployeeId: employeeId,
-              createdAt: { gte: startedAt },
+              createdAt: { gte: day.start, lt: day.end },
             },
           },
           ...(search
@@ -590,20 +606,19 @@ export class KitchenService {
     return user.employeeId;
   }
 
-  private async getStaffHistoryStart(employeeId: string): Promise<Date> {
-    const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, status: ShiftStatus.OPEN },
-      orderBy: { openedAt: "desc" },
-      select: { openedAt: true },
-    });
+  private todayTashkentRange(): { start: Date; end: Date } {
+    const offsetMs = 5 * 60 * 60 * 1000;
+    const shifted = new Date(Date.now() + offsetMs);
+    const startUtcMs = Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+    ) - offsetMs;
 
-    if (shift?.openedAt) {
-      return shift.openedAt;
-    }
-
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    return start;
+    return {
+      start: new Date(startUtcMs),
+      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+    };
   }
 
   private toKitchenTicketStatus(status?: string): KitchenTicketStatus | undefined {
