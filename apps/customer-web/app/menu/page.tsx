@@ -15,7 +15,7 @@ export default async function MenuPage() {
   return (
     <SiteShell>
       <CustomerMenuSections {...(initial ? { initial } : {})} />
-      <div className="mx-auto max-w-6xl bg-[#f5f5ef] px-4 pb-4">
+      <div className="mx-auto max-w-6xl px-4 pb-4">
         <ContactFooter showProfile />
       </div>
     </SiteShell>

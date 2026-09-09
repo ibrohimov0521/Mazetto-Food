@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Heart } from "lucide-react";
+import styles from "./product-detail.module.css";
 import { CustomerMenuSections } from "../../../components/customer-menu-sections";
 import { MediaImage } from "../../../components/media-image";
 import { hapticTap } from "../../../components/motion-primitives";
@@ -12,7 +14,8 @@ import { formatMoney, useCart } from "../../../lib/cart";
 import type { Product } from "../../../lib/types";
 
 export default function ProductPage({
-  id, initialProduct,
+  id,
+  initialProduct,
 }: {
   id: string;
   initialProduct: Product;
@@ -24,12 +27,28 @@ export default function ProductPage({
   );
 }
 
-function ProductDetails({ id, initialProduct }: { id: string; initialProduct: Product }) {
+function ProductDetails({
+  id,
+  initialProduct,
+}: {
+  id: string;
+  initialProduct: Product;
+}) {
   const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, toggleFavorite, triggerCartFlight } = useCart();
-  const [product, setProduct] = useState<Product | null>(() => displayProduct(initialProduct));
-  const [variantId, setVariantId] = useState<string | undefined>(() => initialProduct.variants.find((variant) => variant.isDefault)?.id ?? initialProduct.variants[0]?.id);
-  const [modifierIds, setModifierIds] = useState<string[]>(() => initialProduct.modifiers.filter((link) => link.isRequired).map((link) => link.modifier.id));
+  const [product, setProduct] = useState<Product | null>(() =>
+    displayProduct(initialProduct),
+  );
+  const [variantId, setVariantId] = useState<string | undefined>(
+    () =>
+      initialProduct.variants.find((variant) => variant.isDefault)?.id ??
+      initialProduct.variants[0]?.id,
+  );
+  const [modifierIds, setModifierIds] = useState<string[]>(() =>
+    initialProduct.modifiers
+      .filter((link) => link.isRequired)
+      .map((link) => link.modifier.id),
+  );
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +74,7 @@ function ProductDetails({ id, initialProduct }: { id: string; initialProduct: Pr
         );
       })
       .catch((caught: unknown) => {
-        if (active)
+        if (active && !initialProduct)
           setError(
             caught instanceof Error ? caught.message : "Mahsulot topilmadi.",
           );
@@ -126,14 +145,15 @@ function ProductDetails({ id, initialProduct }: { id: string; initialProduct: Pr
   return (
     <>
       <section className="mf-product-detail-stage mx-auto w-full max-w-6xl px-3 py-4 sm:px-4">
-        <div className="mf-product-config p-4 sm:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <div className={`mf-product-config ${styles.layout}`}>
+          <div className={styles.toolbar}>
             <Link
               aria-label="Menyuga qaytish"
-              className="mf-button-secondary grid h-11 w-11 place-items-center text-2xl"
+              className={styles.backButton}
               href="/menu"
             >
-              &#8249;
+              <ArrowLeft aria-hidden="true" size={20} />
+              <span>Menyu</span>
             </Link>
             <button
               aria-label={
@@ -147,11 +167,15 @@ function ProductDetails({ id, initialProduct }: { id: string; initialProduct: Pr
                   ? "Sevimlilardan olib tashlash"
                   : "Sevimlilarga qo'shish"
               }
-              className={`mf-favorite-button grid h-11 w-11 place-items-center rounded-xl text-xl ${favorite ? "is-active" : ""}`}
+              className={styles.favoriteButton}
               onClick={() => toggleFavorite(product.id)}
               type="button"
             >
-              &#9829;
+              <Heart
+                aria-hidden="true"
+                size={21}
+                fill={favorite ? "currentColor" : "none"}
+              />
             </button>
           </div>
           <div className="mf-product-overview">
@@ -163,7 +187,7 @@ function ProductDetails({ id, initialProduct }: { id: string; initialProduct: Pr
               fit="contain"
               priority
               ref={imageRef}
-              sizes="(max-width: 639px) 45vw, (max-width: 1152px) 48vw, 520px"
+              sizes="(max-width: 767px) 40vw, 360px"
               src={product.imageUrl}
             />
             <div className="mf-product-summary min-w-0">
@@ -188,7 +212,7 @@ function ProductDetails({ id, initialProduct }: { id: string; initialProduct: Pr
               ) : null}
             </div>
           </div>
-          <div className="mt-5 grid gap-5">
+          <div className={styles.options}>
             {product.variants.length ? (
               <fieldset>
                 <legend className="text-sm font-bold">Turini tanlang</legend>
