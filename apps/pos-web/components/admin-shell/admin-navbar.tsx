@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { hasPermission, hasRole, roleLabels } from "../../lib/auth";
 import type { AuthUser, MazettoRole } from "../../lib/auth";
 import { Icon } from "../admin-ui/icon";
@@ -19,6 +20,9 @@ import { BranchScopeBadge } from "./branch-scope-badge";
  * Global qidiruv ATAYLAB qo'shilmagan: backend'da qidiruv endpoint'i yo'q,
  * ishlamaydigan input esa bo'sh joydan yomonroq.
  */
+
+const shortcutClassName =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-mz-control border border-mz-shell-border px-3 py-1.5 text-xs font-black text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg";
 
 function initialsOf(user: AuthUser | null): string {
   const email = user?.email;
@@ -125,15 +129,28 @@ export function AdminNavbar({
         aria-label="Tezkor bo'limlar"
         className="mz-thin-scrollbar hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto xl:flex"
       >
-        {shortcuts.map((item) => (
-          <a
-            className="shrink-0 rounded-mz-control border border-mz-shell-border px-3 py-1.5 text-xs font-black text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg"
-            href={item.href}
-            key={item.href}
-          >
-            {item.label}
-          </a>
-        ))}
+        {shortcuts.map((item) =>
+          item.external ? (
+            <a
+              className={shortcutClassName}
+              href={item.href}
+              key={item.href}
+              rel="noopener noreferrer"
+              target="_blank"
+              title={`${item.label} — yangi tabda ochiladi`}
+            >
+              {item.label}
+              <Icon className="h-3.5 w-3.5 opacity-70" name="externalLink" />
+            </a>
+          ) : (
+            // Qobiq ichidagi havolalar — client navigatsiya. Ilgari bular ham
+            // `<a>` edi, ya'ni admin ichida yurish har safar to'liq sahifa
+            // qayta yuklanishiga olib kelardi.
+            <Link className={shortcutClassName} href={item.href} key={item.href}>
+              {item.label}
+            </Link>
+          ),
+        )}
       </nav>
 
       <div className="min-w-0 flex-1 xl:hidden" />
@@ -203,6 +220,18 @@ type TopbarShortcut = {
   href: string;
   roles: string[];
   permission: string;
+  /**
+   * Havola admin qobig'idan TASHQARIGA olib chiqadimi.
+   *
+   * `/pos`, `/kitchen` va `/shift` — to'liq ekran ish joylari, ularda sidebar
+   * yo'q. Ilgari ular oddiy `<a>` bilan shu tabda ochilardi: bosilgan zahoti
+   * chapdagi menyu butunlay yo'qolardi va qaytish uchun faqat brauzerning
+   * "orqaga" tugmasi qolardi.
+   *
+   * Endi yangi tabda ochiladi — admin sessiyasi joyida qoladi, kassa yoki
+   * oshxona esa o'z oynasida to'liq ekranda ishlaydi.
+   */
+  external?: boolean;
 };
 
 const topbarShortcuts: TopbarShortcut[] = [
@@ -211,18 +240,21 @@ const topbarShortcuts: TopbarShortcut[] = [
     href: "/pos",
     permission: "ORDER_CREATE",
     roles: ["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"],
+    external: true,
   },
   {
     label: "Oshxona",
     href: "/kitchen",
     permission: "KITCHEN_VIEW",
     roles: ["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+    external: true,
   },
   {
     label: "Smena",
     href: "/shift",
     permission: "SHIFT_VIEW_OWN",
     roles: ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"],
+    external: true,
   },
   {
     label: "Admin",

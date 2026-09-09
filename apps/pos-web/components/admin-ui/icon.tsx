@@ -66,6 +66,7 @@ export type IconName =
   | "menu"
   | "monitor"
   | "send"
+  | "externalLink"
   | "logout";
 
 const shapes: Record<IconName, ReactNode> = {
@@ -310,6 +311,13 @@ const shapes: Record<IconName, ReactNode> = {
     <>
       <path d="M21 3.4 10.4 14" />
       <path d="M21 3.4 14.2 21l-3.8-7-7-3.8Z" />
+    </>
+  ),
+  externalLink: (
+    <>
+      <path d="M13.6 4H20v6.4" />
+      <path d="M20 4 11.2 12.8" />
+      <path d="M18 14.4v3.4A2.2 2.2 0 0 1 15.8 20H6.2A2.2 2.2 0 0 1 4 17.8V8.2A2.2 2.2 0 0 1 6.2 6h3.4" />
     </>
   ),
   logout: (
