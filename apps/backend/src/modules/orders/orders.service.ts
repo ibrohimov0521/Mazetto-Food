@@ -362,16 +362,26 @@ export class OrdersService {
       };
       } catch (error) {
         if (this.isUniqueConstraintError(error)) {
-          const order = await this.resolveExistingPosCheckoutByKey(idempotencyKey, requestHash);
+          const existingOperation = await this.prisma.paymentOperation.findUnique({
+            where: { idempotencyKey },
+          });
 
-          return {
-            order,
-            payment: {
-              method: "CASH",
-              cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
-              change: new Prisma.Decimal(dto.cashReceived).sub(order.total).toFixed(2),
-            },
-          };
+          if (existingOperation) {
+            const order = await this.resolveExistingPosCheckoutByKey(idempotencyKey, requestHash);
+
+            return {
+              order,
+              payment: {
+                method: "CASH",
+                cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
+                change: new Prisma.Decimal(dto.cashReceived).sub(order.total).toFixed(2),
+              },
+            };
+          }
+
+          if (attempt < 2) {
+            continue;
+          }
         }
 
         if (this.isRetryableTransactionConflict(error) && attempt < 2) {
@@ -389,7 +399,7 @@ export class OrdersService {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     const employeeId = this.resolveEmployeeId(dto.employeeId, user);
 
-    const order = await this.prisma.$transaction(async (tx) => {
+    const order = await this.withUniqueConstraintRetry(() => this.prisma.$transaction(async (tx) => {
       await this.assertBranchExists(tx, branchId);
       await this.assertEmployeeInBranch(tx, employeeId, branchId);
 
@@ -432,7 +442,7 @@ export class OrdersService {
       });
 
       return this.findOrderById(order.id, tx);
-    });
+    }));
 
     this.kitchenService.emitOrderCreated(order);
     return order;
@@ -995,6 +1005,22 @@ export class OrdersService {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     );
+  }
+
+  private async withUniqueConstraintRetry<T>(operation: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (this.isUniqueConstraintError(error) && attempt < 2) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new BadRequestException("Operation could not be completed");
   }
 
   private isRetryableTransactionConflict(error: unknown): boolean {

@@ -1,4 +1,5 @@
 import { Controller, Get } from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
 import { Public } from "./common/decorators/public.decorator";
 import { PrismaService } from "./prisma/prisma.service";
 
@@ -12,6 +13,7 @@ type BackendHealth = {
 };
 
 @Public()
+@SkipThrottle()
 @Controller("health")
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}

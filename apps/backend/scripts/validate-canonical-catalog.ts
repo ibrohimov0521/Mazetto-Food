@@ -13,8 +13,8 @@ const canonicalStandaloneTarget = 56;
 const canonicalSetTarget = 18;
 const canonicalTotalTarget = 74;
 const pendingOwnerPriceDecisions: Array<{ name: string; reason: string }> = [];
-const legacyCodes = new Set(legacyProductCodes);
-const expectedCategoryCounts = new Map([
+const legacyCodes = new Set<string>(legacyProductCodes);
+const expectedCategoryCounts = new Map<string, number>([
   ["LAVASH", 14],
   ["BURGER", 8],
   ["DONER", 5],
@@ -52,8 +52,8 @@ function main(): void {
   const canonicalSets = menuCombos.filter((combo) => combo.canonical);
   const legacyProducts = products.filter((product) => product.legacy);
   const actualLegacyCodes = new Set(legacyProducts.map((product) => product.code));
-  const customerVisibleCodes = new Set(customerVisibleProductCodes);
-  const customerVisibleCategories = new Set(customerVisibleCategoryCodes);
+  const customerVisibleCodes = new Set<string>(customerVisibleProductCodes);
+  const customerVisibleCategories = new Set<string>(customerVisibleCategoryCodes);
 
   assert.equal(canonicalStandalone.length, canonicalStandaloneTarget);
   assert.equal(canonicalSets.length, canonicalSetTarget);

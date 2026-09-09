@@ -225,6 +225,7 @@ function createServices(prisma: PrismaService) {
   const customersService = new CustomersService(
     prisma,
     branchesService,
+    kitchenService,
     new JwtService(),
     orderEngine,
     telegramAuth,
@@ -392,7 +393,7 @@ async function createDeliveryWebOrder(
     ],
     deliveryFee: 999999,
     total: 999999,
-  } as const;
+  };
 
   const quote = await orderEngine.quoteCheckout(fixture.webCustomer.id, dto);
   assert.equal(quote.subtotal, fixture.expectedConfigurableTotal.toFixed(2));

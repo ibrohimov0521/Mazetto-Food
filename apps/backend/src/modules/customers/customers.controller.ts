@@ -8,7 +8,6 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
@@ -17,10 +16,10 @@ import {
   UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
+import { CustomerAuth } from "../../common/decorators/customer-auth.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
-import { CustomerAuthGuard } from "../../common/guards/customer-auth.guard";
 import type { AuthenticatedCustomer } from "../../common/types/authenticated-customer";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -42,15 +41,13 @@ export class CustomerPublicController {
     private readonly addressesService: CustomerAddressesService,
   ) {}
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("me/addresses")
   listAddresses(@CurrentCustomer() customer: AuthenticatedCustomer) {
     return this.addressesService.list(customer.id);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Put("me/addresses/:id")
   saveAddress(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -60,8 +57,7 @@ export class CustomerPublicController {
     return this.addressesService.save(customer.id, id, dto);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Delete("me/addresses/:id")
   deleteAddress(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -94,8 +90,7 @@ export class CustomerPublicController {
     return this.customersService.logout(dto);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("auth/me")
   getMe(@CurrentCustomer() customer: AuthenticatedCustomer) {
     return this.customersService.getMe(customer.id);
@@ -128,8 +123,7 @@ export class CustomerPublicController {
     return this.customersService.getProduct(id);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Post("checkout/quote")
   quoteCheckout(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -138,8 +132,7 @@ export class CustomerPublicController {
     return this.customersService.quoteCheckout(customer.id, dto);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Post("orders")
   createOnlineOrder(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -148,22 +141,19 @@ export class CustomerPublicController {
     return this.customersService.createOnlineOrder(customer.id, dto);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("me/dashboard")
   getDashboard(@CurrentCustomer() customer: AuthenticatedCustomer) {
     return this.customersService.getCustomerDashboard(customer.id);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("me/orders")
   listOrders(@CurrentCustomer() customer: AuthenticatedCustomer) {
     return this.customersService.listCustomerOrders(customer.id);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("me/orders/:id")
   getOrder(
     @CurrentCustomer() customer: AuthenticatedCustomer,

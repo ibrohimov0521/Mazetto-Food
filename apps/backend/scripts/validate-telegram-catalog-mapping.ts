@@ -39,6 +39,8 @@ const expectedTelegramCategoryCounts = new Map([
   ["SETS", 18],
 ]);
 
+const customerVisibleCategorySet = new Set<string>(customerVisibleCategoryCodes);
+
 function main(): void {
   const catalogProducts = [...menuProducts, ...menuCombos];
   const catalogVariants = [...menuVariants, ...comboVariants];
@@ -131,7 +133,7 @@ function main(): void {
   console.log(`Lavash direct products: ${lavashProducts.length}`);
   console.log(`Burger direct products: ${burgerProducts.length}`);
   console.log(`Set direct products: ${setProducts.length}`);
-  for (const category of menuCategories.filter((item) => customerVisibleCategoryCodes.includes(item.code))) {
+  for (const category of menuCategories.filter((item) => customerVisibleCategorySet.has(item.code))) {
     const rows = productRowsByCategory.get(category.code) ?? [];
     console.log(
       `${category.name}: ${rows.flat().length} products, 1 page, rows: ${rows
@@ -152,7 +154,7 @@ function buildTelegramCategoryRows(): Map<string, string[][]> {
     if (
       hiddenTelegramCategoryCodes.has(category.code) ||
       rowsByCategory.has(category.code) ||
-      !customerVisibleCategoryCodes.includes(category.code)
+      !customerVisibleCategorySet.has(category.code)
     ) {
       continue;
     }

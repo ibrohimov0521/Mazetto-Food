@@ -25,6 +25,8 @@ function createService(prisma: unknown): CustomersService {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
 }
 

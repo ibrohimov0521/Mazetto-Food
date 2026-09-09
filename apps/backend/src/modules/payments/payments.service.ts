@@ -600,11 +600,25 @@ export class PaymentsService {
     };
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    return (
+  private isUniqueConstraintError(error: unknown, field?: string): boolean {
+    if (!(
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
-    );
+    )) {
+      return false;
+    }
+
+    if (!field) {
+      return true;
+    }
+
+    const target = error.meta?.target;
+
+    if (Array.isArray(target)) {
+      return target.includes(field);
+    }
+
+    return typeof target === "string" && target.includes(field);
   }
 
   private async createReceipt(
@@ -625,31 +639,44 @@ export class PaymentsService {
       return;
     }
 
-    await tx.receipt.create({
-      data: {
-        orderId: order.id,
-        branchId: order.branchId,
-        receiptNumber: this.createReceiptNumber(),
-        total: order.total,
-        content: {
-          title: "MAZETTO FOOD",
-          branchName: order.branch.name,
-          orderNumber: order.orderNumber,
-          items: order.items.map((item) => ({
-            name: item.productName,
-            variant: item.variantName,
-            quantity: item.quantity.toFixed(3),
-            total: item.totalPrice.toFixed(2),
-          })),
-          payments: order.payments.map((payment) => ({
-            method: payment.method.code,
-            amount: payment.amount.toFixed(2),
-          })),
-          total: order.total.toFixed(2),
-          dateTime: new Date().toISOString(),
-        },
-      },
-    });
+    const content = {
+      title: "MAZETTO FOOD",
+      branchName: order.branch.name,
+      orderNumber: order.orderNumber,
+      items: order.items.map((item) => ({
+        name: item.productName,
+        variant: item.variantName,
+        quantity: item.quantity.toFixed(3),
+        total: item.totalPrice.toFixed(2),
+      })),
+      payments: order.payments.map((payment) => ({
+        method: payment.method.code,
+        amount: payment.amount.toFixed(2),
+      })),
+      total: order.total.toFixed(2),
+      dateTime: new Date().toISOString(),
+    };
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await tx.receipt.create({
+          data: {
+            orderId: order.id,
+            branchId: order.branchId,
+            receiptNumber: this.createReceiptNumber(),
+            total: order.total,
+            content,
+          },
+        });
+        return;
+      } catch (error) {
+        if (this.isUniqueConstraintError(error, "receiptNumber") && attempt < 2) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
   }
 
   private createReceiptNumber(): string {
