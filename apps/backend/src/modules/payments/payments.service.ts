@@ -31,6 +31,17 @@ type NormalizedPaymentTender = {
   transactionId?: string;
 };
 
+type OrderForReceipt = Prisma.OrderGetPayload<{
+  include: {
+    branch: true;
+    items: true;
+    payments: { include: { method: true } };
+    receipts: true;
+  };
+}>;
+
+const RECEIPT_NUMBER_ATTEMPTS = 5;
+
 @Injectable()
 export class PaymentsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -393,7 +404,9 @@ export class PaymentsService {
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (error) {
-      if (this.isUniqueConstraintError(error)) {
+      // FAQAT idempotency kaliti bo'yicha to'qnashuv shu yo'lga tushadi —
+      // boshqa har qanday unique buzilishi o'z holicha ko'tariladi.
+      if (this.isUniqueConstraintErrorOn(error, "idempotencyKey")) {
         return this.resolveExistingOperationByKey(
           dto.idempotencyKey,
           requestHash,
@@ -607,6 +620,40 @@ export class PaymentsService {
     );
   }
 
+  /**
+   * P2002 aynan berilgan ustun bo'yicha ko'tarilganmi.
+   *
+   * MUAMMO (PHASE 6 H4b). `createPayment` ning `catch` bloki HAR QANDAY P2002
+   * ni "idempotency kaliti allaqachon ishlatilgan" deb talqin qilardi. Bir xil
+   * tranzaksiya ichida `receiptNumber` ham yaratiladi va u ham `@unique` —
+   * ya'ni chek raqami to'qnashuvi idempotency to'qnashuvi deb o'qilardi.
+   * Natija: tranzaksiya bekor bo'lgani uchun `paymentOperation` qatori ham
+   * yo'q edi va kassir "Payment operation could not be resolved" xatosini
+   * ko'rardi — sababi bilan hech qanday aloqasi yo'q xabar.
+   *
+   * Prisma ustun nomini `meta.target` da beradi; u massiv ham, satr ham
+   * bo'lishi mumkin, shuning uchun ikkalasi ham qo'llab-quvvatlanadi.
+   */
+  private isUniqueConstraintErrorOn(error: unknown, column: string): boolean {
+    if (!this.isUniqueConstraintError(error)) {
+      return false;
+    }
+
+    const target = (error as Prisma.PrismaClientKnownRequestError).meta?.target;
+
+    if (Array.isArray(target)) {
+      return target.includes(column);
+    }
+
+    if (typeof target === "string") {
+      return target.includes(column);
+    }
+
+    // Ustun nomi aniqlanmasa idempotency yo'liga tushmaymiz: noto'g'ri talqin
+    // qilishdan ko'ra xatoni ochiq ko'tarish xavfsizroq.
+    return false;
+  }
+
   private async createReceipt(
     tx: Prisma.TransactionClient,
     orderId: string,
@@ -625,11 +672,34 @@ export class PaymentsService {
       return;
     }
 
+    await this.createReceiptRow(tx, order);
+  }
+
+  /*
+   * Chek raqami tasodifiy sondan yasaladi va uning fazosi KUNIGA atigi
+   * 900 000 (soniyada emas). Tug'ilgan kun paradoksi bo'yicha kuniga 500 ta
+   * chekda to'qnashuv ehtimoli ~13%, 1000 tada ~43%.
+   *
+   * To'qnashuv shunchaki chekni emas, BUTUN to'lov tranzaksiyasini bekor
+   * qilardi (PHASE 6 H4). Shuning uchun raqam chegaralangan qayta urinish
+   * bilan olinadi — oshxona ticket raqamidagi naqsh bilan bir xil.
+   *
+   * Qayta urinish `tx` ichida ishlaydi, ya'ni PostgreSQL xatodan keyin
+   * tranzaksiyani bekor qilmasligi uchun har urinish o'z savepoint'ida
+   * bo'lishi kerak — Prisma buni ichki `$transaction` bilan bermaydi, shuning
+   * uchun raqam OLDINDAN band emasligiga ishonch hosil qilinadi.
+   */
+  private async createReceiptRow(
+    tx: Prisma.TransactionClient,
+    order: OrderForReceipt,
+  ): Promise<void> {
+    const receiptNumber = await this.allocateReceiptNumber(tx);
+
     await tx.receipt.create({
       data: {
         orderId: order.id,
         branchId: order.branchId,
-        receiptNumber: this.createReceiptNumber(),
+        receiptNumber,
         total: order.total,
         content: {
           title: "MAZETTO FOOD",
@@ -650,6 +720,35 @@ export class PaymentsService {
         },
       },
     });
+  }
+
+  /**
+   * Band bo'lmagan chek raqamini qaytaradi.
+   *
+   * Nomzod avval `findUnique` bilan tekshiriladi, keyin yoziladi. Bu poygani
+   * BUTUNLAY yopmaydi — ikki tranzaksiya bir xil nomzodni bir vaqtda tekshirib
+   * o'tishi mumkin — lekin to'qnashuv ehtimolini urinishlar soniga qarab
+   * eksponensial kamaytiradi. Uni butunlay yopish uchun kunlik ketma-ket
+   * hisoblagich va `pg_advisory_xact_lock` kerak (buyurtmaning ko'rinadigan
+   * raqamida shunday qilingan); u chek formatini o'zgartiradi, ya'ni alohida
+   * qaror.
+   */
+  private async allocateReceiptNumber(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
+    for (let attempt = 0; attempt < RECEIPT_NUMBER_ATTEMPTS; attempt += 1) {
+      const candidate = this.createReceiptNumber();
+      const existing = await tx.receipt.findUnique({
+        where: { receiptNumber: candidate },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return candidate;
+      }
+    }
+
+    throw new BadRequestException("Unable to allocate a receipt number");
   }
 
   private createReceiptNumber(): string {

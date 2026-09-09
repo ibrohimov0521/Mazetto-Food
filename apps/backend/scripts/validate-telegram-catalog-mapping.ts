@@ -10,7 +10,13 @@ import {
   legacyProductCodes,
 } from "../src/modules/customers/customer-catalog-visibility";
 
-const hiddenTelegramCategoryCodes = new Set(["CHICKEN_LAVASH", "CHICKEN_BURGER"]);
+const hiddenTelegramCategoryCodes: ReadonlySet<string> = new Set<string>([
+  "CHICKEN_LAVASH",
+  "CHICKEN_BURGER",
+]);
+// Literal union emas, `readonly string[]`: bu ro'yxatdan ixtiyoriy kod
+// so'raladi va toraytirilgan tip `includes(string)` ni rad etadi.
+const visibleCategoryCodes: readonly string[] = customerVisibleCategoryCodes;
 const lavashTelegramRows = [
   ["CLASSIC_LAVASH", "CHICKEN_LAVASH"],
   ["BIG_LAVASH", "BIG_CHICKEN_LAVASH"],
@@ -131,7 +137,7 @@ function main(): void {
   console.log(`Lavash direct products: ${lavashProducts.length}`);
   console.log(`Burger direct products: ${burgerProducts.length}`);
   console.log(`Set direct products: ${setProducts.length}`);
-  for (const category of menuCategories.filter((item) => customerVisibleCategoryCodes.includes(item.code))) {
+  for (const category of menuCategories.filter((item) => visibleCategoryCodes.includes(item.code))) {
     const rows = productRowsByCategory.get(category.code) ?? [];
     console.log(
       `${category.name}: ${rows.flat().length} products, 1 page, rows: ${rows
@@ -152,7 +158,7 @@ function buildTelegramCategoryRows(): Map<string, string[][]> {
     if (
       hiddenTelegramCategoryCodes.has(category.code) ||
       rowsByCategory.has(category.code) ||
-      !customerVisibleCategoryCodes.includes(category.code)
+      !visibleCategoryCodes.includes(category.code)
     ) {
       continue;
     }

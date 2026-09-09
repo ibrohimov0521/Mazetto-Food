@@ -392,7 +392,7 @@ async function createDeliveryWebOrder(
     ],
     deliveryFee: 999999,
     total: 999999,
-  } as const;
+  };
 
   const quote = await orderEngine.quoteCheckout(fixture.webCustomer.id, dto);
   assert.equal(quote.subtotal, fixture.expectedConfigurableTotal.toFixed(2));
@@ -986,11 +986,15 @@ async function proveHistoryAndOwnership(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   orders: { webCustomerOrderId: string; telegramCustomerOrderId: string },
 ): Promise<void> {
-  const webHistory = await customersService.listCustomerOrders(fixture.webCustomer.id);
+  const webHistory = await customersService.listCustomerOrders(fixture.webCustomer.id, {
+    limit: 50,
+    offset: 0,
+  });
   assert.ok(webHistory.some((order) => order.id === orders.webCustomerOrderId));
 
   const telegramHistory = await customersService.listCustomerOrders(
     fixture.telegramCustomer.id,
+    { limit: 50, offset: 0 },
   );
   assert.ok(
     telegramHistory.some((order) => order.id === orders.telegramCustomerOrderId),

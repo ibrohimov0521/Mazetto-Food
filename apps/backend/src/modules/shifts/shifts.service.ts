@@ -54,6 +54,22 @@ export class ShiftsService {
       await this.assertEmployeeInBranch(tx, employeeId, branchId);
       await this.assertDeviceInBranch(tx, dto.deviceId, branchId);
 
+      /*
+       * Smena raqami `MAX(shiftNumber) + 1` bilan olinadi — bu o'qib-yozish
+       * poygasi (PHASE 6 H5). Prisma standart izolyatsiyasi Read Committed,
+       * ya'ni bir filialda ikki kassir bir vaqtda smena ochsa ikkalasi bir xil
+       * raqamni o'qiydi va `@@unique([branchId, shiftNumber])` biriga 500
+       * qaytaradi.
+       *
+       * Filialga bog'langan maslahat qulfi ketma-ketlashtiradi: qulf tranzaksiya
+       * oxirigacha ushlab turiladi va u tugagach avtomatik bo'shaydi. Naqsh
+       * `orders/order-display-number.ts` dan olingan.
+       *
+       * Qulf ochiq smena tekshiruvidan OLDIN olinadi, aks holda ikki bir vaqtli
+       * so'rov o'sha tekshiruvdan ham birga o'tib ketishi mumkin edi.
+       */
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`shift-open:${branchId}`}))`;
+
       const existingOpenShift = await tx.shift.findFirst({
         where: {
           branchId,

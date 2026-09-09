@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+import { MazettoThrottlerGuard } from "./common/guards/mazetto-throttler.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { HealthController } from "./health.controller";
@@ -34,6 +36,20 @@ import { PrismaModule } from "./prisma/prisma.module";
 
 @Module({
   imports: [
+    /*
+     * Global rate limit (PHASE 6 H3). Ilgari hech qanday umumiy chegara yo'q
+     * edi — faqat login va OTP o'z qo'lda yozilgan cheklovlariga ega edi.
+     *
+     * Hisoblagichlar JARAYON XOTIRASIDA: deploy'da nolga tushadi va ikkinchi
+     * instance ko'tarilsa har biri o'zicha sanaydi. Redis storage'ga o'tish
+     * 7-bosqich Q2/3-to'lqinda, Redis ishga tushgandan keyin.
+     *
+     * 300 so'rov/daqiqa — POS ekranlari bir necha endpointni birga so'raydi va
+     * oshxona doskasi tez-tez yangilanadi, shuning uchun chegara odatdagi
+     * ishdan ancha yuqori qo'yilgan: maqsad suiiste'molni to'xtatish, xodimni
+     * sekinlashtirish emas.
+     */
+    ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 300 }]),
     PrismaModule,
     AuthModule,
     AuditModule,
@@ -64,6 +80,12 @@ import { PrismaModule } from "./prisma/prisma.module";
   ],
   controllers: [HealthController],
   providers: [
+    // Tartib muhim: chegara autentifikatsiyadan OLDIN qo'llanadi, aks holda
+    // tekshirilmagan so'rovlar oqimi baribir bazaga urilaverardi.
+    {
+      provide: APP_GUARD,
+      useClass: MazettoThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

@@ -53,7 +53,7 @@ async function main(): Promise<void> {
       sortOrder: 10000,
       variants: [
         {
-          id: created.variants[0]?.id,
+          ...(created.variants[0]?.id ? { id: created.variants[0].id } : {}),
           name: "Asosiy",
           price: 13000,
           costPrice: 7500,

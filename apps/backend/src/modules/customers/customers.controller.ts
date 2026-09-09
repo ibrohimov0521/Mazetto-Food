@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
+  ListCustomerOrdersDto,
   ListCustomersDto,
   ListOnlineOrdersDto,
 } from "./dto/list-customers.dto";
@@ -121,8 +122,11 @@ export class CustomerPublicController {
   @UseGuards(CustomerAuthGuard)
   @Public()
   @Get("me/orders")
-  listOrders(@CurrentCustomer() customer: AuthenticatedCustomer) {
-    return this.customersService.listCustomerOrders(customer.id);
+  listOrders(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Query() query: ListCustomerOrdersDto,
+  ) {
+    return this.customersService.listCustomerOrders(customer.id, query);
   }
 
   @UseGuards(CustomerAuthGuard)

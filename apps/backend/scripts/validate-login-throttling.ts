@@ -7,11 +7,21 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 
 const authController = readSource("apps/backend/src/modules/auth/auth.controller.ts");
 const authService = readSource("apps/backend/src/modules/auth/auth.service.ts");
+const clientAddress = readSource("apps/backend/src/common/http/client-address.ts");
 const customerService = readSource("apps/backend/src/modules/customers/customers.service.ts");
 const telegramCustomerAuth = readSource("apps/backend/src/modules/telegram/telegram-customer-auth.service.ts");
 
-assert.match(authController, /request\.headers\["cf-connecting-ip"\]/);
-assert.match(authController, /request\.headers\["x-forwarded-for"\]/);
+// Mijoz manzili faqat yagona hal qiluvchi orqali olinadi. Controller
+// proxy header'larini o'zi o'qimasligi shart (PHASE 6 H1).
+assert.match(authController, /resolveClientAddress\(request\)/);
+assert.doesNotMatch(authController, /cf-connecting-ip/);
+assert.doesNotMatch(authController, /x-forwarded-for/);
+
+// Proxy header'lariga faqat e'lon qilingan hop soni bo'lganda ishoniladi;
+// default 0, ya'ni hech qanday header'ga ishonilmaydi.
+assert.match(clientAddress, /TRUSTED_PROXY_HOP_COUNT/);
+assert.match(clientAddress, /if \(hops === 0\) \{/);
+assert.match(clientAddress, /chain\.length - hops/);
 
 assert.match(authService, /const LOGIN_THROTTLE_WINDOW_MS = 15 \* 60 \* 1000/);
 assert.match(authService, /const LOGIN_THROTTLE_BLOCK_MS = 15 \* 60 \* 1000/);
@@ -24,6 +34,11 @@ assert.match(authService, /this\.loginThrottle\.delete\(throttle\.key\)/);
 assert.match(authService, /key: `login:\$\{identifier\}:address:\$\{clientAddress\}`/);
 assert.match(authService, /key: `login:\$\{identifier\}:account`/);
 assert.match(authService, /HttpStatus\.TOO_MANY_REQUESTS/);
+
+// Kalitning bir qismini so'rov yuboruvchi tanlaydi, shuning uchun jadval
+// chegaralangan bo'lishi shart (PHASE 6 H2).
+assert.match(authService, /const LOGIN_THROTTLE_MAX_ENTRIES = 10_000/);
+assert.match(authService, /this\.pruneLoginThrottle\(now\)/);
 assert.doesNotMatch(authService, /passwordMatches[^]*throw new UnauthorizedException\(`[^`]*\$\{/);
 
 assert.match(customerService, /const CUSTOMER_CODE_REQUEST_WINDOW_MS = 60 \* 1000/);

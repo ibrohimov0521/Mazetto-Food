@@ -286,7 +286,9 @@ async function createKitchenOrder(
         create: {
           toStatus: OrderStatus.NEW,
           changedByUserId: fixture.user.id,
-          changedByEmployeeId: fixture.user.employeeId,
+          ...(fixture.user.employeeId
+            ? { changedByEmployeeId: fixture.user.employeeId }
+            : {}),
           reason: "Kitchen DB release gate fixture",
         },
       },

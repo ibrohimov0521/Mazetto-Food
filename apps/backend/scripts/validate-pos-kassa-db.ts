@@ -319,13 +319,26 @@ async function proveValidationFailures(ordersService: OrdersService, fixture: Fi
   await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "bad-mod", [{ productId: fixture.products.simpleId, quantity: 1, modifiers: [{ modifierId: fixture.products.invalidModifierId, quantity: 1 }] }], 50000), fixture.cashier), /modifier/i);
 }
 
+/**
+ * Foydalanuvchini filialsiz holatda qaytaradi.
+ *
+ * `{ ...user, branchId: undefined }` yozib bo'lmaydi: `exactOptionalPropertyTypes`
+ * ostida ixtiyoriy maydonga aniq `undefined` berish maydonni bermaslik bilan
+ * bir xil emas.
+ */
+function withoutBranch(user: AuthenticatedUser): AuthenticatedUser {
+  const rest = { ...user };
+  delete rest.branchId;
+  return rest;
+}
+
 async function proveBranchAndStaffScope(
   prisma: PrismaService,
   ordersService: OrdersService,
   fixture: Fixture,
 ): Promise<void> {
   await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "blocked", [{ productId: fixture.products.simpleId, quantity: 1 }], 50000), fixture.blockedCashier), /Employee is not active/);
-  await assert.rejects(() => ordersService.listPosCatalog({ ...fixture.noPosUser, branchId: undefined }), /Branch is required|assigned to a branch/);
+  await assert.rejects(() => ordersService.listPosCatalog(withoutBranch(fixture.noPosUser)), /Branch is required|assigned to a branch/);
 
   const otherBranchUser = { ...fixture.cashier, branchId: fixture.otherBranchId };
   await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "branch-tamper", [{ productId: fixture.products.simpleId, quantity: 1 }], 50000), otherBranchUser), /Employee is not active/);

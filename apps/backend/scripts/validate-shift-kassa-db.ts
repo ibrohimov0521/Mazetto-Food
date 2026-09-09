@@ -222,7 +222,11 @@ async function proveConcurrentOpen(
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
   assert.equal(
     await prisma.shift.count({
-      where: { branchId: fixture.branchId, employeeId: fixture.cashier.employeeId, status: ShiftStatus.OPEN },
+      where: {
+        branchId: fixture.branchId,
+        ...(fixture.cashier.employeeId ? { employeeId: fixture.cashier.employeeId } : {}),
+        status: ShiftStatus.OPEN,
+      },
     }),
     1,
   );

@@ -38,6 +38,22 @@ const LOGIN_THROTTLE_MAX_ADDRESS_FAILURES = 5;
 const LOGIN_THROTTLE_MAX_IDENTIFIER_FAILURES = 20;
 const LOGIN_THROTTLE_GC_MS = 60 * 60 * 1000;
 
+/*
+ * Cheklov jadvalining qattiq chegarasi (PHASE 6 H2).
+ *
+ * Kalitning bir qismi — login identifikatori, ya'ni uni SO'ROV YUBORUVCHI
+ * tanlaydi. Ilgari tozalash faqat `assertLoginAllowed` ichida, aynan o'sha
+ * kalit QAYTA so'ralganda bo'lardi; hech qachon takrorlanmaydigan
+ * identifikatorlar yuborilsa hech narsa tozalanmasdi va jadval cheksiz
+ * o'sardi.
+ *
+ * Bu yerda taymer ishlatilmaydi (backend'da hali `ScheduleModule` yo'q —
+ * 7-bosqich Q2). O'rniga yozishda amortizatsiyalangan tozalash: jadval
+ * chegaradan oshsa avval eskirganlari, keyin eng eskilari tashlanadi.
+ * Redis'ga ko'chgach (3-to'lqin) bularning hammasi TTL bilan almashadi.
+ */
+const LOGIN_THROTTLE_MAX_ENTRIES = 10_000;
+
 @Injectable()
 export class AuthService {
   private readonly loginThrottle = new Map<string, LoginThrottleRecord>();
@@ -314,9 +330,45 @@ export class AuthService {
     }
   }
 
+  /**
+   * Jadvalni chegara ichida ushlaydi. Faqat yozish yo'lida chaqiriladi.
+   *
+   * Avval eskirgan yozuvlar tashlanadi — bu odatda yetarli. Agar shundan
+   * keyin ham chegaradan yuqori bo'lsa (ya'ni hujum davom etmoqda), eng eski
+   * yozuvlar tashlanadi: yangi muvaffaqiyatsizliklar eskilaridan muhimroq,
+   * chunki blok holati aynan ular bo'yicha hisoblanadi.
+   */
+  private pruneLoginThrottle(now: number): void {
+    if (this.loginThrottle.size < LOGIN_THROTTLE_MAX_ENTRIES) {
+      return;
+    }
+
+    for (const [key, record] of this.loginThrottle) {
+      const blockExpired = !record.blockedUntil || record.blockedUntil <= now;
+
+      if (blockExpired && now - record.firstFailureAt > LOGIN_THROTTLE_WINDOW_MS) {
+        this.loginThrottle.delete(key);
+      }
+    }
+
+    if (this.loginThrottle.size < LOGIN_THROTTLE_MAX_ENTRIES) {
+      return;
+    }
+
+    const oldestFirst = [...this.loginThrottle.entries()].sort(
+      ([, a], [, b]) => a.firstFailureAt - b.firstFailureAt,
+    );
+    const excess = this.loginThrottle.size - LOGIN_THROTTLE_MAX_ENTRIES + 1;
+
+    for (const [key] of oldestFirst.slice(0, excess)) {
+      this.loginThrottle.delete(key);
+    }
+  }
+
   private registerFailedLoginKey(throttle: LoginThrottleKey): void {
     const now = Date.now();
     const key = throttle.key;
+    this.pruneLoginThrottle(now);
     const current = this.loginThrottle.get(key);
     const record =
       current && now - current.firstFailureAt <= LOGIN_THROTTLE_WINDOW_MS

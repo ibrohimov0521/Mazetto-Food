@@ -16,11 +16,17 @@ type FindManyArgs = {
   orderBy: {
     createdAt: "desc";
   };
+  skip: number;
+  take: number;
 };
 
 function createService(prisma: unknown): CustomersService {
+  // Konstruktor bog'liqliklari soni servis bilan birga o'sadi. Skript tip
+  // tekshiruvidan tashqarida bo'lgan paytda bu ro'yxat ortda qolib ketgan edi
+  // va oxirgi bog'liqlik jimgina `undefined` bo'lib kelardi (PHASE 6 H12).
   return new CustomersService(
     prisma as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -81,7 +87,7 @@ async function main() {
     );
   }
 
-  await service.listCustomerOrders("customer-a");
+  await service.listCustomerOrders("customer-a", { limit: 50, offset: 0 });
   assert(
     findManyCalls[0]?.where.customerId === "customer-a",
     "Order history list must be scoped to authenticated customerId",
@@ -89,6 +95,19 @@ async function main() {
   assert(
     findManyCalls[0]?.orderBy.createdAt === "desc",
     "Order history must be newest first",
+  );
+
+  // PHASE 6 H10 — tarix chegarasiz tortilmasligi kerak: u biznes hajmi bilan
+  // birga o'sadi va `/orders` sahifasi uni holat o'zgarganda qayta yuklaydi.
+  assert(
+    findManyCalls[0]?.take === 50 && findManyCalls[0]?.skip === 0,
+    "Order history must apply the requested page window",
+  );
+
+  await service.listCustomerOrders("customer-a", { limit: 10, offset: 20 });
+  assert(
+    findManyCalls[1]?.take === 10 && findManyCalls[1]?.skip === 20,
+    "Order history must honour a non-default page window",
   );
 
   console.log("Customer order history ownership validation passed");

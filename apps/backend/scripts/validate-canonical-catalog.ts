@@ -51,9 +51,19 @@ function main(): void {
   const canonicalStandalone = menuProducts.filter((product) => product.canonical);
   const canonicalSets = menuCombos.filter((combo) => combo.canonical);
   const legacyProducts = products.filter((product) => product.legacy);
-  const actualLegacyCodes = new Set(legacyProducts.map((product) => product.code));
-  const customerVisibleCodes = new Set(customerVisibleProductCodes);
-  const customerVisibleCategories = new Set(customerVisibleCategoryCodes);
+  /*
+   * `ReadonlySet<string>` ATAYLAB — literal union emas.
+   *
+   * Bu to'plamlar ixtiyoriy kod uchun "ro'yxatda bormi" deb so'raladi.
+   * `new Set(...)` ni o'z holicha qoldirsak TypeScript uni literal union
+   * bo'yicha toraytiradi va `has(product.code)` (oddiy `string`) kompilyatsiya
+   * bo'lmaydi — garchi savol butunlay to'g'ri bo'lsa ham.
+   */
+  const actualLegacyCodes: ReadonlySet<string> = new Set<string>(
+    legacyProducts.map((product) => product.code),
+  );
+  const customerVisibleCodes: ReadonlySet<string> = new Set<string>(customerVisibleProductCodes);
+  const customerVisibleCategories: ReadonlySet<string> = new Set<string>(customerVisibleCategoryCodes);
 
   assert.equal(canonicalStandalone.length, canonicalStandaloneTarget);
   assert.equal(canonicalSets.length, canonicalSetTarget);

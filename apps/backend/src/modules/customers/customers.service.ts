@@ -22,6 +22,7 @@ import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
 import {
+  ListCustomerOrdersDto,
   ListCustomersDto,
   ListOnlineOrdersDto,
 } from "./dto/list-customers.dto";
@@ -454,10 +455,25 @@ export class CustomersService {
     };
   }
 
-  async listCustomerOrders(customerId: string) {
+  /*
+   * Mijoz buyurtmalari tarixi.
+   *
+   * MUAMMO (PHASE 6 H10). Ilgari bu yerda `take` yo'q edi va har chaqiruv
+   * mijozning BUTUN tarixini ichki `items`/`payments` bilan tortardi. Tarix
+   * biznes hajmi bilan cheksiz o'sadi, `/orders` sahifasi esa buyurtma
+   * holati o'zgarganda uni qayta yuklaydi — ya'ni eng sodiq mijozning
+   * so'rovi eng og'iri bo'lardi.
+   *
+   * Javob shakli ATAYLAB o'zgarmadi (hamon massiv): `customer-web`
+   * `CustomerOrder[]` kutadi va bu tuzatish uni buzmasligi kerak. To'liq
+   * sahifalash konverti keyingi ish.
+   */
+  async listCustomerOrders(customerId: string, query: ListCustomerOrdersDto) {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: { customerId },
       orderBy: { createdAt: "desc" },
+      skip: query.offset,
+      take: query.limit,
       include: this.customerOrderInclude({ includePayments: true }),
     });
 

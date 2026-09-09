@@ -31,3 +31,13 @@ export class ListOnlineOrdersDto extends ListCustomersDto {
   @IsString()
   branchId?: string;
 }
+
+/*
+ * `GET /customer/me/orders` uchun sahifalash (PHASE 6 H10).
+ *
+ * Bu endpoint mijozning O'Z tarixini qaytaradi, ya'ni filial yoki qidiruv
+ * filtri kerak emas — faqat chegara. Standart va maksimum yuqoridagi bilan
+ * bir xil, chunki bir xil muammoni yechadi: chegarasiz `findMany` biznes
+ * hajmi bilan birga o'sadi.
+ */
+export class ListCustomerOrdersDto extends ListCustomersDto {}

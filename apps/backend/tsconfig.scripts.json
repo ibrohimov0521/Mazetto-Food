@@ -1,0 +1,23 @@
+{
+  // `scripts/` va `prisma/` uchun TIP TEKSHIRUVI (PHASE 6 H12).
+  //
+  // Nima uchun `src` dan alohida: bu fayllar `tsx` bilan ESM sifatida ishga
+  // tushiriladi va `import.meta` ishlatadi, `src` esa NestJS uchun CommonJS'ga
+  // kompilyatsiya bo'ladi. Bitta `tsconfig` ikkala modul rejimini bera olmaydi,
+  // shuning uchun ikkinchi `tsc` chaqiruvi kerak.
+  //
+  // Ilgari bu fayllar tip tekshiruvidan BUTUNLAY tashqarida edi. Ular servis
+  // kodini import qiladi, ya'ni imzo o'zgarganda jimgina buziladi; ESLint esa
+  // tipga qaramaydi (`projectService` yoqilmagan).
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "noEmit": true
+  },
+  "include": ["scripts/**/*.ts", "prisma/**/*.ts"]
+}

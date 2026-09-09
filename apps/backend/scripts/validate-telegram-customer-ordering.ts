@@ -1140,7 +1140,11 @@ function createService(prisma: InMemoryPrisma) {
       dto: EngineCall["dto"],
       options?: { source?: OrderSource },
     ) => {
-      engineCalls.push({ customerId, dto, source: options?.source });
+      engineCalls.push({
+        customerId,
+        dto,
+        ...(options?.source ? { source: options.source } : {}),
+      });
       return {
         order: { id: "order_telegram_1", orderNumber: "TG-20260828-0001", status: OrderStatus.CONFIRMED },
         customerOrder: { id: "customer_order_1" },

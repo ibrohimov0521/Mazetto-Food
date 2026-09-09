@@ -24,11 +24,11 @@ async function main(): Promise<void> {
     const staffService = new StaffService(prisma);
     const account = await staffService.bootstrapSuperAdmin({
       name,
-      email,
-      phone,
+      ...(email ? { email } : {}),
+      ...(phone ? { phone } : {}),
       password,
       activate,
-      branchCodeOrId,
+      ...(branchCodeOrId ? { branchCodeOrId } : {}),
     });
 
     console.info(

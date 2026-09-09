@@ -15,11 +15,24 @@ const realtimePayloadBlock = sourceBetween(
   "  private readString(value: unknown, path: string): string | undefined {",
 );
 
-assert.match(gateway, /@WebSocketGateway\(\{\s*cors:\s*\{\s*credentials:\s*true,\s*origin:\s*allowedOrigins,/s);
+// WebSocket CORS va HTTP CORS bitta manbadan oziqlanadi (PHASE 6 H12).
+// Ilgari ro'yxat ikki faylda bayt-baytiga takrorlangan edi va biri ortda
+// qolishi hech narsa bilan ushlanmasdi.
+const corsConfig = readSource("apps/backend/src/config/cors.config.ts");
+const mainBootstrap = readSource("apps/backend/src/main.ts");
+
+assert.match(gateway, /@WebSocketGateway\(\{\s*cors:\s*\{\s*credentials:\s*true,\s*origin:\s*getAllowedOrigins\(\),/s);
 assert.doesNotMatch(gateway, /origin:\s*"\*"/);
-assert.match(gateway, /const allowedOrigins = \[/);
-assert.match(gateway, /https:\/\/mazettofood\.uz/);
-assert.match(gateway, /https:\/\/pos\.mazettofood\.uz/);
+assert.doesNotMatch(gateway, /const allowedOrigins = \[/);
+assert.match(mainBootstrap, /origin:\s*getAllowedOrigins\(\)/);
+assert.doesNotMatch(mainBootstrap, /const allowedOrigins = \[/);
+
+assert.match(corsConfig, /CORS_ORIGIN/);
+assert.match(corsConfig, /https:\/\/mazettofood\.uz/);
+assert.match(corsConfig, /https:\/\/pos\.mazettofood\.uz/);
+// `credentials: true` bilan wildcard brauzerda ishlamaydi — u ishlayotgandek
+// ko'rinib, aslida hamma so'rovni buzardi.
+assert.match(corsConfig, /cannot be '\*' while credentials are enabled/);
 
 assert.match(gateway, /private async authenticateSocket\(client: Socket\): Promise<RealtimeAuth \| null>/);
 assert.match(gateway, /client\.disconnect\(true\)/);
