@@ -11,8 +11,8 @@ function read(path: string): string {
 function main(): void {
   const schema = read("prisma/schema.prisma");
   const ordersService = read("src/modules/orders/orders.service.ts");
-  const shiftPage = read("../pos-web/app/shift/page.tsx");
-  const posPage = read("../pos-web/app/pos/page.tsx");
+  const shiftPage = read("../pos-web/app/(fullscreen)/shift/page.tsx");
+  const posPage = read("../pos-web/app/(fullscreen)/pos/page.tsx");
   const auth = read("../pos-web/lib/auth.ts");
 
   assert.match(schema, /expectedCash\s+Decimal\?/);

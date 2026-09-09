@@ -17,15 +17,12 @@ const cashRegisterController = readSource("apps/backend/src/modules/cash-registe
 const posAuth = readSource("apps/pos-web/lib/auth.ts");
 const loginPage = readSource("apps/pos-web/app/login/page.tsx");
 const accessDeniedPage = readSource("apps/pos-web/app/access-denied/page.tsx");
-const staffListPage = readSource("apps/pos-web/app/admin/staff/page.tsx");
-const staffNewPage = readSource("apps/pos-web/app/admin/staff/new/page.tsx");
-const staffDetailPage = readSource("apps/pos-web/app/admin/staff/[id]/page.tsx");
-const reportsPage = readSource("apps/pos-web/app/admin/reports/page.tsx");
 const adminStaff = readSource("apps/pos-web/components/admin/admin-staff.tsx");
 const adminReports = readSource("apps/pos-web/components/admin/admin-reports.tsx");
-const posPage = readSource("apps/pos-web/app/pos/page.tsx");
-const kitchenPage = readSource("apps/pos-web/app/kitchen/page.tsx");
-const printersPage = readSource("apps/pos-web/app/admin/printers/page.tsx");
+const posPage = readSource("apps/pos-web/app/(fullscreen)/pos/page.tsx");
+const kitchenPage = readSource("apps/pos-web/app/(fullscreen)/kitchen/page.tsx");
+const printersPage = readSource("apps/pos-web/app/(shell)/admin/printers/page.tsx");
+const routeAccess = readSource("apps/pos-web/lib/route-access.ts");
 
 for (const permission of [
   "ADMIN_ACCESS",
@@ -77,10 +74,12 @@ assert.match(posAuth, /\| "ADMIN"/);
 assert.match(posAuth, /ADMIN: "\/admin\/dashboard"/);
 assert.match(loginPage, /Xavfsiz kirish/);
 assert.match(accessDeniedPage, /Kirish cheklangan/);
-assert.match(staffListPage, /PermissionGuard permission="STAFF_VIEW"/);
-assert.match(staffNewPage, /PermissionGuard permission="STAFF_CREATE"/);
-assert.match(staffDetailPage, /PermissionGuard permission="STAFF_UPDATE"/);
-assert.match(reportsPage, /PermissionGuard permission="REPORT_SALES_VIEW"/);
+// Guardlar 6-bosqich A2 da sahifalardan `app/(shell)/layout.tsx` ga
+// ko'chdi; qoidalar endi ruxsat matritsasida e'lon qilinadi.
+assert.match(routeAccess, /pattern: "\/admin\/staff", roles: \[[^\]]*\], permission: "STAFF_VIEW"/);
+assert.match(routeAccess, /pattern: "\/admin\/staff\/new", roles: \[[^\]]*\], permission: "STAFF_CREATE"/);
+assert.match(routeAccess, /pattern: "\/admin\/staff\/:id", roles: \[[^\]]*\], permission: "STAFF_UPDATE"/);
+assert.match(routeAccess, /pattern: "\/admin\/reports", roles: \[[^\]]*\], permission: "REPORT_SALES_VIEW"/);
 assert.match(adminStaff, /apiFetch<Staff\[]>\("\/staff"\)/);
 assert.match(adminStaff, /password-reset/);
 assert.match(adminStaff, /\/staff\/me\/password/);

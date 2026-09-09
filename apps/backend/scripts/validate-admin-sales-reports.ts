@@ -9,13 +9,15 @@ const controller = readSource("apps/backend/src/modules/reports/reports.controll
 const service = readSource("apps/backend/src/modules/reports/reports.service.ts");
 const dto = readSource("apps/backend/src/modules/reports/dto/report-query.dto.ts");
 const range = readSource("apps/backend/src/modules/reports/report-range.ts");
-const reportsPage = readSource("apps/pos-web/app/admin/reports/page.tsx");
+const routeAccess = readSource("apps/pos-web/lib/route-access.ts");
 const reportsUi = readSource("apps/pos-web/components/admin/admin-reports.tsx");
 
 assert.match(controller, /@Controller\("reports"\)/);
 assert.match(controller, /@Get\("sales"\)/);
 assert.match(controller, /PERMISSIONS\.REPORT_SALES_VIEW/);
-assert.match(reportsPage, /PermissionGuard permission="REPORT_SALES_VIEW"/);
+// Guardlar 6-bosqich A2 da sahifalardan `app/(shell)/layout.tsx` ga
+// ko'chdi; qoidalar endi ruxsat matritsasida e'lon qilinadi.
+assert.match(routeAccess, /pattern: "\/admin\/reports", roles: \[[^\]]*\], permission: "REPORT_SALES_VIEW"/);
 
 for (const preset of ["TODAY", "YESTERDAY", "LAST_7_DAYS", "THIS_MONTH", "YEAR", "CUSTOM"]) {
   assert.match(dto, new RegExp(`${preset}\\s*=`));

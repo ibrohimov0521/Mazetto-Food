@@ -57,6 +57,32 @@ export const adminNavGroups: AdminNavGroup[] = [
         permission: "DASHBOARD_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
       },
+      /*
+       * Rolga xos landing sahifalari (PHASE 6 A6).
+       *
+       * BRANCH_MANAGER login'dan keyin `/manager/dashboard` ga, ACCOUNTANT esa
+       * `/accounting` ga tushadi (`lib/auth.ts` dagi `roleRedirects`), lekin bu
+       * ikkala yo'l menyuda YO'Q edi — foydalanuvchi boshqa bo'limga o'tsa o'z
+       * bosh sahifasiga qaytolmasdi.
+       *
+       * `roles` ataylab tor: SUPER_ADMIN uchastkasi `lib/route-access.ts` da
+       * ochiq qoladi (u URL orqali kira oladi), lekin menyuda uchta dashboard
+       * ko'rsatilmaydi.
+       */
+      {
+        label: "Filial boshqaruvi",
+        icon: "building",
+        href: "/manager/dashboard",
+        permission: "DASHBOARD_VIEW",
+        roles: ["BRANCH_MANAGER"],
+      },
+      {
+        label: "Buxgalteriya",
+        icon: "banknote",
+        href: "/accounting",
+        permission: "DASHBOARD_VIEW",
+        roles: ["ACCOUNTANT"],
+      },
     ],
   },
   {

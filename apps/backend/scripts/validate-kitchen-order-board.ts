@@ -8,7 +8,7 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 const kitchenService = readSource("apps/backend/src/modules/kitchen/kitchen.service.ts");
 const kitchenController = readSource("apps/backend/src/modules/kitchen/kitchen.controller.ts");
 const telegramStaff = readSource("apps/backend/src/modules/telegram/telegram-order-notification.service.ts");
-const kitchenPage = readSource("apps/pos-web/app/kitchen/page.tsx");
+const kitchenPage = readSource("apps/pos-web/app/(fullscreen)/kitchen/page.tsx");
 
 assert.match(kitchenService, /export type KitchenStaffAction = "accept" \| "start_preparing" \| "mark_ready" \| "complete" \| "cancel"/);
 assert.match(kitchenService, /async applyOrderAction\(/);

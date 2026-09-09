@@ -7,7 +7,7 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 
 const gateway = readSource("apps/backend/src/modules/kitchen/kitchen.gateway.ts");
 const customerOrdersPage = readSource("apps/customer-web/app/orders/page.tsx");
-const waiterPage = readSource("apps/pos-web/app/waiter/page.tsx");
+const waiterPage = readSource("apps/pos-web/app/(fullscreen)/waiter/page.tsx");
 const adminKitchenMonitor = readSource("apps/pos-web/components/admin/admin-kitchen-monitor.tsx");
 const realtimePayloadBlock = sourceBetween(
   gateway,

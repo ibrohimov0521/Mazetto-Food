@@ -18,18 +18,19 @@ const managementDto = readSource(
 const adminCatalog = readSource(
   "apps/pos-web/components/admin/admin-catalog.tsx",
 );
-const adminDashboard = readSource("apps/pos-web/app/admin/dashboard/page.tsx");
-const adminProducts = readSource("apps/pos-web/app/admin/products/page.tsx");
+const adminDashboard = readSource("apps/pos-web/app/(shell)/admin/dashboard/page.tsx");
+const adminProducts = readSource("apps/pos-web/app/(shell)/admin/products/page.tsx");
 const adminProductNew = readSource(
-  "apps/pos-web/app/admin/products/new/page.tsx",
+  "apps/pos-web/app/(shell)/admin/products/new/page.tsx",
 );
 const adminProductEdit = readSource(
-  "apps/pos-web/app/admin/products/[id]/page.tsx",
+  "apps/pos-web/app/(shell)/admin/products/[id]/page.tsx",
 );
 const adminCategories = readSource(
-  "apps/pos-web/app/admin/categories/page.tsx",
+  "apps/pos-web/app/(shell)/admin/categories/page.tsx",
 );
-const adminBranches = readSource("apps/pos-web/app/admin/branches/page.tsx");
+const adminBranches = readSource("apps/pos-web/app/(shell)/admin/branches/page.tsx");
+const routeAccess = readSource("apps/pos-web/lib/route-access.ts");
 const adminProductEditor = readSource(
   "apps/pos-web/components/admin/admin-product-editor.tsx",
 );
@@ -68,9 +69,29 @@ for (const source of [
   adminCategories,
   adminBranches,
 ]) {
-  assert.match(
-    source,
-    /RoleGuard roles=\{\["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"\]\}/,
+  // Sahifada guard qolmagani ham talab: qobiq allaqachon uni qo'llaydi va
+  // takror o'ram qobiqni kontent ICHIGA qaytarib qo'yardi.
+  assert.doesNotMatch(source, /<(RoleGuard|PermissionGuard|AdminLayout)\b/);
+}
+
+/*
+ * Katalog ekranlarining rol ro'yxati — endi ruxsat matritsasida.
+ *
+ * `SUPER`/`ADMIN`/`MANAGER` — `route-access.ts` dagi qisqartmalar.
+ */
+for (const pattern of [
+  "/admin/dashboard",
+  "/admin/products",
+  "/admin/products/new",
+  "/admin/products/:id",
+  "/admin/categories",
+  "/admin/branches",
+]) {
+  assert.ok(
+    routeAccess.includes(
+      `pattern: "${pattern}", roles: [SUPER, ADMIN, MANAGER]`,
+    ),
+    `${pattern}: matritsada SUPER/ADMIN/MANAGER rollari kutilgan edi`,
   );
 }
 
@@ -88,12 +109,14 @@ for (const source of [
  * to'g'rilandi. `validate-admin-nav-rbac.ts` menyu va route mosligini
  * majburlaydi.
  */
-assert.match(adminDashboard, /PermissionGuard permission="DASHBOARD_VIEW"/);
-assert.match(adminProducts, /PermissionGuard permission="MENU_VIEW"/);
-assert.match(adminProductNew, /PermissionGuard permission="MENU_CREATE"/);
-assert.match(adminProductEdit, /PermissionGuard permission="MENU_EDIT"/);
-assert.match(adminCategories, /PermissionGuard permission="MENU_VIEW"/);
-assert.match(adminBranches, /PermissionGuard permission="BRANCH_VIEW"/);
+// Guardlar 6-bosqich A2 da sahifalardan `app/(shell)/layout.tsx` ga
+// ko'chdi; qoidalar endi ruxsat matritsasida e'lon qilinadi.
+assert.match(routeAccess, /pattern: "\/admin\/dashboard", roles: \[[^\]]*\], permission: "DASHBOARD_VIEW"/);
+assert.match(routeAccess, /pattern: "\/admin\/products", roles: \[[^\]]*\], permission: "MENU_VIEW"/);
+assert.match(routeAccess, /pattern: "\/admin\/products\/new", roles: \[[^\]]*\], permission: "MENU_CREATE"/);
+assert.match(routeAccess, /pattern: "\/admin\/products\/:id", roles: \[[^\]]*\], permission: "MENU_EDIT"/);
+assert.match(routeAccess, /pattern: "\/admin\/categories", roles: \[[^\]]*\], permission: "MENU_VIEW"/);
+assert.match(routeAccess, /pattern: "\/admin\/branches", roles: \[[^\]]*\], permission: "BRANCH_VIEW"/);
 
 assert.match(
   adminCatalog,
