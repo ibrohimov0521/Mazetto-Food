@@ -7,6 +7,9 @@ import { CustomerAuthPanel } from "../../../components/customer-auth-panel";
 import { MotionDiv, pageMotion, sectionMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
+import { OrderProgress } from "../../../components/order-progress";
+import { trackingLabel, trackingStatus } from "../../../lib/order-tracking";
+import { useOrderUpdates } from "../../../lib/use-order-updates";
 import { localizeMenuName } from "../../../lib/customer-display";
 import { formatMoney, useCart } from "../../../lib/cart";
 
@@ -50,15 +53,6 @@ type CustomerOrderDetail = {
   };
 };
 
-const statusLabels: Record<string, string> = {
-  NEW: "Yangi",
-  CONFIRMED: "Tasdiqlandi",
-  PREPARING: "Tayyorlanmoqda",
-  COOKING: "Tayyorlanmoqda",
-  READY: "Tayyor",
-  COMPLETED: "Yakunlandi",
-  CANCELLED: "Bekor qilindi",
-};
 const typeLabels: Record<string, string> = {
   DELIVERY: "Yetkazib berish",
   PICKUP: "Olib ketish",
@@ -85,31 +79,31 @@ function OrderDetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!customer?.accessToken) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     setNotFound(false);
     try {
       setOrder(await apiFetch<CustomerOrderDetail>(`/customer/me/orders/${params.id}`, { accessToken: customer.accessToken }));
     } catch (error) {
       if (!(error instanceof Error && error.message.includes("Sessiya muddati tugagan"))) {
-        setNotFound(true);
+        if (!silent) setNotFound(true);
         return;
       }
       const refreshed = await refreshCustomer();
       if (!refreshed) {
-        setNotFound(true);
+        if (!silent) setNotFound(true);
         return;
       }
 
       try {
         setOrder(await apiFetch<CustomerOrderDetail>(`/customer/me/orders/${params.id}`, { accessToken: refreshed.accessToken }));
       } catch {
-        setNotFound(true);
+        if (!silent) setNotFound(true);
       }
     } finally {
       setLoading(false);
@@ -119,6 +113,8 @@ function OrderDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useOrderUpdates(customer?.accessToken, load);
 
   const itemCount = useMemo(
     () => order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 0,
@@ -178,10 +174,11 @@ function OrderDetail() {
             {new Date(order.createdAt).toLocaleString("uz-UZ")} · {typeLabels[order.type] ?? order.type}
           </p>
           <div className="mf-order-metrics mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Metric label="Holat" value={statusLabel(order.status)} />
+            <Metric label="Holat" value={trackingLabel(trackingStatus(order), order.type)} />
             <Metric label="Mahsulot" value={`${itemCount} dona`} />
             <Metric label="Jami" value={formatMoney(order.order.total)} />
           </div>
+          <OrderProgress value={order} />
         </section>
 
         <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
@@ -259,10 +256,6 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <span className="min-w-0 break-words text-right text-[#17314A]">{value}</span>
     </div>
   );
-}
-
-function statusLabel(status: string): string {
-  return statusLabels[status] ?? status;
 }
 
 function customerOrderNumber(order: { displayOrderNumber?: string | null; orderNumber: string }): string {

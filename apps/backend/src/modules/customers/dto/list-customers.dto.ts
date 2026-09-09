@@ -34,6 +34,7 @@ export class ListOnlineOrdersDto extends ListCustomersDto {
 
 export enum CourierOrderStatus {
   READY = "READY",
+  SERVED = "SERVED",
   COMPLETED = "COMPLETED",
   CANCELLED = "CANCELLED",
 }

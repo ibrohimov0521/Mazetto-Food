@@ -290,7 +290,11 @@ async function setup(width = 1440, height = 900, roles = session) {
       return state.failCourier ? fail() : ok(state.orders);
     if (path.startsWith("/courier/orders/")) {
       const id = path.split("/")[3];
-      state.orders = state.orders.filter((item) => item.id !== id);
+      if (req.postDataJSON().status === "SERVED") {
+        state.orders.find((item) => item.id === id).order.status = "SERVED";
+      } else {
+        state.orders = state.orders.filter((item) => item.id !== id);
+      }
       return ok({ id, status: req.postDataJSON().status });
     }
     throw new Error(`Unexpected intercepted API: ${req.method()} ${path}`);
@@ -336,6 +340,35 @@ async function checkLayout(page, label) {
   assert.deepEqual(bad, [], `${label}: offscreen controls`);
 }
 try {
+  for (const [width, height] of [[320, 780], [1024, 680], [1530, 939]]) {
+    const { context, page, state, errors } = await setup(width, height);
+    state.catalog = {
+      ...catalog,
+      products: Array.from({ length: 73 }, (_, index) => ({
+        ...catalog.products[index % catalog.products.length],
+        id: "many-" + index,
+        name: "Mahsulot " + index + " - " + catalog.products[index % catalog.products.length].name,
+      })),
+    };
+    await visit(page, "/pos");
+    const cards = page.locator("button[aria-label$=\"qo'shish\"]");
+    assert.equal(await cards.count(), 73);
+    const clipped = await cards.evaluateAll(nodes => nodes.flatMap(card => {
+      const box = card.getBoundingClientRect();
+      const title = card.querySelector("h2").getBoundingClientRect();
+      const price = card.querySelector("p").getBoundingClientRect();
+      const plus = card.querySelector("svg").getBoundingClientRect();
+      return [title, price, plus].some(rect => rect.top < box.top || rect.bottom > box.bottom + 1)
+        ? [{ name: card.getAttribute("aria-label"), height: box.height }] : [];
+    }));
+    assert.deepEqual(clipped, [], "73-product catalog must not clip names, prices or plus icons");
+    await cards.last().scrollIntoViewIfNeeded();
+    await screenshot(page, "pos-73-products-" + width);
+    await cards.last().click();
+    assert.deepEqual(errors, []);
+    results.push({ width, checked: "73 complete product cards, final card scrolls into view and adds" });
+    await context.close();
+  }
   for (const [width, height] of [
     [320, 780],
     [390, 844],
@@ -517,11 +550,18 @@ try {
     await page
       .getByRole("textbox", { name: "Buyurtma, mijoz yoki manzil qidirish" })
       .fill("");
-    await card.getByRole("button", { name: "Yetkazildi", exact: true }).click();
+    await card.getByRole("button", { name: "Yo'lga chiqdim", exact: true }).click();
     await page.getByRole("dialog").waitFor();
     await screenshot(page, "courier-confirmation-mobile");
     await page.keyboard.press("Escape");
     assert.equal(state.posts.length, 0);
+    await card.getByRole("button", { name: "Yo'lga chiqdim", exact: true }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Tasdiqlash", exact: true })
+      .click();
+    await card.getByText("Kuryer yo'lda", { exact: true }).waitFor();
+    assert.equal(state.posts[0].body.status, "SERVED");
     await card.getByRole("button", { name: "Yetkazildi", exact: true }).click();
     await page
       .getByRole("dialog")
@@ -530,8 +570,8 @@ try {
     await page
       .getByRole("heading", { name: "#WEB201", exact: true })
       .waitFor({ state: "detached" });
-    assert.equal(state.posts.length, 1);
-    assert.equal(state.posts[0].body.status, "COMPLETED");
+    assert.equal(state.posts.length, 2);
+    assert.equal(state.posts[1].body.status, "COMPLETED");
     results.push({
       flow: "Courier search, correct navigation, null coordinates, preparation guard, confirmation, completion",
       passed: true,

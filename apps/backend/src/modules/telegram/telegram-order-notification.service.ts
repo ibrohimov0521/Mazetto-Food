@@ -1,3 +1,4 @@
+import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
 import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, UnauthorizedException } from "@nestjs/common";
 import { CustomerOrderType, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
 import type { KitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
@@ -291,10 +292,10 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     const ticket = order.kitchenTickets[0] ?? null;
     const lines = [
       ticket?.status === KitchenTicketStatus.COMPLETED && order.status === OrderStatus.READY
-        ? "<b>Oshxonadan topshirildi</b>" : this.staffOrderTitle(order.status === OrderStatus.CONFIRMED && ticket?.status === KitchenTicketStatus.NEW ? OrderStatus.NEW : order.status),
+        ? "<b>Oshxonadan topshirildi</b>" : this.staffOrderTitle(order.status === OrderStatus.CONFIRMED && ticket?.status === KitchenTicketStatus.NEW ? OrderStatus.NEW : order.status, order.customerOrder?.type ?? order.type),
       "",
       `<b>Raqam:</b> ${this.escapeHtml(this.publicOrderNumber(order))}`,
-      `<b>Holat:</b> ${ticket?.status === KitchenTicketStatus.COMPLETED && order.status === OrderStatus.READY ? "Oshxonadan topshirildi" : order.status === OrderStatus.CONFIRMED && ticket?.status === KitchenTicketStatus.NEW ? "Yangi" : this.orderStatusLabel(order.status)}`,
+      `<b>Holat:</b> ${ticket?.status === KitchenTicketStatus.COMPLETED && order.status === OrderStatus.READY ? "Oshxonadan topshirildi" : order.status === OrderStatus.CONFIRMED && ticket?.status === KitchenTicketStatus.NEW ? "Yangi" : this.orderStatusLabel(order.status, order.customerOrder?.type ?? order.type)}`,
       `<b>Mijoz:</b> ${this.escapeHtml(order.customerName ?? "Noma'lum")}`,
       `<b>Telefon:</b> ${this.escapeHtml(order.customerPhone ?? "Kiritilmagan")}`,
       `<b>Manzil:</b> ${this.escapeHtml(order.deliveryAddress ?? "Olib ketish")}`,
@@ -375,18 +376,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     return { inline_keyboard: buttons };
   }
 
-  private staffOrderTitle(status: OrderStatus): string {
-    const titles: Record<OrderStatus, string> = {
-      NEW: "🔥 <b>Yangi buyurtma</b>",
-      CONFIRMED: "✅ <b>Buyurtma qabul qilindi</b>",
-      PREPARING: "👨‍🍳 <b>Buyurtma tayyorlanmoqda</b>",
-      READY: "✨ <b>Buyurtma tayyor</b>",
-      SERVED: "🤝 <b>Buyurtma topshirildi</b>",
-      COMPLETED: "✅ <b>Buyurtma yakunlandi</b>",
-      CANCELLED: "⚠️ <b>Buyurtma bekor qilindi</b>",
-    };
-
-    return titles[status];
+  private staffOrderTitle(status: OrderStatus, type?: string): string {
+    return `<b>${sharedOrderStatusLabel(status, type)}</b>`;
   }
 
   private callbackData(orderId: string, action: StaffOrderAction): string {
@@ -740,18 +731,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     );
   }
 
-  private orderStatusLabel(status: OrderStatus): string {
-    const labels: Record<OrderStatus, string> = {
-      NEW: "Yangi",
-      CONFIRMED: "Qabul qilindi",
-      PREPARING: "Tayyorlanmoqda",
-      READY: "Tayyor",
-      SERVED: "Yetkazildi",
-      COMPLETED: "Yakunlangan",
-      CANCELLED: "Bekor qilindi",
-    };
-
-    return labels[status];
+  private orderStatusLabel(status: OrderStatus, type?: string): string {
+    return sharedOrderStatusLabel(status, type);
   }
 
   private kitchenStatusLabel(status: KitchenTicketStatus): string {

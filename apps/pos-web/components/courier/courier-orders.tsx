@@ -55,7 +55,7 @@ type CourierOrder = {
     }[];
   } | null;
 };
-type DeliveryAction = "COMPLETED" | "CANCELLED";
+type DeliveryAction = "SERVED" | "COMPLETED" | "CANCELLED";
 const readyForDelivery = (order: CourierOrder) =>
   ["READY", "SERVED"].includes(order.order?.status ?? order.status);
 
@@ -164,7 +164,9 @@ export function CourierOrdersPage() {
         body: JSON.stringify({ status }),
         signal: AbortSignal.timeout(12000),
       });
-      setOrders((current) => current.filter((item) => item.id !== order.id));
+      if (status !== "SERVED") {
+        setOrders((current) => current.filter((item) => item.id !== order.id));
+      }
       setConfirmation(null);
       await load(true);
     } catch (caught) {
@@ -290,6 +292,8 @@ export function CourierOrdersPage() {
           title={
             confirmation.status === "COMPLETED"
               ? "Buyurtma yetkazildimi?"
+              : confirmation.status === "SERVED"
+                ? "Buyurtmani olib yo'lga chiqdingizmi?"
               : "Buyurtmani bekor qilasizmi?"
           }
           busy={!!busyOrderId}
@@ -309,6 +313,8 @@ export function CourierOrdersPage() {
           <p className={styles.muted}>
             {confirmation.status === "COMPLETED"
               ? "Buyurtma mijozga topshirilganini tasdiqlang."
+              : confirmation.status === "SERVED"
+                ? "Buyurtmani olganingizni tasdiqlang. Mijozga kuryer yo'lda ekanligi ko'rinadi."
               : "Buyurtma bekor qilinadi va faol ro'yxatdan olinadi."}
           </p>
           {error && (
@@ -384,8 +390,8 @@ function CourierOrderCard({
           className={styles.badge}
           data-tone={isReady ? "ready" : "waiting"}
         >
-          {isReady ? <PackageCheck size={14} /> : <Clock3 size={14} />}
-          {orderStatusLabels[status]}
+          {status === "SERVED" ? <Truck size={14} /> : isReady ? <PackageCheck size={14} /> : <Clock3 size={14} />}
+          {status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}
         </span>
       </div>
       <div className={styles.deliveryBody}>
@@ -471,11 +477,11 @@ function CourierOrderCard({
             <button
               className={styles.primary}
               disabled={busy || !isReady}
-              onClick={() => onStatus("COMPLETED")}
+              onClick={() => onStatus(status === "SERVED" ? "COMPLETED" : "SERVED")}
               type="button"
             >
-              {isReady ? <Check size={18} /> : <Truck size={18} />}
-              {isReady ? "Yetkazildi" : "Oshxonada tayyorlanmoqda"}
+              {status === "SERVED" ? <Check size={18} /> : <Truck size={18} />}
+              {status === "SERVED" ? "Yetkazildi" : isReady ? "Yo'lga chiqdim" : "Oshxonada tayyorlanmoqda"}
             </button>
             <button
               className={styles.iconButton}

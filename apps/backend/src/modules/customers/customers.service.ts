@@ -1,4 +1,5 @@
 import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
+import { KitchenService } from "../kitchen/kitchen.service";
 import {
   kitchenEvents,
   kitchenOrderStatusChangedEvent,
@@ -68,6 +69,7 @@ export class CustomersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly branchesService: BranchesService,
+    private readonly kitchenService: KitchenService,
     private readonly jwtService: JwtService,
     private readonly customerOrderEngine: CustomerOrderEngineService,
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
@@ -611,6 +613,9 @@ export class CustomersService {
       }
 
       if (existing.order.status !== nextStatus) {
+        if (existing.order.status === OrderStatus.SERVED && nextStatus === OrderStatus.READY) {
+          throw new BadRequestException("Yo'ldagi buyurtmani tayyor holatiga qaytarib bo'lmaydi.");
+        }
         if (
           nextStatus !== OrderStatus.CANCELLED &&
           existing.order.status !== OrderStatus.READY &&
@@ -687,6 +692,7 @@ export class CustomersService {
       });
     });
 
+    this.kitchenService.emitOrderStatusChanged({ orderId: customerOrder.orderId });
     kitchenEvents.emit(kitchenOrderStatusChangedEvent, {
       orderId: customerOrder.orderId,
       action: "refresh",
