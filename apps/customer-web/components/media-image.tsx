@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { forwardRef, useMemo, useState } from "react";
-import { motion, type HTMLMotionProps } from "framer-motion";
 import { productImage, sourceMenuImage } from "../lib/cart";
 
 type MediaImageProps = {
@@ -13,9 +12,9 @@ type MediaImageProps = {
   imageClassName?: string;
   sizes: string;
   priority?: boolean;
+  eager?: boolean;
   fit?: "cover" | "contain";
   fallbackLabel?: string;
-  motionProps?: HTMLMotionProps<"div">;
 };
 
 const mediaOrigin = process.env.NEXT_PUBLIC_MEDIA_URL?.replace(/\/$/, "");
@@ -33,11 +32,11 @@ const MediaImageContent = forwardRef<HTMLDivElement, MediaImageProps>(function M
   imageClassName = "",
   sizes,
   priority = false,
+  eager = false,
   fit = "cover",
   fallbackLabel = "Rasm tayyorlanmoqda",
-  motionProps,
 }: MediaImageProps, ref) {
-  const [loaded, setLoaded] = useState(priority);
+  const [loaded, setLoaded] = useState(priority || eager);
   const [failed, setFailed] = useState(false);
   const [useSourceFallback, setUseSourceFallback] = useState(false);
   const resolvedSrc = useMemo(() => productImage(src), [src]);
@@ -56,8 +55,7 @@ const MediaImageContent = forwardRef<HTMLDivElement, MediaImageProps>(function M
   }
 
   return (
-    <motion.div
-      {...motionProps}
+    <div
       className={`relative overflow-hidden ${aspectClassName} ${className}`}
       ref={ref}
     >
@@ -70,6 +68,7 @@ const MediaImageContent = forwardRef<HTMLDivElement, MediaImageProps>(function M
           className={`transition-opacity duration-300 ease-out ${fit === "cover" ? "object-cover" : "object-contain"} ${loaded ? "opacity-100" : "opacity-0"} ${imageClassName}`}
           fetchPriority={priority ? "high" : "auto"}
           fill
+          loading={priority || eager ? "eager" : "lazy"}
           onError={handleImageError}
           onLoad={() => setLoaded(true)}
           priority={priority}
@@ -82,13 +81,13 @@ const MediaImageContent = forwardRef<HTMLDivElement, MediaImageProps>(function M
           decoding="async"
           fetchPriority={priority ? "high" : "auto"}
           className={`h-full w-full transition-opacity duration-300 ease-out ${fit === "cover" ? "object-cover" : "object-contain"} ${loaded ? "opacity-100" : "opacity-0"} ${imageClassName}`}
-          loading={priority ? "eager" : "lazy"}
+          loading={priority || eager ? "eager" : "lazy"}
           onError={handleImageError}
           onLoad={() => setLoaded(true)}
           src={activeSrc}
         />
       )}
-    </motion.div>
+    </div>
   );
 });
 

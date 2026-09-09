@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "framer-motion";
 import { BrandLogo } from "./brand-logo";
 import { BrandBotanical } from "./brand-botanical";
 import { useCart, type CartFlight } from "../lib/cart";
@@ -24,7 +23,6 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <MotionConfig reducedMotion="user">
     <main className="mf-shell mf-app-shell min-h-screen" data-customer-surface={pathname === "/" ? "home" : pathname.startsWith("/menu") ? "menu" : "account"}>
         <BrandBotanical />
         <header className="mf-topbar inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)] md:fixed">
@@ -58,9 +56,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                         className="mazetto-liquid-active absolute inset-0 rounded-[1rem]"
                       />
                     ) : null}
-                    <motion.span animate={{ y: active ? -1 : 0, scale: item.href === "/cart" ? (active ? 1.12 : 1.04) : active ? 1.06 : 1 }} className={`relative ${item.href === "/cart" ? "grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-[#F5CF00] to-[#FFD83D] text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.28)]" : active ? "text-[#F5CF00]" : ""}`} transition={{ type: "spring", stiffness: 480, damping: 28 }}>
+                    <span className={`mf-nav-icon relative ${item.href === "/cart" ? "grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-[#F5CF00] to-[#FFD83D] text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.28)]" : active ? "text-[#F5CF00]" : ""}`} data-active={active ? "true" : "false"} data-cart={item.href === "/cart" ? "true" : "false"}>
                       <Icon />
-                    </motion.span>
+                    </span>
                     <span className={`relative max-w-full whitespace-nowrap ${active ? "text-[#F5CF00]" : ""}`}>{item.href === "/cart" && items.length ? subtotal.toLocaleString("uz-UZ") : mobileNavLabel(item.href)}</span>
                     {item.href === "/cart" && items.length ? (
                       <span className="absolute right-1 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#F5CF00] px-1 text-[9px] font-black leading-none text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.24)]">
@@ -73,22 +71,15 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
             </div>
           </nav>
         <CartFlightOverlay flight={cartFlight} onDone={finishCartFlight} />
-        <AnimatePresence>
-          {toastMessage ? (
-            <motion.div
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              role="status"
-              className="mf-toast fixed inset-x-4 bottom-[calc(var(--mf-bottom-nav-space)+env(safe-area-inset-bottom)+0.5rem)] z-50 mx-auto max-w-sm rounded-xl px-4 py-3 text-sm font-bold md:bottom-5"
-              exit={{ opacity: 0, y: 16, scale: 0.96 }}
-              initial={{ opacity: 0, y: 16, scale: 0.96 }}
-              transition={{ duration: 0.22 }}
-            >
-              {toastMessage}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+        {toastMessage ? (
+          <div
+            role="status"
+            className="mf-toast mf-toast-enter fixed inset-x-4 bottom-[calc(var(--mf-bottom-nav-space)+env(safe-area-inset-bottom)+0.5rem)] z-50 mx-auto max-w-sm rounded-xl px-4 py-3 text-sm font-bold md:bottom-5"
+          >
+            {toastMessage}
+          </div>
+        ) : null}
       </main>
-      </MotionConfig>
   );
 }
 
@@ -145,12 +136,21 @@ function topNavClass(active: boolean): string {
 }
 
 function CartFlightOverlay({ flight, onDone }: { flight: CartFlight | null; onDone: () => void }) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const [target, setTarget] = useState<DOMRect | null>(null);
-  const reducedMotion = useReducedMotion();
+  // The cart context hands back a fresh callback every render, so the flight
+  // effects read it through a ref instead of restarting on each one.
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
 
   useEffect(() => {
     if (!flight) {
       setTarget(null);
+      return;
+    }
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      doneRef.current();
       return;
     }
 
@@ -163,28 +163,36 @@ function CartFlightOverlay({ flight, onDone }: { flight: CartFlight | null; onDo
     setTarget(visibleTarget?.getBoundingClientRect() ?? null);
   }, [flight]);
 
-  if (!flight || !target || reducedMotion || !flight.imageUrl) {
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!flight || !target || !image) {
+      return;
+    }
+
+    const deltaX = target.left + target.width / 2 - (flight.source.left + flight.source.width / 2);
+    const deltaY = target.top + target.height / 2 - (flight.source.top + flight.source.height / 2);
+    const animation = image.animate(
+      [
+        { offset: 0, opacity: 0.92, transform: "translate3d(0, 0, 0) scale(1) rotate(0deg)" },
+        { offset: 0.5, opacity: 1, transform: `translate3d(${deltaX * 0.5}px, ${deltaY * 0.5}px, 0) scale(0.72) rotate(-8deg)` },
+        { offset: 1, opacity: 0, transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(0.18) rotate(10deg)` },
+      ],
+      { duration: 620, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" },
+    );
+
+    animation.onfinish = () => doneRef.current();
+    return () => animation.cancel();
+  }, [flight, target]);
+
+  if (!flight || !target || !flight.imageUrl) {
     return null;
   }
 
-  const targetCenterX = target.left + target.width / 2;
-  const targetCenterY = target.top + target.height / 2;
-  const sourceCenterX = flight.source.left + flight.source.width / 2;
-  const sourceCenterY = flight.source.top + flight.source.height / 2;
-
   return (
-    <motion.img
+    <img
       alt=""
-      animate={{
-        opacity: [1, 1, 0],
-        rotate: [0, -8, 10],
-        scale: [1, 0.72, 0.18],
-        x: targetCenterX - sourceCenterX,
-        y: targetCenterY - sourceCenterY,
-      }}
-      className="pointer-events-none fixed z-[60] rounded-2xl object-cover shadow-[0_18px_45px_rgba(245,207,0,0.28)] will-change-transform"
-      initial={{ opacity: 0.92, scale: 1, x: 0, y: 0 }}
-      onAnimationComplete={onDone}
+      className="pointer-events-none fixed z-[60] rounded-2xl object-cover opacity-0 shadow-[0_18px_45px_rgba(245,207,0,0.28)] will-change-transform"
+      ref={imageRef}
       src={flight.imageUrl}
       style={{
         height: flight.source.height,
@@ -192,7 +200,6 @@ function CartFlightOverlay({ flight, onDone }: { flight: CartFlight | null; onDo
         top: flight.source.top,
         width: flight.source.width,
       }}
-      transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
     />
   );
 }
