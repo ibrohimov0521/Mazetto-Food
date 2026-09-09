@@ -1,18 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  formatDateTime,
+  Check,
+  ChevronDown,
+  Clock3,
+  MapPin,
+  Navigation,
+  PackageCheck,
+  Phone,
+  Search,
+  Truck,
+  X,
+} from "lucide-react";
+import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { hasPermission } from "../../lib/auth";
+import {
   formatMoney,
   orderStatusLabels,
-  orderStatusTone,
   type OrderStatus,
 } from "../../lib/order-display";
-import { Badge } from "../admin-ui/badge";
-import { Button } from "../admin-ui/button";
-import { Card, CardBody, CardHeader } from "../admin-ui/card";
-import { ErrorState } from "../admin-ui/feedback";
+import { useAuth } from "../auth/auth-provider";
+import { StaffDialog, StaffEmpty, StaffSync } from "../staff/staff-shell";
+import styles from "../staff/staff.module.css";
 
 type DeliveryPoint = {
   lat?: number;
@@ -20,11 +30,9 @@ type DeliveryPoint = {
   latitude?: number;
   longitude?: number;
   lon?: number;
-  accuracy?: number;
   label?: string;
   address?: string;
 };
-
 type CourierOrder = {
   id: string;
   status: OrderStatus;
@@ -47,146 +55,291 @@ type CourierOrder = {
     }[];
   } | null;
 };
-
-const pageSize = 100;
-const refreshMs = 12000;
+type DeliveryAction = "COMPLETED" | "CANCELLED";
+const readyForDelivery = (order: CourierOrder) =>
+  ["READY", "SERVED"].includes(order.order?.status ?? order.status);
 
 export function CourierOrdersPage() {
+  const { user } = useAuth();
   const [orders, setOrders] = useState<CourierOrder[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [confirmation, setConfirmation] = useState<{
+    order: CourierOrder;
+    status: DeliveryAction;
+  } | null>(null);
+  const request = useRef<AbortController | null>(null);
+  const version = useRef(0);
+  const actionLock = useRef(false);
+  const canUpdate = hasPermission(user, "COURIER_DELIVERY_UPDATE");
 
-  const load = useCallback(async () => {
-    setError("");
-
+  const load = useCallback(async (force = false) => {
+    if (!force && (request.current || actionLock.current)) return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    const current = ++version.current;
+    setRefreshing(true);
     try {
-      const params = new URLSearchParams({
-        limit: String(pageSize),
-        offset: "0",
-      });
-      setOrders(
-        await apiFetch<CourierOrder[]>(`/courier/orders?${params.toString()}`),
+      const data = await apiFetch<CourierOrder[]>(
+        "/courier/orders?limit=100&offset=0",
+        {
+          cache: "no-store",
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(12000),
+          ]),
+        },
       );
+      if (current !== version.current) return;
+      setOrders(data);
       setUpdatedAt(new Date());
+      setError("");
     } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
+      if (current !== version.current || caught instanceof SessionExpiredError)
         return;
-      }
-
       setError(
-        caught instanceof Error
-          ? caught.message
-          : "Kuryer buyurtmalari yuklanmadi.",
+        caught instanceof Error ? caught.message : "Buyurtmalar yuklanmadi.",
       );
     } finally {
-      setIsLoading(false);
+      if (request.current === controller) request.current = null;
+      if (current === version.current) {
+        setIsLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void load();
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const timer = window.setInterval(refresh, 12000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      version.current++;
+      request.current?.abort();
+      request.current = null;
+    };
   }, [load]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => void load(), refreshMs);
-    return () => window.clearInterval(timer);
-  }, [load]);
+  const readyCount = orders.filter(readyForDelivery).length;
+  const visible = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase();
+    return orders.filter((order) => {
+      if (filter === "ready" && !readyForDelivery(order)) return false;
+      if (filter === "waiting" && readyForDelivery(order)) return false;
+      return (
+        !term ||
+        [
+          order.deliveryAddress,
+          order.customer?.name,
+          order.customer?.phone,
+          order.order?.displayOrderNumber,
+          order.order?.orderNumber,
+        ].some((value) => value?.toLocaleLowerCase().includes(term))
+      );
+    });
+  }, [orders, filter, query]);
 
-  const stats = useMemo(
-    () => ({
-      active: orders.length,
-      ready: orders.filter(
-        (order) => order.status === "READY" || order.order?.status === "READY",
-      ).length,
-      total: orders.reduce(
-        (sum, order) => sum + Number(order.order?.total ?? 0),
-        0,
-      ),
-    }),
-    [orders],
-  );
-
-  async function updateStatus(
-    order: CourierOrder,
-    status: "READY" | "COMPLETED" | "CANCELLED",
-  ) {
+  async function updateStatus() {
+    if (!confirmation || actionLock.current || !canUpdate) return;
+    actionLock.current = true;
+    version.current++;
+    request.current?.abort();
+    const { order, status } = confirmation;
     setBusyOrderId(order.id);
     setError("");
-
     try {
       await apiFetch(`/courier/orders/${order.id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
+        signal: AbortSignal.timeout(12000),
       });
-      await load();
+      setOrders((current) => current.filter((item) => item.id !== order.id));
+      setConfirmation(null);
+      await load(true);
     } catch (caught) {
+      await load(true);
       setError(
-        caught instanceof Error ? caught.message : "Status yangilanmadi.",
+        caught instanceof Error
+          ? caught.message
+          : "Holat o'zgarmadi. Qayta urinib ko'ring.",
       );
     } finally {
+      actionLock.current = false;
       setBusyOrderId(null);
     }
   }
 
   return (
-    <div className="grid gap-5">
-      {error ? (
-        <ErrorState message={error} onRetry={() => void load()} />
-      ) : null}
-
-      <section className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Faol yetkazishlar" value={`${stats.active} ta`} />
-        <Stat label="Tayyor" value={`${stats.ready} ta`} />
-        <Stat label="Jami summa" value={formatMoney(stats.total)} />
-      </section>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-mz-text-muted">
-          {updatedAt
-            ? `Yangilandi: ${formatDateTime(updatedAt.toISOString())}`
-            : "Yuklanmoqda..."}
-        </p>
-        <Button
-          disabled={isLoading}
-          onClick={() => void load()}
-          variant="ghost"
-        >
-          Yangilash
-        </Button>
+    <div className={`${styles.content} ${styles.narrowContent}`}>
+      <div className={styles.overview}>
+        <h2 className={styles.pageHeading}>Yetkazib berishlar</h2>
+        <StaffSync
+          updatedAt={updatedAt}
+          error={!!error}
+          refreshing={refreshing || !!busyOrderId}
+          onRefresh={() => void load()}
+        />
       </div>
-
+      <section className={styles.stats} aria-label="Yetkazishlar xulosasi">
+        <div className={styles.stat}>
+          <span>Faol buyurtmalar</span>
+          <strong>{isLoading ? "..." : orders.length}</strong>
+        </div>
+        <div className={styles.stat} data-tone="ready">
+          <span>Olib ketishga tayyor</span>
+          <strong>{isLoading ? "..." : readyCount}</strong>
+        </div>
+        <div className={styles.stat} data-tone="waiting">
+          <span>Buyurtmalar summasi</span>
+          <strong>
+            {isLoading
+              ? "..."
+              : formatMoney(
+                  orders.reduce(
+                    (sum, order) => sum + Number(order.order?.total ?? 0),
+                    0,
+                  ),
+                )}
+          </strong>
+        </div>
+      </section>
+      <div className={styles.toolbar}>
+        <div className={styles.segments} aria-label="Yetkazish holati">
+          {[
+            ["all", "Barchasi", orders.length],
+            ["ready", "Tayyor", readyCount],
+            ["waiting", "Oshxonada", orders.length - readyCount],
+          ].map(([id, label, count]) => (
+            <button
+              key={id}
+              className={styles.segment}
+              aria-pressed={filter === id}
+              onClick={() => setFilter(String(id))}
+              type="button"
+            >
+              {label}
+              <span>{count}</span>
+            </button>
+          ))}
+        </div>
+        <label className={`${styles.search} ${styles.deliverySearch}`}>
+          <Search size={18} />
+          <input
+            aria-label="Buyurtma, mijoz yoki manzil qidirish"
+            placeholder="Buyurtma, mijoz yoki manzil"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+      </div>
+      {error && (
+        <div className={styles.error} role="alert">
+          {error}
+        </div>
+      )}
       {isLoading ? (
-        <Card>
-          <CardBody>
-            <p className="text-sm font-bold text-mz-text-muted">
-              Kuryer buyurtmalari yuklanmoqda...
-            </p>
-          </CardBody>
-        </Card>
-      ) : orders.length ? (
-        <section className="grid gap-4 xl:grid-cols-2">
-          {orders.map((order) => (
+        <div
+          className={styles.deliveryGrid}
+          aria-label="Buyurtmalar yuklanmoqda"
+        >
+          <div className={styles.skeleton} />
+          <div className={styles.skeleton} />
+        </div>
+      ) : visible.length ? (
+        <section
+          className={styles.deliveryGrid}
+          aria-label="Yetkazish buyurtmalari"
+        >
+          {visible.map((order) => (
             <CourierOrderCard
-              busy={busyOrderId === order.id}
               key={order.id}
               order={order}
-              onStatus={(status) => void updateStatus(order, status)}
+              busy={!!busyOrderId}
+              canUpdate={canUpdate}
+              onStatus={(status) => {
+                setError("");
+                setConfirmation({ order, status });
+              }}
             />
           ))}
         </section>
       ) : (
-        <Card>
-          <CardBody className="py-10 text-center">
-            <p className="text-lg font-black text-mz-text">
-              Hozircha yetkazish buyurtmasi yo'q
-            </p>
-            <p className="mt-2 text-sm text-mz-text-muted">
-              Yangi online delivery kelganda shu yerda ko'rinadi.
-            </p>
-          </CardBody>
-        </Card>
+        <StaffEmpty
+          title={
+            orders.length ? "Mos buyurtma topilmadi" : "Hozircha yetkazish yo'q"
+          }
+        >
+          {orders.length
+            ? "Boshqa manzil yoki buyurtma raqamini tekshiring."
+            : "Yangi buyurtmalar shu yerda ko'rinadi."}
+        </StaffEmpty>
+      )}
+      {confirmation && (
+        <StaffDialog
+          title={
+            confirmation.status === "COMPLETED"
+              ? "Buyurtma yetkazildimi?"
+              : "Buyurtmani bekor qilasizmi?"
+          }
+          busy={!!busyOrderId}
+          onClose={() => {
+            setConfirmation(null);
+            setError("");
+          }}
+        >
+          <p>
+            <strong>
+              #
+              {confirmation.order.order?.displayOrderNumber ??
+                confirmation.order.order?.orderNumber}
+            </strong>{" "}
+            · {confirmation.order.customer?.name}
+          </p>
+          <p className={styles.muted}>
+            {confirmation.status === "COMPLETED"
+              ? "Buyurtma mijozga topshirilganini tasdiqlang."
+              : "Buyurtma bekor qilinadi va faol ro'yxatdan olinadi."}
+          </p>
+          {error && (
+            <div className={styles.error} role="alert">
+              {error}
+            </div>
+          )}
+          <div className={styles.dialogActions}>
+            <button
+              className={styles.button}
+              disabled={!!busyOrderId}
+              onClick={() => setConfirmation(null)}
+              type="button"
+            >
+              Ortga
+            </button>
+            <button
+              className={
+                confirmation.status === "CANCELLED"
+                  ? styles.danger
+                  : styles.primary
+              }
+              disabled={!!busyOrderId}
+              onClick={() => void updateStatus()}
+              type="button"
+            >
+              <Check size={18} />
+              {busyOrderId ? "Saqlanmoqda..." : "Tasdiqlash"}
+            </button>
+          </div>
+        </StaffDialog>
       )}
     </div>
   );
@@ -195,214 +348,178 @@ export function CourierOrdersPage() {
 function CourierOrderCard({
   order,
   busy,
+  canUpdate,
   onStatus,
 }: {
   order: CourierOrder;
   busy: boolean;
-  onStatus: (status: "READY" | "COMPLETED" | "CANCELLED") => void;
+  canUpdate: boolean;
+  onStatus: (status: DeliveryAction) => void;
 }) {
   const point = resolvePoint(order.deliveryLocation);
   const status = order.order?.status ?? order.status;
+  const isReady = readyForDelivery(order);
   const title =
     order.order?.displayOrderNumber ?? order.order?.orderNumber ?? "Buyurtma";
-  const maps = point ? buildMapLinks(point) : null;
-
+  const destination = point
+    ? encodeURIComponent(`${point.lat},${point.lng}`)
+    : null;
   return (
-    <Card as="article" className="overflow-hidden">
-      <CardHeader
-        title={title}
-        description={`${formatDateTime(order.createdAt)} · ${order.branch?.name ?? "Filial"}`}
-        actions={
-          <Badge tone={orderStatusTone(status)} withDot>
-            {orderStatusLabels[status] ?? status}
-          </Badge>
-        }
-      />
-      <CardBody className="grid gap-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Info label="Mijoz" value={order.customer?.name ?? "Mijoz"} />
-          {order.customer?.phone ? (
-            <Info
-              label="Telefon"
-              value={order.customer.phone}
+    <article className={styles.deliveryCard}>
+      <div className={styles.deliveryTop}>
+        <div>
+          <h3 className={styles.ticketNumber}>#{title}</h3>
+          <p className={styles.muted}>
+            {new Date(order.createdAt).toLocaleString("uz-UZ", {
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              timeZone: "Asia/Tashkent",
+            })}{" "}
+            · {order.branch?.name ?? "Filial"}
+          </p>
+        </div>
+        <span
+          className={styles.badge}
+          data-tone={isReady ? "ready" : "waiting"}
+        >
+          {isReady ? <PackageCheck size={14} /> : <Clock3 size={14} />}
+          {orderStatusLabels[status]}
+        </span>
+      </div>
+      <div className={styles.deliveryBody}>
+        <div className={styles.addressRow}>
+          <MapPin className={styles.addressIcon} size={22} />
+          <div>
+            <h3>
+              {order.deliveryAddress ||
+                point?.label ||
+                point?.address ||
+                "Manzil kiritilmagan"}
+            </h3>
+            <span className={styles.muted}>Yetkazish manzili</span>
+          </div>
+        </div>
+        <div className={styles.customerRow}>
+          <div>
+            <strong>{order.customer?.name ?? "Mijoz"}</strong>
+            <span className={styles.muted}>
+              {order.customer?.phone || "Telefon kiritilmagan"}
+            </span>
+          </div>
+          {order.customer?.phone && (
+            <a
               href={`tel:${order.customer.phone}`}
-            />
-          ) : (
-            <Info label="Telefon" value="—" />
-          )}
-          <Info
-            label="Manzil"
-            value={
-              order.deliveryAddress ??
-              point?.label ??
-              point?.address ??
-              "Manzil kiritilmagan"
-            }
-            wide
-          />
-          <Info label="Summa" value={formatMoney(order.order?.total)} />
-        </div>
-
-        {order.notes ? (
-          <div className="rounded-mz-control bg-mz-warning-bg px-3 py-2 text-sm font-semibold text-mz-warning">
-            Izoh: {order.notes}
-          </div>
-        ) : null}
-
-        {order.order?.items?.length ? (
-          <div className="rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
-            <p className="text-xs font-black uppercase text-mz-text-muted">
-              Tarkib
-            </p>
-            <ul className="mt-2 grid gap-1.5">
-              {order.order.items.map((item) => (
-                <li
-                  className="flex justify-between gap-3 text-sm text-mz-text"
-                  key={item.id}
-                >
-                  <span className="min-w-0 truncate">{item.productName}</span>
-                  <span className="shrink-0 font-bold">
-                    x{formatQuantity(item.quantity)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          {maps ? (
-            <>
-              <a
-                className="inline-flex justify-center rounded-mz-control bg-mz-accent px-4 py-3 text-sm font-black text-white transition hover:bg-mz-teal-600"
-                href={maps.google}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Google Maps
-              </a>
-              <a
-                className="inline-flex justify-center rounded-mz-control border border-mz-border bg-white px-4 py-3 text-sm font-black text-mz-text transition hover:bg-mz-surface-sunken"
-                href={maps.yandex}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Yandex Maps
-              </a>
-            </>
-          ) : (
-            <div className="rounded-mz-control bg-mz-danger-bg px-3 py-2 text-sm font-bold text-mz-danger sm:col-span-2">
-              Koordinata yo'q. Mijoz bilan telefon orqali aniqlashtiring.
-            </div>
+              className={styles.button}
+              aria-label={`${order.customer.name}: qo'ng'iroq qilish`}
+            >
+              <Phone size={18} />
+              <span className={styles.phoneText}>Qo'ng'iroq</span>
+            </a>
           )}
         </div>
-
-        <div className="flex flex-wrap justify-end gap-2 border-t border-mz-border pt-3">
-          <Button
-            disabled={busy || status === "READY"}
-            onClick={() => onStatus("READY")}
-            size="sm"
-            variant="ghost"
-          >
-            Tayyor
-          </Button>
-          <Button
-            disabled={busy}
-            onClick={() => onStatus("COMPLETED")}
-            size="sm"
-            variant="secondary"
-          >
-            Yetkazildi
-          </Button>
-          <Button
-            disabled={busy}
-            onClick={() => onStatus("CANCELLED")}
-            size="sm"
-            variant="danger"
-          >
-            Bekor qilish
-          </Button>
-        </div>
-      </CardBody>
-    </Card>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardBody>
-        <p className="text-xs font-black uppercase text-mz-text-muted">
-          {label}
-        </p>
-        <p className="mt-2 text-2xl font-black text-mz-text">{value}</p>
-      </CardBody>
-    </Card>
-  );
-}
-
-function Info({
-  label,
-  value,
-  href,
-  wide = false,
-}: {
-  label: string;
-  value: string;
-  href?: string;
-  wide?: boolean;
-}) {
-  const content = href ? (
-    <a
-      className="font-black text-mz-accent underline-offset-2 hover:underline"
-      href={href}
-    >
-      {value}
-    </a>
-  ) : (
-    <span className="font-semibold text-mz-text">{value}</span>
-  );
-
-  return (
-    <div className={wide ? "sm:col-span-2" : ""}>
-      <p className="text-xs font-black uppercase text-mz-text-muted">{label}</p>
-      <p className="mt-1 break-words text-sm">{content}</p>
-    </div>
+        {order.notes && <p className={styles.note}>{order.notes}</p>}
+        {destination ? (
+          <div className={styles.routeLinks}>
+            <a
+              className={styles.secondary}
+              href={`https://www.google.com/maps/dir/?api=1&destination=${destination}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Navigation size={17} />
+              Google Maps
+            </a>
+            <a
+              className={styles.button}
+              href={`https://yandex.com/maps/?rtext=~${destination}&rtt=auto`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <MapPin size={17} />
+              Yandex Maps
+            </a>
+          </div>
+        ) : (
+          <p className={styles.note}>
+            Lokatsiya belgilanmagan. Manzilni mijozdan aniqlashtiring.
+          </p>
+        )}
+        <details className={styles.deliveryDetails}>
+          <summary>
+            <ChevronDown size={16} />
+            {order.order?.items?.reduce(
+              (sum, item) => sum + Number(item.quantity),
+              0,
+            ) ?? 0}{" "}
+            ta mahsulot<strong>{formatMoney(order.order?.total)}</strong>
+          </summary>
+          <ul className={styles.itemList}>
+            {order.order?.items?.map((item) => (
+              <li key={item.id}>
+                <span className={styles.itemQuantity}>
+                  {Number(item.quantity)}x
+                </span>
+                <span className={styles.itemName}>{item.productName}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+        {canUpdate && (
+          <div className={styles.deliveryFooter}>
+            <button
+              className={styles.primary}
+              disabled={busy || !isReady}
+              onClick={() => onStatus("COMPLETED")}
+              type="button"
+            >
+              {isReady ? <Check size={18} /> : <Truck size={18} />}
+              {isReady ? "Yetkazildi" : "Oshxonada tayyorlanmoqda"}
+            </button>
+            <button
+              className={styles.iconButton}
+              disabled={busy}
+              aria-label={`#${title} buyurtmani bekor qilish`}
+              title="Buyurtmani bekor qilish"
+              onClick={() => onStatus("CANCELLED")}
+              type="button"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        )}
+      </div>
+    </article>
   );
 }
 
 function resolvePoint(
   location: DeliveryPoint | null | undefined,
 ): { lat: number; lng: number; label?: string; address?: string } | null {
-  if (!location || typeof location !== "object") {
+  if (!location || typeof location !== "object") return null;
+  const rawLat = location.lat ?? location.latitude;
+  const rawLng = location.lng ?? location.lon ?? location.longitude;
+  if (
+    rawLat == null ||
+    rawLng == null ||
+    String(rawLat).trim() === "" ||
+    String(rawLng).trim() === ""
+  )
     return null;
-  }
-
-  const lat = Number(location.lat ?? location.latitude);
-  const lng = Number(location.lng ?? location.lon ?? location.longitude);
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  const lat = Number(rawLat),
+    lng = Number(rawLng);
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    Math.abs(lat) > 90 ||
+    Math.abs(lng) > 180
+  )
     return null;
-  }
-
   return {
     lat,
     lng,
     ...(location.label ? { label: location.label } : {}),
     ...(location.address ? { address: location.address } : {}),
   };
-}
-
-function buildMapLinks(point: { lat: number; lng: number }) {
-  const destination = `${point.lat},${point.lng}`;
-
-  return {
-    google: `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`,
-    yandex: `https://yandex.com/maps/?rtext=~${encodeURIComponent(destination)}&rtt=auto`,
-  };
-}
-
-function formatQuantity(value: string): string {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric.toLocaleString("uz-UZ") : value;
 }

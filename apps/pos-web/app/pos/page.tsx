@@ -1,30 +1,58 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ArrowRight,
+  Banknote,
+  Check,
+  Clock3,
+  Minus,
+  Plus,
+  ReceiptText,
+  Search,
+  ShoppingBag,
+  Trash2,
+  X,
+} from "lucide-react";
 import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 import { useAuth } from "../../components/auth/auth-provider";
+import {
+  StaffDialog,
+  StaffEmpty,
+  StaffShell,
+} from "../../components/staff/staff-shell";
+import styles from "../../components/staff/staff.module.css";
 import { apiFetch } from "../../lib/api";
 import { handleProductImageError, productImage } from "../../lib/media";
 
-type Variant = { id: string; name: string; sellingPrice: string; isDefault: boolean };
-type Modifier = { isRequired: boolean; modifier: { id: string; name: string; price: string } };
+type Variant = {
+  id: string;
+  name: string;
+  sellingPrice: string;
+  isDefault: boolean;
+};
+type Modifier = {
+  isRequired: boolean;
+  modifier: { id: string; name: string; price: string };
+};
 type Product = {
   id: string;
   categoryId: string;
   name: string;
-  description?: string | null;
   imageUrl?: string | null;
   sellingPrice: string;
   preparationTime?: number | null;
   isCombo: boolean;
   variants: Variant[];
   modifiers: Modifier[];
-  bundleItems?: { componentName: string; quantity: string; unitLabel?: string | null }[];
 };
-type Category = { id: string; name: string };
-type Catalog = { branchId: string; categories: Category[]; products: Product[] };
+type Catalog = {
+  branchId: string;
+  categories: { id: string; name: string }[];
+  products: Product[];
+};
 type CartLine = {
   key: string;
   product: Product;
@@ -33,7 +61,11 @@ type CartLine = {
   quantity: number;
 };
 type PosOrderResult = {
-  order: { orderNumber: string; displayOrderNumber?: string | null; total: string; branch?: { name?: string | null } | null };
+  order: {
+    orderNumber: string;
+    displayOrderNumber?: string | null;
+    total: string;
+  };
   payment: { cashReceived: string; change: string };
 };
 type CurrentShift = {
@@ -41,15 +73,11 @@ type CurrentShift = {
   shiftNumber?: number;
   status: "OPEN" | "CLOSED";
   openedAt?: string;
-  branch?: { name?: string | null; address?: string | null } | null;
-  employee?: { firstName?: string | null; lastName?: string | null } | null;
+  branch?: { name?: string | null } | null;
 };
-
 const formatter = new Intl.NumberFormat("uz-UZ");
-
-function createCheckoutKey() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-}
+const createCheckoutKey = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
 export default function PosPage() {
   return (
@@ -63,7 +91,7 @@ export default function PosPage() {
 
 function PosTerminal() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [currentShift, setCurrentShift] = useState<CurrentShift | null>(null);
   const [isCheckingShift, setIsCheckingShift] = useState(true);
@@ -72,96 +100,141 @@ function PosTerminal() {
   const [query, setQuery] = useState("");
   const [cashReceived, setCashReceived] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
+    null,
+  );
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutKey, setCheckoutKey] = useState(createCheckoutKey);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<PosOrderResult | null>(null);
+  const [mobileView, setMobileView] = useState("menu");
+  const submissionLock = useRef(false);
+  const loadRequest = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadTerminal() {
-      try {
-        const currentShift = await apiFetch<CurrentShift | null>("/cash-register/shift");
-
-        if (!isMounted) {
-          return;
-        }
-
-        if (!currentShift || currentShift.status !== "OPEN") {
-          setCurrentShift(null);
-          router.replace("/shift");
-          return;
-        }
-
-        setCurrentShift(currentShift);
-        setCatalog(await apiFetch<Catalog>("/pos/catalog"));
-      } catch (loadError) {
-        if (isMounted) {
-          if (isAuthenticationError(loadError)) {
-            void logout();
-            return;
-          }
-
-          setError(loadError instanceof Error ? loadError.message : "Katalog yuklanmadi");
-        }
-      } finally {
-        if (isMounted) {
-          setIsCheckingShift(false);
-        }
+  const loadTerminal = useCallback(async () => {
+    loadRequest.current?.abort();
+    const controller = new AbortController();
+    loadRequest.current = controller;
+    setIsCheckingShift(true);
+    setError(null);
+    try {
+      const signal = AbortSignal.any([
+        controller.signal,
+        AbortSignal.timeout(12000),
+      ]);
+      const shift = await apiFetch<CurrentShift | null>(
+        "/cash-register/shift",
+        { signal },
+      );
+      if (controller.signal.aborted) return;
+      if (!shift || shift.status !== "OPEN") {
+        setCurrentShift(null);
+        router.replace("/shift");
+        return;
       }
+      setCurrentShift(shift);
+      const data = await apiFetch<Catalog>("/pos/catalog", { signal });
+      if (!controller.signal.aborted) setCatalog(data);
+    } catch (caught) {
+      if (controller.signal.aborted) return;
+      if (
+        caught instanceof Error &&
+        /invalid or expired access token|unauthorized|jwt/i.test(caught.message)
+      ) {
+        void logout();
+        return;
+      }
+      setError(caught instanceof Error ? caught.message : "Katalog yuklanmadi");
+    } finally {
+      if (!controller.signal.aborted) setIsCheckingShift(false);
     }
-
-    void loadTerminal();
-
-    return () => {
-      isMounted = false;
-    };
   }, [logout, router]);
 
-  const products = catalog?.products ?? [];
+  useEffect(() => {
+    void loadTerminal();
+    return () => loadRequest.current?.abort();
+  }, [loadTerminal]);
+
   const filteredProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return products.filter((product) => {
-      const matchesCategory = categoryId === "ALL" || product.categoryId === categoryId;
-      const matchesSearch = !normalized || product.name.toLowerCase().includes(normalized);
-      return matchesCategory && matchesSearch;
-    });
-  }, [categoryId, products, query]);
+    return (catalog?.products ?? []).filter(
+      (product) =>
+        (categoryId === "ALL" || product.categoryId === categoryId) &&
+        (!normalized || product.name.toLowerCase().includes(normalized)),
+    );
+  }, [categoryId, catalog, query]);
   const total = cart.reduce((sum, line) => sum + lineTotal(line), 0);
+  const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const received = Number(cashReceived || 0);
-  const change = Math.max(0, received - total);
+  const validCash =
+    Number.isFinite(received) && received >= total && received >= 0;
+  const change = Number.isFinite(received) ? Math.max(0, received - total) : 0;
 
   function addProduct(product: Product) {
-    const hasChoices = product.variants.length > 1 || product.modifiers.length > 0;
-    if (hasChoices) {
+    if (submissionLock.current) return;
+    if (product.variants.length > 1 || product.modifiers.length > 0) {
       setSelectedProduct(product);
-      setSelectedVariantId(product.variants.find((variant) => variant.isDefault)?.id ?? product.variants[0]?.id ?? null);
-      setSelectedModifierIds([]);
+      setSelectedVariantId(
+        product.variants.find((variant) => variant.isDefault)?.id ??
+          product.variants[0]?.id ??
+          null,
+      );
+      setSelectedModifierIds(
+        product.modifiers
+          .filter((item) => item.isRequired)
+          .map((item) => item.modifier.id),
+      );
       return;
     }
-    addLine(product);
+    addLine(
+      product,
+      product.variants.find((variant) => variant.isDefault) ??
+        product.variants[0],
+    );
   }
 
-  function addLine(product: Product, variant?: Variant, modifiers: Modifier[] = []) {
-    const key = [product.id, variant?.id ?? "base", ...modifiers.map((item) => item.modifier.id).sort()].join(":");
-    setCart((current) => {
-      const existing = current.find((line) => line.key === key);
-      if (existing) {
-        return current.map((line) => (line.key === key ? { ...line, quantity: line.quantity + 1 } : line));
-      }
-      return [...current, { key, product, ...(variant ? { variant } : {}), modifiers, quantity: 1 }];
-    });
+  function addLine(
+    product: Product,
+    variant?: Variant,
+    modifiers: Modifier[] = [],
+  ) {
+    if (submissionLock.current) return;
+    const key = [
+      product.id,
+      variant?.id ?? "base",
+      ...modifiers.map((item) => item.modifier.id).sort(),
+    ].join(":");
+    setCart((current) =>
+      current.some((line) => line.key === key)
+        ? current.map((line) =>
+            line.key === key ? { ...line, quantity: line.quantity + 1 } : line,
+          )
+        : [
+            ...current,
+            {
+              key,
+              product,
+              ...(variant ? { variant } : {}),
+              modifiers,
+              quantity: 1,
+            },
+          ],
+    );
     setCheckoutKey(createCheckoutKey());
     setSuccess(null);
+    setError(null);
   }
 
   function changeQuantity(key: string, delta: number) {
+    if (submissionLock.current) return;
     setCart((current) =>
       current
-        .map((line) => (line.key === key ? { ...line, quantity: line.quantity + delta } : line))
+        .map((line) =>
+          line.key === key
+            ? { ...line, quantity: line.quantity + delta }
+            : line,
+        )
         .filter((line) => line.quantity > 0),
     );
     setCheckoutKey(createCheckoutKey());
@@ -169,19 +242,22 @@ function PosTerminal() {
   }
 
   async function submitOrder() {
+    if (submissionLock.current) return;
     setError(null);
     if (!cart.length) {
-      setError("Savat bo'sh");
+      setError("Buyurtma bo'sh");
       return;
     }
-    if (received < total) {
-      setError("Qabul qilingan naqd pul jami summadan kam");
+    if (!validCash) {
+      setError("Qabul qilingan naqd summani tekshiring");
       return;
     }
+    submissionLock.current = true;
     setIsSubmitting(true);
     try {
       const result = await apiFetch<PosOrderResult>("/pos/orders", {
         method: "POST",
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           idempotencyKey: checkoutKey,
           cashReceived: received,
@@ -189,7 +265,10 @@ function PosTerminal() {
             productId: line.product.id,
             variantId: line.variant?.id,
             quantity: line.quantity,
-            modifiers: line.modifiers.map((modifier) => ({ modifierId: modifier.modifier.id, quantity: 1 })),
+            modifiers: line.modifiers.map((modifier) => ({
+              modifierId: modifier.modifier.id,
+              quantity: 1,
+            })),
           })),
         }),
       });
@@ -197,210 +276,440 @@ function PosTerminal() {
       setCart([]);
       setCashReceived("");
       setCheckoutKey(createCheckoutKey());
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Buyurtma yaratilmadi");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Buyurtma yaratilmadi",
+      );
     } finally {
+      submissionLock.current = false;
       setIsSubmitting(false);
     }
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#062d2b] text-[#10233a] lg:h-screen lg:overflow-hidden">
-      <div className="flex min-h-screen flex-col lg:h-screen">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#073f3b] px-4 py-3 text-white sm:px-5">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ffd52e]">MAZETTO FOOD</p>
-            <h1 className="text-2xl font-black">Kassa</h1>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-sm font-bold sm:gap-3">
+    <StaffShell
+      title="Kassa"
+      terminal
+      actions={
+        <button
+          className={styles.shiftLink}
+          title="Kassa smenasi"
+          aria-label="Kassa smenasi"
+          onClick={() => router.push("/shift")}
+          disabled={isSubmitting}
+          type="button"
+        >
+          <Clock3 size={17} />
+          <span>
+            {currentShift
+              ? `Smena #${currentShift.shiftNumber ?? ""}`
+              : "Smena"}
+          </span>
+        </button>
+      }
+    >
+      <div className={styles.mobilePosNav}>
+        <div className={styles.segments}>
+          <button
+            className={styles.segment}
+            aria-pressed={mobileView === "menu"}
+            onClick={() => setMobileView("menu")}
+            type="button"
+          >
+            <ShoppingBag size={17} />
+            Menyu
+          </button>
+          <button
+            className={styles.segment}
+            aria-pressed={mobileView === "cart"}
+            onClick={() => setMobileView("cart")}
+            type="button"
+          >
+            <ReceiptText size={17} />
+            Buyurtma<span>{itemCount}</span>
+          </button>
+        </div>
+      </div>
+      {isCheckingShift ? (
+        <StaffEmpty title="Kassa yuklanmoqda..." />
+      ) : !catalog ? (
+        <div className={styles.content}>
+          <div className={styles.error} role="alert">
+            {error ?? "Katalog topilmadi"}
             <button
-              className="flex min-h-11 items-center gap-2 rounded-full border border-[#ffd52e]/50 bg-[#ffd52e] px-4 py-2 text-left font-black text-[#10233a] shadow-[0_8px_22px_rgba(255,213,46,0.22)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(255,213,46,0.30)]"
-              onClick={() => router.push("/shift")}
+              className={styles.button}
+              onClick={() => void loadTerminal()}
               type="button"
             >
-              <span aria-hidden="true">●</span>
-              <span className="grid leading-tight">
-                <span>Smena ochiq</span>
-                <span className="text-[11px] font-black text-[#00685f]">{currentShift?.openedAt ? `Boshlangan: ${formatTime(currentShift.openedAt)}` : "Smena sahifasi"}</span>
+              Qayta urinish
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.posBody}>
+          <section
+            className={styles.catalog}
+            data-hidden={mobileView !== "menu"}
+            aria-label="Mahsulotlar katalogi"
+          >
+            <div className={styles.catalogBar}>
+              <label className={styles.search}>
+                <Search size={19} />
+                <input
+                  placeholder="Mahsulot qidirish..."
+                  aria-label="Mahsulot qidirish"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    aria-label="Qidiruvni tozalash"
+                    onClick={() => setQuery("")}
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+              </label>
+              <span className={styles.muted}>
+                {filteredProducts.length} ta mahsulot
               </span>
-            </button>
-            <span className="max-w-[180px] truncate text-right text-white/85">{user?.email ?? user?.phone ?? "Xodim"}</span>
-            <button className="rounded-full bg-white/10 px-4 py-2" onClick={() => void logout()} type="button">
-              Chiqish
-            </button>
-          </div>
-        </header>
-
-        {isCheckingShift ? (
-          <div className="grid flex-1 place-items-center p-6">
-            <p className="rounded-3xl bg-[#fffaf0] px-6 py-4 text-base font-black text-[#10233a] shadow-2xl">
-              Smena tekshirilmoqda...
-            </p>
-          </div>
-        ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px] gap-4 p-4 max-md:grid-cols-1">
-          <section className="min-h-0 min-w-0 overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl">
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                className="min-h-12 flex-1 rounded-2xl border border-[#d8e5df] px-4 text-base font-bold outline-none focus:border-[#008678]"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Qidirish"
-                value={query}
-              />
-              <span className="rounded-full bg-[#ffe86b] px-4 py-3 text-sm font-black">{products.length} ta mahsulot</span>
             </div>
-
-            <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-2">
-              <button className={tabClass(categoryId === "ALL")} onClick={() => setCategoryId("ALL")} type="button">
+            <nav
+              className={styles.categoryNav}
+              aria-label="Mahsulot kategoriyalari"
+            >
+              <button
+                aria-pressed={categoryId === "ALL"}
+                onClick={() => setCategoryId("ALL")}
+                type="button"
+              >
                 Barchasi
               </button>
-              {catalog?.categories.map((category) => (
-                <button className={tabClass(categoryId === category.id)} key={category.id} onClick={() => setCategoryId(category.id)} type="button">
+              {catalog.categories.map((category) => (
+                <button
+                  key={category.id}
+                  aria-pressed={categoryId === category.id}
+                  onClick={() => setCategoryId(category.id)}
+                  type="button"
+                >
                   {category.name}
                 </button>
               ))}
+            </nav>
+            {filteredProducts.length ? (
+              <div className={styles.productGrid}>
+                {filteredProducts.map((product) => (
+                  <button
+                    className={styles.product}
+                    key={product.id}
+                    onClick={() => addProduct(product)}
+                    disabled={isSubmitting}
+                    aria-label={`${product.name}, ${money(basePrice(product))}, qo'shish`}
+                    type="button"
+                  >
+                    <div className={styles.productImage}>
+                      <img
+                        src={productImage(product.imageUrl)}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(event) =>
+                          handleProductImageError(event.currentTarget)
+                        }
+                      />
+                      <span className={styles.productAdd}>
+                        <Plus size={20} />
+                      </span>
+                    </div>
+                    <div className={styles.productInfo}>
+                      <h2>{product.name}</h2>
+                      <p>{money(basePrice(product))}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <StaffEmpty title="Mahsulot topilmadi">
+                Qidiruv yoki kategoriyani o'zgartiring.
+              </StaffEmpty>
+            )}
+          </section>
+          <aside
+            className={styles.receipt}
+            data-hidden={mobileView !== "cart"}
+            aria-label="Joriy buyurtma"
+          >
+            <div className={styles.receiptHeader}>
+              <h2>Yangi buyurtma</h2>
+              <span className={styles.badge}>{itemCount} ta</span>
             </div>
-
-            <div className="mt-4 grid max-h-[calc(100vh-190px)] grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3 overflow-y-auto pr-1">
-              {filteredProducts.map((product) => (
+            <div className={styles.cartLines}>
+              {success && (
+                <div className={styles.success} role="status">
+                  <strong>
+                    #
+                    {success.order.displayOrderNumber ??
+                      success.order.orderNumber}{" "}
+                    qabul qilindi
+                  </strong>
+                  <p>Qaytim: {money(success.payment.change)}</p>
+                </div>
+              )}
+              {cart.length ? (
+                cart.map((line) => (
+                  <div className={styles.cartLine} key={line.key}>
+                    <div className={styles.cartLineHeader}>
+                      <div>
+                        <strong>{line.product.name}</strong>
+                        <p className={styles.muted}>
+                          {line.variant?.name ?? "Standart"}
+                          {line.modifiers.length
+                            ? ` · ${line.modifiers.map((item) => item.modifier.name).join(", ")}`
+                            : ""}
+                        </p>
+                      </div>
+                      <button
+                        className={styles.iconButton}
+                        disabled={isSubmitting}
+                        aria-label={`${line.product.name}ni o'chirish`}
+                        title="O'chirish"
+                        onClick={() => changeQuantity(line.key, -line.quantity)}
+                        type="button"
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                    <div className={styles.cartLineBottom}>
+                      <div className={styles.quantity}>
+                        <button
+                          aria-label={`${line.product.name}ni kamaytirish`}
+                          disabled={isSubmitting}
+                          onClick={() => changeQuantity(line.key, -1)}
+                          type="button"
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <span>{line.quantity}</span>
+                        <button
+                          aria-label={`${line.product.name}ni ko'paytirish`}
+                          disabled={isSubmitting}
+                          onClick={() => changeQuantity(line.key, 1)}
+                          type="button"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                      <strong>{money(lineTotal(line))}</strong>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <StaffEmpty title="Buyurtma bo'sh">
+                  Menyudan mahsulot tanlang.
+                </StaffEmpty>
+              )}
+            </div>
+            <div className={styles.checkout}>
+              <div className={styles.totalRow}>
+                <span>Jami</span>
+                <strong>{money(total)}</strong>
+              </div>
+              <label className={styles.field}>
+                <span>Qabul qilingan naqd pul</span>
+                <input
+                  className={styles.input}
+                  inputMode="numeric"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="0"
+                  disabled={isSubmitting || !cart.length}
+                  value={cashReceived}
+                  onChange={(event) => setCashReceived(event.target.value)}
+                />
+              </label>
+              <div className={styles.quickCash}>
                 <button
-                  className="group overflow-hidden rounded-[22px] border border-[#dce8df] bg-white text-left shadow-[0_10px_30px_rgba(0,0,0,0.08)] transition active:scale-[0.98]"
-                  key={product.id}
-                  onClick={() => addProduct(product)}
+                  disabled={isSubmitting || !cart.length}
+                  onClick={() => setCashReceived(String(total))}
                   type="button"
                 >
-                  <div className="aspect-[4/3] bg-[#073f3b]">
-                    <img
-                      alt=""
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                      onError={(event) => handleProductImageError(event.currentTarget)}
-                      src={productImage(product.imageUrl)}
-                    />
-                  </div>
-                  <div className="p-3">
-                    <h2 className="line-clamp-2 min-h-10 text-base font-black">{product.name}</h2>
-                    <p className="mt-1 text-sm font-black text-[#008678]">{money(basePrice(product))}</p>
-                    <p className="mt-1 text-xs font-bold text-slate-500">{product.isCombo ? "Set" : `${product.preparationTime ?? 10} daq`}</p>
-                  </div>
+                  Aniq summa
                 </button>
-              ))}
-            </div>
-          </section>
-
-          <aside className="flex max-h-[calc(100vh-120px)] min-h-0 min-w-0 flex-col overflow-hidden rounded-[28px] bg-[#fffaf0] p-4 shadow-2xl max-md:max-h-[calc(100vh-140px)]">
-            <div className="flex shrink-0 items-center justify-between">
-              <h2 className="text-2xl font-black">Savat</h2>
-              <span className="rounded-full bg-[#ffe86b] px-3 py-2 text-sm font-black">{cart.length} qator</span>
-            </div>
-            <div className="no-scrollbar mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
-              {cart.length ? cart.map((line) => (
-                <div className="rounded-2xl bg-white p-3 shadow-sm" key={line.key}>
-                  <div className="flex justify-between gap-2">
-                    <div>
-                      <p className="font-black">{line.product.name}</p>
-                      <p className="text-xs font-bold text-slate-500">{line.variant?.name ?? "Standart"}</p>
-                    </div>
-                    <p className="font-black text-[#008678]">{money(lineTotal(line))}</p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <button className="h-9 w-9 rounded-full bg-[#eef7f1] font-black" onClick={() => changeQuantity(line.key, -1)} type="button">-</button>
-                      <span className="w-8 text-center font-black">{line.quantity}</span>
-                      <button className="h-9 w-9 rounded-full bg-[#ffe03a] font-black" onClick={() => changeQuantity(line.key, 1)} type="button">+</button>
-                    </div>
-                    <button className="text-sm font-bold text-red-500" onClick={() => changeQuantity(line.key, -999)} type="button">O'chirish</button>
-                  </div>
-                </div>
-              )) : <div className="grid min-h-full place-items-center rounded-2xl bg-white p-6 text-center text-sm font-bold text-slate-500">Mahsulot tanlang.</div>}
-            </div>
-            <div className="mt-4 shrink-0 space-y-3 border-t border-[#d8e5df] pt-4">
-              <div className="flex justify-between text-xl font-black"><span>Jami</span><span>{money(total)}</span></div>
-              <input className="min-h-12 w-full rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none" inputMode="numeric" onChange={(event) => setCashReceived(event.target.value)} placeholder="Qabul qilingan naqd pul" value={cashReceived} />
-              <div className="flex justify-between font-black text-[#008678]"><span>Qaytim</span><span>{money(change)}</span></div>
-              {error ? <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-600">{error}</p> : null}
-              {success ? <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-black text-emerald-700">Qabul qilindi: {success.order.displayOrderNumber ?? success.order.orderNumber}</p> : null}
-              <button className="min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50" disabled={isSubmitting || !cart.length} onClick={() => void submitOrder()} type="button">
+                {[50000, 100000].map((amount) => (
+                  <button
+                    key={amount}
+                    disabled={isSubmitting || !cart.length}
+                    onClick={() =>
+                      setCashReceived(
+                        String(
+                          (Number.isFinite(received) ? received : 0) + amount,
+                        ),
+                      )
+                    }
+                    type="button"
+                  >
+                    +{formatter.format(amount)}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.change}>
+                <span>{received < total ? "Yetishmayapti" : "Qaytim"}</span>
+                <strong>
+                  {money(received < total ? total - received : change)}
+                </strong>
+              </div>
+              {error && (
+                <p className={styles.error} role="alert">
+                  {error}
+                </p>
+              )}
+              <button
+                className={`${styles.primary} ${styles.full} ${styles.desktopPay}`}
+                disabled={isSubmitting || !cart.length || !validCash}
+                onClick={() => void submitOrder()}
+                type="button"
+              >
+                <Banknote size={19} />
                 {isSubmitting ? "Tasdiqlanmoqda..." : "Buyurtmani tasdiqlash"}
               </button>
             </div>
           </aside>
         </div>
-        )}
-      </div>
-
-      {selectedProduct ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-[28px] bg-[#fffaf0] p-5 shadow-2xl">
-            <h2 className="text-2xl font-black">{selectedProduct.name}</h2>
-            {selectedProduct.variants.length > 1 ? (
-              <div className="mt-4 grid gap-2">
-                {selectedProduct.variants.map((variant) => (
-                  <button className={choiceClass(selectedVariantId === variant.id)} key={variant.id} onClick={() => setSelectedVariantId(variant.id)} type="button">
-                    <span>{variant.name}</span><span>{money(Number(variant.sellingPrice))}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {selectedProduct.modifiers.length ? (
-              <div className="mt-4 grid gap-2">
-                {selectedProduct.modifiers.map((modifier) => (
-                  <label className={choiceClass(selectedModifierIds.includes(modifier.modifier.id))} key={modifier.modifier.id}>
-                    <span>{modifier.modifier.name}</span>
-                    <span>{money(Number(modifier.modifier.price))}</span>
-                    <input className="sr-only" type="checkbox" checked={selectedModifierIds.includes(modifier.modifier.id)} onChange={(event) => {
-                      setSelectedModifierIds((current) => event.target.checked ? [...current, modifier.modifier.id] : current.filter((id) => id !== modifier.modifier.id));
-                    }} />
-                  </label>
-                ))}
-              </div>
-            ) : null}
-            <div className="mt-5 flex gap-3">
-              <button className="min-h-12 flex-1 rounded-2xl bg-slate-100 font-black" onClick={() => setSelectedProduct(null)} type="button">Bekor qilish</button>
-              <button className="min-h-12 flex-1 rounded-2xl bg-[#ffd52e] font-black" onClick={() => {
-                const variant = selectedProduct.variants.find((item) => item.id === selectedVariantId);
-                const modifiers = selectedProduct.modifiers.filter((item) => selectedModifierIds.includes(item.modifier.id));
-                addLine(selectedProduct, variant, modifiers);
-                setSelectedProduct(null);
-              }} type="button">Savatga qo'shish</button>
-            </div>
+      )}
+      {catalog && (
+        <div className={styles.mobilePaybar}>
+          <div>
+            <small>{itemCount} ta mahsulot</small>
+            <strong>{money(total)}</strong>
           </div>
+          <button
+            className={styles.primary}
+            disabled={
+              isSubmitting ||
+              !cart.length ||
+              (mobileView === "cart" && !validCash)
+            }
+            onClick={() =>
+              mobileView === "menu" ? setMobileView("cart") : void submitOrder()
+            }
+            type="button"
+          >
+            {mobileView === "menu" ? (
+              <>
+                Buyurtma
+                <ArrowRight size={18} />
+              </>
+            ) : (
+              <>
+                <Check size={18} />
+                {isSubmitting ? "Saqlanmoqda" : "Tasdiqlash"}
+              </>
+            )}
+          </button>
         </div>
-      ) : null}
-    </main>
+      )}
+      {selectedProduct && (
+        <StaffDialog
+          title={selectedProduct.name}
+          onClose={() => setSelectedProduct(null)}
+        >
+          {selectedProduct.variants.length > 1 && (
+            <fieldset className={styles.choices}>
+              <legend className={styles.subheading}>Mahsulot turi</legend>
+              {selectedProduct.variants.map((variant) => (
+                <label className={styles.choice} key={variant.id}>
+                  <input
+                    type="radio"
+                    name="product-variant"
+                    checked={selectedVariantId === variant.id}
+                    onChange={() => setSelectedVariantId(variant.id)}
+                  />
+                  <span>{variant.name}</span>
+                  <strong>{money(variant.sellingPrice)}</strong>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {!!selectedProduct.modifiers.length && (
+            <fieldset className={styles.choices}>
+              <legend className={styles.subheading}>Qo'shimchalar</legend>
+              {selectedProduct.modifiers.map((modifier) => (
+                <label className={styles.choice} key={modifier.modifier.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedModifierIds.includes(modifier.modifier.id)}
+                    disabled={modifier.isRequired}
+                    onChange={(event) =>
+                      setSelectedModifierIds((current) =>
+                        event.target.checked
+                          ? [...current, modifier.modifier.id]
+                          : current.filter((id) => id !== modifier.modifier.id),
+                      )
+                    }
+                  />
+                  <span>
+                    {modifier.modifier.name}
+                    {modifier.isRequired ? " (majburiy)" : ""}
+                  </span>
+                  <strong>{money(modifier.modifier.price)}</strong>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <div className={styles.dialogActions}>
+            <button
+              className={styles.button}
+              onClick={() => setSelectedProduct(null)}
+              type="button"
+            >
+              Bekor qilish
+            </button>
+            <button
+              className={styles.primary}
+              onClick={() => {
+                addLine(
+                  selectedProduct,
+                  selectedProduct.variants.find(
+                    (item) => item.id === selectedVariantId,
+                  ),
+                  selectedProduct.modifiers.filter((item) =>
+                    selectedModifierIds.includes(item.modifier.id),
+                  ),
+                );
+                setSelectedProduct(null);
+              }}
+              type="button"
+            >
+              <Plus size={18} />
+              Qo'shish
+            </button>
+          </div>
+        </StaffDialog>
+      )}
+    </StaffShell>
   );
 }
 
 function basePrice(product: Product): number {
-  const defaultVariant = product.variants.find((variant) => variant.isDefault);
-  return Number(defaultVariant?.sellingPrice ?? product.sellingPrice);
+  return Number(
+    (
+      product.variants.find((variant) => variant.isDefault) ??
+      product.variants[0]
+    )?.sellingPrice ?? product.sellingPrice,
+  );
 }
-
 function lineTotal(line: CartLine): number {
-  const modifierTotal = line.modifiers.reduce((sum, modifier) => sum + Number(modifier.modifier.price), 0);
-  return (Number(line.variant?.sellingPrice ?? line.product.sellingPrice) + modifierTotal) * line.quantity;
+  return (
+    (Number(line.variant?.sellingPrice ?? line.product.sellingPrice) +
+      line.modifiers.reduce(
+        (sum, item) => sum + Number(item.modifier.price),
+        0,
+      )) *
+    line.quantity
+  );
 }
-
 function money(value: number | string): string {
   return `${formatter.format(Math.round(Number(value || 0)))} so'm`;
-}
-
-function formatTime(value: string): string {
-  return new Intl.DateTimeFormat("uz-UZ", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Tashkent",
-  }).format(new Date(value));
-}
-
-function tabClass(active: boolean): string {
-  return `shrink-0 rounded-full px-4 py-2 text-sm font-black transition ${active ? "bg-[#ffd52e] text-[#10233a]" : "bg-white text-[#00796f]"}`;
-}
-
-function choiceClass(active: boolean): string {
-  return `flex min-h-12 items-center justify-between rounded-2xl border px-4 text-sm font-black ${active ? "border-[#ffd52e] bg-[#fff3a3]" : "border-[#d8e5df] bg-white"}`;
-}
-
-function isAuthenticationError(error: unknown): boolean {
-  return error instanceof Error && /invalid or expired access token|unauthorized|jwt/i.test(error.message);
 }

@@ -7,13 +7,23 @@ export function PanelSwitcher({
   user,
   variant = "light",
   className = "",
+  staffMode = false,
 }: {
   user: AuthUser | null;
   variant?: "light" | "dark";
   className?: string;
+  staffMode?: boolean;
 }) {
   const pathname = usePathname();
-  const panels = getAccessiblePanels(user);
+  const accessible = getAccessiblePanels(user);
+  const hasTerminal = accessible.some((panel) => panel.href === "/pos");
+  const panels = staffMode
+    ? accessible
+        .filter((panel) => panel.href !== "/shift" || !hasTerminal)
+        .map((panel) =>
+          panel.href === "/pos" ? { ...panel, title: "Kassa" } : panel,
+        )
+    : accessible;
 
   if (panels.length <= 1) {
     return null;
@@ -34,6 +44,9 @@ export function PanelSwitcher({
       {panels.map((panel) => {
         const isActive =
           pathname === panel.href ||
+          (staffMode &&
+            panel.href === "/pos" &&
+            (pathname === "/shift" || pathname.startsWith("/pos/"))) ||
           (panel.href.startsWith("/admin") && pathname.startsWith("/admin"));
 
         return (

@@ -1,11 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PanelSwitcher } from "../../components/auth/panel-switcher";
+import {
+  ArrowRight,
+  Banknote,
+  Check,
+  DoorOpen,
+  LockKeyhole,
+  RefreshCw,
+} from "lucide-react";
 import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 import { useAuth } from "../../components/auth/auth-provider";
+import {
+  StaffDialog,
+  StaffEmpty,
+  StaffShell,
+} from "../../components/staff/staff-shell";
+import styles from "../../components/staff/staff.module.css";
 import { apiFetch } from "../../lib/api";
 
 type Shift = {
@@ -23,18 +36,14 @@ type Shift = {
   closedAt?: string | null;
   branch: { id: string; name: string; address?: string | null };
   employee: { firstName: string; lastName?: string | null };
-  cashTransactions?: CashTransaction[];
+  cashTransactions?: {
+    id: string;
+    type: string;
+    amount: string;
+    reason?: string | null;
+    occurredAt: string;
+  }[];
 };
-
-type CashTransaction = {
-  id: string;
-  type: string;
-  amount: string;
-  reason?: string | null;
-  occurredAt: string;
-};
-
-const formatter = new Intl.NumberFormat("uz-UZ");
 
 export default function ShiftPage() {
   return (
@@ -55,420 +64,395 @@ function ShiftConsole() {
   const [closingCash, setClosingCash] = useState("");
   const [isConfirmingClose, setIsConfirmingClose] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
+  const saving = useRef(false);
+  const loadRequest = useRef<AbortController | null>(null);
   const expectedCash = Number(
     shift?.expectedCash ?? shift?.currentBalance ?? shift?.openingBalance ?? 0,
   );
   const closingValue = Number(closingCash || 0);
-  const differencePreview = closingCash ? closingValue - expectedCash : 0;
-
-  const cashierName = useMemo(() => {
-    if (shift?.employee) {
-      return [shift.employee.firstName, shift.employee.lastName]
-        .filter(Boolean)
-        .join(" ");
-    }
-
-    return user?.email ?? user?.phone ?? "Kassir";
-  }, [shift?.employee, user?.email, user?.phone]);
+  const difference = closingValue - expectedCash;
+  const closingValid =
+    closingCash !== "" && Number.isFinite(closingValue) && closingValue >= 0;
+  const openingValid =
+    openingCash !== "" &&
+    Number.isFinite(Number(openingCash)) &&
+    Number(openingCash) >= 0;
 
   const loadShift = useCallback(async () => {
+    loadRequest.current?.abort();
+    const controller = new AbortController();
+    loadRequest.current = controller;
     setIsLoading(true);
     setError(null);
-
     try {
-      const current = await apiFetch<Shift | null>("/cash-register/shift");
-      setShift(current);
-    } catch (loadError) {
-      if (isAuthenticationError(loadError)) {
+      const current = await apiFetch<Shift | null>("/cash-register/shift", {
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(12000),
+        ]),
+      });
+      if (!controller.signal.aborted) {
+        setShift(current?.status === "OPEN" ? current : null);
+        setLoadFailed(false);
+      }
+    } catch (caught) {
+      if (controller.signal.aborted) return;
+      if (
+        caught instanceof Error &&
+        /invalid or expired access token|unauthorized|jwt/i.test(caught.message)
+      ) {
         void logout();
         return;
       }
-
+      setLoadFailed(true);
       setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Smena ma'lumoti yuklanmadi",
+        caught instanceof Error ? caught.message : "Smena ma'lumoti yuklanmadi",
       );
     } finally {
-      setIsLoading(false);
+      if (!controller.signal.aborted) setIsLoading(false);
     }
   }, [logout]);
-
   useEffect(() => {
     void loadShift();
+    return () => loadRequest.current?.abort();
   }, [loadShift]);
 
   async function openShift() {
+    if (saving.current || !openingValid) return;
+    saving.current = true;
     setIsSaving(true);
     setError(null);
-    setMessage(null);
-
     try {
       const opened = await apiFetch<Shift>("/cash-register/shift/open", {
         method: "POST",
-        body: JSON.stringify({ openingBalance: Number(openingCash || 0) }),
+        body: JSON.stringify({ openingBalance: Number(openingCash) }),
+        signal: AbortSignal.timeout(15000),
       });
       setShift(opened);
       setClosedShift(null);
-      setMessage("Smena ochildi. Endi savdo qilish mumkin.");
       router.replace("/pos");
-    } catch (openError) {
-      setError(
-        openError instanceof Error ? openError.message : "Smena ochilmadi",
-      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Smena ochilmadi");
     } finally {
+      saving.current = false;
       setIsSaving(false);
     }
   }
 
   async function closeShift() {
-    if (!shift) {
-      return;
-    }
-
+    if (!shift || saving.current || !closingValid) return;
+    saving.current = true;
     setIsSaving(true);
     setError(null);
-    setMessage(null);
-
     try {
       const closed = await apiFetch<Shift>(
         `/cash-register/shift/${shift.id}/close`,
         {
           method: "POST",
-          body: JSON.stringify({ closingBalance: Number(closingCash || 0) }),
+          body: JSON.stringify({ closingBalance: closingValue }),
+          signal: AbortSignal.timeout(15000),
         },
       );
       setClosedShift(closed);
       setShift(null);
       setClosingCash("");
       setIsConfirmingClose(false);
-      setMessage("Smena yopildi. Yangi savdo uchun yangi smena oching.");
-    } catch (closeError) {
-      setError(
-        closeError instanceof Error ? closeError.message : "Smena yopilmadi",
-      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Smena yopilmadi");
     } finally {
+      saving.current = false;
       setIsSaving(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-[#062d2b] px-4 py-5 text-[#10233a] sm:px-6">
-      <div className="mx-auto flex max-w-6xl flex-col gap-5">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-[28px] border border-white/10 bg-[#073f3b] px-5 py-4 text-white shadow-2xl">
+    <StaffShell title="Kassa smenasi">
+      <div className={`${styles.content} ${styles.shiftContent}`}>
+        <div className={styles.overview}>
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ffd52e]">
-              MAZETTO FOOD
-            </p>
-            <h1 className="text-2xl font-black">Kassa smenasi</h1>
-            <p className="mt-1 text-sm font-bold text-white/70">
-              {cashierName}
+            <h2 className={styles.pageHeading}>
+              {shift ? `Smena #${shift.shiftNumber}` : "Kassa"}
+            </h2>
+            <p className={styles.muted}>
+              {shift
+                ? [shift.employee.firstName, shift.employee.lastName]
+                    .filter(Boolean)
+                    .join(" ")
+                : (user?.email ?? user?.phone)}
             </p>
           </div>
-          <div className="flex min-w-0 flex-wrap justify-end gap-2">
-            <PanelSwitcher
-              className="flex max-w-full"
-              user={user}
-              variant="dark"
-            />
-            {shift ? (
+          <div className={styles.toolbarGroup}>
+            <button
+              className={styles.iconButton}
+              disabled={isLoading || isSaving}
+              aria-label="Smenani yangilash"
+              title="Smenani yangilash"
+              onClick={() => void loadShift()}
+              type="button"
+            >
+              <RefreshCw size={18} />
+            </button>
+            {shift && (
               <button
-                className="rounded-full bg-[#ffd52e] px-5 py-3 text-sm font-black text-[#10233a]"
+                className={styles.primary}
+                disabled={isSaving}
                 onClick={() => router.push("/pos")}
                 type="button"
               >
-                POSga o'tish
+                Savdoga o'tish
+                <ArrowRight size={18} />
               </button>
-            ) : null}
-            <button
-              className="rounded-full bg-white/10 px-4 py-3 text-sm font-black"
-              onClick={() => void logout()}
-              type="button"
-            >
-              Chiqish
-            </button>
+            )}
           </div>
-        </header>
-
-        {isLoading ? (
-          <section className="rounded-[30px] bg-[#fffaf0] p-6 text-lg font-black shadow-2xl">
-            Smena tekshirilmoqda...
-          </section>
-        ) : null}
-
-        {error ? (
-          <p className="rounded-3xl bg-red-50 px-5 py-4 text-sm font-black text-red-700">
+        </div>
+        {error && (
+          <p className={styles.error} role="alert">
             {error}
           </p>
-        ) : null}
-        {message ? (
-          <p className="rounded-3xl bg-emerald-50 px-5 py-4 text-sm font-black text-emerald-700">
-            {message}
-          </p>
-        ) : null}
-
-        {shift ? (
-          <section className="grid gap-4 lg:grid-cols-[1fr_380px]">
-            <article className="rounded-[30px] bg-[#fffaf0] p-5 shadow-2xl">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
-                    Ochiq smena
-                  </p>
-                  <h2 className="mt-2 text-4xl font-black">
-                    #{shift.shiftNumber}
-                  </h2>
-                  <p className="mt-2 text-sm font-bold text-slate-500">
-                    {shift.branch.name}
-                  </p>
-                  {shift.branch.address ? (
-                    <p className="mt-1 text-sm font-bold text-slate-500">
-                      {shift.branch.address}
-                    </p>
-                  ) : null}
-                  <p className="mt-3 inline-flex rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-800">
-                    Status: Ochiq
-                  </p>
-                </div>
-                <div className="rounded-[24px] bg-[#ffe86b] px-5 py-4 text-right">
-                  <p className="text-xs font-black uppercase text-[#00796f]">
-                    Kutilgan naqd
-                  </p>
-                  <p className="text-2xl font-black">{money(expectedCash)}</p>
-                </div>
+        )}
+        {isLoading ? (
+          <StaffEmpty title="Smena yuklanmoqda..." />
+        ) : shift ? (
+          <>
+            <section className={styles.stats} aria-label="Kassa xulosasi">
+              <div className={styles.stat}>
+                <span>Boshlang'ich naqd</span>
+                <strong>{money(shift.openingBalance)}</strong>
               </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Metric
-                  label="Boshlang'ich naqd"
-                  value={money(shift.openingBalance)}
-                />
-                <Metric
-                  label="Naqd savdo"
-                  value={money(shift.cashSales ?? 0)}
-                />
-                <Metric
-                  label="Buyurtmalar"
-                  value={`${shift.orderCount ?? 0} ta`}
-                />
-                <Metric
-                  label="Ochilgan vaqt"
-                  value={new Date(shift.openedAt).toLocaleString("uz-UZ")}
-                />
+              <div className={styles.stat} data-tone="ready">
+                <span>Naqd savdo</span>
+                <strong>{money(shift.cashSales ?? 0)}</strong>
               </div>
-
-              <div className="mt-6 rounded-[24px] bg-white p-4">
-                <h3 className="text-lg font-black">Kassa harakatlari</h3>
-                <div className="mt-3 grid gap-2">
+              <div className={styles.stat} data-tone="waiting">
+                <span>Buyurtmalar</span>
+                <strong>{shift.orderCount ?? 0} ta</strong>
+              </div>
+            </section>
+            <div className={styles.shiftLayout}>
+              <section className={styles.shiftSummary}>
+                <div className={styles.toolbar}>
+                  <div>
+                    <h2>{shift.branch.name}</h2>
+                    <p className={styles.muted}>{shift.branch.address}</p>
+                  </div>
+                  <span className={styles.badge} data-tone="ready">
+                    <DoorOpen size={14} />
+                    Smena ochiq
+                  </span>
+                </div>
+                <p className={styles.muted}>
+                  Ochilgan: {dateTime(shift.openedAt)}
+                </p>
+                <h3 className={styles.subheading}>Kassa harakatlari</h3>
+                <div className={styles.shiftRows}>
                   {shift.cashTransactions?.length ? (
-                    shift.cashTransactions.map((transaction) => (
-                      <div
-                        className="flex justify-between rounded-2xl bg-[#f3f8f5] px-4 py-3 text-sm font-bold"
-                        key={transaction.id}
-                      >
-                        <span>{transaction.type}</span>
-                        <span>{money(transaction.amount)}</span>
+                    shift.cashTransactions.map((item) => (
+                      <div key={item.id}>
+                        <span>
+                          {transactionLabel(item.type)}
+                          {item.reason && (
+                            <small className={styles.muted}>
+                              {" "}
+                              · {item.reason}
+                            </small>
+                          )}
+                          <small
+                            className={styles.muted}
+                            style={{ display: "block" }}
+                          >
+                            {dateTime(item.occurredAt)}
+                          </small>
+                        </span>
+                        <strong>{money(item.amount)}</strong>
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm font-bold text-slate-500">
-                      Hali kassa harakati yo'q.
-                    </p>
+                    <StaffEmpty title="Hali kassa harakati yo'q" />
                   )}
                 </div>
-              </div>
-            </article>
-
-            <aside className="rounded-[30px] bg-[#fffaf0] p-5 shadow-2xl">
-              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
-                Kassa topshirish
-              </p>
-              <h2 className="mt-2 text-2xl font-black">Smenani yopish</h2>
-              <label className="mt-5 grid gap-2 text-sm font-black">
-                Haqiqiy naqd summa
-                <input
-                  className="min-h-14 rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none focus:border-[#008678]"
-                  inputMode="numeric"
-                  onChange={(event) => setClosingCash(event.target.value)}
-                  value={closingCash}
-                />
-              </label>
-              <div className="mt-4 grid gap-2 rounded-2xl bg-white p-4 text-sm font-black">
-                <div className="flex justify-between">
-                  <span>Kutilgan</span>
-                  <span>{money(expectedCash)}</span>
+              </section>
+              <section className={styles.shiftFinance}>
+                <h2 className={styles.pageHeading}>Kassa topshirish</h2>
+                <div className={styles.totalRow} style={{ marginTop: 20 }}>
+                  <span>Kutilgan naqd</span>
+                  <strong>{money(expectedCash)}</strong>
                 </div>
-                <div className="flex justify-between">
+                <label className={styles.field}>
+                  Haqiqiy naqd summa
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={closingCash}
+                    placeholder="0"
+                    onChange={(event) => setClosingCash(event.target.value)}
+                    disabled={isSaving}
+                  />
+                </label>
+                <div className={styles.change}>
                   <span>Farq</span>
-                  <span
-                    className={
-                      differencePreview === 0
-                        ? "text-[#008678]"
-                        : "text-red-600"
-                    }
-                  >
-                    {money(differencePreview)}
-                  </span>
+                  <strong>
+                    {closingValid
+                      ? differenceText(difference)
+                      : "Summa kiritilmagan"}
+                  </strong>
                 </div>
-              </div>
-              <button
-                className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50"
-                disabled={isSaving || !closingCash}
-                onClick={() => setIsConfirmingClose(true)}
-                type="button"
-              >
-                {isSaving ? "Yopilmoqda..." : "Kassa topshirish"}
-              </button>
-            </aside>
-          </section>
-        ) : !isLoading ? (
-          <section className="grid gap-4 lg:grid-cols-[1fr_380px]">
-            <article className="rounded-[30px] bg-[#fffaf0] p-6 shadow-2xl">
-              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
-                Smena yopiq
-              </p>
-              <h2 className="mt-2 text-4xl font-black">
-                Savdoni boshlash uchun smena oching
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm font-bold text-slate-600">
-                Smena ochilmaguncha POS savdo oynasi ishlamaydi. Filial va
-                kassir serverdagi xodim profilingizdan olinadi.
-              </p>
-              {closedShift ? (
-                <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <Metric
-                    label="Yopilgan smena"
-                    value={`#${closedShift.shiftNumber}`}
-                  />
-                  <Metric
-                    label="Kutilgan naqd"
-                    value={money(closedShift.expectedCash ?? 0)}
-                  />
-                  <Metric
-                    label="Farq"
-                    value={money(closedShift.cashDifference ?? 0)}
-                  />
-                </div>
-              ) : null}
-            </article>
-            <aside className="rounded-[30px] bg-[#fffaf0] p-5 shadow-2xl">
-              <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
-                Smenani ochish
-              </p>
-              <label className="mt-5 grid gap-2 text-sm font-black">
+                <button
+                  className={`${styles.secondary} ${styles.full}`}
+                  disabled={isSaving || !closingValid}
+                  onClick={() => setIsConfirmingClose(true)}
+                  type="button"
+                >
+                  <LockKeyhole size={18} />
+                  Smenani yopish
+                </button>
+              </section>
+            </div>
+          </>
+        ) : (
+          <div className={styles.shiftLayout}>
+            <section className={styles.shiftSummary}>
+              <span className={styles.badge}>Smena yopiq</span>
+              <h2 style={{ marginTop: 12 }}>Yangi smena</h2>
+              {closedShift && (
+                <>
+                  <p className={styles.success} role="status">
+                    #{closedShift.shiftNumber} smena yakunlandi.
+                  </p>
+                  <div className={styles.shiftRows}>
+                    <div>
+                      <span>Kutilgan naqd</span>
+                      <strong>{money(closedShift.expectedCash ?? 0)}</strong>
+                    </div>
+                    <div>
+                      <span>Farq</span>
+                      <strong>
+                        {differenceText(
+                          Number(closedShift.cashDifference ?? 0),
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
+            <section className={styles.shiftFinance}>
+              <h2 className={styles.pageHeading}>Smenani ochish</h2>
+              <label className={styles.field} style={{ marginTop: 20 }}>
                 Boshlang'ich naqd summa
                 <input
-                  className="min-h-14 rounded-2xl border border-[#d8e5df] px-4 text-lg font-black outline-none focus:border-[#008678]"
+                  className={styles.input}
+                  type="number"
+                  min="0"
+                  step="1"
                   inputMode="numeric"
-                  onChange={(event) => setOpeningCash(event.target.value)}
                   value={openingCash}
+                  onChange={(event) => setOpeningCash(event.target.value)}
+                  disabled={isSaving}
                 />
               </label>
               <button
-                className="mt-5 min-h-14 w-full rounded-2xl bg-[#ffd52e] text-base font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50"
-                disabled={isSaving}
+                className={`${styles.primary} ${styles.full}`}
+                style={{ marginTop: 18 }}
+                disabled={isSaving || !openingValid || loadFailed}
                 onClick={() => void openShift()}
                 type="button"
               >
+                <Banknote size={18} />
                 {isSaving ? "Ochilmoqda..." : "Smenani ochish"}
               </button>
-            </aside>
-          </section>
-        ) : null}
+            </section>
+          </div>
+        )}
       </div>
-
-      {shift && isConfirmingClose ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
-          <section className="w-full max-w-md rounded-[30px] bg-[#fffaf0] p-5 text-[#10233a] shadow-2xl">
-            <p className="text-sm font-black uppercase tracking-[0.14em] text-[#008678]">
-              Tasdiqlash
-            </p>
-            <h2 className="mt-2 text-2xl font-black">Smenani yakunlaysizmi?</h2>
-            <p className="mt-2 text-sm font-bold text-slate-600">
-              Bu amal kassani yopadi va POS savdo oynasi yangi smena
-              ochilmaguncha ishlamaydi.
-            </p>
-            <div className="mt-4 grid gap-2 rounded-2xl bg-white p-4 text-sm font-black">
-              <div className="flex justify-between">
-                <span>Kutilgan naqd</span>
-                <span>{money(expectedCash)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Haqiqiy naqd</span>
-                <span>{money(closingValue)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Farq</span>
-                <span
-                  className={
-                    differencePreview === 0
-                      ? "text-[#008678]"
-                      : differencePreview > 0
-                        ? "text-emerald-700"
-                        : "text-red-600"
-                  }
-                >
-                  {differenceText(differencePreview)}
-                </span>
-              </div>
+      {shift && isConfirmingClose && (
+        <StaffDialog
+          title="Smenani yakunlaysizmi?"
+          busy={isSaving}
+          onClose={() => setIsConfirmingClose(false)}
+        >
+          <p className={styles.muted}>
+            Smena yopilgach, savdoni davom ettirish uchun yangi smena ochiladi.
+          </p>
+          <div className={styles.shiftRows}>
+            <div>
+              <span>Kutilgan naqd</span>
+              <strong>{money(expectedCash)}</strong>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                className="min-h-12 rounded-2xl bg-white text-sm font-black shadow-sm"
-                disabled={isSaving}
-                onClick={() => setIsConfirmingClose(false)}
-                type="button"
-              >
-                Bekor qilish
-              </button>
-              <button
-                className="min-h-12 rounded-2xl bg-[#ffd52e] text-sm font-black shadow-[0_12px_28px_rgba(255,213,46,0.35)] disabled:opacity-50"
-                disabled={isSaving}
-                onClick={() => void closeShift()}
-                type="button"
-              >
-                {isSaving ? "Yopilmoqda..." : "Ha, yakunlash"}
-              </button>
+            <div>
+              <span>Haqiqiy naqd</span>
+              <strong>{money(closingValue)}</strong>
             </div>
-          </section>
-        </div>
-      ) : null}
-    </main>
+            <div>
+              <span>Farq</span>
+              <strong>{differenceText(difference)}</strong>
+            </div>
+          </div>
+          {error && (
+            <p className={styles.error} role="alert">
+              {error}
+            </p>
+          )}
+          <div className={styles.dialogActions}>
+            <button
+              className={styles.button}
+              disabled={isSaving}
+              onClick={() => setIsConfirmingClose(false)}
+              type="button"
+            >
+              Ortga
+            </button>
+            <button
+              className={styles.primary}
+              disabled={isSaving}
+              onClick={() => void closeShift()}
+              type="button"
+            >
+              <Check size={18} />
+              {isSaving ? "Yopilmoqda..." : "Yakunlash"}
+            </button>
+          </div>
+        </StaffDialog>
+      )}
+    </StaffShell>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function money(value: number | string) {
+  return `${new Intl.NumberFormat("uz-UZ").format(Math.round(Number(value || 0)))} so'm`;
+}
+function dateTime(value: string) {
+  return new Date(value).toLocaleString("uz-UZ", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Tashkent",
+  });
+}
+function differenceText(value: number) {
+  return value === 0
+    ? "Mos"
+    : `${value > 0 ? "Ortiqcha" : "Kamomad"}: ${money(Math.abs(value))}`;
+}
+function transactionLabel(value: string) {
   return (
-    <div className="rounded-2xl bg-white p-4">
-      <p className="text-xs font-black uppercase text-[#008678]">{label}</p>
-      <p className="mt-2 text-lg font-black">{value}</p>
-    </div>
-  );
-}
-
-function money(value: string | number): string {
-  return `${formatter.format(Math.round(Number(value || 0)))} so'm`;
-}
-
-function differenceText(value: number): string {
-  if (value === 0) {
-    return `Mos: ${money(value)}`;
-  }
-
-  if (value > 0) {
-    return `Ortiqcha: ${money(value)}`;
-  }
-
-  return `Kamomad: ${money(Math.abs(value))}`;
-}
-
-function isAuthenticationError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /invalid or expired access token|unauthorized|jwt/i.test(error.message)
+    (
+      {
+        OPENING: "Smena ochildi",
+        OPENING_BALANCE: "Boshlang'ich naqd",
+        CASH_SALE: "Naqd savdo",
+        SALE: "Savdo",
+        CASH_IN: "Kirim",
+        CASH_OUT: "Chiqim",
+        REFUND: "Qaytarish",
+        CLOSING: "Smena yopildi",
+      } as Record<string, string>
+    )[value] ?? value
   );
 }
