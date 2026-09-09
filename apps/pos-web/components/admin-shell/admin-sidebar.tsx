@@ -53,27 +53,27 @@ export function AdminSidebar({
       }}
     >
       <div
-        className="flex shrink-0 items-center gap-3 border-b border-mz-shell-border px-4"
+        className="flex shrink-0 items-center gap-2 border-b border-mz-shell-border px-3"
         style={{ height: "var(--mz-header-h)" }}
       >
         <span
           aria-hidden="true"
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-mz-control bg-mz-primary text-sm font-black text-mz-primary-fg"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-mz-control bg-mz-primary text-xs font-black text-mz-primary-fg"
         >
           M
         </span>
         {!isCollapsed ? (
-          <span className="truncate text-sm font-bold tracking-wide">
+          <span className="truncate text-xs font-black tracking-[0.1em]">
             MAZETTO ADMIN
           </span>
         ) : null}
       </div>
 
-      <nav className="flex-1 px-2 py-3">
+      <nav className="flex-1 px-1.5 py-2">
         {groups.map((group) => (
-          <div className="mb-4 last:mb-0" key={group.id}>
+          <div className="mb-2.5 last:mb-0" key={group.id}>
             {!isCollapsed ? (
-              <p className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-mz-shell-fg-muted">
+              <p className="px-2.5 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-mz-shell-fg-muted">
                 {group.label}
               </p>
             ) : (
@@ -92,7 +92,7 @@ export function AdminSidebar({
                     <Link
                       aria-current={isActive ? "page" : undefined}
                       className={[
-                        "relative flex items-center gap-3 rounded-mz-control px-3 py-2 text-sm transition",
+                        "relative flex items-center gap-2.5 rounded-mz-control px-2.5 py-1.5 text-[13px] transition",
                         isCollapsed ? "justify-center" : "",
                         isActive
                           ? "bg-mz-shell-deep font-semibold text-mz-white"

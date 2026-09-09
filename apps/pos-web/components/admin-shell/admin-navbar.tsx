@@ -97,14 +97,14 @@ export function AdminNavbar({
 
   return (
     <header
-      className="mz-shell-surface sticky top-0 flex shrink-0 items-center gap-3 border-b border-mz-shell-border bg-mz-shell px-3 text-mz-shell-fg sm:px-5"
+      className="mz-shell-surface sticky top-0 flex shrink-0 items-center gap-2 border-b border-mz-shell-border bg-mz-shell px-2 text-mz-shell-fg sm:px-3"
       style={{ height: "var(--mz-header-h)", zIndex: "var(--mz-z-header)" }}
     >
       <button
         aria-controls="admin-sidebar"
         aria-expanded={isMobileOpen}
         aria-label={isMobileOpen ? "Menyuni yopish" : "Menyuni ochish"}
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg lg:hidden"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg lg:hidden"
         onClick={onToggleMobile}
         type="button"
       >
@@ -114,15 +114,22 @@ export function AdminNavbar({
       <button
         aria-label={isCollapsed ? "Menyuni kengaytirish" : "Menyuni yig'ish"}
         aria-pressed={isCollapsed}
-        className="hidden h-9 w-9 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg lg:grid"
+        className="hidden h-8 w-8 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg lg:grid"
         onClick={onToggleCollapse}
         type="button"
       >
         <Icon name={isCollapsed ? "chevronRight" : "chevronLeft"} />
       </button>
 
+      <a
+        className="hidden shrink-0 rounded-mz-control bg-mz-shell-deep px-2 py-1 text-[11px] font-black tracking-[0.12em] text-mz-primary transition hover:bg-mz-primary hover:text-mz-primary-fg sm:inline-flex"
+        href="/admin/dashboard"
+      >
+        MAZETTO
+      </a>
+
       <PanelSwitcher
-        className="hidden flex-1 xl:flex"
+        className="hidden min-w-0 flex-1 xl:flex"
         user={user}
         variant="dark"
       />
@@ -135,13 +142,13 @@ export function AdminNavbar({
         <button
           aria-expanded={isMenuOpen}
           aria-haspopup="menu"
-          className="flex h-10 items-center gap-2 rounded-mz-pill pl-1 pr-2 transition hover:bg-mz-shell-raised"
+          className="flex h-8 items-center gap-1.5 rounded-mz-pill pl-1 pr-2 transition hover:bg-mz-shell-raised"
           onClick={() => setIsMenuOpen((previous) => !previous)}
           type="button"
         >
           <span
             aria-hidden="true"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-mz-pill bg-mz-accent text-xs font-bold text-mz-white"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-mz-pill bg-mz-primary text-[10px] font-black text-mz-white"
           >
             {initialsOf(user)}
           </span>

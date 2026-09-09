@@ -125,9 +125,9 @@
  * Z-index qiymatlari AdminLTE 4 dan aynan ko'chirilgan (sinovdan o'tgan tartib).
  */
 :root {
-  --mz-sidebar-w: 264px;
-  --mz-sidebar-mini-w: 72px;
-  --mz-header-h: 60px;
+  --mz-sidebar-w: 238px;
+  --mz-sidebar-mini-w: 60px;
+  --mz-header-h: 52px;
 
   --mz-z-header: 1034;
   --mz-z-sidebar-overlay: 1037;

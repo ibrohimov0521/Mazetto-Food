@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
-import { AuthShell } from "../../components/auth/auth-shell";
+import { StaffShell } from "../../components/staff/staff-shell";
 import { PermissionGuard } from "../../components/auth/permission-guard";
 import { RoleGuard } from "../../components/auth/role-guard";
 import { EmptyState, PrimaryButton } from "../../components/erp/erp-ui";
@@ -39,9 +39,9 @@ export default function WaiterPage() {
   return (
     <RoleGuard roles={["WAITER", "SUPER_ADMIN", "BRANCH_MANAGER"]}>
       <PermissionGuard permission="TABLE_VIEW">
-        <AuthShell eyebrow="Table service" title="Waiter workspace">
+        <StaffShell title="Ofitsiant">
           <WaiterFloor />
-        </AuthShell>
+        </StaffShell>
       </PermissionGuard>
     </RoleGuard>
   );
@@ -139,30 +139,30 @@ function WaiterFloor() {
   }
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
-      <div className="grid gap-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <Legend color="bg-emerald-500" label="Available" />
-          <Legend color="bg-red-500" label="Occupied" />
-          <Legend color="bg-yellow-400" label="Reserved" />
-          <Legend color="bg-neutral-400" label="Cleaning" />
+    <section className="mx-auto grid w-full max-w-[1760px] gap-4 p-3 sm:p-4 xl:grid-cols-[1fr_390px]">
+      <div className="grid gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Legend color="bg-[#29996a]" label="Available" />
+          <Legend color="bg-[#c8352f]" label="Occupied" />
+          <Legend color="bg-[#ffd83d]" label="Reserved" />
+          <Legend color="bg-[#9db0b2]" label="Cleaning" />
         </div>
 
         {tables.length ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {tables.map((table) => (
               <button
-                className={`rounded-3xl border p-5 text-left shadow-[0_14px_45px_rgba(17,24,39,0.08)] transition ${
-                  selectedTableId === table.id ? "border-emerald-500 ring-4 ring-emerald-100" : "border-neutral-100"
+                className={`rounded-[10px] border p-4 text-left shadow-[0_4px_16px_rgba(0,79,85,0.10)] transition ${
+                  selectedTableId === table.id ? "border-[#008a84] bg-[#eaf5f1] ring-2 ring-[#bfe2dc]" : "border-[#d5e2dd]"
                 } ${statusBackground(table.status)}`}
                 key={table.id}
                 onClick={() => setSelectedTableId(table.id)}
                 type="button"
               >
-                <p className="text-xs font-semibold uppercase text-neutral-500">{table.hall?.name ?? "Assigned hall"}</p>
-                <h2 className="mt-3 text-2xl font-semibold text-neutral-950">{table.name}</h2>
-                <p className="mt-2 text-sm font-medium text-neutral-600">{table.capacity ?? 0} seats</p>
-                <p className="mt-5 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-neutral-800">{table.status}</p>
+                <p className="text-xs font-semibold uppercase text-[#53706e]">{table.hall?.name ?? "Assigned hall"}</p>
+                <h2 className="mt-3 text-2xl font-semibold text-[#07373a]">{table.name}</h2>
+                <p className="mt-2 text-sm font-medium text-[#53706e]">{table.capacity ?? 0} seats</p>
+                <p className="mt-5 rounded-full bg-[#f5f5ef] px-2.5 py-1 text-[11px] font-bold text-[#07373a]">{table.status}</p>
               </button>
             ))}
           </div>
@@ -171,35 +171,35 @@ function WaiterFloor() {
         )}
       </div>
 
-      <aside className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
+      <aside className="rounded-[10px] border border-[#d5e2dd] bg-white p-4 shadow-[0_4px_16px_rgba(0,79,85,0.10)]">
         {selectedTable ? (
-          <div className="grid gap-5">
+          <div className="grid gap-4">
             <div>
-              <p className="text-sm font-semibold text-emerald-700">Selected table</p>
-              <h3 className="mt-2 text-2xl font-semibold text-neutral-950">{selectedTable.name}</h3>
+              <p className="text-sm font-semibold text-[#006b63]">Selected table</p>
+              <h3 className="mt-2 text-2xl font-semibold text-[#07373a]">{selectedTable.name}</h3>
             </div>
 
             {currentOrder ? (
               <>
-                <div className="rounded-2xl bg-neutral-50 p-4">
-                  <p className="text-sm font-semibold text-neutral-700">{currentOrder.displayOrderNumber ?? currentOrder.orderNumber}</p>
-                  <p className="mt-1 text-sm text-neutral-500">{currentOrder.status} · {currentOrder.total}</p>
+                <div className="rounded-[8px] bg-[#eef4f3] p-3">
+                  <p className="text-sm font-semibold text-[#245055]">{currentOrder.displayOrderNumber ?? currentOrder.orderNumber}</p>
+                  <p className="mt-1 text-sm text-[#53706e]">{currentOrder.status} · {currentOrder.total}</p>
                 </div>
                 <div className="grid gap-2">
                   {currentOrder.items.length ? (
                     currentOrder.items.map((item) => (
-                      <div className="flex justify-between rounded-2xl border border-neutral-100 px-4 py-3 text-sm" key={item.id}>
+                      <div className="flex justify-between rounded-[8px] border border-[#d5e2dd] px-3 py-2.5 text-sm" key={item.id}>
                         <span className="font-semibold text-neutral-800">{item.productName}</span>
-                        <span className="text-neutral-500">{item.quantity} · {item.totalPrice}</span>
+                        <span className="text-[#53706e]">{item.quantity} · {item.totalPrice}</span>
                       </div>
                     ))
                   ) : (
                     <EmptyState title="No products added yet." />
                   )}
                 </div>
-                <div className="grid max-h-72 gap-2 overflow-auto pr-1">
+                <div className="grid max-h-64 gap-2 overflow-auto pr-1">
                   {products.map((product) => (
-                    <button className="rounded-2xl border border-neutral-100 px-4 py-3 text-left text-sm font-semibold text-neutral-800 hover:bg-emerald-50" key={product.id} onClick={() => void addProduct(product)} type="button">
+                    <button className="rounded-[8px] border border-[#d5e2dd] px-3 py-2.5 text-left text-sm font-semibold text-[#07373a] hover:bg-[#eef4f3]" key={product.id} onClick={() => void addProduct(product)} type="button">
                       {product.name}
                     </button>
                   ))}
@@ -211,9 +211,9 @@ function WaiterFloor() {
               </>
             ) : (
               <div className="grid gap-3">
-                <label className="grid gap-2 text-sm font-semibold text-neutral-700">
+                <label className="grid gap-2 text-sm font-semibold text-[#245055]">
                   Guests
-                  <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100" min="1" type="number" value={guestCount} onChange={(event) => setGuestCount(event.target.value)} />
+                  <input className="rounded-[8px] border border-[#b8ccca] px-3 py-2.5 text-sm outline-none focus:border-[#008a84] focus:ring-2 focus:ring-[#bfe2dc]" min="1" type="number" value={guestCount} onChange={(event) => setGuestCount(event.target.value)} />
                 </label>
                 <PrimaryButton onClick={() => void openTable()}>Open table</PrimaryButton>
               </div>
@@ -229,7 +229,7 @@ function WaiterFloor() {
 
 function Legend({ color, label }: { color: string; label: string }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-semibold text-neutral-700 shadow-sm">
+    <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-semibold text-[#245055] shadow-sm">
       <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
       {label}
     </span>
@@ -238,10 +238,10 @@ function Legend({ color, label }: { color: string; label: string }) {
 
 function statusBackground(status: TableStatus): string {
   const classes: Record<TableStatus, string> = {
-    AVAILABLE: "bg-emerald-50",
-    OCCUPIED: "bg-red-50",
-    RESERVED: "bg-yellow-50",
-    CLEANING: "bg-neutral-100",
+    AVAILABLE: "bg-[#e8f5ee]",
+    OCCUPIED: "bg-[#fdeceb]",
+    RESERVED: "bg-[#fff7e8]",
+    CLEANING: "bg-[#eef4f3]",
   };
 
   return classes[status];

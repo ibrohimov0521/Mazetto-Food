@@ -32,6 +32,9 @@ export function StaffShell({
             <span className={styles.brandDivider} />
             <h1>{title}</h1>
           </div>
+          <div className={styles.desktopRoleNav}>
+            <PanelSwitcher user={user} staffMode variant="dark" />
+          </div>
           <div className={styles.headerActions}>
             {actions}
             <span
@@ -51,12 +54,9 @@ export function StaffShell({
             </button>
           </div>
         </div>
-        <PanelSwitcher
-          user={user}
-          staffMode
-          variant="dark"
-          className={styles.roleNav ?? ""}
-        />
+        <div className={styles.mobileRoleNav}>
+          <PanelSwitcher user={user} staffMode variant="dark" className={styles.roleNav ?? ""} />
+        </div>
       </header>
       {children}
     </main>

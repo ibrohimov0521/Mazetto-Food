@@ -27,10 +27,10 @@ export function AdminPageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 ? (
-          <nav aria-label="Breadcrumb" className="mb-1.5">
+          <nav aria-label="Breadcrumb" className="mb-1">
             <ol className="flex flex-wrap items-center gap-1 text-xs font-medium text-mz-text-muted">
               {breadcrumbs.map((crumb, index) => {
                 const isLast = index === breadcrumbs.length - 1;
@@ -68,12 +68,12 @@ export function AdminPageHeader({
           </nav>
         ) : null}
 
-        <h1 className="truncate text-2xl font-bold tracking-tight text-mz-text">
+        <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl text-mz-text">
           {title}
         </h1>
 
         {description ? (
-          <p className="mt-1 text-sm text-mz-text-muted">{description}</p>
+          <p className="mt-0.5 text-[13px] text-mz-text-muted">{description}</p>
         ) : null}
       </div>
 

@@ -82,7 +82,7 @@
   position: relative;
   background: var(--green);
   color: #fff;
-  padding: 12px 24px 0;
+  padding: 6px 16px 0;
   border-bottom: 3px solid var(--gold);
 }
 .header::before {
@@ -99,13 +99,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 12px;
+  gap: 12px;
+  min-height: 43px;
+  padding-bottom: 6px;
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
   min-width: 0;
 }
 .brand img {
@@ -119,14 +120,14 @@
   background: #ffffff40;
 }
 .brand h1 {
-  font-size: 20px;
+  font-size: 17px;
   line-height: 1.2;
   font-weight: 800;
   margin: 0;
 }
 .headerActions {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
   min-width: 0;
 }
@@ -141,8 +142,8 @@
 .headerIcon {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border: 1px solid #ffffff45;
   border-radius: 8px;
   background: #ffffff0c;
@@ -157,14 +158,14 @@
   position: relative;
   display: flex;
   gap: 4px;
-  padding-bottom: 9px;
+  padding-bottom: 6px;
   scrollbar-width: thin;
 }
 .roleNav a {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  padding: 8px 14px;
+  min-height: 34px;
+  padding: 6px 10px;
   border-radius: 6px;
   font-size: 13px;
 }
@@ -172,7 +173,7 @@
   width: 100%;
   max-width: 1800px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 16px;
 }
 .narrowContent {
   max-width: 1320px;
@@ -182,8 +183,8 @@
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 22px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 .pageHeading {
   font-size: 22px;
@@ -1393,5 +1394,29 @@
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+.desktopRoleNav {
+  min-width: 0;
+  flex: 1;
+}
+.desktopRoleNav > div {
+  justify-content: center;
+}
+.desktopRoleNav a {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.mobileRoleNav {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .desktopRoleNav {
+    display: none;
+  }
+  .mobileRoleNav {
+    display: block;
   }
 }
