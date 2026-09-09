@@ -1,0 +1,14 @@
+.identity {
+  border-left: 3px solid #f5cf00;
+  background: #eef6f1 url('/brand/botanical-sprig.svg') no-repeat right 16px top 8px / 100px;
+}
+.identity > h1 { max-width: calc(100% - 60px); }
+.actions { border-top: 1px solid var(--mf-divider); }
+.section { min-width: 0; border-top: 1px solid var(--mf-divider); }
+.section > h2 { border-left: 3px solid #f5cf00; padding-left: 12px; color: #004f55; font-size: 18px; line-height: 1.4; }
+.stat { border-top: 1px solid #cbded5; }
+@media (max-width: 639px) {
+  .identity { background-size: 70px; }
+  .identity > h1 { font-size: 22px; }
+  .section > h2 { font-size: 17px; }
+}

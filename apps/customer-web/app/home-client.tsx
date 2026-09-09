@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CustomerAuthPanel } from "../components/customer-auth-panel";
+import { ContactFooter } from "../components/contact-footer";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
 import { MediaImage } from "../components/media-image";
 import { MotionDiv, pageMotion, sectionMotion } from "../components/motion-primitives";
@@ -112,9 +112,9 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
         </>
       )}
 
-      <MotionDiv {...sectionMotion} className="mx-auto max-w-6xl px-4 pb-12">
-        <section className="mx-auto max-w-lg border-t border-[#0B7F75]/15 pt-6"><CustomerAuthPanel /></section>
-      </MotionDiv>
+      <div className="mx-auto max-w-6xl px-4 pb-4">
+        <ContactFooter showProfile />
+      </div>
     </SiteShell>
   );
 }
@@ -139,7 +139,7 @@ function ProductSection({ products, title, priority = false }: { products: Produ
   return (
     <MotionDiv {...sectionMotion} className="mf-home-products mx-auto max-w-6xl px-4 pb-7">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="mf-section-heading">{title}</h2>
+        <h2 className="mf-section-heading border-l-[3px] border-[#f5cf00] pl-3">{title}</h2>
         <Link className="pressable mf-section-link text-sm font-black" href="/menu">Menyuni ko'rish</Link>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">

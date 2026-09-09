@@ -1,4 +1,5 @@
 import { CustomerMenuSections } from "../../components/customer-menu-sections";
+import { ContactFooter } from "../../components/contact-footer";
 import { SiteShell } from "../../components/site-shell";
 import { getPublicMenu } from "../../lib/public-catalog";
 import { pageMetadata } from "../../lib/seo";
@@ -14,6 +15,9 @@ export default async function MenuPage() {
   return (
     <SiteShell>
       <CustomerMenuSections {...(initial ? { initial } : {})} />
+      <div className="mx-auto max-w-6xl bg-[#f5f5ef] px-4 pb-4">
+        <ContactFooter showProfile />
+      </div>
     </SiteShell>
   );
 }

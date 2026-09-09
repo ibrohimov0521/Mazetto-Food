@@ -11,6 +11,10 @@ export const metadata: Metadata = {
   description:
     "Mazetto Food rasmiy sayti: lavash, burger, hot-dog va setlar. Toshkentda onlayn buyurtma, yetkazib berish yoki filialdan olib ketish.",
   applicationName: "Mazetto Food",
+  icons: {
+    icon: [{ url: "/favicon.ico", sizes: "48x48" }, { url: "/brand/site-icon-v1.png", type: "image/png", sizes: "192x192" }],
+    apple: [{ url: "/brand/apple-touch-icon-v1.png", sizes: "180x180" }],
+  },
   robots: { index: true, follow: true },
   openGraph: {
     type: "website",

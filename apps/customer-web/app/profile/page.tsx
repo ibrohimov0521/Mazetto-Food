@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CustomerAuthPanel } from "../../components/customer-auth-panel";
+import { ContactFooter } from "../../components/contact-footer";
+import styles from "./profile.module.css";
 import { MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
@@ -43,7 +45,12 @@ const typeLabels: Record<string, string> = {
 export default function ProfilePage() {
   return (
     <SiteShell>
-      <Profile />
+      <div className="mx-auto max-w-6xl bg-[#f5f5ef]">
+        <Profile />
+        <div className="px-4 pb-4">
+          <ContactFooter />
+        </div>
+      </div>
     </SiteShell>
   );
 }
@@ -109,7 +116,7 @@ function Profile() {
         </div>
       ) : null}
       <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
-        <div className="mf-checkout-card min-w-0 p-4">
+        <div className={`${styles.identity} min-w-0 p-4 sm:p-5`}>
           <p className="text-xs font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>
           <h1 className="mt-1 break-words text-2xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
           <p className="mt-1 text-sm font-bold text-[#17314A]/60">{dashboard?.phone ?? customer.phone}</p>
@@ -124,7 +131,7 @@ function Profile() {
           </div>
         </div>
 
-        <div className="mf-checkout-card h-fit p-4 text-[#07373A]">
+        <div className={`${styles.actions} h-fit p-4 text-[#07373A]`}>
           <div className="grid gap-2">
             <Link className="pressable mf-button-primary px-4 py-3 text-center text-sm font-bold" href="/orders">
               Buyurtmalarim
@@ -202,7 +209,7 @@ function statusLabel(status: string): string {
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="mf-checkout-card mt-4 p-4">
+    <section className={`${styles.section} mt-4 py-4`}>
       <h2 className="mb-3 text-xl font-black text-[#17314A]">{title}</h2>
       {children}
     </section>
@@ -211,7 +218,7 @@ function Panel({ children, title }: { children: React.ReactNode; title: string }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-cart-row min-w-0 p-2.5">
+    <div className={`${styles.stat} min-w-0 p-2.5`}>
       <p className="text-[11px] font-bold text-[#0B7F75]">{label}</p>
       <p className="mt-1 break-words text-sm font-black text-[#17314A] sm:text-base">{value}</p>
     </div>

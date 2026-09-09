@@ -1,0 +1,55 @@
+.footer {
+  max-width: 1120px;
+  margin: 12px auto 0;
+  padding: 20px 0 10px;
+  border-top: 1px solid var(--mf-divider);
+  color: var(--mf-text);
+}
+.row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.contacts, .identity { min-width: 0; }
+.heading { margin: 0 0 8px; font-size: 14px; font-weight: 800; line-height: 1.4; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; }
+.link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 8px 11px;
+  border: 1px solid var(--mf-border);
+  border-radius: 8px;
+  background: #fff;
+  color: #005b5d;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-decoration: none;
+  transition: background-color 140ms, border-color 140ms;
+}
+.link svg { flex-shrink: 0; }
+.link:hover { border-color: #0b7f75; background: #eef8f2; }
+.link:active { background: #e2f1e9; }
+.link:focus-visible, .credit:focus-visible { outline: 2px solid #087d78; outline-offset: 3px; }
+.profile { display: flex; align-items: center; gap: 12px; min-width: 0; padding-left: 24px; border-left: 1px solid var(--mf-divider); }
+.profile .heading { margin-bottom: 3px; }
+.userIcon { flex-shrink: 0; color: #087d78; }
+.details { margin: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; color: #426467; }
+.details span { display: block; }
+.profile .link { flex-shrink: 0; }
+.creditRow { display: flex; justify-content: flex-end; margin-top: 6px; }
+.credit { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 10px; color: #566b6c; text-decoration: none; }
+.credit img { width: 24px; height: 24px; border-radius: 3px; }
+.credit:hover { color: #07373a; }
+@media (max-width: 850px) {
+  .row { align-items: stretch; flex-direction: column; gap: 16px; }
+  .profile { padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--mf-divider); }
+  .profile .link { margin-left: auto; }
+  .footer { padding-top: 16px; }
+}
+@media (max-width: 359px) {
+  .link { padding-inline: 8px; }
+  .profile { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .link { transition: none; }
+}
