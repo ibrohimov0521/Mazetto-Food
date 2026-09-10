@@ -73,6 +73,13 @@ export function DeliveryAddressPicker({
   const [save, setSave] = useState(true);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  /*
+   * Ko'cha nomi geokoderdan avtomatik to'ldirilganini eslab qolamiz.
+   * Foydalanuvchi maydonni O'ZI tahrirlagan bo'lsa, keyingi nuqta tanlash
+   * uning yozganini ALMASHTIRMASLIGI kerak — bu eng bezovta qiladigan xato.
+   */
+  const autoFilledAddress = useRef<string | null>(null);
+  const [locatingAddress, setLocatingAddress] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const request = useRef(0);
   const mounted = useRef(true);
@@ -112,6 +119,74 @@ export function DeliveryAddressPicker({
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
+
+  /*
+   * Xaritada nuqta tanlanganda ko'cha nomini avtomatik to'ldiradi.
+   *
+   * Ilgari foydalanuvchi ko'chani QO'LDA yozardi — bu checkout'dagi eng
+   * ko'p tashlab ketiladigan qadam edi.
+   *
+   * FAIL-OPEN: geokoder javob bermasa hech narsa ko'rsatilmaydi va maydon
+   * bo'sh qoladi — foydalanuvchi baribir qo'lda yoza oladi. Xato xabari
+   * ATAYLAB yo'q: bu qulaylik, buyurtma uchun shart emas.
+   */
+  useEffect(() => {
+    if (!editing || !point) return;
+
+    // Foydalanuvchi maydonni o'zi tahrirlagan bo'lsa — tegmaymiz.
+    const current = details.address.trim();
+    if (current && current !== autoFilledAddress.current) return;
+
+    let cancelled = false;
+    // Sur-sur qilganda har bir oraliq nuqta uchun so'rov ketmasligi uchun.
+    const timer = setTimeout(() => {
+      setLocatingAddress(true);
+      const query = new URLSearchParams({
+        lat: String(point.latitude),
+        lng: String(point.longitude),
+        lang: "uz",
+      });
+      apiFetch<{ label: string; inCity: boolean }>(
+        "/geocoding/reverse?" + query.toString(),
+      )
+        .then((result) => {
+          if (cancelled) return;
+          const label = result?.label?.trim();
+          if (!label) return;
+          /*
+           * Nominatim to'liq zanjir qaytaradi ("uy, ko'cha, tuman, shahar,
+           * viloyat, mamlakat, indeks"). Maydon uzunligi 200 ta belgi va
+           * foydalanuvchiga ko'cha darajasi yetarli — boshidagi uch bo'lak
+           * olinadi.
+           */
+          const short = label.split(",").slice(0, 3).join(",").trim();
+          autoFilledAddress.current = short;
+          setDetails((previous) =>
+            previous.address.trim() &&
+            previous.address.trim() !== autoFilledAddress.current
+              ? previous
+              : { ...previous, address: short },
+          );
+        })
+        .catch(() => {
+          /* Fail-open: qo'lda kiritish har doim ochiq. */
+        })
+        .finally(() => {
+          if (!cancelled) setLocatingAddress(false);
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    /*
+     * `details.address` ATAYLAB bog'liqlikda emas: har bir harf yozilganda
+     * effekt qayta ishga tushib, so'rov toshqiniga aylanardi. Yozuvning
+     * o'zi `setDetails` ning funksional shaklida qayta tekshiriladi, ya'ni
+     * eskirgan qiymat ustiga yozilmaydi.
+     */
+  }, [editing, point?.latitude, point?.longitude, apiFetch]);
 
   const addressRequest = useCallback(
     async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -454,6 +529,11 @@ export function DeliveryAddressPicker({
               setFormError(null);
             }}
           />
+          {locatingAddress ? (
+            <p className="mf-location-notice" role="status">
+              Manzil aniqlanmoqda...
+            </p>
+          ) : null}
           <div className="mf-address-fields">
             <label className="mf-checkout-field mf-field-wide">
               Ko'cha yoki mahalla

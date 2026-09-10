@@ -130,6 +130,21 @@ const envSchema = z.object({
   TELEGRAM_BOT_URL: optionalText,
   TELEGRAM_CUSTOMER_BOT_URL: optionalText,
 
+  /*
+   * Redis. Ikkalasi ham berilmasa kesh xotiraga tushadi va ilova ishlayveradi
+   * — lekin bir necha nusxa ishlayotganda kesh ular orasida bo'linmaydi.
+   * `REDIS_URL` ustun; berilmasa `REDIS_PORT` dan localhost URL yig'iladi.
+   */
+  REDIS_URL: optionalText,
+  REDIS_PORT: z.coerce.number().int().positive().optional(),
+
+  /*
+   * Geokodlash. Berilmasa ommaviy Nominatim ishlatiladi — u rate limit
+   * qo'yadi, shuning uchun ishlab chiqarishda self-hosted nusxa tavsiya
+   * etiladi. Geokoder ishlamasa buyurtma BLOKLANMAYDI (fail-open).
+   */
+  NOMINATIM_URL: optionalText,
+
   // Media saqlash. Berilmasa rasm yuklash o'chiq qoladi, ilova ishlayveradi.
   MINIO_ENDPOINT: optionalText,
   MINIO_PORT: z.coerce.number().int().positive().default(9000),
