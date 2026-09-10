@@ -5,6 +5,7 @@ import { compare } from "bcryptjs";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { LoginThrottleService } from "../src/modules/auth/login-throttle.service";
 import { RedisService } from "../src/redis/redis.service";
+import { RedisCacheService } from "../src/cache/redis-cache.service";
 import { StaffService } from "../src/modules/staff/staff.service";
 import { UserAuthCacheService } from "../src/common/auth/user-auth-cache.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
@@ -22,10 +23,12 @@ async function main(): Promise<void> {
   await prisma.$connect();
 
   try {
-    const staffService = new StaffService(prisma, new UserAuthCacheService(new RedisService()));
-    // Login cheklovi endi alohida servisda va Redis'ga tayanadi (7-bosqich
-    // 3-to'lqin). Bu skript RBAC ni tekshiradi, cheklovni emas — shuning
-    // uchun ulanishsiz `RedisService` beriladi va u zaxira yo'lida ishlaydi.
+    // Kesh va cheklov servislari ulanishsiz beriladi: bu skript RBAC ni
+    // tekshiradi, ularni emas — ikkalasi ham zaxira yo'lida ishlaydi.
+    const staffService = new StaffService(
+      prisma,
+      new UserAuthCacheService(new RedisCacheService()),
+    );
     const authService = new AuthService(
       prisma,
       new JwtService(),

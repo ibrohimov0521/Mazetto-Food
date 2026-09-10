@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { KitchenStaffAction } from "./kitchen.service";
 
 export type KitchenOrderStatusChangedEvent = {
-  action: KitchenStaffAction;
+  action: KitchenStaffAction | "refresh";
   orderId: string;
 };
 

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { RedisService } from "../../redis/redis.service";
+import { RedisCacheService } from "../../cache/redis-cache.service";
 import type { AuthenticatedUser } from "../types/authenticated-user";
 
 /*
@@ -21,49 +21,28 @@ import type { AuthenticatedUser } from "../types/authenticated-user";
  *
  * Token'ning O'ZIGA ishonmaslik ataylab: token 15 daqiqa yashaydi va uni
  * bekor qilib bo'lmaydi. 30 soniyalik kesh — 15 daqiqalik ko'r nuqta emas.
+ *
+ * TRANSPORT `RedisCacheService` da (umumiy JSON kesh, Redis tushganda
+ * xotiraga tushadi). Bu servis esa KALIT FORMATI va TTL ni egallaydi: guard
+ * o'qiydigan kalit bilan xodim mutatsiyalari o'chiradigan kalit bir xil
+ * bo'lishi shart, aks holda bekor qilish jimgina ta'sirsiz qolardi.
  */
 
-const KEY_PREFIX = "user-auth:";
+const KEY_PREFIX = "auth:user:";
+
+const key = (userId: string) => `${KEY_PREFIX}${userId}`;
 const TTL_SECONDS = 30;
 
 @Injectable()
 export class UserAuthCacheService {
-  constructor(private readonly redis: RedisService) {}
+  constructor(private readonly cache: RedisCacheService) {}
 
   async read(userId: string): Promise<AuthenticatedUser | null> {
-    const client = this.redis.getClient();
-
-    if (!client) {
-      return null;
-    }
-
-    try {
-      const raw = await client.get(`${KEY_PREFIX}${userId}`);
-      return raw ? (JSON.parse(raw) as AuthenticatedUser) : null;
-    } catch {
-      // Kesh o'qilmadi — guard bazaga boradi. Autentifikatsiya Redis
-      // tufayli buzilmasligi kerak.
-      return null;
-    }
+    return this.cache.getJson<AuthenticatedUser>(key(userId));
   }
 
   async write(user: AuthenticatedUser): Promise<void> {
-    const client = this.redis.getClient();
-
-    if (!client) {
-      return;
-    }
-
-    try {
-      await client.set(
-        `${KEY_PREFIX}${user.id}`,
-        JSON.stringify(user),
-        "EX",
-        TTL_SECONDS,
-      );
-    } catch {
-      // e'tiborsiz — kesh ixtiyoriy
-    }
+    await this.cache.setJson(key(user.id), user, TTL_SECONDS * 1000);
   }
 
   /**
@@ -74,16 +53,6 @@ export class UserAuthCacheService {
    * "yaxshilash", "majburiy shart" emas.
    */
   async invalidate(userId: string): Promise<void> {
-    const client = this.redis.getClient();
-
-    if (!client) {
-      return;
-    }
-
-    try {
-      await client.del(`${KEY_PREFIX}${userId}`);
-    } catch {
-      // e'tiborsiz — TTL bilan eskiradi
-    }
+    await this.cache.delete(key(userId));
   }
 }

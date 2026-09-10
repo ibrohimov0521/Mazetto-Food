@@ -3,10 +3,11 @@ import * as assert from "node:assert/strict";
 import { KitchenService } from "../src/modules/kitchen/kitchen.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { syncKitchenTickets } from "../src/modules/kitchen/kitchen-status-sync";
 import { loadEnvironmentFile } from "../src/config/env";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
-// bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
+// bootstrap'i bu yerda ishtirok etmaydi.
 loadEnvironmentFile();
 
 type SentTelegramPayload = {
@@ -61,7 +62,7 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  return new Response(JSON.stringify({ ok: true, ...(method === "sendMessage" ? { result: { message_id: 9000 + sentTelegramPayloads.length, chat: { id: payload.chat_id } } } : {}) }), { status: 200 });
 }) as typeof fetch;
 
 async function main(): Promise<void> {
@@ -93,6 +94,8 @@ async function main(): Promise<void> {
     await proveInvalidAndStaleCallback(prisma, staffNotifications, fixture);
     await proveConcurrentAccept(prisma, staffNotifications, fixture);
     await proveEditFallbackAndCustomerNotificationFailure(prisma, staffNotifications, fixture);
+    await proveCrossChannelRecovery(prisma, kitchenService, staffNotifications, fixture);
+    staffNotifications.onModuleDestroy();
 
     console.info("Telegram staff lifecycle validation passed");
   } finally {
@@ -175,7 +178,7 @@ async function proveLifecycle(
 
   await handleStaffCallback(staffNotifications, `mazetto_order:accept:${order.id}`, 1001);
   await assertOrderState(prisma, order.id, OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED);
-  assertKeyboardTexts(latestEdit(), ["Tayyorlanmoqda", "Bekor qilish"]);
+  assertKeyboardTexts(latestEdit(), ["Tayyorlash", "Bekor qilish"]);
   assertCustomerMessage(order.orderNumber, /qabul qilindi/);
   const afterAcceptHistory = await statusHistoryCount(prisma, order.id);
 
@@ -189,8 +192,14 @@ async function proveLifecycle(
 
   await handleStaffCallback(staffNotifications, `mazetto_order:mark_ready:${order.id}`, 1001);
   await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.READY);
-  assert.deepEqual(latestEdit()?.payload.reply_markup?.inline_keyboard, []);
+  assertKeyboardTexts(latestEdit(), ["Topshirish"]);
   assertCustomerMessage(order.orderNumber, /tayyor/);
+  await handleStaffCallback(staffNotifications, `mazetto_order:complete:${order.id}`, 1001);
+  await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.COMPLETED);
+  assert.deepEqual(latestEdit()?.payload.reply_markup?.inline_keyboard, []);
+  assert.match(latestEdit()?.payload.text ?? "", /Oshxonadan topshirildi/);
+  await handleStaffCallback(staffNotifications, `mazetto_order:complete:${order.id}`, 1001);
+  await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.COMPLETED);
 }
 
 async function proveLifecycleCustomerNotificationSurvivesCallbackAckFailure(
@@ -209,7 +218,7 @@ async function proveLifecycleCustomerNotificationSurvivesCallbackAckFailure(
   }
 
   await assertOrderState(prisma, order.id, OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED);
-  assertKeyboardTexts(latestEdit(), ["Tayyorlanmoqda", "Bekor qilish"]);
+  assertKeyboardTexts(latestEdit(), ["Tayyorlash", "Bekor qilish"]);
   assertCustomerMessage(order.orderNumber, /qabul qilindi/);
 }
 
@@ -309,6 +318,36 @@ async function proveEditFallbackAndCustomerNotificationFailure(
     ),
     "edit-impossible staff screen must fall back to one replacement message",
   );
+}
+
+async function proveCrossChannelRecovery(prisma: PrismaService, kitchen: KitchenService, notifications: TelegramOrderNotificationService, fixture: StaffLifecycleFixture) {
+  const order = await createStaffOrder(prisma, fixture, "cross-channel");
+  await handleStaffCallback(notifications, `mazetto_order:accept:${order.id}`, 7001);
+  // Simulate an older admin writer that left an ACCEPTED ticket behind.
+  await prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.PREPARING } });
+  const before = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: order.id } });
+  assert.equal(before.status, KitchenTicketStatus.ACCEPTED);
+  await kitchen.applyOrderAction(order.id, "mark_ready", { reasonPrefix: "Regression test", suppressTelegramStaffRefresh: true });
+  await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.READY);
+  await prisma.$transaction(async tx => {
+    await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED } });
+    await syncKitchenTickets(tx, order.id, OrderStatus.CANCELLED);
+  });
+  const notificationsBefore = sentTelegramPayloads.filter(entry => entry.method === "sendMessage" && entry.payload.chat_id === fixture.customerChatId).length;
+  await handleStaffCallback(notifications, `mazetto_order:mark_ready:${order.id}`, 7001);
+  await assertOrderState(prisma, order.id, OrderStatus.CANCELLED, KitchenTicketStatus.CANCELLED);
+  assert.match(latestEdit()?.payload.text ?? "", /Bekor qilindi/);
+  assert.deepEqual(latestEdit()?.payload.reply_markup?.inline_keyboard, []);
+  assert.equal(sentTelegramPayloads.filter(entry => entry.method === "sendMessage" && entry.payload.chat_id === fixture.customerChatId).length, notificationsBefore);
+
+  const fallback = await createStaffOrder(prisma, fixture, "replacement-pointer");
+  editFailures.add(7101);
+  await handleStaffCallback(notifications, `mazetto_order:accept:${fallback.id}`, 7101);
+  const stored = await prisma.order.findUniqueOrThrow({ where: { id: fallback.id } });
+  assert.ok(stored.staffTelegramMessageId && stored.staffTelegramMessageId !== 7101);
+  await handleStaffCallback(notifications, `mazetto_order:start_preparing:${fallback.id}`, 7101);
+  assert.equal(latestEdit()?.payload.message_id, stored.staffTelegramMessageId, "Future edits target replacement message");
+  assert.ok(sentTelegramPayloads.some(entry => entry.method === "editMessageReplyMarkup" && entry.payload.message_id === 7101));
 }
 
 async function createStaffOrder(

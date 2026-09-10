@@ -105,7 +105,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             user={user}
           />
 
-          <main className="mx-auto w-full min-w-0 max-w-[1600px] flex-1 px-3 py-4 sm:px-5 sm:py-6">
+          <main className="mx-auto w-full min-w-0 max-w-[1760px] flex-1 px-3 py-3 sm:px-4 sm:py-4">
             {children}
           </main>
         </div>

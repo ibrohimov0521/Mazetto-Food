@@ -235,6 +235,7 @@ function createServices(prisma: PrismaService) {
   const customersService = new CustomersService(
     prisma,
     branchesService,
+    kitchenService,
     new JwtService(),
     orderEngine,
     telegramAuth,

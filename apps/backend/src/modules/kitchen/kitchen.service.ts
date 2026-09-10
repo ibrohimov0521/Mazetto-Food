@@ -1,14 +1,36 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { KitchenTicketStatus, OrderItemStatus, OrderStatus, Prisma } from "@prisma/client";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  KitchenTicketStatus,
+  OrderItemStatus,
+  OrderStatus,
+  Prisma,
+} from "@prisma/client";
 import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
-import { kitchenEvents, kitchenOrderStatusChangedEvent } from "./kitchen-events";
+import {
+  kitchenEvents,
+  kitchenOrderStatusChangedEvent,
+} from "./kitchen-events";
 import { KitchenGateway } from "./kitchen.gateway";
+import {
+  kitchenStatusForOrder,
+  syncKitchenTickets,
+} from "./kitchen-status-sync";
 
 type TransactionClient = Prisma.TransactionClient;
-export type KitchenStaffAction = "accept" | "start_preparing" | "mark_ready" | "complete" | "cancel";
+export type KitchenStaffAction =
+  | "accept"
+  | "start_preparing"
+  | "mark_ready"
+  | "complete"
+  | "cancel";
 type KitchenTransitionActor = {
   user?: AuthenticatedUser;
   reasonPrefix: string;
@@ -39,12 +61,24 @@ export class KitchenService {
     private readonly gateway: KitchenGateway,
   ) {}
 
-  listOrders(user: AuthenticatedUser) {
+  async listOrders(user: AuthenticatedUser) {
+    const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user);
+    const day = this.todayTashkentRange();
 
-    return this.prisma.kitchenTicket.findMany({
+    const tickets = await this.prisma.kitchenTicket.findMany({
       where: {
-        ...(branchId ? { order: { branchId } } : {}),
+        order: {
+          ...(branchId ? { branchId } : {}),
+          createdAt: { gte: day.start, lt: day.end },
+          status: {
+            notIn: [
+              OrderStatus.SERVED,
+              OrderStatus.COMPLETED,
+              OrderStatus.CANCELLED,
+            ],
+          },
+        },
         status: {
           in: [
             KitchenTicketStatus.NEW,
@@ -53,10 +87,75 @@ export class KitchenService {
             KitchenTicketStatus.READY,
           ],
         },
+        OR: [
+          { status: KitchenTicketStatus.NEW },
+          {
+            order: {
+              statusHistory: {
+                some: {
+                  changedByEmployeeId: employeeId,
+                  createdAt: { gte: day.start, lt: day.end },
+                },
+              },
+            },
+          },
+        ],
       },
       include: this.ticketInclude(),
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+      take: 250,
     });
+    return tickets.map((ticket) => ({
+      ...ticket,
+      status: kitchenStatusForOrder(ticket.order.status) ?? ticket.status,
+    }));
+  }
+
+  async listHistory(
+    query: { status?: string; search?: string; limit?: string; offset?: string },
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const branchId = resolveBranchScope(user);
+    const day = this.todayTashkentRange();
+    const status = this.toKitchenTicketStatus(query.status);
+    const search = query.search?.trim();
+
+    const tickets = await this.prisma.kitchenTicket.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        order: {
+          ...(branchId ? { branchId } : {}),
+          createdAt: { gte: day.start, lt: day.end },
+          statusHistory: {
+            some: {
+              changedByEmployeeId: employeeId,
+              createdAt: { gte: day.start, lt: day.end },
+            },
+          },
+          ...(search
+            ? {
+                OR: [
+                  { orderNumber: { contains: search, mode: "insensitive" } },
+                  { displayOrderNumber: { contains: search, mode: "insensitive" } },
+                  { customerName: { contains: search, mode: "insensitive" } },
+                  { customerPhone: { contains: search, mode: "insensitive" } },
+                  { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+                ],
+              }
+            : {}),
+        },
+      },
+      include: this.ticketInclude(),
+      orderBy: { updatedAt: "desc" },
+      skip: this.parseOffset(query.offset),
+      take: this.parseLimit(query.limit),
+    });
+
+    return tickets.map((ticket) => ({
+      ...ticket,
+      status: kitchenStatusForOrder(ticket.order.status) ?? ticket.status,
+    }));
   }
 
   async createTicketForOrder(tx: TransactionClient, orderId: string) {
@@ -118,7 +217,11 @@ export class KitchenService {
     return result.ticket;
   }
 
-  async applyTicketAction(id: string, action: KitchenStaffAction, user: AuthenticatedUser) {
+  async applyTicketAction(
+    id: string,
+    action: KitchenStaffAction,
+    user: AuthenticatedUser,
+  ) {
     const existingTicket = await this.prisma.kitchenTicket.findUnique({
       where: { id },
       select: { orderId: true },
@@ -135,7 +238,11 @@ export class KitchenService {
     });
   }
 
-  async applyOrderAction(orderId: string, action: KitchenStaffAction, actor: KitchenTransitionActor) {
+  async applyOrderAction(
+    orderId: string,
+    action: KitchenStaffAction,
+    actor: KitchenTransitionActor,
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
 
@@ -149,7 +256,20 @@ export class KitchenService {
         resolveBranchScope(actor.user, order.branchId);
       }
 
-      const ticket = order.kitchenTickets[0] ?? null;
+      await syncKitchenTickets(tx, orderId, order.status);
+      const storedTicket = order.kitchenTickets[0] ?? null;
+      const ticket =
+        storedTicket &&
+        ![
+          KitchenTicketStatus.COMPLETED,
+          KitchenTicketStatus.CANCELLED,
+        ].includes(storedTicket.status as "COMPLETED" | "CANCELLED")
+          ? {
+              ...storedTicket,
+              status:
+                kitchenStatusForOrder(order.status) ?? storedTicket.status,
+            }
+          : storedTicket;
 
       if (!ticket) {
         throw new BadRequestException("Oshxona chiptasi topilmadi");
@@ -174,7 +294,10 @@ export class KitchenService {
         orderData.status = transition.orderStatus;
       }
 
-      if (transition.orderStatus === OrderStatus.CONFIRMED && !order.acceptedAt) {
+      if (
+        transition.orderStatus === OrderStatus.CONFIRMED &&
+        !order.acceptedAt
+      ) {
         orderData.acceptedAt = now;
 
         if (user?.employeeId && !order.acceptedById) {
@@ -184,7 +307,8 @@ export class KitchenService {
 
       if (transition.orderStatus === OrderStatus.CANCELLED) {
         orderData.cancelledAt = order.cancelledAt ?? now;
-        orderData.cancellationReason = order.cancellationReason ?? actor.cancellationReason ?? null;
+        orderData.cancellationReason =
+          order.cancellationReason ?? actor.cancellationReason ?? null;
 
         if (user?.employeeId) {
           orderData.cancelledBy = { connect: { id: user.employeeId } };
@@ -234,7 +358,11 @@ export class KitchenService {
     });
 
     if (result.changed) {
-      this.emitOrderStatusChanged({ action, order: result.order, ticket: result.ticket });
+      this.emitOrderStatusChanged({
+        action,
+        order: result.order,
+        ticket: result.ticket,
+      });
       if (!actor.suppressTelegramStaffRefresh) {
         kitchenEvents.emit(kitchenOrderStatusChangedEvent, { action, orderId });
       }
@@ -263,62 +391,138 @@ export class KitchenService {
     order: Pick<KitchenTransitionOrder, "status">,
     ticket: KitchenTransitionOrder["kitchenTickets"][number],
     action: KitchenStaffAction,
-  ): { changed: boolean; orderStatus: OrderStatus; ticketStatus: KitchenTicketStatus } {
-    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
-      throw new BadRequestException(`Buyurtma allaqachon ${order.status.toLowerCase()}`);
+  ): {
+    changed: boolean;
+    orderStatus: OrderStatus;
+    ticketStatus: KitchenTicketStatus;
+  } {
+    if (
+      (action === "cancel" && order.status === OrderStatus.CANCELLED) ||
+      (action === "complete" &&
+        ticket.status === KitchenTicketStatus.COMPLETED &&
+        order.status !== OrderStatus.CANCELLED)
+    ) {
+      return {
+        changed: false,
+        orderStatus: order.status,
+        ticketStatus: ticket.status,
+      };
+    }
+    if (
+      order.status === OrderStatus.COMPLETED ||
+      order.status === OrderStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        order.status === OrderStatus.CANCELLED
+          ? "Buyurtma bekor qilingan. Holat yangilandi."
+          : "Buyurtma yakunlangan. Holat yangilandi.",
+      );
     }
 
-    if (ticket.status === KitchenTicketStatus.COMPLETED || ticket.status === KitchenTicketStatus.CANCELLED) {
+    if (
+      ticket.status === KitchenTicketStatus.COMPLETED ||
+      ticket.status === KitchenTicketStatus.CANCELLED
+    ) {
       throw new BadRequestException("Oshxona chiptasi yopilgan");
     }
 
     if (action === "accept") {
-      if (order.status === OrderStatus.CONFIRMED && ticket.status === KitchenTicketStatus.ACCEPTED) {
-        return { changed: false, orderStatus: OrderStatus.CONFIRMED, ticketStatus: KitchenTicketStatus.ACCEPTED };
+      if (
+        order.status === OrderStatus.CONFIRMED &&
+        ticket.status === KitchenTicketStatus.ACCEPTED
+      ) {
+        return {
+          changed: false,
+          orderStatus: OrderStatus.CONFIRMED,
+          ticketStatus: KitchenTicketStatus.ACCEPTED,
+        };
       }
 
       if (
-        (order.status === OrderStatus.NEW || order.status === OrderStatus.CONFIRMED) &&
+        (order.status === OrderStatus.NEW ||
+          order.status === OrderStatus.CONFIRMED) &&
         ticket.status === KitchenTicketStatus.NEW
       ) {
-        return { changed: true, orderStatus: OrderStatus.CONFIRMED, ticketStatus: KitchenTicketStatus.ACCEPTED };
+        return {
+          changed: true,
+          orderStatus: OrderStatus.CONFIRMED,
+          ticketStatus: KitchenTicketStatus.ACCEPTED,
+        };
       }
     }
 
     if (action === "start_preparing") {
-      if (order.status === OrderStatus.PREPARING && ticket.status === KitchenTicketStatus.COOKING) {
-        return { changed: false, orderStatus: OrderStatus.PREPARING, ticketStatus: KitchenTicketStatus.COOKING };
+      if (
+        order.status === OrderStatus.PREPARING &&
+        ticket.status === KitchenTicketStatus.COOKING
+      ) {
+        return {
+          changed: false,
+          orderStatus: OrderStatus.PREPARING,
+          ticketStatus: KitchenTicketStatus.COOKING,
+        };
       }
 
-      if (order.status === OrderStatus.CONFIRMED && ticket.status === KitchenTicketStatus.ACCEPTED) {
-        return { changed: true, orderStatus: OrderStatus.PREPARING, ticketStatus: KitchenTicketStatus.COOKING };
+      if (
+        order.status === OrderStatus.CONFIRMED &&
+        ticket.status === KitchenTicketStatus.ACCEPTED
+      ) {
+        return {
+          changed: true,
+          orderStatus: OrderStatus.PREPARING,
+          ticketStatus: KitchenTicketStatus.COOKING,
+        };
       }
     }
 
     if (action === "mark_ready") {
-      if (order.status === OrderStatus.READY && ticket.status === KitchenTicketStatus.READY) {
-        return { changed: false, orderStatus: OrderStatus.READY, ticketStatus: KitchenTicketStatus.READY };
+      if (
+        order.status === OrderStatus.READY &&
+        ticket.status === KitchenTicketStatus.READY
+      ) {
+        return {
+          changed: false,
+          orderStatus: OrderStatus.READY,
+          ticketStatus: KitchenTicketStatus.READY,
+        };
       }
 
-      if (order.status === OrderStatus.PREPARING && ticket.status === KitchenTicketStatus.COOKING) {
-        return { changed: true, orderStatus: OrderStatus.READY, ticketStatus: KitchenTicketStatus.READY };
+      if (
+        order.status === OrderStatus.PREPARING &&
+        ticket.status === KitchenTicketStatus.COOKING
+      ) {
+        return {
+          changed: true,
+          orderStatus: OrderStatus.READY,
+          ticketStatus: KitchenTicketStatus.READY,
+        };
       }
     }
 
     if (action === "complete") {
       if (ticket.status === KitchenTicketStatus.READY) {
-        return { changed: true, orderStatus: OrderStatus.READY, ticketStatus: KitchenTicketStatus.COMPLETED };
+        return {
+          changed: true,
+          orderStatus: OrderStatus.READY,
+          ticketStatus: KitchenTicketStatus.COMPLETED,
+        };
       }
     }
 
     if (action === "cancel") {
       if (
-        (order.status === OrderStatus.NEW || order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.PREPARING) &&
+        (order.status === OrderStatus.NEW ||
+          order.status === OrderStatus.CONFIRMED ||
+          order.status === OrderStatus.PREPARING) &&
         (ticket.status === KitchenTicketStatus.NEW ||
           ticket.status === KitchenTicketStatus.ACCEPTED ||
           ticket.status === KitchenTicketStatus.COOKING)
       ) {
-        return { changed: true, orderStatus: OrderStatus.CANCELLED, ticketStatus: KitchenTicketStatus.CANCELLED };
+        return {
+          changed: true,
+          orderStatus: OrderStatus.CANCELLED,
+          ticketStatus: KitchenTicketStatus.CANCELLED,
+        };
       }
     }
 
@@ -395,6 +599,45 @@ export class KitchenService {
     } satisfies Prisma.KitchenTicketInclude;
   }
 
+  private requireEmployee(user: AuthenticatedUser): string {
+    if (!user.employeeId) {
+      throw new ForbiddenException("Authenticated user is not linked to an employee");
+    }
+
+    return user.employeeId;
+  }
+
+  private todayTashkentRange(): { start: Date; end: Date } {
+    const offsetMs = 5 * 60 * 60 * 1000;
+    const shifted = new Date(Date.now() + offsetMs);
+    const startUtcMs = Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+    ) - offsetMs;
+
+    return {
+      start: new Date(startUtcMs),
+      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+    };
+  }
+
+  private toKitchenTicketStatus(status?: string): KitchenTicketStatus | undefined {
+    return Object.values(KitchenTicketStatus).includes(status as KitchenTicketStatus)
+      ? (status as KitchenTicketStatus)
+      : undefined;
+  }
+
+  private parseLimit(value?: string): number {
+    const parsed = Number(value ?? 50);
+    return Number.isFinite(parsed) ? Math.min(100, Math.max(1, Math.trunc(parsed))) : 50;
+  }
+
+  private parseOffset(value?: string): number {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+  }
+
   private createTicketNumber(): string {
     const now = new Date();
     const date = now.toISOString().slice(0, 10).replaceAll("-", "");
@@ -402,6 +645,9 @@ export class KitchenService {
   }
 
   private isUniqueTicketError(error: unknown): boolean {
-    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    );
   }
 }

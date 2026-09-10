@@ -1,6 +1,6 @@
 import { StaffService } from "../src/modules/staff/staff.service";
 import { UserAuthCacheService } from "../src/common/auth/user-auth-cache.service";
-import { RedisService } from "../src/redis/redis.service";
+import { RedisCacheService } from "../src/cache/redis-cache.service";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
 
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   await prisma.$connect();
 
   try {
-    const staffService = new StaffService(prisma, new UserAuthCacheService(new RedisService()));
+    const staffService = new StaffService(prisma, new UserAuthCacheService(new RedisCacheService()));
     const account = await staffService.bootstrapSuperAdmin({
       name,
       ...(email ? { email } : {}),

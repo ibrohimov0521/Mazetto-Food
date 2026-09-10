@@ -1,5 +1,3 @@
-"use client";
-
 import type { Category, CustomerHome, HomepageHeroSlide, HomepagePromotion, ModifierLink, Product, ProductVariant } from "./types";
 
 const categoryLabels: Record<string, string> = {

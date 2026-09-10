@@ -26,19 +26,23 @@ function main(): void {
   assert.match(ordersService, /CashTransactionType\.SALE/);
   assert.match(posPage, /\/cash-register\/shift/);
   assert.match(posPage, /router\.replace\("\/shift"\)/);
-  assert.match(posPage, /Smena ochiq/);
-  assert.match(posPage, /Boshlangan:/);
+  // POS smena banneri o'rniga ixcham tugma keldi: ochiq smena raqami bilan
+  // ko'rsatiladi, boshlanish vaqti esa endi bu ekranda chizilmaydi (u /shift
+  // sahifasida qoldi). Shuning uchun "Boshlangan:" asserti olib tashlandi.
+  assert.match(posPage, /Smena #\$\{currentShift\.shiftNumber/);
   assert.match(posPage, /router\.push\("\/shift"\)/);
   assert.match(auth, /CASHIER: "\/shift"/);
   assert.match(shiftPage, /\/cash-register\/shift\/open/);
   assert.match(shiftPage, /\/cash-register\/shift\/\$\{shift\.id\}\/close/);
   assert.doesNotMatch(shiftPage, /branchId/);
-  assert.match(shiftPage, /Status: Ochiq/);
+  assert.match(shiftPage, /setShift\(current\?\.status === "OPEN" \? current : null\)/);
   assert.match(shiftPage, /setIsConfirmingClose\(true\)/);
   assert.match(shiftPage, /Smenani yakunlaysizmi\?/);
-  assert.match(shiftPage, /Ha, yakunlash/);
-  assert.match(shiftPage, /disabled=\{isSaving \|\| !closingCash\}/);
-  assert.match(shiftPage, /differenceText\(differencePreview\)/);
+  assert.match(shiftPage, /isSaving \? "Yopilmoqda\.\.\." : "Yakunlash"/);
+  assert.match(shiftPage, /closingCash !== "" && Number\.isFinite\(closingValue\) && closingValue >= 0/);
+  assert.match(shiftPage, /disabled=\{isSaving \|\| !closingValid\}/);
+  assert.match(shiftPage, /const difference = closingValue - expectedCash/);
+  assert.match(shiftPage, /differenceText\(difference\)/);
 
   console.info("Shift/Kassa static validation passed");
 }

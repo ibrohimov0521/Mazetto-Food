@@ -1,9 +1,25 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import { getApiBaseUrl, getPrimaryRedirect, type AuthSession, type AuthUser } from "../../lib/auth";
-import { readSession, subscribeToSession, writeSession } from "../../lib/session";
+import {
+  getApiBaseUrl,
+  getPrimaryRedirect,
+  type AuthSession,
+  type AuthUser,
+} from "../../lib/auth";
+import {
+  readSession,
+  subscribeToSession,
+  writeSession,
+} from "../../lib/session";
 
 type AuthContextValue = {
   isReady: boolean;
@@ -109,11 +125,16 @@ async function getLoginRedirect(session: AuthSession): Promise<string> {
 
   try {
     const response = await fetch(`${getApiBaseUrl()}/cash-register/shift`, {
-      headers: { Authorization: `${session.tokens.tokenType} ${session.tokens.accessToken}` },
+      headers: {
+        Authorization: `${session.tokens.tokenType} ${session.tokens.accessToken}`,
+      },
     });
-    const payload = (await response.json()) as ApiEnvelope<CurrentShiftResponse>;
+    const payload =
+      (await response.json()) as ApiEnvelope<CurrentShiftResponse>;
 
-    return response.ok && payload.success && payload.data?.status === "OPEN" ? "/pos" : "/shift";
+    return response.ok && payload.success && payload.data?.status === "OPEN"
+      ? "/pos"
+      : "/shift";
   } catch {
     return "/shift";
   }

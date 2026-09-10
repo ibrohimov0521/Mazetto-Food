@@ -258,6 +258,7 @@ model Customer {
   favorites        CustomerFavorite[]
   customerOrders   CustomerOrder[]
   orderAttempts    CustomerOrderAttempt[]
+  addresses        CustomerAddress[]
   sessions         CustomerSession[]
   challenges       CustomerVerificationChallenge[]
   checkoutSessions TelegramCheckoutSession[]
@@ -265,6 +266,21 @@ model Customer {
   @@index([telegramChatId])
   @@index([createdAt])
   @@map("customers")
+}
+
+model CustomerAddress {
+  id         String
+  customerId String
+  label      String
+  location   Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, id])
+  @@index([customerId, updatedAt])
+  @@map("customer_addresses")
 }
 
 model TelegramCheckoutSession {
@@ -871,6 +887,7 @@ model Order {
   customerName           String?
   customerPhone          String?
   deliveryAddress        String?
+  deliveryLocation       Json?
   guestCount             Int?
   subtotal               Decimal       @default(0) @db.Decimal(12, 2)
   discountTotal          Decimal       @default(0) @db.Decimal(12, 2)
@@ -1239,6 +1256,7 @@ model CustomerOrder {
   type            CustomerOrderType
   paymentMethod   String?
   deliveryAddress String?
+  deliveryLocation Json?
   notes           String?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt

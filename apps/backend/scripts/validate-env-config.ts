@@ -101,6 +101,6 @@ assert.equal(defaults.BACKEND_PORT, 4000);
 // 0 = hech qanday proxy header'iga ishonilmaydi (PHASE 6 H1).
 assert.equal(defaults.TRUSTED_PROXY_HOP_COUNT, 0);
 assert.equal(defaults.JWT_ACCESS_EXPIRES_IN_SECONDS, 900);
-assert.equal(defaults.CORS_ORIGIN, undefined);
+assert.equal(defaults.CORS_ORIGINS, undefined);
 
 console.log("Environment configuration validation passed");

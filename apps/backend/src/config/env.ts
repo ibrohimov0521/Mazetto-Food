@@ -106,6 +106,8 @@ const positiveSeconds = (fallback: number) =>
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   BACKEND_PORT: z.coerce.number().int().positive().default(4000),
+  // Berilmasa Nest o'z default interfeysida tinglaydi.
+  BACKEND_HOST: optionalText,
 
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 
@@ -120,7 +122,7 @@ const envSchema = z.object({
 
   // 0 = hech qanday proxy header'iga ishonilmaydi (PHASE 6 H1).
   TRUSTED_PROXY_HOP_COUNT: z.coerce.number().int().min(0).max(10).default(0),
-  CORS_ORIGIN: optionalText,
+  CORS_ORIGINS: optionalText,
 
   TELEGRAM_BOT_TOKEN: optionalText,
   TELEGRAM_WEBHOOK_SECRET: optionalText,

@@ -79,7 +79,7 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
     return (
       <section className="mt-5">
         <div className="skeleton h-6 w-56 rounded-full" />
-        <div className="mf-upsell-scroll no-scrollbar mt-3">
+        <div className="mf-upsell-grid mt-3">
           {Array.from({ length: 4 }, (_, index) => (
             <div className="skeleton h-48 min-w-0 rounded-2xl" key={index} />
           ))}
@@ -103,10 +103,9 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
       </div>
       <div
         aria-label="Qo'shimcha mahsulotlar"
-        className="mf-upsell-scroll no-scrollbar"
+        className="mf-upsell-grid"
         data-upsell-rail
         role="region"
-        tabIndex={0}
       >
         {recommended.map((product) => (
           <UpsellCard addItem={addItem} key={product.id} product={product} triggerCartFlight={triggerCartFlight} />
@@ -150,12 +149,9 @@ function UpsellCard({
               className="pressable ripple mf-button-primary grid h-9 w-9 shrink-0 place-items-center rounded-xl text-base font-black"
               onClick={() => {
                 const rect = imageRef.current?.getBoundingClientRect();
-                if (rect) {
-                  triggerCartFlight(product.imageUrl, rect);
-                }
 
                 hapticTap([8, 20, 8]);
-                addItem({
+                const added = addItem({
                   productId: product.id,
                   productName: product.name,
                   imageUrl: product.imageUrl,
@@ -165,6 +161,7 @@ function UpsellCard({
                   quantity: 1,
                   modifiers: [],
                 });
+                if (added && rect) triggerCartFlight(product.imageUrl, rect);
               }}
               type="button"
             >

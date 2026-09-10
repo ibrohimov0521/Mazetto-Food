@@ -1,3 +1,5 @@
+import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
+import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import {
   BadRequestException,
   ForbiddenException,
@@ -27,7 +29,11 @@ import { KitchenService } from "../kitchen/kitchen.service";
 import type { CreateOrderDto } from "./dto/create-order.dto";
 import type { ListOrdersDto } from "./dto/list-orders.dto";
 import type { AddOrderItemDto, OrderItemModifierDto, UpdateOrderItemDto } from "./dto/order-item.dto";
-import { PosOrderStatus, type UpdateOrderStatusDto } from "./dto/order-status.dto";
+import {
+  PosOrderStatus,
+  type BulkUpdateOrderStatusDto,
+  type UpdateOrderStatusDto,
+} from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
 import { allocateDisplayOrderNumber } from "./order-display-number";
 
@@ -356,16 +362,26 @@ export class OrdersService {
       };
       } catch (error) {
         if (this.isUniqueConstraintError(error)) {
-          const order = await this.resolveExistingPosCheckoutByKey(idempotencyKey, requestHash);
+          const existingOperation = await this.prisma.paymentOperation.findUnique({
+            where: { idempotencyKey },
+          });
 
-          return {
-            order,
-            payment: {
-              method: "CASH",
-              cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
-              change: new Prisma.Decimal(dto.cashReceived).sub(order.total).toFixed(2),
-            },
-          };
+          if (existingOperation) {
+            const order = await this.resolveExistingPosCheckoutByKey(idempotencyKey, requestHash);
+
+            return {
+              order,
+              payment: {
+                method: "CASH",
+                cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
+                change: new Prisma.Decimal(dto.cashReceived).sub(order.total).toFixed(2),
+              },
+            };
+          }
+
+          if (attempt < 2) {
+            continue;
+          }
         }
 
         if (this.isRetryableTransactionConflict(error) && attempt < 2) {
@@ -383,7 +399,7 @@ export class OrdersService {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     const employeeId = this.resolveEmployeeId(dto.employeeId, user);
 
-    const order = await this.prisma.$transaction(async (tx) => {
+    const order = await this.withUniqueConstraintRetry(() => this.prisma.$transaction(async (tx) => {
       await this.assertBranchExists(tx, branchId);
       await this.assertEmployeeInBranch(tx, employeeId, branchId);
 
@@ -426,7 +442,7 @@ export class OrdersService {
       });
 
       return this.findOrderById(order.id, tx);
-    });
+    }));
 
     this.kitchenService.emitOrderCreated(order);
     return order;
@@ -564,6 +580,7 @@ export class OrdersService {
     const nextStatus = this.toStoredStatus(dto.status);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
       const order = await tx.order.findUnique({ where: { id: orderId } });
 
       if (!order) {
@@ -633,6 +650,8 @@ export class OrdersService {
 
       await tx.order.update({ where: { id: orderId }, data });
 
+      await syncKitchenTickets(tx, orderId, nextStatus);
+
       if (
         order.tableId &&
         (nextStatus === OrderStatus.COMPLETED || nextStatus === OrderStatus.CANCELLED)
@@ -669,7 +688,46 @@ export class OrdersService {
     }
 
     this.kitchenService.emitOrderStatusChanged(result.order);
+    kitchenEvents.emit(kitchenOrderStatusChangedEvent, { orderId, action: "refresh" });
     return result.order;
+  }
+
+  async bulkUpdateStatus(dto: BulkUpdateOrderStatusDto, user: AuthenticatedUser) {
+    if (!dto.confirm) {
+      throw new BadRequestException("Bulk action requires confirmation");
+    }
+
+    const uniqueIds = [...new Set(dto.orderIds.map((id) => id.trim()).filter(Boolean))];
+    const updated: unknown[] = [];
+    const failed: { id: string; message: string }[] = [];
+
+    for (const orderId of uniqueIds) {
+      try {
+        updated.push(
+          await this.updateStatus(
+            orderId,
+            {
+              status: dto.status,
+              reason: dto.reason ?? `Bulk action requested: ${dto.status}`,
+            },
+            user,
+          ),
+        );
+      } catch (caught) {
+        failed.push({
+          id: orderId,
+          message: caught instanceof Error ? caught.message : "Amal bajarilmadi",
+        });
+      }
+    }
+
+    return {
+      requested: uniqueIds.length,
+      updatedCount: updated.length,
+      failedCount: failed.length,
+      updated,
+      failed,
+    };
   }
 
   async confirmOrderForPreparation(
@@ -947,6 +1005,22 @@ export class OrdersService {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     );
+  }
+
+  private async withUniqueConstraintRetry<T>(operation: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (this.isUniqueConstraintError(error) && attempt < 2) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new BadRequestException("Operation could not be completed");
   }
 
   private isRetryableTransactionConflict(error: unknown): boolean {

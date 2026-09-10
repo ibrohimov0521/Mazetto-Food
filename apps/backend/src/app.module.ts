@@ -8,6 +8,7 @@ import { MazettoThrottlerGuard } from "./common/guards/mazetto-throttler.guard";
 import { RedisThrottlerStorage } from "./common/throttler/redis-throttler.storage";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
+import { CacheModule } from "./cache/cache.module";
 import { HealthController } from "./health.controller";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -44,22 +45,25 @@ import { RedisService } from "./redis/redis.service";
 
 @Module({
   imports: [
-    // Rejalashtirilgan tozalash ishlari uchun (7-bosqich Q2). Ilgari
-    // backendda birorta ham davriy ish yo'q edi.
+    // Rejalashtirilgan tozalash ishlari uchun. Ilgari backendda birorta ham
+    // davriy ish yo'q edi.
     ScheduleModule.forRoot(),
+    CacheModule,
     RedisModule,
     SettingsModule,
     /*
-     * Global rate limit (PHASE 6 H3).
+     * Global rate limit.
      *
      * Hisoblagichlar REDIS'da: jarayon xotirasidagi buketlar har deploy'da
      * nolga tushardi va instance boshiga alohida sanalardi, ya'ni haqiqiy
      * chegara instance soniga ko'payib ketardi.
      *
-     * 300 so'rov/daqiqa — POS ekranlari bir necha endpointni birga so'raydi va
-     * oshxona doskasi tez-tez yangilanadi, shuning uchun chegara odatdagi
-     * ishdan ancha yuqori qo'yilgan: maqsad suiiste'molni to'xtatish, xodimni
-     * sekinlashtirish emas.
+     * ⚠ CHEGARA QIYMATI O'LCHOVGA ASOSLANMAGAN. U IP bo'yicha hisoblanadi,
+     * bitta filialdagi bir necha planshet esa BITTA NAT IP ni bo'lishadi —
+     * ya'ni chegara qurilma emas, butun filial uchun amal qiladi. 300 ataylab
+     * baland: maqsad suiiste'molni to'xtatish, xizmat ko'rsatish paytida
+     * xodimni bloklash emas. Haqiqiy qiymat ishlab chiqarish trafigidan
+     * o'lchanishi kerak.
      */
     ThrottlerModule.forRootAsync({
       imports: [RedisModule],

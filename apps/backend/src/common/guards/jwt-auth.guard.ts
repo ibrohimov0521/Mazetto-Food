@@ -74,6 +74,10 @@ export class JwtAuthGuard implements CanActivate {
      * Token'ning o'ziga ishonmaymiz: u 15 daqiqa yashaydi va bekor qilib
      * bo'lmaydi. 30 soniyalik kesh esa bekor qilishni deyarli darhol
      * qoldiradi, chunki xodim o'zgarganda u ANIQ tozalanadi.
+     *
+     * Kalit formati va TTL `UserAuthCacheService` da: guard va xodim
+     * mutatsiyalaridagi bekor qilish AYNI kalitni ishlatishi shart, aks
+     * holda bekor qilish jimgina ta'sirsiz qolardi.
      */
     const cached = await this.userAuthCache.read(userId);
 

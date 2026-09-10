@@ -1,87 +1,108 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Check,
+  ChefHat,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  Flame,
+  History,
+  PackageCheck,
+  Search,
+  ShoppingBag,
+  Truck,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../components/auth/role-guard";
+import {
+  StaffDialog,
+  StaffEmpty,
+  StaffShell,
+  StaffSync,
+} from "../../../components/staff/staff-shell";
+import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
+import { hasPermission } from "../../../lib/auth";
+import { useAuth } from "../../../components/auth/auth-provider";
 
-type KitchenTicketStatus = "NEW" | "ACCEPTED" | "COOKING" | "READY" | "COMPLETED" | "CANCELLED";
-type OrderSource = "POS" | "WEB" | "TELEGRAM";
-type OrderType = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
+type KitchenTicketStatus =
+  | "NEW"
+  | "ACCEPTED"
+  | "COOKING"
+  | "READY"
+  | "COMPLETED"
+  | "CANCELLED";
 type KitchenAction = "accept" | "start" | "ready" | "complete" | "cancel";
-type ModifierSnapshot = {
-  name?: string;
-  quantity?: string;
-};
-type KitchenOrderItem = {
-  id: string;
-  productName: string;
-  variantName?: string | null;
-  quantity: string;
-  notes?: string | null;
-  modifierSnapshot?: unknown;
-};
 type KitchenTicket = {
   id: string;
   ticketNumber: string;
   status: KitchenTicketStatus;
   priority: number;
   createdAt: string;
-  acceptedAt?: string | null;
   order: {
     id: string;
     orderNumber: string;
     displayOrderNumber?: string | null;
-    source: OrderSource;
-    type: OrderType;
+    source: "POS" | "WEB" | "TELEGRAM";
+    type: "DINE_IN" | "TAKEAWAY" | "DELIVERY";
     notes?: string | null;
     kitchenComment?: string | null;
-    branch?: {
-      name?: string | null;
-    } | null;
-    table?: {
-      number?: number | null;
-      name?: string | null;
-      hall?: { name: string } | null;
-    } | null;
-    items: KitchenOrderItem[];
+    branch?: { name?: string | null } | null;
+    table?: { number?: number | null; name?: string | null } | null;
+    items: {
+      id: string;
+      productName: string;
+      variantName?: string | null;
+      quantity: string;
+      notes?: string | null;
+      modifierSnapshot?: unknown;
+    }[];
   };
 };
-
-type Column = {
-  title: string;
-  helper: string;
-  statuses: KitchenTicketStatus[];
-  tone: "new" | "accepted" | "cooking" | "ready";
+const kitchenStatusLabels: Record<KitchenTicketStatus, string> = {
+  NEW: "Yangi",
+  ACCEPTED: "Qabul qilindi",
+  COOKING: "Tayyorlanmoqda",
+  READY: "Tayyor",
+  COMPLETED: "Yopilgan",
+  CANCELLED: "Bekor qilingan",
 };
 
-const pollIntervalMs = 5000;
-const columns: Column[] = [
+const columns = [
   {
+    status: "NEW",
     title: "Yangi",
-    helper: "Qabul qilish kutilmoqda",
-    statuses: ["NEW"],
+    short: "Yangi",
     tone: "new",
+    icon: ShoppingBag,
   },
   {
-    title: "Tasdiqlandi",
-    helper: "Tayyorlashni boshlash kerak",
-    statuses: ["ACCEPTED"],
+    status: "ACCEPTED",
+    title: "Qabul qilindi",
+    short: "Qabul",
     tone: "accepted",
+    icon: ChefHat,
   },
   {
+    status: "COOKING",
     title: "Tayyorlanmoqda",
-    helper: "Oshxonada jarayonda",
-    statuses: ["COOKING"],
+    short: "Jarayon",
     tone: "cooking",
+    icon: Flame,
   },
   {
+    status: "READY",
     title: "Tayyor",
-    helper: "Topshirish yoki olib ketish kutilmoqda",
-    statuses: ["READY"],
+    short: "Tayyor",
     tone: "ready",
+    icon: PackageCheck,
   },
-];
+] as const;
 
 export default function KitchenPage() {
   return (
@@ -98,540 +119,591 @@ function KitchenDisplay() {
   const [now, setNow] = useState(() => Date.now());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [busyTicketId, setBusyTicketId] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [expandedTicketIds, setExpandedTicketIds] = useState<Set<string>>(new Set());
+  const [expandedTicketIds, setExpandedTicketIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [mobileStatus, setMobileStatus] = useState<string>("NEW");
+  const [query, setQuery] = useState("");
+  const [cancelTicket, setCancelTicket] = useState<KitchenTicket | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTickets, setHistoryTickets] = useState<KitchenTicket[]>([]);
+  const [historyStatus, setHistoryStatus] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const loadedOnceRef = useRef(false);
+  const loadVersion = useRef(0);
+  const loadRequest = useRef<AbortController | null>(null);
+  const actionLock = useRef(false);
   const knownTicketIdsRef = useRef<Set<string>>(new Set());
+  const soundEnabled = useRef(true);
 
-  const loadTickets = useCallback(async () => {
+  const loadTickets = useCallback(async (force = false) => {
+    if ((loadRequest.current || actionLock.current) && !force) return;
+    loadRequest.current?.abort();
+    const controller = new AbortController();
+    loadRequest.current = controller;
+    const version = ++loadVersion.current;
+    setRefreshing(true);
     try {
-      const nextTickets = await apiFetch<KitchenTicket[]>("/kitchen/orders");
-      const nextTicketIds = new Set(nextTickets.map((ticket) => ticket.id));
-      const hasNewTicket = loadedOnceRef.current && nextTickets.some((ticket) => !knownTicketIdsRef.current.has(ticket.id));
-
+      const nextTickets = await apiFetch<KitchenTicket[]>("/kitchen/orders", {
+        cache: "no-store",
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(12000),
+        ]),
+      });
+      if (version !== loadVersion.current) return;
+      const hasNewTicket =
+        loadedOnceRef.current &&
+        nextTickets.some((ticket) => !knownTicketIdsRef.current.has(ticket.id));
       setTickets(nextTickets);
       setError(null);
       setLastUpdatedAt(new Date());
-
-      if (hasNewTicket && isSoundEnabled) {
-        playKitchenTone();
-      }
-
-      knownTicketIdsRef.current = nextTicketIds;
+      if (hasNewTicket && soundEnabled.current) playKitchenTone();
+      knownTicketIdsRef.current = new Set(
+        nextTickets.map((ticket) => ticket.id),
+      );
       loadedOnceRef.current = true;
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Oshxona buyurtmalari yuklanmadi");
+    } catch (caught) {
+      if (version !== loadVersion.current) return;
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Oshxona buyurtmalari yuklanmadi",
+      );
     } finally {
-      setIsLoading(false);
+      if (loadRequest.current === controller) loadRequest.current = null;
+      if (version === loadVersion.current) {
+        setIsLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [isSoundEnabled]);
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    const params = new URLSearchParams({ limit: "100", offset: "0" });
+    if (historyStatus) params.set("status", historyStatus);
+    if (historySearch.trim()) params.set("search", historySearch.trim());
+    try {
+      setHistoryTickets(
+        await apiFetch<KitchenTicket[]>(`/kitchen/orders/history?${params.toString()}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(12000),
+        }),
+      );
+    } catch (caught) {
+      setHistoryError(caught instanceof Error ? caught.message : "Tarix yuklanmadi.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historySearch, historyStatus]);
+
+  useEffect(() => {
+    if (historyOpen) void loadHistory();
+  }, [historyOpen, loadHistory]);
 
   useEffect(() => {
     void loadTickets();
-  }, [loadTickets]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void loadTickets();
-    }, pollIntervalMs);
-
-    return () => window.clearInterval(timer);
-  }, [loadTickets]);
-
-  useEffect(() => {
-    const refreshWhenVisible = () => {
+    const refresh = () => {
       if (document.visibilityState === "visible") {
+        setNow(Date.now());
         void loadTickets();
       }
     };
-
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
+    const timer = window.setInterval(refresh, 5000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      loadVersion.current++;
+      loadRequest.current?.abort();
+      loadRequest.current = null;
+    };
   }, [loadTickets]);
 
-  const groupedTickets = useMemo(
-    () =>
-      columns.map((column) => ({
-        ...column,
-        tickets: tickets.filter((ticket) => column.statuses.includes(ticket.status)),
-      })),
-    [tickets],
-  );
-  const totals = useMemo(() => summarizeTickets(tickets), [tickets]);
+  const groupedTickets = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return columns.map((column) => ({
+      ...column,
+      tickets: tickets.filter(
+        (ticket) =>
+          ticket.status === column.status &&
+          (!term ||
+            [
+              ticket.order.displayOrderNumber,
+              ticket.order.orderNumber,
+              ticket.order.table?.name,
+              ...ticket.order.items.map((item) => item.productName),
+            ].some((value) => value?.toLowerCase().includes(term))),
+      ),
+    }));
+  }, [tickets, query]);
 
   async function runAction(ticket: KitchenTicket, action: KitchenAction) {
-    if (busyTicketId) {
-      return;
-    }
-
+    if (actionLock.current) return;
+    actionLock.current = true;
+    loadVersion.current++;
+    loadRequest.current?.abort();
     setBusyTicketId(ticket.id);
-    setError(null);
-
+    setActionError(null);
     try {
-      await apiFetch(`/kitchen/orders/${ticket.id}/${action}`, { method: "PATCH" });
-      await loadTickets();
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Amal bajarilmadi. Holatni yangilab qayta urinib ko'ring.");
-      await loadTickets();
+      const updated = await apiFetch<KitchenTicket>(
+        `/kitchen/orders/${ticket.id}/${action}`,
+        { method: "PATCH", signal: AbortSignal.timeout(12000) },
+      );
+      setTickets((current) =>
+        current.flatMap((entry) =>
+          entry.id !== ticket.id
+            ? [entry]
+            : ["COMPLETED", "CANCELLED"].includes(updated.status)
+              ? []
+              : [updated],
+        ),
+      );
+      setCancelTicket(null);
+      await loadTickets(true);
+    } catch (caught) {
+      setActionError(
+        caught instanceof Error
+          ? caught.message
+          : "Amal bajarilmadi. Qayta urinib ko'ring.",
+      );
+      await loadTickets(true);
     } finally {
+      actionLock.current = false;
       setBusyTicketId(null);
     }
   }
 
-  function toggleTicket(ticketId: string) {
+  function toggleTicket(id: string) {
     setExpandedTicketIds((current) => {
       const next = new Set(current);
-
-      if (next.has(ticketId)) {
-        next.delete(ticketId);
-      } else {
-        next.add(ticketId);
-      }
-
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#071f1d] text-[#fff7e8]">
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-[#071f1d]/95 px-4 py-4 backdrop-blur md:px-6">
-        <div className="mx-auto flex max-w-[1900px] flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ffc83d]">MAZETTO FOOD</p>
-            <h1 className="mt-1 text-3xl font-black tracking-normal text-white md:text-5xl">Oshxona paneli</h1>
-            <p className="mt-2 max-w-2xl text-sm font-semibold text-white/65">
-              Faol buyurtmalar, tayyorlash va topshirish holatlari bitta ekranda.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[620px]">
-            <Metric label="Faol" value={totals.active} tone="neutral" />
-            <Metric label="Tayyorlanmoqda" value={totals.cooking} tone="warning" />
-            <Metric label="Tayyor" value={totals.ready} tone="success" />
-          </div>
+    <StaffShell
+      title="Oshxona"
+      actions={
+        <button
+          className={styles.shiftLink}
+          onClick={() => setHistoryOpen(true)}
+          type="button"
+        >
+          <History size={17} />
+          Tarix
+        </button>
+      }
+    >
+      <div className={styles.content}>
+        <div className={styles.overview}>
+          <h2 className={styles.pageHeading}>Buyurtmalar navbati</h2>
+          <StaffSync
+            updatedAt={lastUpdatedAt}
+            error={!!error}
+            refreshing={refreshing || !!busyTicketId}
+            onRefresh={() => void loadTickets()}
+          />
         </div>
-      </header>
-
-      <section className="mx-auto flex max-w-[1900px] flex-col gap-4 px-4 py-4 md:px-6">
-        <div className="flex flex-col gap-3 rounded-[28px] border border-white/10 bg-white/[0.06] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.22)] sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2 text-sm font-bold">
-            <span className={`rounded-full px-4 py-2 ${error ? "bg-red-500/20 text-red-100" : "bg-emerald-400/15 text-emerald-100"}`}>
-              {error ? "Ulanishda xatolik" : "Avtomatik yangilanadi"}
-            </span>
-            <span className="rounded-full bg-white/10 px-4 py-2 text-white/70">
-              Har {pollIntervalMs / 1000} soniyada
-            </span>
-            {lastUpdatedAt ? (
-              <span className="rounded-full bg-white/10 px-4 py-2 text-white/70">
-                Yangilandi: {lastUpdatedAt.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            ) : null}
+        <section className={styles.stats} aria-label="Oshxona xulosasi">
+          <div className={styles.stat}>
+            <span>Faol buyurtmalar</span>
+            <strong>{isLoading ? "..." : tickets.length}</strong>
           </div>
-
+          <div className={styles.stat} data-tone="waiting">
+            <span>Tayyorlanmoqda</span>
+            <strong>
+              {isLoading
+                ? "..."
+                : tickets.filter((ticket) => ticket.status === "COOKING")
+                    .length}
+            </strong>
+          </div>
+          <div className={styles.stat} data-tone="ready">
+            <span>Topshirishga tayyor</span>
+            <strong>
+              {isLoading
+                ? "..."
+                : tickets.filter((ticket) => ticket.status === "READY").length}
+            </strong>
+          </div>
+        </section>
+        <div className={styles.toolbar}>
+          <label className={`${styles.search} ${styles.deliverySearch}`}>
+            <Search size={18} />
+            <input
+              aria-label="Buyurtma yoki taom qidirish"
+              placeholder="Buyurtma yoki taom qidirish"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
           <button
-            className={`min-h-11 rounded-full px-5 text-sm font-black transition active:scale-95 ${
-              isSoundEnabled
-                ? "bg-[#ffc83d] text-[#1b1300] shadow-[0_10px_28px_rgba(255,200,61,0.25)]"
-                : "border border-white/15 bg-white/5 text-white/75"
-            }`}
-            onClick={() => setIsSoundEnabled((current) => !current)}
+            className={styles.button}
+            aria-pressed={isSoundEnabled}
+            onClick={() => {
+              soundEnabled.current = !isSoundEnabled;
+              setIsSoundEnabled(!isSoundEnabled);
+            }}
             type="button"
           >
-            Ovoz {isSoundEnabled ? "yoqilgan" : "o'chirilgan"}
+            {isSoundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}Ovoz{" "}
+            {isSoundEnabled ? "yoqilgan" : "o'chirilgan"}
           </button>
         </div>
-
-        {error ? (
-          <div className="rounded-[24px] border border-red-400/25 bg-red-500/12 px-5 py-4 text-sm font-bold text-red-50">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
-          {groupedTickets.map((column) => (
-            <KitchenColumn
-              column={column}
-              expandedTicketIds={expandedTicketIds}
-              isLoading={isLoading}
-              key={column.title}
-              now={now}
-              onAction={runAction}
-              busyTicketId={busyTicketId}
-              onToggleDetails={toggleTicket}
-            />
-          ))}
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Metric({ label, value, tone }: { label: string; value: number; tone: "neutral" | "warning" | "success" }) {
-  const toneClass = {
-    neutral: "bg-white/10 text-white",
-    warning: "bg-[#ffc83d]/18 text-[#ffe39a]",
-    success: "bg-emerald-400/16 text-emerald-100",
-  }[tone];
-
-  return (
-    <div className={`rounded-[22px] px-4 py-3 ${toneClass}`}>
-      <p className="text-xs font-extrabold uppercase tracking-[0.14em] opacity-70">{label}</p>
-      <p className="mt-1 text-3xl font-black tabular-nums">{value}</p>
-    </div>
-  );
-}
-
-function KitchenColumn({
-  busyTicketId,
-  column,
-  expandedTicketIds,
-  isLoading,
-  now,
-  onAction,
-  onToggleDetails,
-}: {
-  busyTicketId: string | null;
-  column: Column & { tickets: KitchenTicket[] };
-  expandedTicketIds: Set<string>;
-  isLoading: boolean;
-  now: number;
-  onAction: (ticket: KitchenTicket, action: KitchenAction) => Promise<void>;
-  onToggleDetails: (ticketId: string) => void;
-}) {
-  return (
-    <section className="min-h-[420px] rounded-[30px] border border-white/10 bg-[#0c302d] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
-      <div className="mb-3 flex items-center justify-between gap-3 px-1">
-        <div>
-          <h2 className="text-2xl font-black text-white">{column.title}</h2>
-          <p className="mt-1 text-sm font-semibold text-white/55">{column.helper}</p>
-        </div>
-        <span className={`grid h-12 min-w-12 place-items-center rounded-2xl px-3 text-xl font-black ${columnCountClass(column.tone)}`}>
-          {column.tickets.length}
-        </span>
-      </div>
-
-      <div className="grid gap-3">
-        {isLoading ? (
-          <LoadingTickets />
-        ) : column.tickets.length ? (
-          column.tickets.map((ticket) => (
-            <KitchenTicketCard
-              isBusy={busyTicketId === ticket.id}
-              isExpanded={expandedTicketIds.has(ticket.id)}
-              key={ticket.id}
-              now={now}
-              onAction={onAction}
-              onToggleDetails={onToggleDetails}
-              ticket={ticket}
-            />
-          ))
-        ) : (
-          <div className="rounded-[24px] border border-dashed border-white/15 bg-black/15 px-4 py-12 text-center">
-            <p className="text-base font-black text-white/60">Faol buyurtma yo'q</p>
-            <p className="mt-1 text-sm font-semibold text-white/40">Yangi buyurtma tushsa shu yerda ko'rinadi.</p>
+        {(error || actionError) && (
+          <div className={styles.error} role="alert">
+            {actionError ?? error}
           </div>
         )}
+        <div
+          className={`${styles.segments} ${styles.kitchenFilters}`}
+          aria-label="Oshxona bosqichi"
+        >
+          {groupedTickets.map((column) => (
+            <button
+              className={styles.segment}
+              key={column.status}
+              aria-pressed={mobileStatus === column.status}
+              onClick={() => setMobileStatus(column.status)}
+              type="button"
+            >
+              {column.short}
+              <span>{column.tickets.length}</span>
+            </button>
+          ))}
+        </div>
+        <div className={styles.board}>
+          {groupedTickets.map((column) => (
+            <section
+              className={styles.column}
+              data-hidden={mobileStatus !== column.status}
+              key={column.status}
+              aria-label={column.title}
+            >
+              <div className={styles.columnHeading} data-tone={column.tone}>
+                <column.icon size={18} />
+                <h2>{column.title}</h2>
+                <span>{column.tickets.length}</span>
+              </div>
+              <div className={styles.ticketList}>
+                {isLoading ? (
+                  <div
+                    className={styles.skeleton}
+                    aria-label="Buyurtmalar yuklanmoqda"
+                  />
+                ) : column.tickets.length ? (
+                  column.tickets.map((ticket) => (
+                    <KitchenTicketCard
+                      key={ticket.id}
+                      ticket={ticket}
+                      now={now}
+                      disabled={!!busyTicketId}
+                      busy={busyTicketId === ticket.id}
+                      expanded={expandedTicketIds.has(ticket.id)}
+                      onToggle={() => toggleTicket(ticket.id)}
+                      onAction={(action) => {
+                        if (action === "cancel") {
+                          setActionError(null);
+                          setCancelTicket(ticket);
+                        } else void runAction(ticket, action);
+                      }}
+                    />
+                  ))
+                ) : (
+                  <StaffEmpty title="Navbat bo'sh" />
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
-    </section>
+      {historyOpen && (
+        <StaffDialog title="Smenadagi oshxona tarixi" busy={historyLoading} onClose={() => setHistoryOpen(false)}>
+          <div className={styles.historyControls}>
+            <label className={styles.search}>
+              <Search size={17} />
+              <input
+                aria-label="Tarixdan qidirish"
+                placeholder="Buyurtma yoki taom"
+                value={historySearch}
+                onChange={(event) => setHistorySearch(event.target.value)}
+              />
+            </label>
+            <select
+              className={styles.historySelect}
+              aria-label="Tarix holati"
+              value={historyStatus}
+              onChange={(event) => setHistoryStatus(event.target.value)}
+            >
+              <option value="">Barcha holatlar</option>
+              {Object.entries(kitchenStatusLabels).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <button className={styles.button} onClick={() => void loadHistory()} disabled={historyLoading} type="button">
+              Yangilash
+            </button>
+          </div>
+          {historyError && <div className={styles.error} role="alert">{historyError}</div>}
+          <div className={styles.historyList}>
+            {historyLoading ? (
+              <div className={styles.skeleton} />
+            ) : historyTickets.length ? (
+              historyTickets.map((ticket) => (
+                <article className={styles.historyOrder} key={ticket.id}>
+                  <div>
+                    <strong>#{ticket.order.displayOrderNumber ?? ticket.order.orderNumber}</strong>
+                    <span className={styles.muted}>{ticket.order.items.length} ta mahsulot · {ticket.order.branch?.name ?? "Filial"}</span>
+                  </div>
+                  <span className={styles.badge} data-tone={ticket.status === "CANCELLED" ? "late" : ticket.status === "READY" || ticket.status === "COMPLETED" ? "ready" : "cooking"}>
+                    {kitchenStatusLabels[ticket.status]}
+                  </span>
+                </article>
+              ))
+            ) : (
+              <StaffEmpty title="Tarix bo'sh">Bu smenada siz qabul qilgan buyurtmalar shu yerda ko'rinadi.</StaffEmpty>
+            )}
+          </div>
+        </StaffDialog>
+      )}
+      {cancelTicket && (
+        <StaffDialog
+          title="Buyurtmani bekor qilasizmi?"
+          busy={!!busyTicketId}
+          onClose={() => setCancelTicket(null)}
+        >
+          <p>
+            <strong>
+              #
+              {cancelTicket.order.displayOrderNumber ??
+                cancelTicket.order.orderNumber}
+            </strong>{" "}
+            buyurtmasi bekor qilinadi.
+          </p>
+          {actionError && (
+            <p className={styles.error} role="alert">
+              {actionError}
+            </p>
+          )}
+          <div className={styles.dialogActions}>
+            <button
+              className={styles.button}
+              disabled={!!busyTicketId}
+              onClick={() => setCancelTicket(null)}
+              type="button"
+            >
+              Ortga
+            </button>
+            <button
+              className={styles.danger}
+              disabled={!!busyTicketId}
+              onClick={() => void runAction(cancelTicket, "cancel")}
+              type="button"
+            >
+              <X size={18} />
+              {busyTicketId ? "Saqlanmoqda..." : "Bekor qilish"}
+            </button>
+          </div>
+        </StaffDialog>
+      )}
+    </StaffShell>
   );
 }
 
 function KitchenTicketCard({
-  isBusy,
-  isExpanded,
-  now,
-  onAction,
-  onToggleDetails,
   ticket,
+  now,
+  expanded,
+  busy,
+  disabled,
+  onToggle,
+  onAction,
 }: {
-  isBusy: boolean;
-  isExpanded: boolean;
-  now: number;
-  onAction: (ticket: KitchenTicket, action: KitchenAction) => Promise<void>;
-  onToggleDetails: (ticketId: string) => void;
   ticket: KitchenTicket;
+  now: number;
+  expanded: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  onAction: (action: KitchenAction) => void;
 }) {
-  const elapsedMinutes = Math.floor(Math.max(0, now - new Date(ticket.createdAt).getTime()) / 60000);
-  const primaryAction = primaryActionForStatus(ticket.status);
-  const canCancel = ticket.status === "NEW" || ticket.status === "ACCEPTED" || ticket.status === "COOKING";
-  const itemsCount = ticket.order.items.reduce((total, item) => total + Number(item.quantity), 0);
-
-  const visibleItems = isExpanded ? ticket.order.items : ticket.order.items.slice(0, 1);
-  const hiddenItemCount = Math.max(0, ticket.order.items.length - visibleItems.length);
-  const hasDetails = ticket.order.items.length > 1 || ticket.order.kitchenComment || ticket.order.notes;
-
+  const elapsed = Math.floor(
+    Math.max(0, now - new Date(ticket.createdAt).getTime()) / 60000,
+  );
+  const { user } = useAuth();
+  const canAct = hasPermission(
+    user,
+    ticket.status === "NEW" ? "KITCHEN_ACCEPT" : "KITCHEN_STATUS_UPDATE",
+  );
+  const action = canAct ? primaryAction(ticket.status) : null;
+  const shownItems = expanded
+    ? ticket.order.items
+    : ticket.order.items.slice(0, 3);
+  const hasMore = ticket.order.items.length > 3;
+  const canCancel =
+    hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
+    ["NEW", "ACCEPTED", "COOKING"].includes(ticket.status);
+  const number = ticket.order.displayOrderNumber ?? ticket.order.orderNumber;
+  const place = ticket.order.table
+    ? (ticket.order.table.name ?? `Stol ${ticket.order.table.number ?? ""}`)
+    : ticket.order.type === "DELIVERY"
+      ? "Yetkazish"
+      : "Olib ketish";
   return (
-    <article className="rounded-[16px] border border-white/10 bg-[#fff7e8] p-2.5 text-[#132724] shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-full bg-[#082522] px-2 py-0.5 text-[10px] font-black text-[#ffc83d]">
-              #{ticket.order.displayOrderNumber ?? ticket.order.orderNumber}
-            </span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${sourceClass(ticket.order.source)}`}>
-              {sourceLabel(ticket.order.source)}
-            </span>
-          </div>
-          <h3 className="mt-1.5 text-base font-black tracking-tight text-[#102724]">{placeLabel(ticket)}</h3>
-          <p className="mt-0.5 truncate text-[11px] font-extrabold text-[#42605c]">
-            {ticket.order.branch?.name ?? "Filial"} · {orderTypeLabel(ticket.order.type)}
-          </p>
-        </div>
-
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          {hasDetails ? (
-            <button
-              className="text-[11px] font-black leading-none text-[#087d73] underline-offset-2 hover:underline active:scale-[0.98]"
-              onClick={() => onToggleDetails(ticket.id)}
-              type="button"
-            >
-              {isExpanded ? "Yig'ish" : "Tafsilot"}
-            </button>
-          ) : null}
-          <div className={`rounded-[10px] px-2 py-1 text-center ${urgencyClass(elapsedMinutes)}`}>
-            <p className="text-lg font-black tabular-nums">{elapsedMinutes}</p>
-            <p className="text-[9px] font-black uppercase tracking-[0.08em]">daq</p>
-          </div>
-        </div>
+    <article className={styles.ticket}>
+      <div className={styles.ticketHeader}>
+        <h3 className={styles.ticketNumber}>#{number}</h3>
+        <span className={styles.ticketTime} data-late={elapsed >= 25}>
+          <Clock3 size={14} />
+          {elapsed} daq
+        </span>
       </div>
-
-      <div className="mt-2 flex flex-wrap gap-1">
-        <Chip>{statusLabel(ticket.status)}</Chip>
-        <Chip>{formatQuantity(String(itemsCount))} ta mahsulot</Chip>
-        <Chip>{new Date(ticket.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}</Chip>
+      <div className={styles.ticketMeta}>
+        <span className={styles.badge}>
+          {ticket.order.type === "DELIVERY" ? (
+            <Truck size={13} />
+          ) : (
+            <ShoppingBag size={13} />
+          )}
+          {place}
+        </span>
+        <span className={styles.badge}>
+          {
+            { POS: "Kassa", WEB: "Sayt", TELEGRAM: "Telegram" }[
+              ticket.order.source
+            ]
+          }
+        </span>
       </div>
-
-      <div className={`mt-2 grid gap-1.5 ${isExpanded ? "max-h-52 overflow-y-auto pr-1" : ""}`}>
-        {visibleItems.map((item) => (
-          <div className="rounded-[12px] border border-[#d9cda8] bg-white/70 p-1.5" key={item.id}>
-            <div className="flex items-start gap-1.5">
-              <span className="grid h-7 min-w-7 place-items-center rounded-[10px] bg-[#ffc83d] px-1 text-xs font-black text-[#221600]">
-                {formatQuantity(item.quantity)}x
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-black leading-snug text-[#142a27]">
-                  {item.productName}
-                  {item.variantName ? <span className="text-[#5d746f]"> · {item.variantName}</span> : null}
-                </p>
-                {isExpanded ? <Modifiers value={item.modifierSnapshot} /> : null}
-                {isExpanded && item.notes ? <p className="mt-1 rounded-[10px] bg-[#fff1bc] px-2 py-1 text-[11px] font-bold text-[#5a4300]">{item.notes}</p> : null}
-              </div>
+      <ul className={styles.itemList}>
+        {shownItems.map((item) => (
+          <li key={item.id}>
+            <span className={styles.itemQuantity}>
+              {Number(item.quantity)}x
+            </span>
+            <div className={styles.itemName}>
+              {item.productName}
+              {item.variantName && <small>{item.variantName}</small>}
+              <Modifiers value={item.modifierSnapshot} />
+              {item.notes && <p className={styles.note}>{item.notes}</p>}
             </div>
-          </div>
+          </li>
         ))}
-        {hiddenItemCount ? (
-          <p className="rounded-[12px] bg-[#102724]/8 px-2.5 py-1.5 text-[11px] font-black text-[#42605c]">
-            + {hiddenItemCount} ta mahsulot yashirilgan
-          </p>
-        ) : null}
-      </div>
-
-      {isExpanded && (ticket.order.kitchenComment || ticket.order.notes) ? (
-        <p className="mt-2 rounded-[12px] bg-[#102724] px-2.5 py-1.5 text-[11px] font-bold text-[#fff7e8]">
-          Izoh: {ticket.order.kitchenComment ?? ticket.order.notes}
+      </ul>
+      {hasMore && (
+        <button
+          className={styles.detailsButton}
+          aria-expanded={expanded}
+          onClick={onToggle}
+          type="button"
+        >
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          {expanded
+            ? "Yig'ish"
+            : `Yana ${ticket.order.items.length - 3} ta mahsulot`}
+        </button>
+      )}
+      {(ticket.order.kitchenComment || ticket.order.notes) && (
+        <p className={styles.note}>
+          {ticket.order.kitchenComment ?? ticket.order.notes}
         </p>
-      ) : null}
-
-      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-        {primaryAction ? (
+      )}
+      <div className={styles.ticketActions}>
+        {action && (
           <button
-            className="min-h-9 rounded-[12px] bg-[#ffc83d] px-2.5 text-xs font-black text-[#211600] shadow-[0_8px_18px_rgba(255,200,61,0.2)] transition hover:bg-[#ffda69] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isBusy}
-            onClick={() => void onAction(ticket, primaryAction.action)}
+            className={styles.primary}
+            disabled={disabled}
+            onClick={() => onAction(action.action)}
             type="button"
           >
-            {isBusy ? "Yangilanmoqda..." : primaryAction.label}
+            <Check size={16} />
+            {busy ? "Saqlanmoqda..." : action.label}
           </button>
-        ) : null}
-
-        {canCancel ? (
+        )}
+        {canCancel && (
           <button
-            className="min-h-9 rounded-[12px] border border-red-200 bg-red-50 px-2.5 text-xs font-black text-red-700 transition hover:bg-red-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isBusy}
-            onClick={() => void onAction(ticket, "cancel")}
+            className={styles.iconButton}
+            title="Buyurtmani bekor qilish"
+            aria-label={`#${number} buyurtmani bekor qilish`}
+            disabled={disabled}
+            onClick={() => onAction("cancel")}
             type="button"
           >
-            Bekor qilish
+            <X size={18} />
           </button>
-        ) : null}
+        )}
       </div>
+      <p className={styles.muted} style={{ marginTop: 10, fontSize: 11 }}>
+        {ticket.order.branch?.name ?? "Filial"}
+      </p>
     </article>
   );
 }
 
-function LoadingTickets() {
+function primaryAction(
+  status: KitchenTicketStatus,
+): { action: KitchenAction; label: string } | null {
+  const actions: Partial<
+    Record<KitchenTicketStatus, { action: KitchenAction; label: string }>
+  > = {
+    NEW: { action: "accept", label: "Qabul qilish" },
+    ACCEPTED: { action: "start", label: "Tayyorlash" },
+    COOKING: { action: "ready", label: "Tayyor" },
+    READY: { action: "complete", label: "Topshirish" },
+  };
+  return actions[status] ?? null;
+}
+
+function Modifiers({ value }: { value: unknown }) {
+  if (!Array.isArray(value)) return null;
   return (
     <>
-      {[0, 1, 2].map((index) => (
-        <div className="animate-pulse rounded-[28px] bg-[#fff7e8] p-4" key={index}>
-          <div className="h-5 w-32 rounded-full bg-[#d9cda8]" />
-          <div className="mt-4 h-9 w-44 rounded-full bg-[#d9cda8]" />
-          <div className="mt-5 grid gap-2">
-            <div className="h-16 rounded-[20px] bg-[#eadfbd]" />
-            <div className="h-16 rounded-[20px] bg-[#eadfbd]" />
-          </div>
-        </div>
-      ))}
+      {value
+        .filter(
+          (item): item is { name?: string; quantity?: string } =>
+            !!item && typeof item === "object",
+        )
+        .map((item, index) => (
+          <small key={index}>
+            + {item.name ?? "Qo'shimcha"}
+            {Number(item.quantity) > 1 ? ` x${item.quantity}` : ""}
+          </small>
+        ))}
     </>
   );
 }
 
-function Modifiers({ value }: { value: unknown }) {
-  const modifiers = Array.isArray(value)
-    ? (value.filter((modifier): modifier is ModifierSnapshot => Boolean(modifier && typeof modifier === "object")) as ModifierSnapshot[])
-    : [];
-
-  if (!modifiers.length) {
-    return null;
-  }
-
-  return (
-    <ul className="mt-2 grid gap-1 text-sm font-bold text-[#42605c]">
-      {modifiers.map((modifier, index) => (
-        <li key={`${modifier.name ?? "modifier"}-${index}`}>
-          + {modifier.name ?? "Qo'shimcha"}
-          {modifier.quantity && Number(modifier.quantity) > 1 ? ` x${formatQuantity(modifier.quantity)}` : ""}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Chip({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-full bg-[#e9e1c8] px-2 py-0.5 text-[10px] font-black text-[#42605c]">{children}</span>;
-}
-
-function summarizeTickets(tickets: KitchenTicket[]) {
-  return {
-    active: tickets.length,
-    cooking: tickets.filter((ticket) => ticket.status === "COOKING").length,
-    ready: tickets.filter((ticket) => ticket.status === "READY").length,
-  };
-}
-
-function primaryActionForStatus(status: KitchenTicketStatus): { action: KitchenAction; label: string } | null {
-  const actions: Partial<Record<KitchenTicketStatus, { action: KitchenAction; label: string }>> = {
-    NEW: { action: "accept", label: "Qabul qilish" },
-    ACCEPTED: { action: "start", label: "Tayyorlash" },
-    COOKING: { action: "ready", label: "Tayyor" },
-    READY: { action: "complete", label: "Yopish" },
-  };
-
-  return actions[status] ?? null;
-}
-
-function placeLabel(ticket: KitchenTicket): string {
-  if (ticket.order.table) {
-    return ticket.order.table.name ?? `Stol ${ticket.order.table.number ?? ""}`.trim();
-  }
-
-  return ticket.order.type === "DELIVERY" ? "Yetkazib berish" : "Olib ketish";
-}
-
-function orderTypeLabel(type: OrderType): string {
-  const labels: Record<OrderType, string> = {
-    DELIVERY: "Yetkazib berish",
-    DINE_IN: "Zalda",
-    TAKEAWAY: "Olib ketish",
-  };
-
-  return labels[type];
-}
-
-function sourceLabel(source: OrderSource): string {
-  const labels: Record<OrderSource, string> = {
-    POS: "POS",
-    TELEGRAM: "Telegram",
-    WEB: "Web",
-  };
-
-  return labels[source];
-}
-
-function statusLabel(status: KitchenTicketStatus): string {
-  const labels: Record<KitchenTicketStatus, string> = {
-    NEW: "Yangi",
-    ACCEPTED: "Qabul qilingan",
-    COOKING: "Tayyorlanmoqda",
-    READY: "Tayyor",
-    COMPLETED: "Yopilgan",
-    CANCELLED: "Bekor qilingan",
-  };
-
-  return labels[status];
-}
-
-function columnCountClass(tone: Column["tone"]): string {
-  const classes: Record<Column["tone"], string> = {
-    new: "bg-red-300 text-red-950",
-    accepted: "bg-[#ffc83d] text-[#241600]",
-    cooking: "bg-sky-300 text-sky-950",
-    ready: "bg-emerald-300 text-emerald-950",
-  };
-
-  return classes[tone];
-}
-
-function sourceClass(source: OrderSource): string {
-  const classes: Record<OrderSource, string> = {
-    POS: "bg-slate-200 text-slate-800",
-    TELEGRAM: "bg-sky-100 text-sky-800",
-    WEB: "bg-emerald-100 text-emerald-800",
-  };
-
-  return classes[source];
-}
-
-function urgencyClass(minutes: number): string {
-  if (minutes >= 25) {
-    return "bg-red-600 text-white";
-  }
-
-  if (minutes >= 15) {
-    return "bg-[#ffc83d] text-[#1f1500]";
-  }
-
-  return "bg-emerald-100 text-emerald-800";
-}
-
-function formatQuantity(value: string): string {
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed)) {
-    return value;
-  }
-
-  return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(2);
-}
-
-function playKitchenTone(): void {
+function playKitchenTone() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-
-  if (!AudioContextClass) {
-    return;
-  }
-
+  if (!AudioContextClass) return;
   try {
     const context = new AudioContextClass();
     const oscillator = context.createOscillator();
     const gain = context.createGain();
-
     oscillator.type = "sine";
     oscillator.frequency.value = 880;
     gain.gain.value = 0.08;
     oscillator.connect(gain);
     gain.connect(context.destination);
+    oscillator.onended = () => {
+      void context.close();
+    };
     oscillator.start();
     oscillator.stop(context.currentTime + 0.18);
   } catch {
-    // Browser sound may stay blocked until staff interacts with the page.
+    // Sound can remain blocked until the first staff interaction.
   }
 }
 

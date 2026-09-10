@@ -1,11 +1,13 @@
+import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
 import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, UnauthorizedException } from "@nestjs/common";
 import { CustomerOrderType, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
 import type { KitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
+import { kitchenStatusForOrder } from "../kitchen/kitchen-status-sync";
 import { PrismaService } from "../../prisma/prisma.service";
 
-type StaffOrderAction = Exclude<KitchenStaffAction, "complete">;
+type StaffOrderAction = KitchenStaffAction;
 type LegacyCallbackStatus = "CONFIRMED" | "PREPARING" | "READY" | "CANCELLED";
 type TelegramInlineButton = {
   text: string;
@@ -68,7 +70,7 @@ type StaffTransitionResult = {
   changed: boolean;
   customerTelegramChatId: string | null;
   order: StaffOrderForMessage;
-  requestedAction: StaffOrderAction;
+  requestedAction: StaffOrderAction | "refresh";
 };
 type TelegramResponse = {
   ok?: boolean;
@@ -86,6 +88,7 @@ const actionLabels: Record<StaffOrderAction, string> = {
   start_preparing: "Tayyorlanmoqda",
   mark_ready: "Tayyor",
   cancel: "Bekor qilindi",
+  complete: "Oshxonadan topshirildi",
 };
 const legacyStatusToAction: Record<LegacyCallbackStatus, StaffOrderAction> = {
   CONFIRMED: "accept",
@@ -96,6 +99,17 @@ const legacyStatusToAction: Record<LegacyCallbackStatus, StaffOrderAction> = {
 
 @Injectable()
 export class TelegramOrderNotificationService implements OnModuleDestroy {
+  private readonly messageUpdates = new Map<string, Promise<void>>();
+
+  private enqueueMessage(orderId: string, work: () => Promise<void>): Promise<void> {
+    const previous = this.messageUpdates.get(orderId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(work);
+    this.messageUpdates.set(orderId, next);
+    void next.finally(() => {
+      if (this.messageUpdates.get(orderId) === next) this.messageUpdates.delete(orderId);
+    }).catch(() => undefined);
+    return next;
+  }
   private readonly logger = new Logger(TelegramOrderNotificationService.name);
   private readonly statusChangedListener = (event: KitchenOrderStatusChangedEvent) => {
     void this.refreshStaffOrderMessageFromKitchen(event);
@@ -113,6 +127,10 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
   }
 
   async notifyNewOrder(orderId: string): Promise<void> {
+    return this.enqueueMessage(orderId, () => this.sendNewOrder(orderId));
+  }
+
+  private async sendNewOrder(orderId: string): Promise<void> {
     if (!this.isConfigured()) {
       this.logger.warn("Telegram order notifications are disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_STAFF_CHAT_ID is missing");
       return;
@@ -142,6 +160,10 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
   }
 
   private async refreshStaffOrderMessageFromKitchen(event: KitchenOrderStatusChangedEvent): Promise<void> {
+    return this.enqueueMessage(event.orderId, () => this.refreshLatestStaffMessage(event));
+  }
+
+  private async refreshLatestStaffMessage(event: KitchenOrderStatusChangedEvent): Promise<void> {
     if (!this.isConfigured()) {
       return;
     }
@@ -149,12 +171,12 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     try {
       const order = await this.findOrderForMessage(event.orderId);
 
-      if (!order) {
+      if (!order || !order.staffTelegramMessageId) {
         return;
       }
 
       await this.renderStoredStaffOrderMessage(order);
-      if (event.action !== "complete") {
+      if (event.action !== "complete" && event.action !== "refresh") {
         await this.notifyCustomerStatus({
           changed: true,
           customerTelegramChatId: order.customerOrder?.customer?.telegramChatId ?? null,
@@ -193,6 +215,13 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
 
       return { ok: true, handled: true };
     } catch (error) {
+      try {
+        this.assertStaffCallback(callback);
+        const { orderId } = this.parseCallbackData(callback.data);
+        await this.refreshStaffOrderMessageFromKitchen({ orderId, action: "refresh" });
+      } catch {
+        // Unauthorized and malformed callbacks must not refresh any order.
+      }
       if (error instanceof BadRequestException || error instanceof ForbiddenException) {
         this.logger.warn(
           `Telegram staff callback rejected: ${error instanceof Error ? error.message : String(error)}`,
@@ -236,7 +265,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     orderId: string,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<StaffOrderForMessage | null> {
-    return client.order.findUnique({
+    const order = await client.order.findUnique({
       where: { id: orderId },
       include: {
         items: { orderBy: { createdAt: "asc" } },
@@ -248,15 +277,25 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         kitchenTickets: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
+    if (!order) return null;
+    return {
+      ...order,
+      kitchenTickets: order.kitchenTickets.map(ticket => ({
+        ...ticket,
+        status: ticket.status === KitchenTicketStatus.COMPLETED || ticket.status === KitchenTicketStatus.CANCELLED
+          ? ticket.status : kitchenStatusForOrder(order.status) ?? ticket.status,
+      })),
+    };
   }
 
   private formatStaffOrderMessage(order: StaffOrderForMessage): string {
     const ticket = order.kitchenTickets[0] ?? null;
     const lines = [
-      this.staffOrderTitle(order.status),
+      ticket?.status === KitchenTicketStatus.COMPLETED && order.status === OrderStatus.READY
+        ? "<b>Oshxonadan topshirildi</b>" : this.staffOrderTitle(order.status === OrderStatus.CONFIRMED && ticket?.status === KitchenTicketStatus.NEW ? OrderStatus.NEW : order.status, order.customerOrder?.type ?? order.type),
       "",
       `<b>Raqam:</b> ${this.escapeHtml(this.publicOrderNumber(order))}`,
-      `<b>Status:</b> ${this.orderStatusLabel(order.status)}${ticket ? ` / ${this.kitchenStatusLabel(ticket.status)}` : ""}`,
+      `<b>Holat:</b> ${ticket?.status === KitchenTicketStatus.COMPLETED && order.status === OrderStatus.READY ? "Oshxonadan topshirildi" : order.status === OrderStatus.CONFIRMED && ticket?.status === KitchenTicketStatus.NEW ? "Yangi" : this.orderStatusLabel(order.status, order.customerOrder?.type ?? order.type)}`,
       `<b>Mijoz:</b> ${this.escapeHtml(order.customerName ?? "Noma'lum")}`,
       `<b>Telefon:</b> ${this.escapeHtml(order.customerPhone ?? "Kiritilmagan")}`,
       `<b>Manzil:</b> ${this.escapeHtml(order.deliveryAddress ?? "Olib ketish")}`,
@@ -321,7 +360,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       ]);
     } else if (order.status === OrderStatus.CONFIRMED && ticketStatus === KitchenTicketStatus.ACCEPTED) {
       buttons.push([
-        { text: "Tayyorlanmoqda", callback_data: this.callbackData(order.id, "start_preparing") },
+        { text: "Tayyorlash", callback_data: this.callbackData(order.id, "start_preparing") },
         { text: "Bekor qilish", callback_data: this.callbackData(order.id, "cancel") },
       ]);
     } else if (order.status === OrderStatus.PREPARING && ticketStatus === KitchenTicketStatus.COOKING) {
@@ -331,21 +370,14 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       ]);
     }
 
+    if (order.status === OrderStatus.READY && ticketStatus === KitchenTicketStatus.READY) {
+      buttons.push([{ text: "Topshirish", callback_data: this.callbackData(order.id, "complete") }]);
+    }
     return { inline_keyboard: buttons };
   }
 
-  private staffOrderTitle(status: OrderStatus): string {
-    const titles: Record<OrderStatus, string> = {
-      NEW: "🔥 <b>Yangi buyurtma</b>",
-      CONFIRMED: "✅ <b>Buyurtma qabul qilindi</b>",
-      PREPARING: "👨‍🍳 <b>Buyurtma tayyorlanmoqda</b>",
-      READY: "✨ <b>Buyurtma tayyor</b>",
-      SERVED: "🤝 <b>Buyurtma topshirildi</b>",
-      COMPLETED: "✅ <b>Buyurtma yakunlandi</b>",
-      CANCELLED: "⚠️ <b>Buyurtma bekor qilindi</b>",
-    };
-
-    return titles[status];
+  private staffOrderTitle(status: OrderStatus, type?: string): string {
+    return `<b>${sharedOrderStatusLabel(status, type)}</b>`;
   }
 
   private callbackData(orderId: string, action: StaffOrderAction): string {
@@ -371,7 +403,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
   }
 
   private isStaffOrderAction(value: string | undefined): value is StaffOrderAction {
-    return value === "accept" || value === "start_preparing" || value === "mark_ready" || value === "cancel";
+    return value === "accept" || value === "start_preparing" || value === "mark_ready" || value === "cancel" || value === "complete";
   }
 
   private isLegacyCallbackStatus(value: string | undefined): value is LegacyCallbackStatus {
@@ -435,6 +467,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           ...payload,
           message_id: messageId,
         });
+        await this.rememberStaffMessage(order.id, { result: { message_id: messageId, chat: { id: chatId } } });
         return;
       } catch (error) {
         if (this.isMessageNotModifiedError(error)) {
@@ -447,7 +480,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       }
     }
 
-    await this.telegramRequest("sendMessage", payload);
+    const response = await this.telegramRequest("sendMessage", payload);
+    await this.rememberStaffMessage(order.id, response);
   }
 
   private async renderStoredStaffOrderMessage(order: StaffOrderForMessage): Promise<void> {
@@ -486,7 +520,21 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     action: StaffOrderAction,
   ): Promise<void> {
     try {
-      await this.renderStaffOrderMessage(callback, order);
+      await this.enqueueMessage(order.id, async () => {
+        const latest = await this.findOrderForMessage(order.id);
+        if (!latest) return;
+        if (latest.staffTelegramMessageId) {
+          await this.renderStoredStaffOrderMessage(latest);
+          if (callback.message?.message_id && callback.message.message_id !== latest.staffTelegramMessageId) {
+            await this.telegramRequest("editMessageReplyMarkup", {
+              chat_id: callback.message.chat?.id, message_id: callback.message.message_id,
+              reply_markup: { inline_keyboard: [] },
+            });
+          }
+        } else {
+          await this.renderStaffOrderMessage(callback, latest);
+        }
+      });
     } catch (error) {
       this.logger.warn(
         `Telegram staff message render failed for order ${order.id} (${order.orderNumber}) action ${action}: ${
@@ -497,7 +545,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
   }
 
   private async notifyCustomerStatus(result: StaffTransitionResult): Promise<void> {
-    if (!result.changed || !result.customerTelegramChatId || !process.env.TELEGRAM_BOT_TOKEN) {
+    if (!result.changed || result.requestedAction === "complete" || !result.customerTelegramChatId || !process.env.TELEGRAM_BOT_TOKEN) {
       return;
     }
 
@@ -549,6 +597,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(10_000),
         });
 
         if (response.ok) {
@@ -682,18 +731,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     );
   }
 
-  private orderStatusLabel(status: OrderStatus): string {
-    const labels: Record<OrderStatus, string> = {
-      NEW: "Yangi",
-      CONFIRMED: "Qabul qilingan",
-      PREPARING: "Tayyorlanmoqda",
-      READY: "Tayyor",
-      SERVED: "Yetkazildi",
-      COMPLETED: "Yakunlangan",
-      CANCELLED: "Bekor qilingan",
-    };
-
-    return labels[status];
+  private orderStatusLabel(status: OrderStatus, type?: string): string {
+    return sharedOrderStatusLabel(status, type);
   }
 
   private kitchenStatusLabel(status: KitchenTicketStatus): string {

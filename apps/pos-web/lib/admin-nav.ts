@@ -361,6 +361,7 @@ const branchScopedRoles = [
   "CASHIER",
   "WAITER",
   "KITCHEN",
+  "COURIER",
 ];
 
 /**

@@ -1,65 +1,82 @@
 /* global document, window, getComputedStyle, localStorage */
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-import { fileURLToPath, URL } from 'node:url';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { URL } from 'node:url';
+import { mkdir } from 'node:fs/promises';
+import { chromium } from 'playwright';
 
-const { chromium } = createRequire(import.meta.url)('playwright');
-const base = new URL(globalThis.process.env.QA_BASE || 'http://localhost:3107');
-const api = new URL(globalThis.process.env.QA_API || 'http://localhost:4107/api/v1/');
-for (const url of [base, api]) assert(['localhost', '127.0.0.1'].includes(url.hostname), 'Local preview only');
-const output = fileURLToPath(new URL('../.qa-screenshots/', import.meta.url));
+const base = new URL(globalThis.process.env.QA_BASE || 'http://127.0.0.1:3103');
+const pos = new URL(globalThis.process.env.QA_POS || 'http://127.0.0.1:3104');
+for (const url of [base, pos]) assert(['localhost', '127.0.0.1'].includes(url.hostname), 'Isolated frontend only');
+const output = '.qa-screenshots/cart-network';
 await mkdir(output, { recursive: true });
-const products = (await (await globalThis.fetch(new URL('customer/menu/products', api))).json()).data;
-const product = products.find(p => p.name === 'Big Lavash');
+const catalog = await globalThis.fetch(new URL('/api/v1/customer/menu/products', base));
+assert.equal(catalog.status, 200);
+const products = (await catalog.json()).data;
+const product = products.find(p => p.variants.length && !p.modifiers.length);
 assert(product);
+for (const url of [base, pos]) {
+  const unauthorized = await globalThis.fetch(new URL('/api/v1/kitchen/orders', url));
+  assert.equal(unauthorized.status, 401, 'Internal proxy must preserve authentication');
+  assert.match(unauthorized.headers.get('content-type'), /application\/json/);
+}
 const browser = await chromium.launch({ headless: true });
 const results = [];
 try {
-  for (const width of [390, 430, 768, 1440]) {
+  for (const width of [320, 390, 768, 1440]) {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => ['GET', 'HEAD', 'OPTIONS'].includes(route.request().method()) ? route.continue() : route.abort());
-    await page.addInitScript(p => {
-      localStorage.setItem('mazetto.customer.cart', JSON.stringify([{
-        key: 'qa-scroll-line', productId: p.id, productName: p.name, imageUrl: p.imageUrl,
-        variantId: p.variants[0].id, variantName: p.variants[0].name,
-        unitPrice: p.variants[0].sellingPrice, quantity: 1, modifiers: [],
-      }]));
-    }, product);
+    await page.addInitScript(p => localStorage.setItem('mazetto.customer.cart', JSON.stringify([{
+      key: 'qa-scroll-line', productId: p.id, productName: p.name, imageUrl: p.imageUrl,
+      variantId: p.variants[0].id, variantName: p.variants[0].name,
+      unitPrice: p.variants[0].sellingPrice, quantity: 1, modifiers: [],
+    }])), product);
     await page.goto(new URL('/cart', base).href);
     const rail = page.getByRole('region', { name: "Qo'shimcha mahsulotlar", exact: true });
     await rail.waitFor();
-    await rail.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(500);
+    const summary = await page.locator('.mf-cart-summary').boundingBox();
+    const recommendations = await page.locator('.mf-cart-recommendations').boundingBox();
+    const row = await page.locator('.mf-cart-row').first().boundingBox();
+    assert(summary.y >= row.y + row.height, 'Summary follows basket items');
+    if (width >= 1024) assert(recommendations.x >= summary.x + summary.width, 'Recommendations occupy right column');
+    else assert(recommendations.y >= summary.y + summary.height, 'Mobile summary precedes recommendations');
     const initial = await rail.evaluate(e => ({
-      top: e.scrollTop, height: e.clientHeight, content: e.scrollHeight,
-      xOverflow: e.scrollWidth > e.clientWidth, scrollbar: getComputedStyle(e).scrollbarWidth,
+      height: e.clientHeight, content: e.scrollHeight, overflow: getComputedStyle(e).overflowY,
+      xOverflow: e.scrollWidth > e.clientWidth,
     }));
-    assert(initial.content > initial.height, 'Recommendations must overflow vertically');
-    assert(!initial.xOverflow, 'No clipped horizontal-only cards');
-    assert.equal(initial.scrollbar, 'none');
+    assert(initial.content <= initial.height + 1, 'All recommendations fit without an internal scroll');
+    assert.equal(initial.overflow, 'visible');
+    assert(!initial.xOverflow);
+    await rail.scrollIntoViewIfNeeded();
     const pageY = await page.evaluate(() => window.scrollY);
     const box = await rail.boundingBox();
-    await page.mouse.move(box.x + box.width / 2, Math.max(90, box.y + 60));
-    await page.mouse.wheel(0, 120);
-    await page.waitForTimeout(400);
-    const wheelTop = await rail.evaluate(e => e.scrollTop);
-    assert(wheelTop > 0, 'Ordinary mouse wheel must scroll recommendations');
-    assert.equal(await page.evaluate(() => window.scrollY), pageY, 'At non-boundary scroll the page remains still');
-    await rail.focus();
-    await page.keyboard.press('Home');
-    await page.waitForTimeout(300);
-    await page.keyboard.press('ArrowDown');
-    await page.waitForTimeout(400);
-    const keyboardTop = await rail.evaluate(e => e.scrollTop);
-    assert(keyboardTop > 0, 'Keyboard scrolling remains available');
-    assert(await rail.locator('article').count() > 4);
-    assert.equal(await page.locator('.mf-checkout-card').first().evaluate(e => getComputedStyle(e).overflowY), 'visible');
-    await page.screenshot({ path: `${output}/upsell-vertical-scroll-${width}.png` });
+    await page.mouse.move(box.x + box.width / 2, Math.max(100, Math.min(500, box.y + 60)));
+    await page.mouse.wheel(0, 180);
+    await page.waitForTimeout(350);
+    assert.equal(await rail.evaluate(e => e.scrollTop), 0);
+    assert(await page.evaluate(() => window.scrollY) > pageY, 'Wheel over products scrolls the page');
+    const action = page.getByRole('link', { name: 'Rasmiylashtirish', exact: true });
+    const actionBox = await action.boundingBox();
+    assert(actionBox.y >= 0 && actionBox.y + actionBox.height <= 900, 'Checkout remains visible');
+    await page.screenshot({ path: `${output}/cart-${width}.png`, fullPage: true });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-    results.push({ width, initial, wheelTop, keyboardTop });
+    assert.deepEqual(errors, []);
+    results.push({ width, initial });
     await page.close();
   }
-  await writeFile(`${output}/upsell-vertical-scroll-results.json`, JSON.stringify(results, null, 2));
-  globalThis.console.log(JSON.stringify(results));
+  const menu = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  let fail = true;
+  await menu.route('**/api/v1/customer/menu/**', route => fail
+    ? route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({success:false,error:{message:'QA temporary outage'}})})
+    : route.continue());
+  await menu.goto(new URL('/menu', base).href);
+  await menu.getByRole('status').filter({hasText:'Menyu yangilanmadi'}).waitFor();
+  assert(await menu.locator('[data-product-card]').count() > 5, 'Server-rendered catalog survives a failed refresh');
+  fail = false;
+  await menu.getByRole('button', {name:'Qayta urinish',exact:true}).click();
+  await menu.getByRole('status').filter({hasText:'Menyu yangilanmadi'}).waitFor({state:'hidden'});
+  assert(await menu.locator('[data-product-card]').count() > 5);
+  globalThis.console.log(JSON.stringify({results, proxy:'catalog forwarded; unauthorized requests still rejected', recovery:'menu retained and retry succeeded'}, null, 2));
 } finally { await browser.close(); }

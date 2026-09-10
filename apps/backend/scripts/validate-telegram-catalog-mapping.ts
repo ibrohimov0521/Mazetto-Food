@@ -14,9 +14,6 @@ const hiddenTelegramCategoryCodes: ReadonlySet<string> = new Set<string>([
   "CHICKEN_LAVASH",
   "CHICKEN_BURGER",
 ]);
-// Literal union emas, `readonly string[]`: bu ro'yxatdan ixtiyoriy kod
-// so'raladi va toraytirilgan tip `includes(string)` ni rad etadi.
-const visibleCategoryCodes: readonly string[] = customerVisibleCategoryCodes;
 const lavashTelegramRows = [
   ["CLASSIC_LAVASH", "CHICKEN_LAVASH"],
   ["BIG_LAVASH", "BIG_CHICKEN_LAVASH"],
@@ -44,6 +41,8 @@ const expectedTelegramCategoryCounts = new Map([
   ["DRINKS", 2],
   ["SETS", 18],
 ]);
+
+const customerVisibleCategorySet = new Set<string>(customerVisibleCategoryCodes);
 
 function main(): void {
   const catalogProducts = [...menuProducts, ...menuCombos];
@@ -137,7 +136,7 @@ function main(): void {
   console.log(`Lavash direct products: ${lavashProducts.length}`);
   console.log(`Burger direct products: ${burgerProducts.length}`);
   console.log(`Set direct products: ${setProducts.length}`);
-  for (const category of menuCategories.filter((item) => visibleCategoryCodes.includes(item.code))) {
+  for (const category of menuCategories.filter((item) => customerVisibleCategorySet.has(item.code))) {
     const rows = productRowsByCategory.get(category.code) ?? [];
     console.log(
       `${category.name}: ${rows.flat().length} products, 1 page, rows: ${rows
@@ -158,7 +157,7 @@ function buildTelegramCategoryRows(): Map<string, string[][]> {
     if (
       hiddenTelegramCategoryCodes.has(category.code) ||
       rowsByCategory.has(category.code) ||
-      !visibleCategoryCodes.includes(category.code)
+      !customerVisibleCategorySet.has(category.code)
     ) {
       continue;
     }

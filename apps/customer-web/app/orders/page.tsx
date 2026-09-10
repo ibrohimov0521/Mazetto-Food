@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { io } from "socket.io-client";
+import { OrderProgress } from "../../components/order-progress";
+import { trackingLabel, trackingStatus } from "../../lib/order-tracking";
+import { useOrderUpdates } from "../../lib/use-order-updates";
 import { CustomerAuthPanel } from "../../components/customer-auth-panel";
 import { MotionDiv, AnimatedNumber, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
-import { apiFetch, getApiBaseUrl } from "../../lib/api";
+import { apiFetch } from "../../lib/api";
 import { localizeMenuName } from "../../lib/customer-display";
 import { formatMoney, useCart } from "../../lib/cart";
 
@@ -43,16 +45,6 @@ type CustomerOrder = {
     }[];
   };
 };
-const trackingSteps = ["NEW", "CONFIRMED", "PREPARING", "READY", "COMPLETED"];
-const statusLabels: Record<string, string> = {
-  NEW: "Yangi",
-  CONFIRMED: "Tasdiqlandi",
-  PREPARING: "Tayyorlanmoqda",
-  COOKING: "Tayyorlanmoqda",
-  READY: "Tayyor",
-  COMPLETED: "Yakunlandi",
-  CANCELLED: "Bekor qilindi",
-};
 const typeLabels: Record<string, string> = {
   DELIVERY: "Yetkazib berish",
   PICKUP: "Olib ketish",
@@ -73,13 +65,13 @@ function OrdersDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!customer?.accessToken) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const [nextDashboard, nextOrders] = await Promise.all([
@@ -89,6 +81,10 @@ function OrdersDashboard() {
       setDashboard(nextDashboard);
       setOrders(nextOrders);
     } catch (caught) {
+      if (!(caught instanceof Error && caught.message.includes("Sessiya muddati tugagan"))) {
+        setError(caught instanceof Error ? caught.message : "Buyurtmalarni yuklab bo'lmadi.");
+        return;
+      }
       const refreshed = await refreshCustomer();
       if (!refreshed) {
         setError(caught instanceof Error ? caught.message : "Buyurtmalarni yuklab bo'lmadi.");
@@ -114,28 +110,10 @@ function OrdersDashboard() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (!customer?.accessToken) {
-      return;
-    }
-
-    const socket = io(getSocketBaseUrl(), {
-      auth: { token: customer.accessToken, tokenType: "customer" },
-      transports: ["websocket"],
-    });
-    const refresh = () => void load();
-    socket.on("order.created", refresh);
-    socket.on("order.confirmed", refresh);
-    socket.on("order.sent_to_kitchen", refresh);
-    socket.on("order.status_changed", refresh);
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [customer, load]);
+  useOrderUpdates(customer?.accessToken, load);
 
   const activeOrder = useMemo(
-    () => orders.find((order) => !["COMPLETED", "CANCELLED"].includes(order.status)) ?? null,
+    () => orders.find((order) => !["COMPLETED", "CANCELLED"].includes(trackingStatus(order))) ?? null,
     [orders],
   );
   const history = orders.filter((order) => order.id !== activeOrder?.id);
@@ -160,12 +138,12 @@ function OrdersDashboard() {
           <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtmani kuzatish</p>
           <h1 className="mt-1 text-[1.65rem] font-black leading-tight text-[#17314A] sm:text-3xl">Buyurtmalarim</h1>
           {activeOrder ? (
-            <div className="mf-active-order-card mt-4 min-w-0 overflow-hidden p-4 sm:mt-5 sm:p-5">
+            <div className="mf-active-order-card mt-4 min-w-0 pt-4">
               <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                 <div className="min-w-0">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[#0B7F75]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-[#0B7F75]">Faol buyurtma</span>
-                    <StatusChip status={activeOrder.status} />
+                    <StatusChip status={trackingStatus(activeOrder)} type={activeOrder.type} />
                   </div>
                   <Link className="mt-3 block break-words text-2xl font-black leading-tight text-[#07373A] transition hover:text-[#0B7F75] sm:text-3xl" href={`/orders/${activeOrder.id}`}>
                     {customerOrderNumber(activeOrder.order)}
@@ -175,15 +153,15 @@ function OrdersDashboard() {
                     {activeOrder.branch ? <InfoChip label={activeOrder.branch.name} /> : null}
                   </div>
                 </div>
-                <div className="mf-active-order-total min-w-0 rounded-[1.35rem] px-4 py-3 text-left lg:min-w-[11rem] lg:text-right">
+                <div className="mf-active-order-total flex min-w-0 items-center justify-between gap-3 py-2 lg:block lg:text-right">
                   <p className="text-[10px] font-black uppercase tracking-wide text-[#07373A]/58">Jami</p>
-                  <p className="mt-1 whitespace-nowrap text-2xl font-black text-[#07373A] sm:text-3xl">{formatMoney(activeOrder.order.total)}</p>
+                  <p className="whitespace-nowrap text-xl font-black text-[#07373A]">{formatMoney(activeOrder.order.total)}</p>
                 </div>
               </div>
-              <StatusTracker status={activeOrder.order.status ?? activeOrder.status} />
+              <OrderProgress value={activeOrder} />
               <div className="mt-5 grid min-w-0 gap-2.5">
                 {activeOrder.order.items.map((item) => (
-                  <div className="mf-active-order-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-[1.15rem] px-3 py-3 text-sm text-[#17314A] sm:px-4" key={item.id}>
+                  <div className="mf-active-order-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-3 text-sm text-[#17314A]" key={item.id}>
                     <div className="min-w-0">
                       <p className="break-words font-black leading-snug">
                         <span className="text-[#0B7F75]">{Number(item.quantity)}x</span> {localizeMenuName(item.productName)}
@@ -199,9 +177,9 @@ function OrdersDashboard() {
                 ))}
               </div>
             </div>
-          ) : (
+          ) : loading ? <div className="skeleton mt-4 h-28 rounded-xl" /> : !error ? (
             <div className="mf-cart-row mt-5 p-6 text-sm font-semibold text-[#17314A]/56">Hozir faol buyurtma yo'q.</div>
-          )}
+          ) : null}
         </div>
 
         <MotionDiv {...sectionMotion} className="mf-checkout-card min-w-0 p-4 sm:p-5">
@@ -223,7 +201,7 @@ function OrdersDashboard() {
                   <div className="min-w-0">
                     <p className="break-words font-black leading-tight text-[#17314A]">{customerOrderNumber(order.order)}</p>
                     <p className="mt-1 text-sm leading-5 text-[#17314A]/52">
-                      {new Date(order.createdAt).toLocaleString("uz-UZ")} · {statusLabel(order.status)}
+                      {new Date(order.createdAt).toLocaleString("uz-UZ")} · {trackingLabel(trackingStatus(order), order.type)}
                       {order.branch ? ` · ${order.branch.name}` : ""}
                     </p>
                     <p className="mt-2 break-words text-sm font-semibold leading-5 text-[#17314A]/60">{orderSummary(order)}</p>
@@ -281,31 +259,11 @@ function orderSummary(order: CustomerOrder): string {
     .join(", ");
 }
 
-function StatusTracker({ status }: { status: string }) {
-  const normalized = status === "COOKING" ? "PREPARING" : status;
-  const activeIndex = Math.max(0, trackingSteps.indexOf(normalized));
-
-  return (
-    <div className="mt-5 grid min-w-0 grid-cols-5 gap-1.5 rounded-[1.35rem] bg-white/58 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] sm:gap-2 sm:p-3">
-      {trackingSteps.map((step, index) => {
-        const active = index <= activeIndex;
-        const current = index === activeIndex;
-        return (
-          <div className="grid min-w-0 gap-1.5 text-center" key={step}>
-            <div className={`h-2 rounded-full transition-colors ${active ? "bg-[#F5CF00]" : "bg-[#0B7F75]/12"} ${current ? "shadow-[0_0_18px_rgba(245,207,0,0.48)]" : ""}`} />
-            <p className={`min-w-0 break-words text-[8.5px] font-black leading-[1.05] sm:text-xs ${active ? "text-[#0B7F75]" : "text-[#17314A]/46"}`}>{statusLabel(step)}</p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function StatusChip({ status }: { status: string }) {
+function StatusChip({ status, type }: { status: string; type: string }) {
   const cancelled = status === "CANCELLED";
   return (
     <span className={`rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide ${cancelled ? "bg-red-500/12 text-red-700" : "bg-[#F5CF00]/28 text-[#07373A]"}`}>
-      {statusLabel(status)}
+      {trackingLabel(status, type)}
     </span>
   );
 }
@@ -318,14 +276,6 @@ function InfoChip({ label }: { label: string }) {
   );
 }
 
-function statusLabel(status: string): string {
-  return statusLabels[status] ?? status;
-}
-
 function customerOrderNumber(order: { displayOrderNumber?: string | null; orderNumber: string }): string {
   return order.displayOrderNumber ?? order.orderNumber;
-}
-
-function getSocketBaseUrl(): string {
-  return getApiBaseUrl().replace(/\/api\/v1\/?$/, "");
 }

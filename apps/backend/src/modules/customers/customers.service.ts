@@ -1,5 +1,12 @@
+import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
+import { KitchenService } from "../kitchen/kitchen.service";
+import {
+  kitchenEvents,
+  kitchenOrderStatusChangedEvent,
+} from "../kitchen/kitchen-events";
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -26,6 +33,7 @@ import {
   ListCustomerOrdersDto,
   ListCustomersDto,
   ListOnlineOrdersDto,
+  UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 import {
   customerVisibleCategoryCodes,
@@ -67,6 +75,7 @@ export class CustomersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly branchesService: BranchesService,
+    private readonly kitchenService: KitchenService,
     private readonly jwtService: JwtService,
     private readonly customerOrderEngine: CustomerOrderEngineService,
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
@@ -547,6 +556,264 @@ export class CustomersService {
     );
   }
 
+  async listCourierDeliveryOrders(
+    query: ListOnlineOrdersDto,
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const branchId = resolveBranchScope(user, query.branchId);
+    const day = this.todayTashkentRange();
+    const status = this.toOrderStatus(query.status);
+    const search = query.search?.trim();
+
+    const orderFilters: Prisma.OrderWhereInput[] = [
+      { OR: [{ servedById: null }, { servedById: employeeId }] },
+    ];
+    if (search) {
+      orderFilters.push(this.buildOrderSearchWhere(search));
+    }
+
+    const customerOrders = await this.prisma.customerOrder.findMany({
+      where: {
+        type: "DELIVERY",
+        ...(branchId ? { branchId } : {}),
+        order: {
+          createdAt: { gte: day.start, lt: day.end },
+          status: status ?? { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+          AND: orderFilters,
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      skip: query.offset,
+      take: query.limit,
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+        order: {
+          include: {
+            items: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                productName: true,
+                quantity: true,
+                totalPrice: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return customerOrders.map((customerOrder) =>
+      this.withDerivedCustomerOrderStatus(customerOrder),
+    );
+  }
+
+  async listCourierDeliveryOrderHistory(
+    query: ListOnlineOrdersDto,
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const branchId = resolveBranchScope(user, query.branchId);
+    const day = this.todayTashkentRange();
+    const status = this.toOrderStatus(query.status);
+    const search = query.search?.trim();
+
+    const customerOrders = await this.prisma.customerOrder.findMany({
+      where: {
+        type: "DELIVERY",
+        ...(branchId ? { branchId } : {}),
+        order: {
+          servedById: employeeId,
+          createdAt: { gte: day.start, lt: day.end },
+          ...(status ? { status } : {}),
+          ...(search ? this.buildOrderSearchWhere(search) : {}),
+          statusHistory: {
+            some: {
+              changedByEmployeeId: employeeId,
+              createdAt: { gte: day.start, lt: day.end },
+            },
+          },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+      skip: query.offset,
+      take: query.limit,
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+        order: {
+          include: {
+            items: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                productName: true,
+                quantity: true,
+                totalPrice: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return customerOrders.map((customerOrder) =>
+      this.withDerivedCustomerOrderStatus(customerOrder),
+    );
+  }
+
+  async updateCourierOrderStatus(
+    customerOrderId: string,
+    dto: UpdateCourierOrderStatusDto,
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const scopedBranchId = resolveBranchScope(user);
+    const nextStatus = dto.status as OrderStatus;
+
+    const customerOrder = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id WHERE c.id = ${customerOrderId} FOR UPDATE OF o`;
+      const existing = await tx.customerOrder.findUnique({
+        where: { id: customerOrderId },
+        include: { order: true },
+      });
+
+      if (!existing) {
+        throw new NotFoundException("Online order not found");
+      }
+
+      if (existing.type !== "DELIVERY") {
+        throw new BadRequestException(
+          "Only delivery orders can be updated by courier",
+        );
+      }
+
+      if (scopedBranchId && existing.branchId !== scopedBranchId) {
+        throw new ForbiddenException("Cannot access another branch");
+      }
+
+      if (
+        existing.order.status === OrderStatus.COMPLETED ||
+        existing.order.status === OrderStatus.CANCELLED
+      ) {
+        throw new BadRequestException(
+          "Completed or cancelled orders cannot change status",
+        );
+      }
+
+      if (
+        existing.order.servedById &&
+        existing.order.servedById !== employeeId
+      ) {
+        throw new ForbiddenException("Bu buyurtmani boshqa kuryer olib ketgan.");
+      }
+
+      if (existing.order.status !== nextStatus) {
+        if (existing.order.status === OrderStatus.SERVED && nextStatus === OrderStatus.READY) {
+          throw new BadRequestException("Yo'ldagi buyurtmani tayyor holatiga qaytarib bo'lmaydi.");
+        }
+        if (
+          nextStatus !== OrderStatus.CANCELLED &&
+          existing.order.status !== OrderStatus.READY &&
+          existing.order.status !== OrderStatus.SERVED
+        ) {
+          throw new BadRequestException(
+            "Buyurtma hali oshxonada tayyor bo'lmagan.",
+          );
+        }
+        await tx.order.update({
+          where: { id: existing.orderId },
+          data: {
+            status: nextStatus,
+            ...(nextStatus === OrderStatus.SERVED ||
+            nextStatus === OrderStatus.COMPLETED
+              ? { servedBy: { connect: { id: employeeId } } }
+              : {}),
+            ...(nextStatus === OrderStatus.COMPLETED
+              ? {
+                  closedAt: new Date(),
+                  closedBy: { connect: { id: employeeId } },
+                }
+              : {}),
+            ...(nextStatus === OrderStatus.CANCELLED
+              ? {
+                  cancelledAt: new Date(),
+                  cancellationReason: "Courier cancelled delivery",
+                  cancelledBy: { connect: { id: employeeId } },
+                }
+              : {}),
+          },
+        });
+
+        await syncKitchenTickets(tx, existing.orderId, nextStatus);
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: existing.orderId,
+            fromStatus: existing.order.status,
+            toStatus: nextStatus,
+            changedByUserId: user.id,
+            changedByEmployeeId: user.employeeId ?? null,
+            reason: `Courier status requested: ${dto.status}`,
+          },
+        });
+      }
+
+      return tx.customerOrder.findUniqueOrThrow({
+        where: { id: customerOrderId },
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          branch: {
+            select: {
+              id: true,
+              name: true,
+              address: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
+          order: {
+            include: {
+              items: {
+                orderBy: { createdAt: "asc" },
+                select: {
+                  id: true,
+                  productName: true,
+                  quantity: true,
+                  totalPrice: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    this.kitchenService.emitOrderStatusChanged({ orderId: customerOrder.orderId });
+    kitchenEvents.emit(kitchenOrderStatusChangedEvent, {
+      orderId: customerOrder.orderId,
+      action: "refresh",
+    });
+    return this.withDerivedCustomerOrderStatus(customerOrder);
+  }
+
   async getCustomerStats(user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user);
     const customerWhere = branchId
@@ -586,6 +853,48 @@ export class CustomersService {
     }
 
     return status;
+  }
+
+  private buildOrderSearchWhere(search: string): Prisma.OrderWhereInput {
+    return {
+      OR: [
+        { orderNumber: { contains: search, mode: "insensitive" } },
+        { displayOrderNumber: { contains: search, mode: "insensitive" } },
+        { customerName: { contains: search, mode: "insensitive" } },
+        { customerPhone: { contains: search, mode: "insensitive" } },
+        { deliveryAddress: { contains: search, mode: "insensitive" } },
+        { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+      ],
+    };
+  }
+
+  private toOrderStatus(status?: string): OrderStatus | undefined {
+    return Object.values(OrderStatus).includes(status as OrderStatus)
+      ? (status as OrderStatus)
+      : undefined;
+  }
+
+  private requireEmployee(user: AuthenticatedUser): string {
+    if (!user.employeeId) {
+      throw new ForbiddenException("Authenticated user is not linked to an employee");
+    }
+
+    return user.employeeId;
+  }
+
+  private todayTashkentRange(): { start: Date; end: Date } {
+    const offsetMs = 5 * 60 * 60 * 1000;
+    const shifted = new Date(Date.now() + offsetMs);
+    const startUtcMs = Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+    ) - offsetMs;
+
+    return {
+      start: new Date(startUtcMs),
+      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+    };
   }
 
   private productInclude() {

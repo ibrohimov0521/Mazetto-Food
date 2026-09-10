@@ -1,6 +1,5 @@
 packages:
   - "apps/*"
-  - "packages/*"
 
 allowBuilds:
   # `@nestjs/swagger` bilan kelgan telemetriya paketi. Uning post-install

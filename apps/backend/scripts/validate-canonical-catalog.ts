@@ -13,8 +13,8 @@ const canonicalStandaloneTarget = 56;
 const canonicalSetTarget = 18;
 const canonicalTotalTarget = 74;
 const pendingOwnerPriceDecisions: Array<{ name: string; reason: string }> = [];
-const legacyCodes = new Set(legacyProductCodes);
-const expectedCategoryCounts = new Map([
+const legacyCodes = new Set<string>(legacyProductCodes);
+const expectedCategoryCounts = new Map<string, number>([
   ["LAVASH", 14],
   ["BURGER", 8],
   ["DONER", 5],

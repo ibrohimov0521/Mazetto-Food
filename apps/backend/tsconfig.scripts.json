@@ -1,14 +1,18 @@
 {
-  // `scripts/` va `prisma/` uchun TIP TEKSHIRUVI (PHASE 6 H12).
+  // `scripts/`, `prisma/` va `test/` uchun TIP TEKSHIRUVI.
   //
   // Nima uchun `src` dan alohida: bu fayllar `tsx` bilan ESM sifatida ishga
   // tushiriladi va `import.meta` ishlatadi, `src` esa NestJS uchun CommonJS'ga
-  // kompilyatsiya bo'ladi. Bitta `tsconfig` ikkala modul rejimini bera olmaydi,
-  // shuning uchun ikkinchi `tsc` chaqiruvi kerak.
+  // kompilyatsiya bo'ladi. Bitta `tsconfig` ikkala modul rejimini bera olmaydi.
   //
   // Ilgari bu fayllar tip tekshiruvidan BUTUNLAY tashqarida edi. Ular servis
   // kodini import qiladi, ya'ni imzo o'zgarganda jimgina buziladi; ESLint esa
   // tipga qaramaydi (`projectService` yoqilmagan).
+  //
+  // STRICT ATAYLAB YOQIQ (`tsconfig.base.json` dan meros). U qamrovga
+  // kiritilganda 31 xato ochilgan va hammasi tuzatilgan — jumladan
+  // `CustomersService` ni oltitadan beshta bog'liqlik bilan quruvchi
+  // validator. Strict'ni o'chirish o'sha drift yo'lini qaytarardi.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "module": "ESNext",
@@ -19,5 +23,5 @@
     "emitDecoratorMetadata": true,
     "noEmit": true
   },
-  "include": ["scripts/**/*.ts", "prisma/**/*.ts"]
+  "include": ["scripts/**/*.ts", "prisma/**/*.ts", "test/**/*.ts"]
 }

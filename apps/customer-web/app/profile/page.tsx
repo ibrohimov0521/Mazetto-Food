@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CustomerAuthPanel } from "../../components/customer-auth-panel";
-import { AnimatedNumber, MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
+import { ContactFooter } from "../../components/contact-footer";
+import styles from "./profile.module.css";
+import { MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
 import { MediaImage } from "../../components/media-image";
 import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
@@ -20,6 +22,7 @@ type Dashboard = {
     status: string;
     type: string;
     address?: string | null;
+    deliveryAddress?: string | null;
     createdAt: string;
     order: { orderNumber: string; displayOrderNumber?: string | null; total: string };
   }[];
@@ -42,7 +45,12 @@ const typeLabels: Record<string, string> = {
 export default function ProfilePage() {
   return (
     <SiteShell>
-      <Profile />
+      <div className="mx-auto max-w-6xl bg-[#f5f5ef]">
+        <Profile />
+        <div className="px-4 pb-4">
+          <ContactFooter />
+        </div>
+      </div>
     </SiteShell>
   );
 }
@@ -51,6 +59,7 @@ function Profile() {
   const { customer, favoriteIds, setCustomer, showToast } = useCart();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [localFavorites, setLocalFavorites] = useState<Dashboard["favorites"]>([]);
 
   const load = useCallback(async () => {
     if (!customer?.accessToken) {
@@ -59,11 +68,18 @@ function Profile() {
 
     setLoadError(null);
     try {
-      setDashboard(await apiFetch<Dashboard>("/customer/me/dashboard", { accessToken: customer.accessToken }));
+      const [data, products] = await Promise.all([
+        apiFetch<Dashboard>("/customer/me/dashboard", { accessToken: customer.accessToken }),
+        favoriteIds.length ? apiFetch<Dashboard["favorites"][number]["product"][]>("/customer/menu/products") : Promise.resolve([]),
+      ]);
+      setDashboard(data);
+      setLocalFavorites(products.filter((product) => favoriteIds.includes(product.id)).map((product) => ({ product })));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Profilni yuklab bo'lmadi.");
     }
-  }, [customer]);
+  }, [customer, favoriteIds]);
+
+  const favorites = [...new Map([...(dashboard?.favorites ?? []), ...localFavorites].map((entry) => [entry.product.id, entry])).values()];
 
   useEffect(() => {
     void load();
@@ -72,7 +88,7 @@ function Profile() {
   const addresses = useMemo(() => {
     const values = new Set(
       dashboard?.customerOrders
-        .map((order) => order.address)
+        .map((order) => order.deliveryAddress ?? order.address)
         .filter((address): address is string => Boolean(address)) ?? [],
     );
     return Array.from(values).slice(0, 3);
@@ -80,8 +96,8 @@ function Profile() {
 
   if (!customer?.accessToken) {
     return (
-      <section className="mx-auto max-w-3xl px-4 py-10">
-        <div className="mf-card p-8">
+      <section className="mx-auto max-w-xl px-4 py-6">
+        <div className="mf-card p-5 sm:p-6">
           <CustomerAuthPanel
             description="Sevimlilarni saqlang va buyurtmani kuzating. Telefon raqamingizni Telegram kodi bilan tasdiqlang."
             title="Telefon orqali profil"
@@ -100,34 +116,28 @@ function Profile() {
         </div>
       ) : null}
       <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
-        <div className="mf-checkout-card min-w-0 p-4">
+        <div className={`${styles.identity} min-w-0 p-4 sm:p-5`}>
           <p className="text-xs font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>
-          <h1 className="mt-1 text-3xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
+          <h1 className="mt-1 break-words text-2xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
           <p className="mt-1 text-sm font-bold text-[#17314A]/60">{dashboard?.phone ?? customer.phone}</p>
           <div className="mt-3 inline-flex rounded-full bg-[#0B7F75]/10 px-3 py-1 text-xs font-black text-[#0B7F75]">
             Profil ulangan
           </div>
-          <p className="mt-2 text-sm font-semibold leading-5 text-[#17314A]/62">
-            Sevimlilarni saqlang va buyurtmani kuzating.
-          </p>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
             <Stat label="Buyurtmalar" value={`${dashboard?.customerOrders.length ?? 0}`} />
-            <Stat label="Sevimlilar" value={`${dashboard?.favorites.length ?? favoriteIds.length}`} />
+            <Stat label="Sevimlilar" value={`${favorites.length || favoriteIds.length}`} />
             <Stat label="Bonus" value={formatMoney(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} />
           </div>
         </div>
 
-        <div className="mf-profile-bonus-panel rounded-[1.35rem] p-4 text-[#07373A] shadow-[0_14px_36px_rgba(245,207,0,0.24)]">
-          <p className="text-xs font-black uppercase text-[#052012]/70">Bonus balansi</p>
-          <p className="mt-2 text-3xl font-black"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} /> so'm</p>
-          <p className="mt-2 text-xs font-semibold leading-5 text-[#052012]/70">Profil buyurtmalar va sevimli mahsulotlarni saqlaydi.</p>
-          <div className="mt-4 grid gap-2">
-            <Link className="pressable ripple rounded-2xl bg-[#04130B] px-4 py-2.5 text-center text-sm font-black text-white shadow-[0_10px_24px_rgba(4,19,11,0.22)]" href="/orders">
+        <div className={`${styles.actions} h-fit p-4 text-[#07373A]`}>
+          <div className="grid gap-2">
+            <Link className="pressable mf-button-primary px-4 py-3 text-center text-sm font-bold" href="/orders">
               Buyurtmalarim
             </Link>
             <button
-              className="pressable ripple rounded-2xl bg-white/42 px-4 py-2.5 text-sm font-black text-[#04130B]"
+              className="pressable mf-button-secondary px-4 py-3 text-sm font-bold"
               onClick={() => {
                 setCustomer(null);
                 showToast("Profilingizdan chiqdingiz");
@@ -149,7 +159,7 @@ function Profile() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-black text-[#17314A]">{order.order.displayOrderNumber ?? order.order.orderNumber}</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-[#17314A]/56">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-[#17314A]/65">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
                     </div>
                     <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>
                   </div>
@@ -163,7 +173,7 @@ function Profile() {
 
         <Panel title="Sevimlilar">
           <div className="grid gap-3">
-            {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
+            {favorites.length ? favorites.map(({ product }) => (
               <Link className="pressable grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl bg-[#0B7F75]/7 p-2 transition hover:bg-[#0B7F75]/10" href={`/product/${product.id}`} key={product.id}>
                 <MediaImage
                   alt={product.name}
@@ -173,7 +183,7 @@ function Profile() {
                   src={product.imageUrl}
                 />
                 <div className="min-w-0">
-                  <p className="truncate font-black text-[#17314A]">{localizeMenuName(product.name)}</p>
+                  <p className="break-words font-bold text-[#17314A]">{localizeMenuName(product.name)}</p>
                   <p className="mt-1 text-sm font-bold text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
@@ -199,7 +209,7 @@ function statusLabel(status: string): string {
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="mf-checkout-card mt-4 p-4">
+    <section className={`${styles.section} mt-4 py-4`}>
       <h2 className="mb-3 text-xl font-black text-[#17314A]">{title}</h2>
       {children}
     </section>
@@ -208,9 +218,9 @@ function Panel({ children, title }: { children: React.ReactNode; title: string }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mf-cart-row min-w-0 p-2.5">
-      <p className="truncate text-[10px] font-black uppercase text-[#0B7F75]">{label}</p>
-      <p className="mt-1 truncate text-sm font-black text-[#17314A] sm:text-base">{value}</p>
+    <div className={`${styles.stat} min-w-0 p-2.5`}>
+      <p className="text-[11px] font-bold text-[#0B7F75]">{label}</p>
+      <p className="mt-1 break-words text-sm font-black text-[#17314A] sm:text-base">{value}</p>
     </div>
   );
 }

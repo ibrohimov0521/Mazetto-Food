@@ -1,23 +1,26 @@
 import {
   Body,
   Controller,
+  Delete,
+  Put,
   Get,
   Param,
+  Patch,
   Post,
   Query,
-  UseGuards,
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   ListCustomerOrdersDto,
   ListCustomersDto,
   ListOnlineOrdersDto,
+  UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
+import { CustomerAuth } from "../../common/decorators/customer-auth.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
-import { CustomerAuthGuard } from "../../common/guards/customer-auth.guard";
 import type { AuthenticatedCustomer } from "../../common/types/authenticated-customer";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -29,10 +32,40 @@ import {
   CustomerVerifyCodeDto,
 } from "./dto/customer.dto";
 import { CustomersService } from "./customers.service";
+import { CustomerAddressesService } from "./customer-addresses.service";
+import { SaveCustomerAddressDto } from "./dto/delivery-location.dto";
 
 @Controller("customer")
 export class CustomerPublicController {
-  constructor(private readonly customersService: CustomersService) {}
+  constructor(
+    private readonly customersService: CustomersService,
+    private readonly addressesService: CustomerAddressesService,
+  ) {}
+
+  @CustomerAuth()
+  @Get("me/addresses")
+  listAddresses(@CurrentCustomer() customer: AuthenticatedCustomer) {
+    return this.addressesService.list(customer.id);
+  }
+
+  @CustomerAuth()
+  @Put("me/addresses/:id")
+  saveAddress(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Param("id") id: string,
+    @Body() dto: SaveCustomerAddressDto,
+  ) {
+    return this.addressesService.save(customer.id, id, dto);
+  }
+
+  @CustomerAuth()
+  @Delete("me/addresses/:id")
+  deleteAddress(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Param("id") id: string,
+  ) {
+    return this.addressesService.remove(customer.id, id);
+  }
 
   @Public()
   @Post("auth/request-code")
@@ -58,8 +91,7 @@ export class CustomerPublicController {
     return this.customersService.logout(dto);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("auth/me")
   getMe(@CurrentCustomer() customer: AuthenticatedCustomer) {
     return this.customersService.getMe(customer.id);
@@ -92,8 +124,7 @@ export class CustomerPublicController {
     return this.customersService.getProduct(id);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Post("checkout/quote")
   quoteCheckout(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -102,8 +133,7 @@ export class CustomerPublicController {
     return this.customersService.quoteCheckout(customer.id, dto);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Post("orders")
   createOnlineOrder(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -112,15 +142,13 @@ export class CustomerPublicController {
     return this.customersService.createOnlineOrder(customer.id, dto);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("me/dashboard")
   getDashboard(@CurrentCustomer() customer: AuthenticatedCustomer) {
     return this.customersService.getCustomerDashboard(customer.id);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("me/orders")
   listOrders(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -129,8 +157,7 @@ export class CustomerPublicController {
     return this.customersService.listCustomerOrders(customer.id, query);
   }
 
-  @UseGuards(CustomerAuthGuard)
-  @Public()
+  @CustomerAuth()
   @Get("me/orders/:id")
   getOrder(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -166,5 +193,33 @@ export class CustomersAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.customersService.listOnlineOrders(query, user);
+  }
+
+  @Get("courier/orders")
+  @Permissions(PERMISSIONS.COURIER_DELIVERY_VIEW)
+  listCourierOrders(
+    @Query() query: ListOnlineOrdersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.listCourierDeliveryOrders(query, user);
+  }
+
+  @Get("courier/orders/history")
+  @Permissions(PERMISSIONS.COURIER_DELIVERY_VIEW)
+  listCourierOrderHistory(
+    @Query() query: ListOnlineOrdersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.listCourierDeliveryOrderHistory(query, user);
+  }
+
+  @Patch("courier/orders/:id/status")
+  @Permissions(PERMISSIONS.COURIER_DELIVERY_UPDATE)
+  updateCourierOrderStatus(
+    @Param("id") id: string,
+    @Body() dto: UpdateCourierOrderStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.updateCourierOrderStatus(id, dto, user);
   }
 }

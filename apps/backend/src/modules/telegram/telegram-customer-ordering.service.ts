@@ -1,3 +1,4 @@
+import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { CustomerOrderType, OrderSource, Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -421,7 +422,7 @@ export class TelegramCustomerOrderingService {
             ...orders.map((order) =>
               [
                 `<b>${this.escapeHtml(order.order.displayOrderNumber ?? order.order.orderNumber)}</b>`,
-                `${this.escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status)}`,
+                `${this.escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status, order.type)}`,
                 `Jami: ${this.formatMoney(order.order.total)}`,
               ].join("\n"),
             ),
@@ -1987,17 +1988,7 @@ export class TelegramCustomerOrderingService {
     return labels[code] ?? name;
   }
 
-  private statusLabel(status: string): string {
-    const labels: Record<string, string> = {
-      CANCELLED: "Bekor qilindi",
-      COMPLETED: "Yakunlandi",
-      CONFIRMED: "Qabul qilindi",
-      NEW: "Yangi",
-      PREPARING: "Tayyorlanmoqda",
-      READY: "Tayyor",
-      SERVED: "Berildi",
-    };
-
-    return labels[status] ?? this.escapeHtml(status);
+  private statusLabel(status: string, type?: string): string {
+    return sharedOrderStatusLabel(status, type);
   }
 }

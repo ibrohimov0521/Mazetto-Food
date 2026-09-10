@@ -7,6 +7,7 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 
 const gateway = readSource("apps/backend/src/modules/kitchen/kitchen.gateway.ts");
 const customerOrdersPage = readSource("apps/customer-web/app/orders/page.tsx");
+const customerOrderUpdates = readSource("apps/customer-web/lib/use-order-updates.ts");
 const waiterPage = readSource("apps/pos-web/app/(fullscreen)/waiter/page.tsx");
 const adminKitchenMonitor = readSource("apps/pos-web/components/admin/admin-kitchen-monitor.tsx");
 const realtimePayloadBlock = sourceBetween(
@@ -21,13 +22,13 @@ const realtimePayloadBlock = sourceBetween(
 const corsConfig = readSource("apps/backend/src/config/cors.config.ts");
 const mainBootstrap = readSource("apps/backend/src/main.ts");
 
-assert.match(gateway, /@WebSocketGateway\(\{\s*cors:\s*\{\s*credentials:\s*true,\s*origin:\s*getAllowedOrigins\(\),/s);
+assert.match(gateway, /@WebSocketGateway\(\{\s*cors:\s*\{\s*credentials:\s*true,\s*origin:\s*resolveAllowedOrigins\(\),/s);
 assert.doesNotMatch(gateway, /origin:\s*"\*"/);
 assert.doesNotMatch(gateway, /const allowedOrigins = \[/);
-assert.match(mainBootstrap, /origin:\s*getAllowedOrigins\(\)/);
+assert.match(mainBootstrap, /origin:\s*resolveAllowedOrigins\(\)/);
 assert.doesNotMatch(mainBootstrap, /const allowedOrigins = \[/);
 
-assert.match(corsConfig, /CORS_ORIGIN/);
+assert.match(corsConfig, /CORS_ORIGINS/);
 assert.match(corsConfig, /https:\/\/mazettofood\.uz/);
 assert.match(corsConfig, /https:\/\/pos\.mazettofood\.uz/);
 // `credentials: true` bilan wildcard brauzerda ishlamaydi — u ishlayotgandek
@@ -53,8 +54,12 @@ assert.doesNotMatch(realtimePayloadBlock, /phone/);
 assert.doesNotMatch(realtimePayloadBlock, /deliveryAddress/);
 assert.doesNotMatch(realtimePayloadBlock, /\.\.\.payload/);
 
-assert.match(customerOrdersPage, /auth: \{ token: customer\.accessToken, tokenType: "customer" \}/);
-assert.match(customerOrdersPage, /transports: \["websocket"\]/);
+// Socket handshake sahifadan `lib/use-order-updates.ts` hook ichiga ko`chirildi;
+// token endi sahifadan parametr sifatida uzatiladi.
+assert.match(customerOrdersPage, /useOrderUpdates\(customer\?\.accessToken, load\)/);
+assert.match(customerOrderUpdates, /auth: \{ token, tokenType: "customer" \}/);
+assert.match(customerOrderUpdates, /if \(!token\) return;/);
+assert.match(customerOrderUpdates, /transports: \["websocket"\]/);
 assert.match(waiterPage, /auth: \{ token: session\.tokens\.accessToken, tokenType: "staff" \}/);
 assert.match(waiterPage, /transports: \["websocket"\]/);
 assert.doesNotMatch(adminKitchenMonitor, /autentifikatsiyasiz\s+global broadcast/i);

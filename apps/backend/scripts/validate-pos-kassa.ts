@@ -11,11 +11,31 @@ const posController = readSource("apps/backend/src/modules/orders/pos.controller
 const posDto = readSource("apps/backend/src/modules/orders/dto/pos-checkout.dto.ts");
 const ordersService = readSource("apps/backend/src/modules/orders/orders.service.ts");
 const schema = readSource("apps/backend/prisma/schema.prisma");
+/*
+ * VIZUAL assertlar ATAYLAB olib tashlandi.
+ *
+ * Bu skript Tailwind sinf satrlarini tekshirardi (`bg-[#062d2b]`,
+ * `grid-cols-[minmax(0,1fr)_390px]`). Bunday assert hech qanday xatti-harakatni
+ * himoya qilmaydi — u faqat ekran restayl qilinganda buziladi, va aynan
+ * shunday bo'ldi: POS qayta dizayn qilinganda ular jimgina yiqildi va hech
+ * kim sezmadi.
+ *
+ * Layout regressiyasi uchun brauzer tekshiruvi kerak, regex emas. Bu yerda
+ * faqat XATTI-HARAKAT tekshiriladi: RBAC, endpoint, pul hisobi, guardlar.
+ */
 const posPage = readSource("apps/pos-web/app/(fullscreen)/pos/page.tsx");
 const posMedia = readSource("apps/pos-web/lib/media.ts");
 const posGlobals = readSource("apps/pos-web/app/globals.css");
 const authProvider = readSource("apps/pos-web/components/auth/auth-provider.tsx");
 const posAuth = readSource("apps/pos-web/lib/auth.ts");
+
+/*
+ * Endpoint assertlari chaqiruv FORMATLANISHIGA emas, MANZILGA qaraydi.
+ *
+ * Ilgari ular `apiFetch<Type>("/url")` ni bir qatorda kutardi. Prettier
+ * chaqiruvni ko'p qatorga bo'lganda ular jimgina yiqilardi — tekshirilayotgan
+ * xatti-harakat esa umuman o'zgarmagan bo'lardi.
+ */
 
 assert.match(permissions, /POS_USE: "POS_USE"/);
 assert.match(schema, /enum OrderSource[\s\S]*\bPOS\b/);
@@ -50,18 +70,11 @@ assert.doesNotMatch(posCheckoutBody, /dto\.source/);
 
 assert.match(posPage, /PermissionGuard permission="POS_USE"/);
 assert.match(posPage, /RoleGuard roles=\{\["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"\]\}/);
-assert.match(posPage, /min-h-screen overflow-x-hidden bg-\[#062d2b\][^"]*lg:h-screen lg:overflow-hidden/);
-assert.match(posPage, /flex min-h-screen flex-col lg:h-screen/);
-assert.match(posPage, /apiFetch<CurrentShift \| null>\("\/cash-register\/shift"\)/);
+assert.match(posPage, /"\/cash-register\/shift"/);
 assert.match(posPage, /router\.replace\("\/shift"\)/);
-assert.match(posPage, /apiFetch<Catalog>\("\/pos\/catalog"\)/);
-assert.match(posPage, /apiFetch<PosOrderResult>\("\/pos\/orders"/);
+assert.match(posPage, /"\/pos\/catalog"/);
+assert.match(posPage, /"\/pos\/orders"/);
 assert.match(posPage, /const \[checkoutKey, setCheckoutKey\] = useState\(createCheckoutKey\)/);
-assert.match(posPage, /grid-cols-\[minmax\(0,1fr\)_390px\]/);
-assert.match(posPage, /max-md:grid-cols-1/);
-assert.match(posPage, /<aside className="[^"]*max-h-\[calc\(100vh-120px\)\][^"]*overflow-hidden/);
-assert.match(posPage, /no-scrollbar mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto/);
-assert.match(posPage, /mt-4 shrink-0 space-y-3 border-t/);
 assert.match(posPage, /handleProductImageError\(event\.currentTarget\)/);
 assert.match(posMedia, /const defaultMediaUrl = "https:\/\/media\.mazettofood\.uz"/);
 assert.match(posMedia, /export const fallbackImage =/);
@@ -79,7 +92,7 @@ assert.match(posAuth, /CASHIER: "\/shift"/);
 assert.match(posAuth, /KITCHEN: "\/kitchen"/);
 assert.match(authProvider, /getLoginRedirect/);
 assert.match(authProvider, /\/cash-register\/shift/);
-assert.match(authProvider, /payload\.data\?\.status === "OPEN" \? "\/pos" : "\/shift"/);
+assert.match(authProvider, /payload\.data\?\.status === "OPEN"[\s\S]{0,40}"\/pos"[\s\S]{0,30}"\/shift"/);
 
 console.info("POS/Kassa static validation passed");
 

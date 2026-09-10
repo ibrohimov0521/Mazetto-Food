@@ -349,6 +349,7 @@ function createServices(
   const customersService = new CustomersService(
     prisma as never,
     {} as never,
+    {} as never,
     new JwtService(),
     {} as never,
     telegramCustomerAuthService,

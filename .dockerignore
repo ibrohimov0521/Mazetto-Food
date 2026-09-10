@@ -34,3 +34,5 @@ Thumbs.db
 *.swo
 
 Dockerfile.local
+
+media-source

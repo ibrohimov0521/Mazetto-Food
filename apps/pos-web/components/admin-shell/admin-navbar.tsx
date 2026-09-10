@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { hasPermission, hasRole, roleLabels } from "../../lib/auth";
+import { roleLabels } from "../../lib/auth";
 import type { AuthUser, MazettoRole } from "../../lib/auth";
 import { Icon } from "../admin-ui/icon";
+import { PanelSwitcher } from "../auth/panel-switcher";
 import { BranchScopeBadge } from "./branch-scope-badge";
 
 /*
@@ -20,9 +20,6 @@ import { BranchScopeBadge } from "./branch-scope-badge";
  * Global qidiruv ATAYLAB qo'shilmagan: backend'da qidiruv endpoint'i yo'q,
  * ishlamaydigan input esa bo'sh joydan yomonroq.
  */
-
-const shortcutClassName =
-  "inline-flex shrink-0 items-center gap-1.5 rounded-mz-control border border-mz-shell-border px-3 py-1.5 text-xs font-black text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg";
 
 function initialsOf(user: AuthUser | null): string {
   const email = user?.email;
@@ -68,7 +65,6 @@ export function AdminNavbar({
   onToggleCollapse: () => void;
   onLogout: () => void;
 }) {
-  const shortcuts = resolveTopbarShortcuts(user);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -101,14 +97,14 @@ export function AdminNavbar({
 
   return (
     <header
-      className="mz-shell-surface sticky top-0 flex shrink-0 items-center gap-3 border-b border-mz-shell-border bg-mz-shell px-3 text-mz-shell-fg sm:px-5"
+      className="mz-shell-surface sticky top-0 flex shrink-0 items-center gap-2 border-b border-mz-shell-border bg-mz-shell px-2 text-mz-shell-fg sm:px-3"
       style={{ height: "var(--mz-header-h)", zIndex: "var(--mz-z-header)" }}
     >
       <button
         aria-controls="admin-sidebar"
         aria-expanded={isMobileOpen}
         aria-label={isMobileOpen ? "Menyuni yopish" : "Menyuni ochish"}
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg lg:hidden"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg lg:hidden"
         onClick={onToggleMobile}
         type="button"
       >
@@ -118,40 +114,22 @@ export function AdminNavbar({
       <button
         aria-label={isCollapsed ? "Menyuni kengaytirish" : "Menyuni yig'ish"}
         aria-pressed={isCollapsed}
-        className="hidden h-9 w-9 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg lg:grid"
+        className="hidden h-8 w-8 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg lg:grid"
         onClick={onToggleCollapse}
         type="button"
       >
         <Icon name={isCollapsed ? "chevronRight" : "chevronLeft"} />
       </button>
 
-      <nav
-        aria-label="Tezkor bo'limlar"
-        className="mz-thin-scrollbar hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto xl:flex"
-      >
-        {shortcuts.map((item) =>
-          item.external ? (
-            <a
-              className={shortcutClassName}
-              href={item.href}
-              key={item.href}
-              rel="noopener noreferrer"
-              target="_blank"
-              title={`${item.label} — yangi tabda ochiladi`}
-            >
-              {item.label}
-              <Icon className="h-3.5 w-3.5 opacity-70" name="externalLink" />
-            </a>
-          ) : (
-            // Qobiq ichidagi havolalar — client navigatsiya. Ilgari bular ham
-            // `<a>` edi, ya'ni admin ichida yurish har safar to'liq sahifa
-            // qayta yuklanishiga olib kelardi.
-            <Link className={shortcutClassName} href={item.href} key={item.href}>
-              {item.label}
-            </Link>
-          ),
-        )}
-      </nav>
+      <span className="hidden shrink-0 px-1 text-xs font-black text-mz-primary sm:inline-flex">
+        MAZETTO
+      </span>
+
+      <PanelSwitcher
+        className="hidden min-w-0 flex-1 xl:flex"
+        user={user}
+        variant="dark"
+      />
 
       <div className="min-w-0 flex-1 xl:hidden" />
 
@@ -161,13 +139,13 @@ export function AdminNavbar({
         <button
           aria-expanded={isMenuOpen}
           aria-haspopup="menu"
-          className="flex h-10 items-center gap-2 rounded-mz-pill pl-1 pr-2 transition hover:bg-mz-shell-raised"
+          className="flex h-8 items-center gap-1.5 rounded-mz-pill pl-1 pr-2 transition hover:bg-mz-shell-raised"
           onClick={() => setIsMenuOpen((previous) => !previous)}
           type="button"
         >
           <span
             aria-hidden="true"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-mz-pill bg-mz-accent text-xs font-bold text-mz-white"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-mz-pill bg-mz-primary text-[10px] font-black text-mz-primary-fg"
           >
             {initialsOf(user)}
           </span>
@@ -196,6 +174,11 @@ export function AdminNavbar({
                 {primaryRoleLabel(user)}
               </p>
             </div>
+            <PanelSwitcher
+              className="border-b border-mz-border px-3 py-2 xl:hidden"
+              user={user}
+              variant="light"
+            />
             <button
               className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-danger transition hover:bg-mz-danger-bg"
               onClick={() => {
@@ -212,70 +195,5 @@ export function AdminNavbar({
         ) : null}
       </div>
     </header>
-  );
-}
-
-type TopbarShortcut = {
-  label: string;
-  href: string;
-  roles: string[];
-  permission: string;
-  /**
-   * Havola admin qobig'idan TASHQARIGA olib chiqadimi.
-   *
-   * `/pos`, `/kitchen` va `/shift` — to'liq ekran ish joylari, ularda sidebar
-   * yo'q. Ilgari ular oddiy `<a>` bilan shu tabda ochilardi: bosilgan zahoti
-   * chapdagi menyu butunlay yo'qolardi va qaytish uchun faqat brauzerning
-   * "orqaga" tugmasi qolardi.
-   *
-   * Endi yangi tabda ochiladi — admin sessiyasi joyida qoladi, kassa yoki
-   * oshxona esa o'z oynasida to'liq ekranda ishlaydi.
-   */
-  external?: boolean;
-};
-
-const topbarShortcuts: TopbarShortcut[] = [
-  {
-    label: "Kassa",
-    href: "/pos",
-    permission: "ORDER_CREATE",
-    roles: ["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"],
-    external: true,
-  },
-  {
-    label: "Oshxona",
-    href: "/kitchen",
-    permission: "KITCHEN_VIEW",
-    roles: ["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
-    external: true,
-  },
-  {
-    label: "Smena",
-    href: "/shift",
-    permission: "SHIFT_VIEW_OWN",
-    roles: ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"],
-    external: true,
-  },
-  {
-    label: "Admin",
-    href: "/admin/dashboard",
-    permission: "DASHBOARD_VIEW",
-    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
-  },
-  {
-    label: "Hisobot",
-    href: "/admin/reports",
-    permission: "REPORT_SALES_VIEW",
-    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-  },
-];
-
-function resolveTopbarShortcuts(user: AuthUser | null): TopbarShortcut[] {
-  if (!user) {
-    return [];
-  }
-
-  return topbarShortcuts.filter(
-    (item) => hasRole(user, item.roles) && hasPermission(user, item.permission),
   );
 }

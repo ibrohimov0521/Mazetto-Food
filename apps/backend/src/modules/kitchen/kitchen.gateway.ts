@@ -9,14 +9,14 @@ import {
   getCustomerJwtAccessSecret,
   getJwtAccessSecret,
 } from "../../config/auth.config";
-import { getAllowedOrigins } from "../../config/cors.config";
+import { resolveAllowedOrigins } from "../../config/cors.config";
 import { PrismaService } from "../../prisma/prisma.service";
 
 @Injectable()
 @WebSocketGateway({
   cors: {
     credentials: true,
-    origin: getAllowedOrigins(),
+    origin: resolveAllowedOrigins(),
   },
 })
 export class KitchenGateway implements OnGatewayConnection {

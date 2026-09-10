@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
-import { CashTransactionType, Prisma, ShiftStatus } from "@prisma/client";
+import { CashTransactionType, OrderStatus, Prisma, ShiftStatus } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -62,6 +62,56 @@ export class CashRegisterService {
       where: { shiftId },
       include: { employee: true, payment: { include: { method: true } }, order: true },
       orderBy: { occurredAt: "desc" },
+      take: 200,
+    });
+  }
+
+  async getCurrentShiftOrders(
+    query: { status?: string; search?: string; limit?: string; offset?: string },
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const shift = await this.prisma.shift.findFirst({
+      where: { employeeId, status: ShiftStatus.OPEN },
+      orderBy: { openedAt: "desc" },
+      select: { id: true, branchId: true, employeeId: true },
+    });
+
+    if (!shift) {
+      return [];
+    }
+
+    resolveBranchScope(user, shift.branchId);
+    this.assertCanViewShift(user, shift.employeeId);
+
+    const status = this.toOrderStatus(query.status);
+    const search = query.search?.trim();
+    const day = this.todayTashkentRange();
+
+    return this.prisma.order.findMany({
+      where: {
+        shiftId: shift.id,
+        createdAt: { gte: day.start, lt: day.end },
+        ...(status ? { status } : {}),
+        ...(search
+          ? {
+              OR: [
+                { orderNumber: { contains: search, mode: "insensitive" } },
+                { displayOrderNumber: { contains: search, mode: "insensitive" } },
+                { customerName: { contains: search, mode: "insensitive" } },
+                { customerPhone: { contains: search, mode: "insensitive" } },
+                { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        items: { orderBy: { createdAt: "asc" } },
+        payments: { include: { method: true }, orderBy: { createdAt: "asc" } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: this.parseOffset(query.offset),
+      take: this.parseLimit(query.limit),
     });
   }
 
@@ -124,5 +174,36 @@ export class CashRegisterService {
     }
 
     throw new ForbiddenException("Cannot access another cashier shift");
+  }
+
+  private todayTashkentRange(): { start: Date; end: Date } {
+    const offsetMs = 5 * 60 * 60 * 1000;
+    const shifted = new Date(Date.now() + offsetMs);
+    const startUtcMs = Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+    ) - offsetMs;
+
+    return {
+      start: new Date(startUtcMs),
+      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+    };
+  }
+
+  private toOrderStatus(status?: string): OrderStatus | undefined {
+    return Object.values(OrderStatus).includes(status as OrderStatus)
+      ? (status as OrderStatus)
+      : undefined;
+  }
+
+  private parseLimit(value?: string): number {
+    const parsed = Number(value ?? 50);
+    return Number.isFinite(parsed) ? Math.min(100, Math.max(1, Math.trunc(parsed))) : 50;
+  }
+
+  private parseOffset(value?: string): number {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   }
 }

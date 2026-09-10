@@ -10,7 +10,11 @@ const kitchenController = readSource("apps/backend/src/modules/kitchen/kitchen.c
 const telegramStaff = readSource("apps/backend/src/modules/telegram/telegram-order-notification.service.ts");
 const kitchenPage = readSource("apps/pos-web/app/(fullscreen)/kitchen/page.tsx");
 
-assert.match(kitchenService, /export type KitchenStaffAction = "accept" \| "start_preparing" \| "mark_ready" \| "complete" \| "cancel"/);
+// Tur ko'p qatorli formatlanishi mumkin — qiymatlar muhim, joylashuvi emas.
+assert.match(
+  kitchenService,
+  /export type KitchenStaffAction =[\s\S]*?"accept"[\s\S]*?"start_preparing"[\s\S]*?"mark_ready"[\s\S]*?"complete"[\s\S]*?"cancel"/,
+);
 assert.match(kitchenService, /async applyOrderAction\(/);
 assert.match(kitchenService, /SELECT id FROM "orders" WHERE id = \$\{orderId\} FOR UPDATE/);
 assert.match(kitchenService, /changedByUserId: user\?\.id \?\? null/);
@@ -27,9 +31,13 @@ assert.doesNotMatch(telegramStaff, /tx\.order\.update\(\{ where: \{ id: orderId 
 
 assert.match(kitchenPage, /RoleGuard roles=\{\["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"\]\}/);
 assert.match(kitchenPage, /PermissionGuard permission="KITCHEN_VIEW"/);
-assert.match(kitchenPage, /const pollIntervalMs = 5000/);
+// Oshxona doskasi 5 soniyada yangilanadi. Aniq yozilishi emas, DAVRI muhim:
+// websocket o'rniga polling ataylab tanlangan (pastdagi `doesNotMatch`).
+assert.match(kitchenPage, /setInterval\(refresh, 5000\)/);
 assert.match(kitchenPage, /document\.addEventListener\("visibilitychange"/);
-assert.match(kitchenPage, /apiFetch\(`\/kitchen\/orders\/\$\{ticket\.id\}\/\$\{action\}`/);
+// Amal ticket va harakat bo'yicha manzillanadi. `apiFetch(` chaqiruvi
+// ko'p qatorga bo'linishi mumkin, shuning uchun faqat manzil tekshiriladi.
+assert.match(kitchenPage, /`\/kitchen\/orders\/\$\{ticket\.id\}\/\$\{action\}`/);
 assert.match(kitchenPage, /type KitchenAction = "accept" \| "start" \| "ready" \| "complete" \| "cancel"/);
 assert.match(kitchenPage, /Bekor qilish/);
 assert.doesNotMatch(kitchenPage, /from "socket\.io-client"/);

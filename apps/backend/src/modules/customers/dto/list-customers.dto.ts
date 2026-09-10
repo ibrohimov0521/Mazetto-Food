@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 
 /*
  * `GET /customers` va `GET /online-orders` uchun sahifalash.
@@ -30,6 +30,26 @@ export class ListOnlineOrdersDto extends ListCustomersDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+export enum CourierOrderStatus {
+  READY = "READY",
+  SERVED = "SERVED",
+  COMPLETED = "COMPLETED",
+  CANCELLED = "CANCELLED",
+}
+
+export class UpdateCourierOrderStatusDto {
+  @IsEnum(CourierOrderStatus)
+  status!: CourierOrderStatus;
 }
 
 /*
