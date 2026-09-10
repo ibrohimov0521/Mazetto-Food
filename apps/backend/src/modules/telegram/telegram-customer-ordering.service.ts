@@ -1,5 +1,5 @@
 import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { CustomerOrderType, OrderSource, Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -13,6 +13,25 @@ import {
   OnlinePaymentMethodDto,
 } from "../customers/dto/customer.dto";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
+import {
+  branchMapUrl,
+  branchSupportsType,
+  burgerTelegramRows,
+  categoryButtonLabel,
+  chunkButtons,
+  cleanAddress,
+  escapeHtml,
+  formatMoney,
+  isMessageNotModifiedError,
+  isSimpleQuickAddProduct,
+  lavashTelegramRows,
+  maskPhone,
+  parseCustomerOrderType,
+  readCartModifiers,
+  requiredTelegramId,
+  telegramProductButtonLabel,
+  type BranchForCheckout,
+} from "./telegram-customer-presentation";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
@@ -31,22 +50,7 @@ type LinkedCustomer = {
   phone: string;
   bonusBalance: Prisma.Decimal;
 };
-type CartModifier = {
-  modifierId: string;
-  quantity: number;
-};
 type CheckoutStep = "ORDER_TYPE" | "ADDRESS" | "NOTE" | "SUMMARY";
-type BranchForCheckout = {
-  id: string;
-  name: string;
-  address?: string | null;
-  latitude?: Prisma.Decimal | null;
-  longitude?: Prisma.Decimal | null;
-  acceptsOrders: boolean;
-  deliveryEnabled: boolean;
-  pickupEnabled: boolean;
-  isTemporarilyClosed: boolean;
-};
 type TelegramCartForCheckout = {
   id: string;
   updatedAt: Date;
@@ -88,23 +92,6 @@ type CustomerScreenPayload = {
 };
 const customerCallbackPrefix = "cust";
 const TELEGRAM_CHECKOUT_SESSION_TTL_MS = 60 * 60 * 1000;
-const minimumAddressLength = 5;
-const lavashTelegramRows = [
-  ["CLASSIC_LAVASH", "CHICKEN_LAVASH"],
-  ["BIG_LAVASH", "BIG_CHICKEN_LAVASH"],
-  ["LAVASH_CHEESE", "CHICKEN_CHEESE_LAVASH"],
-  ["BIG_LAVASH_CHEESE", "BIG_CHICKEN_LAVASH_CHEESE"],
-  ["LAVASH_SPICY", "CHICKEN_SPICY_LAVASH"],
-  ["BIG_LAVASH_SPICY", "BIG_CHICKEN_SPICY_LAVASH"],
-  ["TANDIR_LAVASH"],
-  ["TANDIR_LAVASH_CHEESE"],
-] as const;
-const burgerTelegramRows = [
-  ["CLASSIC_BURGER", "CHICKEN_BURGER"],
-  ["CHEESEBURGER", "CHICKEN_CHEESEBURGER"],
-  ["DOUBLE_BURGER", "DOUBLE_CHICKEN_BURGER"],
-  ["DOUBLE_CHEESEBURGER", "DOUBLE_CHICKEN_CHEESEBURGER"],
-] as const;
 
 @Injectable()
 export class TelegramCustomerOrderingService {
@@ -249,7 +236,7 @@ export class TelegramCustomerOrderingService {
       return false;
     }
 
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
+    const chatId = requiredTelegramId(message.chat?.id, "chat id");
     const customer = await this.findLinkedCustomer(message.from?.id);
 
     if (!customer) {
@@ -287,7 +274,7 @@ export class TelegramCustomerOrderingService {
   }
 
   async sendCategoryMenu(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
+    const chatId = requiredTelegramId(message.chat?.id, "chat id");
     const customer = await this.findLinkedCustomer(message.from?.id);
 
     if (!customer) {
@@ -315,9 +302,9 @@ export class TelegramCustomerOrderingService {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          ...this.chunkButtons(
+          ...chunkButtons(
             sorted.map((category) => ({
-              text: this.categoryButtonLabel(category.code, category.name),
+              text: categoryButtonLabel(category.code, category.name),
               callback_data: `${customerCallbackPrefix}:cat:${category.id}`,
             })),
             2,
@@ -330,7 +317,7 @@ export class TelegramCustomerOrderingService {
   }
 
   async sendCartFromMessage(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
+    const chatId = requiredTelegramId(message.chat?.id, "chat id");
     const customer = await this.findLinkedCustomer(message.from?.id);
 
     if (!customer) {
@@ -345,12 +332,12 @@ export class TelegramCustomerOrderingService {
     message: TelegramMessage,
     name?: string | null,
   ): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
+    const chatId = requiredTelegramId(message.chat?.id, "chat id");
     await this.sendMainMenu({ chatId }, name);
   }
 
   async sendBranches(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
+    const chatId = requiredTelegramId(message.chat?.id, "chat id");
     await this.sendBranchesToTarget({ chatId });
   }
 
@@ -376,8 +363,8 @@ export class TelegramCustomerOrderingService {
         "",
         ...branches.map((branch) =>
           [
-            `<b>${this.escapeHtml(branch.name)}</b>`,
-            this.escapeHtml(branch.address ?? "Manzil kiritilmagan"),
+            `<b>${escapeHtml(branch.name)}</b>`,
+            escapeHtml(branch.address ?? "Manzil kiritilmagan"),
             branch.acceptsOrders && !branch.isTemporarilyClosed
               ? "Buyurtma qabul qilmoqda"
               : "Hozir buyurtma qabul qilmayapti",
@@ -389,7 +376,7 @@ export class TelegramCustomerOrderingService {
       reply_markup: {
         inline_keyboard: [
           ...branches.flatMap((branch) => {
-            const mapUrl = this.branchMapUrl(branch);
+            const mapUrl = branchMapUrl(branch);
             return mapUrl
               ? [[{ text: `📍 ${branch.name} xaritada`, url: mapUrl }]]
               : [];
@@ -421,9 +408,9 @@ export class TelegramCustomerOrderingService {
             "",
             ...orders.map((order) =>
               [
-                `<b>${this.escapeHtml(order.order.displayOrderNumber ?? order.order.orderNumber)}</b>`,
-                `${this.escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status, order.type)}`,
-                `Jami: ${this.formatMoney(order.order.total)}`,
+                `<b>${escapeHtml(order.order.displayOrderNumber ?? order.order.orderNumber)}</b>`,
+                `${escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status, order.type)}`,
+                `Jami: ${formatMoney(order.order.total)}`,
               ].join("\n"),
             ),
           ].join("\n\n")
@@ -450,10 +437,10 @@ export class TelegramCustomerOrderingService {
       text: [
         "👤 <b>Profil</b>",
         "",
-        `<b>Ism:</b> ${this.escapeHtml(customer.name)}`,
-        `<b>Telefon:</b> ${this.maskPhone(customer.phone)}`,
+        `<b>Ism:</b> ${escapeHtml(customer.name)}`,
+        `<b>Telefon:</b> ${maskPhone(customer.phone)}`,
         `<b>Buyurtmalar:</b> ${orderCount}`,
-        `<b>Bonus:</b> ${this.formatMoney(customer.bonusBalance)}`,
+        `<b>Bonus:</b> ${formatMoney(customer.bonusBalance)}`,
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
@@ -524,7 +511,7 @@ export class TelegramCustomerOrderingService {
 
     const cartLabel = await this.cartButtonLabel(customerId);
     const hasQuickAddableProducts = products.some((product) =>
-      this.isSimpleQuickAddProduct(product),
+      isSimpleQuickAddProduct(product),
     );
 
     await this.renderCustomerScreen(target, {
@@ -537,12 +524,12 @@ export class TelegramCustomerOrderingService {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          ...this.chunkButtons(products.map((product) => {
+          ...chunkButtons(products.map((product) => {
             const variant =
               product.variants.find((item) => item.isDefault) ?? product.variants[0];
-            const quickAddable = this.isSimpleQuickAddProduct(product);
+            const quickAddable = isSimpleQuickAddProduct(product);
             return {
-              text: `${quickAddable ? "➕ " : ""}${product.name} · ${this.formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
+              text: `${quickAddable ? "➕ " : ""}${product.name} · ${formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
               callback_data: quickAddable
                 ? `${customerCallbackPrefix}:qprod:${product.id}:${categoryId}`
                 : `${customerCallbackPrefix}:prod:${product.id}`,
@@ -595,8 +582,8 @@ export class TelegramCustomerOrderingService {
           .map((product) => {
             const variant = product.variants.find((item) => item.isDefault) ?? product.variants[0];
             return {
-              text: `${this.telegramProductButtonLabel(product.code, product.name)} · ${this.formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
-              callback_data: this.isSimpleQuickAddProduct(product)
+              text: `${telegramProductButtonLabel(product.code, product.name)} · ${formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
+              callback_data: isSimpleQuickAddProduct(product)
                 ? `${customerCallbackPrefix}:qprod:${product.id}:${categoryId}:1`
                 : `${customerCallbackPrefix}:prod:${product.id}`,
             };
@@ -660,21 +647,21 @@ export class TelegramCustomerOrderingService {
     const variantButtons = product.variants.length
       ? product.variants.map((variant) => [
           {
-            text: `${variant.name} · ${this.formatMoney(variant.sellingPrice)}`,
+            text: `${variant.name} · ${formatMoney(variant.sellingPrice)}`,
             callback_data: `${customerCallbackPrefix}:addv:${variant.id}`,
           },
         ])
       : [[{
-          text: `Savatga qo'shish · ${this.formatMoney(product.sellingPrice)}`,
+          text: `Savatga qo'shish · ${formatMoney(product.sellingPrice)}`,
           callback_data: `${customerCallbackPrefix}:addp:${product.id}`,
         }]];
 
     await this.renderCustomerScreen(target, {
       text: [
-        `🍽 <b>${this.escapeHtml(product.name)}</b>`,
-        product.category?.name ? this.escapeHtml(product.category.name) : "",
+        `🍽 <b>${escapeHtml(product.name)}</b>`,
+        product.category?.name ? escapeHtml(product.category.name) : "",
         "",
-        this.escapeHtml(product.description ?? "Buyurtmadan keyin tayyorlanadi."),
+        escapeHtml(product.description ?? "Buyurtmadan keyin tayyorlanadi."),
         product.modifiers.length
           ? "\nQo'shimchalarni mahsulot savatga qo'shilgandan keyin tanlaysiz."
           : "",
@@ -716,7 +703,7 @@ export class TelegramCustomerOrderingService {
       },
     });
 
-    if (!product || !this.isSimpleQuickAddProduct(product)) {
+    if (!product || !isSimpleQuickAddProduct(product)) {
       await this.answerCallback(callback, "Bu mahsulotni qayta tanlang.", true);
       if (product) {
         await this.sendProductConfigurator(target, product.id);
@@ -832,7 +819,7 @@ export class TelegramCustomerOrderingService {
         },
       });
       const existing = existingItems.find(
-        (item) => this.readCartModifiers(item.modifierSnapshot).length === 0,
+        (item) => readCartModifiers(item.modifierSnapshot).length === 0,
       );
 
       if (existing) {
@@ -884,7 +871,7 @@ export class TelegramCustomerOrderingService {
     productName: string,
   ): Promise<void> {
     await this.renderCustomerScreen(target, {
-      text: `✅ <b>${this.escapeHtml(productName)}</b> savatga qo'shildi.`,
+      text: `✅ <b>${escapeHtml(productName)}</b> savatga qo'shildi.`,
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
@@ -951,7 +938,7 @@ export class TelegramCustomerOrderingService {
         "",
         ...totals.lines,
         "",
-        `<b>Jami: ${this.formatMoney(totals.total)}</b>`,
+        `<b>Jami: ${formatMoney(totals.total)}</b>`,
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
@@ -1008,7 +995,7 @@ export class TelegramCustomerOrderingService {
       text: [
         "✅ <b>Buyurtma turi</b>",
         "",
-        `Filial: <b>${this.escapeHtml(branch.name)}</b>`,
+        `Filial: <b>${escapeHtml(branch.name)}</b>`,
         "",
         "Qanday buyurtma berasiz?",
       ].join("\n"),
@@ -1028,7 +1015,7 @@ export class TelegramCustomerOrderingService {
     customer: LinkedCustomer,
     rawType: string,
   ): Promise<void> {
-    const orderType = this.parseCustomerOrderType(rawType);
+    const orderType = parseCustomerOrderType(rawType);
     const session = await this.getActiveCheckoutSession(customer.id, target.chatId);
     const branch = session?.branchId
       ? await this.findBranchForCheckout(session.branchId)
@@ -1041,7 +1028,7 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    if (!this.branchSupportsType(branch, orderType)) {
+    if (!branchSupportsType(branch, orderType)) {
       await this.renderCustomerScreen(target, {
         text:
           orderType === CustomerOrderType.DELIVERY
@@ -1082,7 +1069,7 @@ export class TelegramCustomerOrderingService {
       text: [
         "🚚 <b>Yetkazib berish manzili</b>",
         "",
-        `Filial: <b>${this.escapeHtml(branch.name)}</b>`,
+        `Filial: <b>${escapeHtml(branch.name)}</b>`,
         "",
         "Manzilingizni yuboring. Masalan: Sergeli 7, 12-uy, 3-podyezd, mo'ljal - maktab yonida.",
       ].join("\n"),
@@ -1099,9 +1086,9 @@ export class TelegramCustomerOrderingService {
     customer: LinkedCustomer,
     address: string,
   ): Promise<void> {
-    const cleanAddress = this.cleanAddress(address);
+    const normalizedAddress = cleanAddress(address);
 
-    if (!cleanAddress) {
+    if (!normalizedAddress) {
       await this.telegramRequest("sendMessage", {
         chat_id: chatId,
         text: "Manzil juda qisqa yoki bo'sh. Iltimos, ko'cha, uy va mo'ljalni yozing.",
@@ -1111,7 +1098,7 @@ export class TelegramCustomerOrderingService {
 
     await this.upsertCheckoutSession(customer.id, chatId, {
       step: "NOTE",
-      address: cleanAddress,
+      address: normalizedAddress,
     });
 
     await this.telegramRequest("sendMessage", {
@@ -1202,7 +1189,7 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    if (!this.branchSupportsType(branch, orderType)) {
+    if (!branchSupportsType(branch, orderType)) {
       await this.renderCustomerScreen(target, {
         text: "Tanlangan filial yoki buyurtma turi hozir mavjud emas. Iltimos, qayta tanlang.",
       });
@@ -1210,7 +1197,7 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    if (orderType === CustomerOrderType.DELIVERY && !this.cleanAddress(session.address ?? "")) {
+    if (orderType === CustomerOrderType.DELIVERY && !cleanAddress(session.address ?? "")) {
       await this.upsertCheckoutSession(customer.id, target.chatId, { step: "ADDRESS" });
       await this.askDeliveryAddress(target, branch);
       return;
@@ -1228,7 +1215,7 @@ export class TelegramCustomerOrderingService {
         productId: item.productId,
         ...(item.variantId ? { variantId: item.variantId } : {}),
         quantity: Number(item.quantity),
-        modifiers: this.readCartModifiers(item.modifierSnapshot),
+        modifiers: readCartModifiers(item.modifierSnapshot),
         ...(item.notes ? { notes: item.notes } : {}),
       })),
     });
@@ -1238,20 +1225,20 @@ export class TelegramCustomerOrderingService {
       text: [
         "✅ <b>Buyurtmani tasdiqlash</b>",
         "",
-        `Filial: <b>${this.escapeHtml(branch.name)}</b>`,
+        `Filial: <b>${escapeHtml(branch.name)}</b>`,
         `Turi: <b>${orderType === CustomerOrderType.DELIVERY ? "Yetkazib berish" : "Olib ketish"}</b>`,
         orderType === CustomerOrderType.DELIVERY
-          ? `Manzil: <b>${this.escapeHtml(session.address ?? "")}</b>`
+          ? `Manzil: <b>${escapeHtml(session.address ?? "")}</b>`
           : "",
-        session.note ? `Izoh: ${this.escapeHtml(session.note)}` : "",
+        session.note ? `Izoh: ${escapeHtml(session.note)}` : "",
         "To'lov: <b>Naqd</b>",
         "",
         ...totals.lines,
         deliveryFee > 0
-          ? `Yetkazib berish: ${this.formatMoney(new Prisma.Decimal(quote.deliveryFee))}`
+          ? `Yetkazib berish: ${formatMoney(new Prisma.Decimal(quote.deliveryFee))}`
           : "",
         "",
-        `<b>Jami: ${this.formatMoney(new Prisma.Decimal(quote.total))}</b>`,
+        `<b>Jami: ${formatMoney(new Prisma.Decimal(quote.total))}</b>`,
       ].filter(Boolean).join("\n"),
       parse_mode: "HTML",
       reply_markup: {
@@ -1291,7 +1278,7 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    if (!this.branchSupportsType(branch, orderType)) {
+    if (!branchSupportsType(branch, orderType)) {
       await this.renderCustomerScreen(target, {
         text: "Tanlangan filial bu buyurtma turini hozir qabul qilmayapti.",
       });
@@ -1301,7 +1288,7 @@ export class TelegramCustomerOrderingService {
 
     const deliveryAddress =
       orderType === CustomerOrderType.DELIVERY
-        ? this.cleanAddress(session.address ?? "")
+        ? cleanAddress(session.address ?? "")
         : null;
 
     if (orderType === CustomerOrderType.DELIVERY && !deliveryAddress) {
@@ -1334,7 +1321,7 @@ export class TelegramCustomerOrderingService {
             productId: item.productId,
             ...(item.variantId ? { variantId: item.variantId } : {}),
             quantity: Number(item.quantity),
-            modifiers: this.readCartModifiers(item.modifierSnapshot),
+            modifiers: readCartModifiers(item.modifierSnapshot),
             ...(item.notes ? { notes: item.notes } : {}),
           })),
         },
@@ -1351,7 +1338,7 @@ export class TelegramCustomerOrderingService {
         text: [
           "🎉 <b>Buyurtma qabul qilindi</b>",
           "",
-          `Raqam: <b>${this.escapeHtml(result.order?.displayOrderNumber ?? result.order?.orderNumber ?? "-")}</b>`,
+          `Raqam: <b>${escapeHtml(result.order?.displayOrderNumber ?? result.order?.orderNumber ?? "-")}</b>`,
           `Holat: <b>${this.statusLabel(result.order?.status ?? "NEW")}</b>`,
           "",
           "Buyurtmani web sayt yoki Telegramdagi Buyurtmalarim bo'limidan kuzatishingiz mumkin.",
@@ -1410,7 +1397,7 @@ export class TelegramCustomerOrderingService {
         productId: item.productId,
         variantId: item.variantId,
         quantity: item.quantity.toFixed(3),
-        modifiers: this.readCartModifiers(item.modifierSnapshot).sort((a, b) =>
+        modifiers: readCartModifiers(item.modifierSnapshot).sort((a, b) =>
           a.modifierId.localeCompare(b.modifierId),
         ),
         notes: item.notes?.trim() ?? null,
@@ -1471,7 +1458,7 @@ export class TelegramCustomerOrderingService {
     const modifierIds = [
       ...new Set(
         items.flatMap((item) =>
-          this.readCartModifiers(item.modifierSnapshot).map((modifier) => modifier.modifierId),
+          readCartModifiers(item.modifierSnapshot).map((modifier) => modifier.modifierId),
         ),
       ),
     ];
@@ -1484,7 +1471,7 @@ export class TelegramCustomerOrderingService {
     let total = new Prisma.Decimal(0);
     const lines = items.map((item) => {
       const quantity = new Prisma.Decimal(item.quantity);
-      const selectedModifiers = this.readCartModifiers(item.modifierSnapshot);
+      const selectedModifiers = readCartModifiers(item.modifierSnapshot);
       const modifierTotal = selectedModifiers.reduce((sum, selected) => {
         const modifier = modifiers.find((candidate) => candidate.id === selected.modifierId);
         return modifier
@@ -1500,9 +1487,9 @@ export class TelegramCustomerOrderingService {
         .join(", ");
 
       return [
-        `${quantity.toNumber()}x <b>${this.escapeHtml(item.product.name)}</b>${item.variant ? ` ${this.escapeHtml(item.variant.name)}` : ""}`,
-        modifierNames ? `  + ${this.escapeHtml(modifierNames)}` : "",
-        `  ${this.formatMoney(lineTotal)}`,
+        `${quantity.toNumber()}x <b>${escapeHtml(item.product.name)}</b>${item.variant ? ` ${escapeHtml(item.variant.name)}` : ""}`,
+        modifierNames ? `  + ${escapeHtml(modifierNames)}` : "",
+        `  ${formatMoney(lineTotal)}`,
       ].filter(Boolean).join("\n");
     });
 
@@ -1565,25 +1552,11 @@ export class TelegramCustomerOrderingService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${firstKey}, ${secondKey})`;
   }
 
-  private branchMapUrl(branch: {
-    latitude?: Prisma.Decimal | null;
-    longitude?: Prisma.Decimal | null;
-  }): string | null {
-    if (branch.latitude === null || branch.latitude === undefined) {
-      return null;
-    }
-
-    if (branch.longitude === null || branch.longitude === undefined) {
-      return null;
-    }
-
-    return `https://www.google.com/maps/search/?api=1&query=${Number(branch.latitude)},${Number(branch.longitude)}`;
-  }
 
   private orderTypeButtons(branch: BranchForCheckout) {
     const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
 
-    if (this.branchSupportsType(branch, CustomerOrderType.PICKUP)) {
+    if (branchSupportsType(branch, CustomerOrderType.PICKUP)) {
       buttons.push([
         {
           text: "🚶 Olib ketish",
@@ -1592,7 +1565,7 @@ export class TelegramCustomerOrderingService {
       ]);
     }
 
-    if (this.branchSupportsType(branch, CustomerOrderType.DELIVERY)) {
+    if (branchSupportsType(branch, CustomerOrderType.DELIVERY)) {
       buttons.push([
         {
           text: "🚚 Yetkazib berish",
@@ -1604,26 +1577,7 @@ export class TelegramCustomerOrderingService {
     return buttons;
   }
 
-  private parseCustomerOrderType(value: string): CustomerOrderType {
-    if (value === CustomerOrderType.DELIVERY || value === CustomerOrderType.PICKUP) {
-      return value;
-    }
 
-    throw new BadRequestException("Order type is invalid");
-  }
-
-  private branchSupportsType(
-    branch: BranchForCheckout,
-    orderType: CustomerOrderType,
-  ): boolean {
-    if (!branch.acceptsOrders || branch.isTemporarilyClosed) {
-      return false;
-    }
-
-    return orderType === CustomerOrderType.DELIVERY
-      ? branch.deliveryEnabled
-      : branch.pickupEnabled;
-  }
 
   private async availableBranches(): Promise<BranchForCheckout[]> {
     return this.prisma.branch.findMany({
@@ -1670,7 +1624,7 @@ export class TelegramCustomerOrderingService {
   ): Promise<BranchForCheckout | null> {
     const branches = await this.availableBranches();
 
-    return branches.find((branch) => this.branchSupportsType(branch, orderType)) ?? null;
+    return branches.find((branch) => branchSupportsType(branch, orderType)) ?? null;
   }
 
   private getActiveCheckoutSession(customerId: string, chatId: string) {
@@ -1726,33 +1680,7 @@ export class TelegramCustomerOrderingService {
       .catch(() => undefined);
   }
 
-  private cleanAddress(address: string): string | null {
-    const normalized = address.replace(/\s+/g, " ").trim();
 
-    if (normalized.length < minimumAddressLength) {
-      return null;
-    }
-
-    return normalized;
-  }
-
-  private readCartModifiers(value: Prisma.JsonValue | null): CartModifier[] {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
-    return value.flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return [];
-      }
-
-      const modifierId = "modifierId" in item ? String(item.modifierId) : "";
-      const quantity =
-        "quantity" in item && Number(item.quantity) > 0 ? Number(item.quantity) : 1;
-
-      return modifierId ? [{ modifierId, quantity }] : [];
-    });
-  }
 
   private findLinkedCustomer(telegramUserId: number | string | undefined) {
     if (telegramUserId === undefined || telegramUserId === null) {
@@ -1778,7 +1706,7 @@ export class TelegramCustomerOrderingService {
     const cartLabel = await this.cartButtonLabel(customerId);
     await this.renderCustomerScreen(target, {
       text: [
-        `Assalomu alaykum${name ? `, ${this.escapeHtml(name)}` : ""}!`,
+        `Assalomu alaykum${name ? `, ${escapeHtml(name)}` : ""}!`,
         "",
         "Menyu, savat, filial va profilingiz tayyor.",
       ].join("\n"),
@@ -1799,13 +1727,6 @@ export class TelegramCustomerOrderingService {
     });
   }
 
-  private isSimpleQuickAddProduct(product: {
-    category?: { code?: string | null; name?: string | null } | null;
-    variants?: Array<{ id: string; isDefault?: boolean | null }>;
-    modifiers?: unknown[];
-  }): boolean {
-    return (product.variants?.length ?? 0) <= 1;
-  }
 
   private async cartButtonLabel(customerId?: string): Promise<string> {
     if (!customerId) {
@@ -1820,13 +1741,6 @@ export class TelegramCustomerOrderingService {
     return count > 0 ? `🛒 Savat (${count})` : "🛒 Savat";
   }
 
-  private chunkButtons<T>(items: T[], size: number): T[][] {
-    const rows: T[][] = [];
-    for (let index = 0; index < items.length; index += size) {
-      rows.push(items.slice(index, index + size));
-    }
-    return rows;
-  }
 
   private async sendLinkRequired(target: CustomerScreenTarget): Promise<void> {
     await this.renderCustomerScreen(target, {
@@ -1836,7 +1750,7 @@ export class TelegramCustomerOrderingService {
 
   private callbackTarget(callback: TelegramCallbackQuery): CustomerScreenTarget {
     return {
-      chatId: this.requiredTelegramId(callback.message?.chat?.id, "chat id"),
+      chatId: requiredTelegramId(callback.message?.chat?.id, "chat id"),
       ...(callback.id ? { callbackQueryId: callback.id } : {}),
       ...(callback.message?.message_id ? { messageId: callback.message.message_id } : {}),
     };
@@ -1871,7 +1785,7 @@ export class TelegramCustomerOrderingService {
         });
         return;
       } catch (error) {
-        if (this.isMessageNotModifiedError(error)) {
+        if (isMessageNotModifiedError(error)) {
           return;
         }
       }
@@ -1883,11 +1797,6 @@ export class TelegramCustomerOrderingService {
     });
   }
 
-  private isMessageNotModifiedError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-
-    return message.includes("message is not modified");
-  }
 
   private async telegramRequest(method: string, payload: unknown): Promise<void> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -1908,85 +1817,11 @@ export class TelegramCustomerOrderingService {
     }
   }
 
-  private requiredTelegramId(
-    value: number | string | undefined,
-    label: string,
-  ): string {
-    if (value === undefined || value === null || String(value).trim() === "") {
-      throw new BadRequestException(`Telegram ${label} is missing`);
-    }
 
-    return String(value);
-  }
 
-  private formatMoney(value: Prisma.Decimal | number | string): string {
-    const amount = Number(value);
 
-    return `${new Intl.NumberFormat("uz-UZ").format(amount)} so'm`;
-  }
 
-  private maskPhone(phone: string): string {
-    if (phone.length <= 7) {
-      return this.escapeHtml(phone);
-    }
 
-    return this.escapeHtml(`${phone.slice(0, 4)}***${phone.slice(-4)}`);
-  }
-
-  private escapeHtml(value: string): string {
-    return value
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
-  }
-
-  private categoryButtonLabel(code: string | null | undefined, name: string): string {
-    const icons: Record<string, string> = {
-      BURGER: "🍔",
-      BLYUDALAR: "🍽",
-      CHICKEN_BURGER: "🍔",
-      CHICKEN_LAVASH: "🍗",
-      DONER: "🥙",
-      DRINKS: "🥤",
-      FAST_FOOD: "🍟",
-      HOT_DOG: "🌭",
-      LAVASH: "🌯",
-      SAUCES: "🥫",
-      SETS: "🔥",
-    };
-
-    return `${icons[code ?? ""] ?? "🍽"} ${name}`;
-  }
-
-  private telegramProductButtonLabel(code: string, name: string): string {
-    const labels: Record<string, string> = {
-      BIG_CHICKEN_LAVASH: "Kurinniy Big",
-      BIG_CHICKEN_LAVASH_CHEESE: "Kurinniy Big Pishloqli",
-      BIG_CHICKEN_SPICY_LAVASH: "Achchiq Kurinniy Big",
-      BIG_LAVASH: "Big Lavash",
-      BIG_LAVASH_CHEESE: "Big Pishloqli",
-      BIG_LAVASH_SPICY: "Achchiq Big",
-      CHEESEBURGER: "Chizburger",
-      CHICKEN_BURGER: "Chicken Burger",
-      CHICKEN_CHEESEBURGER: "Chicken Chizburger",
-      CHICKEN_CHEESE_LAVASH: "Kurinniy Pishloqli",
-      CHICKEN_LAVASH: "Kurinniy Lavash",
-      CHICKEN_SPICY_LAVASH: "Achchiq Kurinniy",
-      CLASSIC_BURGER: "Burger",
-      CLASSIC_LAVASH: "Lavash",
-      DOUBLE_BURGER: "Double Burger",
-      DOUBLE_CHEESEBURGER: "Double Chizburger",
-      DOUBLE_CHICKEN_BURGER: "Double Chicken",
-      DOUBLE_CHICKEN_CHEESEBURGER: "Double Chicken Chizburger",
-      LAVASH_CHEESE: "Pishloqli",
-      LAVASH_SPICY: "Achchiq Lavash",
-      TANDIR_LAVASH: "Tandir Lavash",
-      TANDIR_LAVASH_CHEESE: "Tandir Pishloqli",
-    };
-
-    return labels[code] ?? name;
-  }
 
   private statusLabel(status: string, type?: string): string {
     return sharedOrderStatusLabel(status, type);
