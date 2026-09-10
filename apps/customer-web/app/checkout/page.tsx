@@ -63,12 +63,13 @@ type FormErrors = Partial<
 const checkoutAttemptKey = "mazetto.customer.checkoutAttemptId";
 const checkoutAttemptPayloadKey = "mazetto.customer.checkoutAttemptPayload";
 
-const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] = [
-  { value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" },
-  { value: "CARD", label: "Karta", hint: "Terminal orqali" },
-  { value: "CLICK", label: "Click", hint: "Ilova orqali onlayn" },
-  { value: "PAYME", label: "Payme", hint: "Ilova orqali onlayn" },
-];
+const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] =
+  [
+    { value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" },
+    { value: "CARD", label: "Karta", hint: "Terminal orqali" },
+    { value: "CLICK", label: "Click", hint: "Ilova orqali onlayn" },
+    { value: "PAYME", label: "Payme", hint: "Ilova orqali onlayn" },
+  ];
 
 export default function CheckoutPage() {
   return (
@@ -221,6 +222,8 @@ function CheckoutFlow() {
         body: JSON.stringify({
           branchId,
           type,
+          deliveryLocation:
+            type === "DELIVERY" ? (deliveryLocation ?? undefined) : undefined,
           items: orderItemsPayload,
         }),
         method: "POST",
@@ -261,6 +264,7 @@ function CheckoutFlow() {
     }
   }, [
     branchId,
+    deliveryLocation,
     customer?.accessToken,
     items.length,
     orderItemsPayload,

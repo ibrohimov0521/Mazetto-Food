@@ -630,7 +630,9 @@
   background: white;
   border: 1px solid #d5e2dd;
   border-radius: 8px;
-  box-shadow: 0 2px 3px #003e4308, 0 8px 20px -10px #003e4333;
+  box-shadow:
+    0 2px 3px #003e4308,
+    0 8px 20px -10px #003e4333;
 }
 .ticketHeader {
   display: flex;
@@ -746,7 +748,9 @@
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 2px 3px #003e4308, 0 8px 20px -10px #003e4333;
+  box-shadow:
+    0 2px 3px #003e4308,
+    0 8px 20px -10px #003e4333;
   overflow: hidden;
 }
 .deliveryTop {
@@ -895,8 +899,8 @@
 }
 .productGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-  grid-auto-rows: minmax(218px, auto);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-auto-rows: minmax(250px, auto);
   flex: 1 1 0%;
   align-content: start;
   overflow-y: auto;
@@ -910,7 +914,7 @@
   flex-direction: column;
   align-self: start;
   min-width: 0;
-  min-height: 218px;
+  min-height: 250px;
   height: 100%;
   border: 1px solid #cddfd5;
   border-radius: 8px;
@@ -953,7 +957,9 @@
   color: #07373a;
   background: #ffd83d;
   border-radius: 6px;
-  box-shadow: 0 2px 0 #be9f22, 0 8px 18px #003b3f2e;
+  box-shadow:
+    0 2px 0 #be9f22,
+    0 8px 18px #003b3f2e;
   z-index: 2;
 }
 .productInfo {
@@ -967,9 +973,9 @@
   background: linear-gradient(180deg, #ffffff 0%, #f4faf6 100%);
 }
 .productInfo h2 {
-  min-height: 40px;
-  font-size: 13px;
-  line-height: 1.4;
+  min-height: 44px;
+  font-size: 14px;
+  line-height: 1.3;
   font-weight: 700;
   margin: 0 0 8px;
   overflow-wrap: anywhere;
@@ -1184,12 +1190,12 @@
     padding: 16px;
   }
   .productGrid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    grid-auto-rows: minmax(210px, auto);
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-auto-rows: minmax(230px, auto);
     gap: 10px;
   }
   .product {
-    min-height: 210px;
+    min-height: 230px;
   }
   .identity {
     display: none;
@@ -1348,11 +1354,11 @@
   }
   .productGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(194px, auto);
+    grid-auto-rows: minmax(218px, auto);
     overflow: visible;
   }
   .product {
-    min-height: 194px;
+    min-height: 218px;
   }
   .productInfo {
     padding: 10px;
@@ -1447,12 +1453,16 @@
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .ticket,
   .deliveryCard {
-    transition: border-color 150ms, box-shadow 150ms;
+    transition:
+      border-color 150ms,
+      box-shadow 150ms;
   }
   .ticket:hover,
   .deliveryCard:hover {
     border-color: #75a597;
-    box-shadow: 0 4px 6px #003e4308, 0 12px 24px -12px #003e4347;
+    box-shadow:
+      0 4px 6px #003e4308,
+      0 12px 24px -12px #003e4347;
   }
 }
 .desktopRoleNav a {
