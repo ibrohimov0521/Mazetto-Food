@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useEffect, useState } from "react";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { formatDateTime } from "../../lib/order-display";
 import { Badge, type BadgeTone } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
@@ -73,7 +74,6 @@ function actorName(user: AuditLog["user"]): string {
 }
 
 export function AdminAuditPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
   const [facets, setFacets] = useState<AuditFacets>({
     actions: [],
     entities: [],
@@ -82,8 +82,6 @@ export function AdminAuditPage() {
   const [entity, setEntity] = useState("");
   const [offset, setOffset] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     void apiFetch<AuditFacets>("/audit-logs/facets")
@@ -93,38 +91,25 @@ export function AdminAuditPage() {
       });
   }, []);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset),
-    });
-
-    if (action) params.set("action", action);
-    if (entity) params.set("entity", entity);
-
-    try {
-      setLogs(await apiFetch<AuditLog[]>(`/audit-logs?${params.toString()}`));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Audit jurnalini yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [action, entity, offset]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (action) params.set("action", action);
+      if (entity) params.set("entity", entity);
+      return apiFetch<AuditLog[]>(`/audit-logs?${params.toString()}`);
+    },
+    [action, entity, offset],
+    "Audit jurnalini yuklab bo'lmadi.",
+  );
+  const logs = data ?? [];
 
   const columns: DataTableColumn<AuditLog>[] = [
     {

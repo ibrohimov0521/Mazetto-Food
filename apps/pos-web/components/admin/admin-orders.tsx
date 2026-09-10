@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission, type AuthUser } from "../../lib/auth";
 import {
@@ -112,20 +113,21 @@ export function AdminOrdersPage() {
   const { user } = useAuth();
   const showBranchFilter = canSwitchBranch(user);
 
-  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [branchId, setBranchId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<OrderStatus>("CANCELLED");
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkResult, setBulkResult] = useState<BulkOrderStatusResult | null>(null);
+  const [bulkResult, setBulkResult] = useState<BulkOrderStatusResult | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -139,40 +141,34 @@ export function AdminOrdersPage() {
       });
   }, [showBranchFilter]);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset),
-    });
-
-    if (status) params.set("status", status);
-    if (type) params.set("type", type);
-    if (paymentStatus) params.set("paymentStatus", paymentStatus);
-    if (branchId) params.set("branchId", branchId);
-
-    try {
-      setOrders(await apiFetch<AdminOrder[]>(`/orders?${params.toString()}`));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Buyurtmalarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [branchId, offset, paymentStatus, status, type]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    isLoading,
+    error: loadError,
+    reload: load,
+  } = useApiResource(
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (status) params.set("status", status);
+      if (type) params.set("type", type);
+      if (paymentStatus) params.set("paymentStatus", paymentStatus);
+      if (branchId) params.set("branchId", branchId);
+      return apiFetch<AdminOrder[]>(`/orders?${params.toString()}`);
+    },
+    [branchId, offset, paymentStatus, status, type],
+    "Buyurtmalarni yuklab bo'lmadi.",
+  );
+  const orders = data ?? [];
+  /*
+   * Yuklash xatosi va AMAL xatosi alohida: ommaviy amal yiqilganda
+   * ro'yxat baribir ko'rinib turishi kerak, va keyingi qayta yuklash
+   * amal xatosini jimgina o'chirib yubormasligi kerak.
+   */
+  const [saveError, setSaveError] = useState("");
+  const error = saveError || loadError;
 
   useEffect(() => {
     setSelectedOrderIds((current) => {
@@ -216,25 +212,30 @@ export function AdminOrdersPage() {
 
   async function bulkUpdateSelected(): Promise<void> {
     setBulkBusy(true);
-    setError("");
+    setSaveError("");
     setBulkResult(null);
 
     try {
-      const result = await apiFetch<BulkOrderStatusResult>("/orders/bulk/status", {
-        method: "PATCH",
-        body: JSON.stringify({
-          orderIds: [...selectedOrderIds],
-          status: bulkStatus,
-          reason: `Admin bulk action: ${bulkStatus} from orders list`,
-          confirm: true,
-        }),
-      });
+      const result = await apiFetch<BulkOrderStatusResult>(
+        "/orders/bulk/status",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            orderIds: [...selectedOrderIds],
+            status: bulkStatus,
+            reason: `Admin bulk action: ${bulkStatus} from orders list`,
+            confirm: true,
+          }),
+        },
+      );
       setBulkResult(result);
       setBulkConfirmOpen(false);
       setSelectedOrderIds(new Set());
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Ommaviy amal bajarilmadi.");
+      setSaveError(
+        caught instanceof Error ? caught.message : "Ommaviy amal bajarilmadi.",
+      );
     } finally {
       setBulkBusy(false);
     }
@@ -254,7 +255,9 @@ export function AdminOrdersPage() {
         <input
           aria-label={`${order.displayOrderNumber ?? order.orderNumber} buyurtmani tanlash`}
           checked={selectedOrderIds.has(order.id)}
-          disabled={order.status === "COMPLETED" || order.status === "CANCELLED"}
+          disabled={
+            order.status === "COMPLETED" || order.status === "CANCELLED"
+          }
           onChange={(event) => toggleSelected(order.id, event.target.checked)}
           type="checkbox"
         />
@@ -266,9 +269,12 @@ export function AdminOrdersPage() {
       primary: true,
       render: (order) => (
         <div className="min-w-0">
-          <p className="truncate font-semibold text-mz-text">{order.displayOrderNumber ?? order.orderNumber}</p>
+          <p className="truncate font-semibold text-mz-text">
+            {order.displayOrderNumber ?? order.orderNumber}
+          </p>
           <p className="truncate text-xs text-mz-text-muted">
-            {formatDateTime(order.createdAt)} · {orderSourceLabels[order.source]} · {order.orderNumber}
+            {formatDateTime(order.createdAt)} ·{" "}
+            {orderSourceLabels[order.source]} · {order.orderNumber}
           </p>
         </div>
       ),
@@ -434,14 +440,18 @@ export function AdminOrdersPage() {
             {bulkResult ? (
               <span className="text-xs font-semibold text-mz-text-muted">
                 {bulkResult.updatedCount} ta bajarildi
-                {bulkResult.failedCount ? `, ${bulkResult.failedCount} ta o'tmadi` : ""}
+                {bulkResult.failedCount
+                  ? `, ${bulkResult.failedCount} ta o'tmadi`
+                  : ""}
               </span>
             ) : null}
             <Select
               aria-label="Tanlangan buyurtmalar uchun ommaviy amal"
               disabled={!selectedOrderIds.size || bulkBusy}
               value={bulkStatus}
-              onChange={(event) => setBulkStatus(event.target.value as OrderStatus)}
+              onChange={(event) =>
+                setBulkStatus(event.target.value as OrderStatus)
+              }
             >
               {changeableStatuses.map((value) => (
                 <option key={value} value={value}>
@@ -500,7 +510,9 @@ export function AdminOrdersPage() {
               onClick={() => void bulkUpdateSelected()}
               variant={bulkStatus === "CANCELLED" ? "danger" : "primary"}
             >
-              {bulkBusy ? "Bajarilmoqda..." : `${selectedOrders.length} ta buyurtmaga qo'llash`}
+              {bulkBusy
+                ? "Bajarilmoqda..."
+                : `${selectedOrders.length} ta buyurtmaga qo'llash`}
             </Button>
           </>
         }
@@ -517,11 +529,15 @@ export function AdminOrdersPage() {
               <span className="font-semibold">
                 {order.displayOrderNumber ?? order.orderNumber}
               </span>
-              <span className="text-mz-text-muted">{formatMoney(order.total)}</span>
+              <span className="text-mz-text-muted">
+                {formatMoney(order.total)}
+              </span>
             </div>
           ))}
           {selectedOrders.length > 8 ? (
-            <p className="text-xs text-mz-text-muted">Yana {selectedOrders.length - 8} ta buyurtma tanlangan.</p>
+            <p className="text-xs text-mz-text-muted">
+              Yana {selectedOrders.length - 8} ta buyurtma tanlangan.
+            </p>
           ) : null}
         </div>
       </Modal>
@@ -708,7 +724,11 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         <Card>
           <CardHeader
             description={`${orderSourceLabels[order.source]} · ${orderTypeLabels[order.type]}`}
-            title={order.displayOrderNumber ? `${order.displayOrderNumber} · ${order.orderNumber}` : order.orderNumber}
+            title={
+              order.displayOrderNumber
+                ? `${order.displayOrderNumber} · ${order.orderNumber}`
+                : order.orderNumber
+            }
           />
           <CardBody className="flex flex-wrap gap-2">
             <Badge tone={orderStatusTone(order.status)} withDot>

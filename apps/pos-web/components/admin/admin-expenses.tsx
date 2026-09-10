@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission } from "../../lib/auth";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
@@ -63,15 +64,12 @@ export function AdminExpensesPage() {
   const canCreate = hasPermission(user, "EXPENSE_CREATE");
   const canSeeShifts = hasPermission(user, "SHIFT_VIEW_BRANCH");
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [openShifts, setOpenShifts] = useState<Shift[]>([]);
   const [category, setCategory] = useState("");
   const [branchId, setBranchId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -104,38 +102,25 @@ export function AdminExpensesPage() {
     }
   }, [canSeeShifts, showBranchFilter]);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset),
-    });
-
-    if (category) params.set("category", category);
-    if (branchId) params.set("branchId", branchId);
-
-    try {
-      setExpenses(await apiFetch<Expense[]>(`/expenses?${params.toString()}`));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Xarajatlarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [branchId, category, offset]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (category) params.set("category", category);
+      if (branchId) params.set("branchId", branchId);
+      return apiFetch<Expense[]>(`/expenses?${params.toString()}`);
+    },
+    [branchId, category, offset],
+    "Xarajatlarni yuklab bo'lmadi.",
+  );
+  const expenses = data ?? [];
 
   const stats = useMemo(() => {
     const total = expenses.reduce(

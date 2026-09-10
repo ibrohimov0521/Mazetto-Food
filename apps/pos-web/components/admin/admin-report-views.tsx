@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { reportQueryParams, type ReportQuery } from "../../lib/report-query";
 import { Card, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
@@ -40,34 +40,18 @@ function decimal(value: unknown): string {
 
 /** Hisobotni yuklab, yuklanish va xato holatini boshqaradigan umumiy ilgak. */
 function useReport<T>(path: string, query: ReportQuery) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-
   const key = reportQueryParams(query).toString();
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      setData(await apiFetch<T>(`${path}?${key}`));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error ? caught.message : "Hisobotni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [key, path]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource<T>(
+    () => apiFetch<T>(`${path}?${key}`),
+    [key, path],
+    "Hisobotni yuklab bo'lmadi.",
+  );
 
   return { data, error, isLoading, reload: load };
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { hasPermission } from "../../lib/auth";
 import { formatMoney } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
@@ -109,14 +110,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   const { showToast } = useToast();
   const canEditBranchAvailability = hasPermission(user, "BRANCH_EDIT");
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [modifierCatalog, setModifierCatalog] = useState<Modifier[]>([]);
-  const [product, setProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   const [form, setForm] = useState({
@@ -130,76 +125,84 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
     sortOrder: "0",
   });
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
+  /*
+   * Yuklash va FORMANI URUG'LANTIRISH ataylab ajratilgan: hook faqat
+   * serverdan kelgan xom ma'lumotni beradi, forma esa quyidagi effektda
+   * to'ldiriladi. Aks holda har qayta yuklash foydalanuvchi kiritgan
+   * o'zgarishlarni bosib ketardi.
+   */
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    async () => {
       const [nextCategories, nextModifiers] = await Promise.all([
         apiFetch<Category[]>("/menu/categories?includeInactive=true"),
         apiFetch<Modifier[]>("/menu/modifiers?includeInactive=true"),
       ]);
-      setCategories(nextCategories);
-      setModifierCatalog(nextModifiers);
+      const nextBranches = canEditBranchAvailability
+        ? await apiFetch<Branch[]>("/branches")
+        : [];
+      const nextProduct = productId
+        ? await apiFetch<Product>(`/menu/products/${productId}`)
+        : null;
 
-      if (canEditBranchAvailability) {
-        setBranches(await apiFetch<Branch[]>("/branches"));
-      }
-
-      if (productId) {
-        const nextProduct = await apiFetch<Product>(
-          `/menu/products/${productId}`,
-        );
-        setProduct(nextProduct);
-        setVariants(
-          nextProduct.variants.length > 0
-            ? nextProduct.variants
-            : [
-                {
-                  name: "Asosiy",
-                  sellingPrice: nextProduct.sellingPrice,
-                  isDefault: true,
-                },
-              ],
-        );
-        setSelectedModifierIds(
-          (nextProduct.modifiers ?? []).map((entry) => entry.modifier.id),
-        );
-        setForm({
-          name: nextProduct.name,
-          description: nextProduct.description ?? "",
-          categoryId: nextProduct.categoryId,
-          image: nextProduct.imageUrl ?? "",
-          preparationTime: String(nextProduct.preparationTime ?? 10),
-          isActive: nextProduct.isAvailable,
-          isRecommended: nextProduct.isRecommended,
-          sortOrder: String(nextProduct.sortOrder ?? 0),
-        });
-      } else {
-        setVariants([{ name: "Asosiy", sellingPrice: "0", isDefault: true }]);
-        setForm((current) => ({
-          ...current,
-          categoryId: nextCategories[0]?.id ?? "",
-        }));
-      }
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Forma ma'lumotlarini yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [canEditBranchAvailability, productId]);
+      return {
+        categories: nextCategories,
+        modifiers: nextModifiers,
+        branches: nextBranches,
+        product: nextProduct,
+      };
+    },
+    [canEditBranchAvailability, productId],
+    "Forma ma'lumotlarini yuklab bo'lmadi.",
+  );
+  const categories = data?.categories ?? [];
+  const modifierCatalog = data?.modifiers ?? [];
+  const branches = data?.branches ?? [];
+  const product = data?.product ?? null;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!data) return;
+
+    const nextProduct = data.product;
+
+    if (!nextProduct) {
+      setVariants([{ name: "Asosiy", sellingPrice: "0", isDefault: true }]);
+      setForm((current) => ({
+        ...current,
+        categoryId: data.categories[0]?.id ?? "",
+      }));
+      return;
+    }
+
+    setVariants(
+      nextProduct.variants.length > 0
+        ? nextProduct.variants
+        : [
+            {
+              name: "Asosiy",
+              sellingPrice: nextProduct.sellingPrice,
+              isDefault: true,
+            },
+          ],
+    );
+    setSelectedModifierIds(
+      (nextProduct.modifiers ?? []).map((entry) => entry.modifier.id),
+    );
+    setForm({
+      name: nextProduct.name,
+      description: nextProduct.description ?? "",
+      categoryId: nextProduct.categoryId,
+      image: nextProduct.imageUrl ?? "",
+      preparationTime: String(nextProduct.preparationTime ?? 10),
+      isActive: nextProduct.isAvailable,
+      isRecommended: nextProduct.isRecommended,
+      sortOrder: String(nextProduct.sortOrder ?? 0),
+    });
+  }, [data]);
 
   function updateVariant(index: number, patch: Partial<Variant>): void {
     setVariants((current) =>

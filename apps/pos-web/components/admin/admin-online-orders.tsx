@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import {
   formatDateTime,
@@ -63,14 +64,11 @@ export function AdminOnlineOrdersPage() {
   const { user } = useAuth();
   const showBranchFilter = canSwitchBranch(user);
 
-  const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState("");
   const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -84,41 +82,28 @@ export function AdminOnlineOrdersPage() {
       });
   }, [showBranchFilter]);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
 
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset),
-    });
-
-    if (branchId) {
-      params.set("branchId", branchId);
-    }
-
-    const path = `/online-orders?${params.toString()}`;
-
-    try {
-      setOrders(await apiFetch<CustomerOrder[]>(path));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
+      if (branchId) {
+        params.set("branchId", branchId);
       }
 
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Online buyurtmalarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [branchId, offset]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+      return apiFetch<CustomerOrder[]>(`/online-orders?${params.toString()}`);
+    },
+    [branchId, offset],
+    "Online buyurtmalarni yuklab bo'lmadi.",
+  );
+  const orders = data ?? [];
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -162,11 +147,15 @@ export function AdminOnlineOrdersPage() {
       render: (item) => (
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">
-            {item.order?.displayOrderNumber ?? item.order?.orderNumber ?? "Raqamsiz"}
+            {item.order?.displayOrderNumber ??
+              item.order?.orderNumber ??
+              "Raqamsiz"}
           </p>
           <p className="truncate text-xs text-mz-text-muted">
             {formatDateTime(item.createdAt)}
-            {item.order?.displayOrderNumber ? ` · ${item.order.orderNumber}` : ""}
+            {item.order?.displayOrderNumber
+              ? ` · ${item.order.orderNumber}`
+              : ""}
           </p>
         </div>
       ),

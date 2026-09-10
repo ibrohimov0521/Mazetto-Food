@@ -123,7 +123,9 @@ export function AdminSettings() {
       setDrafts(Object.fromEntries(data.map((row) => [row.key, row.value])));
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Sozlamalarni yuklab bo'lmadi",
+        caught instanceof Error
+          ? caught.message
+          : "Sozlamalarni yuklab bo'lmadi",
       );
     } finally {
       setLoading(false);
@@ -330,9 +332,7 @@ function SettingControl({
                   // Bo'sh ro'yxat to'lov usullarini butunlay yo'q qilardi;
                   // server ham buni rad etadi, lekin tugmani bosishdan
                   // oldin to'sish aniqroq.
-                  onChange(
-                    next.size > 0 ? [...next].join(",") : draft,
-                  );
+                  onChange(next.size > 0 ? [...next].join(",") : draft);
                 }}
                 type="button"
               >
@@ -370,10 +370,7 @@ function SettingControl({
     <div className="border-b border-mz-border pb-4 last:border-0 last:pb-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <FormField
-            {...(hint ? { hint } : {})}
-            label={title}
-          >
+          <FormField {...(hint ? { hint } : {})} label={title}>
             {(props) => (
               <div className="flex items-center gap-2">
                 <TextInput

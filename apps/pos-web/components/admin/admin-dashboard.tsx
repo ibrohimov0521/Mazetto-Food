@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { hasPermission } from "../../lib/auth";
 import { useAuth } from "../auth/auth-provider";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
@@ -37,58 +37,56 @@ type CatalogBranch = { isActive: boolean };
 
 export function AdminDashboard() {
   const { user } = useAuth();
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [catalog, setCatalog] = useState<CatalogCounts | null>(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   const canViewSummary = hasPermission(user, "DASHBOARD_VIEW");
   const canViewCatalog = hasPermission(user, "MENU_VIEW");
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
+  /*
+   * Ikkala bo'lak BITTA yuklashda qaytariladi: ular alohida holatda
+   * turganda ruxsat bayrog'i o'zgarganda biri eskirib, ikkinchisi
+   * yangilanib qolardi.
+   */
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource<{
+    summary: DashboardSummary | null;
+    catalog: CatalogCounts | null;
+  }>(
+    async () => {
+      const nextSummary = canViewSummary
+        ? await apiFetch<DashboardSummary>("/dashboard/summary")
+        : null;
 
-    try {
-      if (canViewSummary) {
-        setSummary(await apiFetch<DashboardSummary>("/dashboard/summary"));
+      if (!canViewCatalog) {
+        return { summary: nextSummary, catalog: null };
       }
 
-      if (canViewCatalog) {
-        const [products, categories, branches] = await Promise.all([
-          apiFetch<CatalogProduct[]>("/menu/products?includeInactive=true"),
-          apiFetch<unknown[]>("/menu/categories?includeInactive=true"),
-          apiFetch<CatalogBranch[]>("/branches"),
-        ]);
+      const [products, categories, branches] = await Promise.all([
+        apiFetch<CatalogProduct[]>("/menu/products?includeInactive=true"),
+        apiFetch<unknown[]>("/menu/categories?includeInactive=true"),
+        apiFetch<CatalogBranch[]>("/branches"),
+      ]);
 
-        setCatalog({
+      return {
+        summary: nextSummary,
+        catalog: {
           products: products.length,
           canonical: products.filter(
             (item) => item.catalogVisibility === "CANONICAL",
           ).length,
           categories: categories.length,
           activeBranches: branches.filter((branch) => branch.isActive).length,
-        });
-      }
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        // AuthProvider login'ga yo'naltiradi.
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Ma'lumotlarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [canViewCatalog, canViewSummary]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+        },
+      };
+    },
+    [canViewCatalog, canViewSummary],
+    "Ma'lumotlarni yuklab bo'lmadi.",
+  );
+  const summary = data?.summary ?? null;
+  const catalog = data?.catalog ?? null;
 
   if (isLoading) {
     return <SkeletonRows rows={6} />;
