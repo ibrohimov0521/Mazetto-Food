@@ -20,6 +20,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
+import { SettingsService } from "../settings/settings.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
 import {
   ListCustomerOrdersDto,
@@ -52,10 +53,14 @@ type CustomerRefreshPayload = {
   sessionId: string;
   tokenUse: "customer_refresh";
 };
-const CUSTOMER_CODE_TTL_MS = 10 * 60 * 1000;
-const CUSTOMER_CODE_ATTEMPT_LIMIT = 5;
-const CUSTOMER_CODE_REQUEST_WINDOW_MS = 60 * 1000;
-const CUSTOMER_CODE_REQUEST_LIMIT = 3;
+/*
+ * Tasdiqlash kodi cheklovlari SOZLAMA REESTRIDA (7-bosqich Q1).
+ *
+ * Ilgari bu qiymatlar shu faylda VA `telegram-customer-auth.service.ts` da takrorlangan edi: biri
+ * o'zgartirilsa ikkinchisi ortda qolardi va hech narsa ogohlantirmasdi.
+ * Endi ikkala yo'l ham bitta manbadan o'qiydi va o'zgarish deploysiz
+ * qo'llanadi.
+ */
 
 @Injectable()
 export class CustomersService {
@@ -66,10 +71,12 @@ export class CustomersService {
     private readonly customerOrderEngine: CustomerOrderEngineService,
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async requestCode(dto: CustomerRequestCodeDto) {
     const phone = normalizeCustomerPhone(dto.phone);
+    const ttlMinutes = await this.settingsService.getInt("customer_code_ttl_minutes");
     const code = this.generateVerificationCode();
     const codeHash = await bcrypt.hash(code, 12);
     const challenge = await this.prisma.$transaction(async (tx) => {
@@ -86,7 +93,7 @@ export class CustomersService {
           customerId: existingCustomer?.id ?? null,
           phone,
           codeHash,
-          expiresAt: new Date(Date.now() + CUSTOMER_CODE_TTL_MS),
+          expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000),
         },
         select: { id: true, phone: true, expiresAt: true, createdAt: true },
       });
@@ -122,7 +129,11 @@ export class CustomersService {
       throw new UnauthorizedException("Invalid or expired verification code");
     }
 
-    if (challenge.attempts >= CUSTOMER_CODE_ATTEMPT_LIMIT) {
+    const attemptLimit = await this.settingsService.getInt(
+      "customer_code_attempt_limit",
+    );
+
+    if (challenge.attempts >= attemptLimit) {
       throw new UnauthorizedException("Verification attempt limit exceeded");
     }
 
@@ -134,7 +145,7 @@ export class CustomersService {
         where: { id: challenge.id },
         data: {
           attempts,
-          ...(attempts >= CUSTOMER_CODE_ATTEMPT_LIMIT
+          ...(attempts >= attemptLimit
             ? { consumedAt: now }
             : {}),
         },
@@ -370,16 +381,20 @@ export class CustomersService {
     tx: TransactionClient,
     phone: string,
   ): Promise<void> {
+    const [windowSeconds, requestLimit] = await Promise.all([
+      this.settingsService.getInt("customer_code_request_window_seconds"),
+      this.settingsService.getInt("customer_code_request_limit"),
+    ]);
     const recentRequests = await tx.customerVerificationChallenge.count({
       where: {
         phone,
         createdAt: {
-          gte: new Date(Date.now() - CUSTOMER_CODE_REQUEST_WINDOW_MS),
+          gte: new Date(Date.now() - windowSeconds * 1000),
         },
       },
     });
 
-    if (recentRequests >= CUSTOMER_CODE_REQUEST_LIMIT) {
+    if (recentRequests >= requestLimit) {
       throw new BadRequestException(
         "Too many verification code requests. Please wait before trying again.",
       );

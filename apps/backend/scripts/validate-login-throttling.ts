@@ -13,6 +13,9 @@ const loginThrottle = readSource(
 const clientAddress = readSource("apps/backend/src/common/http/client-address.ts");
 const customerService = readSource("apps/backend/src/modules/customers/customers.service.ts");
 const telegramCustomerAuth = readSource("apps/backend/src/modules/telegram/telegram-customer-auth.service.ts");
+const settingRules = readSource(
+  "apps/backend/src/modules/settings/setting-rules.ts",
+);
 
 // Mijoz manzili faqat yagona hal qiluvchi orqali olinadi. Controller
 // proxy header'larini o'zi o'qimasligi shart (PHASE 6 H1).
@@ -53,11 +56,43 @@ assert.match(loginThrottle, /expire\(key, WINDOW_SECONDS\)/);
 assert.match(loginThrottle, /FALLBACK_MAX_ENTRIES/);
 assert.match(loginThrottle, /private pruneFallback\(\)/);
 
-assert.match(customerService, /const CUSTOMER_CODE_REQUEST_WINDOW_MS = 60 \* 1000/);
-assert.match(customerService, /const CUSTOMER_CODE_REQUEST_LIMIT = 3/);
+/*
+ * Tasdiqlash kodi cheklovlari 7-bosqich Q1 da SOZLAMA REESTRIGA ko'chdi.
+ *
+ * Ilgari ular ikki faylda takrorlangan edi — biri o'zgartirilsa ikkinchisi
+ * ortda qolardi. Endi ikkala yo'l ham bir manbadan o'qiydi, shuning uchun
+ * validator qattiq yozilgan konstanta QOLMAGANINI tekshiradi.
+ */
+for (const source of [customerService, telegramCustomerAuth]) {
+  assert.doesNotMatch(source, /const CUSTOMER_CODE_TTL_MS/);
+  assert.doesNotMatch(source, /const CUSTOMER_CODE_REQUEST_WINDOW_MS/);
+  assert.doesNotMatch(source, /const CUSTOMER_CODE_REQUEST_LIMIT/);
+  assert.match(source, /settingsService\.getInt\(/);
+}
+
 assert.match(customerService, /await this\.assertCanRequestCode\(tx, phone\)/);
-assert.match(telegramCustomerAuth, /const CUSTOMER_CODE_REQUEST_WINDOW_MS = 60 \* 1000/);
-assert.match(telegramCustomerAuth, /const CUSTOMER_CODE_REQUEST_LIMIT = 3/);
+assert.match(
+  customerService,
+  /this\.settingsService\.getInt\(\s*"customer_code_request_window_seconds"/s,
+);
+assert.match(
+  customerService,
+  /this\.settingsService\.getInt\(\s*"customer_code_request_limit"/s,
+);
+assert.match(
+  telegramCustomerAuth,
+  /this\.settingsService\.getInt\(\s*"customer_code_request_window_seconds"/s,
+);
+
+// Reestrdagi default'lar avvalgi qattiq yozilgan qiymatlar bilan bir xil
+// bo'lishi shart: bu ko'chirish XATTI-HARAKATNI o'zgartirmasligi kerak edi.
+assert.match(settingRules, /customer_code_ttl_minutes: INT\(1, 60, 10\)/);
+assert.match(settingRules, /customer_code_attempt_limit: INT\(1, 20, 5\)/);
+assert.match(settingRules, /customer_code_request_limit: INT\(1, 20, 3\)/);
+assert.match(
+  settingRules,
+  /customer_code_request_window_seconds: INT\(10, 3600, 60\)/,
+);
 
 console.info("Login and verification throttling validation passed");
 

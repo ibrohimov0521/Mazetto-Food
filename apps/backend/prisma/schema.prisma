@@ -385,6 +385,7 @@ model User {
   statusChanges     OrderStatusHistory[] @relation("OrderStatusChangedBy")
   stockMovements    StockMovement[]
   assignedUserRoles UserRole[]           @relation("UserRoleAssignedBy")
+  settingsUpdated   Setting[]            @relation("SettingUpdatedBy")
 
   @@index([isActive])
   @@index([createdAt])
@@ -1410,4 +1411,30 @@ model RevenueRecord {
   @@index([employeeId])
   @@index([source])
   @@map("revenue_records")
+}
+
+/// Ish vaqtida o'zgartiriladigan biznes sozlamalari (7-bosqich Q1).
+///
+/// Ilgari bunday jadval umuman yo'q edi va 17 ta biznes konstantasi kodda
+/// qattiq yozilgan edi — har o'zgarish redeploy talab qilardi. Uchtasi esa
+/// IKKI faylda takrorlangan edi, ya'ni biri yangilanib ikkinchisi ortda
+/// qolishi hech narsa bilan ushlanmasdi.
+///
+/// Qiymat SATR sifatida saqlanadi va tur `setting-rules.ts` reestrida
+/// e'lon qilinadi: yozishda tekshiriladi va normallashtiriladi, o'qishda
+/// esa faqat reestrda e'lon qilingan kalitlar qabul qilinadi.
+model Setting {
+  key         String   @id
+  value       String
+  /// Sozlama mijoz tomoniga oshkor qilinadimi. `false` — faqat admin.
+  isPublic    Boolean  @default(false)
+  description String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  updatedBy User? @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([isPublic])
+  @@map("settings")
 }

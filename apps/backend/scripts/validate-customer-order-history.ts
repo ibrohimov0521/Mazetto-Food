@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import { OrderStatus } from "@prisma/client";
 import { CustomersService } from "../src/modules/customers/customers.service";
+import { createSettingsStub } from "./settings-stub";
 
 type FindFirstArgs = {
   where: {
@@ -31,6 +32,7 @@ function createService(prisma: unknown): CustomersService {
     {} as never,
     {} as never,
     {} as never,
+    createSettingsStub(),
   );
 }
 

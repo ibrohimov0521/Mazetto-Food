@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import { SettingsService } from "../settings/settings.service";
 import { normalizeCustomerPhone } from "../customers/customer-phone";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
 
@@ -56,9 +57,12 @@ type VerificationDelivery =
       botUrl?: string;
     };
 
-const CUSTOMER_CODE_TTL_MS = 10 * 60 * 1000;
-const CUSTOMER_CODE_REQUEST_WINDOW_MS = 60 * 1000;
-const CUSTOMER_CODE_REQUEST_LIMIT = 3;
+/*
+ * Tasdiqlash kodi cheklovlari SOZLAMA REESTRIDA (7-bosqich Q1).
+ *
+ * Ilgari bu uch qiymat shu faylda VA `customers.service.ts` da takrorlangan
+ * edi. Endi ikkala yo'l ham bitta manbadan o'qiydi.
+ */
 const customerCallbackPrefix = "cust";
 
 @Injectable()
@@ -68,6 +72,7 @@ export class TelegramCustomerAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramCustomerOrderingService: TelegramCustomerOrderingService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async deliverVerificationCode(params: {
@@ -190,6 +195,9 @@ export class TelegramCustomerAuthService {
   }
 
   private async handleContactMessage(message: TelegramMessage): Promise<void> {
+    const ttlMinutes = await this.settingsService.getInt(
+      "customer_code_ttl_minutes",
+    );
     const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
     const fromId = this.requiredTelegramId(message.from?.id, "user id");
     const contactUserId = message.contact?.user_id
@@ -246,7 +254,7 @@ export class TelegramCustomerAuthService {
           customerId: customer.id,
           phone: customer.phone,
           codeHash: await bcrypt.hash(code, 12),
-          expiresAt: new Date(Date.now() + CUSTOMER_CODE_TTL_MS),
+          expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000),
         },
         select: { id: true },
       });
@@ -587,16 +595,20 @@ export class TelegramCustomerAuthService {
     tx: Prisma.TransactionClient,
     phone: string,
   ): Promise<void> {
+    const [windowSeconds, requestLimit] = await Promise.all([
+      this.settingsService.getInt("customer_code_request_window_seconds"),
+      this.settingsService.getInt("customer_code_request_limit"),
+    ]);
     const recentRequests = await tx.customerVerificationChallenge.count({
       where: {
         phone,
         createdAt: {
-          gte: new Date(Date.now() - CUSTOMER_CODE_REQUEST_WINDOW_MS),
+          gte: new Date(Date.now() - windowSeconds * 1000),
         },
       },
     });
 
-    if (recentRequests >= CUSTOMER_CODE_REQUEST_LIMIT) {
+    if (recentRequests >= requestLimit) {
       throw new BadRequestException(
         "Too many verification code requests. Please wait before trying again.",
       );

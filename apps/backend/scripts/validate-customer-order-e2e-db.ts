@@ -21,6 +21,7 @@ import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegra
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
+import { createSettingsStub } from "./settings-stub";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
@@ -226,7 +227,11 @@ function createServices(prisma: PrismaService) {
     orderEngine,
     telegramNotifications,
   );
-  const telegramAuth = new TelegramCustomerAuthService(prisma, telegramOrdering);
+  const telegramAuth = new TelegramCustomerAuthService(
+    prisma,
+    telegramOrdering,
+    createSettingsStub(),
+  );
   const customersService = new CustomersService(
     prisma,
     branchesService,
@@ -234,6 +239,7 @@ function createServices(prisma: PrismaService) {
     orderEngine,
     telegramAuth,
     telegramNotifications,
+    createSettingsStub(),
   );
 
   return { customersService, orderEngine, telegramOrdering };

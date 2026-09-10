@@ -10,6 +10,7 @@ import { TelegramController } from "../src/modules/telegram/telegram.controller"
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { loadEnvironmentFile } from "../src/config/env";
+import { createSettingsStub } from "./settings-stub";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
@@ -103,6 +104,7 @@ function createServices(prisma: PrismaClient) {
   const telegramCustomerAuthService = new TelegramCustomerAuthService(
     prisma as never,
     telegramCustomerOrderingService as never,
+    createSettingsStub(),
   );
   const customersService = new CustomersService(
     prisma as never,
@@ -111,6 +113,7 @@ function createServices(prisma: PrismaClient) {
     {} as never,
     telegramCustomerAuthService,
     {} as never,
+    createSettingsStub(),
   );
 
   return { telegramCustomerAuthService, customersService };

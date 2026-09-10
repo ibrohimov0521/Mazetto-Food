@@ -29,6 +29,7 @@ import { ReceiptsModule } from "./modules/receipts/receipts.module";
 import { RecipesModule } from "./modules/recipes/recipes.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { RolesModule } from "./modules/roles/roles.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 import { ShiftsModule } from "./modules/shifts/shifts.module";
 import { StaffModule } from "./modules/staff/staff.module";
 import { SuppliersModule } from "./modules/suppliers/suppliers.module";
@@ -45,6 +46,7 @@ import { RedisService } from "./redis/redis.service";
     // backendda birorta ham davriy ish yo'q edi.
     ScheduleModule.forRoot(),
     RedisModule,
+    SettingsModule,
     /*
      * Global rate limit (PHASE 6 H3).
      *

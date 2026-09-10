@@ -51,6 +51,9 @@ export const PERMISSIONS = {
   REPORT_EXPENSES_VIEW: "REPORT_EXPENSES_VIEW",
   EXPENSE_CREATE: "EXPENSE_CREATE",
   AUDIT_VIEW: "AUDIT_VIEW",
+  // Biznes sozlamalari — kill switch va cheklov qiymatlari (7-bosqich Q1).
+  // Faqat SUPER_ADMIN: bular filial darajasidagi qaror emas.
+  SETTING_MANAGE: "SETTING_MANAGE",
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

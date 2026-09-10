@@ -6,6 +6,7 @@ import { CustomersService } from "../src/modules/customers/customers.service";
 import { TelegramController } from "../src/modules/telegram/telegram.controller";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
+import { createSettingsStub } from "./settings-stub";
 
 type CustomerRecord = {
   id: string;
@@ -343,6 +344,7 @@ function createServices(
   const telegramCustomerAuthService = new TelegramCustomerAuthService(
     prisma as never,
     telegramCustomerOrderingService as never,
+    createSettingsStub(),
   );
   const customersService = new CustomersService(
     prisma as never,
@@ -351,6 +353,7 @@ function createServices(
     {} as never,
     telegramCustomerAuthService,
     {} as never,
+    createSettingsStub(),
   );
 
   return { prisma, telegramCustomerAuthService, customersService };
