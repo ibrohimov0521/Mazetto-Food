@@ -12,6 +12,7 @@ import {
   PaymentStatus,
   Prisma,
   RevenueRecordSource,
+  ShiftType,
   TableStatus,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -227,6 +228,9 @@ export class PaymentsService {
               dto.shiftId,
               order.branchId,
               employeeId,
+              order.type === "DINE_IN" || order.source === OrderSource.POS
+                ? ShiftType.CASHIER
+                : undefined,
             );
           }
 
@@ -778,6 +782,7 @@ export class PaymentsService {
     shiftId: string,
     branchId: string,
     employeeId: string,
+    expectedType?: ShiftType,
   ): Promise<void> {
     const shift = await tx.shift.findFirst({
       where: {
@@ -785,6 +790,7 @@ export class PaymentsService {
         branchId,
         employeeId,
         status: "OPEN",
+        ...(expectedType ? { type: expectedType } : {}),
       },
     });
 

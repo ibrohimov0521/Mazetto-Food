@@ -1,10 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { CashTransactionType, PaymentStatus, Prisma, ShiftStatus } from "@prisma/client";
+import { CashTransactionType, CashTransferStatus, PaymentStatus, Prisma, ShiftStatus, ShiftType } from "@prisma/client";
 import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListShiftsDto } from "./dto/list-shifts.dto";
-import type { CloseShiftDto, CreateCashTransactionDto, OpenShiftDto } from "./dto/shift.dto";
+import type { CloseShiftDto, CreateCashTransactionDto, CreateCashTransferDto, OpenShiftDto } from "./dto/shift.dto";
 
 @Injectable()
 export class ShiftsService {
@@ -93,6 +93,7 @@ export class ShiftsService {
           employeeId,
           deviceId: dto.deviceId ?? null,
           shiftNumber: (latestShift?.shiftNumber ?? 0) + 1,
+          type: dto.type ?? ShiftType.CASHIER,
           openingBalance: new Prisma.Decimal(dto.openingBalance),
         },
         include: this.shiftInclude(),
@@ -238,6 +239,302 @@ export class ShiftsService {
         },
       });
     });
+  }
+
+  async openCourierShift(dto: OpenShiftDto, user: AuthenticatedUser) {
+    if (!user.employeeId) {
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
+    }
+
+    return this.openShift(
+      { ...dto, employeeId: user.employeeId, type: ShiftType.COURIER },
+      user,
+    );
+  }
+
+  async getCurrentCourierShift(user: AuthenticatedUser) {
+    const employeeId = user.employeeId;
+    if (!employeeId) {
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
+    }
+
+    const shift = await this.prisma.shift.findFirst({
+      where: { employeeId, type: ShiftType.COURIER, status: ShiftStatus.OPEN },
+      include: {
+        branch: { select: { id: true, code: true, name: true } },
+        employee: { select: { id: true, firstName: true, lastName: true } },
+        cashTransactions: { orderBy: { occurredAt: "desc" }, take: 200 },
+        outgoingCashTransfers: {
+          where: { status: CashTransferStatus.PENDING },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+      orderBy: { openedAt: "desc" },
+    });
+
+    if (!shift) {
+      return null;
+    }
+
+    return {
+      ...shift,
+      currentCash: this.calculateCashBalance(
+        shift.openingBalance,
+        shift.cashTransactions,
+      ),
+    };
+  }
+
+  async createCashTransfer(
+    dto: CreateCashTransferDto,
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = user.employeeId;
+    if (!employeeId) {
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const shift = await tx.shift.findFirst({
+        where: {
+          employeeId,
+          type: ShiftType.COURIER,
+          status: ShiftStatus.OPEN,
+        },
+        orderBy: { openedAt: "desc" },
+      });
+      if (!shift) {
+        throw new BadRequestException("Open courier shift is required");
+      }
+
+      await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
+      resolveBranchScope(user, shift.branchId);
+
+      const transactions = await tx.cashTransaction.findMany({
+        where: { shiftId: shift.id },
+        select: { amount: true, type: true },
+      });
+      const balance = this.calculateCashBalance(
+        shift.openingBalance,
+        transactions,
+      );
+      const amount = new Prisma.Decimal(dto.amount);
+      if (balance.lessThan(amount)) {
+        throw new BadRequestException(
+          "Transfer amount exceeds courier cash balance",
+        );
+      }
+
+      const transfer = await tx.cashTransfer.create({
+        data: {
+          branchId: shift.branchId,
+          fromShiftId: shift.id,
+          amount,
+          reason: dto.reason ?? "Courier cash handover",
+          createdById: user.id,
+        },
+      });
+
+      await tx.cashTransaction.create({
+        data: {
+          branchId: shift.branchId,
+          shiftId: shift.id,
+          employeeId,
+          cashTransferId: transfer.id,
+          type: CashTransactionType.CASH_OUT,
+          amount,
+          reason: "Cash transfer to cashier",
+          createdById: user.id,
+        },
+      });
+
+      return tx.cashTransfer.findUniqueOrThrow({
+        where: { id: transfer.id },
+        include: {
+          fromShift: { include: { employee: true } },
+          toShift: { include: { employee: true } },
+        },
+      });
+    });
+  }
+
+  async listPendingCashTransfers(user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user);
+    return this.prisma.cashTransfer.findMany({
+      where: {
+        status: CashTransferStatus.PENDING,
+        ...(branchId ? { branchId } : {}),
+      },
+      include: {
+        fromShift: { include: { employee: true } },
+        toShift: { include: { employee: true } },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 100,
+    });
+  }
+
+  async acceptCashTransfer(id: string, user: AuthenticatedUser) {
+    const employeeId = user.employeeId;
+    if (!employeeId) {
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const cashierShift = await tx.shift.findFirst({
+        where: {
+          employeeId,
+          type: ShiftType.CASHIER,
+          status: ShiftStatus.OPEN,
+        },
+        orderBy: { openedAt: "desc" },
+      });
+      if (!cashierShift) {
+        throw new BadRequestException("Open cashier shift is required");
+      }
+
+      await this.assertEmployeeInBranch(tx, employeeId, cashierShift.branchId);
+      const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+        'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
+        id,
+      );
+      if (locked.length !== 1) {
+        throw new NotFoundException("Cash transfer not found");
+      }
+
+      const transfer = await tx.cashTransfer.findUnique({
+        where: { id },
+        include: { fromShift: true },
+      });
+      if (!transfer) {
+        throw new NotFoundException("Cash transfer not found");
+      }
+      if (transfer.status !== CashTransferStatus.PENDING) {
+        throw new BadRequestException("Cash transfer is already processed");
+      }
+      if (transfer.branchId !== cashierShift.branchId) {
+        throw new ForbiddenException("Cash transfer belongs to another branch");
+      }
+
+      await tx.cashTransaction.create({
+        data: {
+          branchId: cashierShift.branchId,
+          shiftId: cashierShift.id,
+          employeeId,
+          cashTransferId: transfer.id,
+          type: CashTransactionType.CASH_IN,
+          amount: transfer.amount,
+          reason: "Cash transfer accepted",
+          createdById: user.id,
+        },
+      });
+
+      return tx.cashTransfer.update({
+        where: { id },
+        data: {
+          status: CashTransferStatus.ACCEPTED,
+          toShiftId: cashierShift.id,
+          acceptedById: user.id,
+          acceptedAt: new Date(),
+        },
+        include: {
+          fromShift: { include: { employee: true } },
+          toShift: { include: { employee: true } },
+        },
+      });
+    });
+  }
+
+  async rejectCashTransfer(
+    id: string,
+    reason: string | undefined,
+    user: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+        'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
+        id,
+      );
+      if (locked.length !== 1) {
+        throw new NotFoundException("Cash transfer not found");
+      }
+
+      const transfer = await tx.cashTransfer.findUnique({
+        where: { id },
+        include: { fromShift: true },
+      });
+      if (!transfer) {
+        throw new NotFoundException("Cash transfer not found");
+      }
+      if (transfer.status !== CashTransferStatus.PENDING) {
+        throw new BadRequestException("Cash transfer is already processed");
+      }
+
+      resolveBranchScope(user, transfer.branchId);
+      if (transfer.fromShift.status === ShiftStatus.OPEN) {
+        await tx.cashTransaction.create({
+          data: {
+            branchId: transfer.branchId,
+            shiftId: transfer.fromShiftId,
+            employeeId: transfer.fromShift.employeeId,
+            cashTransferId: transfer.id,
+            type: CashTransactionType.CASH_IN,
+            amount: transfer.amount,
+            reason: reason ?? "Cash transfer rejected and returned",
+            createdById: user.id,
+          },
+        });
+      }
+
+      return tx.cashTransfer.update({
+        where: { id },
+        data: {
+          status:
+            transfer.fromShift.status === ShiftStatus.OPEN
+              ? CashTransferStatus.REJECTED
+              : CashTransferStatus.DISPUTED,
+          reason: reason ?? transfer.reason,
+          rejectedAt: new Date(),
+        },
+        include: {
+          fromShift: { include: { employee: true } },
+          toShift: { include: { employee: true } },
+        },
+      });
+    });
+  }
+
+  private calculateCashBalance(
+    openingBalance: Prisma.Decimal,
+    transactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
+  ) {
+    const hasOpeningTransaction = transactions.some(
+      (transaction) => transaction.type === CashTransactionType.OPENING_BALANCE,
+    );
+    const startingBalance = hasOpeningTransaction
+      ? new Prisma.Decimal(0)
+      : openingBalance;
+
+    return transactions.reduce((balance, transaction) => {
+      const outgoingTypes: CashTransactionType[] = [
+        CashTransactionType.EXPENSE,
+        CashTransactionType.REFUND,
+        CashTransactionType.WITHDRAW,
+        CashTransactionType.CASH_OUT,
+      ];
+      const outgoing = outgoingTypes.includes(transaction.type);
+      return outgoing
+        ? balance.sub(transaction.amount)
+        : balance.add(transaction.amount);
+    }, startingBalance);
   }
 
   private calculateShiftTotals(

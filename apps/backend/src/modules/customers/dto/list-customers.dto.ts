@@ -2,7 +2,9 @@ import { Type } from "class-transformer";
 import {
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   Max,
   Min,
@@ -58,6 +60,25 @@ export enum CourierOrderStatus {
 export class UpdateCourierOrderStatusDto {
   @IsEnum(CourierOrderStatus)
   status!: CourierOrderStatus;
+
+  @IsOptional()
+  @IsString()
+  @Max(160)
+  idempotencyKey?: string;
+
+  @IsOptional()
+  @IsString()
+  shiftId?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentMethodCode?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @IsPositive()
+  amount?: number;
 }
 
 export class AssignCourierDto {

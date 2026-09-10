@@ -40,7 +40,10 @@ test("cashier shift history stays scoped to the open shift and today", () => {
   const method = methodSource(cashSource, "getCurrentShiftOrders");
 
   assert.match(method, /const employeeId = this\.requireEmployee\(user\)/);
-  assert.match(method, /where: \{ employeeId, status: ShiftStatus\.OPEN \}/);
+  assert.match(
+    method,
+    /where: \{ employeeId, type: ShiftType\.CASHIER, status: ShiftStatus\.OPEN \}/,
+  );
   assert.match(method, /this\.assertCanViewShift\(user, shift\.employeeId\)/);
   assert.match(method, /const day = this\.todayTashkentRange\(\)/);
   assert.match(method, /shiftId: shift\.id/);

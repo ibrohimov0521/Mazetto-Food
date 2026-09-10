@@ -1,5 +1,13 @@
-import { CashTransactionType } from "@prisma/client";
-import { IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min } from "class-validator";
+import { CashTransactionType, ShiftType } from "@prisma/client";
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  MaxLength,
+  Min,
+} from "class-validator";
 
 export class OpenShiftDto {
   @IsOptional()
@@ -13,6 +21,10 @@ export class OpenShiftDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  @IsOptional()
+  @IsEnum(ShiftType)
+  type?: ShiftType;
 
   @IsNumber()
   @Min(0)
@@ -40,6 +52,17 @@ export class CreateCashTransactionDto {
   @IsOptional()
   @IsString()
   paymentId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class CreateCashTransferDto {
+  @IsNumber()
+  @IsPositive()
+  amount!: number;
 
   @IsOptional()
   @IsString()

@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
   CloseShiftDto,
   CreateCashTransactionDto,
+  CreateCashTransferDto,
   OpenShiftDto,
 } from "../shifts/dto/shift.dto";
 import { CashRegisterService } from "./cash-register.service";
@@ -23,10 +24,65 @@ export class CashRegisterController {
   @Get("shift/orders")
   @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
   getCurrentShiftOrders(
-    @Query() query: { status?: string; search?: string; limit?: string; offset?: string },
+    @Query()
+    query: {
+      status?: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.cashRegisterService.getCurrentShiftOrders(query, user);
+  }
+
+  @Get("courier-shift")
+  @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
+  getCourierShift(@CurrentUser() user: AuthenticatedUser) {
+    return this.cashRegisterService.getCourierShift(user);
+  }
+
+  @Post("courier-shift/open")
+  @Permissions(PERMISSIONS.SHIFT_OPEN)
+  openCourierShift(
+    @Body() dto: OpenShiftDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.openCourierShift(dto, user);
+  }
+
+  @Post("courier-shift/transfers")
+  @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
+  createCashTransfer(
+    @Body() dto: CreateCashTransferDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.createCashTransfer(dto, user);
+  }
+
+  @Get("transfers/pending")
+  @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
+  listPendingTransfers(@CurrentUser() user: AuthenticatedUser) {
+    return this.cashRegisterService.listPendingTransfers(user);
+  }
+
+  @Post("transfers/:id/accept")
+  @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
+  acceptTransfer(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.acceptTransfer(id, user);
+  }
+
+  @Post("transfers/:id/reject")
+  @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
+  rejectTransfer(
+    @Param("id") id: string,
+    @Body() body: { reason?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.rejectTransfer(id, body.reason, user);
   }
 
   @Post("shift/open")

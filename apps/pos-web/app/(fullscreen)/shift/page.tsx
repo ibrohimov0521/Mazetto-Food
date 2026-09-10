@@ -21,6 +21,15 @@ import {
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
 
+type CashTransfer = {
+  id: string;
+  amount: string;
+  reason?: string | null;
+  createdAt: string;
+  fromShift?: {
+    employee?: { firstName: string; lastName?: string | null } | null;
+  } | null;
+};
 type Shift = {
   id: string;
   shiftNumber: number;
@@ -67,6 +76,7 @@ function ShiftConsole() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingTransfers, setPendingTransfers] = useState<CashTransfer[]>([]);
   const saving = useRef(false);
   const loadRequest = useRef<AbortController | null>(null);
   const expectedCash = Number(
@@ -96,6 +106,16 @@ function ShiftConsole() {
       });
       if (!controller.signal.aborted) {
         setShift(current?.status === "OPEN" ? current : null);
+        setPendingTransfers(
+          current?.status === "OPEN"
+            ? await apiFetch<CashTransfer[]>(
+                "/cash-register/transfers/pending",
+                {
+                  signal: AbortSignal.timeout(12000),
+                },
+              )
+            : [],
+        );
         setLoadFailed(false);
       }
     } catch (caught) {
@@ -119,6 +139,28 @@ function ShiftConsole() {
     void loadShift();
     return () => loadRequest.current?.abort();
   }, [loadShift]);
+
+  async function acceptTransfer(id: string) {
+    if (saving.current) return;
+    saving.current = true;
+    setIsSaving(true);
+    setError(null);
+    try {
+      await apiFetch("/cash-register/transfers/" + id + "/accept", {
+        method: "POST",
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(15000),
+      });
+      await loadShift();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Topshirish qabul qilinmadi",
+      );
+    } finally {
+      saving.current = false;
+      setIsSaving(false);
+    }
+  }
 
   async function openShift() {
     if (saving.current || !openingValid) return;
@@ -231,6 +273,52 @@ function ShiftConsole() {
                 <strong>{shift.orderCount ?? 0} ta</strong>
               </div>
             </section>
+            {pendingTransfers.length > 0 && (
+              <section
+                className={styles.shiftSummary}
+                aria-label="Kuryer topshiriqlari"
+              >
+                <div className={styles.toolbar}>
+                  <div>
+                    <h2>Kuryerlardan topshiriqlar</h2>
+                    <p className={styles.muted}>
+                      Naqd kassaga qabul qilinmaguncha bu yerda kutadi.
+                    </p>
+                  </div>
+                  <span className={styles.badge} data-tone="waiting">
+                    {pendingTransfers.length} ta
+                  </span>
+                </div>
+                <div className={styles.historyList}>
+                  {pendingTransfers.map((transfer) => (
+                    <article className={styles.historyOrder} key={transfer.id}>
+                      <div>
+                        <strong>
+                          {transfer.fromShift?.employee?.firstName ?? "Kuryer"}{" "}
+                          {transfer.fromShift?.employee?.lastName ?? ""}
+                        </strong>
+                        <span className={styles.muted}>
+                          {transfer.reason ?? "Naqd topshirish"} -{" "}
+                          {dateTime(transfer.createdAt)}
+                        </span>
+                      </div>
+                      <div className={styles.historyAmount}>
+                        <strong>{money(transfer.amount)}</strong>
+                        <button
+                          className={styles.primary}
+                          disabled={isSaving}
+                          onClick={() => void acceptTransfer(transfer.id)}
+                          type="button"
+                        >
+                          <Check size={16} />
+                          Qabul qilish
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
             <div className={styles.shiftLayout}>
               <section className={styles.shiftSummary}>
                 <div className={styles.toolbar}>

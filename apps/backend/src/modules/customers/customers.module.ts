@@ -4,6 +4,7 @@ import { PrismaModule } from "../../prisma/prisma.module";
 import { BranchesModule } from "../branches/branches.module";
 import { KitchenModule } from "../kitchen/kitchen.module";
 import { OrdersModule } from "../orders/orders.module";
+import { PaymentsModule } from "../payments/payments.module";
 import { TelegramModule } from "../telegram/telegram.module";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
 import {
@@ -22,10 +23,17 @@ import { CustomerAddressesService } from "./customer-addresses.service";
     BranchesModule,
     KitchenModule,
     OrdersModule,
+    PaymentsModule,
     TelegramModule,
   ],
   controllers: [CustomerPublicController, CustomersAdminController],
-  providers: [CustomersService, CustomerAuthService, CustomerCourierService, CustomerOrderEngineService, CustomerAddressesService],
+  providers: [
+    CustomersService,
+    CustomerAuthService,
+    CustomerCourierService,
+    CustomerOrderEngineService,
+    CustomerAddressesService,
+  ],
   exports: [CustomerOrderEngineService],
 })
 export class CustomersModule {}

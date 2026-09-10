@@ -63,6 +63,13 @@ type CourierOrder = {
   } | null;
 };
 type DeliveryAction = "SERVED" | "COMPLETED" | "CANCELLED";
+type CourierShift = {
+  id: string;
+  shiftNumber: number;
+  currentCash?: string;
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+};
 const readyForDelivery = (order: CourierOrder) =>
   ["READY", "SERVED"].includes(order.order?.status ?? order.status);
 const courierHistoryStatuses = ["SERVED", "COMPLETED", "CANCELLED"] as const;
@@ -83,6 +90,10 @@ export function CourierOrdersPage() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [courierShift, setCourierShift] = useState<CourierShift | null>(null);
+  const [transferAmount, setTransferAmount] = useState("");
+  const [shiftBusy, setShiftBusy] = useState(false);
+  const [shiftError, setShiftError] = useState("");
   const [confirmation, setConfirmation] = useState<{
     order: CourierOrder;
     status: DeliveryAction;
@@ -91,6 +102,22 @@ export function CourierOrdersPage() {
   const version = useRef(0);
   const actionLock = useRef(false);
   const canUpdate = hasPermission(user, "COURIER_DELIVERY_UPDATE");
+
+  const loadCourierShift = useCallback(async () => {
+    try {
+      setCourierShift(
+        await apiFetch<CourierShift | null>("/cash-register/courier-shift", {
+          cache: "no-store",
+          signal: AbortSignal.timeout(12000),
+        }),
+      );
+      setShiftError("");
+    } catch (caught) {
+      setShiftError(
+        caught instanceof Error ? caught.message : "Kuryer kassasi yuklanmadi",
+      );
+    }
+  }, []);
 
   const load = useCallback(async (force = false) => {
     if (!force && (request.current || actionLock.current)) return;
@@ -137,13 +164,18 @@ export function CourierOrdersPage() {
     if (historySearch.trim()) params.set("search", historySearch.trim());
     try {
       setHistoryOrders(
-        await apiFetch<CourierOrder[]>(`/courier/orders/history?${params.toString()}`, {
-          cache: "no-store",
-          signal: AbortSignal.timeout(12000),
-        }),
+        await apiFetch<CourierOrder[]>(
+          `/courier/orders/history?${params.toString()}`,
+          {
+            cache: "no-store",
+            signal: AbortSignal.timeout(12000),
+          },
+        ),
       );
     } catch (caught) {
-      setHistoryError(caught instanceof Error ? caught.message : "Tarix yuklanmadi.");
+      setHistoryError(
+        caught instanceof Error ? caught.message : "Tarix yuklanmadi.",
+      );
     } finally {
       setHistoryLoading(false);
     }
@@ -155,6 +187,7 @@ export function CourierOrdersPage() {
 
   useEffect(() => {
     void load();
+    void loadCourierShift();
     const refresh = () => {
       if (document.visibilityState === "visible") void load();
     };
@@ -167,7 +200,7 @@ export function CourierOrdersPage() {
       request.current?.abort();
       request.current = null;
     };
-  }, [load]);
+  }, [load, loadCourierShift]);
 
   const readyCount = orders.filter(readyForDelivery).length;
   const visible = useMemo(() => {
@@ -217,7 +250,12 @@ export function CourierOrdersPage() {
     try {
       await apiFetch(`/courier/orders/${order.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(status === "COMPLETED"
+            ? { shiftId: courierShift?.id, paymentMethodCode: "CASH" }
+            : {}),
+        }),
         signal: AbortSignal.timeout(12000),
       });
       if (status !== "SERVED") {
@@ -225,6 +263,7 @@ export function CourierOrdersPage() {
       }
       setConfirmation(null);
       await load(true);
+      await loadCourierShift();
     } catch (caught) {
       await load(true);
       setError(
@@ -238,23 +277,123 @@ export function CourierOrdersPage() {
     }
   }
 
+  async function openCourierShift() {
+    if (shiftBusy) return;
+    setShiftBusy(true);
+    setShiftError("");
+    try {
+      const opened = await apiFetch<CourierShift>(
+        "/cash-register/courier-shift/open",
+        {
+          method: "POST",
+          body: JSON.stringify({ openingBalance: 0 }),
+          signal: AbortSignal.timeout(15000),
+        },
+      );
+      setCourierShift(opened);
+    } catch (caught) {
+      setShiftError(
+        caught instanceof Error ? caught.message : "Kuryer smenasi ochilmadi",
+      );
+    } finally {
+      setShiftBusy(false);
+    }
+  }
+
+  async function transferCash() {
+    const amount = Number(transferAmount);
+    if (!courierShift || !Number.isFinite(amount) || amount <= 0 || shiftBusy)
+      return;
+    setShiftBusy(true);
+    setShiftError("");
+    try {
+      await apiFetch("/cash-register/courier-shift/transfers", {
+        method: "POST",
+        body: JSON.stringify({ amount, reason: "Kassirga topshirish" }),
+        signal: AbortSignal.timeout(15000),
+      });
+      setTransferAmount("");
+      await loadCourierShift();
+    } catch (caught) {
+      setShiftError(
+        caught instanceof Error ? caught.message : "Naqd topshirilmadi",
+      );
+    } finally {
+      setShiftBusy(false);
+    }
+  }
+
   return (
     <div className={`${styles.content} ${styles.narrowContent}`}>
       <div className={styles.overview}>
         <h2 className={styles.pageHeading}>Yetkazib berishlar</h2>
         <div className={styles.inlineActions}>
-          <button className={styles.button} onClick={() => setHistoryOpen(true)} type="button">
+          <button
+            className={styles.button}
+            onClick={() => setHistoryOpen(true)}
+            type="button"
+          >
             <History size={17} />
             Tarix
           </button>
-        <StaffSync
-          updatedAt={updatedAt}
-          error={!!error}
-          refreshing={refreshing || !!busyOrderId}
-          onRefresh={() => void load()}
-        />
+          <StaffSync
+            updatedAt={updatedAt}
+            error={!!error}
+            refreshing={refreshing || !!busyOrderId}
+            onRefresh={() => void load()}
+          />
         </div>
       </div>
+      <section className={styles.shiftSummary} aria-label="Kuryer kassasi">
+        <div className={styles.toolbar}>
+          <div>
+            <h2>Kuryer kassasi</h2>
+            <p className={styles.muted}>
+              {courierShift
+                ? "Smena #" +
+                  courierShift.shiftNumber +
+                  " - Qo'ldagi naqd: " +
+                  formatMoney(courierShift.currentCash ?? 0)
+                : "Yetkazilgan naqdlar shu smenada hisoblanadi."}
+            </p>
+          </div>
+          {courierShift ? (
+            <div className={styles.inlineActions}>
+              <input
+                className={styles.input}
+                inputMode="decimal"
+                min="0"
+                placeholder="Summa"
+                aria-label="Kassirga topshiriladigan summa"
+                value={transferAmount}
+                onChange={(event) => setTransferAmount(event.target.value)}
+              />
+              <button
+                className={styles.primary}
+                disabled={shiftBusy || !transferAmount}
+                onClick={() => void transferCash()}
+                type="button"
+              >
+                Kassirga topshirish
+              </button>
+            </div>
+          ) : (
+            <button
+              className={styles.primary}
+              disabled={shiftBusy}
+              onClick={() => void openCourierShift()}
+              type="button"
+            >
+              Smenani ochish
+            </button>
+          )}
+        </div>
+        {shiftError && (
+          <p className={styles.error} role="alert">
+            {shiftError}
+          </p>
+        )}
+      </section>
       <section className={styles.stats} aria-label="Yetkazishlar xulosasi">
         <div className={styles.stat}>
           <span>Faol buyurtmalar</span>
@@ -350,7 +489,11 @@ export function CourierOrdersPage() {
         </StaffEmpty>
       )}
       {historyOpen && (
-        <StaffDialog title="Smenadagi yetkazish tarixi" busy={historyLoading} onClose={() => setHistoryOpen(false)}>
+        <StaffDialog
+          title="Smenadagi yetkazish tarixi"
+          busy={historyLoading}
+          onClose={() => setHistoryOpen(false)}
+        >
           <div className={styles.historyControls}>
             <label className={styles.search}>
               <Search size={17} />
@@ -369,14 +512,27 @@ export function CourierOrdersPage() {
             >
               <option value="">Barcha holatlar</option>
               {courierHistoryStatuses.map((status) => (
-                <option key={status} value={status}>{status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}</option>
+                <option key={status} value={status}>
+                  {status === "SERVED"
+                    ? "Kuryer yo'lda"
+                    : orderStatusLabels[status]}
+                </option>
               ))}
             </select>
-            <button className={styles.button} onClick={() => void loadHistory()} disabled={historyLoading} type="button">
+            <button
+              className={styles.button}
+              onClick={() => void loadHistory()}
+              disabled={historyLoading}
+              type="button"
+            >
               Yangilash
             </button>
           </div>
-          {historyError && <div className={styles.error} role="alert">{historyError}</div>}
+          {historyError && (
+            <div className={styles.error} role="alert">
+              {historyError}
+            </div>
+          )}
           <div className={styles.historyList}>
             {historyLoading ? (
               <div className={styles.skeleton} />
@@ -386,17 +542,37 @@ export function CourierOrdersPage() {
                 return (
                   <article className={styles.historyOrder} key={order.id}>
                     <div>
-                      <strong>#{order.order?.displayOrderNumber ?? order.order?.orderNumber}</strong>
-                      <span className={styles.muted}>{order.customer?.name ?? "Mijoz"} · {formatMoney(order.order?.total)}</span>
+                      <strong>
+                        #
+                        {order.order?.displayOrderNumber ??
+                          order.order?.orderNumber}
+                      </strong>
+                      <span className={styles.muted}>
+                        {order.customer?.name ?? "Mijoz"} ·{" "}
+                        {formatMoney(order.order?.total)}
+                      </span>
                     </div>
-                    <span className={styles.badge} data-tone={status === "CANCELLED" ? "late" : status === "COMPLETED" ? "ready" : "waiting"}>
-                      {status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}
+                    <span
+                      className={styles.badge}
+                      data-tone={
+                        status === "CANCELLED"
+                          ? "late"
+                          : status === "COMPLETED"
+                            ? "ready"
+                            : "waiting"
+                      }
+                    >
+                      {status === "SERVED"
+                        ? "Kuryer yo'lda"
+                        : orderStatusLabels[status]}
                     </span>
                   </article>
                 );
               })
             ) : (
-              <StaffEmpty title="Tarix bo'sh">Siz olib ketgan buyurtmalar shu yerda saqlanadi.</StaffEmpty>
+              <StaffEmpty title="Tarix bo'sh">
+                Siz olib ketgan buyurtmalar shu yerda saqlanadi.
+              </StaffEmpty>
             )}
           </div>
         </StaffDialog>
@@ -408,7 +584,7 @@ export function CourierOrdersPage() {
               ? "Buyurtma yetkazildimi?"
               : confirmation.status === "SERVED"
                 ? "Buyurtmani olib yo'lga chiqdingizmi?"
-              : "Buyurtmani bekor qilasizmi?"
+                : "Buyurtmani bekor qilasizmi?"
           }
           busy={!!busyOrderId}
           onClose={() => {
@@ -429,7 +605,7 @@ export function CourierOrdersPage() {
               ? "Buyurtma mijozga topshirilganini tasdiqlang."
               : confirmation.status === "SERVED"
                 ? "Buyurtmani olganingizni tasdiqlang. Mijozga kuryer yo'lda ekanligi ko'rinadi."
-              : "Buyurtma bekor qilinadi va faol ro'yxatdan olinadi."}
+                : "Buyurtma bekor qilinadi va faol ro'yxatdan olinadi."}
           </p>
           {error && (
             <div className={styles.error} role="alert">
@@ -504,7 +680,13 @@ function CourierOrderCard({
           className={styles.badge}
           data-tone={isReady ? "ready" : "waiting"}
         >
-          {status === "SERVED" ? <Truck size={14} /> : isReady ? <PackageCheck size={14} /> : <Clock3 size={14} />}
+          {status === "SERVED" ? (
+            <Truck size={14} />
+          ) : isReady ? (
+            <PackageCheck size={14} />
+          ) : (
+            <Clock3 size={14} />
+          )}
           {status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}
         </span>
       </div>
@@ -596,11 +778,17 @@ function CourierOrderCard({
             <button
               className={styles.primary}
               disabled={busy || !isReady}
-              onClick={() => onStatus(status === "SERVED" ? "COMPLETED" : "SERVED")}
+              onClick={() =>
+                onStatus(status === "SERVED" ? "COMPLETED" : "SERVED")
+              }
               type="button"
             >
               {status === "SERVED" ? <Check size={18} /> : <Truck size={18} />}
-              {status === "SERVED" ? "Yetkazildi" : isReady ? "Yo'lga chiqdim" : "Oshxonada tayyorlanmoqda"}
+              {status === "SERVED"
+                ? "Yetkazildi"
+                : isReady
+                  ? "Yo'lga chiqdim"
+                  : "Oshxonada tayyorlanmoqda"}
             </button>
             <button
               className={styles.iconButton}

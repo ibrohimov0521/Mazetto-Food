@@ -4,10 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { OrderStatus, Prisma } from "@prisma/client";
+import {
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  ShiftStatus,
+  ShiftType,
+} from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { PaymentsService } from "../payments/payments.service";
 import {
   kitchenEvents,
   kitchenOrderStatusChangedEvent,
@@ -47,6 +54,7 @@ export class CustomerCourierService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   async listCourierDeliveryOrders(
@@ -183,6 +191,63 @@ export class CustomerCourierService {
     const employeeId = requireEmployee(user);
     const scopedBranchId = resolveBranchScope(user);
     const nextStatus = dto.status as OrderStatus;
+
+    if (nextStatus === OrderStatus.COMPLETED) {
+      const paymentOrder = await this.prisma.customerOrder.findUnique({
+        where: { id: customerOrderId },
+        include: { order: { include: { payments: true } } },
+      });
+
+      if (!paymentOrder) {
+        throw new NotFoundException("Online order not found");
+      }
+
+      const successfulPaymentStatuses: PaymentStatus[] = [
+        PaymentStatus.PAID,
+        PaymentStatus.SUCCESS,
+      ];
+      const paidTotal = paymentOrder.order.payments
+        .filter((payment) => successfulPaymentStatuses.includes(payment.status))
+        .reduce(
+          (total, payment) => total.add(payment.amount),
+          new Prisma.Decimal(0),
+        );
+      const outstanding = paymentOrder.order.total.sub(paidTotal);
+
+      if (outstanding.greaterThan(0)) {
+        const courierShift = await this.prisma.shift.findFirst({
+          where: {
+            employeeId,
+            type: ShiftType.COURIER,
+            status: ShiftStatus.OPEN,
+          },
+          orderBy: { openedAt: "desc" },
+          select: { id: true, branchId: true },
+        });
+
+        if (!courierShift || courierShift.branchId !== paymentOrder.branchId) {
+          throw new BadRequestException(
+            "Open courier shift is required before collecting cash",
+          );
+        }
+
+        await this.paymentsService.processOrderPayment(
+          {
+            orderId: paymentOrder.orderId,
+            idempotencyKey:
+              dto.idempotencyKey ?? "courier-cash-" + paymentOrder.orderId,
+            shiftId: dto.shiftId ?? courierShift.id,
+            payments: [
+              {
+                paymentMethodCode: dto.paymentMethodCode ?? "CASH",
+                amount: dto.amount ?? Number(outstanding),
+              },
+            ],
+          },
+          user,
+        );
+      }
+    }
 
     const customerOrder = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id WHERE c.id = ${customerOrderId} FOR UPDATE OF o`;
