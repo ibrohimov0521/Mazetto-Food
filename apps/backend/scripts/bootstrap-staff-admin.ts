@@ -1,5 +1,10 @@
 import { StaffService } from "../src/modules/staff/staff.service";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { loadEnvironmentFile } from "../src/config/env";
+
+// Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
+// bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
+loadEnvironmentFile();
 
 async function main(): Promise<void> {
   const password = process.env.MAZETTO_BOOTSTRAP_ADMIN_PASSWORD;

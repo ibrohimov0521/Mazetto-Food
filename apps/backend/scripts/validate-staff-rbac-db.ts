@@ -3,9 +3,16 @@ import * as assert from "node:assert/strict";
 import { randomInt } from "node:crypto";
 import { compare } from "bcryptjs";
 import { AuthService } from "../src/modules/auth/auth.service";
+import { LoginThrottleService } from "../src/modules/auth/login-throttle.service";
+import { RedisService } from "../src/redis/redis.service";
 import { StaffService } from "../src/modules/staff/staff.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { loadEnvironmentFile } from "../src/config/env";
+
+// Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
+// bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
+loadEnvironmentFile();
 
 async function main(): Promise<void> {
   assertIsolatedDatabase();
@@ -15,7 +22,14 @@ async function main(): Promise<void> {
 
   try {
     const staffService = new StaffService(prisma);
-    const authService = new AuthService(prisma, new JwtService());
+    // Login cheklovi endi alohida servisda va Redis'ga tayanadi (7-bosqich
+    // 3-to'lqin). Bu skript RBAC ni tekshiradi, cheklovni emas — shuning
+    // uchun ulanishsiz `RedisService` beriladi va u zaxira yo'lida ishlaydi.
+    const authService = new AuthService(
+      prisma,
+      new JwtService(),
+      new LoginThrottleService(new RedisService()),
+    );
     const runId = Date.now().toString();
     const branch = await createBranch(prisma, `STAFF_GATE_${runId}`, "Staff Gate Branch");
     const otherBranch = await createBranch(prisma, `STAFF_OTHER_${runId}`, "Staff Other Branch");

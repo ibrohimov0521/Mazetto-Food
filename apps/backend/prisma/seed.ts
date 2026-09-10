@@ -3,6 +3,11 @@ import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 import { PERMISSIONS } from "../src/common/auth/permissions";
 import { seedMenu } from "./seeds/menu";
+import { loadEnvironmentFile } from "../src/config/env";
+
+// Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
+// bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
+loadEnvironmentFile();
 
 const connectionString = process.env.DATABASE_URL;
 

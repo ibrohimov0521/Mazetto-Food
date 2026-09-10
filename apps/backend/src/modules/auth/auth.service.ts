@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -12,6 +12,7 @@ import {
 import { normalizeCustomerPhone } from "../customers/customer-phone";
 import type { AuthResponse, AuthTokens, RefreshTokenPayload } from "./auth.types";
 import type { LoginDto } from "./dto/login.dto";
+import { LoginThrottleService } from "./login-throttle.service";
 
 type UserWithAuthRelations = {
   id: string;
@@ -26,50 +27,18 @@ type UserWithAuthRelations = {
   }[];
 };
 
-type LoginThrottleRecord = {
-  failures: number;
-  firstFailureAt: number;
-  blockedUntil: number | null;
-};
-
-const LOGIN_THROTTLE_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_THROTTLE_BLOCK_MS = 15 * 60 * 1000;
-const LOGIN_THROTTLE_MAX_ADDRESS_FAILURES = 5;
-const LOGIN_THROTTLE_MAX_IDENTIFIER_FAILURES = 20;
-const LOGIN_THROTTLE_GC_MS = 60 * 60 * 1000;
-
-/*
- * Cheklov jadvalining qattiq chegarasi (PHASE 6 H2).
- *
- * Kalitning bir qismi — login identifikatori, ya'ni uni SO'ROV YUBORUVCHI
- * tanlaydi. Ilgari tozalash faqat `assertLoginAllowed` ichida, aynan o'sha
- * kalit QAYTA so'ralganda bo'lardi; hech qachon takrorlanmaydigan
- * identifikatorlar yuborilsa hech narsa tozalanmasdi va jadval cheksiz
- * o'sardi.
- *
- * Bu yerda taymer ishlatilmaydi (backend'da hali `ScheduleModule` yo'q —
- * 7-bosqich Q2). O'rniga yozishda amortizatsiyalangan tozalash: jadval
- * chegaradan oshsa avval eskirganlari, keyin eng eskilari tashlanadi.
- * Redis'ga ko'chgach (3-to'lqin) bularning hammasi TTL bilan almashadi.
- */
-const LOGIN_THROTTLE_MAX_ENTRIES = 10_000;
-
 @Injectable()
 export class AuthService {
-  private readonly loginThrottle = new Map<string, LoginThrottleRecord>();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly loginThrottle: LoginThrottleService,
   ) {}
 
   async login(dto: LoginDto, clientAddress = "unknown"): Promise<AuthResponse> {
     const identifier = this.normalizeIdentifier(dto.identifier);
-    const throttleKeys = this.createLoginThrottleKeys(identifier, clientAddress);
 
-    for (const throttle of throttleKeys) {
-      this.assertLoginAllowed(throttle.key);
-    }
+    await this.loginThrottle.assertAllowed(identifier, clientAddress);
 
     const userRecord = await this.prisma.user.findFirst({
       where: {
@@ -80,20 +49,18 @@ export class AuthService {
     });
 
     if (!userRecord?.passwordHash) {
-      this.registerFailedLogin(throttleKeys);
+      await this.loginThrottle.registerFailure(identifier, clientAddress);
       throw new UnauthorizedException("Invalid credentials");
     }
 
     const passwordMatches = await compare(dto.password, userRecord.passwordHash);
 
     if (!passwordMatches) {
-      this.registerFailedLogin(throttleKeys);
+      await this.loginThrottle.registerFailure(identifier, clientAddress);
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    for (const throttle of throttleKeys) {
-      this.loginThrottle.delete(throttle.key);
-    }
+    await this.loginThrottle.clear(identifier, clientAddress);
 
     await this.prisma.user.update({
       where: { id: userRecord.id },
@@ -290,100 +257,5 @@ export class AuthService {
   private getRefreshExpiresAt(): Date {
     return new Date(Date.now() + getJwtRefreshExpiresIn() * 1000);
   }
-
-  private createLoginThrottleKeys(identifier: string, clientAddress: string): LoginThrottleKey[] {
-    return [
-      {
-        key: `login:${identifier}:address:${clientAddress}`,
-        maxFailures: LOGIN_THROTTLE_MAX_ADDRESS_FAILURES,
-      },
-      {
-        key: `login:${identifier}:account`,
-        maxFailures: LOGIN_THROTTLE_MAX_IDENTIFIER_FAILURES,
-      },
-    ];
-  }
-
-  private assertLoginAllowed(key: string): void {
-    const record = this.loginThrottle.get(key);
-    const now = Date.now();
-
-    if (!record) {
-      return;
-    }
-
-    if (record.blockedUntil && record.blockedUntil > now) {
-      throw new HttpException(
-        "Too many login attempts. Please wait before trying again.",
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    if (record.blockedUntil || now - record.firstFailureAt > LOGIN_THROTTLE_GC_MS) {
-      this.loginThrottle.delete(key);
-    }
-  }
-
-  private registerFailedLogin(throttles: LoginThrottleKey[]): void {
-    for (const throttle of throttles) {
-      this.registerFailedLoginKey(throttle);
-    }
-  }
-
-  /**
-   * Jadvalni chegara ichida ushlaydi. Faqat yozish yo'lida chaqiriladi.
-   *
-   * Avval eskirgan yozuvlar tashlanadi — bu odatda yetarli. Agar shundan
-   * keyin ham chegaradan yuqori bo'lsa (ya'ni hujum davom etmoqda), eng eski
-   * yozuvlar tashlanadi: yangi muvaffaqiyatsizliklar eskilaridan muhimroq,
-   * chunki blok holati aynan ular bo'yicha hisoblanadi.
-   */
-  private pruneLoginThrottle(now: number): void {
-    if (this.loginThrottle.size < LOGIN_THROTTLE_MAX_ENTRIES) {
-      return;
-    }
-
-    for (const [key, record] of this.loginThrottle) {
-      const blockExpired = !record.blockedUntil || record.blockedUntil <= now;
-
-      if (blockExpired && now - record.firstFailureAt > LOGIN_THROTTLE_WINDOW_MS) {
-        this.loginThrottle.delete(key);
-      }
-    }
-
-    if (this.loginThrottle.size < LOGIN_THROTTLE_MAX_ENTRIES) {
-      return;
-    }
-
-    const oldestFirst = [...this.loginThrottle.entries()].sort(
-      ([, a], [, b]) => a.firstFailureAt - b.firstFailureAt,
-    );
-    const excess = this.loginThrottle.size - LOGIN_THROTTLE_MAX_ENTRIES + 1;
-
-    for (const [key] of oldestFirst.slice(0, excess)) {
-      this.loginThrottle.delete(key);
-    }
-  }
-
-  private registerFailedLoginKey(throttle: LoginThrottleKey): void {
-    const now = Date.now();
-    const key = throttle.key;
-    this.pruneLoginThrottle(now);
-    const current = this.loginThrottle.get(key);
-    const record =
-      current && now - current.firstFailureAt <= LOGIN_THROTTLE_WINDOW_MS
-        ? current
-        : { failures: 0, firstFailureAt: now, blockedUntil: null };
-
-    record.failures += 1;
-    record.blockedUntil =
-      record.failures >= throttle.maxFailures ? now + LOGIN_THROTTLE_BLOCK_MS : null;
-
-    this.loginThrottle.set(key, record);
-  }
 }
 
-type LoginThrottleKey = {
-  key: string;
-  maxFailures: number;
-};

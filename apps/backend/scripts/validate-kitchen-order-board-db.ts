@@ -3,6 +3,11 @@ import * as assert from "node:assert/strict";
 import { KitchenService } from "../src/modules/kitchen/kitchen.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { loadEnvironmentFile } from "../src/config/env";
+
+// Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
+// bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
+loadEnvironmentFile();
 
 type Fixture = {
   branchId: string;

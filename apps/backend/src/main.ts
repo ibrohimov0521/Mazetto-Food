@@ -5,10 +5,21 @@ import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { ApiResponseInterceptor } from "./common/interceptors/api-response.interceptor";
 import { getAllowedOrigins } from "./config/cors.config";
+import { loadEnvironmentFile, validateEnvironment } from "./config/env";
 
 async function bootstrap(): Promise<void> {
+  /*
+   * Env AVVAL yuklanadi va tekshiriladi — Nest konteyneri qurilishidan oldin.
+   *
+   * Prisma xizmat konstruktorida `DATABASE_URL` ni talab qiladi, ya'ni bu
+   * tartib buzilsa nosozlik "Prisma ishga tushmadi" bo'lib ko'rinadi, aslida
+   * esa muammo konfiguratsiyada bo'ladi (7-bosqich Q3.1).
+   */
+  loadEnvironmentFile();
+  const env = validateEnvironment();
+
   const app = await NestFactory.create(AppModule);
-  const port = Number(process.env.BACKEND_PORT ?? 4000);
+  const port = env.BACKEND_PORT;
 
   /*
    * Xavfsizlik header'lari (PHASE 6 H3). Backend faqat JSON API qaytaradi va

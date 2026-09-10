@@ -20,6 +20,11 @@ import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-cu
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { loadEnvironmentFile } from "../src/config/env";
+
+// Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
+// bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
+loadEnvironmentFile();
 
 type SentTelegramPayload = {
   chat_id: string;

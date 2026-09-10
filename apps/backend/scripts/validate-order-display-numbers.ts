@@ -3,6 +3,11 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import assert from "node:assert/strict";
 import { Pool } from "pg";
 import { allocateDisplayOrderNumber } from "../src/modules/orders/order-display-number";
+import { loadEnvironmentFile } from "../src/config/env";
+
+// Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
+// bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
+loadEnvironmentFile();
 
 const databaseUrl = process.env.DATABASE_URL;
 

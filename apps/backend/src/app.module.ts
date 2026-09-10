@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { MazettoThrottlerGuard } from "./common/guards/mazetto-throttler.guard";
+import { RedisThrottlerStorage } from "./common/throttler/redis-throttler.storage";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { HealthController } from "./health.controller";
@@ -33,23 +34,32 @@ import { TablesModule } from "./modules/tables/tables.module";
 import { TelegramModule } from "./modules/telegram/telegram.module";
 import { UsersModule } from "./modules/users/users.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { RedisModule } from "./redis/redis.module";
+import { RedisService } from "./redis/redis.service";
 
 @Module({
   imports: [
+    RedisModule,
     /*
-     * Global rate limit (PHASE 6 H3). Ilgari hech qanday umumiy chegara yo'q
-     * edi — faqat login va OTP o'z qo'lda yozilgan cheklovlariga ega edi.
+     * Global rate limit (PHASE 6 H3).
      *
-     * Hisoblagichlar JARAYON XOTIRASIDA: deploy'da nolga tushadi va ikkinchi
-     * instance ko'tarilsa har biri o'zicha sanaydi. Redis storage'ga o'tish
-     * 7-bosqich Q2/3-to'lqinda, Redis ishga tushgandan keyin.
+     * Hisoblagichlar REDIS'da: jarayon xotirasidagi buketlar har deploy'da
+     * nolga tushardi va instance boshiga alohida sanalardi, ya'ni haqiqiy
+     * chegara instance soniga ko'payib ketardi.
      *
      * 300 so'rov/daqiqa — POS ekranlari bir necha endpointni birga so'raydi va
      * oshxona doskasi tez-tez yangilanadi, shuning uchun chegara odatdagi
      * ishdan ancha yuqori qo'yilgan: maqsad suiiste'molni to'xtatish, xodimni
      * sekinlashtirish emas.
      */
-    ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 300 }]),
+    ThrottlerModule.forRootAsync({
+      imports: [RedisModule],
+      inject: [RedisService],
+      useFactory: (redis: RedisService) => ({
+        throttlers: [{ name: "default", ttl: 60_000, limit: 300 }],
+        storage: new RedisThrottlerStorage(redis),
+      }),
+    }),
     PrismaModule,
     AuthModule,
     AuditModule,
