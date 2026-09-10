@@ -11,6 +11,7 @@ Print agent cheklarni backend API dan olib, muvaffaqiyatli chop etilgandan keyin
 - `MAZETTO_PRINTER_MODE` - `file`, `stdout`, yoki `tcp`.
 - `MAZETTO_PRINT_OUTPUT_DIR` - `file` rejimida chek fayllari yoziladigan papka.
 - `MAZETTO_PRINTER_HOST` va `MAZETTO_PRINTER_PORT` - `tcp` rejimidagi ESC/POS printer uchun. Port default `9100`.
+- `MAZETTO_PRINT_HEALTH_PORT` - lokal boshqaruv/status sahifasi porti, default `7357`.
 
 ## Ishga tushirish
 
@@ -33,3 +34,7 @@ MAZETTO_PRINT_DRY_RUN=false MAZETTO_PRINTER_MODE=tcp MAZETTO_PRINTER_HOST=192.16
 ```
 
 Agar printer xato qaytarsa yoki ulanish uzilsa, chek `printed` bo‘lib belgilanmaydi va keyingi siklda qayta urinadi.
+
+## Lokal status
+
+Agent ishlaganda status oynasi `http://127.0.0.1:7357/` da chiqadi. JSON holat: `/status`, health: `/health`.
