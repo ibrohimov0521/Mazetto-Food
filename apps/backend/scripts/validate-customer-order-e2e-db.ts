@@ -217,6 +217,7 @@ function createServices(prisma: PrismaService) {
     branchesService,
     kitchenService,
     ordersService,
+    createSettingsStub(),
   );
   const telegramNotifications = new TelegramOrderNotificationService(
     prisma,

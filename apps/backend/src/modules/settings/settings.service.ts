@@ -83,6 +83,7 @@ export class SettingsService {
     return {
       customerPaymentMethods: await this.getCsv("customer_payment_methods"),
       customerDeliveryEnabled: await this.getBool("customer_delivery_enabled"),
+      customerDeliveryFee: await this.getInt("customer_delivery_fee"),
     };
   }
 

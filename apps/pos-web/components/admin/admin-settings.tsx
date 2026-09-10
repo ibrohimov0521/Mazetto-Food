@@ -99,6 +99,10 @@ const SETTING_LABELS: Record<string, { title: string; hint: string }> = {
     title: "Yetkazib berish",
     hint: "Mijoz checkout'da yetkazishni tanlay oladimi",
   },
+  customer_delivery_fee: {
+    title: "Yetkazish narxi",
+    hint: "So'mda. Har qanday buyurtma uchun bir xil. Olib ketishda olinmaydi",
+  },
 };
 
 export function AdminSettings() {

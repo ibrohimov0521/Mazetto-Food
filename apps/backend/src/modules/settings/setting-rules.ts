@@ -79,6 +79,23 @@ const SETTING_RULES = {
   // Yetkazish darvozasi. `false` — mijoz checkout'da yetkazishni tanlay
   // olmaydi. Kuryer ishi tugaguncha o'chiq (B bloki).
   customer_delivery_enabled: BOOL(false),
+
+  /*
+   * Yetkazish narxi, SO'MDA. Yagona qat'iy summa — savat hajmiga ham,
+   * masofaga ham qaramaydi.
+   *
+   * Nima uchun butun so'm (tiyin emas): O'zbekistonda narxlar so'mda
+   * ko'rsatiladi va tiyin amalda ishlatilmaydi. `Prisma.Decimal` ga
+   * o'tkazilganda kasr qismi 0 bo'ladi.
+   *
+   * Yuqori chegara 1 000 000 — bu sozlama emas, XATODAN himoya: nol
+   * ortiqcha yozib qo'yilsa admin panel darhol rad etadi.
+   *
+   * Pog'onali jadvalga (porsiya yoki masofa bo'yicha) o'tish kerak bo'lsa,
+   * bu kalit o'rniga JSON jadval sozlamasi qo'yiladi — `resolveDeliveryFee`
+   * ning yagona joyda turgani shuning uchun.
+   */
+  customer_delivery_fee: INT(0, 1_000_000, 20_000),
 } satisfies Record<string, SettingRule>;
 
 export type SettingKey = keyof typeof SETTING_RULES;
@@ -87,6 +104,15 @@ export type SettingKey = keyof typeof SETTING_RULES;
 export const PUBLIC_SETTING_KEYS = [
   "customer_payment_methods",
   "customer_delivery_enabled",
+  /*
+   * Narx mijozga OCHIQ: u savatda "yetkazish: 20 000" ni checkout'ga
+   * o'tishdan OLDIN ko'rishi kerak. Yashirin narx buyurtmani oxirgi
+   * qadamda tashlab ketishning asosiy sababi.
+   *
+   * Bu oshkor qilish emas — narxni baribir server hisoblaydi, mijoz
+   * yuborgan qiymat qabul qilinmaydi.
+   */
+  "customer_delivery_fee",
 ] as const satisfies readonly SettingKey[];
 
 export const settingKeys = Object.keys(SETTING_RULES) as SettingKey[];

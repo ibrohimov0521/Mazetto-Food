@@ -29,6 +29,7 @@ import type {
 import { OnlineOrderTypeDto, OnlinePaymentMethodDto } from "./dto/customer.dto";
 import { normalizeDeliveryLocation, deliveryAddressText } from "./delivery-location";
 import { normalizeCustomerPhone } from "./customer-phone";
+import { SettingsService } from "../settings/settings.service";
 
 type TransactionClient = Prisma.TransactionClient;
 type ModifierSnapshot = {
@@ -65,6 +66,7 @@ export class CustomerOrderEngineService {
     private readonly branchesService: BranchesService,
     private readonly kitchenService: KitchenService,
     private readonly ordersService: OrdersService,
+    private readonly settings: SettingsService,
   ) {}
 
   async createOnlineOrder(
@@ -113,6 +115,9 @@ export class CustomerOrderEngineService {
       if (dto.type === OnlineOrderTypeDto.DELIVERY && !deliveryAddress) {
         throw new BadRequestException("Delivery address is required");
       }
+
+      // Tranzaksiyadan OLDIN: sozlama o'qishi kesh yoki bazaga borishi mumkin.
+      const deliveryFee = await this.resolveDeliveryFee(dto.type);
 
       const result = await this.prisma.$transaction(
         async (tx) => {
@@ -167,7 +172,10 @@ export class CustomerOrderEngineService {
             });
           }
 
-          const pricing = this.composeCustomerOrderPricing(dto.type, subtotal);
+          const pricing = this.composeCustomerOrderPricing(
+            subtotal,
+            deliveryFee,
+          );
           await this.recalculateOrderTotals(tx, order.id, pricing.deliveryFee);
           await tx.orderStatusHistory.create({
             data: {
@@ -267,11 +275,13 @@ export class CustomerOrderEngineService {
       dto.type,
     );
 
+    const deliveryFee = await this.resolveDeliveryFee(dto.type);
+
     const pricing = await this.prisma.$transaction(async (tx) =>
       this.composeCustomerOrderPricing(
-        dto.type,
         (await this.calculateCustomerOrderPricing(tx, dto.branchId, dto.items))
           .subtotal,
+        deliveryFee,
       ),
     );
 
@@ -604,11 +614,9 @@ export class CustomerOrderEngineService {
   }
 
   private composeCustomerOrderPricing(
-    type: OnlineOrderTypeDto,
     subtotal: Prisma.Decimal,
+    deliveryFee: Prisma.Decimal,
   ) {
-    const deliveryFee = this.resolveDeliveryFee(type);
-
     return {
       deliveryFee,
       subtotal,
@@ -616,12 +624,23 @@ export class CustomerOrderEngineService {
     };
   }
 
-  private resolveDeliveryFee(type: OnlineOrderTypeDto): Prisma.Decimal {
+  /*
+   * Narx SOZLAMADAN olinadi, kodda emas — deploysiz o'zgartiriladi.
+   *
+   * Olib ketishda har doim 0: mijoz o'zi kelganda yetkazish xizmati yo'q.
+   *
+   * ATAYLAB tranzaksiyadan TASHQARIDA chaqiriladi. Sozlama Redis keshidan
+   * o'qiladi, kesh bo'sh bo'lsa bazaga boradi; buni tranzaksiya ichida
+   * qilish ochiq tranzaksiyani tashqi kutish vaqtiga bog'lab qo'yardi.
+   */
+  private async resolveDeliveryFee(
+    type: OnlineOrderTypeDto,
+  ): Promise<Prisma.Decimal> {
     if (type === OnlineOrderTypeDto.PICKUP) {
       return new Prisma.Decimal(0);
     }
 
-    return new Prisma.Decimal(0);
+    return new Prisma.Decimal(await this.settings.getInt("customer_delivery_fee"));
   }
 
   private async recalculateOrderTotals(
