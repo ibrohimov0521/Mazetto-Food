@@ -29,6 +29,7 @@ export class ReceiptsService {
       where: {
         ...(branchId ? { branchId } : {}),
         ...(query.orderId ? { orderId: query.orderId } : {}),
+        ...(typeof query.printed === "boolean" ? { printed: query.printed } : {}),
         ...(createdAt ? { createdAt } : {}),
       },
       orderBy: { createdAt: "desc" },

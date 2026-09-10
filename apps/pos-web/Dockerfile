@@ -9,7 +9,12 @@ WORKDIR /app
 
 FROM base AS deps
 
-COPY . .
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/customer-web/package.json ./apps/customer-web/package.json
+COPY apps/pos-web/package.json ./apps/pos-web/package.json
+COPY apps/print-agent/package.json ./apps/print-agent/package.json
+COPY apps/telegram-bot/package.json ./apps/telegram-bot/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -20,7 +25,8 @@ ARG NEXT_PUBLIC_MEDIA_URL
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_MEDIA_URL=$NEXT_PUBLIC_MEDIA_URL
 
-COPY --from=deps /app ./
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 
 RUN pnpm exec turbo run build --filter=pos-web
 

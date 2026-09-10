@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Branch } from "../lib/types";
@@ -111,26 +110,16 @@ export function BranchPicker({
         <span className={`mf-branch-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
       </button>
 
-      {open ? createPortal(<AnimatePresence>
-        {open ? (
+      {open ? createPortal(
           <>
-            <motion.div
-              animate={{ opacity: 1 }}
-              className="fixed inset-0 z-40 bg-black/34 backdrop-blur-sm sm:hidden"
-              exit={{ opacity: 0 }}
-              initial={{ opacity: 0 }}
-            />
-            <motion.div
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="mf-branch-menu fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-space)+0.75rem+env(safe-area-inset-bottom))] z-50 max-h-[70vh] overflow-hidden rounded-[1.7rem] p-2"
+            <div className="mf-fade-enter fixed inset-0 z-40 bg-black/34 backdrop-blur-sm sm:hidden" />
+            <div
+              className="mf-branch-menu mf-pop-enter fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-space)+0.75rem+env(safe-area-inset-bottom))] z-50 max-h-[70vh] overflow-hidden rounded-[1.7rem] p-2"
               style={anchor ? { position: "fixed", top: anchor.top, left: anchor.left, width: anchor.width, minWidth: 0, bottom: "auto", right: "auto" } : {}}
               id={panelId}
               ref={panelRef}
               role="dialog"
               aria-label="Filial tanlash"
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              initial={{ opacity: 0, y: 12, scale: 0.98 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
             >
               <div className="flex items-center justify-between px-3 py-1">
                 <span className="text-sm font-black">Filial tanlash</span>
@@ -159,10 +148,8 @@ export function BranchPicker({
                   );
                 })}
               </div>
-            </motion.div>
-          </>
-        ) : null}
-      </AnimatePresence>, document.body) : null}
+            </div>
+          </>, document.body) : null}
     </div>
   );
 }

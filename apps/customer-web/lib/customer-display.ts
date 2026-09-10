@@ -345,3 +345,15 @@ const seedProductDescriptions: Record<string, string> = {
   BURGER_SET: "Classic Burger with fries and drink.",
   KIDS_SET: "Nuggets with fries, cheese sauce, and water.",
 };
+
+// The homepage renders at most four recommended, four combo and six popular
+// products, so both the server payload and the client refresh carry only those.
+export function selectHomeProducts(products: Product[], home: CustomerHome): Product[] {
+  const keep = new Set<string>();
+  for (const product of products.filter((product) => product.isRecommended).slice(0, 4)) keep.add(product.id);
+  for (const product of products.filter((product) => product.isCombo).slice(0, 4)) keep.add(product.id);
+  for (const product of products.filter((product) => !product.isCombo).slice(0, 6)) keep.add(product.id);
+  for (const slide of home.heroSlides) if (slide.product?.id) keep.add(slide.product.id);
+
+  return products.filter((product) => keep.has(product.id));
+}

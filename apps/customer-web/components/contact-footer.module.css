@@ -2,12 +2,18 @@
   position: relative;
   isolation: isolate;
   max-width: 1200px;
-  margin: 28px auto 24px;
-  padding: 22px 24px 8px;
-  border: 1px solid #36807a;
+  margin: 30px auto 26px;
+  padding: 20px 22px 9px;
+  border: 1px solid #2a8d83;
+  border-top: 3px solid #ffd83d;
   border-radius: 8px;
-  background: #003e43;
-  box-shadow: 0 2px 0 #75b2a440 inset, 0 8px 0 -3px #002e32, 0 20px 30px -12px #001f32a6;
+  background:
+    radial-gradient(circle at 16% 0%, #0b7970 0%, transparent 34%),
+    linear-gradient(135deg, #00393e 0%, #00565a 56%, #003a3f 100%);
+  box-shadow:
+    0 1px 0 #b8fff040 inset,
+    0 9px 0 -5px #ffd83d,
+    0 22px 44px -20px #001518e6;
   color: #f5faf6;
 }
 .row {
@@ -39,9 +45,9 @@
   gap: 7px;
   min-height: 44px;
   padding: 8px 13px;
-  border: 1px solid #74a99d66;
+  border: 1px solid #6db8aa61;
   border-radius: 8px;
-  background: #ffffff0a;
+  background: linear-gradient(180deg, #075f60 0%, #00484d 100%);
   color: #f5faf6;
   font-size: 12px;
   font-weight: 700;
@@ -51,7 +57,9 @@
     background-color 140ms,
     border-color 140ms,
     color 140ms,
-    transform 140ms;
+    transform 140ms,
+    box-shadow 140ms;
+  box-shadow: 0 6px 0 -3px #002d31, 0 12px 20px -16px #000;
 }
 .link svg {
   flex-shrink: 0;
@@ -62,6 +70,7 @@
   border-color: #ffdf39;
   background: #ffdf39;
   color: #003c40;
+  box-shadow: 0 7px 0 -4px #bd9b00, 0 14px 24px -16px #ffd83d;
 }
 .link:hover svg,
 .link:focus-visible svg,
@@ -77,7 +86,7 @@
   width: 130px;
   height: 110px;
   background: url("/brand/botanical-sprig.svg") center / contain no-repeat;
-  opacity: 0.12;
+  opacity: 0.18;
   pointer-events: none;
 }
 .heading::before {
@@ -113,8 +122,8 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
-  padding-left: 24px;
-  border-left: 1px solid #358482;
+  padding: 12px 0 12px 24px;
+  border-left: 1px solid #4fa79d;
 }
 .profile .heading {
   margin-bottom: 3px;
@@ -122,6 +131,7 @@
 .userIcon {
   flex-shrink: 0;
   color: #ffdf39;
+  opacity: 1;
 }
 .details {
   margin: 0;
@@ -147,7 +157,8 @@
   gap: 6px;
   min-height: 44px;
   font-size: 10px;
-  color: #acc9c1;
+  color: #c2d9d2;
+  opacity: 0.82;
   text-decoration: none;
 }
 .credit img {

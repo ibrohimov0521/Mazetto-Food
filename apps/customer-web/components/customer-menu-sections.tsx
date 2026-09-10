@@ -268,7 +268,7 @@ export function CustomerMenuSections({
                   {category.description ? <p className="mf-menu-section-description hidden max-w-md text-right text-sm font-semibold text-white/56 md:block">{category.description}</p> : null}
                 </div>
                 <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
-                  {products.map((product, index) => <ProductCard compact key={product.id} priority={intro && sectionIndex === 0 && index < 4} product={product} />)}
+                  {products.map((product, index) => <ProductCard compact eager={intro && sectionIndex === 0 && index < 4} key={product.id} product={product} />)}
                 </div>
               </section>
             ))}

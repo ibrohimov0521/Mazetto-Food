@@ -9,10 +9,11 @@ export const metadata: Metadata = {
   applicationName: "Mazetto Food",
   icons: {
     icon: [
-      { url: "/brand/mazetto-m-icon.png", type: "image/png", sizes: "1254x1254" },
-      { url: "/brand/mazetto-m-icon.png", type: "image/png", sizes: "192x192" },
+      { url: "/brand/mazetto-icon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/brand/mazetto-icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/brand/mazetto-icon-512.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: [{ url: "/brand/mazetto-m-icon.png", sizes: "1254x1254" }],
+    apple: [{ url: "/brand/apple-touch-icon.png", sizes: "180x180" }],
   },
   robots: { index: true, follow: true },
   openGraph: { type: "website", locale: "uz_UZ", siteName: "Mazetto Food", images: [{ url: "/brand/mazetto-food-logo.webp", width: 2048, height: 895, alt: "Mazetto Food" }] },
