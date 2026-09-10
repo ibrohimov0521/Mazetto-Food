@@ -1,8 +1,63 @@
 # MAZETTO FOOD Work Status
 
-Last updated: 2026-09-07
+Last updated: 2026-09-10
 
 This file is the persistent working checklist for the existing MAZETTO FOOD production project. Read this before continuing any Mazetto task.
+
+## 6-bosqich 1–2-to'lqin — brauzer QA (2026-09-10)
+
+Shoxobcha: `admin-redesign-phase-5` · **deploy qilinmagan**
+
+Reja: [`MAZETTO_ROADMAP_MASTER.md`](./MAZETTO_ROADMAP_MASTER.md) 1- va 2-to'lqin.
+
+### Muhit
+
+Docker: `mazetto-postgres` 5433, `mazetto-redis` 6380. Backend `.env` ni O'ZI
+yuklamaydi — `DATABASE_URL` va JWT sekretlari qo'lda eksport qilinishi shart,
+aks holda ishga tushishda "DATABASE_URL is required to initialize Prisma"
+beradi.
+
+Baza allaqachon to'ldirilgan: 3 filial, 91 mahsulot, 11 kategoriya, 74 ommaviy
+menyu. QA uchun ikkita hisob qo'shildi (mavjud `admin@mazetto.local`
+**tegilmadi**, uning paroli ma'lum emas):
+
+| Hisob | Rol | Maqsad |
+|---|---|---|
+| `qa@mazetto.local` | SUPER_ADMIN | umumiy QA |
+| `qa-acc@mazetto.local` | ACCOUNTANT | rad etish yo'lini sinash |
+
+### Brauzerda tasdiqlangan
+
+- **Topbar yorliqlari.** Kassa / Oshxona / Smena tashqi havola ikonkasi bilan
+  ko'rinadi va aksessibil nomi "— yangi tabda ochiladi" deydi. Admin / Hisobot
+  ikonkasiz, client navigatsiya.
+- **Sidebar navigatsiyada saqlanadi.** Sidebar yig'ildi, keyin
+  `/admin/dashboard` → `/admin/staff` → `/admin/audit` o'tildi (jumladan
+  to'liq sahifa yuklanishi bilan) — **yig'ilgan holat saqlanib qoldi**. Ilgari
+  u har o'tishda ochilib ketardi, chunki `AdminLayout` remount bo'lardi. Bu
+  layout endi unmount bo'lmayotganining bevosita dalili.
+- **Rad etish paneli qobiq ichida.** ACCOUNTANT `/admin/audit` ga kirdi:
+  sidebar va header joyida qoldi, kontent joyida "Bu bo'lim sizning rolingiz
+  uchun ochilmagan" paneli va o'z bosh sahifasiga tugma. Ilgari qobiqsiz
+  sahifaga uchib, yagona tugma tizimdan chiqarardi.
+- **Skeleton.** Sessiya tiklanayotgan paytda qobiq darhol chiziladi, faqat
+  kontent joyi skeleton. Ilgari butunlay oq sahifa edi.
+- **Rol uy sahifasi menyuda.** ACCOUNTANT login'dan keyin `/accounting` ga
+  tushdi va menyudagi "Buxgalteriya" elementi FAOL holatda. Ilgari bu havola
+  menyuda umuman yo'q edi.
+- **Rol bo'yicha filtrlash.** SUPER_ADMIN 16 nav elementi va 5 yorliq ko'radi;
+  ACCOUNTANT 7 nav elementi va faqat "Hisobot" yorlig'ini.
+- **Ma'lumot oqimi.** Dashboard, Xodimlar va Audit jurnali haqiqiy ma'lumot
+  bilan yuklandi.
+
+### Tekshirilmagan
+
+- **Responsive.** `resize_window` bu muhitda viewport'ni o'zgartirmadi —
+  768 / 1024 / 1366 kengliklari ko'rilmadi.
+- **BRANCH_MANAGER roli** va uning `/manager/dashboard` uy sahifasi.
+- **Sozlanmagan sahifa paneli** — uni ko'rish uchun qoidasiz sahifa qo'shish
+  kerak; `validate-admin-nav-rbac.ts` buni statik ushlaydi.
+- POS, oshxona, ofitsiant va smena ekranlari (bu to'lqin ularga tegmadi).
 
 ## Latest Verified Release (2026-09-07)
 
