@@ -126,9 +126,12 @@ export function CourierOrdersPage() {
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError("");
+    const params = new URLSearchParams({ limit: "100", offset: "0" });
+    if (historyStatus) params.set("status", historyStatus);
+    if (historySearch.trim()) params.set("search", historySearch.trim());
     try {
       setHistoryOrders(
-        await apiFetch<CourierOrder[]>("/courier/orders/history?limit=100&offset=0", {
+        await apiFetch<CourierOrder[]>(`/courier/orders/history?${params.toString()}`, {
           cache: "no-store",
           signal: AbortSignal.timeout(12000),
         }),
@@ -138,7 +141,7 @@ export function CourierOrdersPage() {
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [historySearch, historyStatus]);
 
   useEffect(() => {
     if (historyOpen) void loadHistory();

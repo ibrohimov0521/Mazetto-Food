@@ -30,6 +30,14 @@ export class ListOnlineOrdersDto extends ListCustomersDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
 }
 
 export enum CourierOrderStatus {

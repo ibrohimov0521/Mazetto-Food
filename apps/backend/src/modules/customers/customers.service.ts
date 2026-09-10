@@ -533,6 +533,15 @@ export class CustomersService {
     const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user, query.branchId);
     const day = this.todayTashkentRange();
+    const status = this.toOrderStatus(query.status);
+    const search = query.search?.trim();
+
+    const orderFilters: Prisma.OrderWhereInput[] = [
+      { OR: [{ servedById: null }, { servedById: employeeId }] },
+    ];
+    if (search) {
+      orderFilters.push(this.buildOrderSearchWhere(search));
+    }
 
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
@@ -540,8 +549,8 @@ export class CustomersService {
         ...(branchId ? { branchId } : {}),
         order: {
           createdAt: { gte: day.start, lt: day.end },
-          status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
-          OR: [{ servedById: null }, { servedById: employeeId }],
+          status: status ?? { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+          AND: orderFilters,
         },
       },
       orderBy: { createdAt: "asc" },
@@ -586,6 +595,8 @@ export class CustomersService {
     const employeeId = this.requireEmployee(user);
     const branchId = resolveBranchScope(user, query.branchId);
     const day = this.todayTashkentRange();
+    const status = this.toOrderStatus(query.status);
+    const search = query.search?.trim();
 
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
@@ -594,6 +605,8 @@ export class CustomersService {
         order: {
           servedById: employeeId,
           createdAt: { gte: day.start, lt: day.end },
+          ...(status ? { status } : {}),
+          ...(search ? this.buildOrderSearchWhere(search) : {}),
           statusHistory: {
             some: {
               changedByEmployeeId: employeeId,
@@ -810,6 +823,25 @@ export class CustomersService {
     }
 
     return status;
+  }
+
+  private buildOrderSearchWhere(search: string): Prisma.OrderWhereInput {
+    return {
+      OR: [
+        { orderNumber: { contains: search, mode: "insensitive" } },
+        { displayOrderNumber: { contains: search, mode: "insensitive" } },
+        { customerName: { contains: search, mode: "insensitive" } },
+        { customerPhone: { contains: search, mode: "insensitive" } },
+        { deliveryAddress: { contains: search, mode: "insensitive" } },
+        { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+      ],
+    };
+  }
+
+  private toOrderStatus(status?: string): OrderStatus | undefined {
+    return Object.values(OrderStatus).includes(status as OrderStatus)
+      ? (status as OrderStatus)
+      : undefined;
   }
 
   private requireEmployee(user: AuthenticatedUser): string {
