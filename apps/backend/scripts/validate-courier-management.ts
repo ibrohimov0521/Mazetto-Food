@@ -15,7 +15,8 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 const permissions = read("apps/backend/src/common/auth/permissions.ts");
 const seed = read("apps/backend/prisma/seed.ts");
-const service = read("apps/backend/src/modules/customers/customers.service.ts");
+// Kuryer domeni `customer-courier.service.ts` ga ko'chdi (6.6).
+const service = read("apps/backend/src/modules/customers/customer-courier.service.ts");
 const controller = read(
   "apps/backend/src/modules/customers/customers.controller.ts",
 );

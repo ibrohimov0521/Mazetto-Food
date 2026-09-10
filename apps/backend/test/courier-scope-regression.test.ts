@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serviceSource = readFileSync(
-  join(__dirname, "../src/modules/customers/customers.service.ts"),
+  join(__dirname, "../src/modules/customers/customer-courier.service.ts"),
   "utf8",
 );
 const courierUiSource = readFileSync(
