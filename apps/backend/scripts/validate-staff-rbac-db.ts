@@ -15,7 +15,7 @@ async function main(): Promise<void> {
 
   try {
     const staffService = new StaffService(prisma);
-    const authService = new AuthService(prisma, new JwtService());
+    const authService = new AuthService(prisma, new JwtService(), { getJson: async () => null, setJson: async () => undefined, delete: async () => undefined } as never);
     const runId = Date.now().toString();
     const branch = await createBranch(prisma, `STAFF_GATE_${runId}`, "Staff Gate Branch");
     const otherBranch = await createBranch(prisma, `STAFF_OTHER_${runId}`, "Staff Other Branch");

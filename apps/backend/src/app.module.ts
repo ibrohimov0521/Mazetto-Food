@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
+import { CacheModule } from "./cache/cache.module";
 import { HealthController } from "./health.controller";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -35,6 +36,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 
 @Module({
   imports: [
+    CacheModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,

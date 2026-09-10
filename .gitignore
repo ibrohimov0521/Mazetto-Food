@@ -30,3 +30,5 @@ Thumbs.db
 
 Dockerfile.local
 *.tsbuildinfo
+
+media-source/

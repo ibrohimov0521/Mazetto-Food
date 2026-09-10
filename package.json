@@ -13,7 +13,8 @@
     "media:validate": "node apps/media/scripts/validate-media-assets.mjs",
     "format": "prettier --write .",
     "test": "pnpm --filter backend test",
-    "ci": "DATABASE_URL=${DATABASE_URL:-postgresql://ci:ci@localhost:5432/ci} pnpm --filter backend prisma:generate && pnpm typecheck && pnpm --filter backend typecheck:scripts && pnpm test && pnpm build"
+    "ci": "DATABASE_URL=${DATABASE_URL:-postgresql://ci:ci@localhost:5432/ci} pnpm --filter backend prisma:generate && pnpm typecheck && pnpm --filter backend typecheck:scripts && pnpm test && pnpm build",
+    "load:test": "node scripts/load-test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",

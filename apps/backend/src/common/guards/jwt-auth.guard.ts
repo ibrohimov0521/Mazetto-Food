@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
+import { RedisCacheService } from "../../cache/redis-cache.service";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import type { AuthenticatedRequest, AuthenticatedUser } from "../types/authenticated-user";
 import { getJwtAccessSecret } from "../../config/auth.config";
@@ -17,6 +18,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwtService: JwtService,
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
+    private readonly cache: RedisCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -64,6 +66,13 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   private async resolveCurrentUser(userId: string): Promise<AuthenticatedUser> {
+    const cacheKey = `auth:user:${userId}`;
+    const cachedUser = await this.cache.getJson<AuthenticatedUser>(cacheKey);
+
+    if (cachedUser) {
+      return cachedUser;
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -108,7 +117,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("User is not active");
     }
 
-    return {
+    const authenticatedUser: AuthenticatedUser = {
       id: user.id,
       ...(user.email ? { email: user.email } : {}),
       ...(user.phone ? { phone: user.phone } : {}),
@@ -120,5 +129,8 @@ export class JwtAuthGuard implements CanActivate {
         userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
       ),
     };
+
+    await this.cache.setJson(cacheKey, authenticatedUser, 30_000);
+    return authenticatedUser;
   }
 }

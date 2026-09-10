@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
+import { RedisCacheService } from "../../cache/redis-cache.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -40,11 +41,10 @@ const LOGIN_THROTTLE_GC_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
-  private readonly loginThrottle = new Map<string, LoginThrottleRecord>();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly cache: RedisCacheService,
   ) {}
 
   async login(dto: LoginDto, clientAddress = "unknown"): Promise<AuthResponse> {
@@ -52,7 +52,7 @@ export class AuthService {
     const throttleKeys = this.createLoginThrottleKeys(identifier, clientAddress);
 
     for (const throttle of throttleKeys) {
-      this.assertLoginAllowed(throttle.key);
+      await this.assertLoginAllowed(throttle.key);
     }
 
     const userRecord = await this.prisma.user.findFirst({
@@ -64,20 +64,18 @@ export class AuthService {
     });
 
     if (!userRecord?.passwordHash) {
-      this.registerFailedLogin(throttleKeys);
+      await this.registerFailedLogin(throttleKeys);
       throw new UnauthorizedException("Invalid credentials");
     }
 
     const passwordMatches = await compare(dto.password, userRecord.passwordHash);
 
     if (!passwordMatches) {
-      this.registerFailedLogin(throttleKeys);
+      await this.registerFailedLogin(throttleKeys);
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    for (const throttle of throttleKeys) {
-      this.loginThrottle.delete(throttle.key);
-    }
+    await Promise.all(throttleKeys.map((throttle) => this.cache.delete(this.loginThrottleKey(throttle.key))));
 
     await this.prisma.user.update({
       where: { id: userRecord.id },
@@ -288,8 +286,9 @@ export class AuthService {
     ];
   }
 
-  private assertLoginAllowed(key: string): void {
-    const record = this.loginThrottle.get(key);
+  private async assertLoginAllowed(key: string): Promise<void> {
+    const cacheKey = this.loginThrottleKey(key);
+    const record = await this.cache.getJson<LoginThrottleRecord>(cacheKey);
     const now = Date.now();
 
     if (!record) {
@@ -304,20 +303,18 @@ export class AuthService {
     }
 
     if (record.blockedUntil || now - record.firstFailureAt > LOGIN_THROTTLE_GC_MS) {
-      this.loginThrottle.delete(key);
+      await this.cache.delete(cacheKey);
     }
   }
 
-  private registerFailedLogin(throttles: LoginThrottleKey[]): void {
-    for (const throttle of throttles) {
-      this.registerFailedLoginKey(throttle);
-    }
+  private async registerFailedLogin(throttles: LoginThrottleKey[]): Promise<void> {
+    await Promise.all(throttles.map((throttle) => this.registerFailedLoginKey(throttle)));
   }
 
-  private registerFailedLoginKey(throttle: LoginThrottleKey): void {
+  private async registerFailedLoginKey(throttle: LoginThrottleKey): Promise<void> {
     const now = Date.now();
-    const key = throttle.key;
-    const current = this.loginThrottle.get(key);
+    const cacheKey = this.loginThrottleKey(throttle.key);
+    const current = await this.cache.getJson<LoginThrottleRecord>(cacheKey);
     const record =
       current && now - current.firstFailureAt <= LOGIN_THROTTLE_WINDOW_MS
         ? current
@@ -327,7 +324,11 @@ export class AuthService {
     record.blockedUntil =
       record.failures >= throttle.maxFailures ? now + LOGIN_THROTTLE_BLOCK_MS : null;
 
-    this.loginThrottle.set(key, record);
+    await this.cache.setJson(cacheKey, record, LOGIN_THROTTLE_GC_MS);
+  }
+
+  private loginThrottleKey(key: string): string {
+    return `auth:${key}`;
   }
 }
 
