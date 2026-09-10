@@ -65,3 +65,27 @@ test("narx mijozga ochiq kalitlar ro'yxatida", () => {
     (PUBLIC_SETTING_KEYS as readonly string[]).includes("customer_delivery_fee"),
   );
 });
+
+test("tekin zona radiusi sozlamada va chegaralangan", () => {
+  /*
+   * Radius KODDA emas, sozlamada: bu marketing qarori va aksiya
+   * paytida deploysiz o'zgarishi kerak.
+   */
+  const rule = describeSettingRule("customer_free_delivery_radius_meters");
+  assert.equal(rule.kind, "int");
+  assert.equal(rule.kind === "int" && rule.min, 0, "0 — tekin zona yo'q");
+  assert.equal(rule.kind === "int" && rule.max, 50_000);
+});
+
+test("radius uchun manfiy qiymat rad etiladi", () => {
+  assert.throws(() =>
+    validateSettingValue("customer_free_delivery_radius_meters", "-1"),
+  );
+});
+
+test("buzuq radius default'ga tushadi", () => {
+  assert.equal(
+    parseIntSetting("customer_free_delivery_radius_meters", "salom"),
+    1_000,
+  );
+});

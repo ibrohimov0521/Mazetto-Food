@@ -31,6 +31,7 @@ import {
   normalizeDeliveryLocation,
   deliveryAddressText,
 } from "./delivery-location";
+import { deliveryDistanceKm } from "./delivery-distance";
 import { normalizeCustomerPhone } from "./customer-phone";
 import { SettingsService } from "../settings/settings.service";
 
@@ -62,7 +63,6 @@ const operationalCustomerPaymentMethods = [
   OnlinePaymentMethodDto.CASH,
 ] as const;
 
-const FREE_DELIVERY_RADIUS_METERS = 1000;
 @Injectable()
 export class CustomerOrderEngineService {
   constructor(
@@ -660,6 +660,19 @@ export class CustomerOrderEngineService {
    * o'qiladi, kesh bo'sh bo'lsa bazaga boradi; buni tranzaksiya ichida
    * qilish ochiq tranzaksiyani tashqi kutish vaqtiga bog'lab qo'yardi.
    */
+  /*
+   * Yetkazish narxi: belgilangan radius ICHIDA tekin, undan uzoqda
+   * sozlamadagi qat'iy summa. Olib ketishda har doim 0.
+   *
+   * Masofa `delivery-distance.ts` dagi umumiy funksiyadan olinadi —
+   * u `atan2` ishlatadi va sinovdan o'tgan. Ilgari bu yerda ikkinchi,
+   * ichki Haversine nusxasi turardi va u `asin` ishlatardi: juda uzoq
+   * nuqtalarda suzuvchi nuqta xatosi argumentni 1 dan kattaroq qilib
+   * NaN berardi, va ikki nusxa vaqt o'tib ajralib ketardi.
+   *
+   * ATAYLAB TRANZAKSIYADAN TASHQARIDA: sozlama o'qishi Redis yoki
+   * bazaga boradi.
+   */
   private async resolveDeliveryFee(
     type: OnlineOrderTypeDto,
     branchId: string,
@@ -669,10 +682,12 @@ export class CustomerOrderEngineService {
       return new Prisma.Decimal(0);
     }
 
+    const flatFee = new Prisma.Decimal(
+      await this.settings.getInt("customer_delivery_fee"),
+    );
+
     if (!deliveryLocation) {
-      return new Prisma.Decimal(
-        await this.settings.getInt("customer_delivery_fee"),
-      );
+      return flatFee;
     }
 
     const branch = await this.prisma.branch.findUnique({
@@ -680,35 +695,27 @@ export class CustomerOrderEngineService {
       select: { latitude: true, longitude: true },
     });
 
-    if (!branch || branch.latitude === null || branch.longitude === null) {
-      throw new BadRequestException(
-        "Filial koordinatasi sozlanmagan. Iltimos, filialni tekshiring.",
-      );
+    /*
+     * FAIL-OPEN. Filial koordinatasi ixtiyoriy (`Decimal?`) va u
+     * sozlanmagan bo'lsa buyurtma BLOKLANMASLIGI kerak — ilgari bu yerda
+     * xato tashlanardi va koordinatasiz filialdan yetkazib berishga
+     * buyurtma berib bo'lmasdi. Masofani bilmasak, oddiy narx olinadi.
+     */
+    const distanceKm = branch
+      ? deliveryDistanceKm(branch, deliveryLocation)
+      : null;
+
+    if (distanceKm === null) {
+      return flatFee;
     }
 
-    const toRadians = (value: number) => (value * Math.PI) / 180;
-    const latitudeDelta = toRadians(
-      deliveryLocation.latitude - Number(branch.latitude),
+    const freeRadiusMeters = await this.settings.getInt(
+      "customer_free_delivery_radius_meters",
     );
-    const longitudeDelta = toRadians(
-      deliveryLocation.longitude - Number(branch.longitude),
-    );
-    const branchLatitude = toRadians(Number(branch.latitude));
-    const destinationLatitude = toRadians(deliveryLocation.latitude);
-    const haversine =
-      Math.sin(latitudeDelta / 2) ** 2 +
-      Math.cos(branchLatitude) *
-        Math.cos(destinationLatitude) *
-        Math.sin(longitudeDelta / 2) ** 2;
-    const distance = 2 * 6_371_000 * Math.asin(Math.sqrt(haversine));
 
-    if (distance <= FREE_DELIVERY_RADIUS_METERS) {
-      return new Prisma.Decimal(0);
-    }
-
-    return new Prisma.Decimal(
-      await this.settings.getInt("customer_delivery_fee"),
-    );
+    return distanceKm * 1000 <= freeRadiusMeters
+      ? new Prisma.Decimal(0)
+      : flatFee;
   }
 
   private async recalculateOrderTotals(

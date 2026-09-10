@@ -96,6 +96,14 @@ const SETTING_RULES = {
    * ning yagona joyda turgani shuning uchun.
    */
   customer_delivery_fee: INT(0, 1_000_000, 20_000),
+  /*
+   * Shu radius ICHIDA yetkazish tekin, undan uzoqda yuqoridagi narx
+   * olinadi. Metrda.
+   *
+   * Sozlamada, kodda emas: bu marketing qarori va aksiya paytida
+   * deploysiz o'zgartirilishi kerak. 0 — tekin zona yo'q.
+   */
+  customer_free_delivery_radius_meters: INT(0, 50_000, 1_000),
 } satisfies Record<string, SettingRule>;
 
 export type SettingKey = keyof typeof SETTING_RULES;

@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
@@ -57,13 +58,10 @@ export function AdminShiftsPage() {
   const { user } = useAuth();
   const showBranchFilter = canSwitchBranch(user);
 
-  const [shifts, setShifts] = useState<Shift[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [status, setStatus] = useState("");
   const [branchId, setBranchId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -77,38 +75,25 @@ export function AdminShiftsPage() {
       });
   }, [showBranchFilter]);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset),
-    });
-
-    if (status) params.set("status", status);
-    if (branchId) params.set("branchId", branchId);
-
-    try {
-      setShifts(await apiFetch<Shift[]>(`/shifts?${params.toString()}`));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Smenalarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [branchId, offset, status]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (status) params.set("status", status);
+      if (branchId) params.set("branchId", branchId);
+      return apiFetch<Shift[]>(`/shifts?${params.toString()}`);
+    },
+    [branchId, offset, status],
+    "Smenalarni yuklab bo'lmadi.",
+  );
+  const shifts = data ?? [];
 
   const stats = useMemo(() => {
     const open = shifts.filter((shift) => shift.status === "OPEN").length;

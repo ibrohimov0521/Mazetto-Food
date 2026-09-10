@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import {
   formatDateTime,
@@ -61,13 +62,10 @@ export function AdminPaymentsPage() {
   const { user } = useAuth();
   const showBranchFilter = canSwitchBranch(user);
 
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [status, setStatus] = useState("");
   const [branchId, setBranchId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -81,38 +79,25 @@ export function AdminPaymentsPage() {
       });
   }, [showBranchFilter]);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset),
-    });
-
-    if (status) params.set("status", status);
-    if (branchId) params.set("branchId", branchId);
-
-    try {
-      setPayments(await apiFetch<Payment[]>(`/payments?${params.toString()}`));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "To'lovlarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [branchId, offset, status]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (status) params.set("status", status);
+      if (branchId) params.set("branchId", branchId);
+      return apiFetch<Payment[]>(`/payments?${params.toString()}`);
+    },
+    [branchId, offset, status],
+    "To'lovlarni yuklab bo'lmadi.",
+  );
+  const payments = data ?? [];
 
   const stats = useMemo(() => {
     const successful = payments.filter(
@@ -144,7 +129,9 @@ export function AdminPaymentsPage() {
       render: (payment) => (
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">
-            {payment.order ? payment.order.displayOrderNumber ?? payment.order.orderNumber : "Buyurtmasiz"}
+            {payment.order
+              ? (payment.order.displayOrderNumber ?? payment.order.orderNumber)
+              : "Buyurtmasiz"}
           </p>
           <p className="truncate text-xs text-mz-text-muted">
             {formatDateTime(payment.paidAt ?? payment.createdAt)}
