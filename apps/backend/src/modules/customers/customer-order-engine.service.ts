@@ -756,16 +756,22 @@ export class CustomerOrderEngineService {
   private withDerivedCustomerOrderStatus<
     T extends { order?: { status: OrderStatus } | null },
   >(customerOrder: T): T & { status: string } {
+    const type =
+      "type" in customerOrder && typeof customerOrder.type === "string"
+        ? customerOrder.type
+        : undefined;
+
     return {
       ...customerOrder,
       status: this.toCustomerOrderStatus(
         customerOrder.order?.status ?? OrderStatus.NEW,
+        type,
       ),
     };
   }
 
-  private toCustomerOrderStatus(status: OrderStatus): string {
-    if (status === OrderStatus.SERVED) {
+  private toCustomerOrderStatus(status: OrderStatus, type?: string): string {
+    if (status === OrderStatus.SERVED && type === "DELIVERY") {
       return "READY";
     }
 

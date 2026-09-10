@@ -24,8 +24,11 @@ import { deliveryDistanceKm } from "./delivery-distance";
  * u hali qo'liga olmagan. Xom holatni ko'rsatish "berildi" degan
  * noto'g'ri taassurot berardi.
  */
-export function toCustomerOrderStatus(status: OrderStatus): string {
-  if (status === OrderStatus.SERVED) {
+export function toCustomerOrderStatus(
+  status: OrderStatus,
+  type?: string,
+): string {
+  if (status === OrderStatus.SERVED && type === "DELIVERY") {
     return "READY";
   }
 
@@ -35,10 +38,16 @@ export function toCustomerOrderStatus(status: OrderStatus): string {
 export function withDerivedCustomerOrderStatus<
   T extends { order?: { status: OrderStatus } | null },
 >(customerOrder: T): T & { status: string } {
+  const type =
+    "type" in customerOrder && typeof customerOrder.type === "string"
+      ? customerOrder.type
+      : undefined;
+
   return {
     ...customerOrder,
     status: toCustomerOrderStatus(
       customerOrder.order?.status ?? OrderStatus.NEW,
+      type,
     ),
   };
 }

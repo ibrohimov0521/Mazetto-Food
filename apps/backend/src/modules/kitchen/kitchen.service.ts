@@ -8,6 +8,7 @@ import {
   KitchenTicketStatus,
   OrderItemStatus,
   OrderStatus,
+  OrderType,
   Prisma,
 } from "@prisma/client";
 import { randomInt } from "node:crypto";
@@ -21,6 +22,7 @@ import {
 import { KitchenGateway } from "./kitchen.gateway";
 import {
   kitchenStatusForOrder,
+  orderStatusAfterKitchenHandoff,
   syncKitchenTickets,
 } from "./kitchen-status-sync";
 
@@ -40,6 +42,7 @@ type KitchenTransitionActor = {
 type KitchenTransitionOrder = {
   id: string;
   branchId: string;
+  type: OrderType;
   status: OrderStatus;
   acceptedAt: Date | null;
   acceptedById: string | null;
@@ -503,7 +506,7 @@ export class KitchenService {
       if (ticket.status === KitchenTicketStatus.READY) {
         return {
           changed: true,
-          orderStatus: OrderStatus.READY,
+          orderStatus: orderStatusAfterKitchenHandoff(order.type),
           ticketStatus: KitchenTicketStatus.COMPLETED,
         };
       }
@@ -538,6 +541,7 @@ export class KitchenService {
       select: {
         id: true,
         branchId: true,
+        type: true,
         status: true,
         acceptedAt: true,
         acceptedById: true,

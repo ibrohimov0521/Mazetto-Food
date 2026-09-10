@@ -1,4 +1,13 @@
-import { KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
+import {
+  KitchenTicketStatus,
+  OrderStatus,
+  OrderType,
+  Prisma,
+} from "@prisma/client";
+
+export function orderStatusAfterKitchenHandoff(type: OrderType): OrderStatus {
+  return type === OrderType.TAKEAWAY ? OrderStatus.SERVED : OrderStatus.READY;
+}
 
 export function kitchenStatusForOrder(
   status: OrderStatus,

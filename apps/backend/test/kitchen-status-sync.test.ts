@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KitchenTicketStatus, OrderStatus } from "@prisma/client";
-import { kitchenStatusForOrder } from "../src/modules/kitchen/kitchen-status-sync";
+import { KitchenTicketStatus, OrderStatus, OrderType } from "@prisma/client";
+import {
+  kitchenStatusForOrder,
+  orderStatusAfterKitchenHandoff,
+} from "../src/modules/kitchen/kitchen-status-sync";
 
 test("kitchen tickets follow the canonical order status mapping", () => {
   const cases: Array<[OrderStatus, KitchenTicketStatus | null]> = [
@@ -36,4 +39,19 @@ test("every terminal order status maps to a terminal kitchen ticket status", () 
     assert.ok(ticketStatus);
     assert.ok(terminalTicketStatuses.includes(ticketStatus));
   }
+});
+
+test("pickup handoff is served while delivery handoff remains ready", () => {
+  assert.equal(
+    orderStatusAfterKitchenHandoff(OrderType.TAKEAWAY),
+    OrderStatus.SERVED,
+  );
+  assert.equal(
+    orderStatusAfterKitchenHandoff(OrderType.DELIVERY),
+    OrderStatus.READY,
+  );
+  assert.equal(
+    orderStatusAfterKitchenHandoff(OrderType.DINE_IN),
+    OrderStatus.READY,
+  );
 });
