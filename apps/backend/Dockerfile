@@ -9,13 +9,19 @@ WORKDIR /app
 
 FROM base AS deps
 
-COPY . .
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/customer-web/package.json ./apps/customer-web/package.json
+COPY apps/pos-web/package.json ./apps/pos-web/package.json
+COPY apps/print-agent/package.json ./apps/print-agent/package.json
+COPY apps/telegram-bot/package.json ./apps/telegram-bot/package.json
 
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
 
-COPY --from=deps /app ./
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" pnpm --filter backend prisma:generate
 RUN pnpm --filter backend build
@@ -39,7 +45,6 @@ COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/node_modules ./apps/
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/dist ./apps/backend/dist
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
-COPY --from=builder --chown=nestjs:nodejs /app/packages ./packages
 
 USER nestjs
 
