@@ -1,3 +1,7 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { Socket } from "node:net";
+import { join } from "node:path";
+
 type ReceiptSummary = {
   id: string;
   receiptNumber: string;
@@ -21,6 +25,12 @@ type AgentConfig = {
   pollMs: number;
   dryRun: boolean;
   once: boolean;
+  mode: "stdout" | "file" | "tcp";
+  outputDir: string;
+  printerHost: string | null;
+  printerPort: number;
+  timeoutMs: number;
+  retries: number;
 };
 
 const config = readConfig();
@@ -37,6 +47,7 @@ async function main(agentConfig: AgentConfig): Promise<void> {
     pollMs: agentConfig.pollMs,
     dryRun: agentConfig.dryRun,
     once: agentConfig.once,
+    mode: agentConfig.mode,
     tokenConfigured: Boolean(agentConfig.token),
   });
 
@@ -55,8 +66,7 @@ async function main(agentConfig: AgentConfig): Promise<void> {
 }
 
 async function pollOnce(agentConfig: AgentConfig): Promise<void> {
-  const receipts = await request<ReceiptSummary[]>(agentConfig, receiptsPath(agentConfig));
-  const pending = receipts.filter((receipt) => !receipt.printed);
+  const pending = await request<ReceiptSummary[]>(agentConfig, receiptsPath(agentConfig));
 
   if (!pending.length) {
     console.log("No pending receipts");
@@ -64,7 +74,11 @@ async function pollOnce(agentConfig: AgentConfig): Promise<void> {
   }
 
   for (const receipt of pending) {
-    await printReceipt(agentConfig, receipt.id);
+    try {
+      await printReceipt(agentConfig, receipt.id);
+    } catch (error) {
+      console.error(`Print failed for ${receipt.receiptNumber}`, error);
+    }
   }
 }
 
@@ -78,19 +92,80 @@ async function printReceipt(agentConfig: AgentConfig, receiptId: string): Promis
     return;
   }
 
-  await sendToPrinter(receipt);
+  await sendToPrinter(agentConfig, receipt);
   await request<ReceiptDetail>(agentConfig, `/receipts/${encodeURIComponent(receipt.id)}/print`, { method: "PATCH" });
   console.log(`Printed: ${label}`);
 }
 
-async function sendToPrinter(receipt: ReceiptDetail): Promise<void> {
-  // Real printer adapters will plug in here: USB, network ESC/POS, or Windows spooler.
-  // Until then, fail closed so a receipt is never marked printed without hardware output.
-  throw new Error(`Printer adapter is not configured for receipt ${receipt.receiptNumber}`);
+async function sendToPrinter(agentConfig: AgentConfig, receipt: ReceiptDetail): Promise<void> {
+  const commands = receipt.escpos?.commands ?? [];
+
+  for (let attempt = 1; attempt <= agentConfig.retries + 1; attempt += 1) {
+    try {
+      if (agentConfig.mode === "stdout") {
+        console.log(renderCommands(commands));
+        return;
+      }
+
+      if (agentConfig.mode === "file") {
+        await writeReceiptFile(agentConfig, receipt);
+        return;
+      }
+
+      if (agentConfig.mode === "tcp") {
+        await writeTcpReceipt(agentConfig, commands);
+        return;
+      }
+    } catch (error) {
+      if (attempt > agentConfig.retries) {
+        throw error;
+      }
+
+      console.warn(`Printer retry ${attempt}/${agentConfig.retries} for ${receipt.receiptNumber}`);
+      await delay(Math.min(1000 * attempt, 5000));
+    }
+  }
+}
+
+async function writeReceiptFile(agentConfig: AgentConfig, receipt: ReceiptDetail): Promise<void> {
+  await mkdir(agentConfig.outputDir, { recursive: true });
+  const filename = `${safeFileName(receipt.receiptNumber)}.txt`;
+  const content = renderCommands(receipt.escpos?.commands ?? []);
+  await writeFile(join(agentConfig.outputDir, filename), `${content}\n`, "utf8");
+}
+
+async function writeTcpReceipt(agentConfig: AgentConfig, commands: Array<Record<string, unknown>>): Promise<void> {
+  const printerHost = agentConfig.printerHost;
+
+  if (!printerHost) {
+    throw new Error("MAZETTO_PRINTER_HOST is required for tcp mode");
+  }
+
+  const payload = Buffer.from(toEscPosText(commands), "utf8");
+
+  await new Promise<void>((resolve, reject) => {
+    const socket = new Socket();
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`Printer TCP timeout after ${agentConfig.timeoutMs}ms`));
+    }, agentConfig.timeoutMs);
+
+    socket.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    socket.connect(agentConfig.printerPort, printerHost, () => {
+      socket.end(payload, () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  });
 }
 
 function receiptsPath(agentConfig: AgentConfig): string {
-  const params = new URLSearchParams({ limit: "25" });
+  const params = new URLSearchParams({ limit: "50", printed: "false" });
 
   if (agentConfig.branchId) {
     params.set("branchId", agentConfig.branchId);
@@ -140,6 +215,10 @@ function renderCommands(commands: Array<Record<string, unknown>>): string {
         return String(command.value ?? "");
       }
 
+      if (command.type === "cut") {
+        return "";
+      }
+
       if (command.type === "line") {
         return "------------------------------";
       }
@@ -158,6 +237,12 @@ function readConfig(): AgentConfig {
     pollMs: readPositiveInt(process.env.MAZETTO_PRINT_POLL_MS, 5000),
     dryRun: process.env.MAZETTO_PRINT_DRY_RUN !== "false",
     once: process.argv.includes("--once"),
+    mode: readPrintMode(process.env.MAZETTO_PRINTER_MODE),
+    outputDir: process.env.MAZETTO_PRINT_OUTPUT_DIR?.trim() || "./printed-receipts",
+    printerHost: process.env.MAZETTO_PRINTER_HOST?.trim() || null,
+    printerPort: readPositiveInt(process.env.MAZETTO_PRINTER_PORT, 9100),
+    timeoutMs: readPositiveInt(process.env.MAZETTO_PRINT_TIMEOUT_MS, 10000),
+    retries: readNonNegativeInt(process.env.MAZETTO_PRINT_RETRIES, 2),
   };
 }
 
@@ -172,4 +257,47 @@ function readPositiveInt(value: string | undefined, fallback: number): number {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+
+function toEscPosText(commands: Array<Record<string, unknown>>): string {
+  const initialize = "\x1b@";
+  const cut = "\x1dV\x00";
+  const body = commands
+    .map((command) => {
+      if (command.type === "align") {
+        return command.value === "center" ? "\x1ba\x01" : "\x1ba\x00";
+      }
+
+      if (command.type === "bold") {
+        return command.value ? "\x1bE\x01" : "\x1bE\x00";
+      }
+
+      if (command.type === "cut") {
+        return cut;
+      }
+
+      const line = renderCommands([command]);
+      return line ? `${line}\n` : "";
+    })
+    .join("");
+
+  return `${initialize}${body}\n${cut}`;
+}
+
+function safeFileName(value: string): string {
+  return value.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "receipt";
+}
+
+function readPrintMode(value: string | undefined): AgentConfig["mode"] {
+  if (value === "stdout" || value === "file" || value === "tcp") {
+    return value;
+  }
+
+  return "file";
+}
+
+function readNonNegativeInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
