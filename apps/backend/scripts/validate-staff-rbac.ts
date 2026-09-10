@@ -89,6 +89,32 @@ assert.doesNotMatch(posPage, /\/admin\/printers/);
 assert.match(kitchenPage, /PermissionGuard permission="KITCHEN_VIEW"/);
 assert.doesNotMatch(printersPage, /"CASHIER"/);
 
+/*
+ * Ruxsat keshi (PHASE 6 H8).
+ *
+ * `JwtAuthGuard` ilgari HAR so'rovda to'rt jadvalli join bajarardi. Kesh
+ * qo'shildi, lekin u bekor qilishni yo'qotmasligi shart — aks holda
+ * bloklangan xodim kesh eskirguncha ishlashda davom etardi.
+ */
+const authCache = readSource(
+  "apps/backend/src/common/auth/user-auth-cache.service.ts",
+);
+
+assert.match(jwtGuard, /this\.userAuthCache\.read\(userId\)/);
+assert.match(jwtGuard, /this\.userAuthCache\.write\(resolved\)/);
+// Faol emas foydalanuvchi keshdan OLDIN rad etiladi.
+assert.match(jwtGuard, /User is not active/);
+
+// TTL qisqa bo'lishi shart: u bekor qilish kechikishining eng yomon holati.
+assert.match(authCache, /const TTL_SECONDS = 30/);
+
+// Xodim profilini o'zgartiradigan har bir yo'l keshni tozalashi kerak.
+assert.equal(
+  (staffService.match(/this\.userAuthCache\.invalidate\(/g) ?? []).length,
+  5,
+  "beshta mutatsiya yo'li ham keshni bekor qilishi kerak",
+);
+
 console.info("Staff RBAC static validation passed");
 
 function readSource(path: string): string {

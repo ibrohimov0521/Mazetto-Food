@@ -6,6 +6,7 @@ import { AuthService } from "../src/modules/auth/auth.service";
 import { LoginThrottleService } from "../src/modules/auth/login-throttle.service";
 import { RedisService } from "../src/redis/redis.service";
 import { StaffService } from "../src/modules/staff/staff.service";
+import { UserAuthCacheService } from "../src/common/auth/user-auth-cache.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
@@ -21,7 +22,7 @@ async function main(): Promise<void> {
   await prisma.$connect();
 
   try {
-    const staffService = new StaffService(prisma);
+    const staffService = new StaffService(prisma, new UserAuthCacheService(new RedisService()));
     // Login cheklovi endi alohida servisda va Redis'ga tayanadi (7-bosqich
     // 3-to'lqin). Bu skript RBAC ni tekshiradi, cheklovni emas — shuning
     // uchun ulanishsiz `RedisService` beriladi va u zaxira yo'lida ishlaydi.

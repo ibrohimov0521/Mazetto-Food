@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
+import { UserAuthCacheService } from "./common/auth/user-auth-cache.service";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { MazettoThrottlerGuard } from "./common/guards/mazetto-throttler.guard";
 import { RedisThrottlerStorage } from "./common/throttler/redis-throttler.storage";
@@ -98,6 +99,7 @@ import { RedisService } from "./redis/redis.service";
   ],
   controllers: [HealthController],
   providers: [
+    UserAuthCacheService,
     // Tartib muhim: chegara autentifikatsiyadan OLDIN qo'llanadi, aks holda
     // tekshirilmagan so'rovlar oqimi baribir bazaga urilaverardi.
     {

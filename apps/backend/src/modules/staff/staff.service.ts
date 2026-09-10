@@ -12,6 +12,7 @@ import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { UserAuthCacheService } from "../../common/auth/user-auth-cache.service";
 import { normalizeCustomerPhone } from "../customers/customer-phone";
 import type {
   ChangeOwnPasswordDto,
@@ -93,7 +94,10 @@ const staffSelect = {
 
 @Injectable()
 export class StaffService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userAuthCache: UserAuthCacheService,
+  ) {}
 
   async listStaff(user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user);
@@ -211,6 +215,15 @@ export class StaffService {
       });
     });
 
+
+    /*
+     * Ruxsat keshini darhol bekor qilamiz (PHASE 6 H8).
+     *
+     * Bo'lmasa o'zgarish 30 soniyagacha kechikardi. Bu XAVFSIZLIK sharti
+     * emas — TTL baribir eskirtiradi — lekin bloklangan xodim yarim
+     * daqiqa ishlashda davom etishi operatsion jihatdan yomon.
+     */
+    await this.userAuthCache.invalidate(id);
     return this.toStaffDto(updated);
   }
 
@@ -257,6 +270,10 @@ export class StaffService {
       });
     });
 
+
+    // Rol va holat o'zgarishi eng muhim ikki holat: bloklangan yoki roli
+    // tushirilgan xodim kesh eskirguncha ishlashda davom etardi.
+    await this.userAuthCache.invalidate(id);
     return this.toStaffDto(updated);
   }
 
@@ -298,6 +315,10 @@ export class StaffService {
       });
     });
 
+
+    // Rol va holat o'zgarishi eng muhim ikki holat: bloklangan yoki roli
+    // tushirilgan xodim kesh eskirguncha ishlashda davom etardi.
+    await this.userAuthCache.invalidate(id);
     return this.toStaffDto(updated);
   }
 
@@ -320,6 +341,15 @@ export class StaffService {
       await this.createAuditLog(tx, actor.id, "STAFF_PASSWORD_RESET", id, {});
     });
 
+
+    /*
+     * Ruxsat keshini darhol bekor qilamiz (PHASE 6 H8).
+     *
+     * Bo'lmasa o'zgarish 30 soniyagacha kechikardi. Bu XAVFSIZLIK sharti
+     * emas — TTL baribir eskirtiradi — lekin bloklangan xodim yarim
+     * daqiqa ishlashda davom etishi operatsion jihatdan yomon.
+     */
+    await this.userAuthCache.invalidate(id);
     return { changed: true };
   }
 
@@ -352,6 +382,15 @@ export class StaffService {
       await this.createAuditLog(tx, user.id, "STAFF_OWN_PASSWORD_CHANGED", user.id, {});
     });
 
+
+    /*
+     * Ruxsat keshini darhol bekor qilamiz (PHASE 6 H8).
+     *
+     * Bo'lmasa o'zgarish 30 soniyagacha kechikardi. Bu XAVFSIZLIK sharti
+     * emas — TTL baribir eskirtiradi — lekin bloklangan xodim yarim
+     * daqiqa ishlashda davom etishi operatsion jihatdan yomon.
+     */
+    await this.userAuthCache.invalidate(user.id);
     return { changed: true };
   }
 

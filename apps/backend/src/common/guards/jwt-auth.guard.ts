@@ -10,6 +10,7 @@ import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import type { AuthenticatedRequest, AuthenticatedUser } from "../types/authenticated-user";
 import { getJwtAccessSecret } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
+import { UserAuthCacheService } from "../auth/user-auth-cache.service";
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -17,6 +18,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwtService: JwtService,
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
+    private readonly userAuthCache: UserAuthCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -64,6 +66,21 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   private async resolveCurrentUser(userId: string): Promise<AuthenticatedUser> {
+    /*
+     * Kesh (PHASE 6 H8). Ilgari bu yerda HAR so'rovda to'rt jadvalli join
+     * bajarilardi, holbuki token rollarni va ruxsatlarni allaqachon olib
+     * yuradi.
+     *
+     * Token'ning o'ziga ishonmaymiz: u 15 daqiqa yashaydi va bekor qilib
+     * bo'lmaydi. 30 soniyalik kesh esa bekor qilishni deyarli darhol
+     * qoldiradi, chunki xodim o'zgarganda u ANIQ tozalanadi.
+     */
+    const cached = await this.userAuthCache.read(userId);
+
+    if (cached) {
+      return cached;
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -108,7 +125,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("User is not active");
     }
 
-    return {
+    const resolved: AuthenticatedUser = {
       id: user.id,
       ...(user.email ? { email: user.email } : {}),
       ...(user.phone ? { phone: user.phone } : {}),
@@ -120,5 +137,11 @@ export class JwtAuthGuard implements CanActivate {
         userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
       ),
     };
+
+    // Faol bo'lmagan foydalanuvchi yuqorida rad etilgan, ya'ni bu yerga
+    // faqat haqiqiy profil yetib keladi.
+    await this.userAuthCache.write(resolved);
+
+    return resolved;
   }
 }
