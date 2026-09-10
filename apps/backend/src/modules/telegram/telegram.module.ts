@@ -8,6 +8,7 @@ import { TelegramController } from "./telegram.controller";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
 import { TelegramCartService } from "./telegram-cart.service";
+import { TelegramCheckoutService } from "./telegram-checkout.service";
 import { TelegramCheckoutSessionService } from "./telegram-checkout-session.service";
 import { TelegramCustomerScreenService } from "./telegram-customer-screen.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
@@ -22,6 +23,7 @@ import { TelegramOrderNotificationService } from "./telegram-order-notification.
     TelegramCustomerScreenService,
     TelegramCheckoutSessionService,
     TelegramCartService,
+    TelegramCheckoutService,
     TelegramCustomerOrderingService,
   ],
   exports: [TelegramOrderNotificationService, TelegramCustomerAuthService],

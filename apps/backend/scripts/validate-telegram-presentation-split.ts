@@ -100,9 +100,67 @@ for (const rows of ["lavashTelegramRows", "burgerTelegramRows"]) {
  */
 const serviceLines = service.split("\n").length;
 assert.ok(
-  serviceLines < 1900,
-  `Servis ${serviceLines} qatorga o'sdi (chegara 1900). Keyingi bo'lakni ajrating.`,
+  serviceLines < 1250,
+  `Servis ${serviceLines} qatorga o'sdi (chegara 1250). Keyingi bo'lakni ajrating.`,
 );
+
+/*
+ * QATLAM TARTIBI. Har qatlam faqat PASTGA qarashi kerak:
+ *
+ *   buyurtma -> checkout -> (sessiya, savat, ekran)
+ *   savat -> ekran
+ *   ekran -> hech kim
+ *
+ * Halqa bog'liqlik Nest'da `forwardRef` talab qiladi va u ishga tushish
+ * tartibiga bog'liq nozik nosozliklar keltiradi — aynan shu sabab
+ * qatlamlar shu tartibda ajratilgan edi.
+ */
+const screen = read(
+  "apps/backend/src/modules/telegram/telegram-customer-screen.service.ts",
+);
+const checkout = read(
+  "apps/backend/src/modules/telegram/telegram-checkout.service.ts",
+);
+const cart = read("apps/backend/src/modules/telegram/telegram-cart.service.ts");
+
+assert.doesNotMatch(
+  screen,
+  /from "\.\/telegram-(cart|checkout|customer-ordering)/,
+  "Ekran qatlami yuqoriga bog'landi — halqa yuzaga keladi.",
+);
+assert.doesNotMatch(
+  cart,
+  /from "\.\/telegram-(checkout|customer-ordering)/,
+  "Savat qatlami yuqoriga bog'landi — halqa yuzaga keladi.",
+);
+assert.doesNotMatch(
+  checkout,
+  /from "\.\/telegram-customer-ordering/,
+  "Checkout buyurtma servisiga bog'landi — halqa yuzaga keladi.",
+);
+
+/*
+ * Checkout oqimi buyurtma servisiga QAYTIB kelmasin: bu metodlar bitta
+ * ketma-ketlik va bo'linib ketsa, sessiya holati ikki joyda
+ * boshqarilardi.
+ */
+for (const name of [
+  "startCheckout",
+  "selectOrderType",
+  "acceptDeliveryAddress",
+  "sendCheckoutSummary",
+  "confirmCartOrder",
+]) {
+  const declaration = new RegExp(`^  (private )?(async )?${name}\\(`, "m");
+  assert.ok(
+    declaration.test(checkout),
+    `"${name}" checkout servisida yo'q.`,
+  );
+  assert.ok(
+    !declaration.test(service),
+    `"${name}" buyurtma servisiga qaytib kelgan.`,
+  );
+}
 
 console.log(
   `Telegram taqdimot ajratmasi validatsiyasi o'tdi (servis ${serviceLines} qator)`,

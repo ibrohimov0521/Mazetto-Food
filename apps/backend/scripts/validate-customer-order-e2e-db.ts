@@ -26,6 +26,7 @@ import { createDeadLetterStub } from "./dead-letter-stub";
 import { TelegramCustomerScreenService } from "../src/modules/telegram/telegram-customer-screen.service";
 import { TelegramCheckoutSessionService } from "../src/modules/telegram/telegram-checkout-session.service";
 import { TelegramCartService } from "../src/modules/telegram/telegram-cart.service";
+import { TelegramCheckoutService } from "../src/modules/telegram/telegram-checkout.service";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
@@ -235,6 +236,14 @@ function createServices(prisma: PrismaService) {
     new TelegramCustomerScreenService(),
     new TelegramCheckoutSessionService(prisma as never),
     new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+    new TelegramCheckoutService(
+      prisma as never,
+      orderEngine as never,
+      telegramNotifications,
+      new TelegramCustomerScreenService(),
+      new TelegramCheckoutSessionService(prisma as never),
+      new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+    ),
   );
   const telegramAuth = new TelegramCustomerAuthService(
     prisma,

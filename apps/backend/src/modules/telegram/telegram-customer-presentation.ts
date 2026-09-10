@@ -16,6 +16,16 @@ import { CustomerOrderType, Prisma } from "@prisma/client";
  * ajratishning ma'nosi qolmaydi.
  */
 
+/*
+ * Telegram hisobiga ULANGAN mijoz. Bot faqat ulangan mijoz bilan
+ * ishlaydi, shuning uchun bu tip barcha oqimlarda uchraydi.
+ */
+export type LinkedCustomer = {
+  id: string;
+  name: string;
+  phone: string;
+  bonusBalance: Prisma.Decimal;
+};
 export type CartModifier = {
   modifierId: string;
   quantity: number;

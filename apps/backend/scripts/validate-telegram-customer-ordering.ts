@@ -5,6 +5,7 @@ import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegra
 import { TelegramCustomerScreenService } from "../src/modules/telegram/telegram-customer-screen.service";
 import { TelegramCheckoutSessionService } from "../src/modules/telegram/telegram-checkout-session.service";
 import { TelegramCartService } from "../src/modules/telegram/telegram-cart.service";
+import { TelegramCheckoutService } from "../src/modules/telegram/telegram-checkout.service";
 
 type SentTelegramPayload = {
   method?: string;
@@ -1166,6 +1167,14 @@ function createService(prisma: InMemoryPrisma) {
     new TelegramCustomerScreenService(),
     new TelegramCheckoutSessionService(prisma as never),
     new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+    new TelegramCheckoutService(
+      prisma as never,
+      orderEngine as never,
+      staffNotifications as never,
+      new TelegramCustomerScreenService(),
+      new TelegramCheckoutSessionService(prisma as never),
+      new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+    ),
   );
   const callbackBase = {
     id: "callback_1",
