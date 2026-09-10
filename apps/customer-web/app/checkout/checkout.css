@@ -597,6 +597,30 @@
   color: var(--mf-muted);
   margin-top: 4px;
 }
+/*
+ * Hali ishga tushmagan to'lov usuli. YASHIRILMAYDI — so'nadi va "Tez kunda"
+ * belgisi qo'yiladi, ya'ni mijoz keyin nima bo'lishini biladi.
+ *
+ * `cursor: default` — qator bosiladigandek ko'rinmasin.
+ */
+.mf-checkout-payment.is-soon {
+  opacity: 0.6;
+  cursor: default;
+  background: #f2f4f0;
+  border-style: dashed;
+}
+.mf-payment-soon {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--mf-muted);
+  border: 1px solid #a8c9b7;
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
 .mf-checkout-summary {
   position: sticky;
   top: calc(var(--mf-header-height) + 22px);
