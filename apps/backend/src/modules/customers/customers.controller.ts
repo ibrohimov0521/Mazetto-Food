@@ -32,6 +32,7 @@ import {
   CustomerRequestCodeDto,
   CustomerVerifyCodeDto,
 } from "./dto/customer.dto";
+import { CustomerAuthService } from "./customer-auth.service";
 import { CustomersService } from "./customers.service";
 import { CustomerAddressesService } from "./customer-addresses.service";
 import { SaveCustomerAddressDto } from "./dto/delivery-location.dto";
@@ -40,6 +41,7 @@ import { SaveCustomerAddressDto } from "./dto/delivery-location.dto";
 export class CustomerPublicController {
   constructor(
     private readonly customersService: CustomersService,
+    private readonly customerAuth: CustomerAuthService,
     private readonly addressesService: CustomerAddressesService,
   ) {}
 
@@ -71,25 +73,25 @@ export class CustomerPublicController {
   @Public()
   @Post("auth/request-code")
   requestCode(@Body() dto: CustomerRequestCodeDto) {
-    return this.customersService.requestCode(dto);
+    return this.customerAuth.requestCode(dto);
   }
 
   @Public()
   @Post("auth/verify-code")
   verifyCode(@Body() dto: CustomerVerifyCodeDto) {
-    return this.customersService.verifyCode(dto);
+    return this.customerAuth.verifyCode(dto);
   }
 
   @Public()
   @Post("auth/refresh")
   refresh(@Body() dto: CustomerRefreshDto) {
-    return this.customersService.refresh(dto);
+    return this.customerAuth.refresh(dto);
   }
 
   @Public()
   @Post("auth/logout")
   logout(@Body() dto: CustomerLogoutDto) {
-    return this.customersService.logout(dto);
+    return this.customerAuth.logout(dto);
   }
 
   @CustomerAuth()

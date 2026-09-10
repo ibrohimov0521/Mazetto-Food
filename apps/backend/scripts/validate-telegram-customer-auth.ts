@@ -2,7 +2,7 @@ import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as assert from "node:assert/strict";
 import * as bcrypt from "bcryptjs";
-import { CustomersService } from "../src/modules/customers/customers.service";
+import { CustomerAuthService } from "../src/modules/customers/customer-auth.service";
 import { TelegramController } from "../src/modules/telegram/telegram.controller";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
@@ -347,14 +347,15 @@ function createServices(
     telegramCustomerOrderingService as never,
     createSettingsStub(),
   );
-  const customersService = new CustomersService(
+  /*
+   * Auth `CustomerAuthService` ga ko'chdi (6.6). Konstruktor endi
+   * to'rtta bog'liqlik oladi: baza, JWT, Telegram yetkazish va
+   * sozlamalar.
+   */
+  const customersService = new CustomerAuthService(
     prisma as never,
-    {} as never,
-    {} as never,
     new JwtService(),
-    {} as never,
     telegramCustomerAuthService,
-    {} as never,
     createSettingsStub(),
   );
 

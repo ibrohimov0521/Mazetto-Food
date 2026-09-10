@@ -73,7 +73,7 @@ for (const [route, why] of [
 
 // --- Biriktirishda qulf ---
 const assignBody =
-  service.match(/async assignCourier\([\s\S]*?\n {2}private /)?.[0] ?? "";
+  service.match(/async assignCourier\([\s\S]*?\n {2}\}/)?.[0] ?? "";
 assert.ok(assignBody, "assignCourier topilmadi.");
 /*
  * Kuryerning o'zi shu lahzada buyurtmani olayotgan bo'lishi mumkin
@@ -142,7 +142,7 @@ assert.match(
 );
 assert.match(
   service,
-  /withDeliveryDistance\(this\.withDerivedCustomerOrderStatus\(customerOrder\)\)/,
+  /withDeliveryDistance\(withDerivedCustomerOrderStatus\(customerOrder\)\)/,
   "Kuryer ro'yxatlariga masofa qo'shilmayapti.",
 );
 /*

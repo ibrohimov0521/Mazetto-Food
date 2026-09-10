@@ -5,7 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import * as assert from "node:assert/strict";
 import * as bcrypt from "bcryptjs";
 import { Pool } from "pg";
-import { CustomersService } from "../src/modules/customers/customers.service";
+import { CustomerAuthService } from "../src/modules/customers/customer-auth.service";
 import { TelegramController } from "../src/modules/telegram/telegram.controller";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
@@ -107,14 +107,11 @@ function createServices(prisma: PrismaClient) {
     telegramCustomerOrderingService as never,
     createSettingsStub(),
   );
-  const customersService = new CustomersService(
+  // Auth `CustomerAuthService` ga ko'chdi (6.6).
+  const customersService = new CustomerAuthService(
     prisma as never,
-    {} as never,
-    {} as never,
     new JwtService(),
-    {} as never,
     telegramCustomerAuthService,
-    {} as never,
     createSettingsStub(),
   );
 
@@ -122,7 +119,7 @@ function createServices(prisma: PrismaClient) {
 }
 
 async function testUnlinkedChallenge(
-  customersService: CustomersService,
+  customersService: CustomerAuthService,
 ): Promise<void> {
   const result = await customersService.requestCode({ phone: "998990007001" });
   assert.equal(result.challenge.phone, "+998990007001");
@@ -164,7 +161,7 @@ async function testSelfContactLink(
 
 async function testEquivalentPhoneFormatting(
   telegramCustomerAuthService: TelegramCustomerAuthService,
-  customersService: CustomersService,
+  customersService: CustomerAuthService,
   prisma: PrismaClient,
 ): Promise<void> {
   sentTelegramPayloads.length = 0;
@@ -296,7 +293,7 @@ async function testTelegramUniqueness(
 }
 
 async function testLinkedRequestResendAndVerify(
-  customersService: CustomersService,
+  customersService: CustomerAuthService,
   prisma: PrismaClient,
 ): Promise<void> {
   sentTelegramPayloads.length = 0;
@@ -334,7 +331,7 @@ async function testLinkedRequestResendAndVerify(
 }
 
 async function testExpiredAndAttemptLimit(
-  customersService: CustomersService,
+  customersService: CustomerAuthService,
   prisma: PrismaClient,
 ): Promise<void> {
   await prisma.customerVerificationChallenge.create({
@@ -371,7 +368,7 @@ async function testExpiredAndAttemptLimit(
 }
 
 async function testRequestCodeRateLimit(
-  customersService: CustomersService,
+  customersService: CustomerAuthService,
 ): Promise<void> {
   await customersService.requestCode({ phone: "+998990007006" });
   await customersService.requestCode({ phone: "+998990007006" });

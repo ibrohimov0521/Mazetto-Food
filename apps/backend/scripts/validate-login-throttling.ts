@@ -11,7 +11,11 @@ const loginThrottle = readSource(
   "apps/backend/src/modules/auth/login-throttle.service.ts",
 );
 const clientAddress = readSource("apps/backend/src/common/http/client-address.ts");
-const customerService = readSource("apps/backend/src/modules/customers/customers.service.ts");
+/*
+ * Mijoz auth kodi `customer-auth.service.ts` ga ko'chdi (6.6) — cheklov
+ * qiymatlari sozlama reestridan o'qilishi o'sha yerda tekshiriladi.
+ */
+const customerService = readSource("apps/backend/src/modules/customers/customer-auth.service.ts");
 const telegramCustomerAuth = readSource("apps/backend/src/modules/telegram/telegram-customer-auth.service.ts");
 const settingRules = readSource(
   "apps/backend/src/modules/settings/setting-rules.ts",

@@ -27,7 +27,7 @@ test("courier active order search keeps courier ownership scope", () => {
   assert.match(method, /const orderFilters: Prisma\.OrderWhereInput\[\]/);
   assert.match(method, /servedById: null/);
   assert.match(method, /servedById: employeeId/);
-  assert.match(method, /orderFilters\.push\(this\.buildOrderSearchWhere\(search\)\)/);
+  assert.match(method, /orderFilters\.push\(buildOrderSearchWhere\(search\)\)/);
   assert.match(method, /AND: orderFilters/);
   assert.doesNotMatch(
     method, /OR: \[\{ servedById: null \}, \{ servedById: employeeId \}\],[\s\S]*\.\.\.\(search \? \{ OR:/,
