@@ -7,6 +7,10 @@ import { PrismaModule } from "../../prisma/prisma.module";
 import { TelegramController } from "./telegram.controller";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
+import { TelegramCartService } from "./telegram-cart.service";
+import { TelegramCheckoutService } from "./telegram-checkout.service";
+import { TelegramCheckoutSessionService } from "./telegram-checkout-session.service";
+import { TelegramCustomerScreenService } from "./telegram-customer-screen.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 
 @Module({
@@ -16,6 +20,10 @@ import { TelegramOrderNotificationService } from "./telegram-order-notification.
     CustomerOrderEngineService,
     TelegramOrderNotificationService,
     TelegramCustomerAuthService,
+    TelegramCustomerScreenService,
+    TelegramCheckoutSessionService,
+    TelegramCartService,
+    TelegramCheckoutService,
     TelegramCustomerOrderingService,
   ],
   exports: [TelegramOrderNotificationService, TelegramCustomerAuthService],

@@ -48,6 +48,7 @@ export const routeAccessRules: RouteAccessRule[] = [
   { pattern: "/admin/orders/:id", roles: [SUPER, MANAGER], permission: "ORDER_VIEW" },
   { pattern: "/admin/orders", roles: [SUPER, MANAGER], permission: "ORDER_VIEW" },
   { pattern: "/admin/online-orders", roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT], permission: "ONLINE_ORDER_VIEW" },
+  { pattern: "/admin/couriers", roles: [SUPER, ADMIN, MANAGER], permission: "COURIER_MANAGE" },
   { pattern: "/admin/tables", roles: [SUPER, MANAGER], permission: "TABLE_VIEW" },
   { pattern: "/admin/kitchen-monitor", roles: [SUPER, MANAGER], permission: "KITCHEN_VIEW" },
 

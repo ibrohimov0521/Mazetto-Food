@@ -1,5 +1,13 @@
 import { Type } from "class-transformer";
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  ValidateIf,
+} from "class-validator";
 
 /*
  * `GET /customers` va `GET /online-orders` uchun sahifalash.
@@ -50,6 +58,20 @@ export enum CourierOrderStatus {
 export class UpdateCourierOrderStatusDto {
   @IsEnum(CourierOrderStatus)
   status!: CourierOrderStatus;
+}
+
+export class AssignCourierDto {
+  /*
+   * `null` — biriktirishni BEKOR QILISH, ya'ni buyurtma yana erkin bo'ladi
+   * va uni istalgan kuryer olishi mumkin. Bu asosiy holat: kuryerning
+   * telefoni o'chdi yoki u ishdan chiqdi.
+   *
+   * `ValidateIf` ataylab: `IsOptional` `null` ni ham tashlab yuborardi va
+   * "bekor qilish" ni "hech narsa yubormaslik" dan ajratib bo'lmasdi.
+   */
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  employeeId!: string | null;
 }
 
 /*

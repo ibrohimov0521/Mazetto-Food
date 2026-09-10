@@ -47,6 +47,15 @@ export const PERMISSIONS = {
   ONLINE_ORDER_VIEW: "ONLINE_ORDER_VIEW",
   COURIER_DELIVERY_VIEW: "COURIER_DELIVERY_VIEW",
   COURIER_DELIVERY_UPDATE: "COURIER_DELIVERY_UPDATE",
+  /*
+   * Kuryerlar ustidan nazorat: kim nima olib ketayotganini ko'rish va
+   * buyurtmani boshqa kuryerga o'tkazish.
+   *
+   * KURYERGA BERILMAYDI. Kuryer o'z buyurtmasini oladi, lekin boshqa
+   * kuryerning buyurtmasini o'ziga tortib ololmasligi kerak — aks holda
+   * "kim olib ketyapti" degan javob ishonchsiz bo'lardi.
+   */
+  COURIER_MANAGE: "COURIER_MANAGE",
   REPORT_SALES_VIEW: "REPORT_SALES_VIEW",
   REPORT_PRODUCTS_VIEW: "REPORT_PRODUCTS_VIEW",
   REPORT_EMPLOYEES_VIEW: "REPORT_EMPLOYEES_VIEW",
@@ -55,6 +64,13 @@ export const PERMISSIONS = {
   AUDIT_VIEW: "AUDIT_VIEW",
   // Biznes sozlamalari — kill switch va cheklov qiymatlari (7-bosqich Q1).
   // Faqat SUPER_ADMIN: bular filial darajasidagi qaror emas.
+  /*
+   * Yuborilmagan bildirishnomalarni ko'rish va qayta yuborish.
+   *
+   * Faqat egasi darajasida: qayta yuborish TASHQI xabar jo'natadi
+   * (Telegram guruhiga), ya'ni uni tasodifan bosish mumkin bo'lmasin.
+   */
+  NOTIFICATION_MANAGE: "NOTIFICATION_MANAGE",
   SETTING_MANAGE: "SETTING_MANAGE",
 } as const;
 

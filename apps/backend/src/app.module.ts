@@ -38,6 +38,7 @@ import { SuppliersModule } from "./modules/suppliers/suppliers.module";
 import { TablesModule } from "./modules/tables/tables.module";
 import { TelegramModule } from "./modules/telegram/telegram.module";
 import { GeocodingModule } from "./modules/geocoding/geocoding.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { UploadsModule } from "./modules/uploads/uploads.module";
 import { UsersModule } from "./modules/users/users.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -104,6 +105,7 @@ import { RedisService } from "./redis/redis.service";
     MaintenanceModule,
     UploadsModule,
     GeocodingModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [

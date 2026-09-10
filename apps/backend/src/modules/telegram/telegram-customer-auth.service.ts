@@ -7,6 +7,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
 import { normalizeCustomerPhone } from "../customers/customer-phone";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
+import { customerCallbackPrefix } from "./telegram-customer-presentation";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
@@ -64,7 +65,6 @@ type VerificationDelivery =
  * Ilgari bu uch qiymat shu faylda VA `customers.service.ts` da takrorlangan
  * edi. Endi ikkala yo'l ham bitta manbadan o'qiydi.
  */
-const customerCallbackPrefix = "cust";
 
 @Injectable()
 export class TelegramCustomerAuthService {

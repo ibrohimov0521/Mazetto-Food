@@ -14,6 +14,7 @@ import {
   ListCustomerOrdersDto,
   ListCustomersDto,
   ListOnlineOrdersDto,
+  AssignCourierDto,
   UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
@@ -31,6 +32,8 @@ import {
   CustomerRequestCodeDto,
   CustomerVerifyCodeDto,
 } from "./dto/customer.dto";
+import { CustomerAuthService } from "./customer-auth.service";
+import { CustomerCourierService } from "./customer-courier.service";
 import { CustomersService } from "./customers.service";
 import { CustomerAddressesService } from "./customer-addresses.service";
 import { SaveCustomerAddressDto } from "./dto/delivery-location.dto";
@@ -39,6 +42,7 @@ import { SaveCustomerAddressDto } from "./dto/delivery-location.dto";
 export class CustomerPublicController {
   constructor(
     private readonly customersService: CustomersService,
+    private readonly customerAuth: CustomerAuthService,
     private readonly addressesService: CustomerAddressesService,
   ) {}
 
@@ -70,25 +74,25 @@ export class CustomerPublicController {
   @Public()
   @Post("auth/request-code")
   requestCode(@Body() dto: CustomerRequestCodeDto) {
-    return this.customersService.requestCode(dto);
+    return this.customerAuth.requestCode(dto);
   }
 
   @Public()
   @Post("auth/verify-code")
   verifyCode(@Body() dto: CustomerVerifyCodeDto) {
-    return this.customersService.verifyCode(dto);
+    return this.customerAuth.verifyCode(dto);
   }
 
   @Public()
   @Post("auth/refresh")
   refresh(@Body() dto: CustomerRefreshDto) {
-    return this.customersService.refresh(dto);
+    return this.customerAuth.refresh(dto);
   }
 
   @Public()
   @Post("auth/logout")
   logout(@Body() dto: CustomerLogoutDto) {
-    return this.customersService.logout(dto);
+    return this.customerAuth.logout(dto);
   }
 
   @CustomerAuth()
@@ -169,7 +173,10 @@ export class CustomerPublicController {
 
 @Controller()
 export class CustomersAdminController {
-  constructor(private readonly customersService: CustomersService) {}
+  constructor(
+    private readonly customersService: CustomersService,
+    private readonly courierService: CustomerCourierService,
+  ) {}
 
   @Get("customers")
   @Permissions(PERMISSIONS.CUSTOMER_VIEW)
@@ -201,7 +208,7 @@ export class CustomersAdminController {
     @Query() query: ListOnlineOrdersDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.customersService.listCourierDeliveryOrders(query, user);
+    return this.courierService.listCourierDeliveryOrders(query, user);
   }
 
   @Get("courier/orders/history")
@@ -210,7 +217,33 @@ export class CustomersAdminController {
     @Query() query: ListOnlineOrdersDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.customersService.listCourierDeliveryOrderHistory(query, user);
+    return this.courierService.listCourierDeliveryOrderHistory(query, user);
+  }
+
+  /*
+   * Kuryerlar nazorati (5.5). `COURIER_MANAGE` — KURYERGA BERILMAGAN:
+   * kuryer o'z buyurtmasini oladi, lekin boshqasinikini tortib ololmaydi.
+   */
+  @Get("couriers")
+  @Permissions(PERMISSIONS.COURIER_MANAGE)
+  listCouriers(@CurrentUser() user: AuthenticatedUser) {
+    return this.courierService.listCouriers(user);
+  }
+
+  @Get("couriers/deliveries")
+  @Permissions(PERMISSIONS.COURIER_MANAGE)
+  listActiveDeliveries(@CurrentUser() user: AuthenticatedUser) {
+    return this.courierService.listActiveDeliveries(user);
+  }
+
+  @Patch("courier/orders/:id/assign")
+  @Permissions(PERMISSIONS.COURIER_MANAGE)
+  assignCourier(
+    @Param("id") id: string,
+    @Body() dto: AssignCourierDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.courierService.assignCourier(id, dto.employeeId, user);
   }
 
   @Patch("courier/orders/:id/status")
@@ -220,6 +253,6 @@ export class CustomersAdminController {
     @Body() dto: UpdateCourierOrderStatusDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.customersService.updateCourierOrderStatus(id, dto, user);
+    return this.courierService.updateCourierOrderStatus(id, dto, user);
   }
 }
