@@ -14,9 +14,9 @@
 # `pnpm release:gate` aynan o'sha commit'ning `verify` natijasini so'raydi.
 # Batafsil: docs/CI_CD.md.
 #
-# CorpEats CI/CD'sidan ATAYLAB yengilroq: image build, registry, SSH deploy va
-# avtomatik rollback yo'q. Relizni hamon odam chiqaradi (backup va migratsiya
-# nazorat ostida qolishi uchun), faqat endi tekshirilmagan commit chiqmaydi.
+# Deploy alohida: deploy.yml shu check yashil tugagach, yangi migratsiyasi
+# yo'q commit'ni Dokploy'ga chiqaradi. Migratsiyali reliz odam nazoratida
+# qoladi. CorpEats'dagi image registry va avtomatik rollback ATAYLAB yo'q.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: CI

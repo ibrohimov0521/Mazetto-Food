@@ -1,0 +1,162 @@
+# ── MAZETTO FOOD — Avtomatik deploy (Dokploy) ─────────────────────────────────
+#
+# `main` dagi commit uchun CI "verify" YASHIL tugagach: `production` tegidan
+# beri o'zgargan ilovalarni Dokploy API orqali navbat bilan deploy qiladi,
+# production smoke'ni yurgizadi va `production` tegini shu commit'ga suradi.
+#
+# Deploy QILMAYDI — ogohlantirish bilan to'xtaydi, xato emas:
+#   · yangi Prisma migratsiya bor: backup va `prisma migrate deploy` odam
+#     nazoratida qoladi (docs/CI_CD.md, 5-bo'lim)
+#   · `production` tegi yo'q: nima o'zgarganini solishtiradigan nuqta yo'q
+#   · `main` bu orada oldinga ketgan: yangi commit o'z CI'sidan keyin keladi
+#
+# O'CHIQ holatda keladi. Yoqish (repo admini, bir marta) — docs/CI_CD.md, 4:
+#   secrets    DOKPLOY_URL, DOKPLOY_API_KEY
+#   variables  AUTO_DEPLOY=true, DOKPLOY_APP_BACKEND, DOKPLOY_APP_CUSTOMER_WEB,
+#              DOKPLOY_APP_POS_WEB (ixtiyoriy: DOKPLOY_APP_MEDIA,
+#              DOKPLOY_APP_TELEGRAM_BOT)
+# va Dokploy'da shu ilovalarning O'Z "Autodeploy" i o'chiriladi — aks holda
+# ular CI'ni kutmasdan har push'da deploy qiladi.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Qo'lda: `main` uchini deploy qiladi. CI yashil bo'lishi va migratsiya
+  # yo'qligi baribir shart. AUTO_DEPLOY o'chiq bo'lsa ham ishlaydi.
+  workflow_dispatch:
+
+# Deploy hech qachon yarmida bekor qilinmaydi; ketma-ket merge'larda keyingisi
+# navbatda kutadi.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy
+    # `branches` filtri workflow_run'da ishonchsiz — shart shu yerda to'liq
+    # takrorlanadi. PR run'lari ham "CI" nomi bilan tugaydi, lekin
+    # production'ga faqat `main` ga PUSH bo'lgan commit chiqadi.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.AUTO_DEPLOY == 'true' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    permissions:
+      contents: write # faqat `production` tegini surish uchun
+      checks: read # release gate `verify` natijasini o'qiydi
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          # `production` tegidan diff va `main` tarixini tekshirish uchun.
+          fetch-depth: 0
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Sozlama tekshiruvi
+        id: config
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+        run: |
+          if [ -n "$DOKPLOY_URL" ] && [ -n "$DOKPLOY_API_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::DOKPLOY_URL yoki DOKPLOY_API_KEY secret'i yo'q — deploy qilinmadi (docs/CI_CD.md, 4-bo'lim)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # `pnpm release:gate` ning O'ZI: commit `main` da bo'lmasa yoki `verify`
+      # yashil bo'lmasa step yiqiladi. `production` tegidan beri o'zgargan
+      # ilovalar va yangi migratsiyalar keyingi qadamlarga chiqariladi.
+      - name: Release gate
+        id: gate
+        if: steps.config.outputs.ready == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --quiet --force --tags origin
+          node scripts/release-gate.mjs "$SHA" --github-output
+
+      - name: Deploy rejasi
+        id: plan
+        if: steps.gate.outcome == 'success'
+        env:
+          SINCE: ${{ steps.gate.outputs.since }}
+          APPS: ${{ steps.gate.outputs.apps }}
+          MIGRATIONS: ${{ steps.gate.outputs.migrations }}
+        run: |
+          skip() {
+            echo "::warning::$1"
+            printf '### Deploy qilinmadi\n\n%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          [ -n "$SINCE" ] || skip "production tegi yo'q. Production'dagi commit'ni belgilang: git tag production <sha> && git push origin production"
+
+          head="$(git ls-remote origin refs/heads/main | cut -f1)"
+          [ "$head" = "$SHA" ] || skip "main oldinga ketgan (${head:0:7}). O'sha commit o'z CI'sidan keyin deploy qilinadi."
+
+          [ -z "$MIGRATIONS" ] || skip "Yangi migratsiya: $MIGRATIONS. Reliz qo'lda — backup va prisma migrate deploy bilan, oxirida production tegini suring (docs/CI_CD.md, 5-bo'lim)."
+
+          echo "go=true" >> "$GITHUB_OUTPUT"
+          echo "Deploy qilinadi: ${APPS:-hech biri}"
+
+      - name: Dokploy deploy
+        id: deploy
+        if: steps.plan.outputs.go == 'true'
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_APP_BACKEND: ${{ vars.DOKPLOY_APP_BACKEND }}
+          DOKPLOY_APP_CUSTOMER_WEB: ${{ vars.DOKPLOY_APP_CUSTOMER_WEB }}
+          DOKPLOY_APP_POS_WEB: ${{ vars.DOKPLOY_APP_POS_WEB }}
+          DOKPLOY_APP_TELEGRAM_BOT: ${{ vars.DOKPLOY_APP_TELEGRAM_BOT }}
+          DOKPLOY_APP_MEDIA: ${{ vars.DOKPLOY_APP_MEDIA }}
+          APPS: ${{ steps.gate.outputs.apps }}
+        # $APPS ataylab qo'shtirnoqsiz: bo'sh joy bilan ajratilgan ro'yxat.
+        run: node scripts/dokploy-deploy.mjs --sha "$SHA" $APPS
+
+      # Dokploy "done" deganda yangi konteyner hali ko'tarilayotgan bo'lishi
+      # mumkin, shuning uchun bir necha urinish. Avtomatik rollback YO'Q:
+      # yiqilsa job qizil bo'ladi va Dokploy'da oldingi deploy'ga qo'lda
+      # qaytiladi.
+      - name: Production smoke
+        id: smoke
+        if: steps.deploy.outcome == 'success' && steps.deploy.outputs.deployed != '0'
+        run: |
+          for attempt in 1 2 3 4; do
+            node scripts/smoke-production.mjs && exit 0
+            [ "$attempt" = 4 ] || { echo "— $attempt-urinish o'tmadi, 30 soniya kutiladi"; sleep 30; }
+          done
+          echo "::error::Deploy'dan keyin production smoke o'tmadi"
+          exit 1
+
+      # Faqat backend (agar o'zgargan bo'lsa) deploy bo'lib, smoke o'tganda.
+      # Aks holda teg joyida qoladi va keyingi run o'zgarishlarni qaytadan
+      # ko'radi — migratsiya ko'rinmay qolmaydi.
+      - name: production tegini surish
+        if: steps.deploy.outputs.complete == 'true' && steps.smoke.outcome != 'failure'
+        run: |
+          git tag -f production "$SHA"
+          git push --quiet --force origin refs/tags/production
+          echo "production → ${SHA:0:7}"
+          printf '\n`production` tegi → `%s`\n' "${SHA:0:7}" >> "$GITHUB_STEP_SUMMARY"

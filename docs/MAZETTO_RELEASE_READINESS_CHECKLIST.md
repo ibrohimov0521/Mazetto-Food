@@ -78,6 +78,10 @@ This checklist is for the next controlled production release. It is documentatio
     - Verify branch location button.
     - Avoid creating duplicate production orders unless a controlled order proof is explicitly approved.
 
+12. Mark the release
+    - Move the `production` tag to the released commit: `git tag -f production <sha> && git push -f origin production`.
+    - Automatic deploys and `pnpm release:gate` (without `--since`) compare against this tag. If it is left behind, the next automatic deploy sees already-applied migrations as new and stops.
+
 ## Media Release Command Shape
 
 Dry run:

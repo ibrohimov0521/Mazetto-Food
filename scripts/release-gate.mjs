@@ -1,27 +1,33 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 
 /*
  * Reliz darvozasi: production'ga faqat CI'dan YASHIL o'tgan `main` commit'i
  * chiqadi.
  *
- * Branch protection qizil PR'ni merge qilishga yo'l qo'ymaydi, lekin image
- * server'da hamon qo'lda yig'iladi — u yerda "qaysi commit'ni chiqaryapman va
- * u tekshirilganmi?" degan savolga hech narsa javob bermasdi. Image yig'ishdan
- * OLDIN shu skript yurgiziladi:
+ * Branch protection qizil PR'ni merge qilishga yo'l qo'ymaydi, lekin
+ * production'ga chiqarishda "qaysi commit'ni chiqaryapman va u
+ * tekshirilganmi?" degan savolga hech narsa javob bermasdi. Qo'lda relizda
+ * image yig'ishdan OLDIN yurgiziladi; avtomatik deploy (deploy.yml) ham aynan
+ * shu skriptni chaqiradi.
  *
  *   pnpm release:gate                        # joriy HEAD
  *   pnpm release:gate <sha>                  # aniq commit
- *   pnpm release:gate <sha> --since <prod>   # + production'dagi commit'dan
- *                                            #   beri nima o'zgargani
+ *   pnpm release:gate <sha> --since <sha2>   # boshqa solishtirish nuqtasi
  *
- * `--since` ga hozir production'da turgan commit beriladi — image tegidagi
- * qisqa SHA, masalan `mazetto-food-backend-pdslpm:0a459a9` → `0a459a9`.
+ * Solishtirish nuqtasi `--since`, berilmasa `production` tegi — production'da
+ * turgan oxirgi commit. Undan beri qaysi ilovalar o'zgargani va yangi
+ * migratsiyalar chiqariladi.
+ *
+ * `--github-output` natijani GitHub Actions step output'lariga ham yozadi:
+ * sha, since, apps (bo'sh joy bilan), migrations (vergul bilan).
  *
  * Chiqish kodi: 0 — relizga ruxsat, 1 — yo'q.
  */
 
 const CHECK_NAME = "verify";
+const PRODUCTION_TAG = "production";
 
 /*
  * Rad etish `process.exit()` bilan EMAS, istisno bilan qilinadi. Windows'da
@@ -81,7 +87,7 @@ async function latestVerifyRun(repo, sha) {
   return runs.sort((a, b) => b.id - a.id)[0];
 }
 
-function describeChanges(base, sha) {
+function describeChanges(base, sha, label) {
   const changed = git("diff", "--name-only", base, sha)
     .split("\n")
     .filter(Boolean);
@@ -122,7 +128,7 @@ function describeChanges(base, sha) {
   ];
 
   console.log(
-    `\n${base.slice(0, 7)}..${sha.slice(0, 7)}: ${changed.length} fayl o'zgargan`,
+    `\n${label} (${base.slice(0, 7)})..${sha.slice(0, 7)}: ${changed.length} fayl o'zgargan`,
   );
   console.log(
     `  Qayta deploy: ${apps.length > 0 ? apps.join(", ") : "hech biri"}`,
@@ -140,20 +146,23 @@ function describeChanges(base, sha) {
         "       (docs/MAZETTO_RELEASE_READINESS_CHECKLIST.md).",
     );
   }
+
+  return { apps, migrations };
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const sinceAt = args.indexOf("--since");
-  const since = sinceAt >= 0 ? args[sinceAt + 1] : undefined;
+  const sinceArg = sinceAt >= 0 ? args[sinceAt + 1] : undefined;
+  const githubOutput = args.includes("--github-output");
   const target =
     args.find(
       (arg, index) =>
         !arg.startsWith("--") && (sinceAt < 0 || index !== sinceAt + 1),
     ) ?? "HEAD";
 
-  if (sinceAt >= 0 && !since) {
-    fail("--since dan keyin production'dagi commit berilishi kerak");
+  if (sinceAt >= 0 && (!sinceArg || sinceArg.startsWith("--"))) {
+    fail("--since dan keyin solishtiriladigan commit berilishi kerak");
   }
 
   const sha = resolveCommit(target);
@@ -213,14 +222,40 @@ async function main() {
 
   console.log(`  OK   CI yashil: ${run.html_url}`);
 
-  if (since) {
-    const base = resolveCommit(since);
+  let base;
+
+  if (sinceArg) {
+    base = resolveCommit(sinceArg);
 
     if (!base) {
-      fail(`--since commit topilmadi: ${since}`);
+      fail(`--since commit topilmadi: ${sinceArg}`);
     }
+  } else {
+    base = resolveCommit(`refs/tags/${PRODUCTION_TAG}`);
 
-    describeChanges(base, sha);
+    if (!base) {
+      console.log(
+        `\n  !    \`${PRODUCTION_TAG}\` tegi yo'q — nima o'zgargani solishtirilmadi`,
+      );
+    }
+  }
+
+  const changes = base
+    ? describeChanges(base, sha, sinceArg ?? PRODUCTION_TAG)
+    : { apps: [], migrations: [] };
+
+  if (githubOutput && process.env.GITHUB_OUTPUT) {
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      [
+        `sha=${sha}`,
+        `since=${base ?? ""}`,
+        `apps=${changes.apps.join(" ")}`,
+        `migrations=${changes.migrations.join(",")}`,
+      ]
+        .map((line) => `${line}\n`)
+        .join(""),
+    );
   }
 }
 
