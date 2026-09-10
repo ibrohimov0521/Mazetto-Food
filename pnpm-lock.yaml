@@ -44,9 +44,6 @@ importers:
 
   apps/backend:
     dependencies:
-      '@mazetto/types':
-        specifier: workspace:*
-        version: link:../../packages/types
       '@nestjs/common':
         specifier: 11.1.9
         version: 11.1.9(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
@@ -123,12 +120,6 @@ importers:
 
   apps/customer-web:
     dependencies:
-      '@mazetto/api-client':
-        specifier: workspace:*
-        version: link:../../packages/api-client
-      '@mazetto/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
       framer-motion:
         specifier: ^13.1.1
         version: 13.1.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -166,9 +157,6 @@ importers:
 
   apps/pos-web:
     dependencies:
-      '@mazetto/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
       lucide-react:
         specifier: 1.41.0
         version: 1.41.0(react@19.2.8)
@@ -209,44 +197,6 @@ importers:
       tsx:
         specifier: 4.21.0
         version: 4.21.0
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  packages/api-client:
-    dependencies:
-      '@mazetto/types':
-        specifier: workspace:*
-        version: link:../types
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  packages/config:
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  packages/types:
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  packages/ui:
-    dependencies:
-      react:
-        specifier: 19.2.8
-        version: 19.2.8
-      react-dom:
-        specifier: 19.2.8
-        version: 19.2.8(react@19.2.8)
-    devDependencies:
-      '@types/react':
-        specifier: 19.2.7
-        version: 19.2.7
       typescript:
         specifier: 5.9.3
         version: 5.9.3

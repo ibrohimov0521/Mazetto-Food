@@ -17,7 +17,6 @@ const nextConfig: NextConfig = {
   },
   output: "standalone",
   outputFileTracingRoot: path.join(configDir, "../.."),
-  transpilePackages: ["@mazetto/api-client", "@mazetto/ui"],
   async headers() {
     return [
       {

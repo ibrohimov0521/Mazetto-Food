@@ -9,7 +9,6 @@ const apiOrigin = (process.env.API_INTERNAL_URL || (process.env.NODE_ENV === "pr
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(configDir, "../.."),
-  transpilePackages: ["@mazetto/ui"],
   async rewrites() {
     return [
       {
