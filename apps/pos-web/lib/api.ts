@@ -3,11 +3,27 @@
 import { getApiBaseUrl, type AuthSession } from "./auth";
 import { readSession, writeSession } from "./session";
 
+/*
+ * Backend javob konverti.
+ *
+ * `message` MASSIV bo'lishi mumkin: `ValidationPipe` har buzilgan maydon
+ * uchun alohida satr beradi va `HttpExceptionFilter` ularni o'zgarishsiz
+ * uzatadi. Ilgari bu tip `string` deb yozilgan edi — TypeScript xavfsiz
+ * deb hisoblardi, `new Error(massiv)` esa xabarlarni VERGUL bilan
+ * bo'shliqsiz yopishtirib yuborardi.
+ */
 type ApiEnvelope<T> = {
   success: boolean;
   data?: T;
-  error?: { message: string };
+  error?: { message: string | string[] };
 };
+
+/** Massiv bo'lsa o'qiladigan qilib birlashtiradi. */
+function readEnvelopeMessage(
+  message: string | string[] | undefined,
+): string | undefined {
+  return Array.isArray(message) ? message.join(", ") : message;
+}
 
 /**
  * Sessiya tugaganda `apiFetch` shu xatoni tashlaydi.
@@ -51,7 +67,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const payload = await parseEnvelope<T>(response);
 
   if (!response.ok || !payload.success || payload.data === undefined) {
-    throw new Error(payload.error?.message ?? "Request failed");
+    throw new Error(
+      readEnvelopeMessage(payload.error?.message) ?? "Request failed",
+    );
   }
 
   return payload.data;

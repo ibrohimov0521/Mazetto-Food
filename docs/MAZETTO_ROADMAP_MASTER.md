@@ -191,15 +191,75 @@ Keyingi bloklar shularga tayanadi.
 
 Bular funksiya qo'shmaydi, lekin keyingi hamma ishni tezlashtiradi. Shoshilinch emas.
 
-| # | Ish | Manba |
+| # | Ish | Holat |
 |---|---|---|
-| 6.1 | react-query + `query-keys` | [Q5](./MAZETTO_PHASE_7_PLAN.md) |
-| 6.2 | `@mazetto/api-client` ni tiriltirish | [Q5.3](./MAZETTO_PHASE_7_PLAN.md) |
-| 6.3 | Umumiy UI paketi | [Q7](./MAZETTO_PHASE_7_PLAN.md) |
-| 6.4 | Bildirishnoma quvuri | [Q6](./MAZETTO_PHASE_7_PLAN.md) |
-| 6.5 | Ko'p tillilik (uz / ru) | [Q8](./MAZETTO_PHASE_7_PLAN.md) |
-| 6.6 | Yirik fayllarni bo'lish (2003 va 1216 qator) | [H12](./MAZETTO_PHASE_6_PLAN.md) |
-| 6.7 | Repo hajmi: media git'dan chiqadi | [H12c](./MAZETTO_PHASE_6_PLAN.md) — 3.6 dan keyin |
+| 6.1 | Admin ekranlarida ma'lumot yuklash | ✅ bajarildi — **react-query'siz**, quyida sabab |
+| 6.2 | Umumiy API mijozi | ✅ hal qilindi — **paketsiz**, quyida sabab |
+| 6.3 | Umumiy UI paketi | ❌ KERAK EMAS — takror yo'q |
+| 6.4 | Bildirishnoma quvuri | ✅ bajarildi (o'lik xatlar) |
+| 6.5 | Ko'p tillilik (uz / ru) | ❌ HOZIRCHA KERAK EMAS |
+| 6.6 | Yirik fayllarni bo'lish | ✅ bajarildi (3 fayl, 13 modul) |
+| 6.7 | Repo hajmi | ✅ hal qilindi — **tarix qayta yozilmadi**, quyida sabab |
+
+---
+
+### 6-to'lqindagi qarorlar va ularning dalili
+
+Reja yozilganidan keyin kod o'zgardi, shuning uchun uchta band boshqacha
+hal qilindi. Har biri o'lchovga asoslangan.
+
+**6.1 — react-query o'rniga `useApiResource`.**
+Reja react-query'ni taklif qilgan edi. O'lchov: 22 ta admin ekranidan
+HECH BIRIDA javob tartibi qo'riqchisi yo'q edi va 12 tasi filtr
+o'zgarganda qayta yuklardi — ya'ni filtrni tez almashtirganda sekinroq
+javob yutib, jadval eski ma'lumotni ko'rsatardi. react-query buni
+yechadi, lekin yangi bog'liqlik va 22 faylni qayta yozish evaziga.
+100 qatorlik hook xuddi shu poygani yechdi va 43 ta takroriy `catch`
+blokini bitta joyga yig'di. Kesh va qayta urinish admin panelida talab
+qilinmagan.
+
+**6.2 — `@mazetto/api-client` paketi o'rniga konvert qulfi.**
+Ikkala `apiFetch` ATAYLAB boshqacha: `pos-web` xodim sessiyasi bilan
+ishlaydi va 401 da tokenni yangilaydi; `customer-web` mijoz tokenini
+parametr sifatida oladi va katalogni 30 soniya keshlaydi. Ularni bitta
+paketga yig'ish har ikkalasiga keraksiz maydonlar qo'shardi.
+
+Umumiy narsa faqat konvert SHAKLI edi — va aynan o'sha yerda HAQIQIY
+XATO topildi: `pos-web` tipida `message: string` deb yozilgan, backend
+esa validatsiya xatolarini MASSIV qaytaradi. `new Error(massiv)`
+xabarlarni vergul bilan bo'shliqsiz yopishtirardi. Tuzatildi va
+`validate-api-envelope` bilan qulflandi.
+
+**6.3 — umumiy UI paketi KERAK EMAS.**
+O'lchov: `pos-web/components/admin-ui/` da 15 ta umumiy komponent bor
+(Tailwind `mz-` tokenlari). `customer-web` da umumiy komponent NOLTA —
+uning hammasi domenga bog'langan (`branch-picker`, `delivery-map`) va
+boshqa dizayn tizimida (`mf-` CSS sinflari). Uning "toast"i esa savat
+kontekstidagi metod. Ya'ni yo'q qilinadigan takror yo'q: bu ikki
+MAHSULOT — admin panel va do'kon.
+
+**6.5 — ko'p tillilik HOZIRCHA kerak emas.**
+O'lchov: `lang="uz"`, `locale: "uz_UZ"`, UI'da ruscha matn NOL.
+`localizeMenuName` aslida tarjima emas, katalog kodini o'zbekcha nomga
+o'giradi. Ikkinchi til paydo bo'lmaguncha i18n infratuzilmasi yuki
+bo'sh qoladi.
+
+**6.7 — tarix QAYTA YOZILMADI.**
+`.git` 237 MB va uning katta qismi tarixdagi dizayn manbalari (46 MB
+`.cdr`, 8.7 MB PDF). Tozalash `git filter-repo` talab qiladi: har
+commit SHA'si o'zgaradi, `main` ga force-push kerak, hamma reponi
+qaytadan klon qiladi va yo'ldagi shoxlar uziladi.
+
+O'lchov shuni ko'rsatdiki, bu og'irlik amalda deyarli hech narsaga
+turmaydi: `.dockerignore` `.git` ni chiqaradi (Docker build tarixni
+ko'chirmaydi) va `actions/checkout@v4` sukut bo'yicha sayoz klon qiladi
+(CI to'liq tarixni tortmaydi). Qoladigan narxi — dasturchining bir
+martalik to'liq kloni.
+
+Shuning uchun tarix tegilmadi, lekin O'SISH TO'XTATILDI:
+`validate-repo-weight` ro'yxatdan tashqari 512K dan og'ir yangi fayl
+qo'shilsa yiqiladi. Tarixni tozalash kerak bo'lsa, u alohida, hamma
+kelishgan holda rejalashtiriladigan ish.
 
 ---
 
