@@ -19,10 +19,10 @@ import {
   burgerTelegramRows,
   categoryButtonLabel,
   chunkButtons,
+  customerCallbackPrefix,
   cleanAddress,
   escapeHtml,
   formatMoney,
-  isMessageNotModifiedError,
   isSimpleQuickAddProduct,
   lavashTelegramRows,
   maskPhone,
@@ -30,19 +30,22 @@ import {
   readCartModifiers,
   requiredTelegramId,
   telegramProductButtonLabel,
-  type BranchForCheckout,
 } from "./telegram-customer-presentation";
+import {
+  TelegramCustomerScreenService,
+  type CustomerScreenTarget,
+  type TelegramCallbackQuery,
+} from "./telegram-customer-screen.service";
+import {
+  TelegramCheckoutSessionService,
+  type CheckoutStep,
+} from "./telegram-checkout-session.service";
+import { TelegramCartService } from "./telegram-cart.service";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
   from?: { id?: number | string; first_name?: string; last_name?: string };
   text?: string;
-};
-type TelegramCallbackQuery = {
-  id?: string;
-  data?: string;
-  message?: { chat?: { id?: number | string }; message_id?: number };
-  from?: { id?: number | string };
 };
 type LinkedCustomer = {
   id: string;
@@ -50,7 +53,6 @@ type LinkedCustomer = {
   phone: string;
   bonusBalance: Prisma.Decimal;
 };
-type CheckoutStep = "ORDER_TYPE" | "ADDRESS" | "NOTE" | "SUMMARY";
 type TelegramCartForCheckout = {
   id: string;
   updatedAt: Date;
@@ -71,27 +73,6 @@ type TelegramCheckoutSessionForKey = {
   address: string | null;
   note: string | null;
 };
-type TelegramInlineButton = {
-  text: string;
-  callback_data?: string;
-  url?: string;
-};
-type CustomerScreenTarget = {
-  chatId: string;
-  callbackQueryId?: string;
-  messageId?: number;
-};
-type CustomerScreenPayload = {
-  text: string;
-  parse_mode?: "HTML";
-  reply_markup?: {
-    inline_keyboard?: TelegramInlineButton[][];
-    keyboard?: string[][];
-    resize_keyboard?: boolean;
-  };
-};
-const customerCallbackPrefix = "cust";
-const TELEGRAM_CHECKOUT_SESSION_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class TelegramCustomerOrderingService {
@@ -101,6 +82,9 @@ export class TelegramCustomerOrderingService {
     private readonly prisma: PrismaService,
     private readonly customerOrderEngine: CustomerOrderEngineService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
+    private readonly screen: TelegramCustomerScreenService,
+    private readonly checkoutSession: TelegramCheckoutSessionService,
+    private readonly cart: TelegramCartService,
   ) {}
 
   async handleCustomerCallback(callback: TelegramCallbackQuery): Promise<boolean> {
@@ -113,51 +97,51 @@ export class TelegramCustomerOrderingService {
 
     const [, action, ...values] = data.split(":");
     const customer = await this.findLinkedCustomer(callback.from?.id);
-    const target = this.callbackTarget(callback);
+    const target = this.screen.callbackTarget(callback);
 
     if (!customer) {
-      await this.sendLinkRequired(target);
+      await this.screen.sendLinkRequired(target);
       return true;
     }
 
     if (action === "home") {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.sendMainMenu(target, customer.name, customer.id);
       return true;
     }
 
     if (action === "menu") {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.sendCategoryMenuToTarget(target, customer.id);
       return true;
     }
 
     if (action === "branches") {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.sendBranchesToTarget(target);
       return true;
     }
 
     if (action === "orders") {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.sendCustomerOrders(target, customer);
       return true;
     }
 
     if (action === "profile") {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.sendCustomerProfile(target, customer);
       return true;
     }
 
     if (action === "cat" && values[0]) {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.sendProductsForCategory(target, customer.id, values[0]);
       return true;
     }
 
     if (action === "prod" && values[0]) {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.sendProductConfigurator(target, values[0]);
       return true;
     }
@@ -178,49 +162,49 @@ export class TelegramCustomerOrderingService {
     }
 
     if (action === "mod" || action === "rm") {
-      await this.answerCallback(callback, "Bu menyu eskirgan. Qayta oching.", true);
-      await this.sendCart(target, customer);
+      await this.screen.answerCallback(callback, "Bu menyu eskirgan. Qayta oching.", true);
+      await this.cart.sendCart(target, customer);
       return true;
     }
 
     if (action === "qty" && values[0] && values[1]) {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.changeCartQuantity(target, customer, values[0], values[1]);
       return true;
     }
 
     if (action === "cart") {
-      await this.answerCallback(callback);
-      await this.sendCart(target, customer);
+      await this.screen.answerCallback(callback);
+      await this.cart.sendCart(target, customer);
       return true;
     }
 
     if (action === "checkout") {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.startCheckout(target, customer);
       return true;
     }
 
     if (action === "type" && values[0]) {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.selectOrderType(target, customer, values[0]);
       return true;
     }
 
     if (action === "note" && values[0]) {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.handleNoteChoice(target, customer, values[0]);
       return true;
     }
 
     if (action === "confirm" && values[0]) {
-      await this.answerCallback(callback);
+      await this.screen.answerCallback(callback);
       await this.confirmCartOrder(target, customer, values[0]);
       return true;
     }
 
-    await this.answerCallback(callback, "Bu menyu eskirgan. Qayta oching.", true);
-    await this.renderCustomerScreen(target, {
+    await this.screen.answerCallback(callback, "Bu menyu eskirgan. Qayta oching.", true);
+    await this.screen.renderCustomerScreen(target, {
       text: "Bu tugma eskirgan bo'lishi mumkin. Iltimos, bosh menyudan qayta tanlang.",
       reply_markup: {
         inline_keyboard: [[{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }]],
@@ -243,14 +227,14 @@ export class TelegramCustomerOrderingService {
       return false;
     }
 
-    const session = await this.getActiveCheckoutSession(customer.id, chatId);
+    const session = await this.checkoutSession.getActiveCheckoutSession(customer.id, chatId);
 
     if (!session) {
       return false;
     }
 
     if (text === "🏠 Bosh menyu") {
-      await this.clearCheckoutSession(customer.id, chatId);
+      await this.checkoutSession.clearCheckoutSession(customer.id, chatId);
       await this.sendMainMenu({ chatId }, customer.name, customer.id);
       return true;
     }
@@ -278,7 +262,7 @@ export class TelegramCustomerOrderingService {
     const customer = await this.findLinkedCustomer(message.from?.id);
 
     if (!customer) {
-      await this.sendLinkRequired({ chatId });
+      await this.screen.sendLinkRequired({ chatId });
       return;
     }
 
@@ -297,7 +281,7 @@ export class TelegramCustomerOrderingService {
 
     const cartLabel = await this.cartButtonLabel(customerId);
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: "🍽 <b>Menyu bo'limini tanlang</b>",
       parse_mode: "HTML",
       reply_markup: {
@@ -321,11 +305,11 @@ export class TelegramCustomerOrderingService {
     const customer = await this.findLinkedCustomer(message.from?.id);
 
     if (!customer) {
-      await this.sendLinkRequired({ chatId });
+      await this.screen.sendLinkRequired({ chatId });
       return;
     }
 
-    await this.sendCart({ chatId }, customer);
+    await this.cart.sendCart({ chatId }, customer);
   }
 
   async sendMainMenuFromMessage(
@@ -357,7 +341,7 @@ export class TelegramCustomerOrderingService {
       },
     });
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         "📍 <b>Filiallar</b>",
         "",
@@ -401,7 +385,7 @@ export class TelegramCustomerOrderingService {
       },
     });
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: orders.length
         ? [
             "📦 <b>Buyurtmalaringiz</b>",
@@ -409,7 +393,7 @@ export class TelegramCustomerOrderingService {
             ...orders.map((order) =>
               [
                 `<b>${escapeHtml(order.order.displayOrderNumber ?? order.order.orderNumber)}</b>`,
-                `${escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status, order.type)}`,
+                `${escapeHtml(order.branch.name)} · ${sharedOrderStatusLabel(order.order.status, order.type)}`,
                 `Jami: ${formatMoney(order.order.total)}`,
               ].join("\n"),
             ),
@@ -433,7 +417,7 @@ export class TelegramCustomerOrderingService {
       where: { customerId: customer.id },
     });
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         "👤 <b>Profil</b>",
         "",
@@ -498,7 +482,7 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!products.length) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Bu bo'limda hozircha mahsulot yo'q.",
         reply_markup: {
           inline_keyboard: [
@@ -514,7 +498,7 @@ export class TelegramCustomerOrderingService {
       isSimpleQuickAddProduct(product),
     );
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         "🍽 <b>Mahsulot tanlang</b>",
         hasQuickAddableProducts
@@ -593,7 +577,7 @@ export class TelegramCustomerOrderingService {
 
     const cartLabel = await this.cartButtonLabel(customerId);
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         categoryCode === "LAVASH"
           ? "🌯 <b>Lavashlar</b>"
@@ -638,7 +622,7 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!product) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Mahsulot topilmadi yoki hozir mavjud emas.",
       });
       return;
@@ -656,7 +640,7 @@ export class TelegramCustomerOrderingService {
           callback_data: `${customerCallbackPrefix}:addp:${product.id}`,
         }]];
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         `🍽 <b>${escapeHtml(product.name)}</b>`,
         product.category?.name ? escapeHtml(product.category.name) : "",
@@ -704,7 +688,7 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!product || !isSimpleQuickAddProduct(product)) {
-      await this.answerCallback(callback, "Bu mahsulotni qayta tanlang.", true);
+      await this.screen.answerCallback(callback, "Bu mahsulotni qayta tanlang.", true);
       if (product) {
         await this.sendProductConfigurator(target, product.id);
       }
@@ -713,7 +697,7 @@ export class TelegramCustomerOrderingService {
 
     const variant = product.variants.find((item) => item.isDefault) ?? product.variants[0] ?? null;
     await this.addCartItem(customer.id, product.id, variant?.id ?? null);
-    await this.answerCallback(callback, "Savatga qo'shildi ✅");
+    await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
 
     if (categoryId) {
       await this.sendProductsForCategory(target, customer.id, categoryId);
@@ -752,13 +736,13 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!variant) {
-      await this.answerCallback(callback, "Variant topilmadi yoki mavjud emas.", true);
-      await this.renderCustomerScreen(target, { text: "Variant topilmadi yoki hozir mavjud emas." });
+      await this.screen.answerCallback(callback, "Variant topilmadi yoki mavjud emas.", true);
+      await this.screen.renderCustomerScreen(target, { text: "Variant topilmadi yoki hozir mavjud emas." });
       return;
     }
 
     const cartItem = await this.addCartItem(customer.id, variant.productId, variant.id);
-    await this.answerCallback(callback, "Savatga qo'shildi ✅");
+    await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
     await this.sendCartItemConfigured(target, cartItem.id, variant.product.name);
   }
 
@@ -784,13 +768,13 @@ export class TelegramCustomerOrderingService {
     });
 
     if (!product) {
-      await this.answerCallback(callback, "Mahsulot topilmadi yoki mavjud emas.", true);
-      await this.renderCustomerScreen(target, { text: "Mahsulot topilmadi yoki hozir mavjud emas." });
+      await this.screen.answerCallback(callback, "Mahsulot topilmadi yoki mavjud emas.", true);
+      await this.screen.renderCustomerScreen(target, { text: "Mahsulot topilmadi yoki hozir mavjud emas." });
       return;
     }
 
     const cartItem = await this.addCartItem(customer.id, product.id, null);
-    await this.answerCallback(callback, "Savatga qo'shildi ✅");
+    await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
     await this.sendCartItemConfigured(target, cartItem.id, product.name);
   }
 
@@ -800,9 +784,9 @@ export class TelegramCustomerOrderingService {
     variantId: string | null,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      await this.lockTelegramCart(tx, customerId);
-      const cart = await this.getOrCreateCartForTransaction(tx, customerId);
-      await this.lockCartLine(tx, cart.id, productId, variantId);
+      await this.cart.lockTelegramCart(tx, customerId);
+      const cart = await this.cart.getOrCreateCartForTransaction(tx, customerId);
+      await this.cart.lockCartLine(tx, cart.id, productId, variantId);
 
       const existingItems = await tx.cartItem.findMany({
         where: {
@@ -845,32 +829,13 @@ export class TelegramCustomerOrderingService {
     });
   }
 
-  private async getOrCreateCartForTransaction(
-    tx: Prisma.TransactionClient,
-    customerId: string,
-  ): Promise<{ id: string }> {
-    const existing = await tx.cart.findFirst({
-      where: { customerId },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true },
-    });
-
-    if (existing) {
-      return existing;
-    }
-
-    return tx.cart.create({
-      data: { customerId },
-      select: { id: true },
-    });
-  }
 
   private async sendCartItemConfigured(
     target: CustomerScreenTarget,
     cartItemId: string,
     productName: string,
   ): Promise<void> {
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: `✅ <b>${escapeHtml(productName)}</b> savatga qo'shildi.`,
       parse_mode: "HTML",
       reply_markup: {
@@ -892,10 +857,10 @@ export class TelegramCustomerOrderingService {
     cartItemId: string,
     direction: string,
   ): Promise<void> {
-    const item = await this.findCustomerCartItem(customer.id, cartItemId);
+    const item = await this.cart.findCustomerCartItem(customer.id, cartItemId);
 
     if (!item) {
-      await this.sendCart(target, customer);
+      await this.cart.sendCart(target, customer);
       return;
     }
 
@@ -911,70 +876,29 @@ export class TelegramCustomerOrderingService {
       });
     }
 
-    await this.sendCart(target, customer);
+    await this.cart.sendCart(target, customer);
   }
 
-  private async sendCart(target: CustomerScreenTarget, customer: LinkedCustomer): Promise<void> {
-    const cart = await this.getCartWithItems(customer.id);
-
-    if (!cart?.items.length) {
-      await this.renderCustomerScreen(target, {
-        text: "🛒 Savatingiz bo'sh. Menyudan taom tanlang.",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
-            [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
-          ],
-        },
-      });
-      return;
-    }
-
-    const totals = await this.calculateCartTotals(cart.items);
-
-    await this.renderCustomerScreen(target, {
-      text: [
-        "🛒 <b>Savat</b>",
-        "",
-        ...totals.lines,
-        "",
-        `<b>Jami: ${formatMoney(totals.total)}</b>`,
-      ].join("\n"),
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          ...cart.items.flatMap((item) => [
-            [
-              { text: `− ${item.product.name}`, callback_data: `${customerCallbackPrefix}:qty:${item.id}:dec` },
-              { text: "+", callback_data: `${customerCallbackPrefix}:qty:${item.id}:inc` },
-            ],
-          ]),
-          [{ text: "✅ Buyurtma berish", callback_data: `${customerCallbackPrefix}:checkout` }],
-          [{ text: "🍽 Menyuga qaytish", callback_data: `${customerCallbackPrefix}:menu` }],
-        ],
-      },
-    });
-  }
 
   private async startCheckout(target: CustomerScreenTarget, customer: LinkedCustomer): Promise<void> {
-    const cart = await this.getCartWithItems(customer.id);
+    const cart = await this.cart.getCartWithItems(customer.id);
 
     if (!cart?.items.length) {
-      await this.sendCart(target, customer);
+      await this.cart.sendCart(target, customer);
       return;
     }
 
-    const branches = await this.availableBranches();
+    const branches = await this.checkoutSession.availableBranches();
 
     if (!branches.length) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Hozir buyurtma qabul qiladigan filial topilmadi.",
       });
       return;
     }
 
     const branch = branches[0]!;
-    await this.upsertCheckoutSession(customer.id, target.chatId, {
+    await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, {
       branchId: branch.id,
       step: "ORDER_TYPE",
       orderType: null,
@@ -982,16 +906,16 @@ export class TelegramCustomerOrderingService {
       note: null,
     });
 
-    const typeButtons = this.orderTypeButtons(branch);
+    const typeButtons = this.checkoutSession.orderTypeButtons(branch);
 
     if (!typeButtons.length) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Tanlangan filial hozir buyurtma turi qabul qilmayapti.",
       });
       return;
     }
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         "✅ <b>Buyurtma turi</b>",
         "",
@@ -1016,20 +940,20 @@ export class TelegramCustomerOrderingService {
     rawType: string,
   ): Promise<void> {
     const orderType = parseCustomerOrderType(rawType);
-    const session = await this.getActiveCheckoutSession(customer.id, target.chatId);
+    const session = await this.checkoutSession.getActiveCheckoutSession(customer.id, target.chatId);
     const branch = session?.branchId
-      ? await this.findBranchForCheckout(session.branchId)
-      : await this.defaultBranchForType(orderType);
+      ? await this.checkoutSession.findBranchForCheckout(session.branchId)
+      : await this.checkoutSession.defaultBranchForType(orderType);
 
     if (!branch) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Hozir bu buyurtma turi uchun ochiq filial topilmadi.",
       });
       return;
     }
 
     if (!branchSupportsType(branch, orderType)) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text:
           orderType === CustomerOrderType.DELIVERY
             ? "Bu filialda yetkazib berish hozir mavjud emas."
@@ -1040,7 +964,7 @@ export class TelegramCustomerOrderingService {
     }
 
     if (orderType === CustomerOrderType.DELIVERY) {
-      await this.upsertCheckoutSession(customer.id, target.chatId, {
+      await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, {
         branchId: branch.id,
         orderType,
         step: "ADDRESS",
@@ -1051,7 +975,7 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    await this.upsertCheckoutSession(customer.id, target.chatId, {
+    await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, {
       branchId: branch.id,
       orderType,
       step: "SUMMARY",
@@ -1065,7 +989,7 @@ export class TelegramCustomerOrderingService {
     target: CustomerScreenTarget,
     branch: { name: string },
   ): Promise<void> {
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         "🚚 <b>Yetkazib berish manzili</b>",
         "",
@@ -1089,19 +1013,19 @@ export class TelegramCustomerOrderingService {
     const normalizedAddress = cleanAddress(address);
 
     if (!normalizedAddress) {
-      await this.telegramRequest("sendMessage", {
+      await this.screen.telegramRequest("sendMessage", {
         chat_id: chatId,
         text: "Manzil juda qisqa yoki bo'sh. Iltimos, ko'cha, uy va mo'ljalni yozing.",
       });
       return;
     }
 
-    await this.upsertCheckoutSession(customer.id, chatId, {
+    await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
       step: "NOTE",
       address: normalizedAddress,
     });
 
-    await this.telegramRequest("sendMessage", {
+    await this.screen.telegramRequest("sendMessage", {
       chat_id: chatId,
       text: [
         "Manzil qabul qilindi.",
@@ -1125,7 +1049,7 @@ export class TelegramCustomerOrderingService {
     choice: string,
   ): Promise<void> {
     if (choice === "skip") {
-      await this.upsertCheckoutSession(customer.id, target.chatId, {
+      await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, {
         step: "SUMMARY",
         note: null,
       });
@@ -1134,10 +1058,10 @@ export class TelegramCustomerOrderingService {
     }
 
     if (choice === "add") {
-      await this.upsertCheckoutSession(customer.id, target.chatId, {
+      await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, {
         step: "NOTE",
       });
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Kur'er uchun izohni yuboring. Masalan: Qo'ng'iroq qilmang, eshik oldiga qoldiring.",
         reply_markup: {
           keyboard: [["⬅️ Orqaga", "🏠 Bosh menyu"]],
@@ -1155,14 +1079,14 @@ export class TelegramCustomerOrderingService {
     const cleanNote = note.trim();
 
     if (!cleanNote) {
-      await this.telegramRequest("sendMessage", {
+      await this.screen.telegramRequest("sendMessage", {
         chat_id: chatId,
         text: "Izoh bo'sh bo'lmasin yoki O'tkazib yuborish tugmasini bosing.",
       });
       return;
     }
 
-    await this.upsertCheckoutSession(customer.id, chatId, {
+    await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
       step: "SUMMARY",
       note: cleanNote.slice(0, 1000),
     });
@@ -1173,15 +1097,15 @@ export class TelegramCustomerOrderingService {
     target: CustomerScreenTarget,
     customer: LinkedCustomer,
   ): Promise<void> {
-    const cart = await this.getCartWithItems(customer.id);
+    const cart = await this.cart.getCartWithItems(customer.id);
 
     if (!cart?.items.length) {
-      await this.sendCart(target, customer);
+      await this.cart.sendCart(target, customer);
       return;
     }
 
-    const session = await this.getActiveCheckoutSession(customer.id, target.chatId);
-    const branch = session?.branchId ? await this.findBranchForCheckout(session.branchId) : null;
+    const session = await this.checkoutSession.getActiveCheckoutSession(customer.id, target.chatId);
+    const branch = session?.branchId ? await this.checkoutSession.findBranchForCheckout(session.branchId) : null;
     const orderType = session?.orderType;
 
     if (!session || !branch || !orderType) {
@@ -1190,7 +1114,7 @@ export class TelegramCustomerOrderingService {
     }
 
     if (!branchSupportsType(branch, orderType)) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Tanlangan filial yoki buyurtma turi hozir mavjud emas. Iltimos, qayta tanlang.",
       });
       await this.startCheckout(target, customer);
@@ -1198,13 +1122,13 @@ export class TelegramCustomerOrderingService {
     }
 
     if (orderType === CustomerOrderType.DELIVERY && !cleanAddress(session.address ?? "")) {
-      await this.upsertCheckoutSession(customer.id, target.chatId, { step: "ADDRESS" });
+      await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, { step: "ADDRESS" });
       await this.askDeliveryAddress(target, branch);
       return;
     }
 
-    await this.upsertCheckoutSession(customer.id, target.chatId, { step: "SUMMARY" });
-    const totals = await this.calculateCartTotals(cart.items);
+    await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, { step: "SUMMARY" });
+    const totals = await this.cart.calculateCartTotals(cart.items);
     const quote = await this.customerOrderEngine.quoteCheckout(customer.id, {
       branchId: branch.id,
       type:
@@ -1221,7 +1145,7 @@ export class TelegramCustomerOrderingService {
     });
     const deliveryFee = Number(quote.deliveryFee);
 
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         "✅ <b>Buyurtmani tasdiqlash</b>",
         "",
@@ -1257,21 +1181,21 @@ export class TelegramCustomerOrderingService {
     customer: LinkedCustomer,
     cartId: string,
   ): Promise<void> {
-    const cart = await this.getCartWithItems(customer.id);
+    const cart = await this.cart.getCartWithItems(customer.id);
 
     if (!cart || cart.id !== cartId || !cart.items.length) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Bu tasdiqlash eskirgan. Iltimos, savatni qayta tekshiring.",
       });
       return;
     }
 
-    const session = await this.getActiveCheckoutSession(customer.id, target.chatId);
-    const branch = session?.branchId ? await this.findBranchForCheckout(session.branchId) : null;
+    const session = await this.checkoutSession.getActiveCheckoutSession(customer.id, target.chatId);
+    const branch = session?.branchId ? await this.checkoutSession.findBranchForCheckout(session.branchId) : null;
     const orderType = session?.orderType;
 
     if (!session || !branch || !orderType) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Bu tasdiqlash eskirgan. Iltimos, buyurtma turini qayta tanlang.",
       });
       await this.startCheckout(target, customer);
@@ -1279,7 +1203,7 @@ export class TelegramCustomerOrderingService {
     }
 
     if (!branchSupportsType(branch, orderType)) {
-      await this.renderCustomerScreen(target, {
+      await this.screen.renderCustomerScreen(target, {
         text: "Tanlangan filial bu buyurtma turini hozir qabul qilmayapti.",
       });
       await this.startCheckout(target, customer);
@@ -1292,7 +1216,7 @@ export class TelegramCustomerOrderingService {
         : null;
 
     if (orderType === CustomerOrderType.DELIVERY && !deliveryAddress) {
-      await this.upsertCheckoutSession(customer.id, target.chatId, { step: "ADDRESS" });
+      await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, { step: "ADDRESS" });
       await this.askDeliveryAddress(target, branch);
       return;
     }
@@ -1333,13 +1257,13 @@ export class TelegramCustomerOrderingService {
       }
 
       await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-      await this.clearCheckoutSession(customer.id, target.chatId);
-      await this.renderCustomerScreen(target, {
+      await this.checkoutSession.clearCheckoutSession(customer.id, target.chatId);
+      await this.screen.renderCustomerScreen(target, {
         text: [
           "🎉 <b>Buyurtma qabul qilindi</b>",
           "",
           `Raqam: <b>${escapeHtml(result.order?.displayOrderNumber ?? result.order?.orderNumber ?? "-")}</b>`,
-          `Holat: <b>${this.statusLabel(result.order?.status ?? "NEW")}</b>`,
+          `Holat: <b>${sharedOrderStatusLabel(result.order?.status ?? "NEW")}</b>`,
           "",
           "Buyurtmani web sayt yoki Telegramdagi Buyurtmalarim bo'limidan kuzatishingiz mumkin.",
         ].join("\n"),
@@ -1356,29 +1280,13 @@ export class TelegramCustomerOrderingService {
         "Telegram cart confirmation failed",
         error instanceof Error ? error.stack : String(error),
       );
-      await this.telegramRequest("sendMessage", {
+      await this.screen.telegramRequest("sendMessage", {
         chat_id: target.chatId,
         text: "Buyurtmani yaratishda xatolik bo'ldi. Iltimos, savatni tekshirib qayta urinib ko'ring.",
       });
     }
   }
 
-  private async getOrCreateCart(customerId: string) {
-    const existing = await this.prisma.cart.findFirst({
-      where: { customerId },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true },
-    });
-
-    if (existing) {
-      return existing;
-    }
-
-    return this.prisma.cart.create({
-      data: { customerId },
-      select: { id: true },
-    });
-  }
 
   private createTelegramOrderIdempotencyKey(
     customerId: string,
@@ -1413,88 +1321,8 @@ export class TelegramCustomerOrderingService {
     return `telegram:${customerId}:${cart.id}:${hash}`;
   }
 
-  private getCartWithItems(customerId: string) {
-    return this.prisma.cart.findFirst({
-      where: { customerId },
-      orderBy: { updatedAt: "desc" },
-      include: {
-        items: {
-          orderBy: { createdAt: "asc" },
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sellingPrice: true,
-                modifiers: {
-                  where: { modifier: { isActive: true } },
-                  orderBy: { sortOrder: "asc" },
-                  include: { modifier: true },
-                },
-              },
-            },
-            variant: { select: { id: true, name: true, sellingPrice: true } },
-          },
-        },
-      },
-    });
-  }
 
-  private findCustomerCartItem(customerId: string, cartItemId: string) {
-    return this.prisma.cartItem.findFirst({
-      where: { id: cartItemId, cart: { customerId } },
-      select: {
-        id: true,
-        productId: true,
-        quantity: true,
-        modifierSnapshot: true,
-      },
-    });
-  }
 
-  private async calculateCartTotals(
-    items: NonNullable<Awaited<ReturnType<typeof this.getCartWithItems>>>["items"],
-  ) {
-    const modifierIds = [
-      ...new Set(
-        items.flatMap((item) =>
-          readCartModifiers(item.modifierSnapshot).map((modifier) => modifier.modifierId),
-        ),
-      ),
-    ];
-    const modifiers = modifierIds.length
-      ? await this.prisma.modifier.findMany({
-          where: { id: { in: modifierIds }, isActive: true },
-          select: { id: true, name: true, price: true },
-        })
-      : [];
-    let total = new Prisma.Decimal(0);
-    const lines = items.map((item) => {
-      const quantity = new Prisma.Decimal(item.quantity);
-      const selectedModifiers = readCartModifiers(item.modifierSnapshot);
-      const modifierTotal = selectedModifiers.reduce((sum, selected) => {
-        const modifier = modifiers.find((candidate) => candidate.id === selected.modifierId);
-        return modifier
-          ? sum.add(modifier.price.mul(new Prisma.Decimal(selected.quantity)))
-          : sum;
-      }, new Prisma.Decimal(0));
-      const unitPrice = item.variant?.sellingPrice ?? item.product.sellingPrice;
-      const lineTotal = unitPrice.add(modifierTotal).mul(quantity);
-      total = total.add(lineTotal);
-      const modifierNames = selectedModifiers
-        .map((selected) => modifiers.find((modifier) => modifier.id === selected.modifierId)?.name)
-        .filter(Boolean)
-        .join(", ");
-
-      return [
-        `${quantity.toNumber()}x <b>${escapeHtml(item.product.name)}</b>${item.variant ? ` ${escapeHtml(item.variant.name)}` : ""}`,
-        modifierNames ? `  + ${escapeHtml(modifierNames)}` : "",
-        `  ${formatMoney(lineTotal)}`,
-      ].filter(Boolean).join("\n");
-    });
-
-    return { lines, total };
-  }
 
   private async handleBack(
     chatId: string,
@@ -1509,9 +1337,9 @@ export class TelegramCustomerOrderingService {
     }
 
     if (step === "NOTE") {
-      const session = await this.getActiveCheckoutSession(customer.id, chatId);
-      const branch = session?.branchId ? await this.findBranchForCheckout(session.branchId) : null;
-      await this.upsertCheckoutSession(customer.id, chatId, {
+      const session = await this.checkoutSession.getActiveCheckoutSession(customer.id, chatId);
+      const branch = session?.branchId ? await this.checkoutSession.findBranchForCheckout(session.branchId) : null;
+      await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
         step: "ADDRESS",
         address: null,
         note: null,
@@ -1522,163 +1350,21 @@ export class TelegramCustomerOrderingService {
       }
     }
 
-    await this.sendCart(target, customer);
-  }
-
-  private async lockCartLine(
-    tx: Prisma.TransactionClient,
-    cartId: string,
-    productId: string,
-    variantId: string | null,
-  ): Promise<void> {
-    await this.lockByKey(tx, ["telegram-cart-line", cartId, productId, variantId ?? ""]);
-  }
-
-  private async lockTelegramCart(
-    tx: Prisma.TransactionClient,
-    customerId: string,
-  ): Promise<void> {
-    await this.lockByKey(tx, ["telegram-cart", customerId]);
-  }
-
-  private async lockByKey(
-    tx: Prisma.TransactionClient,
-    values: string[],
-  ): Promise<void> {
-    const hash = createHash("sha256").update(values.join(":")).digest();
-    const firstKey = hash.readInt32BE(0);
-    const secondKey = hash.readInt32BE(4);
-
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${firstKey}, ${secondKey})`;
-  }
-
-
-  private orderTypeButtons(branch: BranchForCheckout) {
-    const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
-
-    if (branchSupportsType(branch, CustomerOrderType.PICKUP)) {
-      buttons.push([
-        {
-          text: "🚶 Olib ketish",
-          callback_data: `${customerCallbackPrefix}:type:${CustomerOrderType.PICKUP}`,
-        },
-      ]);
-    }
-
-    if (branchSupportsType(branch, CustomerOrderType.DELIVERY)) {
-      buttons.push([
-        {
-          text: "🚚 Yetkazib berish",
-          callback_data: `${customerCallbackPrefix}:type:${CustomerOrderType.DELIVERY}`,
-        },
-      ]);
-    }
-
-    return buttons;
+    await this.cart.sendCart(target, customer);
   }
 
 
 
-  private async availableBranches(): Promise<BranchForCheckout[]> {
-    return this.prisma.branch.findMany({
-      where: {
-        isActive: true,
-        acceptsOrders: true,
-        isTemporarilyClosed: false,
-        OR: [{ pickupEnabled: true }, { deliveryEnabled: true }],
-      },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        latitude: true,
-        longitude: true,
-        acceptsOrders: true,
-        deliveryEnabled: true,
-        pickupEnabled: true,
-        isTemporarilyClosed: true,
-      },
-    });
-  }
 
-  private findBranchForCheckout(branchId: string): Promise<BranchForCheckout | null> {
-    return this.prisma.branch.findUnique({
-      where: { id: branchId },
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        latitude: true,
-        longitude: true,
-        acceptsOrders: true,
-        deliveryEnabled: true,
-        pickupEnabled: true,
-        isTemporarilyClosed: true,
-      },
-    });
-  }
 
-  private async defaultBranchForType(
-    orderType: CustomerOrderType,
-  ): Promise<BranchForCheckout | null> {
-    const branches = await this.availableBranches();
 
-    return branches.find((branch) => branchSupportsType(branch, orderType)) ?? null;
-  }
 
-  private getActiveCheckoutSession(customerId: string, chatId: string) {
-    return this.prisma.telegramCheckoutSession.findFirst({
-      where: {
-        customerId,
-        chatId,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
-  }
 
-  private upsertCheckoutSession(
-    customerId: string,
-    chatId: string,
-    data: {
-      step?: CheckoutStep;
-      branchId?: string | null;
-      orderType?: CustomerOrderType | null;
-      address?: string | null;
-      note?: string | null;
-    },
-  ) {
-    const expiresAt = new Date(Date.now() + TELEGRAM_CHECKOUT_SESSION_TTL_MS);
 
-    return this.prisma.telegramCheckoutSession.upsert({
-      where: { customerId_chatId: { customerId, chatId } },
-      create: {
-        customerId,
-        chatId,
-        step: data.step ?? "ORDER_TYPE",
-        branchId: data.branchId ?? null,
-        orderType: data.orderType ?? null,
-        address: data.address ?? null,
-        note: data.note ?? null,
-        expiresAt,
-      },
-      update: {
-        ...("step" in data ? { step: data.step } : {}),
-        ...("branchId" in data ? { branchId: data.branchId } : {}),
-        ...("orderType" in data ? { orderType: data.orderType } : {}),
-        ...("address" in data ? { address: data.address } : {}),
-        ...("note" in data ? { note: data.note } : {}),
-        expiresAt,
-      },
-    });
-  }
 
-  private clearCheckoutSession(customerId: string, chatId: string): Promise<unknown> {
-    return this.prisma.telegramCheckoutSession
-      .delete({ where: { customerId_chatId: { customerId, chatId } } })
-      .catch(() => undefined);
-  }
+
+
+
 
 
 
@@ -1704,7 +1390,7 @@ export class TelegramCustomerOrderingService {
     customerId?: string,
   ): Promise<void> {
     const cartLabel = await this.cartButtonLabel(customerId);
-    await this.renderCustomerScreen(target, {
+    await this.screen.renderCustomerScreen(target, {
       text: [
         `Assalomu alaykum${name ? `, ${escapeHtml(name)}` : ""}!`,
         "",
@@ -1742,80 +1428,6 @@ export class TelegramCustomerOrderingService {
   }
 
 
-  private async sendLinkRequired(target: CustomerScreenTarget): Promise<void> {
-    await this.renderCustomerScreen(target, {
-      text: "Avval MAZETTO profilingizni ulang: /start bosing va telefon raqamingizni yuboring.",
-    });
-  }
-
-  private callbackTarget(callback: TelegramCallbackQuery): CustomerScreenTarget {
-    return {
-      chatId: requiredTelegramId(callback.message?.chat?.id, "chat id"),
-      ...(callback.id ? { callbackQueryId: callback.id } : {}),
-      ...(callback.message?.message_id ? { messageId: callback.message.message_id } : {}),
-    };
-  }
-
-  private async answerCallback(
-    callback: TelegramCallbackQuery,
-    text?: string,
-    showAlert = false,
-  ): Promise<void> {
-    if (!callback.id) {
-      return;
-    }
-
-    await this.telegramRequest("answerCallbackQuery", {
-      callback_query_id: callback.id,
-      ...(text ? { text } : {}),
-      ...(showAlert ? { show_alert: true } : {}),
-    }).catch(() => undefined);
-  }
-
-  private async renderCustomerScreen(
-    target: CustomerScreenTarget,
-    payload: CustomerScreenPayload,
-  ): Promise<void> {
-    if (target.messageId) {
-      try {
-        await this.telegramRequest("editMessageText", {
-          chat_id: target.chatId,
-          message_id: target.messageId,
-          ...payload,
-        });
-        return;
-      } catch (error) {
-        if (isMessageNotModifiedError(error)) {
-          return;
-        }
-      }
-    }
-
-    await this.telegramRequest("sendMessage", {
-      chat_id: target.chatId,
-      ...payload,
-    });
-  }
-
-
-  private async telegramRequest(method: string, payload: unknown): Promise<void> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-
-    if (!token) {
-      return;
-    }
-
-    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
-    }
-  }
 
 
 
@@ -1823,7 +1435,9 @@ export class TelegramCustomerOrderingService {
 
 
 
-  private statusLabel(status: string, type?: string): string {
-    return sharedOrderStatusLabel(status, type);
-  }
+
+
+
+
+
 }

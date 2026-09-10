@@ -33,6 +33,14 @@ export type BranchForCheckout = {
   isTemporarilyClosed: boolean;
 };
 
+/*
+ * Mijoz botining barcha callback'lari shu prefiks bilan boshlanadi:
+ * `cust:menu`, `cust:type:DELIVERY`. Prefiks XODIM botining
+ * callback'laridan ajratadi — ikkalasi bitta webhook'ga keladi.
+ *
+ * Ilgari bu satr UCH faylda takrorlangan edi.
+ */
+export const customerCallbackPrefix = "cust";
 /** Manzil shundan qisqa bo'lsa, kuryer uni topa olmaydi. */
 export const minimumAddressLength = 5;
 

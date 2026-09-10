@@ -2,6 +2,9 @@ import { CustomerOrderType, OrderSource, OrderStatus, Prisma } from "@prisma/cli
 import * as assert from "node:assert/strict";
 import { customerVisibleProductCodeSet } from "../src/modules/customers/customer-catalog-visibility";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
+import { TelegramCustomerScreenService } from "../src/modules/telegram/telegram-customer-screen.service";
+import { TelegramCheckoutSessionService } from "../src/modules/telegram/telegram-checkout-session.service";
+import { TelegramCartService } from "../src/modules/telegram/telegram-cart.service";
 
 type SentTelegramPayload = {
   method?: string;
@@ -1160,6 +1163,9 @@ function createService(prisma: InMemoryPrisma) {
     prisma as never,
     orderEngine as never,
     staffNotifications as never,
+    new TelegramCustomerScreenService(),
+    new TelegramCheckoutSessionService(prisma as never),
+    new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
   );
   const callbackBase = {
     id: "callback_1",
