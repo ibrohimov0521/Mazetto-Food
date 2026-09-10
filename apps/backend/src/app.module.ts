@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { MazettoThrottlerGuard } from "./common/guards/mazetto-throttler.guard";
@@ -18,6 +19,7 @@ import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { HomepageModule } from "./modules/homepage/homepage.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { KitchenModule } from "./modules/kitchen/kitchen.module";
+import { MaintenanceModule } from "./modules/maintenance/maintenance.module";
 import { MenuModule } from "./modules/menu/menu.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
@@ -39,6 +41,9 @@ import { RedisService } from "./redis/redis.service";
 
 @Module({
   imports: [
+    // Rejalashtirilgan tozalash ishlari uchun (7-bosqich Q2). Ilgari
+    // backendda birorta ham davriy ish yo'q edi.
+    ScheduleModule.forRoot(),
     RedisModule,
     /*
      * Global rate limit (PHASE 6 H3).
@@ -87,6 +92,7 @@ import { RedisService } from "./redis/redis.service";
     SuppliersModule,
     TablesModule,
     TelegramModule,
+    MaintenanceModule,
   ],
   controllers: [HealthController],
   providers: [
