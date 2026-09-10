@@ -13,7 +13,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "staff:bootstrap": "tsx scripts/bootstrap-staff-admin.ts",
-    "test": "node --test --import tsx test/customer-auth-decorator.test.ts",
+    "test": "node --test --import tsx test/*.test.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
   },
   "dependencies": {
