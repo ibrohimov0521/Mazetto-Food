@@ -19,7 +19,6 @@ import {
   StockMovementType,
   TableStatus,
 } from "@prisma/client";
-import { createHash, randomInt } from "node:crypto";
 import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -29,13 +28,28 @@ import { KitchenService } from "../kitchen/kitchen.service";
 import type { CreateOrderDto } from "./dto/create-order.dto";
 import type { ListOrdersDto } from "./dto/list-orders.dto";
 import type { AddOrderItemDto, OrderItemModifierDto, UpdateOrderItemDto } from "./dto/order-item.dto";
-import {
-  PosOrderStatus,
-  type BulkUpdateOrderStatusDto,
-  type UpdateOrderStatusDto,
+import type {
+  BulkUpdateOrderStatusDto,
+  UpdateOrderStatusDto,
 } from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
 import { allocateDisplayOrderNumber } from "./order-display-number";
+import {
+  assertOrderCanChange,
+  assertPosCheckoutQuantities,
+  calculateItemTotal,
+  createOrderNumber,
+  createPosCheckoutRequestHash,
+  createPosIdempotencyKey,
+  isRetryableTransactionConflict,
+  isUniqueConstraintError,
+  orderInclude,
+  requireEmployee,
+  resolveEmployeeId,
+  toStoredStatus,
+  unavailableProductWhere,
+  type ModifierSnapshot,
+} from "./order-rules";
 
 type TransactionClient = Prisma.TransactionClient;
 type ConfirmOrderForPreparationOptions = {
@@ -45,14 +59,6 @@ type ConfirmOrderForPreparationOptions = {
   reason?: string | null;
 };
 
-type ModifierSnapshot = {
-  id: string;
-  code: string;
-  name: string;
-  quantity: string;
-  unitPrice: string;
-  totalPrice: string;
-};
 type PosCheckoutOperation = {
   id: string;
   orderId: string;
@@ -82,7 +88,7 @@ export class OrdersService {
             code: { in: [...customerVisibleProductCodes] },
             isAvailable: true,
             OR: [{ branchId }, { branchId: null }],
-            ...this.unavailableProductWhere(branchId),
+            ...unavailableProductWhere(branchId),
           },
         },
       },
@@ -101,7 +107,7 @@ export class OrdersService {
         code: { in: [...customerVisibleProductCodes] },
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
-        ...this.unavailableProductWhere(branchId),
+        ...unavailableProductWhere(branchId),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
@@ -176,12 +182,12 @@ export class OrdersService {
 
   async createPosCheckout(dto: CreatePosCheckoutDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user);
-    const employeeId = this.requireEmployee(user);
-    const idempotencyKey = this.createPosIdempotencyKey(dto.idempotencyKey);
-    const requestHash = this.createPosCheckoutRequestHash(dto, branchId, employeeId);
+    const employeeId = requireEmployee(user);
+    const idempotencyKey = createPosIdempotencyKey(dto.idempotencyKey);
+    const requestHash = createPosCheckoutRequestHash(dto, branchId, employeeId);
     let kitchenTicket: Awaited<ReturnType<KitchenService["createTicketForOrder"]>> | null = null;
 
-    this.assertPosCheckoutQuantities(dto);
+    assertPosCheckoutQuantities(dto);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       kitchenTicket = null;
@@ -206,7 +212,7 @@ export class OrdersService {
           const order = await tx.order.create({
             data: {
               branchId,
-              orderNumber: this.createOrderNumber(),
+              orderNumber: createOrderNumber(),
               ...displayOrder,
               shiftId: openShift.id,
               source: OrderSource.POS,
@@ -361,7 +367,7 @@ export class OrdersService {
         },
       };
       } catch (error) {
-        if (this.isUniqueConstraintError(error)) {
+        if (isUniqueConstraintError(error)) {
           const existingOperation = await this.prisma.paymentOperation.findUnique({
             where: { idempotencyKey },
           });
@@ -384,7 +390,7 @@ export class OrdersService {
           }
         }
 
-        if (this.isRetryableTransactionConflict(error) && attempt < 2) {
+        if (isRetryableTransactionConflict(error) && attempt < 2) {
           continue;
         }
 
@@ -397,7 +403,7 @@ export class OrdersService {
 
   async createOrder(dto: CreateOrderDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
-    const employeeId = this.resolveEmployeeId(dto.employeeId, user);
+    const employeeId = resolveEmployeeId(dto.employeeId, user);
 
     const order = await this.withUniqueConstraintRetry(() => this.prisma.$transaction(async (tx) => {
       await this.assertBranchExists(tx, branchId);
@@ -416,7 +422,7 @@ export class OrdersService {
         data: {
           branchId,
           tableId: dto.tableId ?? null,
-          orderNumber: this.createOrderNumber(),
+          orderNumber: createOrderNumber(),
           ...displayOrder,
           source: OrderSource.POS,
           type: dto.type,
@@ -461,7 +467,7 @@ export class OrdersService {
       orderBy: { createdAt: "desc" },
       skip: query.offset,
       take: query.limit,
-      include: this.orderInclude(),
+      include: orderInclude(),
     });
   }
 
@@ -472,7 +478,7 @@ export class OrdersService {
   }
 
   async addItem(orderId: string, dto: AddOrderItemDto, user: AuthenticatedUser) {
-    const employeeId = this.requireEmployee(user);
+    const employeeId = requireEmployee(user);
 
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
@@ -481,7 +487,7 @@ export class OrdersService {
         throw new NotFoundException("Order not found");
       }
 
-      this.assertOrderCanChange(order.status);
+      assertOrderCanChange(order.status);
       await this.assertEmployeeInBranch(tx, employeeId, order.branchId);
 
       const snapshot = await this.createItemSnapshot(tx, order.branchId, dto);
@@ -513,7 +519,7 @@ export class OrdersService {
     dto: UpdateOrderItemDto,
     user: AuthenticatedUser,
   ) {
-    const employeeId = this.requireEmployee(user);
+    const employeeId = requireEmployee(user);
 
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
@@ -522,7 +528,7 @@ export class OrdersService {
         throw new NotFoundException("Order not found");
       }
 
-      this.assertOrderCanChange(order.status);
+      assertOrderCanChange(order.status);
       await this.assertEmployeeInBranch(tx, employeeId, order.branchId);
 
       const item = await tx.orderItem.findFirst({ where: { id: itemId, orderId } });
@@ -536,7 +542,7 @@ export class OrdersService {
         dto.modifiers && item.productId
           ? await this.createModifierSnapshot(tx, item.productId, dto.modifiers)
           : (item.modifierSnapshot as ModifierSnapshot[] | null);
-      const totalPrice = this.calculateItemTotal(item.unitPrice, quantity, modifierSnapshot ?? []);
+      const totalPrice = calculateItemTotal(item.unitPrice, quantity, modifierSnapshot ?? []);
       const isCancelling = dto.status === OrderItemStatus.CANCELLED;
 
       const data: Prisma.OrderItemUncheckedUpdateInput = {
@@ -576,8 +582,8 @@ export class OrdersService {
   }
 
   async updateStatus(orderId: string, dto: UpdateOrderStatusDto, user: AuthenticatedUser) {
-    const employeeId = this.requireEmployee(user);
-    const nextStatus = this.toStoredStatus(dto.status);
+    const employeeId = requireEmployee(user);
+    const nextStatus = toStoredStatus(dto.status);
 
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
@@ -789,7 +795,7 @@ export class OrdersService {
         ...(options?.requireCanonical ? { code: { in: [...customerVisibleProductCodes] } } : {}),
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
-        ...this.unavailableProductWhere(branchId),
+        ...unavailableProductWhere(branchId),
       },
       include: {
         variants: true,
@@ -817,7 +823,7 @@ export class OrdersService {
       variantName: variant?.name,
       quantity,
       unitPrice,
-      totalPrice: this.calculateItemTotal(unitPrice, quantity, modifiers),
+      totalPrice: calculateItemTotal(unitPrice, quantity, modifiers),
       modifiers,
     };
   }
@@ -868,52 +874,8 @@ export class OrdersService {
     });
   }
 
-  private createPosIdempotencyKey(idempotencyKey: string): string {
-    return `POS_CHECKOUT:${idempotencyKey}`;
-  }
 
-  private assertPosCheckoutQuantities(dto: CreatePosCheckoutDto): void {
-    for (const item of dto.items) {
-      if (item.quantity <= 0 || item.quantity > 99) {
-        throw new BadRequestException("POS item quantity must be between 1 and 99");
-      }
 
-      for (const modifier of item.modifiers ?? []) {
-        const quantity = modifier.quantity ?? 1;
-
-        if (quantity <= 0 || quantity > 99) {
-          throw new BadRequestException("POS modifier quantity must be between 1 and 99");
-        }
-      }
-    }
-  }
-
-  private createPosCheckoutRequestHash(
-    dto: CreatePosCheckoutDto,
-    branchId: string,
-    employeeId: string,
-  ): string {
-    const normalized = {
-      branchId,
-      employeeId,
-      cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
-      notes: dto.notes ?? null,
-      items: dto.items.map((item) => ({
-        productId: item.productId,
-        variantId: item.variantId ?? null,
-        quantity: new Prisma.Decimal(item.quantity).toFixed(3),
-        notes: item.notes ?? null,
-        modifiers: (item.modifiers ?? [])
-          .map((modifier) => ({
-            modifierId: modifier.modifierId,
-            quantity: new Prisma.Decimal(modifier.quantity ?? 1).toFixed(3),
-          }))
-          .sort((left, right) => left.modifierId.localeCompare(right.modifierId)),
-      })),
-    };
-
-    return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
-  }
 
   private async assertCashPaymentMethod(tx: TransactionClient, branchId: string) {
     const method = await tx.paymentMethod.findFirst({
@@ -1000,19 +962,13 @@ export class OrdersService {
     return this.resolveExistingPosCheckout(this.prisma, operation, requestHash);
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    );
-  }
 
   private async withUniqueConstraintRetry<T>(operation: () => Promise<T>): Promise<T> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await operation();
       } catch (error) {
-        if (this.isUniqueConstraintError(error) && attempt < 2) {
+        if (isUniqueConstraintError(error) && attempt < 2) {
           continue;
         }
 
@@ -1023,25 +979,7 @@ export class OrdersService {
     throw new BadRequestException("Operation could not be completed");
   }
 
-  private isRetryableTransactionConflict(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2034"
-    );
-  }
 
-  private calculateItemTotal(
-    unitPrice: Prisma.Decimal,
-    quantity: Prisma.Decimal,
-    modifiers: ModifierSnapshot[],
-  ) {
-    const modifierTotal = modifiers.reduce(
-      (total, modifier) => total.add(new Prisma.Decimal(modifier.totalPrice)),
-      new Prisma.Decimal(0),
-    );
-
-    return unitPrice.add(modifierTotal).mul(quantity);
-  }
 
   private async recalculateOrderTotals(tx: TransactionClient, orderId: string): Promise<void> {
     const items = await tx.orderItem.findMany({
@@ -1161,7 +1099,7 @@ export class OrdersService {
   private async findOrderById(id: string, client: TransactionClient | PrismaService) {
     const order = await client.order.findUnique({
       where: { id },
-      include: this.orderInclude(),
+      include: orderInclude(),
     });
 
     if (!order) {
@@ -1171,45 +1109,8 @@ export class OrdersService {
     return order;
   }
 
-  private orderInclude() {
-    return {
-      branch: { select: { id: true, code: true, name: true } },
-      table: { select: { id: true, code: true, name: true } },
-      createdBy: { select: { id: true, firstName: true, lastName: true } },
-      acceptedBy: { select: { id: true, firstName: true, lastName: true } },
-      closedBy: { select: { id: true, firstName: true, lastName: true } },
-      items: {
-        orderBy: { createdAt: "asc" },
-      },
-      payments: {
-        orderBy: { createdAt: "asc" },
-        include: {
-          method: { select: { id: true, code: true, name: true } },
-        },
-      },
-      statusHistory: {
-        orderBy: { createdAt: "asc" },
-      },
-    } satisfies Prisma.OrderInclude;
-  }
 
-  private resolveEmployeeId(dtoEmployeeId: string | undefined, user: AuthenticatedUser): string {
-    const employeeId = dtoEmployeeId ?? user.employeeId;
 
-    if (!employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
-    }
-
-    return employeeId;
-  }
-
-  private requireEmployee(user: AuthenticatedUser): string {
-    if (!user.employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
-    }
-
-    return user.employeeId;
-  }
 
   private async assertBranchExists(tx: TransactionClient | PrismaService, branchId: string): Promise<void> {
     const branch = await tx.branch.findFirst({ where: { id: branchId, isActive: true } });
@@ -1247,44 +1148,7 @@ export class OrdersService {
     }
   }
 
-  private assertOrderCanChange(status: OrderStatus): void {
-    if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
-      throw new BadRequestException("Completed or cancelled orders cannot be changed");
-    }
-  }
 
-  private toStoredStatus(status: PosOrderStatus): OrderStatus {
-    const statusMap: Record<PosOrderStatus, OrderStatus> = {
-      [PosOrderStatus.NEW]: OrderStatus.NEW,
-      [PosOrderStatus.CONFIRMED]: OrderStatus.CONFIRMED,
-      [PosOrderStatus.PREPARING]: OrderStatus.PREPARING,
-      [PosOrderStatus.READY]: OrderStatus.READY,
-      [PosOrderStatus.SERVED]: OrderStatus.SERVED,
-      [PosOrderStatus.COMPLETED]: OrderStatus.COMPLETED,
-      [PosOrderStatus.CANCELLED]: OrderStatus.CANCELLED,
-    };
 
-    return statusMap[status];
-  }
 
-  private unavailableProductWhere(branchId: string): Prisma.ProductWhereInput {
-    return {
-      NOT: {
-        branchAvailabilities: {
-          some: {
-            branchId,
-            status: { in: ["OUT_OF_STOCK", "UNAVAILABLE"] },
-          },
-        },
-      },
-    };
-  }
-
-  private createOrderNumber(): string {
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-    const time = now.toISOString().slice(11, 19).replaceAll(":", "");
-
-    return `POS-${date}-${time}-${randomInt(1000, 10000)}`;
-  }
 }
