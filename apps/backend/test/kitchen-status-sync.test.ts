@@ -6,7 +6,7 @@ import { kitchenStatusForOrder } from "../src/modules/kitchen/kitchen-status-syn
 test("kitchen tickets follow the canonical order status mapping", () => {
   const cases: Array<[OrderStatus, KitchenTicketStatus | null]> = [
     [OrderStatus.NEW, null],
-    [OrderStatus.CONFIRMED, null],
+    [OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED],
     [OrderStatus.PREPARING, KitchenTicketStatus.COOKING],
     [OrderStatus.READY, KitchenTicketStatus.READY],
     [OrderStatus.SERVED, KitchenTicketStatus.COMPLETED],
@@ -20,7 +20,11 @@ test("kitchen tickets follow the canonical order status mapping", () => {
 });
 
 test("every terminal order status maps to a terminal kitchen ticket status", () => {
-  const terminalStatuses = [OrderStatus.SERVED, OrderStatus.COMPLETED, OrderStatus.CANCELLED];
+  const terminalStatuses = [
+    OrderStatus.SERVED,
+    OrderStatus.COMPLETED,
+    OrderStatus.CANCELLED,
+  ];
   const terminalTicketStatuses: KitchenTicketStatus[] = [
     KitchenTicketStatus.COMPLETED,
     KitchenTicketStatus.CANCELLED,

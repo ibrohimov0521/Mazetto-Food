@@ -27,7 +27,11 @@ import type {
   OnlineOrderModifierDto,
 } from "./dto/customer.dto";
 import { OnlineOrderTypeDto, OnlinePaymentMethodDto } from "./dto/customer.dto";
-import { normalizeDeliveryLocation, deliveryAddressText } from "./delivery-location";
+import {
+  normalizeDeliveryLocation,
+  deliveryAddressText,
+} from "./delivery-location";
+import { deliveryDistanceKm } from "./delivery-distance";
 import { normalizeCustomerPhone } from "./customer-phone";
 import { SettingsService } from "../settings/settings.service";
 
@@ -77,12 +81,16 @@ export class CustomerOrderEngineService {
     let kitchenTicket: Awaited<
       ReturnType<KitchenService["createTicketForOrder"]>
     > | null = null;
-    const deliveryLocation = dto.type === OnlineOrderTypeDto.DELIVERY && dto.deliveryLocation
-      ? normalizeDeliveryLocation(dto.deliveryLocation)
-      : undefined;
-    const deliveryAddress = dto.type === OnlineOrderTypeDto.DELIVERY
-      ? deliveryLocation ? deliveryAddressText(deliveryLocation) : dto.address?.trim()
-      : undefined;
+    const deliveryLocation =
+      dto.type === OnlineOrderTypeDto.DELIVERY && dto.deliveryLocation
+        ? normalizeDeliveryLocation(dto.deliveryLocation)
+        : undefined;
+    const deliveryAddress =
+      dto.type === OnlineOrderTypeDto.DELIVERY
+        ? deliveryLocation
+          ? deliveryAddressText(deliveryLocation)
+          : dto.address?.trim()
+        : undefined;
     const requestHash = this.hashCheckoutRequest(dto);
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
@@ -117,12 +125,19 @@ export class CustomerOrderEngineService {
       }
 
       // Tranzaksiyadan OLDIN: sozlama o'qishi kesh yoki bazaga borishi mumkin.
-      const deliveryFee = await this.resolveDeliveryFee(dto.type);
+      const deliveryFee = await this.resolveDeliveryFee(
+        dto.type,
+        dto.branchId,
+        deliveryLocation,
+      );
 
       const result = await this.prisma.$transaction(
         async (tx) => {
           const orderSource = options?.source ?? OrderSource.WEB;
-          const displayOrder = await allocateDisplayOrderNumber(tx, orderSource);
+          const displayOrder = await allocateDisplayOrderNumber(
+            tx,
+            orderSource,
+          );
           const order = await tx.order.create({
             data: {
               branchId: dto.branchId,
@@ -137,7 +152,9 @@ export class CustomerOrderEngineService {
                   : OrderType.TAKEAWAY,
               status: OrderStatus.NEW,
               customerName: dto.name ?? customer.name,
-              customerPhone: dto.phone ? normalizeCustomerPhone(dto.phone) : customer.phone,
+              customerPhone: dto.phone
+                ? normalizeCustomerPhone(dto.phone)
+                : customer.phone,
               deliveryAddress: deliveryAddress ?? null,
               ...(deliveryLocation ? { deliveryLocation } : {}),
               notes: dto.notes ?? null,
@@ -275,7 +292,15 @@ export class CustomerOrderEngineService {
       dto.type,
     );
 
-    const deliveryFee = await this.resolveDeliveryFee(dto.type);
+    const deliveryLocation =
+      dto.type === OnlineOrderTypeDto.DELIVERY && dto.deliveryLocation
+        ? normalizeDeliveryLocation(dto.deliveryLocation)
+        : undefined;
+    const deliveryFee = await this.resolveDeliveryFee(
+      dto.type,
+      dto.branchId,
+      deliveryLocation,
+    );
 
     const pricing = await this.prisma.$transaction(async (tx) =>
       this.composeCustomerOrderPricing(
@@ -473,7 +498,9 @@ export class CustomerOrderEngineService {
       phone: dto.phone?.trim() ?? null,
       type: dto.type,
       address: dto.address?.trim() ?? null,
-      ...(dto.deliveryLocation ? { deliveryLocation: normalizeDeliveryLocation(dto.deliveryLocation) } : {}),
+      ...(dto.deliveryLocation
+        ? { deliveryLocation: normalizeDeliveryLocation(dto.deliveryLocation) }
+        : {}),
       paymentMethod: dto.paymentMethod,
       notes: dto.notes?.trim() ?? null,
       items: dto.items.map((item) => ({
@@ -633,14 +660,62 @@ export class CustomerOrderEngineService {
    * o'qiladi, kesh bo'sh bo'lsa bazaga boradi; buni tranzaksiya ichida
    * qilish ochiq tranzaksiyani tashqi kutish vaqtiga bog'lab qo'yardi.
    */
+  /*
+   * Yetkazish narxi: belgilangan radius ICHIDA tekin, undan uzoqda
+   * sozlamadagi qat'iy summa. Olib ketishda har doim 0.
+   *
+   * Masofa `delivery-distance.ts` dagi umumiy funksiyadan olinadi —
+   * u `atan2` ishlatadi va sinovdan o'tgan. Ilgari bu yerda ikkinchi,
+   * ichki Haversine nusxasi turardi va u `asin` ishlatardi: juda uzoq
+   * nuqtalarda suzuvchi nuqta xatosi argumentni 1 dan kattaroq qilib
+   * NaN berardi, va ikki nusxa vaqt o'tib ajralib ketardi.
+   *
+   * ATAYLAB TRANZAKSIYADAN TASHQARIDA: sozlama o'qishi Redis yoki
+   * bazaga boradi.
+   */
   private async resolveDeliveryFee(
     type: OnlineOrderTypeDto,
+    branchId: string,
+    deliveryLocation?: { latitude: number; longitude: number },
   ): Promise<Prisma.Decimal> {
     if (type === OnlineOrderTypeDto.PICKUP) {
       return new Prisma.Decimal(0);
     }
 
-    return new Prisma.Decimal(await this.settings.getInt("customer_delivery_fee"));
+    const flatFee = new Prisma.Decimal(
+      await this.settings.getInt("customer_delivery_fee"),
+    );
+
+    if (!deliveryLocation) {
+      return flatFee;
+    }
+
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { latitude: true, longitude: true },
+    });
+
+    /*
+     * FAIL-OPEN. Filial koordinatasi ixtiyoriy (`Decimal?`) va u
+     * sozlanmagan bo'lsa buyurtma BLOKLANMASLIGI kerak — ilgari bu yerda
+     * xato tashlanardi va koordinatasiz filialdan yetkazib berishga
+     * buyurtma berib bo'lmasdi. Masofani bilmasak, oddiy narx olinadi.
+     */
+    const distanceKm = branch
+      ? deliveryDistanceKm(branch, deliveryLocation)
+      : null;
+
+    if (distanceKm === null) {
+      return flatFee;
+    }
+
+    const freeRadiusMeters = await this.settings.getInt(
+      "customer_free_delivery_radius_meters",
+    );
+
+    return distanceKm * 1000 <= freeRadiusMeters
+      ? new Prisma.Decimal(0)
+      : flatFee;
   }
 
   private async recalculateOrderTotals(

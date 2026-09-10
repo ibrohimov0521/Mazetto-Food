@@ -89,4 +89,50 @@ assert.match(
   "Admin panelda narx uchun yorliq yo'q — kalit nomi xom ko'rinadi.",
 );
 
+/*
+ * TEKIN ZONA (Javohirning qoidasi): belgilangan radius ichida yetkazish
+ * tekin. Quyidagi uchta shart uning ilk versiyasidagi nuqsonlarni
+ * qaytarmaslik uchun.
+ */
+assert.match(
+  rules,
+  /customer_free_delivery_radius_meters: INT\(0, 50_000, 1_000\)/,
+  "Tekin zona radiusi sozlamada emas — u marketing qarori va deploysiz o'zgarishi kerak.",
+);
+
+/*
+ * MASOFA UMUMIY MODULDAN. Ilgari bu yerda ikkinchi, ichki Haversine
+ * nusxasi turardi va u `asin` ishlatardi — juda uzoq nuqtalarda NaN
+ * berardi. Ikki nusxa vaqt o'tib ajralib ketardi.
+ */
+assert.match(
+  engine,
+  /deliveryDistanceKm\(branch, deliveryLocation\)/,
+  "Masofa umumiy `delivery-distance` modulidan olinmayapti.",
+);
+assert.doesNotMatch(
+  engine,
+  /Math\.asin\(Math\.sqrt\(/,
+  "Ichki Haversine nusxasi qaytib kelgan — u `asin` ishlatadi va NaN berishi mumkin.",
+);
+
+/*
+ * FAIL-OPEN. Filial koordinatasi ixtiyoriy; sozlanmagan bo'lsa buyurtma
+ * BLOKLANMASLIGI kerak. Ilgari bu yerda xato tashlanardi va
+ * koordinatasiz filialdan yetkazib berishga buyurtma berib bo'lmasdi.
+ */
+const feeBody =
+  engine.match(/private async resolveDeliveryFee\([\s\S]*?\n {2}\}/)?.[0] ?? "";
+assert.ok(feeBody, "resolveDeliveryFee topilmadi.");
+assert.doesNotMatch(
+  feeBody,
+  /throw new BadRequestException/,
+  "Narx hisoblash buyurtmani BLOKLAYAPTI — koordinatasiz filial yetkazib bera olmay qoladi.",
+);
+assert.match(
+  feeBody,
+  /if \(distanceKm === null\) \{\s+return flatFee;/,
+  "Masofa noma'lum bo'lganda oddiy narxga tushilmayapti.",
+);
+
 console.log("Yetkazish narxi validatsiyasi o'tdi");

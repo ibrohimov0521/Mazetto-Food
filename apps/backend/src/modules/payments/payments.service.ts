@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import {
   CashTransactionType,
+  OrderSource,
   KitchenTicketStatus,
   OrderStatus,
   PaymentStatus,
@@ -207,12 +208,6 @@ export class PaymentsService {
             throw new BadRequestException("Cancelled orders cannot be paid");
           }
 
-          if (order.status === OrderStatus.COMPLETED) {
-            throw new BadRequestException(
-              "Completed orders cannot receive new payments",
-            );
-          }
-
           await this.assertEmployeeInBranch(tx, employeeId, order.branchId);
 
           const tenders = this.normalizeTenders(dto.payments);
@@ -339,11 +334,16 @@ export class PaymentsService {
               ? PaymentStatus.PAID
               : PaymentStatus.PENDING;
 
+            const shouldCompleteOrder =
+              paymentStatus === PaymentStatus.PAID &&
+              order.source === OrderSource.POS &&
+              order.status !== OrderStatus.COMPLETED;
+
             await tx.order.update({
               where: { id: order.id },
               data: {
                 paymentStatus,
-                ...(paymentStatus === PaymentStatus.PAID
+                ...(shouldCompleteOrder
                   ? {
                       status: OrderStatus.COMPLETED,
                       closedAt: now,
@@ -354,41 +354,43 @@ export class PaymentsService {
             });
 
             if (paymentStatus === PaymentStatus.PAID) {
-              if (order.tableId) {
+              if (shouldCompleteOrder && order.tableId) {
                 await tx.restaurantTable.update({
                   where: { id: order.tableId },
                   data: { status: TableStatus.AVAILABLE },
                 });
               }
 
-              await tx.orderStatusHistory.create({
-                data: {
-                  orderId: order.id,
-                  fromStatus: order.status,
-                  toStatus: OrderStatus.COMPLETED,
-                  changedByUserId: user.id,
-                  changedByEmployeeId: employeeId,
-                  reason: "Order completed after payment",
-                },
-              });
-
-              await tx.kitchenTicket.updateMany({
-                where: {
-                  orderId: order.id,
-                  status: {
-                    in: [
-                      KitchenTicketStatus.NEW,
-                      KitchenTicketStatus.ACCEPTED,
-                      KitchenTicketStatus.COOKING,
-                      KitchenTicketStatus.READY,
-                    ],
+              if (shouldCompleteOrder) {
+                await tx.orderStatusHistory.create({
+                  data: {
+                    orderId: order.id,
+                    fromStatus: order.status,
+                    toStatus: OrderStatus.COMPLETED,
+                    changedByUserId: user.id,
+                    changedByEmployeeId: employeeId,
+                    reason: "Order completed after payment",
                   },
-                },
-                data: {
-                  status: KitchenTicketStatus.COMPLETED,
-                  completedAt: now,
-                },
-              });
+                });
+
+                await tx.kitchenTicket.updateMany({
+                  where: {
+                    orderId: order.id,
+                    status: {
+                      in: [
+                        KitchenTicketStatus.NEW,
+                        KitchenTicketStatus.ACCEPTED,
+                        KitchenTicketStatus.COOKING,
+                        KitchenTicketStatus.READY,
+                      ],
+                    },
+                  },
+                  data: {
+                    status: KitchenTicketStatus.COMPLETED,
+                    completedAt: now,
+                  },
+                });
+              }
 
               await this.createReceipt(tx, order.id);
             }

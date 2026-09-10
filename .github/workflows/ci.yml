@@ -1,37 +1,156 @@
+# ── MAZETTO FOOD — CI ────────────────────────────────────────────────────────
+#
+# Har bir PR va `main` ga har bir push'da yuradi. Bitta `verify` checki:
+#
+#   1. install        pnpm install --frozen-lockfile
+#   2. migrate        migratsiyalar toza PostgreSQL 18 ga qo'llanadi
+#   3. pnpm run ci    server'dagi AYNAN o'sha skript: prisma generate →
+#                     typecheck → lint → test → build → validatorlar
+#   4. smoke          backend production rejimida ishga tushib /health ga
+#                     "database ok" deb javob beradi
+#
+# Branch protection shu `verify` ni `main` uchun majburiy qiladi — u yashil
+# bo'lmaguncha PR merge qilinmaydi. Relizdan oldin server'da
+# `pnpm release:gate` aynan o'sha commit'ning `verify` natijasini so'raydi.
+# Batafsil: docs/CI_CD.md.
+#
+# Deploy alohida: deploy.yml shu check yashil tugagach, yangi migratsiyasi
+# yo'q commit'ni Dokploy'ga chiqaradi. Migratsiyali reliz odam nazoratida
+# qoladi. CorpEats'dagi image registry va avtomatik rollback ATAYLAB yo'q.
+# ─────────────────────────────────────────────────────────────────────────────
+
 name: CI
 
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
+  # PR ochmasdan branch'ni tekshirish: gh workflow run ci.yml --ref <branch>
+  workflow_dispatch:
+
+# Bir branch'ga ketma-ket push qilinsa faqat oxirgisining natijasi kerak, eskisi
+# bekor qilinadi. `main` bundan mustasno: uning har bir commit'i relizga nomzod
+# va release gate aynan o'sha SHA'ning tugagan natijasini talab qiladi.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
 
 jobs:
   verify:
+    # Bu nom branch protection'dagi majburiy check nomi va release gate ham
+    # uni qidiradi. O'zgartirilsa ikkalasini ham yangilang, aks holda PR'lar
+    # "Expected — Waiting for status to be reported" da qotib qoladi.
+    #
+    # Shu sababli `paths-ignore` ham YO'Q: faqat hujjat o'zgargan PR'da check
+    # umuman yurmasa, majburiy check hech qachon kelmaydi va PR bloklanadi.
+    name: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Migratsiyalar, bazaga tegadigan validatorlar va smoke uchun. Production
+    # bilan bir xil major versiya (18).
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      TURBO_TELEMETRY_DISABLED: "1"
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
+      # pnpm versiyasi package.json dagi `packageManager` dan olinadi —
+      # Dockerfile'lar bilan bir xil, ya'ni versiya ikki joyda yozilmaydi.
       - name: Enable pnpm
-        run: corepack enable && corepack prepare pnpm@11.19.0 --activate
+        run: corepack enable && pnpm --version
 
-      - name: Install dependencies
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck apps
-        run: pnpm typecheck
+      # `pnpm run ci` dan OLDIN. Nomi `-db` bilan tugamaydigan ba'zi
+      # validatorlar ham bazaga yozib, tranzaksiyani qaytarib oladi (masalan
+      # validate-order-display-numbers). Server'da `pnpm run ci` migratsiya
+      # qilingan bazaga qarshi yuradi; bu yerda migratsiya keyin tursa, jadval
+      # yo'qligidan validator yiqiladi — PR #4 ning birinchi run'i aynan shunda
+      # qizil bo'lgan. Yon foydasi: migratsiya SQL'i toza bazaga qo'llanishi
+      # ham shu qadamda tekshiriladi.
+      - name: Migratsiyalar toza bazaga qo'llanadi
+        run: pnpm --filter backend prisma:migrate:deploy
 
-      - name: Typecheck backend validation scripts
-        run: pnpm --filter backend typecheck:scripts
+      # Qadamlarni bu yerda alohida yozish o'rniga skriptning o'zi chaqiriladi:
+      # server'dagi tekshiruv va CI hech qachon bir-biridan ajralib ketmaydi.
+      # Eski workflow aynan shunday ajralgan edi — `prisma generate` ni
+      # tushirib qoldirgani uchun `main` dagi har bir push qizil bo'lgan.
+      - name: pnpm run ci (generate, typecheck, lint, test, build, validate)
+        run: pnpm run ci
 
-      - name: Run tests
-        run: pnpm test
+      # typecheck va build Nest'ning DI xatolarini, env tekshiruvini va
+      # ishga tushishdagi yiqilishlarni ko'rmaydi — ular faqat real boot'da
+      # chiqadi. Sirlar faqat CI uchun, hech qayerda ishlatilmaydi.
+      - name: "Smoke: backend production rejimida ishga tushadi"
+        env:
+          NODE_ENV: production
+          BACKEND_PORT: "4000"
+          JWT_ACCESS_SECRET: ci-only-access-secret
+          JWT_REFRESH_SECRET: ci-only-refresh-secret
+          CUSTOMER_JWT_ACCESS_SECRET: ci-only-customer-access-secret
+          CUSTOMER_JWT_REFRESH_SECRET: ci-only-customer-refresh-secret
+        run: |
+          node apps/backend/dist/main.js > backend.log 2>&1 &
+          pid=$!
 
-      - name: Build
-        run: pnpm build
+          for attempt in $(seq 1 30); do
+            body="$(curl -fsS --max-time 3 http://127.0.0.1:4000/api/v1/health || true)"
+            case "$body" in
+              *'"database":{"status":"ok"}'*)
+                echo "✓ health ($attempt-urinish): $body"
+                kill "$pid"
+                exit 0
+                ;;
+            esac
+
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "::error::Backend ishga tushmasdan yiqildi"
+              cat backend.log
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          echo "::error::Backend 60 soniyada sog'lom javob bermadi"
+          cat backend.log
+          kill "$pid" || true
+          exit 1

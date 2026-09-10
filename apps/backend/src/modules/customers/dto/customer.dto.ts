@@ -142,6 +142,10 @@ export class CustomerCheckoutQuoteDto {
 
   @IsEnum(OnlineOrderTypeDto)
   type!: OnlineOrderTypeDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeliveryLocationDto)
+  deliveryLocation?: DeliveryLocationDto;
 
   @IsArray()
   @ArrayMinSize(1)
