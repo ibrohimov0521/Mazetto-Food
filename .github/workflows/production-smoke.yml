@@ -1,0 +1,38 @@
+# ── MAZETTO FOOD — Production smoke ──────────────────────────────────────────
+#
+# Relizdan KEYIN qo'lda yurgiziladi: Actions → Production smoke → Run workflow
+# (yoki `gh workflow run production-smoke.yml`).
+#
+# scripts/smoke-production.mjs ni yurgizadi — faqat GET, buyurtma yaratmaydi,
+# hech narsani o'zgartirmaydi. Xuddi shu skript istalgan joydan ham ishlaydi:
+# `pnpm release:smoke`. Workflow'ning foydasi — natija Actions tarixida qoladi
+# va tashqi tarmoqdan (server ichidan emas) tekshirilgan bo'ladi.
+#
+# `schedule` ATAYLAB yo'q: bu monitoring emas, reliz tekshiruvi.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Production smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Public route va API smoke
+        run: node scripts/smoke-production.mjs

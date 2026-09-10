@@ -1,6 +1,6 @@
 # MAZETTO FOOD Release Readiness Checklist
 
-Last updated: 2026-08-30
+Last updated: 2026-09-11
 
 This checklist is for the next controlled production release. It is documentation only; it does not authorize deployment by itself.
 
@@ -16,18 +16,19 @@ This checklist is for the next controlled production release. It is documentatio
 
 1. Preflight
    - Confirm local HEAD and `origin/main`.
-   - Confirm production currently healthy.
+   - Confirm production currently healthy (`pnpm release:smoke`).
    - Confirm pending commits are expected.
    - Confirm no uncommitted source changes except approved local artifacts.
+   - Run `pnpm release:gate <sha> --since <prod-sha>` and stop if it refuses. The commit must be on `origin/main` and its CI `verify` check must be green. The output lists which apps to redeploy and any new migrations. See `docs/CI_CD.md`.
 
 2. Production database backup
    - Create a PostgreSQL dump before migration.
    - Verify the backup can be listed with `pg_restore --list`.
    - Record the backup path.
 
-3. Push approved commit chain
-   - Push only after local validations pass.
-   - Avoid pushing untracked QA screenshots, temporary DB files, `.env`, or secrets.
+3. Approved commit is on `main`
+   - Changes reach `main` only through a PR whose `verify` check is green; direct pushes are blocked by branch protection.
+   - Avoid committing untracked QA screenshots, temporary DB files, `.env`, or secrets.
 
 4. Backend deploy
    - Deploy backend image built from the approved commit.
@@ -56,6 +57,7 @@ This checklist is for the next controlled production release. It is documentatio
    - Do not reset or change the webhook unless the release prompt explicitly requires it.
 
 9. Public route health
+   - Run `pnpm release:smoke` (or GitHub Actions → Production smoke). It is read-only and covers backend health with database, customer-web pages, the customer menu/home APIs from step 10, pos-web and media health, and protected endpoints that must return 401 without a token. Representative media file URLs still need the manual check below.
    - Backend health.
    - Customer web home.
    - Customer menu.
