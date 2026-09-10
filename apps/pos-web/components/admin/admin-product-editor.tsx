@@ -10,6 +10,7 @@ import { Button, ButtonLink } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
 import { FormField, Select, Textarea, TextInput } from "../admin-ui/form";
+import { ImageDropzone } from "../admin-ui/image-dropzone";
 import { useToast } from "../admin-ui/toast";
 
 /*
@@ -442,18 +443,30 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                   )}
                 </FormField>
                 <FormField
-                  hint="Media serveridagi nisbiy yo'l"
-                  label="Rasm yo'li"
+                  hint="Yuklang yoki mavjud yo'lni qo'lda kiriting"
+                  label="Rasm"
                 >
                   {(props) => (
-                    <TextInput
-                      {...props}
-                      placeholder="/products/lavash-big.webp"
-                      value={form.image}
-                      onChange={(event) =>
-                        setForm({ ...form, image: event.target.value })
-                      }
-                    />
+                    <div className="flex flex-col gap-2">
+                      <ImageDropzone
+                        onUploaded={(url) => setForm({ ...form, image: url })}
+                        value={form.image}
+                      />
+                      {/*
+                        Matn maydoni ATAYLAB qoldirilgan: mavjud 74 mahsulotning
+                        yo'llari allaqachon yozilgan va ularni yuklab qayta
+                        ishlash bu ishning qamrovidan tashqarida. Yuklash bu
+                        maydonni to'ldiradi, uni almashtirmaydi.
+                      */}
+                      <TextInput
+                        {...props}
+                        placeholder="/products/lavash-big.webp"
+                        value={form.image}
+                        onChange={(event) =>
+                          setForm({ ...form, image: event.target.value })
+                        }
+                      />
+                    </div>
                   )}
                 </FormField>
               </div>
@@ -709,8 +722,13 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
             <CardHeader title="Rasm boshqaruvi" />
             <CardBody>
               <p className="text-xs text-mz-text-muted">
-                Media yuklash endpoint&apos;i hali yo&apos;q. Hozircha faqat
-                mavjud rasm yo&apos;li tahrirlanadi.
+                Rasm to&apos;g&apos;ridan-to&apos;g&apos;ri yuklanadi va media
+                serverida saqlanadi. Fayl nomi avtomatik beriladi, ya&apos;ni
+                bir xil nomli ikki rasm bir-birini almashtirmaydi.
+              </p>
+              <p className="mt-2 text-xs text-mz-text-muted">
+                Mavjud mahsulotlarning yo&apos;llari o&apos;zgarmadi — quyidagi
+                matn maydonini qo&apos;lda tahrirlash ham ishlaydi.
               </p>
             </CardBody>
           </Card>

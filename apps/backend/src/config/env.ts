@@ -128,6 +128,15 @@ const envSchema = z.object({
   TELEGRAM_BOT_URL: optionalText,
   TELEGRAM_CUSTOMER_BOT_URL: optionalText,
 
+  // Media saqlash. Berilmasa rasm yuklash o'chiq qoladi, ilova ishlayveradi.
+  MINIO_ENDPOINT: optionalText,
+  MINIO_PORT: z.coerce.number().int().positive().default(9000),
+  MINIO_BUCKET: optionalText,
+  MINIO_ROOT_USER: optionalText,
+  MINIO_ROOT_PASSWORD: optionalText,
+  MINIO_PUBLIC_URL: optionalText,
+  MINIO_USE_SSL: envBoolean(false),
+
   SWAGGER_ENABLED: envBoolean(false),
 });
 

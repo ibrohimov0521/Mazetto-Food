@@ -36,6 +36,7 @@ import { StaffModule } from "./modules/staff/staff.module";
 import { SuppliersModule } from "./modules/suppliers/suppliers.module";
 import { TablesModule } from "./modules/tables/tables.module";
 import { TelegramModule } from "./modules/telegram/telegram.module";
+import { UploadsModule } from "./modules/uploads/uploads.module";
 import { UsersModule } from "./modules/users/users.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RedisModule } from "./redis/redis.module";
@@ -96,6 +97,7 @@ import { RedisService } from "./redis/redis.service";
     TablesModule,
     TelegramModule,
     MaintenanceModule,
+    UploadsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -15,6 +15,7 @@ export {
   type SortDirection,
 } from "./data-table";
 export { Icon, iconNames, type IconName } from "./icon";
+export { ImageDropzone } from "./image-dropzone";
 export { EmptyState, ErrorState, Skeleton, SkeletonRows } from "./feedback";
 export { FilterBar, FormField, Select, Textarea, TextInput } from "./form";
 export { Modal } from "./modal";

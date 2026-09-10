@@ -21,6 +21,35 @@ services:
     volumes:
       - redis-data:/data
 
+  # Media saqlash (7-bosqich Q4).
+  #
+  # Ilgari mahsulot rasmi admin panelda ODDIY MATN maydoni edi: admin yo'lni
+  # qo'lda yozardi va faylni serverga ham qo'lda joylashtirish kerak bo'lardi.
+  # AUD-009 ("ishlab chiqarish media volume'i bo'sh") aynan shundan kelib
+  # chiqqan — qator bazada bor edi, fayl esa serverga hech qachon chiqmagan.
+  #
+  # Portlar env orqali: bu mashinada 9000 ni boshqa loyihaning konteyneri
+  # egallagan, xuddi Postgres 5433 va Redis 6380 bo'lgani kabi.
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: mazetto-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mazetto}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-mazetto-dev-secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres-data:
   redis-data:
+  minio-data:

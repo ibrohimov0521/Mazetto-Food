@@ -7,7 +7,7 @@
     "rootDir": "src",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "types": ["node"],
+    "types": ["node", "multer"],
     "sourceMap": true
   },
   "include": ["src/**/*.ts"]
