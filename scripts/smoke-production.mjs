@@ -46,6 +46,22 @@ const checks = [
     status: [200],
   },
   { name: "API bosh sahifa", url: `${api}/customer/home`, status: [200] },
+  /*
+   * Biznes sozlamalari — 2026-09-10 dan beri tekshiriladi.
+   *
+   * O'sha kuni yangi kod prod'ga MIGRATSIYASIZ chiqdi: `settings` jadvali
+   * yo'qligidan bu endpoint 500 qaytardi, smoke esa 18/18 yashil edi.
+   * Sozlamani mijoz autentifikatsiyasi, buyurtma dvigateli va Telegram oqimi
+   * ham o'qiydi (SettingsService.readAll), ya'ni bu bitta sahifaning emas,
+   * buyurtma yo'lining nosozligi. Kod prod'da yangi, migratsiya esa
+   * qo'llanmagan holat aynan shu tekshiruvda ko'rinadi.
+   */
+  {
+    name: "API biznes sozlamalari",
+    url: `${api}/settings/public`,
+    status: [200],
+    body: (text) => text.includes('"success":true'),
+  },
   {
     name: "oshxona tokensiz yopiq",
     url: `${api}/kitchen/orders`,
@@ -54,6 +70,16 @@ const checks = [
   {
     name: "POS katalog tokensiz yopiq",
     url: `${api}/pos/catalog`,
+    status: [401],
+  },
+  {
+    name: "kuryerlar tokensiz yopiq",
+    url: `${api}/couriers`,
+    status: [401],
+  },
+  {
+    name: "dead-letter'lar tokensiz yopiq",
+    url: `${api}/notifications/dead-letters`,
     status: [401],
   },
   {
@@ -71,6 +97,15 @@ const checks = [
   ),
   { name: "pos-web health", url: `${pos}/api/health`, status: [200] },
   { name: "pos-web /login", url: `${pos}/login`, status: [200] },
+  /*
+   * Yangi admin sahifasi. 404 qaytarsa pos-web `main` dan ORQADA qolgan —
+   * backend yangilanib, web yangilanmagan holatni ko'rsatadi.
+   */
+  {
+    name: "pos-web /admin/settings",
+    url: `${pos}/admin/settings`,
+    status: [200],
+  },
   { name: "media health", url: `${media}/healthz`, status: [200, 204] },
 ];
 
