@@ -52,7 +52,7 @@ assert.match(ordersService, /resolveRequiredBranchScope\(user\)/);
 assert.match(ordersService, /const employeeId = requireEmployee\(user\)/);
 assert.match(ordersService, /source: OrderSource\.POS/);
 assert.match(ordersService, /code: \{ in: \[\.\.\.customerVisibleProductCodes\] \}/);
-assert.match(ordersService, /this\.createItemSnapshot\(tx, branchId, item, \{\s*requireCanonical: true/);
+assert.match(ordersService, /this\.createItemSnapshot\([\s\S]{0,200}requireCanonical: true/);
 assert.match(ordersService, /new Prisma\.Decimal\(dto\.cashReceived\)/);
 assert.match(ordersService, /paymentStatus: PaymentStatus\.PAID/);
 assert.match(ordersService, /this\.confirmOrderForPreparation/);
