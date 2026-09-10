@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import type { DeliveryLocationDto } from "./dto/delivery-location.dto";
+import { isWithinTashkent } from "./tashkent-bounds";
 
 export function normalizeDeliveryLocation(value: DeliveryLocationDto) {
   if (
@@ -11,6 +12,20 @@ export function normalizeDeliveryLocation(value: DeliveryLocationDto) {
     !value.house?.trim()
   ) {
     throw new BadRequestException("Manzil va xaritadagi nuqtani tekshiring.");
+  }
+  /*
+   * Yetkazib berish zonasi tekshiruvi ATAYLAB shu yerda — buyurtma yaratish va
+   * manzil saqlash yo'llarining ikkalasi ham shu funksiyadan o'tadi. Frontend
+   * ham xaritani chegaralaydi, lekin u faqat qulaylik: chegara SERVERDA
+   * majburlanadi, chunki mijoz API'ga to'g'ridan-to'g'ri murojaat qila oladi.
+   *
+   * Xabar alohida — "manzilni tekshiring" degani foydalanuvchini adashtiradi,
+   * chunki manzil to'g'ri bo'lishi mumkin, shunchaki zonadan tashqarida.
+   */
+  if (!isWithinTashkent(value.latitude, value.longitude)) {
+    throw new BadRequestException(
+      "Hozircha faqat Toshkent shahri bo'ylab yetkazib beramiz. Xaritadan shahar ichidagi manzilni tanlang.",
+    );
   }
   return {
     latitude: value.latitude,

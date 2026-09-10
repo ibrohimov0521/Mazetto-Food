@@ -1,3 +1,5 @@
+import { isWithinTashkent } from "./tashkent-bounds";
+
 export type DeliveryPoint = {
   latitude: number;
   longitude: number;
@@ -23,10 +25,13 @@ export function isDeliveryLocation(value: unknown): value is DeliveryLocation {
   if (!value || typeof value !== "object") return false;
   const location = value as DeliveryLocation;
   return (
-    Number.isFinite(location.latitude) &&
-    Math.abs(location.latitude) <= 90 &&
-    Number.isFinite(location.longitude) &&
-    Math.abs(location.longitude) <= 180 &&
+    /*
+     * Zona tekshiruvi shu yerda ham kerak: bu funksiya localStorage'dan va
+     * serverdan kelgan SAQLANGAN manzillarni ham tekshiradi. Zona
+     * toraytirilsa, eski manzil endi yaroqsiz bo'lib qoladi va uni jimgina
+     * checkout'ga o'tkazib yuborish serverdan 400 keltirardi.
+     */
+    isWithinTashkent(location.latitude, location.longitude) &&
     typeof location.address === "string" &&
     Boolean(location.address.trim()) &&
     typeof location.house === "string" &&

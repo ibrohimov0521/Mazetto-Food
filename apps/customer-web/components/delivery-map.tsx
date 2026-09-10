@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { LocateFixed, MapPin, Minus, Plus, RotateCw } from "lucide-react";
 import type { Map as LeafletMap } from "leaflet";
 import type { DeliveryPoint } from "../lib/delivery-location";
+import {
+  OUTSIDE_TASHKENT_MESSAGE,
+  TASHKENT_CENTER,
+  TASHKENT_LEAFLET_BOUNDS,
+  isWithinTashkent,
+} from "../lib/tashkent-bounds";
 
 type Props = {
   point: DeliveryPoint | null;
@@ -14,11 +20,9 @@ type Props = {
 export default function DeliveryMap({ point, center, onChange }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<LeafletMap | null>(null);
-  const callback = useRef(onChange);
+  const emit = useRef<(next: DeliveryPoint) => void>(() => {});
   const currentPoint = useRef(point);
-  const initialCenter = useRef(
-    point ?? center ?? { latitude: 41.3111, longitude: 69.2797 },
-  );
+  const initialCenter = useRef(point ?? center ?? TASHKENT_CENTER);
   const gpsRequest = useRef(0);
   const gpsTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -27,8 +31,24 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
   const [ready, setReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const [zoneError, setZoneError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
-  callback.current = onChange;
+  /*
+   * Nuqta uch yo'l bilan tanlanadi: bosish, xaritani surish va GPS. Zona
+   * tekshiruvi UCHALASI uchun ham shu yagona joyda — aks holda yangi manba
+   * qo'shilganda tekshiruvni ulashni unutish oson bo'lardi.
+   *
+   * `maxBounds` surishni to'sadi, lekin GPS boshqa shahardan kelishi mumkin
+   * va chekkadagi bosish ham chegaradan chiqib ketishi mumkin.
+   */
+  emit.current = (next: DeliveryPoint) => {
+    if (!isWithinTashkent(next.latitude, next.longitude)) {
+      setZoneError(OUTSIDE_TASHKENT_MESSAGE);
+      return;
+    }
+    setZoneError(null);
+    onChange(next);
+  };
   currentPoint.current = point;
   if (!point && center) initialCenter.current = center;
 
@@ -53,6 +73,11 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
           zoomAnimation: false,
           fadeAnimation: false,
           markerZoomAnimation: false,
+          // Yetkazish zonasidan tashqariga surib bo'lmaydi. Viskozitet 1.0 —
+          // chekkaga yopishadi, "cho'zilib qaytish" effektisiz.
+          maxBounds: TASHKENT_LEAFLET_BOUNDS,
+          maxBoundsViscosity: 1,
+          minZoom: 11,
         }).setView(
           [initial.latitude, initial.longitude],
           currentPoint.current ? 17 : 14,
@@ -102,7 +127,7 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
               longitude: position.lng,
               source: "map" as const,
             };
-            callback.current(next);
+            emit.current(next);
             instance?.panTo(event.latlng, { animate: false });
           },
         );
@@ -137,7 +162,7 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
             return;
           gpsRequest.current++;
           setLocating(false);
-          callback.current({
+          emit.current({
             latitude: position.lat,
             longitude: position.lng,
             source: "map",
@@ -229,7 +254,7 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
             return;
           }
           setLocating(false);
-          callback.current({
+          emit.current({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             accuracyMeters: Math.min(position.coords.accuracy, 100000),
@@ -311,6 +336,11 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
       {point?.source === "gps" && (point.accuracyMeters ?? 0) > 100 ? (
         <p className="mf-location-notice">
           GPS aniqligi past. Bino joyini xaritada tekshiring.
+        </p>
+      ) : null}
+      {zoneError ? (
+        <p className="mf-location-notice" role="alert">
+          {zoneError}
         </p>
       ) : null}
       {gpsError ? (

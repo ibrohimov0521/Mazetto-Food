@@ -16,6 +16,7 @@ import { isDeliveryLocation } from "../lib/delivery-location";
 import { useFulfillmentState } from "../lib/fulfillment";
 import { MediaImage } from "./media-image";
 import { Plus } from "lucide-react";
+import { TASHKENT_CENTER } from "../lib/tashkent-bounds";
 const FulfillmentDialog = dynamic(() => import("./fulfillment-dialog"), {
   ssr: false,
 });
@@ -44,7 +45,7 @@ const branch = {
   id: "preview-branch",
   name: "Mazetto Food",
   address: "Toshkent",
-  coordinates: { latitude: 41.3111, longitude: 69.2797 },
+  coordinates: TASHKENT_CENTER,
   acceptsOrders: true,
   deliveryEnabled: true,
   pickupEnabled: true,
