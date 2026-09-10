@@ -32,3 +32,4 @@ Dockerfile.local
 *.tsbuildinfo
 
 media-source/
+.backups/
