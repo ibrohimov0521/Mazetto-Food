@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useMemo, useState } from "react";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import {
   formatDateTime,
   formatMoney,
@@ -52,44 +53,27 @@ type CustomerStats = {
 };
 
 export function AdminCustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [stats, setStats] = useState<CustomerStats | null>(null);
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState("");
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [offset, setOffset] = useState(0);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const [nextCustomers, nextStats] = await Promise.all([
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () =>
+      Promise.all([
         apiFetch<Customer[]>(`/customers?limit=${pageSize}&offset=${offset}`),
         apiFetch<CustomerStats>("/customers/statistics"),
-      ]);
-      setCustomers(nextCustomers);
-      setStats(nextStats);
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Mijozlarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [offset]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+      ]),
+    [offset],
+    "Mijozlarni yuklab bo'lmadi.",
+  );
+  const customers = data?.[0] ?? [];
+  const stats = data?.[1] ?? null;
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();

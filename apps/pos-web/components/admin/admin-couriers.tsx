@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import {
   formatDateTime,
   formatMoney,
@@ -64,46 +65,33 @@ function courierName(courier: Courier): string {
 }
 
 export function AdminCouriersPage() {
-  const [couriers, setCouriers] = useState<Courier[]>([]);
-  const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [query, setQuery] = useState("");
   const [assignFilter, setAssignFilter] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState("");
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      /*
-       * Ikkalasi PARALLEL: ro'yxatlar bir-biriga bog'liq emas va ketma-ket
-       * kutish sahifani ikki barobar sekinlashtirardi.
-       */
-      const [nextCouriers, nextOrders] = await Promise.all([
+  /*
+   * Ikkala ro'yxat PARALLEL: ular bir-biriga bog'liq emas va ketma-ket
+   * kutish sahifani ikki barobar sekinlashtirardi.
+   */
+  const {
+    data,
+    isLoading,
+    error: loadError,
+    reload,
+  } = useApiResource(
+    () =>
+      Promise.all([
         apiFetch<Courier[]>("/couriers"),
         apiFetch<DeliveryOrder[]>("/couriers/deliveries"),
-      ]);
-      setCouriers(nextCouriers);
-      setOrders(nextOrders);
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Kuryerlar ro'yxatini yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+      ]),
+    [],
+    "Kuryerlar ro'yxatini yuklab bo'lmadi.",
+  );
+  const couriers = data?.[0] ?? [];
+  const orders = data?.[1] ?? [];
+  const error = saveError || loadError;
+  const load = reload;
 
   const courierById = useMemo(
     () => new Map(couriers.map((courier) => [courier.id, courier])),
@@ -175,7 +163,7 @@ export function AdminCouriersPage() {
 
   async function assign(customerOrderId: string, employeeId: string | null) {
     setSavingId(customerOrderId);
-    setError("");
+    setSaveError("");
 
     try {
       await apiFetch(`/courier/orders/${customerOrderId}/assign`, {
@@ -188,7 +176,7 @@ export function AdminCouriersPage() {
       if (caught instanceof SessionExpiredError) {
         return;
       }
-      setError(
+      setSaveError(
         caught instanceof Error
           ? caught.message
           : "Biriktirishni saqlab bo'lmadi.",

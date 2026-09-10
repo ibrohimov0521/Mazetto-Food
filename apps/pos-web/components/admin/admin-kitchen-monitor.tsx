@@ -136,7 +136,10 @@ export function AdminKitchenMonitor() {
             {ticket.ticketNumber}
           </p>
           <p className="truncate text-xs text-mz-text-muted">
-            {ticket.order?.displayOrderNumber ?? ticket.order?.orderNumber ?? "—"} · {formatDateTime(ticket.createdAt)}
+            {ticket.order?.displayOrderNumber ??
+              ticket.order?.orderNumber ??
+              "—"}{" "}
+            · {formatDateTime(ticket.createdAt)}
           </p>
         </div>
       ),

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import {
   formatDateTime,
@@ -99,13 +100,10 @@ export function AdminReceiptsPage() {
   const [isMarking, setIsMarking] = useState(false);
   const showBranchFilter = canSwitchBranch(user);
 
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [printed, setPrinted] = useState("");
   const [branchId, setBranchId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -144,35 +142,24 @@ export function AdminReceiptsPage() {
     [showToast],
   );
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset),
-    });
-
-    if (branchId) params.set("branchId", branchId);
-
-    try {
-      setReceipts(await apiFetch<Receipt[]>(`/receipts?${params.toString()}`));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error ? caught.message : "Cheklarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [branchId, offset]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (branchId) params.set("branchId", branchId);
+      return apiFetch<Receipt[]>(`/receipts?${params.toString()}`);
+    },
+    [branchId, offset],
+    "Cheklarni yuklab bo'lmadi.",
+  );
+  const receipts = data ?? [];
 
   async function markPrinted(): Promise<void> {
     if (!detail) {
@@ -249,7 +236,10 @@ export function AdminReceiptsPage() {
     {
       key: "order",
       header: "Buyurtma",
-      render: (receipt) => receipt.order ? receipt.order.displayOrderNumber ?? receipt.order.orderNumber : "—",
+      render: (receipt) =>
+        receipt.order
+          ? (receipt.order.displayOrderNumber ?? receipt.order.orderNumber)
+          : "—",
     },
     {
       key: "orderStatus",
