@@ -22,6 +22,7 @@ import { TelegramOrderNotificationService } from "../src/modules/telegram/telegr
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
 import { createSettingsStub } from "./settings-stub";
+import { createDeadLetterStub } from "./dead-letter-stub";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
@@ -222,6 +223,7 @@ function createServices(prisma: PrismaService) {
   const telegramNotifications = new TelegramOrderNotificationService(
     prisma,
     kitchenService,
+    createDeadLetterStub(),
   );
   const telegramOrdering = new TelegramCustomerOrderingService(
     prisma,

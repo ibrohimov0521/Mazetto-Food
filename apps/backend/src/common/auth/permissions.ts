@@ -64,6 +64,13 @@ export const PERMISSIONS = {
   AUDIT_VIEW: "AUDIT_VIEW",
   // Biznes sozlamalari — kill switch va cheklov qiymatlari (7-bosqich Q1).
   // Faqat SUPER_ADMIN: bular filial darajasidagi qaror emas.
+  /*
+   * Yuborilmagan bildirishnomalarni ko'rish va qayta yuborish.
+   *
+   * Faqat egasi darajasida: qayta yuborish TASHQI xabar jo'natadi
+   * (Telegram guruhiga), ya'ni uni tasodifan bosish mumkin bo'lmasin.
+   */
+  NOTIFICATION_MANAGE: "NOTIFICATION_MANAGE",
   SETTING_MANAGE: "SETTING_MANAGE",
 } as const;
 

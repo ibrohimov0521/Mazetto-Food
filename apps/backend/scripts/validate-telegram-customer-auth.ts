@@ -7,6 +7,7 @@ import { TelegramController } from "../src/modules/telegram/telegram.controller"
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { createSettingsStub } from "./settings-stub";
+import { createDeadLetterStub } from "./dead-letter-stub";
 
 type CustomerRecord = {
   id: string;
@@ -623,6 +624,7 @@ async function testWebhookSecretAndStaffRegression(): Promise<void> {
   const realStaffService = new TelegramOrderNotificationService(
     {} as never,
     {} as never,
+    createDeadLetterStub(),
   );
   const parser = realStaffService as unknown as {
     parseCallbackData(data: string): { action: string; orderId: string };

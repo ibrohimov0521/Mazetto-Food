@@ -6,6 +6,7 @@ import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitche
 import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
 import { kitchenStatusForOrder } from "../kitchen/kitchen-status-sync";
 import { PrismaService } from "../../prisma/prisma.service";
+import { NotificationDeadLetterService } from "../notifications/notification-dead-letter.service";
 
 type StaffOrderAction = KitchenStaffAction;
 type LegacyCallbackStatus = "CONFIRMED" | "PREPARING" | "READY" | "CANCELLED";
@@ -118,6 +119,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
+    private readonly deadLetters: NotificationDeadLetterService,
   ) {
     kitchenEvents.on(kitchenOrderStatusChangedEvent, this.statusChangedListener);
   }
@@ -156,7 +158,57 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         `Telegram order notification failed for order ${orderId}`,
         error instanceof Error ? error.stack : String(error),
       );
+      /*
+       * ENG MUHIM YO'QOTISH: yangi buyurtma xabari yetib bormasa, oshxona
+       * buyurtma haqda umuman bilmaydi. Ilgari bu yerda faqat log qolardi.
+       */
+      await this.deadLetters.record({
+        kind: "staff_new_order",
+        orderId,
+        error,
+        attempts: telegramRequestMaxAttempts,
+      });
     }
+  }
+
+  /**
+   * O'lik xatni qayta yuboradi.
+   *
+   * Yozuv ro'yxatdan FAQAT muvaffaqiyatdan keyin olib tashlanadi: qayta
+   * urinish ham yiqilsa, u ko'rinib turishi kerak. Aks holda "qayta
+   * yuborish" tugmasi muammoni yashirib qo'yardi.
+   */
+  async retryDeadLetter(messageId: string): Promise<boolean> {
+    const entries = await this.deadLetters.list(500);
+    const entry = entries.find((row) => row.messageId === messageId);
+
+    if (!entry) {
+      return false;
+    }
+
+    /*
+     * `staff_status_refresh` qayta yuborilmaydi: u KITCHEN hodisasiga
+     * bog'liq va o'sha hodisa allaqachon o'tib ketgan. Uni "qayta
+     * yuborish" eskirgan holatni yozib, hozirgi holatni buzardi.
+     * Yangi buyurtma xabari esa holatdan mustaqil — u qayta chizilganda
+     * buyurtmaning JORIY holati o'qiladi.
+     */
+    if (entry.kind !== "staff_new_order") {
+      return false;
+    }
+
+    await this.enqueueMessage(entry.orderId, () =>
+      this.sendNewOrder(entry.orderId),
+    );
+
+    /*
+     * `sendNewOrder` xatoni o'zi yutadi va YANGI o'lik xat yozadi, ya'ni
+     * muvaffaqiyatni javob bo'yicha aniqlab bo'lmaydi. Shuning uchun
+     * eskisi olib tashlanadi: agar yana yiqilgan bo'lsa, o'rniga yangi
+     * yozuv paydo bo'lgan.
+     */
+    await this.deadLetters.take(messageId);
+    return true;
   }
 
   private async refreshStaffOrderMessageFromKitchen(event: KitchenOrderStatusChangedEvent): Promise<void> {
@@ -190,6 +242,12 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      await this.deadLetters.record({
+        kind: "staff_status_refresh",
+        orderId: event.orderId,
+        error,
+        attempts: telegramRequestMaxAttempts,
+      });
     }
   }
 

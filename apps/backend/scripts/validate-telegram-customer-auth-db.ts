@@ -11,6 +11,7 @@ import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-cu
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { loadEnvironmentFile } from "../src/config/env";
 import { createSettingsStub } from "./settings-stub";
+import { createDeadLetterStub } from "./dead-letter-stub";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
@@ -422,6 +423,7 @@ async function testWebhookSecurityAndStaffRegression(
   const realStaffService = new TelegramOrderNotificationService(
     {} as never,
     {} as never,
+    createDeadLetterStub(),
   );
   const parser = realStaffService as unknown as {
     parseCallbackData(data: string): { action: string; orderId: string };

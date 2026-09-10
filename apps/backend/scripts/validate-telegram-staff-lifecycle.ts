@@ -5,6 +5,7 @@ import { TelegramOrderNotificationService } from "../src/modules/telegram/telegr
 import { PrismaService } from "../src/prisma/prisma.service";
 import { syncKitchenTickets } from "../src/modules/kitchen/kitchen-status-sync";
 import { loadEnvironmentFile } from "../src/config/env";
+import { createDeadLetterStub } from "./dead-letter-stub";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi.
@@ -82,7 +83,7 @@ async function main(): Promise<void> {
       emitOrderStatusChanged: () => undefined,
     };
     const kitchenService = new KitchenService(prisma, gateway as never);
-    const staffNotifications = new TelegramOrderNotificationService(prisma, kitchenService);
+    const staffNotifications = new TelegramOrderNotificationService(prisma, kitchenService, createDeadLetterStub());
     const fixture = await createFixture(prisma);
 
     await proveNewOrderNotification(prisma, staffNotifications, fixture);
