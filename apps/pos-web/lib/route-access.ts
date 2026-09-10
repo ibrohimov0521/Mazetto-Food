@@ -75,6 +75,8 @@ export const routeAccessRules: RouteAccessRule[] = [
   { pattern: "/admin/branches", roles: [SUPER, ADMIN, MANAGER], permission: "BRANCH_VIEW" },
   { pattern: "/admin/printers", roles: [SUPER, MANAGER], permission: "RECEIPT_PRINT" },
   { pattern: "/admin/audit", roles: [SUPER], permission: "AUDIT_VIEW" },
+  // Kill switch va cheklov qiymatlari — filial darajasidagi qaror emas.
+  { pattern: "/admin/settings", roles: [SUPER], permission: "SETTING_MANAGE" },
 
   { pattern: "/admin/shifts", roles: [SUPER, MANAGER], permission: "SHIFT_VIEW_BRANCH" },
   { pattern: "/admin/receipts", roles: [SUPER, MANAGER, ACCOUNTANT], permission: "RECEIPT_VIEW" },

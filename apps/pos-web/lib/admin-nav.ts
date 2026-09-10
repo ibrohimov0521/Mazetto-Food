@@ -243,6 +243,14 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
+        // Kill switch va cheklovlar — faqat SUPER_ADMIN.
+        label: "Biznes sozlamalari",
+        icon: "gauge",
+        href: "/admin/settings",
+        permission: "SETTING_MANAGE",
+        roles: ["SUPER_ADMIN"],
+      },
+      {
         // Jurnal global — faqat SUPER_ADMIN ko'radi (AuditLog da branchId yo'q).
         label: "Audit jurnali",
         icon: "clipboard",

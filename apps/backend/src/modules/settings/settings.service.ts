@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.service";
 import {
+  describeSettingRule,
   isKnownSettingKey,
   isPublicSettingKey,
   parseBoolSetting,
@@ -55,7 +56,15 @@ export class SettingsService {
 
   // --- Admin ekrani ------------------------------------------------------
 
-  /** Barcha e'lon qilingan sozlamalar, saqlanmaganlari default bilan. */
+  /**
+   * Barcha e'lon qilingan sozlamalar, saqlanmaganlari default bilan.
+   *
+   * QOIDA ham qaytariladi (`rule`), chunki admin ekrani qaysi boshqaruv
+   * elementini chizishni bilishi kerak: butun son uchun raqam kiritish,
+   * mantiqiy uchun toggle, ro'yxat uchun tanlov. Buni frontendda qaytadan
+   * yozish reestr yechayotgan drift muammosini qaytarardi — bu safar
+   * backend bilan UI orasida.
+   */
   async listSettings() {
     const stored = await this.readAll();
 
@@ -64,6 +73,8 @@ export class SettingsService {
       value: stored[key] ?? settingFallback(key),
       isStored: stored[key] !== undefined,
       isPublic: isPublicSettingKey(key),
+      rule: describeSettingRule(key),
+      fallback: settingFallback(key),
     }));
   }
 

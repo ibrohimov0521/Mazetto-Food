@@ -107,7 +107,7 @@ for (const block of navSource.matchAll(/^ {6}\{\n([\s\S]*?)^ {6}\},$/gm)) {
 
 assert.equal(
   items.length,
-  25,
+  26,
   `nav elementlari soni kutilganidan farq qiladi: ${items.length}`,
 );
 
