@@ -467,6 +467,7 @@ export class CustomersService {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: { customerId },
       orderBy: { createdAt: "desc" },
+      take: 50,
       include: this.customerOrderInclude({ includePayments: true }),
     });
 

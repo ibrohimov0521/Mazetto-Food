@@ -15,6 +15,7 @@ export class UsersService {
         ...(branchId ? { employee: { branchId } } : {}),
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
       select: {
         id: true,
         email: true,

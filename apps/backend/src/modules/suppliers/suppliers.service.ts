@@ -17,6 +17,7 @@ export class SuppliersService {
         ...(scopedBranchId ? { OR: [{ branchId: scopedBranchId }, { branchId: null }] } : {}),
       },
       orderBy: { name: "asc" },
+      take: 200,
     });
   }
 

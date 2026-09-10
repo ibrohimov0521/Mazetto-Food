@@ -62,6 +62,7 @@ export class CashRegisterService {
       where: { shiftId },
       include: { employee: true, payment: { include: { method: true } }, order: true },
       orderBy: { occurredAt: "desc" },
+      take: 200,
     });
   }
 

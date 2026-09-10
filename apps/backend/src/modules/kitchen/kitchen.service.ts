@@ -103,6 +103,7 @@ export class KitchenService {
       },
       include: this.ticketInclude(),
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+      take: 250,
     });
     return tickets.map((ticket) => ({
       ...ticket,

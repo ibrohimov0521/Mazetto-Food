@@ -102,6 +102,7 @@ export class StaffService {
         ...(branchId ? { employee: { branchId } } : {}),
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
       select: this.staffSelect(),
     });
 
