@@ -391,7 +391,7 @@ export class KitchenService {
   }
 
   private resolveTransition(
-    order: Pick<KitchenTransitionOrder, "status">,
+    order: Pick<KitchenTransitionOrder, "status" | "type">,
     ticket: KitchenTransitionOrder["kitchenTickets"][number],
     action: KitchenStaffAction,
   ): {
