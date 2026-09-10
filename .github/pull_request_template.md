@@ -13,9 +13,10 @@
 
 ## CI avtomatik tekshiradi
 
-`verify` checki `pnpm run ci` ni yurgizadi (prisma generate → typecheck → lint →
-test → build → validatorlar), so'ng migratsiyalarni toza bazaga qo'llab backendni
-production rejimida ishga tushiradi. U yashil bo'lmaguncha merge qilinmaydi.
+`verify` checki migratsiyalarni toza bazaga qo'llaydi, `pnpm run ci` ni
+yurgizadi (prisma generate → typecheck → lint → test → build → validatorlar),
+so'ng backendni production rejimida ishga tushiradi. U yashil bo'lmaguncha
+merge qilinmaydi.
 
 ## CI tutmaydigan narsalar — qo'lda
 

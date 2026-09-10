@@ -3,10 +3,10 @@
 # Har bir PR va `main` ga har bir push'da yuradi. Bitta `verify` checki:
 #
 #   1. install        pnpm install --frozen-lockfile
-#   2. pnpm run ci    server'dagi AYNAN o'sha skript: prisma generate →
+#   2. migrate        migratsiyalar toza PostgreSQL 18 ga qo'llanadi
+#   3. pnpm run ci    server'dagi AYNAN o'sha skript: prisma generate →
 #                     typecheck → lint → test → build → validatorlar
-#   3. smoke          migratsiyalar toza Postgres'ga qo'llanadi, backend
-#                     production rejimida ishga tushib /health ga
+#   4. smoke          backend production rejimida ishga tushib /health ga
 #                     "database ok" deb javob beradi
 #
 # Branch protection shu `verify` ni `main` uchun majburiy qiladi — u yashil
@@ -50,7 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # Faqat smoke bosqichi uchun. Production bilan bir xil major versiya (18).
+    # Migratsiyalar, bazaga tegadigan validatorlar va smoke uchun. Production
+    # bilan bir xil major versiya (18).
     services:
       postgres:
         image: postgres:18-alpine
@@ -98,15 +99,22 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # `pnpm run ci` dan OLDIN. Nomi `-db` bilan tugamaydigan ba'zi
+      # validatorlar ham bazaga yozib, tranzaksiyani qaytarib oladi (masalan
+      # validate-order-display-numbers). Server'da `pnpm run ci` migratsiya
+      # qilingan bazaga qarshi yuradi; bu yerda migratsiya keyin tursa, jadval
+      # yo'qligidan validator yiqiladi — PR #4 ning birinchi run'i aynan shunda
+      # qizil bo'lgan. Yon foydasi: migratsiya SQL'i toza bazaga qo'llanishi
+      # ham shu qadamda tekshiriladi.
+      - name: Migratsiyalar toza bazaga qo'llanadi
+        run: pnpm --filter backend prisma:migrate:deploy
+
       # Qadamlarni bu yerda alohida yozish o'rniga skriptning o'zi chaqiriladi:
       # server'dagi tekshiruv va CI hech qachon bir-biridan ajralib ketmaydi.
       # Eski workflow aynan shunday ajralgan edi — `prisma generate` ni
       # tushirib qoldirgani uchun `main` dagi har bir push qizil bo'lgan.
       - name: pnpm run ci (generate, typecheck, lint, test, build, validate)
         run: pnpm run ci
-
-      - name: "Smoke: migratsiyalar toza bazaga qo'llanadi"
-        run: pnpm --filter backend prisma:migrate:deploy
 
       # typecheck va build Nest'ning DI xatolarini, env tekshiruvini va
       # ishga tushishdagi yiqilishlarni ko'rmaydi — ular faqat real boot'da

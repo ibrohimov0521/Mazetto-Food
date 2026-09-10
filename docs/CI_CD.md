@@ -30,22 +30,27 @@ branch ──► PR ──► CI "verify" ── yashil bo'lishi SHART ──►
 
 `.github/workflows/ci.yml` — har PR'da va `main` ga har push'da.
 
-| Bosqich                          | Nimani ushlaydi                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------------------ |
-| `pnpm install --frozen-lockfile` | lockfile va `package.json` mos kelmasligi                                            |
-| `pnpm run ci` → prisma generate  | schema xatosi                                                                        |
-| `pnpm run ci` → typecheck        | TypeScript xatolari (ilovalar va backend skriptlari)                                 |
-| `pnpm run ci` → lint             | ESLint qoidalari                                                                     |
-| `pnpm run ci` → test             | backend regressiya testlari                                                          |
-| `pnpm run ci` → build            | Next.js, Nest va agent build yiqilishi                                               |
-| `pnpm run ci` → validate         | `apps/backend/scripts/validate-*.ts` qoidalari (bazasizlari)                         |
-| smoke: `prisma migrate deploy`   | migratsiya toza PostgreSQL 18 ga qo'llanmasligi                                      |
-| smoke: backend boot              | production rejimida ishga tushmaslik: env tekshiruvi, Nest DI xatosi, bazaga ulanish |
+| Bosqich                          | Nimani ushlaydi                                                                         |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile` | lockfile va `package.json` mos kelmasligi                                               |
+| `prisma migrate deploy`          | migratsiya SQL'i toza PostgreSQL 18 ga qo'llanmasligi                                   |
+| `pnpm run ci` → prisma generate  | schema xatosi                                                                           |
+| `pnpm run ci` → typecheck        | TypeScript xatolari (ilovalar va backend skriptlari)                                    |
+| `pnpm run ci` → lint             | ESLint qoidalari                                                                        |
+| `pnpm run ci` → test             | backend regressiya testlari                                                             |
+| `pnpm run ci` → build            | Next.js, Nest va agent build yiqilishi                                                  |
+| `pnpm run ci` → validate         | `apps/backend/scripts/validate-*.ts` qoidalari (`-db` bilan tugaydiganlaridan tashqari) |
+| smoke: backend boot              | production rejimida ishga tushmaslik: env tekshiruvi, Nest DI xatosi, bazaga ulanish    |
 
 Workflow qadamlarni qayta yozmaydi, server'dagi `pnpm run ci` ning O'ZINI
 chaqiradi — ikkalasi hech qachon ajralib ketmaydi. Eski workflow aynan shunday
 ajralgan edi: `prisma generate` ni tushirib qoldirgani uchun `main` dagi har
 push qizil bo'lgan va buni hech kim sezmagan.
+
+Migratsiya `pnpm run ci` dan OLDIN turadi. Nomi `-db` bilan tugamaydigan ba'zi
+validatorlar ham bazaga yozib, tranzaksiyani qaytarib oladi (masalan
+`validate-order-display-numbers`). Server'da `pnpm run ci` migratsiya qilingan
+bazaga qarshi yuradi, CI'da ham shunday bo'lishi kerak.
 
 ### CI tutmaydigan narsalar
 
