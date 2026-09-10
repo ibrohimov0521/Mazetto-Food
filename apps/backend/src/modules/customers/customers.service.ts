@@ -40,6 +40,7 @@ import {
   customerVisibleProductCodes,
 } from "./customer-catalog-visibility";
 import { normalizeCustomerPhone } from "./customer-phone";
+import { deliveryDistanceKm } from "./delivery-distance";
 import type {
   CustomerCheckoutQuoteDto,
   CreateOnlineOrderDto,
@@ -614,7 +615,7 @@ export class CustomersService {
     });
 
     return customerOrders.map((customerOrder) =>
-      this.withDerivedCustomerOrderStatus(customerOrder),
+      this.withDeliveryDistance(this.withDerivedCustomerOrderStatus(customerOrder)),
     );
   }
 
@@ -676,7 +677,7 @@ export class CustomersService {
     });
 
     return customerOrders.map((customerOrder) =>
-      this.withDerivedCustomerOrderStatus(customerOrder),
+      this.withDeliveryDistance(this.withDerivedCustomerOrderStatus(customerOrder)),
     );
   }
 
@@ -847,6 +848,35 @@ export class CustomersService {
     };
   }
 
+  /*
+   * Kuryer ro'yxatiga filialdan mijozgacha masofa qo'shadi.
+   *
+   * ATAYLAB SARALAMAYMIZ. Masofa `deliveryLocation` JSON ustunidan
+   * hisoblanadi, ya'ni SQL uni bilmaydi va saralash faqat joriy SAHIFA
+   * ichida bo'lardi — "eng yaqin buyurtma" ro'yxat boshida turgandek
+   * ko'rinib, aslida keyingi sahifada qolib ketardi. Bu haqiqatdan ham
+   * yomonroq: noto'g'ri tartib to'g'ri tartibdek ko'rinadi.
+   *
+   * Masofa hozircha KO'RSATISH uchun. Haqiqiy "eng yaqin birinchi"
+   * tartibi uchun koordinatalar alohida ustunlarga chiqarilishi kerak.
+   */
+  private withDeliveryDistance<
+    T extends {
+      deliveryLocation?: unknown;
+      branch?: {
+        latitude: Prisma.Decimal | null;
+        longitude: Prisma.Decimal | null;
+      } | null;
+    },
+  >(customerOrder: T): T & { distanceKm: number | null } {
+    return {
+      ...customerOrder,
+      distanceKm: customerOrder.branch
+        ? deliveryDistanceKm(customerOrder.branch, customerOrder.deliveryLocation)
+        : null,
+    };
+  }
+
   private toCustomerOrderStatus(status: OrderStatus): string {
     if (status === OrderStatus.SERVED) {
       return "READY";
@@ -880,6 +910,213 @@ export class CustomersService {
     }
 
     return user.employeeId;
+  }
+
+  /*
+   * Kuryerlar nazorati (5.5).
+   *
+   * Ilgari hech kim kim nima olib ketayotganini KO'RA OLMASDI: kuryer
+   * buyurtmani o'zi olardi (birinchi kelgan oladi) va agar telefoni
+   * o'chsa yoki kasal bo'lib qolsa, buyurtma o'sha kuryerga biriktirilgan
+   * holda muzlab qolardi — chunki `updateCourierOrderStatus` boshqa
+   * kuryerni rad etadi.
+   */
+  async listCouriers(user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user);
+    const day = this.todayTashkentRange();
+
+    const couriers = await this.prisma.employee.findMany({
+      where: {
+        status: "ACTIVE",
+        ...(branchId ? { branchId } : {}),
+        user: { roles: { some: { role: { code: "COURIER" } } } },
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        employeeCode: true,
+        branch: { select: { id: true, name: true } },
+      },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    });
+
+    if (!couriers.length) {
+      return [];
+    }
+
+    /*
+     * Ikkita `groupBy` — kuryer boshiga alohida so'rov emas.
+     * 20 ta kuryerda bu 40 ta so'rovni 2 taga tushiradi.
+     */
+    const courierIds = couriers.map((courier) => courier.id);
+    const [active, completed] = await Promise.all([
+      this.prisma.order.groupBy({
+        by: ["servedById"],
+        where: {
+          servedById: { in: courierIds },
+          type: "DELIVERY",
+          status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ["servedById"],
+        where: {
+          servedById: { in: courierIds },
+          type: "DELIVERY",
+          status: OrderStatus.COMPLETED,
+          // "Bugun" Toshkent bo'yicha — UTC yarim tunda hisob nolga tushmasin.
+          updatedAt: { gte: day.start, lt: day.end },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const activeById = new Map(
+      active.map((row) => [row.servedById, row._count._all]),
+    );
+    const completedById = new Map(
+      completed.map((row) => [row.servedById, row._count._all]),
+    );
+
+    return couriers.map((courier) => ({
+      ...courier,
+      activeDeliveries: activeById.get(courier.id) ?? 0,
+      completedToday: completedById.get(courier.id) ?? 0,
+    }));
+  }
+
+  /*
+   * Nazorat ekrani uchun FAOL yetkazishlar.
+   *
+   * Nima uchun `/online-orders` ni qayta ishlatmadik: u barcha turdagi
+   * buyurtmalarni to'liq `items` va `kitchenTickets` bilan tortadi. Kunlik
+   * hajm chegaradan oshganda yetkazishlar olib ketishlar orasida qolib
+   * ketardi — ya'ni nazorat ekrani buyurtmani KO'RSATMASDAN qoldirardi,
+   * bu esa uning butun maqsadini yo'qqa chiqaradi.
+   *
+   * Bu yerda filtr SERVERDA va faqat kerakli maydonlar olinadi.
+   */
+  async listActiveDeliveries(user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user);
+
+    const customerOrders = await this.prisma.customerOrder.findMany({
+      where: {
+        type: "DELIVERY",
+        ...(branchId ? { branchId } : {}),
+        order: {
+          status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        deliveryAddress: true,
+        deliveryLocation: true,
+        createdAt: true,
+        customer: { select: { id: true, name: true, phone: true } },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            displayOrderNumber: true,
+            status: true,
+            total: true,
+            servedById: true,
+          },
+        },
+      },
+    });
+
+    return customerOrders.map((customerOrder) =>
+      this.withDeliveryDistance(this.withDerivedCustomerOrderStatus(customerOrder)),
+    );
+  }
+
+  /**
+   * Buyurtmani kuryerga biriktiradi yoki biriktirishni bekor qiladi
+   * (`employeeId: null` — buyurtma yana "erkin" bo'ladi).
+   */
+  async assignCourier(
+    customerOrderId: string,
+    employeeId: string | null,
+    user: AuthenticatedUser,
+  ) {
+    const scopedBranchId = resolveBranchScope(user);
+
+    return this.prisma.$transaction(async (tx) => {
+      /*
+       * `FOR UPDATE` — kuryerning o'zi shu lahzada buyurtmani olayotgan
+       * bo'lishi mumkin (`updateCourierOrderStatus` ham shu qulfni oladi).
+       * Qulfsiz ikkalasi ham muvaffaqiyatli tugab, oxirgi yozuv yutardi.
+       */
+      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id WHERE c.id = ${customerOrderId} FOR UPDATE OF o`;
+
+      const existing = await tx.customerOrder.findUnique({
+        where: { id: customerOrderId },
+        include: { order: { select: { id: true, status: true } } },
+      });
+
+      if (!existing) {
+        throw new NotFoundException("Online order not found");
+      }
+      if (existing.type !== "DELIVERY") {
+        throw new BadRequestException(
+          "Faqat yetkazish buyurtmasini kuryerga biriktirish mumkin.",
+        );
+      }
+      if (scopedBranchId && existing.branchId !== scopedBranchId) {
+        throw new ForbiddenException("Cannot access another branch");
+      }
+      if (
+        existing.order.status === OrderStatus.COMPLETED ||
+        existing.order.status === OrderStatus.CANCELLED
+      ) {
+        throw new BadRequestException(
+          "Yakunlangan yoki bekor qilingan buyurtmani qayta biriktirib bo'lmaydi.",
+        );
+      }
+
+      if (employeeId) {
+        /*
+         * Biriktirilayotgan xodim HAQIQATAN kuryer va SHU filialda ekanini
+         * tekshiramiz — aks holda buyurtma oshpazga biriktirilib, kuryer
+         * ro'yxatidan butunlay yo'qolib ketardi.
+         */
+        const courier = await tx.employee.findFirst({
+          where: {
+            id: employeeId,
+            status: "ACTIVE",
+            branchId: existing.branchId,
+            user: { roles: { some: { role: { code: "COURIER" } } } },
+          },
+          select: { id: true },
+        });
+
+        if (!courier) {
+          throw new BadRequestException(
+            "Bu xodim shu filialning faol kuryeri emas.",
+          );
+        }
+      }
+
+      await tx.order.update({
+        where: { id: existing.order.id },
+        data: { servedById: employeeId },
+      });
+
+      return { customerOrderId, employeeId };
+    });
   }
 
   private todayTashkentRange(): { start: Date; end: Date } {

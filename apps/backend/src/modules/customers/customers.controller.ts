@@ -14,6 +14,7 @@ import {
   ListCustomerOrdersDto,
   ListCustomersDto,
   ListOnlineOrdersDto,
+  AssignCourierDto,
   UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
@@ -211,6 +212,32 @@ export class CustomersAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.customersService.listCourierDeliveryOrderHistory(query, user);
+  }
+
+  /*
+   * Kuryerlar nazorati (5.5). `COURIER_MANAGE` — KURYERGA BERILMAGAN:
+   * kuryer o'z buyurtmasini oladi, lekin boshqasinikini tortib ololmaydi.
+   */
+  @Get("couriers")
+  @Permissions(PERMISSIONS.COURIER_MANAGE)
+  listCouriers(@CurrentUser() user: AuthenticatedUser) {
+    return this.customersService.listCouriers(user);
+  }
+
+  @Get("couriers/deliveries")
+  @Permissions(PERMISSIONS.COURIER_MANAGE)
+  listActiveDeliveries(@CurrentUser() user: AuthenticatedUser) {
+    return this.customersService.listActiveDeliveries(user);
+  }
+
+  @Patch("courier/orders/:id/assign")
+  @Permissions(PERMISSIONS.COURIER_MANAGE)
+  assignCourier(
+    @Param("id") id: string,
+    @Body() dto: AssignCourierDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.assignCourier(id, dto.employeeId, user);
   }
 
   @Patch("courier/orders/:id/status")

@@ -43,6 +43,12 @@ type CourierOrder = {
   createdAt: string;
   customer?: { name: string; phone: string } | null;
   branch?: { name: string; address?: string | null } | null;
+  /*
+   * Filialdan mijozgacha TO'G'RI CHIZIQ masofasi, kilometrda. Serverdan
+   * keladi (Haversine). Haqiqiy yo'l undan uzunroq — bu raqam "qaysi
+   * buyurtma yaqinroq" degan tartib uchun, aniq masofa uchun emas.
+   */
+  distanceKm?: number | null;
   order?: {
     orderNumber: string;
     displayOrderNumber?: string | null;
@@ -512,7 +518,12 @@ function CourierOrderCard({
                 point?.address ||
                 "Manzil kiritilmagan"}
             </h3>
-            <span className={styles.muted}>Yetkazish manzili</span>
+            <span className={styles.muted}>
+              Yetkazish manzili
+              {typeof order.distanceKm === "number"
+                ? ` · ~${order.distanceKm} km`
+                : ""}
+            </span>
           </div>
         </div>
         <div className={styles.customerRow}>
