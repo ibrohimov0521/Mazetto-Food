@@ -123,6 +123,7 @@ export function AdminOrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<OrderStatus>("CANCELLED");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkOrderStatusResult | null>(null);
 
@@ -213,7 +214,7 @@ export function AdminOrdersPage() {
     setBulkResult(null);
   }
 
-  async function bulkCancelSelected(): Promise<void> {
+  async function bulkUpdateSelected(): Promise<void> {
     setBulkBusy(true);
     setError("");
     setBulkResult(null);
@@ -223,8 +224,8 @@ export function AdminOrdersPage() {
         method: "PATCH",
         body: JSON.stringify({
           orderIds: [...selectedOrderIds],
-          status: "CANCELLED",
-          reason: "Admin bulk action: cancelled from orders list",
+          status: bulkStatus,
+          reason: `Admin bulk action: ${bulkStatus} from orders list`,
           confirm: true,
         }),
       });
@@ -436,13 +437,25 @@ export function AdminOrdersPage() {
                 {bulkResult.failedCount ? `, ${bulkResult.failedCount} ta o'tmadi` : ""}
               </span>
             ) : null}
+            <Select
+              aria-label="Tanlangan buyurtmalar uchun ommaviy amal"
+              disabled={!selectedOrderIds.size || bulkBusy}
+              value={bulkStatus}
+              onChange={(event) => setBulkStatus(event.target.value as OrderStatus)}
+            >
+              {changeableStatuses.map((value) => (
+                <option key={value} value={value}>
+                  {orderStatusLabels[value]}
+                </option>
+              ))}
+            </Select>
             <Button
               disabled={!selectedOrderIds.size || bulkBusy}
               onClick={() => setBulkConfirmOpen(true)}
               size="sm"
-              variant="danger"
+              variant={bulkStatus === "CANCELLED" ? "danger" : "primary"}
             >
-              Tanlanganlarni bekor qilish
+              Tanlanganlarga qo'llash
             </Button>
           </div>
         </div>
@@ -472,7 +485,7 @@ export function AdminOrdersPage() {
       </Card>
 
       <Modal
-        description="Bu amal tanlangan buyurtmalarni bekor qilingan holatiga o'tkazadi. Davom etish uchun ikkinchi marta tasdiqlang."
+        description={`Bu amal tanlangan buyurtmalarni "${orderStatusLabels[bulkStatus]}" holatiga o'tkazadi. Davom etish uchun ikkinchi marta tasdiqlang.`}
         footer={
           <>
             <Button
@@ -484,16 +497,16 @@ export function AdminOrdersPage() {
             </Button>
             <Button
               disabled={bulkBusy}
-              onClick={() => void bulkCancelSelected()}
-              variant="danger"
+              onClick={() => void bulkUpdateSelected()}
+              variant={bulkStatus === "CANCELLED" ? "danger" : "primary"}
             >
-              {bulkBusy ? "Bajarilmoqda..." : `${selectedOrders.length} ta buyurtmani bekor qilish`}
+              {bulkBusy ? "Bajarilmoqda..." : `${selectedOrders.length} ta buyurtmaga qo'llash`}
             </Button>
           </>
         }
         isOpen={bulkConfirmOpen}
         onClose={() => setBulkConfirmOpen(false)}
-        title="Ommaviy amalni tasdiqlang"
+        title={`Ommaviy amal: ${orderStatusLabels[bulkStatus]}`}
       >
         <div className="grid gap-2 text-sm text-mz-text">
           {selectedOrders.slice(0, 8).map((order) => (
