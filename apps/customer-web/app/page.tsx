@@ -1,6 +1,7 @@
 import Home from "./home-client";
 import { getPublicHome } from "../lib/public-catalog";
 import { jsonLd, pageMetadata, siteUrl } from "../lib/seo";
+import { selectHomeProducts } from "../lib/customer-display";
 
 export const revalidate = 300;
 export const metadata = pageMetadata(
@@ -9,7 +10,10 @@ export const metadata = pageMetadata(
   "/",
 );
 export default async function HomePage() {
-  const initial = await getPublicHome().catch(() => undefined);
+  const loaded = await getPublicHome().catch(() => undefined);
+  // Only the products the homepage renders travel in the RSC payload; the rest
+  // of the catalog is fetched by /menu and by the client refresh.
+  const initial = loaded ? { ...loaded, products: selectHomeProducts(loaded.products, loaded.home) } : undefined;
   return (
     <>
       <script

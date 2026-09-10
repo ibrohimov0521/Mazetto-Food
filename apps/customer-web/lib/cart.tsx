@@ -205,7 +205,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated || !fulfillmentReady || fulfillment.fulfillment) return;
     let cancelled = false;
     const request = customer?.accessToken ? apiFetch : guestApiFetch;
-    void Promise.all([
+    // Restoring the saved address is only needed once the visitor reaches the
+    // cart, so it waits for an idle frame instead of competing with hydration.
+    const restore = () => void Promise.all([
       request<SavedAddress[]>("/customer/me/addresses", {
         ...(customer?.accessToken ? { accessToken: customer.accessToken } : {}),
       }),
@@ -237,8 +239,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       .finally(() => {
         if (!cancelled) setRestoredOwner(owner);
       });
+
+    const idle = typeof window.requestIdleCallback === "function";
+    const handle = idle
+      ? window.requestIdleCallback(restore, { timeout: 4000 })
+      : window.setTimeout(restore, 1200);
     return () => {
       cancelled = true;
+      if (idle) window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
     };
   }, [
     hydrated,

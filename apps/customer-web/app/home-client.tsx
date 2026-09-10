@@ -9,7 +9,7 @@ import { MotionDiv, pageMotion, sectionMotion } from "../components/motion-primi
 import { ProductCard } from "../components/product-card";
 import { SiteShell } from "../components/site-shell";
 import { apiFetch } from "../lib/api";
-import { displayCategory, displayCustomerHome, displayProducts } from "../lib/customer-display";
+import { displayCategory, displayCustomerHome, displayProducts, selectHomeProducts } from "../lib/customer-display";
 import type { Category, CustomerHome, Product } from "../lib/types";
 
 export default function Home({ initial }: { initial?: { categories: Category[]; products: Product[]; home: CustomerHome } }) {
@@ -19,6 +19,11 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
   const [loading, setLoading] = useState(!initial);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadVersion = useRef(0);
+  // Skips re-rendering every card when the background refresh matches what was
+  // server-rendered, which is the common case behind the five-minute revalidate.
+  const renderedRef = useRef(
+    initial ? snapshot(initial.categories, initial.products, initial.home) : "",
+  );
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
@@ -31,8 +36,12 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
         apiFetch<CustomerHome>("/customer/home"),
       ]);
       if (version !== loadVersion.current) return;
+      const homeProducts = selectHomeProducts(nextProducts, nextHome);
+      const next = snapshot(nextCategories, homeProducts, nextHome);
+      if (next === renderedRef.current) return;
+      renderedRef.current = next;
       setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
-      setProducts(displayProducts(nextProducts));
+      setProducts(displayProducts(homeProducts));
       setHome(displayCustomerHome(nextHome));
     } catch (error) {
       if (version !== loadVersion.current) return;
@@ -48,9 +57,15 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
       return () => { loadVersion.current++; };
     }
 
-    const timeout = window.setTimeout(() => void load(), 2500);
+    // The server payload is at most five minutes old, so the refresh waits for
+    // an idle frame instead of competing with hydration.
+    const idle = typeof window.requestIdleCallback === "function";
+    const handle = idle
+      ? window.requestIdleCallback(() => void load(), { timeout: 6000 })
+      : window.setTimeout(() => void load(), 2500);
     return () => {
-      window.clearTimeout(timeout);
+      if (idle) window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
       loadVersion.current++;
     };
   }, [initial, load]);
@@ -81,7 +96,7 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
 
       <PromotionSlider promotions={home.promotions} />
 
-      {loading ? <SkeletonProductSection title="Tavsiya qilamiz" /> : <ProductSection priority products={featured.length ? featured : popular.slice(0, 4)} title="Tavsiya qilamiz" />}
+      {loading ? <SkeletonProductSection title="Tavsiya qilamiz" /> : <ProductSection eager products={featured.length ? featured : popular.slice(0, 4)} title="Tavsiya qilamiz" />}
 
       <MotionDiv {...sectionMotion} className="mx-auto w-full max-w-6xl px-4 pb-8">
         <div className="no-scrollbar mf-home-category-row flex max-w-full gap-2.5 overflow-x-auto pb-2 sm:gap-3">
@@ -131,7 +146,7 @@ function getCategoryRank(category: Category): number {
   return 0;
 }
 
-function ProductSection({ products, title, priority = false }: { products: Product[]; title: string; priority?: boolean }) {
+function ProductSection({ products, title, eager = false }: { products: Product[]; title: string; eager?: boolean }) {
   if (!products.length) {
     return null;
   }
@@ -143,7 +158,7 @@ function ProductSection({ products, title, priority = false }: { products: Produ
         <Link className="pressable mf-section-link text-sm font-black" href="/menu">Menyuni ko'rish</Link>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
-        {products.map((product, index) => <ProductCard compact key={product.id} priority={priority && index < 4} product={product} />)}
+        {products.map((product, index) => <ProductCard compact eager={eager && index < 4} key={product.id} product={product} />)}
       </div>
     </MotionDiv>
   );
@@ -174,4 +189,8 @@ function SkeletonProductSection({ title }: { title: string }) {
       </div>
     </section>
   );
+}
+
+function snapshot(categories: Category[], products: Product[], home: CustomerHome): string {
+  return JSON.stringify([categories, products, home]);
 }

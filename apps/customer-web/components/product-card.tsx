@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { MediaImage } from "./media-image";
-import { MotionArticle, MotionButton, buttonMotion, hapticTap } from "./motion-primitives";
+import { hapticTap } from "./motion-primitives";
 import { cartItemKey, formatMoney, useCart } from "../lib/cart";
 import type { Product } from "../lib/types";
 
-export function ProductCard({ compact = false, priority = false, product }: { compact?: boolean; priority?: boolean; product: Product }) {
+export function ProductCard({ compact = false, eager = false, product }: { compact?: boolean; eager?: boolean; product: Product }) {
   const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, items, toggleFavorite, triggerCartFlight, updateQuantity } = useCart();
   const variant = product.variants.find((candidate) => candidate.isDefault) ?? product.variants[0];
@@ -42,8 +41,7 @@ export function ProductCard({ compact = false, priority = false, product }: { co
       {compact ? "+" : "Tanlash"}
     </Link>
   ) : (
-    <MotionButton
-      {...buttonMotion}
+    <button
       aria-label={`${product.name} savatga qo'shish`}
       className="pressable ripple mf-button-primary mf-product-plus justify-self-end font-black"
       onClick={() => {
@@ -65,17 +63,14 @@ export function ProductCard({ compact = false, priority = false, product }: { co
       type="button"
     >
       {compact ? "+" : "Qo'shish"}
-    </MotionButton>
+    </button>
   );
 
   return (
-    <MotionArticle
+    <article
       // Lift without scaling/tilting the text and image's rasterized layer.
-      whileHover={{ y: -5 }}
-      whileTap={{ y: 1 }}
-      transition={{ type: "spring", stiffness: 420, damping: 30 }}
       data-product-card="true"
-      className={`mf-product-card mf-product-card-locked mf-leaf-corner group min-w-0 overflow-hidden ${compact ? "is-compact" : ""}`}
+      className={`mf-product-card mf-product-card-locked mf-product-card-lift mf-leaf-corner group min-w-0 overflow-hidden ${compact ? "is-compact" : ""}`}
     >
       <div className="mf-product-media-shell relative">
         <Link href={`/product/${product.id}`}>
@@ -84,7 +79,7 @@ export function ProductCard({ compact = false, priority = false, product }: { co
             aspectClassName={compact ? "aspect-[1.22/1]" : "aspect-[4/3]"}
             className="mf-product-media"
             ref={imageRef}
-            priority={priority}
+            eager={eager}
             src={product.imageUrl}
             sizes={compact ? "(max-width: 767px) 50vw, (max-width: 1152px) 33vw, (max-width: 1279px) 360px, 270px" : "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 360px"}
           />
@@ -124,15 +119,12 @@ export function ProductCard({ compact = false, priority = false, product }: { co
           {product.description?.trim() || "Buyurtmadan keyin issiq tayyorlanadi."}
         </p>
         <div className="mf-product-price-row flex min-w-0 items-center justify-between gap-2 sm:gap-3">
-          <motion.span
-            className={`${compact ? "text-[14px] min-[390px]:text-[15px] sm:text-base" : "text-lg"} mf-product-price min-w-0 font-black text-[#F5CF00]`}
-            transition={{ type: "spring", stiffness: 520, damping: 34 }}
-          >
+          <span className={`${compact ? "text-[14px] min-[390px]:text-[15px] sm:text-base" : "text-lg"} mf-product-price min-w-0 font-black text-[#F5CF00]`}>
             {formatMoney(price)}
-          </motion.span>
+          </span>
         </div>
       </div>
-    </MotionArticle>
+    </article>
   );
 }
 
@@ -183,67 +175,50 @@ function ProductQuantityControl({
   return (
     <div
       ref={stepperRef}
-      className={`mf-product-stepper mf-button-primary ${expanded ? "is-expanded" : "is-collapsed"} items-center overflow-hidden rounded-full text-sm font-black`}
+      className={`mf-product-stepper mf-button-primary ${expanded ? "is-expanded" : "is-collapsed"} relative items-center overflow-hidden rounded-full text-sm font-black`}
       onFocusCapture={() => { setExpanded(true); clearCollapseTimer(); }}
       onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) scheduleCollapse(); }}
     >
-      <AnimatePresence initial={false} mode="popLayout">
-        {expanded ? (
-          <motion.div
-            animate={{ opacity: 1 }}
-            className="grid h-full w-full grid-cols-3 items-center"
-            exit={{ opacity: 0 }}
-            initial={{ opacity: 0 }}
-            key="expanded"
-            transition={{ duration: 0.16 }}
-          >
-            <button
-              aria-label={`${productName} kamaytirish`}
-              className="pressable h-full w-full"
-              onClick={() => {
-                onDecrease();
-                scheduleCollapse();
-              }}
-              type="button"
-            >
-              -
-            </button>
-            <motion.span
-              animate={{ scale: [1, 1.16, 1] }}
-              className="text-center"
-              key={quantity}
-              transition={{ duration: 0.22 }}
-            >
-              {quantity}
-            </motion.span>
-            <button
-              aria-label={`${productName} qo'shish`}
-              className="pressable h-full w-full"
-              onClick={() => {
-                onIncrease();
-                scheduleCollapse();
-              }}
-              type="button"
-            >
-              +
-            </button>
-          </motion.div>
-        ) : (
-          <motion.button
-            animate={{ opacity: 1, scale: 1 }}
-            aria-label={`${productName} miqdori ${quantity}. O'zgartirish`}
-            className="pressable grid h-full w-full place-items-center"
-            exit={{ opacity: 0, scale: 0.92 }}
-            initial={{ opacity: 0, scale: 0.92 }}
-            key="collapsed"
-            onClick={expand}
-            transition={{ duration: 0.16 }}
-            type="button"
-          >
-            {quantity}
-          </motion.button>
-        )}
-      </AnimatePresence>
+      <div aria-hidden={!expanded} className="mf-stepper-face grid h-full w-full grid-cols-3 items-center" data-visible={expanded ? "true" : "false"}>
+        <button
+          aria-label={`${productName} kamaytirish`}
+          className="pressable h-full w-full"
+          onClick={() => {
+            onDecrease();
+            scheduleCollapse();
+          }}
+          tabIndex={expanded ? undefined : -1}
+          type="button"
+        >
+          -
+        </button>
+        <span className="mf-stepper-count text-center" key={quantity}>
+          {quantity}
+        </span>
+        <button
+          aria-label={`${productName} qo'shish`}
+          className="pressable h-full w-full"
+          onClick={() => {
+            onIncrease();
+            scheduleCollapse();
+          }}
+          tabIndex={expanded ? undefined : -1}
+          type="button"
+        >
+          +
+        </button>
+      </div>
+      <button
+        aria-hidden={expanded}
+        aria-label={`${productName} miqdori ${quantity}. O'zgartirish`}
+        className="mf-stepper-face pressable grid h-full w-full place-items-center"
+        data-visible={expanded ? "false" : "true"}
+        onClick={expand}
+        tabIndex={expanded ? -1 : undefined}
+        type="button"
+      >
+        {quantity}
+      </button>
     </div>
   );
 }
