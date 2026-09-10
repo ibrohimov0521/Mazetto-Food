@@ -1,5 +1,6 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
@@ -46,6 +47,35 @@ async function bootstrap(): Promise<void> {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new ApiResponseInterceptor());
+
+  /*
+   * API hujjati — faqat ATAYLAB yoqilganda (7-bosqich Q3.2).
+   *
+   * `SWAGGER_ENABLED` default'i `false` va ishlab chiqarishda shunday
+   * qolishi kerak: hujjat ichki endpoint tuzilishini ochib beradi.
+   *
+   * Yon foyda: `docs/admin-redesign/03-current-state/BACKEND_API_INVENTORY.md`
+   * QO'LDA yig'ilgan va eskirib boradi — Swagger uni bepul va doim
+   * yangi holda beradi.
+   */
+  if (env.SWAGGER_ENABLED && env.NODE_ENV !== "production") {
+    const config = new DocumentBuilder()
+      .setTitle("MAZETTO FOOD API")
+      .setDescription("Restoran platformasi — POS, admin va mijoz API'si")
+      .setVersion("1.0")
+      .addBearerAuth(
+        { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        "access-token",
+      )
+      .build();
+
+    SwaggerModule.setup(
+      "api/v1/docs",
+      app,
+      SwaggerModule.createDocument(app, config),
+      { swaggerOptions: { persistAuthorization: true } },
+    );
+  }
 
   await app.listen(port);
 }

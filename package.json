@@ -11,7 +11,11 @@
     "media:prepare": "node apps/media/scripts/prepare-media-release.mjs --dry-run",
     "media:smoke": "node apps/media/scripts/smoke-media-container.mjs",
     "media:validate": "node apps/media/scripts/validate-media-assets.mjs",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "verify": "turbo run typecheck lint build && node scripts/ops-validate.mjs",
+    "validate": "node scripts/ops-validate.mjs",
+    "db:backup": "node scripts/ops-backup-db.mjs",
+    "ops:health": "node scripts/ops-health.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",

@@ -3,6 +3,10 @@ packages:
   - "packages/*"
 
 allowBuilds:
+  # `@nestjs/swagger` bilan kelgan telemetriya paketi. Uning post-install
+  # skripti tashqi xizmatga signal yuboradi, ya'ni bizga kerak emas — ataylab
+  # RAD etilgan. `false` yozilmasa pnpm har buyruqda ogohlantirib to'xtaydi.
+  "@scarf/scarf": false
   "@nestjs/core": true
   "@prisma/engines": true
   "esbuild": true
