@@ -1,26 +1,27 @@
 # MAZETTO FOOD — CI/CD
 
-Maqsad: tekshirilmagan kod `main` ga ham, production'ga ham chiqmasin. Oddiy
-o'zgarish o'zi deploy bo'lsin, lekin migratsiyali reliz (backup,
-`prisma migrate deploy`) odam nazoratida qolsin.
+Maqsad: tekshirilmagan kod `main` ga ham, production'ga ham chiqmasin.
+
+**CD YO'Q.** Bu hujjat faqat CI haqida. Production'ga chiqarish to'liq qo'lda
+va bitta odam — reliz egasi — zimmasida: [`RELEASE_RULES.md`](RELEASE_RULES.md).
+Avtomatik deploy (`deploy.yml`) ataylab olib tashlandi.
 
 ```text
 branch ──► PR ──► CI "verify" ── yashil bo'lishi SHART ──► merge
                                                              │
                    main'dagi commit uchun CI "verify" ◄──────┘
-                                  │ yashil
+                                  │ tugadi
                                   ▼
-          Deploy workflow: release:gate — production tegidan beri nima o'zgardi?
+        Release handoff: issue ochiladi va reliz egasiga biriktiriladi
                                   │
-         ┌────────────────────────┴─────────────────────────┐
-  migratsiya yo'q                                    migratsiya bor
-         │                                                  │
-  Dokploy API: o'zgargan ilovalar              to'xtaydi (ogohlantirish)
-  → release:smoke                              → qo'lda reliz: backup, deploy,
-  → production tegi suriladi                     migrate deploy, release:smoke,
-                                                 production tegi
-         │                                                  │
-         └────── qo'lda: dizayn / mobil / Telegram / printer ┘
+                                  ▼
+        Reliz egasi o'z mashinasida: pull → pnpm run ci → release:gate
+                                  │
+                                  ▼
+        Reliz egasi: backup → deploy → migrate deploy → release:smoke
+                                  │
+                                  ▼
+                   production tegi suriladi, issue yopiladi
 ```
 
 ## 1. Ish tartibi
@@ -105,91 +106,53 @@ qo'ya olmaydi.
 > yangilang. Aks holda har PR "Expected — Waiting for status to be reported"
 > holatida qotib qoladi.
 
-## 4. Avtomatik deploy
+## 4. Reliz topshirig'i (avtomatik deploy O'RNIGA)
 
-`.github/workflows/deploy.yml` — `main` dagi commit uchun `verify` yashil
-tugagach ishga tushadi:
+`.github/workflows/release-handoff.yml` — `main` dagi commit uchun CI tugagach
+ishga tushadi va **deploy qilmaydi**, faqat xabar beradi:
 
-1. `release:gate` — commit `main` da va `verify` yashil ekani qayta tekshiriladi.
-2. `production` tegidan beri qaysi ilovalar o'zgargani va yangi migratsiya
-   bormi, aniqlanadi.
-3. Quyidagilardan biri bo'lsa **deploy qilinmaydi** (ogohlantirish, xato emas):
-   - yangi migratsiya bor → qo'lda reliz (5-bo'lim);
-   - `production` tegi yo'q;
-   - `main` bu orada oldinga ketgan → o'sha commit o'z CI'sidan keyin keladi.
-4. O'zgargan ilovalar Dokploy API orqali **navbat bilan** deploy qilinadi:
-   backend → customer-web → pos-web → telegram-bot → media. Har biri tugashi
-   kutiladi. Har biridan oldin `main` hamon shu commit'da ekani qayta
-   tekshiriladi, chunki Dokploy aniq commit'ni emas, branch uchini yig'adi.
-5. `release:smoke` — konteyner ko'tarilishini kutib, 4 urinishgacha.
-6. Hammasi o'tsa `production` tegi shu commit'ga suriladi.
+1. Reliz egasiga (`@ibrohimov0521`) `reliz` yorlig'i bilan issue ochiladi va
+   biriktiriladi — GitHub o'zi email/bildirishnoma yuboradi.
+2. Issue ichida: commit va CI natijasi havolasi, `pnpm release:gate` ning
+   to'liq chiqishi (qaysi ilova o'zgargan, yangi migratsiyalar), `production`
+   tegidan beri chiqmagan commitlar ro'yxati, lokal yurgiziladigan buyruqlar
+   va prodgacha bo'lgan to'liq tekshiruv ro'yxati.
+3. CI qizil bo'lsa sarlavha `main QIZIL:` bilan ochiladi — deploy qadamlariga
+   o'tilmaydi.
+4. Bir commit uchun ikkinchi issue ochilmaydi (CI qayta yurgizilsa ham).
 
-Avtomatik rollback yo'q. Deploy yoki smoke yiqilsa job qizil bo'ladi, teg
-joyida qoladi va Dokploy'da oldingi deploy'ga qo'lda qaytiladi
-(`docs/DOKPLOY_DEPLOYMENT.md`, Rollback Notes).
+Secret KERAK EMAS: `GITHUB_TOKEN` yetadi, ya'ni merge bo'lishi bilan ishlaydi.
 
-Qo'lda ham yurgizish mumkin: Actions → **Deploy** → Run workflow. U `main`
-uchini deploy qiladi va yuqoridagi shartlarning hammasi baribir amal qiladi.
+> `workflow_run` workflow'i faqat default branch'dagi nusxasidan yuradi — bu
+> fayl `main` ga tushmaguncha hech narsa ochilmaydi.
 
-### Yoqish — bir marta, repo admini
-
-Workflow O'CHIQ holatda keladi: quyidagilar qilinmaguncha hech narsa deploy
-qilmaydi.
-
-**1. Dokploy'da**
-
-- Settings → Profile → API/CLI → API kalit yarating.
-- backend, customer-web, pos-web (kerak bo'lsa media, telegram-bot) ilovalarida
-  **Autodeploy'ni o'chiring.** Aks holda Dokploy CI'ni kutmasdan har push'da
-  o'zi deploy qiladi va bu darvoza ma'nosiz bo'ladi.
-- Ilova ID'larini oling:
-
-  ```bash
-  curl -s -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_URL/api/project.all" \
-    | jq -r '.. | objects | select(has("applicationId") and has("appName")) | "\(.appName)  \(.applicationId)"'
-  ```
-
-**2. GitHub → Settings → Secrets and variables → Actions**
-
-| Nomi                       | Turi     | Qiymat                                                               |
-| -------------------------- | -------- | -------------------------------------------------------------------- |
-| `DOKPLOY_URL`              | secret   | Dokploy panel manzili                                                |
-| `DOKPLOY_API_KEY`          | secret   | 1-qadamdagi kalit                                                    |
-| `DOKPLOY_APP_BACKEND`      | variable | backend `applicationId` — **majburiy**                               |
-| `DOKPLOY_APP_CUSTOMER_WEB` | variable | customer-web `applicationId`                                         |
-| `DOKPLOY_APP_POS_WEB`      | variable | pos-web `applicationId`                                              |
-| `DOKPLOY_APP_MEDIA`        | variable | ixtiyoriy                                                            |
-| `DOKPLOY_APP_TELEGRAM_BOT` | variable | ixtiyoriy                                                            |
-| `AUTO_DEPLOY`              | variable | `true` — yoqadi; o'chirish uchun o'chiring yoki boshqa qiymat bering |
-
-ID berilmagan ilova Dokploy'da emas deb hisoblanadi: avtomatik deploy
-qilinmaydi, job summary'da "qo'lda" deb chiqadi. Backend bundan mustasno —
-uning ID'si bo'lmasa `production` tegi surilmaydi, chunki migratsiyalar backend
-bilan keladi. `print-agent` restoranda ishlaydi va hech qachon Dokploy'dan
-deploy qilinmaydi.
-
-**3. `production` tegi** — hozir production'da turgan commit'ga (image
-tegidagi SHA):
+Ochiq topshiriqlar — production'ga chiqmagan navbat:
 
 ```bash
-git tag production <prod-sha> && git push origin production
+gh issue list --label reliz --state open
 ```
 
-**4. Tekshirish:** Actions → **Deploy** → Run workflow. Deploy qilmasa, nima
-uchunligini job summary'da yozadi.
+### Avtomatik deploy nima uchun olib tashlandi
 
-Ixtiyoriy: Settings → Environments → `production` → Required reviewers. Shunda
-har deploy bitta tasdiq tugmasini kutadi.
+Avval `deploy.yml` `main` yashil bo'lgach commit'ni Dokploy API orqali o'zi
+chiqarardi. Qaror: **production'ga faqat reliz egasi, o'z mashinasidan
+chiqaradi** — u avval commit'ni tortib oladi, to'liq tekshiradi, keyin deploy
+qiladi. Qoidalar to'plami: [`RELEASE_RULES.md`](RELEASE_RULES.md).
 
-`DOKPLOY_API_KEY` Dokploy panelga kirish beradi. U faqat secret sifatida
-saqlanadi va workflow faqat `main` dagi push'dan keyin yuradi — fork'dan
-kelgan PR unga yeta olmaydi.
+Shu bilan birga **Dokploy'ning o'z "Autodeploy" i har bir ilovada o'chiq
+bo'lishi shart.** Yoqiq qolsa Dokploy GitHub'ni kutmasdan har push'da o'zi
+deploy qiladi va workflow'ni o'chirish hech narsa bermaydi.
+
+`AUTO_DEPLOY`, `DOKPLOY_URL`, `DOKPLOY_API_KEY` va `DOKPLOY_APP_*` Actions
+sozlamalari endi ishlatilmaydi — ularni repo sozlamalaridan o'chirish mumkin.
+`scripts/dokploy-deploy.mjs` qoldi: reliz egasi uni LOKAL mashinasidan
+yurgizadi (`RELEASE_RULES.md`, 4-bo'lim, 5-qadam).
 
 ## 5. Qo'lda reliz
 
-Migratsiya bo'lsa, avtomatik deploy o'chiq bo'lsa yoki ilova Dokploy'da
-bo'lmasa. Tartib `docs/MAZETTO_RELEASE_READINESS_CHECKLIST.md` da, unga uch
-buyruq qo'shildi.
+**Har doim — boshqa yo'l yo'q.** Kim qiladi va nimalarni tekshiradi:
+[`RELEASE_RULES.md`](RELEASE_RULES.md). Bosqichma-bosqich tartib
+`docs/MAZETTO_RELEASE_READINESS_CHECKLIST.md` da, unga uch buyruq qo'shildi.
 
 **Image yig'ishdan OLDIN:**
 
@@ -237,33 +200,35 @@ Keyin qo'lda: dizayn va mobil layout, Telegram webhook info, printer.
 git tag -f production <sha> && git push -f origin production
 ```
 
-Avtomatik deploy va `release:gate` shu tegdan solishtiradi. Surilmasa, keyingi
-avtomatik deploy allaqachon qo'llangan migratsiyani yana "yangi" deb ko'radi va
-to'xtaydi.
+`release:gate` va reliz topshirig'i issue'si shu tegdan solishtiradi. Surilmasa
+hisob buziladi: keyingi topshiriq allaqachon chiqarilgan o'zgarishlarni yana
+"chiqmagan" deb, qo'llangan migratsiyani esa "yangi" deb ko'rsatadi.
 
 ## 6. Nima uchun CorpEats'dan yumshoqroq
 
 CorpEats'da `main` ga merge → image build → registry → SSH orqali avtomatik
 deploy → avtomatik rollback. Mazetto'da:
 
-| CorpEats                                           | Mazetto                                            | Sabab                                                                   |
-| -------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
-| Har `main` push'da GHCR image build + push         | yo'q — image server'da (Dokploy) yig'iladi         | registry va uning sirlari qo'shimcha yuk                                |
-| Har `main` push'da SSH orqali deploy               | Dokploy API orqali, faqat migratsiyasiz commit'lar | migratsiya production'da backup bilan qo'lda yuradi                     |
-| Avtomatik rollback                                 | yo'q — job qizil bo'ladi, qaytarish qo'lda         | rollback bazani qaytarmaydi; qarorni odam qabul qiladi                  |
-| nginx konfig validatsiyasi                         | yo'q                                               | routing Traefik/Dokploy'da                                              |
-| Backup, Telegram test, mobile workflow'lari        | yo'q                                               | hozircha kerak emas                                                     |
-| `paths-ignore` (faqat hujjat o'zgarsa CI yurmaydi) | yo'q                                               | majburiy check hujjat PR'ida ham kelishi kerak, aks holda PR bloklanadi |
-| Turbo kesh                                         | yo'q                                               | repo public — Actions daqiqalari bepul, soddalik ustun                  |
+| CorpEats                                           | Mazetto                                              | Sabab                                                                   |
+| -------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------- |
+| Har `main` push'da GHCR image build + push         | yo'q — image server'da (Dokploy) yig'iladi           | registry va uning sirlari qo'shimcha yuk                                |
+| Har `main` push'da SSH orqali deploy               | yo'q — reliz egasi o'z mashinasidan qo'lda chiqaradi | qaror va javobgarlik bitta odamda; avtomatika faqat xabar beradi        |
+| Avtomatik rollback                                 | yo'q — qaytarish qo'lda                              | rollback bazani qaytarmaydi; qarorni odam qabul qiladi                  |
+| nginx konfig validatsiyasi                         | yo'q                                                 | routing Traefik/Dokploy'da                                              |
+| Backup, Telegram test, mobile workflow'lari        | yo'q                                                 | hozircha kerak emas                                                     |
+| `paths-ignore` (faqat hujjat o'zgarsa CI yurmaydi) | yo'q                                                 | majburiy check hujjat PR'ida ham kelishi kerak, aks holda PR bloklanadi |
+| Turbo kesh                                         | yo'q                                                 | repo public — Actions daqiqalari bepul, soddalik ustun                  |
 
 CorpEats'dan olingani: eskirgan run'ni bekor qilish (`main` bundan mustasno),
-deploy'ni yarmida bekor qilmaslik, `workflow_run` dagi branch shartini job'da
-takrorlash, pnpm store keshi, `workflow_dispatch`, `timeout-minutes`.
+`workflow_run` dagi branch shartini job'da takrorlash, pnpm store keshi,
+`workflow_dispatch`, `timeout-minutes`.
 
 ## 7. Keyin qo'shish mumkin
 
 - **DB validatorlar** (`validate-*-db.ts`) — CI'da Postgres allaqachon bor, ya'ni
   ular bir martalik bazada xavfsiz yurishi mumkin.
 - **Dockerfile build** — image yig'ilishi deploy paytida emas, PR'da yiqilsin.
-- **Deploy xabarnomasi** — natija Telegram kanaliga.
+- **Reliz topshirig'i Telegram'ga ham** — hozir faqat GitHub issue. Telegram
+  uchun `TELEGRAM_BOT_TOKEN` va chat id secret'lari kerak; ularni faqat repo
+  admini qo'sha oladi.
 - **Playwright QA** (`scripts/qa-*.mjs`) — tanlanganlari PR'da.

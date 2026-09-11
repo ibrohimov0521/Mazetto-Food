@@ -6,7 +6,9 @@ import { appendFileSync } from "node:fs";
  * O'zgargan ilovalarni Dokploy API orqali deploy qiladi va har birining
  * tugashini kutadi.
  *
- * .github/workflows/deploy.yml chaqiradi, lekin lokal ham ishlaydi:
+ * FAQAT QO'LDA. Avval buni .github/workflows/deploy.yml chaqirardi; o'sha
+ * workflow olib tashlandi va production'ga endi faqat reliz egasi o'z
+ * mashinasidan chiqaradi (docs/RELEASE_RULES.md):
  *
  *   DOKPLOY_URL=https://... DOKPLOY_API_KEY=... DOKPLOY_APP_BACKEND=<id> \
  *     node scripts/dokploy-deploy.mjs --sha <to'liq sha> backend pos-web

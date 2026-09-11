@@ -35,3 +35,13 @@ Tegishli qatorlarni belgilang, tegishli bo'lmaganini o'chirib yuboring.
 - [ ] Migratsiya additive: ustun/jadvalni o'chirmaydi va nomini o'zgartirmaydi,
       ya'ni eski backend yangi sxemada ham ishlay oladi
 - [ ] Relizdan oldin production baza backup'i olinadi
+
+## Production'ga chiqarish
+
+Merge bu yerda tugaydi — **avtomatik deploy yo'q.** Merge'dan keyin CI tugashi
+bilan reliz egasiga (@ibrohimov0521) topshiriq issue'si ochiladi; prodga
+chiqarish va undan oldingi barcha tekshiruv o'sha issue'da, uning zimmasida.
+Qoidalar: `docs/RELEASE_RULES.md`.
+
+Relizga tegishli bir narsa bo'lsa (yangi env, Dokploy sozlamasi, migratsiya
+tartibi) — shu yerga yozing, issue'ga ko'chadi.

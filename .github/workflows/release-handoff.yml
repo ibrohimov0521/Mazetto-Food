@@ -1,0 +1,146 @@
+# ── MAZETTO FOOD — Reliz topshirig'i ─────────────────────────────────────────
+#
+# `main` ga har bir push uchun CI tugagach, reliz egasiga GitHub issue ochadi
+# va unga biriktiradi. Issue ichida: commit, CI natijasi, `release-gate`
+# chiqishi, production'ga chiqmagan commitlar ro'yxati, reliz egasi lokal
+# mashinasida yurgizadigan buyruqlar va prodgacha bo'lgan to'liq tekshiruv
+# ro'yxati. Qoidalar: docs/RELEASE_RULES.md.
+#
+# BU WORKFLOW DEPLOY QILMAYDI. Avvalgi deploy.yml `main` yashil bo'lgach
+# commit'ni Dokploy'ga o'zi chiqarardi — u ATAYLAB olib tashlandi. Production
+# faqat reliz egasining o'z mashinasidan chiqadi. Bu yerda qolgan yagona
+# avtomatika — xabar berish, ya'ni hech bir o'zgarish nazoratsiz qolmaydi.
+#
+# `workflow_run` workflow'i FAQAT default branch'dagi nusxasidan yuradi: bu
+# fayl `main` ga tushmaguncha hech narsa ochilmaydi.
+#
+# Secret KERAK EMAS — `GITHUB_TOKEN` yetadi, ya'ni merge bo'lishi bilan
+# ishlaydi va repo admini hech narsa sozlamaydi.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Release handoff
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Qo'lda: `main` uchi uchun topshiriqni qayta ochadi.
+  workflow_dispatch:
+
+# Ketma-ket merge'da har commit o'z issue'sini oladi, shuning uchun oldingisi
+# bekor qilinmaydi.
+concurrency:
+  group: release-handoff-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  # Reliz egasi. O'zgarsa docs/RELEASE_RULES.md dagi nom ham yangilansin.
+  RELEASE_OWNER: ibrohimov0521
+  LABEL: reliz
+
+jobs:
+  handoff:
+    name: handoff
+    # `branches` filtri workflow_run'da ishonchsiz — shart shu yerda to'liq
+    # takrorlanadi. PR run'lari ham "CI" nomi bilan tugaydi, lekin topshiriq
+    # faqat `main` ga PUSH bo'lgan commit uchun ochiladi.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      CI_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'success' }}
+      CI_URL: ${{ github.event.workflow_run.html_url }}
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # `production` tegidan diff va commitlar ro'yxati uchun butun tarix
+          # va teglar kerak.
+          fetch-depth: 0
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Yorliq keyingi qadamdan OLDIN yaratiladi: `gh issue list --label` mavjud
+      # bo'lmagan yorliq bilan xato qaytaradi, ya'ni birinchi run yiqilardi.
+      - name: Yorliq
+        run: |
+          gh label create "$LABEL" \
+            --description "Production'ga chiqarish topshirig'i" \
+            --color FBCA04 2>/dev/null || true
+
+      # Bir xil commit uchun ikkinchi issue ochilmasin: CI qayta yurgizilsa
+      # yoki workflow qo'lda takrorlansa shu qadam to'xtatadi.
+      - name: Shu commit uchun issue bormi
+        id: existing
+        run: |
+          short="${SHA:0:7}"
+          number="$(gh issue list --state all --label "$LABEL" --limit 100 \
+            --json number,title \
+            --jq "first(.[] | select(.title | contains(\"$short\")) | .number) // empty" \
+            || true)"
+
+          if [ -n "$number" ]; then
+            echo "::notice::Topshiriq allaqachon ochilgan: #$number"
+          fi
+
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      # `pnpm install` ATAYLAB yo'q: release-gate va release-handoff faqat
+      # node, git va GitHub API bilan ishlaydi. Xabar berish o'rnatishni
+      # kutib turmasin.
+      - name: Topshiriq matnini yig'ish
+        id: body
+        if: steps.existing.outputs.number == ''
+        run: |
+          node scripts/release-handoff.mjs \
+            --sha "$SHA" \
+            --ci "$CI_CONCLUSION" \
+            --ci-url "$CI_URL" \
+            --out handoff.md
+
+      - name: Issue ochiladi va reliz egasiga biriktiriladi
+        if: steps.existing.outputs.number == ''
+        # Sarlavha `${{ }}` bilan to'g'ridan-to'g'ri buyruq ichiga QO'YILMAYDI:
+        # u commit sarlavhasidan keladi va qo'shtirnoq yoki `$(...)` bo'lsa
+        # shellga qo'shimcha buyruq bo'lib tushardi. env orqali kirsa, bash uni
+        # faqat matn deb oladi.
+        env:
+          TITLE: ${{ steps.body.outputs.title }}
+        run: |
+          # Biriktirish alohida: hamkor ro'yxatdan chiqib ketgan bo'lsa ham
+          # issue baribir ochilishi kerak, aks holda xabar umuman bormaydi.
+          url="$(gh issue create \
+            --title "$TITLE" \
+            --body-file handoff.md \
+            --label "$LABEL")"
+
+          echo "$url"
+          number="${url##*/}"
+
+          gh issue edit "$number" --add-assignee "$RELEASE_OWNER" \
+            || echo "::warning::@$RELEASE_OWNER ga biriktirib bo'lmadi — issue ochiq, qo'lda biriktiring"
+
+          {
+            echo "### Reliz topshirig'i"
+            echo ""
+            echo "$url"
+            echo ""
+            echo "Production'ga chiqarish @$RELEASE_OWNER zimmasida (docs/RELEASE_RULES.md)."
+          } >> "$GITHUB_STEP_SUMMARY"

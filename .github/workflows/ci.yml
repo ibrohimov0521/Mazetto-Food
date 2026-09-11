@@ -14,9 +14,9 @@
 # `pnpm release:gate` aynan o'sha commit'ning `verify` natijasini so'raydi.
 # Batafsil: docs/CI_CD.md.
 #
-# Deploy alohida: deploy.yml shu check yashil tugagach, yangi migratsiyasi
-# yo'q commit'ni Dokploy'ga chiqaradi. Migratsiyali reliz odam nazoratida
-# qoladi. CorpEats'dagi image registry va avtomatik rollback ATAYLAB yo'q.
+# AVTOMATIK DEPLOY YO'Q. Bu workflow hech narsani production'ga chiqarmaydi.
+# Shu check tugagach release-handoff.yml reliz egasiga issue ochadi, deploy'ni
+# esa u o'z mashinasidan qo'lda qiladi — docs/RELEASE_RULES.md.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: CI

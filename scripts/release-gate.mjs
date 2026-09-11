@@ -8,9 +8,10 @@ import { appendFileSync } from "node:fs";
  *
  * Branch protection qizil PR'ni merge qilishga yo'l qo'ymaydi, lekin
  * production'ga chiqarishda "qaysi commit'ni chiqaryapman va u
- * tekshirilganmi?" degan savolga hech narsa javob bermasdi. Qo'lda relizda
- * image yig'ishdan OLDIN yurgiziladi; avtomatik deploy (deploy.yml) ham aynan
- * shu skriptni chaqiradi.
+ * tekshirilganmi?" degan savolga hech narsa javob bermasdi. Reliz egasi uni
+ * deploy'dan OLDIN yurgizadi (docs/RELEASE_RULES.md); reliz topshirig'i
+ * issue'sini tayyorlaydigan scripts/release-handoff.mjs ham shu skriptni
+ * chaqiradi va chiqishini issue ichiga soladi.
  *
  *   pnpm release:gate                        # joriy HEAD
  *   pnpm release:gate <sha>                  # aniq commit
