@@ -92,6 +92,7 @@ async function fetchTimed(endpoint) {
       name: endpoint.name,
       ok: false,
       error: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : String(error),
       durationMs: performance.now() - startedAt,
     };
   } finally {
