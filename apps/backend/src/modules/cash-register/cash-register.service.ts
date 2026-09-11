@@ -70,6 +70,10 @@ export class CashRegisterService {
     return this.shiftsService.createCashTransfer(dto, user);
   }
 
+  listTransferReceivers(user: AuthenticatedUser) {
+    return this.shiftsService.listCashTransferReceivers(user);
+  }
+
   listPendingTransfers(user: AuthenticatedUser) {
     return this.shiftsService.listPendingCashTransfers(user);
   }

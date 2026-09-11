@@ -88,7 +88,7 @@ async function main() {
     assert.equal(await prisma.payment.count({ where: { orderId: delivery.order.id } }), 1);
     assert.equal(await prisma.revenueRecord.count({ where: { shiftId: sourceShift.id } }), 3);
 
-    const transfer = await shifts.createCashTransfer({ amount: 60000 }, worker);
+    const transfer = await shifts.createCashTransfer({ amount: 60000, toShiftId: targetShift.id }, worker);
     await assert.rejects(() => shifts.acceptCashTransfer(transfer.id, worker), /o'zingiz qabul/);
     await assert.rejects(() => shifts.closeShift(sourceShift.id, { closingBalance: 0 }, worker), /hali tasdiqlanmagan/);
     const accepted = await Promise.allSettled([shifts.acceptCashTransfer(transfer.id, receiver), shifts.acceptCashTransfer(transfer.id, receiver)]);
@@ -99,7 +99,7 @@ async function main() {
     assert.equal(await prisma.cashTransaction.count({ where: { cashTransferId: transfer.id, type: "CASH_IN" } }), 1);
 
     await shifts.createCashTransaction(sourceShift.id, { type: "CASH_IN", amount: 15000 }, worker);
-    const attempts = await Promise.allSettled([shifts.createCashTransfer({ amount: 10000 }, worker), shifts.createCashTransfer({ amount: 10000 }, worker)]);
+    const attempts = await Promise.allSettled([shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker), shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker)]);
     assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1, "parallel submissions cannot overdraw");
     const pending = await prisma.cashTransfer.findFirstOrThrow({ where: { fromShiftId: sourceShift.id, status: "PENDING" } });
     await shifts.rejectCashTransfer(pending.id, "QA returned", receiver);

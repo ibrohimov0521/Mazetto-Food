@@ -60,6 +60,12 @@ export class CashRegisterController {
     return this.cashRegisterService.createCashTransfer(dto, user);
   }
 
+  @Get("transfers/receivers")
+  @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
+  listTransferReceivers(@CurrentUser() user: AuthenticatedUser) {
+    return this.cashRegisterService.listTransferReceivers(user);
+  }
+
   @Get("transfers/pending")
   @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
   listPendingTransfers(@CurrentUser() user: AuthenticatedUser) {

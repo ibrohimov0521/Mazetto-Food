@@ -9,13 +9,18 @@ const user = (role = "CASHIER", employeeId = "receiver"): AuthenticatedUser => (
 
 function fixture(options: { self?: boolean; balance?: number; pending?: boolean } = {}) {
   const writes: { type: string; amount: Prisma.Decimal }[] = [];
-  const shift = { id: "s1", branchId: "b1", employeeId: "receiver", status: "OPEN", openingBalance: new Prisma.Decimal(0) };
-  const transfer = { id: "t1", fromShiftId: "source", branchId: "b1", status: "PENDING", amount: new Prisma.Decimal(40000), fromShift: { employeeId: options.self ? "receiver" : "sender", status: "OPEN" } };
+  const shift = { id: "s1", branchId: "b1", employeeId: "sender", status: "OPEN", openingBalance: new Prisma.Decimal(0) };
+  const receiverShift = { id: "s2", branchId: "b1", employeeId: "receiver", status: "OPEN", openingBalance: new Prisma.Decimal(0), employee: { status: "ACTIVE", firstName: "Receiver", lastName: "", user: { roles: [{ role: { code: "CASHIER" } }] } } };
+  const transfer = { id: "t1", fromShiftId: "s1", toShiftId: "s2", branchId: "b1", status: "PENDING", amount: new Prisma.Decimal(40000), fromShift: { employeeId: options.self ? "receiver" : "sender", status: "OPEN" } };
   const calls: string[] = [];
   const tx = {
     $queryRawUnsafe: async () => { calls.push("lock"); return [{ id: "s1" }]; },
     employee: { findFirst: async () => ({ id: "receiver" }) },
-    shift: { findFirst: async () => shift, findUnique: async () => shift, findUniqueOrThrow: async () => shift },
+    shift: {
+      findFirst: async ({ where }: { where?: { employeeId?: string } } = {}) => where?.employeeId === "receiver" ? receiverShift : shift,
+      findUnique: async ({ where }: { where: { id: string } }) => where.id === receiverShift.id ? receiverShift : shift,
+      findUniqueOrThrow: async () => shift,
+    },
     cashTransaction: {
       findMany: async () => { calls.push("balance"); return [{ type: "CASH_SALE", amount: new Prisma.Decimal(options.balance ?? 50000) }]; },
       create: async ({ data }: { data: { type: string; amount: Prisma.Decimal } }) => { writes.push(data); return data; },
@@ -34,7 +39,7 @@ function fixture(options: { self?: boolean; balance?: number; pending?: boolean 
 
 test("a kitchen employee can submit cash; only one CASH_OUT is created", async () => {
   const f = fixture();
-  await f.service.createCashTransfer({ amount: 40000 }, user("KITCHEN"));
+  await f.service.createCashTransfer({ amount: 40000, toShiftId: "s2" }, user("KITCHEN", "sender"));
   assert.equal(f.writes.length, 1);
   assert.ok(f.writes[0]);
   assert.equal(f.writes[0].type, "CASH_OUT");
@@ -44,7 +49,7 @@ test("a kitchen employee can submit cash; only one CASH_OUT is created", async (
 
 test("handover cannot exceed available employee cash", async () => {
   const f = fixture({ balance: 30000 });
-  await assert.rejects(() => f.service.createCashTransfer({ amount: 40000 }, user("COURIER")), /oshmasligi/);
+  await assert.rejects(() => f.service.createCashTransfer({ amount: 40000, toShiftId: "s2" }, user("COURIER", "sender")), /oshmasligi/);
   assert.equal(f.writes.length, 0);
 });
 
@@ -55,6 +60,15 @@ test("accepting cash creates one incoming movement, never another sale", async (
   assert.deepEqual(f.writes.map(w => w.type), ["CASH_IN"]);
   await assert.rejects(() => f.service.acceptCashTransfer("t1", user()), /already processed/);
   assert.equal(f.writes.length, 1);
+});
+
+test("a different cashier cannot approve a handover assigned to another shift", async () => {
+  const f = fixture();
+  await assert.rejects(
+    () => f.service.acceptCashTransfer("t1", user("CASHIER", "other")),
+    /boshqa kassir smenasiga/,
+  );
+  assert.equal(f.writes.length, 0);
 });
 
 test("employee cannot approve their own handover", async () => {
@@ -74,7 +88,7 @@ test("courier and kitchen roles cannot approve another employee's cash", async (
 
 test("pending outgoing cash blocks closing the shift", async () => {
   const f = fixture({ pending: true });
-  await assert.rejects(() => f.service.closeShift("s1", { closingBalance: 10000 }, user()), /hali tasdiqlanmagan/);
+  await assert.rejects(() => f.service.closeShift("s1", { closingBalance: 10000 }, user("CASHIER", "sender")), /hali tasdiqlanmagan/);
   assert.equal(f.writes.length, 0);
 });
 

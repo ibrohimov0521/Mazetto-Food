@@ -403,10 +403,67 @@ export class ShiftsService {
         );
       }
 
+      if (!dto.toShiftId) {
+        throw new BadRequestException(
+          "Pulni qabul qiladigan ochiq kassir smenasini tanlang",
+        );
+      }
+
+      const receiverShift = await tx.shift.findUnique({
+        where: { id: dto.toShiftId },
+        select: {
+          id: true,
+          branchId: true,
+          employeeId: true,
+          status: true,
+          employee: {
+            select: {
+              status: true,
+              firstName: true,
+              lastName: true,
+              user: {
+                select: {
+                  roles: { select: { role: { select: { code: true } } } },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!receiverShift || receiverShift.status !== ShiftStatus.OPEN) {
+        throw new BadRequestException(
+          "Tanlangan kassir smenasi ochiq emas. Ro'yxatni yangilang.",
+        );
+      }
+      if (receiverShift.branchId !== shift.branchId) {
+        throw new ForbiddenException(
+          "Pulni faqat shu filialdagi kassirga topshirish mumkin",
+        );
+      }
+      if (receiverShift.employeeId === employeeId) {
+        throw new BadRequestException(
+          "O'zingizning smenangizni qabul qiluvchi sifatida tanlab bo'lmaydi",
+        );
+      }
+      const receiverRoles = receiverShift.employee.user?.roles.map(
+        (item) => item.role.code,
+      ) ?? [];
+      if (
+        receiverShift.employee.status !== "ACTIVE" ||
+        !receiverRoles.some((role) =>
+          ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"].includes(role),
+        )
+      ) {
+        throw new BadRequestException(
+          "Tanlangan xodim pul qabul qiluvchi kassir emas",
+        );
+      }
+
       const transfer = await tx.cashTransfer.create({
         data: {
           branchId: shift.branchId,
           fromShiftId: shift.id,
+          toShiftId: receiverShift.id,
           amount,
           reason: dto.reason ?? "Xodim naqd pulni kassirga topshirdi",
           createdById: user.id,
@@ -436,15 +493,79 @@ export class ShiftsService {
     });
   }
 
+  async listCashTransferReceivers(user: AuthenticatedUser) {
+    const employeeId = user.employeeId;
+    if (!employeeId) {
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
+    }
+
+    const sourceShift = await this.prisma.shift.findFirst({
+      where: { employeeId, status: ShiftStatus.OPEN },
+      orderBy: { openedAt: "desc" },
+      select: { branchId: true },
+    });
+    if (!sourceShift) return [];
+
+    const branchId = resolveBranchScope(user, sourceShift.branchId);
+    const receiverShifts = await this.prisma.shift.findMany({
+      where: {
+        branchId: branchId ?? sourceShift.branchId,
+        status: ShiftStatus.OPEN,
+        employeeId: { not: employeeId },
+        employee: {
+          status: "ACTIVE",
+          user: {
+            roles: {
+              some: {
+                role: {
+                  code: { in: ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"] },
+                },
+              },
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        employeeId: true,
+        employee: {
+          select: {
+            firstName: true,
+            lastName: true,
+            employeeCode: true,
+          },
+        },
+      },
+      orderBy: [{ employee: { firstName: "asc" } }, { openedAt: "asc" }],
+    });
+
+    return receiverShifts.map((receiver) => ({
+      shiftId: receiver.id,
+      employeeId: receiver.employeeId,
+      firstName: receiver.employee.firstName,
+      lastName: receiver.employee.lastName,
+      employeeCode: receiver.employee.employeeCode,
+    }));
+  }
+
   async listPendingCashTransfers(user: AuthenticatedUser) {
     this.assertCashReceiver(user);
     const employeeId = user.employeeId;
     if (!employeeId) throw new ForbiddenException("Employee profile is required");
-    const branchId = resolveBranchScope(user);
+    const receiverShift = await this.prisma.shift.findFirst({
+      where: { employeeId, status: ShiftStatus.OPEN },
+      orderBy: { openedAt: "desc" },
+      select: { id: true, branchId: true },
+    });
+    if (!receiverShift) return [];
+    const branchId = resolveBranchScope(user, receiverShift.branchId);
     return this.prisma.cashTransfer.findMany({
       where: {
         status: CashTransferStatus.PENDING,
         fromShift: { employeeId: { not: employeeId } },
+        OR: [{ toShiftId: receiverShift.id }, { toShiftId: null }],
         ...(branchId ? { branchId } : {}),
       },
       include: {
@@ -513,6 +634,11 @@ export class ShiftsService {
           "O'zingiz topshirgan pulni o'zingiz qabul qila olmaysiz",
         );
       }
+      if (transfer.toShiftId && transfer.toShiftId !== cashierShift.id) {
+        throw new ForbiddenException(
+          "Bu topshiriq boshqa kassir smenasiga biriktirilgan",
+        );
+      }
 
       await tx.cashTransaction.create({
         data: {
@@ -549,6 +675,10 @@ export class ShiftsService {
     user: AuthenticatedUser,
   ) {
     this.assertCashReceiver(user);
+    const receiverEmployeeId = user.employeeId;
+    if (!receiverEmployeeId) {
+      throw new ForbiddenException("Employee profile is required");
+    }
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
         'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
@@ -570,10 +700,25 @@ export class ShiftsService {
       }
 
       resolveBranchScope(user, transfer.branchId);
-      if (transfer.fromShift.employeeId === user.employeeId) {
+      if (transfer.fromShift.employeeId === receiverEmployeeId) {
         throw new ForbiddenException(
           "O'zingizning topshirig'ingizni rad eta olmaysiz",
         );
+      }
+      if (transfer.toShiftId) {
+        const receiverShift = await tx.shift.findFirst({
+          where: {
+            id: transfer.toShiftId,
+            employeeId: receiverEmployeeId,
+            status: ShiftStatus.OPEN,
+          },
+          select: { id: true },
+        });
+        if (!receiverShift) {
+          throw new ForbiddenException(
+            "Bu topshiriq boshqa kassir smenasiga biriktirilgan",
+          );
+        }
       }
       await tx.$queryRawUnsafe(
         'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',

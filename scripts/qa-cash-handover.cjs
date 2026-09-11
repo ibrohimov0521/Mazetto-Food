@@ -36,6 +36,7 @@ const results = [];
               reads.push(api);
               if (api === '/cash-register/shift') return ok(shift);
               if (api === '/cash-register/transfers/pending') return ok(pending);
+              if (api === '/cash-register/transfers/receivers') return ok([{ shiftId: 's-receiver', employeeId: 'receiver', firstName: 'QA', lastName: 'Kassir', employeeCode: 'QA-CASHIER' }]);
               if (api === '/branches') return ok([shift.branch]);
               return ok([]);
             }
@@ -68,6 +69,7 @@ const results = [];
         await page.getByText("Kassir tasdig'i kutilmoqda", { exact: true }).waitFor();
         assert.equal(writes.length, 1);
         assert.equal(writes[0].body.amount, 460000);
+        assert.equal(writes[0].body.toShiftId, 's-receiver');
         assert.equal(await page.getByRole('button', { name: 'Barcha naqd', exact: true }).isDisabled(), true);
         if (role === 'CASHIER') {
           await page.getByRole('button', { name: 'Qabul qilish', exact: true }).click();

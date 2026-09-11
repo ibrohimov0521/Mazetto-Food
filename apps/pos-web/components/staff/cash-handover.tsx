@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, Clock3 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { StaffDialog } from "./staff-shell";
@@ -15,6 +15,13 @@ export type OutgoingTransfer = {
     employee?: { firstName: string; lastName?: string | null };
   } | null;
 };
+export type CashReceiver = {
+  shiftId: string;
+  employeeId: string;
+  firstName: string;
+  lastName?: string | null;
+  employeeCode?: string;
+};
 const labels: Record<string, string> = {
   PENDING: "Kassir tasdig'i kutilmoqda",
   ACCEPTED: "Qabul qilindi",
@@ -27,22 +34,38 @@ const money = (value: number | string) =>
 export function CashHandover({
   shiftId,
   balance,
+  receivers,
   transfers,
   onChanged,
 }: {
   shiftId: string;
   balance: number;
+  receivers: CashReceiver[];
   transfers: OutgoingTransfer[];
   onChanged: () => Promise<void>;
 }) {
   const [amount, setAmount] = useState("");
+  const [receiverShiftId, setReceiverShiftId] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const value = Number(amount);
+  const receiver = receivers.find(
+    (candidate) => candidate.shiftId === receiverShiftId,
+  );
   const valid =
-    amount !== "" && Number.isFinite(value) && value > 0 && value <= balance;
+    amount !== "" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= balance &&
+    receiverShiftId !== "";
+
+  useEffect(() => {
+    if (!receivers.some((candidate) => candidate.shiftId === receiverShiftId)) {
+      setReceiverShiftId(receivers.length === 1 ? receivers[0]?.shiftId ?? "" : "");
+    }
+  }, [receiverShiftId, receivers]);
 
   async function submit() {
     if (lock.current || !valid) return;
@@ -52,7 +75,7 @@ export function CashHandover({
     try {
       await apiFetch("/cash-register/transfers", {
         method: "POST",
-        body: JSON.stringify({ amount: value }),
+        body: JSON.stringify({ amount: value, toShiftId: receiverShiftId }),
         signal: AbortSignal.timeout(15000),
       });
       setConfirming(false);
@@ -90,6 +113,30 @@ export function CashHandover({
           marginTop: 16,
         }}
       >
+        <label
+          className={styles.field}
+          style={{ flex: "1 1 260px", minWidth: 0 }}
+        >
+          Qabul qiluvchi kassir
+          <select
+            className={styles.input}
+            value={receiverShiftId}
+            disabled={busy || receivers.length === 0}
+            onChange={(event) => setReceiverShiftId(event.target.value)}
+          >
+            <option value="">
+              {receivers.length === 0
+                ? "Ochiq kassir smenasi topilmadi"
+                : "Kassirni tanlang"}
+            </option>
+            {receivers.map((candidate) => (
+              <option key={candidate.shiftId} value={candidate.shiftId}>
+                {candidate.firstName} {candidate.lastName ?? ""}
+                {candidate.employeeCode ? ` · ${candidate.employeeCode}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
         <label
           className={styles.field}
           style={{ flex: "1 1 220px", minWidth: 0 }}
@@ -131,6 +178,11 @@ export function CashHandover({
           {error}
         </p>
       )}
+      {receivers.length === 0 && balance > 0 && !error && (
+        <p className={styles.error} role="status">
+          Pul topshirish uchun shu filialda ochiq kassir smenasi bo'lishi kerak.
+        </p>
+      )}
       {transfers.length > 0 && (
         <div className={styles.historyList} style={{ marginTop: 18 }}>
           {transfers.map((transfer) => (
@@ -163,15 +215,18 @@ export function CashHandover({
       {confirming && (
         <StaffDialog
           busy={busy}
-          title="Pulni kassirga topshirasizmi?"
+          title="Pulni tanlangan kassirga topshirasizmi?"
           onClose={() => {
             if (!busy) setConfirming(false);
           }}
         >
           <p className={styles.pageHeading}>{money(value)}</p>
           <p className={styles.muted}>
-            Summa kassangizdan chiqariladi va kassir tasdiqlaguncha topshirish
-            holatida turadi.
+            {receiver
+              ? `${receiver.firstName} ${receiver.lastName ?? ""} kassir smenasiga yuboriladi.`
+              : "Avval pulni qabul qiladigan kassirni tanlang."} Summa
+            kassangizdan chiqariladi va qabul qilinmaguncha topshirish holatida
+            turadi.
           </p>
           {error && (
             <p className={styles.error} role="alert">

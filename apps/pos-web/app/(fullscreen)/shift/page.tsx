@@ -21,7 +21,11 @@ import {
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
 import { hasPermission } from "../../../lib/auth";
-import { CashHandover, type OutgoingTransfer } from "../../../components/staff/cash-handover";
+import {
+  CashHandover,
+  type CashReceiver,
+  type OutgoingTransfer,
+} from "../../../components/staff/cash-handover";
 
 type CashTransfer = {
   id: string;
@@ -29,6 +33,9 @@ type CashTransfer = {
   reason?: string | null;
   createdAt: string;
   fromShift?: {
+    employee?: { firstName: string; lastName?: string | null } | null;
+  } | null;
+  toShift?: {
     employee?: { firstName: string; lastName?: string | null } | null;
   } | null;
 };
@@ -91,7 +98,10 @@ function ShiftConsole() {
   const [openingCash, setOpeningCash] = useState("0");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [openingBranchId, setOpeningBranchId] = useState("");
-  const needsBranchChoice = !user?.branchId;
+  const [branchLoadError, setBranchLoadError] = useState<string | null>(null);
+  const needsBranchChoice = Boolean(
+    user && (user.roles.includes("SUPER_ADMIN") || !user.branchId),
+  );
   const [closingCash, setClosingCash] = useState("");
   const [isConfirmingClose, setIsConfirmingClose] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -99,6 +109,7 @@ function ShiftConsole() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingTransfers, setPendingTransfers] = useState<CashTransfer[]>([]);
+  const [receivers, setReceivers] = useState<CashReceiver[]>([]);
   const saving = useRef(false);
   const loadRequest = useRef<AbortController | null>(null);
   const expectedCash = Number(
@@ -129,16 +140,25 @@ function ShiftConsole() {
       });
       if (!controller.signal.aborted) {
         setShift(current?.status === "OPEN" ? current : null);
-        setPendingTransfers(
-          current?.status === "OPEN" && canReceive
-            ? await apiFetch<CashTransfer[]>(
-                "/cash-register/transfers/pending",
-                {
-                  signal: AbortSignal.timeout(12000),
-                },
-              )
-            : [],
-        );
+        if (current?.status === "OPEN") {
+          const [pending, availableReceivers] = await Promise.all([
+            canReceive
+              ? apiFetch<CashTransfer[]>(
+                  "/cash-register/transfers/pending",
+                  { signal: AbortSignal.timeout(12000) },
+                )
+              : Promise.resolve([]),
+            apiFetch<CashReceiver[]>(
+              "/cash-register/transfers/receivers",
+              { signal: AbortSignal.timeout(12000) },
+            ).catch(() => []),
+          ]);
+          setPendingTransfers(pending);
+          setReceivers(availableReceivers);
+        } else {
+          setPendingTransfers([]);
+          setReceivers([]);
+        }
         setLoadFailed(false);
       }
     } catch (caught) {
@@ -164,10 +184,31 @@ function ShiftConsole() {
   }, [loadShift]);
 
   useEffect(() => {
-    if (!needsBranchChoice) return;
+    if (!needsBranchChoice) {
+      setBranches([]);
+      setOpeningBranchId("");
+      setBranchLoadError(null);
+      return;
+    }
+    setBranchLoadError(null);
     apiFetch<Branch[]>("/branches")
-      .then(setBranches)
-      .catch(() => setBranches([]));
+      .then((nextBranches) => {
+        setBranches(nextBranches);
+        if (nextBranches.length === 1) {
+          setOpeningBranchId(nextBranches[0]?.id ?? "");
+        }
+        if (nextBranches.length === 0) {
+          setBranchLoadError("Faol filiallar topilmadi");
+        }
+      })
+      .catch((caught) => {
+        setBranches([]);
+        setBranchLoadError(
+          caught instanceof Error
+            ? caught.message
+            : "Filiallar ro'yxati yuklanmadi",
+        );
+      });
   }, [needsBranchChoice]);
 
   async function processTransfer(id: string, action: "accept" | "reject") {
@@ -308,7 +349,13 @@ function ShiftConsole() {
                 <strong>{shift.orderCount ?? 0} ta</strong>
               </div>
             </section>
-            <CashHandover shiftId={shift.id} balance={expectedCash} transfers={shift.outgoingCashTransfers ?? []} onChanged={loadShift} />
+            <CashHandover
+              shiftId={shift.id}
+              balance={expectedCash}
+              receivers={receivers}
+              transfers={shift.outgoingCashTransfers ?? []}
+              onChanged={loadShift}
+            />
             {pendingTransfers.length > 0 && (
               <section
                 className={styles.shiftSummary}
@@ -470,7 +517,7 @@ function ShiftConsole() {
               <h2 className={styles.pageHeading}>Smenani ochish</h2>
               {needsBranchChoice && (
                 <label className={styles.field} style={{ marginTop: 20 }}>
-                  Filial
+                  Smena uchun filial
                   <select
                     className={styles.input}
                     value={openingBranchId}
@@ -484,6 +531,11 @@ function ShiftConsole() {
                       </option>
                     ))}
                   </select>
+                  {branchLoadError && (
+                    <span className={styles.error} role="alert">
+                      {branchLoadError}
+                    </span>
+                  )}
                 </label>
               )}
               <label
@@ -505,7 +557,12 @@ function ShiftConsole() {
               <button
                 className={`${styles.primary} ${styles.full}`}
                 style={{ marginTop: 18 }}
-                disabled={isSaving || !openingValid || loadFailed}
+                disabled={
+                  isSaving ||
+                  !openingValid ||
+                  loadFailed ||
+                  Boolean(branchLoadError)
+                }
                 onClick={() => void openShift()}
                 type="button"
               >

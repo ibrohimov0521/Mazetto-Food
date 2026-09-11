@@ -64,6 +64,9 @@ export class CreateCashTransferDto {
   @IsPositive()
   amount!: number;
 
+  @IsString()
+  toShiftId!: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)
