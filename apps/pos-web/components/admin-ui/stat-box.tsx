@@ -103,7 +103,7 @@ export function InfoBox({
           {value}
         </p>
         {description ? (
-          <p className="truncate text-xs text-mz-text-faint">{description}</p>
+          <p className="truncate text-xs text-mz-text-muted">{description}</p>
         ) : null}
       </div>
     </div>

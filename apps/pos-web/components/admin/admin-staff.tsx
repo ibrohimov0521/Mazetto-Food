@@ -1,10 +1,14 @@
 "use client";
 
-import Link from "next/link";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "../admin-ui/button";
-import { TextInput } from "../admin-ui/form";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import {
   isSuperAdminStaff,
@@ -12,12 +16,30 @@ import {
 } from "../../lib/staff-guards";
 import { useAuth } from "../auth/auth-provider";
 import { Badge as UiBadge } from "../admin-ui/badge";
-import { ButtonLink, GuardedButton } from "../admin-ui/button";
+import { Button, ButtonLink, GuardedButton } from "../admin-ui/button";
 import { Card } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
-import { ErrorState } from "../admin-ui/feedback";
-import { FilterBar } from "../admin-ui/form";
+import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
+import {
+  Checkbox,
+  CheckboxGroup,
+  FilterBar,
+  focusFirstInvalidField,
+  FormField,
+  Select,
+  TextInput,
+} from "../admin-ui/form";
+import { Modal } from "../admin-ui/modal";
 import { useToast } from "../admin-ui/toast";
+
+/*
+ * MAHALLIY PRIMITIVLAR O'CHIRILDI.
+ *
+ * Bu fayl o'zining `Field`, `Check`, `Select` va `Notice` komponentlarini
+ * saqlardi va ularning o'lchamlari `admin-ui` dan boshqacha edi: `py-2`
+ * `TextInput` yonida `py-3` mahalliy `select` turardi, checkbox esa 16px
+ * edi. Endi hammasi `admin-ui/form` dan keladi.
+ */
 
 type Role = {
   id: string;
@@ -244,13 +266,27 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
+  const formRef = useRef<HTMLFormElement>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [staff, setStaff] = useState<Staff | null>(null);
   const [passwordReset, setPasswordReset] = useState("");
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  /*
+   * YUKLANISH HOLATI.
+   *
+   * Ilgari yo'q edi: bo'sh forma darhol render bo'lardi va `/roles`,
+   * `/branches` javobi kelmasdan ham "Saqlash" bosilishi mumkin edi —
+   * rollar ro'yxati bo'sh, filial tanlanmagan holda POST ketardi.
+   */
+  const [isLoading, setIsLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [baseline, setBaseline] = useState("");
+  const [isDiscardOpen, setIsDiscardOpen] = useState(false);
   const [form, setForm] = useState<StaffFormState>({
     name: "",
     email: "",
@@ -263,6 +299,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
 
   useEffect(() => {
     async function load() {
+      setIsLoading(true);
       /*
        * `/staff` ham yuklanadi: "oxirgi faol SUPER_ADMIN" qoidasini
        * tekshirish uchun umumiy ro'yxat kerak (lib/staff-guards.ts).
@@ -278,8 +315,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
 
       if (staffId) {
         const nextStaff = await apiFetch<Staff>(`/staff/${staffId}`);
-        setStaff(nextStaff);
-        setForm({
+        const nextForm: StaffFormState = {
           name: nextStaff.displayName ?? "",
           email: nextStaff.email ?? "",
           phone: nextStaff.phone ?? "",
@@ -287,22 +323,86 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           roleCodes: nextStaff.roles.map((role) => role.code),
           branchId: nextStaff.employee?.branchId ?? "",
           isActive: nextStaff.isActive,
-        });
+        };
+
+        setStaff(nextStaff);
+        setForm(nextForm);
+        setBaseline(snapshotStaffForm(nextForm));
       } else {
-        setForm((current) => ({
-          ...current,
-          branchId: nextBranches[0]?.id ?? "",
-        }));
+        setForm((current) => {
+          const nextForm = {
+            ...current,
+            branchId: nextBranches[0]?.id ?? "",
+          };
+          setBaseline(snapshotStaffForm(nextForm));
+          return nextForm;
+        });
       }
     }
 
-    void load().catch(() => setError("Forma ma'lumotlarini yuklab bo'lmadi."));
-  }, [staffId]);
+    void load()
+      .catch(() => setError("Forma ma'lumotlarini yuklab bo'lmadi."))
+      .finally(() => setIsLoading(false));
+  }, [reloadKey, staffId]);
+
+  const isDirty = baseline !== "" && snapshotStaffForm(form) !== baseline;
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+
+    function warn(event: BeforeUnloadEvent): void {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", warn);
+
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [isDirty]);
+
+  /*
+   * Validatsiya INLINE — xato aynan aybdor maydon yonida turadi.
+   * Toast faqat SERVER javobi uchun.
+   */
+  function validate(): Record<string, string> {
+    const next: Record<string, string> = {};
+
+    if (!form.name.trim()) {
+      next.name = "Ism familiya kiritilishi shart.";
+    }
+
+    if (isNew && form.password.length < 8) {
+      next.password = "Parol kamida 8 belgidan iborat bo'lishi kerak.";
+    }
+
+    if (form.roleCodes.length === 0) {
+      next.roleCodes = "Kamida bitta rol tanlanishi kerak.";
+    }
+
+    if (needsBranch(form.roleCodes) && !form.branchId) {
+      next.branchId = "Bu rol uchun filial tanlanishi kerak.";
+    }
+
+    return next;
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
-    setMessage("Saqlanmoqda...");
+
+    const nextErrors = validate();
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      window.requestAnimationFrame(() =>
+        focusFirstInvalidField(formRef.current),
+      );
+      return;
+    }
+
+    setIsSaving(true);
 
     try {
       if (isNew) {
@@ -318,8 +418,9 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             isActive: form.isActive,
           }),
         });
-        setMessage("Xodim yaratildi.");
         setStaff(created);
+        setBaseline(snapshotStaffForm(form));
+        showToast("Xodim yaratildi.", "success");
         router.replace(`/admin/staff/${created.id}`);
         return;
       }
@@ -363,22 +464,46 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       }
 
       setStaff(nextStaff);
-      setMessage("Xodim ma'lumotlari saqlandi.");
+      setBaseline(snapshotStaffForm(form));
+      showToast("Xodim ma'lumotlari saqlandi.", "success");
     } catch (saveError) {
-      setMessage("");
-      setError(
+      if (saveError instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
         saveError instanceof Error
           ? saveError.message
           : "Saqlashda xatolik yuz berdi.",
+        "danger",
       );
+    } finally {
+      setIsSaving(false);
     }
   }
 
   async function resetPassword() {
-    if (!staffId || passwordReset.length < 8) {
-      setError("Yangi parol kamida 8 belgidan iborat bo'lishi kerak.");
+    if (!staffId) {
       return;
     }
+
+    if (passwordReset.length < 8) {
+      setErrors((current) => ({
+        ...current,
+        passwordReset: "Yangi parol kamida 8 belgidan iborat bo'lishi kerak.",
+      }));
+      window.requestAnimationFrame(() =>
+        focusFirstInvalidField(formRef.current),
+      );
+      return;
+    }
+
+    setErrors((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([key]) => key !== "passwordReset"),
+      ),
+    );
+    setIsResetting(true);
 
     try {
       await apiFetch(`/staff/${staffId}/password-reset`, {
@@ -386,17 +511,23 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
         body: JSON.stringify({ newPassword: passwordReset }),
       });
       setPasswordReset("");
-      setMessage("Parol reset qilindi. Xodim yangi parol bilan qayta kiradi.");
       showToast(
         "Parol reset qilindi. Xodimning barcha sessiyalari bekor qilindi.",
         "success",
       );
     } catch (resetError) {
-      setError(
+      if (resetError instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
         resetError instanceof Error
           ? resetError.message
           : "Parol reset qilinmadi.",
+        "danger",
       );
+    } finally {
+      setIsResetting(false);
     }
   }
 
@@ -430,201 +561,322 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
     : null;
   const isProtectedSuperAdmin = staff ? isSuperAdminStaff(staff) : false;
 
+  if (isLoading) {
+    return <SkeletonRows rows={8} />;
+  }
+
   return (
     <div className="grid gap-5">
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-      {message ? <Notice>{message}</Notice> : null}
-      <form className="grid gap-5 lg:grid-cols-[1fr_320px]" onSubmit={save}>
-        <section className="grid gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-          <Field label="Ism familiya">
-            <TextInput
-              value={form.name}
-              onChange={(event) =>
-                setForm({ ...form, name: event.target.value })
-              }
+      {error ? (
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            setError("");
+            setReloadKey((current) => current + 1);
+          }}
+        />
+      ) : null}
+      <form className="space-y-5" onSubmit={save} ref={formRef}>
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <section className="grid gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+            <FormField
+              label="Ism familiya"
               required
-            />
-          </Field>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Email">
-              <TextInput
-                type="email"
-                value={form.email}
-                onChange={(event) =>
-                  setForm({ ...form, email: event.target.value })
-                }
-              />
-            </Field>
-            <Field label="Telefon">
-              <TextInput
-                placeholder="+998901234567"
-                value={form.phone}
-                onChange={(event) =>
-                  setForm({ ...form, phone: event.target.value })
-                }
-              />
-            </Field>
-          </div>
-          {isNew ? (
-            <Field label="Boshlang'ich parol">
-              <TextInput
-                minLength={8}
-                type="password"
-                value={form.password}
-                onChange={(event) =>
-                  setForm({ ...form, password: event.target.value })
-                }
+              {...(errors.name ? { error: errors.name } : {})}
+            >
+              {(props) => (
+                <TextInput
+                  {...props}
+                  required
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm({ ...form, name: event.target.value })
+                  }
+                />
+              )}
+            </FormField>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField label="Email">
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    type="email"
+                    value={form.email}
+                    onChange={(event) =>
+                      setForm({ ...form, email: event.target.value })
+                    }
+                  />
+                )}
+              </FormField>
+              <FormField label="Telefon">
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    placeholder="+998901234567"
+                    value={form.phone}
+                    onChange={(event) =>
+                      setForm({ ...form, phone: event.target.value })
+                    }
+                  />
+                )}
+              </FormField>
+            </div>
+            {isNew ? (
+              <FormField
+                hint="Kamida 8 belgi"
+                label="Boshlang'ich parol"
                 required
-              />
-            </Field>
-          ) : null}
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Rollar">
-              <div className="grid gap-2 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2">
-                {roles.map((role) => (
-                  <label
-                    className={`flex items-center gap-2 rounded-mz-control px-3 py-2 text-xs font-black ${
-                      roleChangeBlock
-                        ? "cursor-not-allowed opacity-60"
-                        : "cursor-pointer hover:bg-mz-surface"
-                    }`}
-                    key={role.id}
-                  >
-                    <input
+                {...(errors.password ? { error: errors.password } : {})}
+              >
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    minLength={8}
+                    required
+                    type="password"
+                    value={form.password}
+                    onChange={(event) =>
+                      setForm({ ...form, password: event.target.value })
+                    }
+                  />
+                )}
+              </FormField>
+            ) : null}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/*
+              `<fieldset>` + `<legend>`.
+
+              Ilgari bu guruh `<label>` (mahalliy `Field`) ichida edi va
+              ichida yana `<label>` lar turardi: yaroqsiz HTML, va tashqi
+              yorliqni bosish birinchi checkbox'ni almashtirib yuborardi.
+            */}
+              <CheckboxGroup
+                legend="Rollar"
+                {...(errors.roleCodes ? { error: errors.roleCodes } : {})}
+                {...(roleChangeBlock
+                  ? { hint: roleChangeBlock }
+                  : !isNew
+                    ? {
+                        hint: "Rol o'zgarsa, xodimning barcha sessiyalari bekor qilinadi.",
+                      }
+                    : {})}
+              >
+                <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2">
+                  {roles.map((role) => (
+                    <Checkbox
                       checked={form.roleCodes.includes(role.code)}
-                      className="h-4 w-4 accent-mz-accent"
                       disabled={Boolean(roleChangeBlock)}
-                      type="checkbox"
-                      onChange={(event) =>
+                      key={role.id}
+                      label={`${role.name} (${role.code})`}
+                      onChange={(checked) =>
                         setForm((current) =>
-                          toggleRole(current, role.code, event.target.checked),
+                          toggleRole(current, role.code, checked),
                         )
                       }
                     />
-                    <span>
-                      {role.name} ({role.code})
-                    </span>
-                  </label>
-                ))}
-              </div>
-              {roleChangeBlock ? (
-                <p className="text-xs font-semibold text-mz-warning">
-                  {roleChangeBlock}
-                </p>
-              ) : !isNew ? (
-                <p className="text-xs font-normal text-mz-text-muted">
-                  Rol o'zgarsa, xodimning barcha sessiyalari bekor qilinadi.
-                </p>
-              ) : null}
-            </Field>
-            <Field label="Filial">
-              <Select
-                disabled={!needsBranch(form.roleCodes)}
-                value={form.branchId}
-                onChange={(event) =>
-                  setForm({ ...form, branchId: event.target.value })
-                }
+                  ))}
+                </div>
+              </CheckboxGroup>
+              <FormField
+                label="Filial"
+                {...(errors.branchId ? { error: errors.branchId } : {})}
               >
-                <option value="">Global</option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name} · {branch.address ?? branch.code}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <div className="grid gap-1.5">
-            <Check
+                {(props) => (
+                  <Select
+                    {...props}
+                    disabled={!needsBranch(form.roleCodes)}
+                    value={form.branchId}
+                    onChange={(event) =>
+                      setForm({ ...form, branchId: event.target.value })
+                    }
+                  >
+                    <option value="">Global</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name} · {branch.address ?? branch.code}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+            </div>
+            <Checkbox
+              boxed
               checked={form.isActive}
               disabled={Boolean(statusChangeBlock)}
               label={form.isActive ? "Faol account" : "Bloklangan account"}
               onChange={(checked) => setForm({ ...form, isActive: checked })}
+              {...(statusChangeBlock
+                ? { description: statusChangeBlock }
+                : !isNew
+                  ? {
+                      description:
+                        "Bloklansa, xodimning barcha sessiyalari bekor qilinadi.",
+                    }
+                  : {})}
             />
-            {statusChangeBlock ? (
-              <p className="text-xs font-semibold text-mz-warning">
-                {statusChangeBlock}
-              </p>
-            ) : !isNew ? (
-              <p className="text-xs text-mz-text-muted">
-                Bloklansa, xodimning barcha sessiyalari bekor qilinadi.
-              </p>
-            ) : null}
-          </div>
-        </section>
-
-        <aside className="grid content-start gap-4">
-          <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-            <p className="text-sm font-black text-mz-text">Xavfsizlik</p>
-            <p className="mt-2 text-sm leading-6 text-mz-text-muted">
-              Parol hash ko'rinishida saqlanadi. Bu sahifada parol hash yoki
-              token ko'rsatilmaydi.
-            </p>
-            {isProtectedSuperAdmin ? (
-              <div className="mt-3 rounded-mz-control bg-mz-warning-bg px-3 py-2">
-                <p className="text-xs font-bold text-mz-warning">
-                  Bu SUPER_ADMIN accounti — himoyalangan qoidalar amal qiladi.
-                </p>
-              </div>
-            ) : null}
           </section>
-          {!isNew ? (
-            <section className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-              <p className="text-sm font-black text-mz-text">Parol reset</p>
-              <TextInput
-                disabled={Boolean(passwordResetBlock)}
-                minLength={8}
-                placeholder="Yangi vaqtinchalik parol"
-                type="password"
-                value={passwordReset}
-                onChange={(event) => setPasswordReset(event.target.value)}
-              />
-              <GuardedButton
-                blockedReason={passwordResetBlock}
-                onClick={() => void resetPassword()}
-                size="sm"
-                variant="ghost"
-              >
-                Parolni reset qilish
-              </GuardedButton>
-              {passwordResetBlock ? (
-                <p className="text-xs font-semibold text-mz-warning">
-                  {passwordResetBlock}
-                </p>
-              ) : (
-                <p className="text-xs text-mz-text-muted">
-                  Reset qilinsa, xodimning barcha sessiyalari bekor qilinadi.
-                </p>
-              )}
-            </section>
-          ) : null}
-        </aside>
 
-        <div className="flex flex-wrap justify-end gap-3 lg:col-span-2">
-          <Link
-            className="rounded-mz-control border border-mz-border px-5 py-3 text-sm font-black text-mz-text-muted"
-            href="/admin/staff"
+          <aside className="grid content-start gap-4">
+            <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+              <p className="text-sm font-black text-mz-text">Xavfsizlik</p>
+              <p className="mt-2 text-sm leading-6 text-mz-text-muted">
+                Parol hash ko'rinishida saqlanadi. Bu sahifada parol hash yoki
+                token ko'rsatilmaydi.
+              </p>
+              {isProtectedSuperAdmin ? (
+                <div className="mt-3 rounded-mz-control bg-mz-warning-bg px-3 py-2">
+                  <p className="text-xs font-bold text-mz-warning">
+                    Bu SUPER_ADMIN accounti — himoyalangan qoidalar amal qiladi.
+                  </p>
+                </div>
+              ) : null}
+            </section>
+            {!isNew ? (
+              <section className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+                <p className="text-sm font-black text-mz-text">Parol reset</p>
+                <FormField
+                  label="Yangi vaqtinchalik parol"
+                  {...(errors.passwordReset
+                    ? { error: errors.passwordReset }
+                    : passwordResetBlock
+                      ? { hint: passwordResetBlock }
+                      : {
+                          hint: "Reset qilinsa, xodimning barcha sessiyalari bekor qilinadi.",
+                        })}
+                >
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      disabled={Boolean(passwordResetBlock)}
+                      minLength={8}
+                      type="password"
+                      value={passwordReset}
+                      onChange={(event) => setPasswordReset(event.target.value)}
+                    />
+                  )}
+                </FormField>
+                <GuardedButton
+                  blockedReason={passwordResetBlock}
+                  isLoading={isResetting}
+                  onClick={() => void resetPassword()}
+                  variant="ghost"
+                >
+                  Parolni reset qilish
+                </GuardedButton>
+              </section>
+            ) : null}
+          </aside>
+        </div>
+
+        {/*
+        `position: sticky` uchun MUHIM: yopishqoq element GRID ELEMENTI
+        bo'lmasligi kerak. Grid elementining yopishqoq "idishi" — uning
+        o'z grid maydoni, ya'ni o'z balandligidagi qator; bunda siljish
+        uchun joy qolmaydi va `bottom-0` hech narsa qilmaydi. Shu sababli
+        forma oddiy blok konteyner, ustunli setka esa ichki `div`.
+      */}
+        {/* Yopishqoq harakat paneli + iflos holat ko'rsatkichi. */}
+        <div className="sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-3 rounded-mz-card border border-mz-border bg-mz-surface px-4 py-3 shadow-mz-overlay">
+          <p
+            aria-live="polite"
+            className="mr-auto flex items-center gap-2 text-xs font-medium text-mz-text-muted"
+          >
+            {isDirty ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 rounded-mz-pill bg-mz-warning-accent"
+                />
+                Saqlanmagan o&apos;zgarishlar bor
+              </>
+            ) : (
+              "Barcha o'zgarishlar saqlangan"
+            )}
+          </p>
+
+          <Button
+            onClick={() => {
+              if (isDirty) {
+                setIsDiscardOpen(true);
+                return;
+              }
+
+              router.push("/admin/staff");
+            }}
+            variant="ghost"
           >
             Bekor qilish
-          </Link>
-          <Button type="submit">Saqlash</Button>
+          </Button>
+          <Button
+            disabled={!isDirty}
+            isLoading={isSaving}
+            size="lg"
+            type="submit"
+          >
+            {isSaving ? "Saqlanmoqda" : "Saqlash"}
+          </Button>
         </div>
       </form>
+
+      <Modal
+        description="Kiritilgan o'zgarishlar saqlanmaydi."
+        footer={
+          <>
+            <Button onClick={() => setIsDiscardOpen(false)} variant="ghost">
+              Tahrirlashda qolish
+            </Button>
+            <Button
+              onClick={() => {
+                setIsDiscardOpen(false);
+                router.push("/admin/staff");
+              }}
+              variant="danger"
+            >
+              O&apos;zgarishlarni tashlab ketish
+            </Button>
+          </>
+        }
+        isOpen={isDiscardOpen}
+        onClose={() => setIsDiscardOpen(false)}
+        title="O'zgarishlarni bekor qilasizmi?"
+      />
     </div>
   );
 }
 
 function OwnPasswordPanel() {
+  const { showToast } = useToast();
+  const formRef = useRef<HTMLFormElement>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
-    setMessage("");
+
+    const nextErrors: Record<string, string> = {};
+
+    if (newPassword.length < 8) {
+      nextErrors.newPassword = "Parol kamida 8 belgidan iborat bo'lishi kerak.";
+    }
+
+    if (newPassword !== confirmation) {
+      nextErrors.confirmation = "Takroriy parol mos kelmadi.";
+    }
+
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      window.requestAnimationFrame(() =>
+        focusFirstInvalidField(formRef.current),
+      );
+      return;
+    }
+
+    setIsSaving(true);
 
     try {
       await apiFetch("/staff/me/password", {
@@ -634,57 +886,78 @@ function OwnPasswordPanel() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmation("");
-      setMessage(
+      showToast(
         "Parolingiz yangilandi. Keyingi kirishda yangi paroldan foydalaning.",
+        "success",
       );
     } catch (passwordError) {
-      setError(
+      if (passwordError instanceof SessionExpiredError) {
+        return;
+      }
+
+      showToast(
         passwordError instanceof Error
           ? passwordError.message
           : "Parol o'zgartirilmadi.",
+        "danger",
       );
+    } finally {
+      setIsSaving(false);
     }
   }
 
   return (
     <form
-      className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card lg:grid-cols-[1fr_1fr_1fr_auto]"
+      className="grid items-end gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card lg:grid-cols-[1fr_1fr_1fr_auto]"
       onSubmit={submit}
+      ref={formRef}
     >
-      <TextInput
-        placeholder="Joriy parol"
-        type="password"
-        value={currentPassword}
-        onChange={(event) => setCurrentPassword(event.target.value)}
+      <FormField label="Joriy parol" required>
+        {(props) => (
+          <TextInput
+            {...props}
+            required
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+          />
+        )}
+      </FormField>
+      <FormField
+        label="Yangi parol"
         required
-      />
-      <TextInput
-        placeholder="Yangi parol"
-        type="password"
-        minLength={8}
-        value={newPassword}
-        onChange={(event) => setNewPassword(event.target.value)}
+        {...(errors.newPassword ? { error: errors.newPassword } : {})}
+      >
+        {(props) => (
+          <TextInput
+            {...props}
+            minLength={8}
+            required
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+        )}
+      </FormField>
+      <FormField
+        label="Yangi parolni takrorlang"
         required
-      />
-      <TextInput
-        placeholder="Yangi parolni takrorlang"
-        type="password"
-        minLength={8}
-        value={confirmation}
-        onChange={(event) => setConfirmation(event.target.value)}
-        required
-      />
-      <Button type="submit">Parolni yangilash</Button>
-      {message ? (
-        <p className="text-sm font-bold text-mz-info lg:col-span-4">
-          {message}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="text-sm font-bold text-mz-danger lg:col-span-4">
-          {error}
-        </p>
-      ) : null}
+        {...(errors.confirmation ? { error: errors.confirmation } : {})}
+      >
+        {(props) => (
+          <TextInput
+            {...props}
+            minLength={8}
+            required
+            type="password"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+        )}
+      </FormField>
+      <Button isLoading={isSaving} type="submit">
+        {isSaving ? "Yangilanmoqda" : "Parolni yangilash"}
+      </Button>
     </form>
   );
 }
@@ -719,71 +992,7 @@ function formatDate(value?: string | null): string {
   return value ? formatter.format(new Date(value)) : "Mavjud emas";
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="grid gap-2 text-sm font-black text-mz-text">
-      {label}
-      {children}
-    </label>
-  );
-}
-
-function Check({
-  label,
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label
-      className={`inline-flex w-fit items-center gap-2 rounded-mz-control border border-mz-border px-4 py-3 text-sm font-black text-mz-text ${
-        disabled ? "cursor-not-allowed opacity-60" : ""
-      }`}
-    >
-      <input
-        checked={checked}
-        className="h-4 w-4 accent-mz-accent"
-        disabled={disabled}
-        type="checkbox"
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      {label}
-    </label>
-  );
-}
-
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      className="w-full rounded-mz-control border border-mz-border bg-mz-surface px-4 py-3 text-sm font-bold text-mz-text outline-none transition focus:border-mz-accent focus:ring-4 focus:ring-mz-info-bg disabled:cursor-not-allowed disabled:bg-mz-surface-sunken disabled:text-mz-text-faint"
-    />
-  );
-}
-
-function Notice({
-  children,
-  tone = "success",
-}: {
-  children: React.ReactNode;
-  tone?: "success" | "danger";
-}) {
-  return (
-    <div
-      className={`rounded-mz-control px-4 py-3 text-sm font-bold ${tone === "danger" ? "bg-mz-danger-bg text-mz-danger" : "bg-mz-info-bg text-mz-info"}`}
-    >
-      {children}
-    </div>
-  );
+/** Iflos (saqlanmagan) holatni aniqlash uchun formaning barqaror surati. */
+function snapshotStaffForm(form: StaffFormState): string {
+  return JSON.stringify({ ...form, roleCodes: [...form.roleCodes].sort() });
 }

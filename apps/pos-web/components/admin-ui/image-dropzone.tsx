@@ -83,7 +83,9 @@ export function ImageDropzone({
         if (!response.ok || !payload.success || !payload.data) {
           const message = payload.error?.message;
           throw new Error(
-            Array.isArray(message) ? message.join(", ") : message ?? "Yuklab bo'lmadi",
+            Array.isArray(message)
+              ? message.join(", ")
+              : (message ?? "Yuklab bo'lmadi"),
           );
         }
 
@@ -101,7 +103,7 @@ export function ImageDropzone({
     <div className="flex flex-col gap-2">
       <div
         aria-describedby={describedBy}
-        className={`flex items-center gap-3 rounded-mz-card border border-dashed p-3 transition ${
+        className={`flex flex-wrap items-center gap-3 rounded-mz-card border border-dashed p-3 transition ${
           dragging
             ? "border-mz-accent bg-mz-info-bg"
             : "border-mz-border bg-mz-surface-sunken"
@@ -136,10 +138,10 @@ export function ImageDropzone({
           </span>
         )}
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[12rem] flex-1">
           <p className="text-xs text-mz-text-muted" id={describedBy}>
-            Rasmni shu yerga tashlang yoki tanlang. PNG, JPEG, WebP, GIF —
-            5 MB gacha.
+            Rasmni shu yerga tashlang yoki tanlang. PNG, JPEG, WebP, GIF — 5 MB
+            gacha.
           </p>
           {error ? (
             <p className="mt-1 text-xs font-medium text-mz-danger" role="alert">
@@ -149,12 +151,11 @@ export function ImageDropzone({
         </div>
 
         <Button
-          disabled={uploading}
+          isLoading={uploading}
           onClick={() => inputRef.current?.click()}
-          size="sm"
           variant="ghost"
         >
-          {uploading ? "Yuklanmoqda…" : "Fayl tanlash"}
+          {uploading ? "Yuklanmoqda" : "Fayl tanlash"}
         </Button>
 
         <input

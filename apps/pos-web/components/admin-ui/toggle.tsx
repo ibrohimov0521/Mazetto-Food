@@ -8,6 +8,10 @@ import { useId } from "react";
  * Checkbox o'rniga: bu boshqaruvlar darhol ta'sir qiladi (filialni faolsiz
  * qilish, nofaol mahsulotlarni ko'rsatish) — forma yuborilishini kutmaydi.
  * Semantik jihatdan bu `role="switch"`.
+ *
+ * O'CHIQ holat foni `--color-mz-border-strong`. Token qiymati #b8ccca dan
+ * #71918d ga ko'tarildi: oq fonda 1.68:1 edi, ya'ni o'chiq switch amalda
+ * ko'rinmasdi (WCAG 1.4.11 uchun kamida 3:1 kerak — endi 3.42:1).
  */
 
 export function Toggle({

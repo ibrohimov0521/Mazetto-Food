@@ -38,8 +38,17 @@
   /* Ink — matn (customer-web --mf-text) */
   --color-mz-ink-900: #07373a;
   --color-mz-ink-700: #245055;
+  /*
+   * ink-600 QO'SHILDI. ink-500 (#5c7b7e) ikkilamchi matn uchun ishlatilardi,
+   * lekin u `--color-mz-surface-sunken` da 4.11:1 va `--color-mz-canvas` da
+   * 4.16:1 — jadval sarlavhasi, badge, nofaol tab va filtr paneli aynan shu
+   * fonlarda turadi. ink-600 uchtasida ham >= 5:1.
+   */
+  --color-mz-ink-600: #4f6d70;
   --color-mz-ink-500: #5c7b7e;
   --color-mz-ink-300: #9db0b2;
+  /* Boshqaruv chegarasi — oq fonda 3.42:1, sunken'da 3.07:1 (WCAG 1.4.11) */
+  --color-mz-ink-200: #71918d;
 
   /* Sirtlar */
   --color-mz-ivory: #f5f5ef;
@@ -51,6 +60,8 @@
 
   /* Qobiq — sidebar va header (to'q teal) */
   --color-mz-shell: #004f55;
+  /* Navbar qobig'i — sidebar'dan bir pog'ona to'q (ilgari CSS ichida #003e43) */
+  --color-mz-shell-header: #003e43;
   /*
    * Faol menyu elementi foni. Ilgari `--color-mz-shell-active` (#08686a)
    * ishlatilardi — qobiq foni bilan farqi atigi 4% yorug'lik edi va faol
@@ -68,17 +79,41 @@
   --color-mz-surface: #ffffff;
   --color-mz-surface-sunken: #eef4f3;
   --color-mz-text: #07373a;
-  --color-mz-text-muted: #5c7b7e;
-  --color-mz-text-faint: #9db0b2;
+  /*
+   * Matn ierarxiyasi — har bir pog'ona oq, sunken VA canvas fonida >= 4.5:1.
+   *
+   *   text        #07373a  12.99 / 11.68 / 11.80
+   *   text-muted  #4f6d70   5.59 /  5.03 /  5.08   (ilgari #5c7b7e: 4.58/4.11/4.16)
+   *   text-faint  #5c7b7e   4.58 /  4.11 /  4.16   (ilgari #9db0b2: 2.26/2.03/2.05)
+   *
+   * `faint` MAZMUN uchun ishlatilmasligi kerak (bezak: ajratgich, chevron,
+   * placeholder, bo'sh eskiz ikonkasi), lekin eski qiymat 2.26:1 bo'lgani va
+   * bir necha ekranda matnga tushib qolgani uchun u ham o'qiladigan darajaga
+   * ko'tarildi — tasodifiy ishlatilishi ham xavfsiz bo'lsin.
+   */
+  --color-mz-text-muted: var(--color-mz-ink-600);
+  --color-mz-text-faint: var(--color-mz-ink-500);
   --color-mz-text-inverse: #f5f5ef;
+  /*
+   * `border` — TUZILMA ajratgichi (kartochka qirrasi, jadval qatori).
+   * `border-strong` — BOSHQARUV chegarasi (input, select, checkbox, toggle
+   * o'chiq holati). Ilgari #b8ccca edi — 1.68:1, ya'ni chegara yo'q edi.
+   */
   --color-mz-border: #dde7e6;
-  --color-mz-border-strong: #b8ccca;
+  --color-mz-border-strong: var(--color-mz-ink-200);
 
   /* Harakatlar */
   --color-mz-primary: #ffd83d;
   --color-mz-primary-hover: #f5cf00;
   --color-mz-primary-fg: #07373a;
   --color-mz-accent: #23958d;
+  /*
+   * To'ldirilgan teal boshqaruv uchun (ikkinchi darajali tugma, faol chip).
+   * `accent` ustida OQ matn faqat 3.65:1 — matn uchun yetarli emas;
+   * `accent-strong` da 7.18:1, `accent-deep` (hover) da 9.34:1.
+   */
+  --color-mz-accent-strong: var(--color-mz-teal-700);
+  --color-mz-accent-deep: var(--color-mz-teal-800);
   --color-mz-focus: #23958d;
 
   /*
@@ -111,7 +146,8 @@
   --radius-mz-pill: 999px;
 
   /* Soya — AdminLTE (juda quruq) va Lezato (juda havodor) orasida */
-  --shadow-mz-card: 0 2px 3px rgba(0, 55, 60, 0.03), 0 8px 20px -10px rgba(0, 55, 60, 0.2);
+  --shadow-mz-card:
+    0 2px 3px rgba(0, 55, 60, 0.03), 0 8px 20px -10px rgba(0, 55, 60, 0.2);
   --shadow-mz-raised: 0 8px 24px rgba(0, 79, 85, 0.12);
   --shadow-mz-overlay: 0 12px 32px rgba(0, 79, 85, 0.16);
 }
@@ -149,16 +185,20 @@
   background: var(--color-mz-canvas);
 }
 
-.mz-admin *,
-.mz-panel-nav {
-  letter-spacing: 0;
-}
+/*
+ * `.mz-admin * { letter-spacing: 0 }` O'CHIRILDI.
+ *
+ * U Tailwind'dan KEYIN yuklanardi va `*` selektori bilan har bir
+ * `tracking-*` utility'sini jimgina bekor qilardi — sarlavhalar, badge'lar
+ * va sidebar yorliqlari hammasi 0 tracking bilan chiqardi. Panel navigatsiyasi
+ * uchun kerak bo'lgan joyda esa aynan shu elementga qoldirildi.
+ */
 .mz-admin header.mz-shell-surface {
-  background-color: #003e43;
-  border-bottom: 2px solid #ffd83d;
+  background-color: var(--color-mz-shell-header);
   box-shadow: 0 4px 16px #002e321c;
 }
 .mz-panel-nav {
+  letter-spacing: 0;
   display: flex;
   max-width: 100%;
   white-space: nowrap;
@@ -170,28 +210,42 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  min-height: 36px;
   border: 1px solid #ffffff30;
-  border-radius: 6px;
+  border-radius: var(--radius-mz-control);
 }
+/*
+ * Faol panel — RANG bilan belgilanadi, `0 2px 0` bevel bilan emas.
+ * Bevel Bootstrap 3 / AdminLTE naqshi va DESIGN_RULES uni rad etadi.
+ */
 .mz-panel-nav a[aria-current="page"] {
-  border-color: #ffd83d;
-  box-shadow: 0 2px 0 #a78b17;
+  border-color: var(--color-mz-primary);
+  background-color: #ffffff1a;
 }
 .mz-admin #admin-sidebar {
-  background-color: #003e43;
+  background-color: var(--color-mz-shell-header);
 }
 .mz-admin #admin-sidebar a[aria-current="page"] {
-  color: #ffd83d;
+  color: var(--color-mz-primary);
   background-color: #ffffff0d;
   box-shadow: inset 0 0 0 1px #ffffff24;
 }
+/*
+ * Oltin chap chizig'i SAHIFA SARLAVHASIGA tegishli, `h1` elementiga emas.
+ *
+ * `main h1` selektori `AccessDeniedPanel` va `UnknownRoutePanel` ichidagi
+ * MARKAZLASHTIRILGAN sarlavhaga ham tushardi: markazlangan matnning chap
+ * chetida chiziq paydo bo'lardi. `.truncate` — `AdminPageHeader` dagi
+ * sarlavhaning o'ziga xos klassi (boshqa `main` ichidagi `h1` da yo'q).
+ */
 .mz-admin main h1 {
-  padding-left: 12px;
-  border-left: 4px solid #ffd83d;
   line-height: 1.3;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.mz-admin main h1.truncate {
+  padding-left: 12px;
+  border-left: 4px solid var(--color-mz-primary);
 }
 .mz-admin main .bg-mz-shell {
   background-image: url("/brand/botanical-sprig.svg");
@@ -199,12 +253,18 @@
   background-size: 90px;
   background-repeat: no-repeat;
 }
-.mz-admin .bg-mz-primary {
-  box-shadow: 0 2px 0 #b6951b;
-}
-.mz-admin main table thead {
-  color: #004f55;
-}
+/*
+ * `.mz-admin .bg-mz-primary { box-shadow: 0 2px 0 ... }` O'CHIRILDI.
+ *
+ * U `bg-mz-primary` TAQDIM ETILGAN HAR BIR elementga 2px qattiq bevel
+ * qo'yardi: avatar doirasi, sidebar logo kvadrati, sidebar faol ko'rsatkichi
+ * (3px kenglikdagi chiziq!), hisobot diagrammasi ustunlari va oltin CTA.
+ * Bu Bootstrap 3 bevel'i — DESIGN_RULES uni aniq rad etadi.
+ *
+ * `.mz-admin main table thead { color: ... }` ham O'CHIRILDI: u element
+ * selektori bilan komponentning `text-mz-text-muted` / saralangan ustun
+ * uchun `text-mz-info` klasslarini yutib yuborardi (specificity 0,1,3).
+ */
 @media (min-width: 1280px) {
   .mz-panel-nav.hidden.xl\:flex {
     display: flex;

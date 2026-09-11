@@ -61,8 +61,8 @@ export function RowAction({
 }) {
   const className = `grid h-9 w-9 place-items-center rounded-mz-control transition ${
     tone === "danger"
-      ? "text-mz-text-faint hover:bg-mz-danger-bg hover:text-mz-danger"
-      : "text-mz-text-faint hover:bg-mz-surface-sunken hover:text-mz-accent"
+      ? "text-mz-text-muted hover:bg-mz-danger-bg hover:text-mz-danger"
+      : "text-mz-text-muted hover:bg-mz-surface-sunken hover:text-mz-info"
   }`;
 
   if (href) {
@@ -99,6 +99,7 @@ export function DataTable<T>({
   sort,
   onSort,
   rowActions,
+  scrollHeightClass = "max-h-[70vh]",
 }: {
   columns: DataTableColumn<T>[];
   rows: T[];
@@ -113,6 +114,15 @@ export function DataTable<T>({
   onSort?: (key: string) => void;
   /** Qator amallari — o'ngdagi qo'shimcha ustun. */
   rowActions?: (row: T) => React.ReactNode;
+  /**
+   * Jadval konteynerining eng katta balandligi.
+   *
+   * Bu YOPISHQOQ SARLAVHA uchun kerak: `position: sticky` faqat scroll
+   * qiladigan ota-element ichida ishlaydi, ya'ni konteynerda balandlik
+   * cheklovi bo'lishi shart. Ba'zi ekranlar 50 qator ko'rsatadi va
+   * birinchi ekrandan keyin ustun ma'nosi yo'qolardi.
+   */
+  scrollHeightClass?: string;
 }) {
   if (isLoading) {
     return (
@@ -142,10 +152,12 @@ export function DataTable<T>({
   return (
     <>
       {/* Desktop */}
-      <div className="mz-thin-scrollbar hidden overflow-x-auto md:block">
+      <div
+        className={`mz-thin-scrollbar hidden overflow-auto md:block ${scrollHeightClass}`}
+      >
         <table className="w-full min-w-full border-collapse text-sm">
           {caption ? <caption className="sr-only">{caption}</caption> : null}
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-mz-border bg-mz-surface-sunken">
               {columns.map((column) => (
                 <SortableHeader
@@ -156,7 +168,7 @@ export function DataTable<T>({
                 />
               ))}
               {rowActions ? (
-                <th className="px-3 py-2.5 text-right text-xs font-bold uppercase tracking-wide text-mz-text-muted">
+                <th className="sticky top-0 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-right text-xs font-bold uppercase tracking-wide text-mz-text-muted">
                   Amal
                 </th>
               ) : null}
@@ -210,7 +222,7 @@ export function DataTable<T>({
                   <dt className="text-xs font-medium text-mz-text-muted">
                     {column.header}
                   </dt>
-                  <dd className="text-right text-xs text-mz-text">
+                  <dd className="text-right text-sm text-mz-text">
                     {column.render(row)}
                   </dd>
                 </div>
@@ -250,14 +262,14 @@ function SortableHeader<T>({
             : "descending"
           : undefined
       }
-      className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide ${
-        isSorted ? "text-mz-accent" : "text-mz-text-muted"
+      className={`sticky top-0 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-xs font-bold uppercase tracking-wide ${
+        isSorted ? "text-mz-info" : "text-mz-text-muted"
       } ${alignClass}`}
       scope="col"
     >
       {canSort ? (
         <button
-          className={`inline-flex items-center gap-1 rounded-mz-control transition hover:text-mz-accent ${
+          className={`inline-flex min-h-9 items-center gap-1 rounded-mz-control transition hover:text-mz-info ${
             column.align === "right" ? "flex-row-reverse" : ""
           }`}
           onClick={() => onSort?.(column.key)}

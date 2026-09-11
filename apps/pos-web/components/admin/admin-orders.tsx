@@ -129,6 +129,21 @@ export function AdminOrdersPage() {
   const [type, setType] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [branchId, setBranchId] = useState("");
+  /*
+   * QIDIRUV va SANA ORALIG'I.
+   *
+   * Ilgari bu ekranda erkin qidiruv umuman yo'q edi: aniq buyurtmani
+   * topish uchun 25 tadan varaqlash kerak bo'lardi. Server tomonida
+   * `buildOrderSearchWhere` allaqachon buyurtma raqami, mijoz
+   * ismi/telefoni, manzil va taom nomi bo'yicha qidiradi.
+   *
+   * `search` kiritilayotganda, `appliedSearch` esa so'rovda ishlatiladi:
+   * har harf uchun so'rov yubormaslik uchun 400 ms kechiktiriladi.
+   */
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
     new Set(),
@@ -152,6 +167,14 @@ export function AdminOrdersPage() {
       });
   }, [showBranchFilter]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAppliedSearch(search.trim());
+      setOffset(0);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
   const {
     data,
     isLoading,
@@ -167,9 +190,17 @@ export function AdminOrdersPage() {
       if (type) params.set("type", type);
       if (paymentStatus) params.set("paymentStatus", paymentStatus);
       if (branchId) params.set("branchId", branchId);
+      if (appliedSearch) params.set("search", appliedSearch);
+      /*
+       * Sana maydoni `YYYY-MM-DD` beradi. Boshi kunning boshidan,
+       * oxiri kunning OXIRIGA qadar olinadi — aks holda "to" sifatida
+       * tanlangan kun butunlay tushib qolardi.
+       */
+      if (from) params.set("from", `${from}T00:00:00.000Z`);
+      if (to) params.set("to", `${to}T23:59:59.999Z`);
       return apiFetch<AdminOrder[]>(`/orders?${params.toString()}`);
     },
-    [branchId, offset, paymentStatus, status, type],
+    [appliedSearch, branchId, from, offset, paymentStatus, status, to, type],
     "Buyurtmalarni yuklab bo'lmadi.",
   );
   const orders = data ?? [];
@@ -362,6 +393,37 @@ export function AdminOrdersPage() {
 
       <Card>
         <FilterBar>
+          <div className="min-w-56 flex-1">
+            <TextInput
+              aria-label="Buyurtma raqami, mijoz ismi yoki telefoni bo'yicha qidirish"
+              placeholder="Raqam, ism, telefon, manzil yoki taom"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+
+          <div className="w-40">
+            <TextInput
+              aria-label="Sanadan"
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(event) =>
+                changeFilter(() => setFrom(event.target.value))
+              }
+            />
+          </div>
+
+          <div className="w-40">
+            <TextInput
+              aria-label="Sanagacha"
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(event) => changeFilter(() => setTo(event.target.value))}
+            />
+          </div>
+
           <div className="w-44">
             <Select
               aria-label="Holat bo'yicha filtr"

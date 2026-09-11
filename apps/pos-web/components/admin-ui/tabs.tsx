@@ -53,7 +53,7 @@ export function Tabs({
           <button
             aria-controls={panelId}
             aria-selected={isActive}
-            className={`flex shrink-0 items-center gap-2 rounded-mz-control px-3.5 py-1.5 text-sm transition ${
+            className={`flex min-h-9 shrink-0 items-center gap-2 rounded-mz-control px-3.5 py-1.5 text-sm transition ${
               isActive
                 ? "bg-mz-surface font-semibold text-mz-text shadow-mz-card"
                 : "font-medium text-mz-text-muted hover:text-mz-text"
@@ -98,9 +98,9 @@ export function ChipGroup({
         return (
           <button
             aria-pressed={isActive}
-            className={`rounded-mz-pill border px-3.5 py-1.5 text-sm font-semibold transition ${
+            className={`inline-flex min-h-9 items-center rounded-mz-pill border px-3.5 py-1.5 text-sm font-semibold transition ${
               isActive
-                ? "border-mz-accent bg-mz-accent text-mz-white"
+                ? "border-mz-accent-strong bg-mz-accent-strong text-mz-white"
                 : "border-mz-border bg-mz-surface text-mz-text-muted hover:bg-mz-surface-sunken hover:text-mz-text"
             }`}
             key={item.key}

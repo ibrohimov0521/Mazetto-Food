@@ -571,98 +571,238 @@
   }
 }
 
-/* Kitchen board follows the page scroll on touch devices. */
+/*
+ * Oshxona taxtasi (KDS).
+ *
+ * Ekran devorda turadi va 1-2 metrdan o'qiladi: shuning uchun matn
+ * o'lchamlari o'zgaruvchilar bilan boshqariladi ("TV" zichligida yana
+ * kattalashadi) - taom nomi >= 22px, miqdor chipi >= 28px, taymer >= 20px,
+ * qo'shimcha va izohlar >= 16px.
+ *
+ * O'lchamlar FAQAT `.board` ichida qo'llanadi: `.ticketNumber`, `.itemName`,
+ * `.itemQuantity`, `.note`, `.badge` klasslarini kassa, ofitsiant va kuryer
+ * ekranlari ham ishlatadi.
+ */
 .board {
+  /*
+   * KDS rang semantikasi (DESIGN_RULES): teal/ko'k = jarayonda,
+   * yashil = tayyor, amber = diqqat/kutilmoqda (brend tilla CTA dan
+   * farqli tusda), qizil = FAQAT kechikish/bekor qilish.
+   */
+  --kds-new: #c07016; /* amber-jigarrang: diqqat, tilla CTA bilan adashmaydi */
+  --kds-accepted: #0f7f7a; /* teal: qabul qilindi */
+  --kds-cooking: #2f6fb5; /* ko'k info: tayyorlanmoqda */
+  --kds-ready: #24875e; /* yashil: tayyor */
+  --kds-warn: #c07016; /* amber: muddat yaqinlashdi */
+  --kds-late: #b9323c; /* qizil: kechikdi */
+  --kds-critical: #8e1f27; /* to'q qizil: jiddiy kechikish */
+  --kds-number: 28px;
+  --kds-item: 22px;
+  --kds-small: 16px;
+  --kds-qty: 20px;
+  --kds-qty-box: 34px;
+  --kds-timer: 22px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
   align-items: start;
 }
+/* "TV" zichligi - uzoqdagi devor ekrani uchun, qurilmada eslab qolinadi. */
+.board[data-density="tv"] {
+  --kds-number: 36px;
+  --kds-item: 28px;
+  --kds-small: 19px;
+  --kds-qty: 25px;
+  --kds-qty-box: 44px;
+  --kds-timer: 28px;
+}
 .column {
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Tasdiqlanmagan yangi chipta: ovozi o'chirilgan ekran uchun ko'z signali. */
+.column[data-alert="true"] {
+  outline: 3px solid var(--kds-new);
+  outline-offset: 5px;
+  border-radius: 4px;
+}
+.column[data-alert="true"] .columnHeading {
+  animation: kitchenAlert 1.2s ease-in-out infinite;
+}
+@keyframes kitchenAlert {
+  0%,
+  100% {
+    background: #003e43;
+  }
+  50% {
+    background: var(--kds-new);
+  }
 }
 .columnHeading {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px;
+  gap: 10px;
+  padding: 12px 14px;
   margin-bottom: 14px;
-  border-bottom: 3px solid #ffd83d;
+  flex-shrink: 0;
+  border-bottom: 4px solid var(--kds-new);
   background: #003e43;
   color: white;
 }
 .columnHeading[data-tone="accepted"] {
-  border-color: #72909a;
+  border-color: var(--kds-accepted);
 }
 .columnHeading[data-tone="cooking"] {
-  border-color: #739ed4;
+  border-color: var(--kds-cooking);
 }
 .columnHeading[data-tone="ready"] {
-  border-color: #54a780;
+  border-color: var(--kds-ready);
 }
 .columnHeading h2 {
-  font-size: 15px;
+  font-size: 19px;
   font-weight: 800;
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Hisoblagich - neytral oq chip: tilla faqat CTA va pul uchun. */
 .columnHeading span {
   display: grid;
   place-items: center;
-  height: 25px;
-  min-width: 25px;
-  padding: 0 6px;
-  background: #ffd83d;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  background: white;
   color: #07373a;
-  border-radius: 4px;
+  border-radius: 6px;
   margin-left: auto;
-  font-size: 12px;
+  font-size: 17px;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.columnAck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid #ffffff66;
+  border-radius: 6px;
+  background: #ffffff26;
+  color: white;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.columnAck:hover {
+  background: #ffffff3d;
+}
+.columnAck ~ span {
+  margin-left: 0;
 }
 .ticketList {
   display: grid;
+  align-content: start;
   gap: 14px;
+  min-height: 0;
 }
 .ticket {
   min-width: 0;
   padding: 16px;
   background: white;
   border: 1px solid #d5e2dd;
+  border-left: 7px solid #b3c7c0;
   border-radius: 8px;
   box-shadow:
     0 2px 3px #003e4308,
     0 8px 20px -10px #003e4333;
 }
+/* Kechikish bosqichlari: butun taxta emas, faqat kartochka belgilanadi. */
+.ticket[data-urgency="warn"] {
+  border-left-color: var(--kds-warn);
+  background: #fffaf0;
+}
+.ticket[data-urgency="late"] {
+  border-left-color: var(--kds-late);
+  background: #fff6f4;
+}
+.ticket[data-urgency="critical"] {
+  border-left-color: var(--kds-critical);
+  background: #ffeeea;
+  box-shadow: 0 0 0 2px #b9323c4d;
+}
 .ticketHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
 }
+/*
+ * ASOSIY qoida tiklandi. `.ticketNumber` oshxona ekranidan tashqarida
+ * ham ishlatiladi (kuryer kartasi, kassa muvaffaqiyat dialogi), va
+ * faqat `.board` ichida ta'riflab qo'yilganda o'sha joylarda butunlay
+ * stilsiz qolardi. Oshxona kattalashtirishni o'zi alohida beradi.
+ */
 .ticketNumber {
   font-size: 18px;
   font-weight: 800;
   overflow-wrap: anywhere;
 }
+.board .ticketNumber {
+  font-size: var(--kds-number);
+  line-height: 1.15;
+}
 .ticketMeta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
-  margin: 9px 0 13px;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.board .badge {
+  padding: 5px 9px;
+  gap: 6px;
+  font-size: 15px;
+}
+.ticketPriority {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: #fff1d8;
+  color: #7a4708;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 .ticketTime {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
-  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #eaf2ee;
+  color: #07373a;
+  font-size: var(--kds-timer);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  font-weight: 700;
+  font-weight: 800;
 }
-.ticketTime[data-late="true"] {
-  color: #b9323c;
+.ticketTime[data-urgency="warn"] {
+  background: #fff1d8;
+  color: #7a4708;
+}
+.ticketTime[data-urgency="late"] {
+  background: #ffe7e4;
+  color: #9b2530;
+}
+.ticketTime[data-urgency="critical"] {
+  background: var(--kds-critical);
+  color: white;
 }
 .itemList {
   list-style: none;
@@ -676,6 +816,10 @@
   align-items: flex-start;
   gap: 10px;
 }
+.board .itemList > li {
+  padding: 11px 0;
+  gap: 12px;
+}
 .itemQuantity {
   min-width: 26px;
   height: 26px;
@@ -687,6 +831,16 @@
   border-radius: 4px;
   font-weight: 800;
   font-size: 12px;
+}
+/* Taxtada miqdor - to'q teal chip: uzoqdan eng kuchli kontrast. */
+.board .itemQuantity {
+  min-width: var(--kds-qty-box);
+  height: var(--kds-qty-box);
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #07373a;
+  color: white;
+  font-size: var(--kds-qty);
 }
 .itemName {
   min-width: 0;
@@ -701,6 +855,15 @@
   font-weight: 400;
   margin-top: 3px;
 }
+.board .itemName {
+  font-size: var(--kds-item);
+  line-height: 1.25;
+}
+.board .itemName small {
+  margin-top: 4px;
+  color: #41625a;
+  font-size: var(--kds-small);
+}
 .note {
   margin: 10px 0;
   padding: 9px 10px;
@@ -710,23 +873,86 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.board .note {
+  padding: 10px 12px;
+  border-left-width: 4px;
+  font-size: var(--kds-small);
+  font-weight: 700;
+}
 .ticketActions {
   display: flex;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 10px;
+  margin-top: 16px;
 }
 .ticketActions > :first-child {
   flex: 1;
 }
+.ticketPrimary {
+  min-height: 56px;
+  font-size: 18px;
+}
+.board[data-density="tv"] .ticketPrimary {
+  min-height: 64px;
+  font-size: 21px;
+}
+.ticketCancel {
+  width: 56px;
+  height: 56px;
+}
+/*
+ * Amal xatosi chiptaning O'ZIDA ko'rinadi: to'rt ustunli taxtada sahifa
+ * tepasidagi banner oshpazdan bir necha yuz piksel uzoqda qolib ketadi.
+ */
+.ticketError {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #edc2c3;
+  border-radius: 6px;
+  background: #fff0ed;
+  color: #a52230;
+  font-size: var(--kds-small);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.ticketBranch {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
 .detailsButton {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 36px;
+  gap: 6px;
+  min-height: 44px;
   color: #006860;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   margin-top: 4px;
+}
+.soundUnlock {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid #e4be22;
+  border-radius: 8px;
+  background: var(--gold, #ffd83d);
+  color: #07373a;
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: 0 2px 0 #cca919;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .kitchenFilters {
   display: none;
@@ -735,6 +961,26 @@
   background: #e2eae5;
   height: 180px;
   border-radius: 8px;
+}
+/*
+ * Keng ekranda taxta balandligi qat'iy: har bir ustun ALOHIDA aylanadi,
+ * shuning uchun 12 ta yangi chipta "Tayyor" ustuni sarlavhasini ekrandan
+ * chiqarib yubormaydi.
+ */
+@media (min-width: 1200px) {
+  .board {
+    height: calc(100dvh - 240px);
+    min-height: 420px;
+    align-items: stretch;
+  }
+  .column {
+    height: 100%;
+  }
+  .ticketList {
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+  }
 }
 
 /* Delivery addresses stay readable without loading an embedded map. */

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CustomerAuthPanel } from "../../components/customer-auth-panel";
 import { ContactFooter } from "../../components/contact-footer";
 import styles from "./profile.module.css";
@@ -16,6 +16,12 @@ import {
   trackingStatus,
   trackingTone,
 } from "../../lib/order-tracking";
+import { MapPin, Trash2 } from "lucide-react";
+import {
+  deliveryAddressText,
+  isDeliveryLocation,
+  type SavedAddress,
+} from "../../lib/delivery-location";
 
 type Dashboard = {
   id: string;
@@ -63,7 +69,13 @@ export default function ProfilePage() {
 }
 
 function Profile() {
-  const { customer, favoriteIds, setCustomer, showToast } = useCart();
+  const {
+    customer,
+    favoriteIds,
+    openFulfillment,
+    setCustomer,
+    showToast,
+  } = useCart();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localFavorites, setLocalFavorites] = useState<Dashboard["favorites"]>([]);
@@ -92,14 +104,58 @@ function Profile() {
     void load();
   }, [load]);
 
-  const addresses = useMemo(() => {
-    const values = new Set(
-      dashboard?.customerOrders
-        .map((order) => order.deliveryAddress ?? order.address)
-        .filter((address): address is string => Boolean(address)) ?? [],
-    );
-    return Array.from(values).slice(0, 3);
-  }, [dashboard]);
+  /*
+   * HAQIQIY saqlangan manzillar.
+   *
+   * Ilgari bu ro'yxat o'tgan buyurtmalarning `deliveryAddress` MATNIDAN
+   * yasalardi (eng ko'p 3 ta, tahrirlanmaydigan chip). Haqiqiy manzil
+   * do'koni esa `/customer/me/addresses` — checkout dialogida
+   * tahrirlanadigan o'sha ro'yxat. Natijada profil va checkout mijozga
+   * IKKI XIL ro'yxat ko'rsatardi va profildan manzilni boshqarish
+   * imkoni yo'q edi.
+   */
+  const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const [removingAddressId, setRemovingAddressId] = useState<string | null>(
+    null,
+  );
+
+  const loadAddresses = useCallback(async () => {
+    if (!customer?.accessToken) return;
+    setAddressError(null);
+    try {
+      const saved = await apiFetch<SavedAddress[]>("/customer/me/addresses", {
+        accessToken: customer.accessToken,
+      });
+      setAddresses(saved.filter((entry) => isDeliveryLocation(entry.location)));
+    } catch {
+      setAddressError("Manzillar yuklanmadi.");
+    }
+  }, [customer?.accessToken]);
+
+  useEffect(() => {
+    void loadAddresses();
+  }, [loadAddresses]);
+
+  async function removeAddress(id: string) {
+    if (removingAddressId) return;
+    setRemovingAddressId(id);
+    setAddressError(null);
+    try {
+      await apiFetch(`/customer/me/addresses/${id}`, {
+        method: "DELETE",
+        ...(customer?.accessToken
+          ? { accessToken: customer.accessToken }
+          : {}),
+      });
+      setAddresses((current) => current.filter((entry) => entry.id !== id));
+      showToast("Manzil o'chirildi");
+    } catch {
+      setAddressError("Manzilni o'chirib bo'lmadi.");
+    } finally {
+      setRemovingAddressId(null);
+    }
+  }
 
   if (!customer?.accessToken) {
     return (
@@ -200,10 +256,51 @@ function Profile() {
       </MotionDiv>
 
       <Panel title="Saqlangan manzillar">
-        <div className="flex flex-wrap gap-3">
-          {addresses.length ? addresses.map((address) => (
-            <span className="rounded-2xl bg-[#0B7F75]/10 px-4 py-3 text-sm font-bold text-[#0B7F75]" key={address}>{address}</span>
-          )) : <span className="rounded-2xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-semibold text-[#586B7D]">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
+        {addressError ? (
+          <p role="alert" className="mb-3 text-sm font-bold text-[#A3231D]">
+            {addressError}
+          </p>
+        ) : null}
+        <div className="grid gap-3">
+          {addresses.length ? (
+            addresses.map((address) => (
+              <div
+                className="mf-cart-row flex min-w-0 items-start justify-between gap-3 p-4"
+                key={address.id}
+              >
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-black text-[#17314A]">
+                    {address.label || address.location.address}
+                  </p>
+                  <p className="mt-1 break-words text-xs font-semibold text-[#586B7D]">
+                    {deliveryAddressText(address.location)}
+                  </p>
+                </div>
+                <button
+                  aria-label={`${address.label || address.location.address} manzilini o'chirish`}
+                  className="mf-icon-control shrink-0"
+                  disabled={removingAddressId === address.id}
+                  onClick={() => void removeAddress(address.id)}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" size={17} />
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm font-semibold text-[#586B7D]">
+              Hali saqlangan manzil yo'q. Yetkazib berishni tanlaganingizda
+              manzil shu yerda saqlanadi.
+            </p>
+          )}
+          <button
+            className="mf-button-secondary justify-self-start"
+            onClick={openFulfillment}
+            type="button"
+          >
+            <MapPin aria-hidden="true" size={17} />
+            Manzil qo'shish yoki o'zgartirish
+          </button>
         </div>
       </Panel>
     </MotionDiv>

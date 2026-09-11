@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { Icon } from "./icon";
 
 /*
  * Modal.
@@ -16,6 +17,7 @@ export function Modal({
   onClose,
   footer,
   children,
+  dismissOnBackdrop = true,
 }: {
   isOpen: boolean;
   title: string;
@@ -23,6 +25,14 @@ export function Modal({
   onClose: () => void;
   footer?: React.ReactNode;
   children?: React.ReactNode;
+  /**
+   * Fonni bosish oynani yopadimi.
+   *
+   * Standart `true` — tasdiqlash va ko'rish oynalari uchun to'g'ri.
+   * FORMA oynalarida `false` berilishi kerak: bitta beparvo bosish
+   * terilgan ma'lumotni ogohlantirmasdan yo'q qilib yuboradi.
+   */
+  dismissOnBackdrop?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -34,7 +44,18 @@ export function Modal({
     }
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
+
+    /*
+     * Fokus BIRINCHI boshqaruvga, panelning o'ziga emas.
+     *
+     * Ilgari panel fokuslanardi, ya'ni har forma oynasida foydalanuvchi
+     * yozishni boshlash uchun avval Tab bosishi kerak edi. Yopish tugmasi
+     * o'tkazib yuboriladi — u birinchi bo'lsa ham maqsad emas.
+     */
+    const initial = panelRef.current?.querySelector<HTMLElement>(
+      'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], button:not([disabled]):not([data-mz-modal-close]), [tabindex]:not([tabindex="-1"])',
+    );
+    (initial ?? panelRef.current)?.focus();
 
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key === "Escape") {
@@ -84,11 +105,11 @@ export function Modal({
 
   const handleBackdrop = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (event.target === event.currentTarget) {
+      if (dismissOnBackdrop && event.target === event.currentTarget) {
         onClose();
       }
     },
-    [onClose],
+    [dismissOnBackdrop, onClose],
   );
 
   if (!isOpen) {
@@ -129,11 +150,12 @@ export function Modal({
           </div>
           <button
             aria-label="Yopish"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-mz-control text-mz-text-muted transition hover:bg-mz-surface-sunken hover:text-mz-text"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-mz-control text-mz-text-muted transition hover:bg-mz-surface-sunken hover:text-mz-text"
+            data-mz-modal-close="true"
             onClick={onClose}
             type="button"
           >
-            <span aria-hidden="true">✕</span>
+            <Icon className="h-4 w-4" name="close" />
           </button>
         </div>
 
