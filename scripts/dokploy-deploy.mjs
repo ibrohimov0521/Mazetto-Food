@@ -228,14 +228,11 @@ async function main() {
 
     if (!applicationId) {
       /*
-       * ID berilmagan ilova Dokploy boshqarmaydi deb hisoblanadi va qo'lda
-       * deploy qilinadi. Backend bundan MUSTASNO: migratsiyalar u bilan
-       * keladi, uni o'tkazib yuborib `production` tegini surish keyingi
-       * migratsiyani ko'rinmas qilib qo'yardi.
+       * ID berilmagan ilova qo'lda deploy qilinishi mumkin, lekin release
+       * tegi faqat barcha so'ralgan ilovalar muvaffaqiyatli deploy qilinganda
+       * suriladi. Shunday qilib qisman deploy production bilan aralashmaydi.
        */
-      if (app === "backend") {
-        complete = false;
-      }
+      complete = false;
 
       manual.push(app);
       console.log(`  SKIP ${app} — ${APP_ID_ENV[app]} berilmagan`);
