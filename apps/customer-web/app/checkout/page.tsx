@@ -8,11 +8,14 @@ import {
   ArrowRight,
   Banknote,
   Check,
+  CreditCard,
   MapPin,
   Pencil,
   ShoppingBag,
+  Smartphone,
   Truck,
   UserRound,
+  type LucideIcon,
 } from "lucide-react";
 
 import { deliveryAddressText } from "../../lib/delivery-location";
@@ -63,13 +66,64 @@ type FormErrors = Partial<
 const checkoutAttemptKey = "mazetto.customer.checkoutAttemptId";
 const checkoutAttemptPayloadKey = "mazetto.customer.checkoutAttemptPayload";
 
-const paymentOptions: { value: PaymentMethod; label: string; hint: string }[] =
-  [
-    { value: "CASH", label: "Naqd", hint: "Kuryerga yoki kassada" },
-    { value: "CARD", label: "Karta", hint: "Terminal orqali" },
-    { value: "CLICK", label: "Click", hint: "Ilova orqali onlayn" },
-    { value: "PAYME", label: "Payme", hint: "Ilova orqali onlayn" },
-  ];
+/*
+ * Har usulning O'Z ikonkasi va O'Z xulosa matni bor.
+ *
+ * Ilgari to'rttasi ham `Banknote` bilan chizilardi (ko'z rangdan/shakldan
+ * usulni ajratolmasdi), xulosada esa qat'iy "Buyurtmani olganda naqd to'lov"
+ * yozilardi — kartani tanlagan mijozga ham "naqd" deb ko'rsatilardi.
+ *
+ * `summary` — buyurtma xulosasidagi bir qatorlik jumla; `hint` — radio
+ * yonidagi kichik izoh.
+ */
+const paymentOptions: {
+  value: PaymentMethod;
+  label: string;
+  hint: string;
+  icon: LucideIcon;
+  summary: { delivery: string; pickup: string };
+}[] = [
+  {
+    value: "CASH",
+    label: "Naqd",
+    hint: "Kuryerga yoki kassada",
+    icon: Banknote,
+    summary: {
+      delivery: "Buyurtmani olganda kuryerga naqd to'lov",
+      pickup: "Buyurtmani olganda kassada naqd to'lov",
+    },
+  },
+  {
+    value: "CARD",
+    label: "Karta",
+    hint: "Terminal orqali",
+    icon: CreditCard,
+    summary: {
+      delivery: "Buyurtmani olganda kuryerning terminali orqali karta bilan",
+      pickup: "Buyurtmani olganda kassadagi terminal orqali karta bilan",
+    },
+  },
+  {
+    value: "CLICK",
+    label: "Click",
+    hint: "Ilova orqali onlayn",
+    icon: Smartphone,
+    summary: {
+      delivery: "Click ilovasi orqali onlayn to'lov",
+      pickup: "Click ilovasi orqali onlayn to'lov",
+    },
+  },
+  {
+    value: "PAYME",
+    label: "Payme",
+    hint: "Ilova orqali onlayn",
+    icon: Smartphone,
+    summary: {
+      delivery: "Payme ilovasi orqali onlayn to'lov",
+      pickup: "Payme ilovasi orqali onlayn to'lov",
+    },
+  },
+];
 
 export default function CheckoutPage() {
   return (
@@ -157,6 +211,26 @@ function CheckoutFlow() {
       available: allowedCodes.has(option.value),
     }));
   }, [quote?.paymentMethods]);
+  /*
+   * Tanlangan usul serverga ko'ra ishlamasa — birinchi ishlaydiganiga
+   * o'tkaziladi.
+   *
+   * Ilgari mijoz kotirovka kelishidan oldin "Click"ni tanlab qo'ysa,
+   * keyin server uni rad etgani uchun radio "Tez kunda" belgisiga
+   * aylanardi, lekin `paymentMethod` state'da "CLICK" qolib ketardi va
+   * buyurtma yaroqsiz usul bilan yuborilardi. Xato faqat yuborishdan
+   * keyin ko'rinardi.
+   */
+  useEffect(() => {
+    if (!quote) return;
+    const available = paymentAvailability.filter((option) => option.available);
+    if (!available.length) return;
+    if (available.some((option) => option.value === paymentMethod)) return;
+    setPaymentMethod(available[0]!.value);
+  }, [quote, paymentAvailability, paymentMethod]);
+  const selectedPayment =
+    paymentOptions.find((option) => option.value === paymentMethod) ??
+    paymentOptions[0]!;
   const orderItemsPayload = useMemo(
     () =>
       items.map((item) => ({
@@ -647,7 +721,7 @@ function CheckoutFlow() {
                 }
                 key={option.value}
               >
-                <Banknote size={24} />
+                <option.icon size={24} aria-hidden="true" />
                 <span>
                   <strong>{option.label}</strong>
                   <small>
@@ -778,7 +852,10 @@ function CheckoutFlow() {
             </div>
           ) : null}
           <p className="mf-summary-payment">
-            <Banknote size={18} /> Buyurtmani olganda naqd to'lov
+            <selectedPayment.icon size={18} aria-hidden="true" />{" "}
+            {type === "PICKUP"
+              ? selectedPayment.summary.pickup
+              : selectedPayment.summary.delivery}
           </p>
         </aside>
       </div>

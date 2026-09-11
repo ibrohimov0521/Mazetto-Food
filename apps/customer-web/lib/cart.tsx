@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { apiFetch, getApiBaseUrl } from "./api";
@@ -189,16 +188,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const fulfillment = useFulfillmentState(customer?.id);
   const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
-  const pendingItem = useRef<Omit<CartItem, "key"> | null>(null);
-  const pendingQuantity = useRef<{ key: string; quantity: number } | null>(
-    null,
-  );
   const owner = customer?.id ?? "guest";
-  const [restoredOwner, setRestoredOwner] = useState<string | null>(null);
-  const [awaitingAddress, setAwaitingAddress] = useState(false);
-  const addressReady =
-    fulfillment.fulfillmentReady &&
-    (Boolean(fulfillment.fulfillment) || restoredOwner === owner);
   const { fulfillmentReady, selectFulfillment } = fulfillment;
 
   useEffect(() => {
@@ -235,9 +225,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         // The address dialog provides retry and manual selection if restoration fails.
-      })
-      .finally(() => {
-        if (!cancelled) setRestoredOwner(owner);
       });
 
     const idle = typeof window.requestIdleCallback === "function";
@@ -377,33 +364,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setToastMessage(`${item.productName} savatga qo'shildi`);
   }, []);
 
-  useEffect(() => {
-    if (!awaitingAddress || !addressReady) return;
-    setAwaitingAddress(false);
-    if (!fulfillment.fulfillmentConfirmed) {
-      setFulfillmentOpen(true);
-      return;
-    }
-    const item = pendingItem.current;
-    pendingItem.current = null;
-    if (item) commitItem(item);
-    const update = pendingQuantity.current;
-    pendingQuantity.current = null;
-    if (update)
-      setItems((current) =>
-        current.map((line) =>
-          line.key === update.key
-            ? { ...line, quantity: update.quantity }
-            : line,
-        ),
-      );
-  }, [
-    awaitingAddress,
-    addressReady,
-    fulfillment.fulfillmentConfirmed,
-    commitItem,
-  ]);
-
   const value: CartContextValue = {
     customer,
     items,
@@ -418,26 +378,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     openFulfillment() {
       setFulfillmentOpen(true);
     },
+    /*
+     * Savatga qo'shish HECH QACHON to'sib qo'yilmaydi.
+     *
+     * Ilgari birinchi "+" filial va xaritali manzil dialogini ochardi va
+     * `false` qaytarardi: dialog yopilsa mahsulot yo'qolardi, toast ham
+     * chiqmasdi — mijoz "tugma ishlamayapti" deb o'ylardi. Menyu narxlari
+     * filialga bog'liq emas, yakuniy summa esa checkout'dagi kotirovkada
+     * qaytadan hisoblanadi, shuning uchun manzilsiz savat to'ldirish xavfsiz.
+     *
+     * Manzil/filial checkout'da so'raladi va `validate()` uni majburiy
+     * qiladi — ya'ni talab yo'qolmadi, faqat keyinroq surildi.
+     */
     addItem(item) {
-      if (!addressReady || !fulfillment.fulfillmentConfirmed) {
-        if (!pendingItem.current) pendingItem.current = item;
-        setAwaitingAddress(true);
-        return false;
-      }
       commitItem(item);
       return true;
     },
     updateQuantity(key, quantity) {
-      const current = items.find((item) => item.key === key);
-      if (
-        current &&
-        quantity > current.quantity &&
-        (!addressReady || !fulfillment.fulfillmentConfirmed)
-      ) {
-        pendingQuantity.current = { key, quantity };
-        setAwaitingAddress(true);
-        return;
-      }
       setItems((current) =>
         current
           .map((item) => (item.key === key ? { ...item, quantity } : item))
@@ -500,26 +457,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           initial={fulfillment.fulfillment}
           onInvalidate={fulfillment.resetFulfillment}
           onClose={() => {
-            pendingItem.current = null;
-            pendingQuantity.current = null;
             setFulfillmentOpen(false);
           }}
           onConfirm={(selection) => {
             fulfillment.selectFulfillment(selection);
-            const item = pendingItem.current;
-            pendingItem.current = null;
             setFulfillmentOpen(false);
-            if (item) commitItem(item);
-            const update = pendingQuantity.current;
-            pendingQuantity.current = null;
-            if (update)
-              setItems((current) =>
-                current.map((line) =>
-                  line.key === update.key
-                    ? { ...line, quantity: update.quantity }
-                    : line,
-                ),
-              );
           }}
         />
       ) : null}
