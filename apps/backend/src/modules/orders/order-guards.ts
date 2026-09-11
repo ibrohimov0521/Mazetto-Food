@@ -123,7 +123,7 @@ export async function assertOpenCashierShift(
 
   if (!shift) {
     throw new BadRequestException(
-      "Open employee shift is required before POS sales",
+      "Kassa savdosidan oldin xodim smenasi ochiq bo'lishi shart",
     );
   }
 
@@ -139,7 +139,7 @@ export async function assertOpenCashierShift(
 
   if (touched.count !== 1) {
     throw new BadRequestException(
-      "Open employee shift is required before POS sales",
+      "Kassa savdosidan oldin xodim smenasi ochiq bo'lishi shart",
     );
   }
 
