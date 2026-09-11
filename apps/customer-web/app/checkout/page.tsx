@@ -34,6 +34,7 @@ import { localizeMenuName } from "../../lib/customer-display";
 
 import type { Branch } from "../../lib/types";
 import { normalizePhone } from "../../lib/phone";
+import { PhoneInput, nationalPhoneValue } from "../../components/phone-input";
 
 type OrderResult = {
   customerOrder: { id: string };
@@ -151,7 +152,9 @@ function CheckoutFlow() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const branchId = fulfillment?.branchId ?? "";
   const [name, setName] = useState(customer?.name ?? "");
-  const [phone, setPhone] = useState(customer?.phone ?? "");
+  const [phone, setPhone] = useState(() =>
+    nationalPhoneValue(customer?.phone ?? ""),
+  );
   const deliveryLocation = fulfillmentConfirmed
     ? (fulfillment?.location ?? null)
     : null;
@@ -673,28 +676,35 @@ function CheckoutFlow() {
                   autoComplete="name"
                   maxLength={120}
                   aria-invalid={Boolean(errors.name)}
+                  {...(errors.name
+                    ? { "aria-describedby": "checkout-name-error" }
+                    : {})}
                   className="mf-input"
                   placeholder="Ismingiz"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                 />
-                <FieldError message={errors.name} />
+                <FieldError id="checkout-name-error" message={errors.name} />
               </label>
-              <label className="mf-checkout-field">
-                Telefon raqam
-                <input
+              {/*
+                Checkout o'z telefon maydonini qayta yozgan edi: oddiy
+                `<input type="tel" maxLength={40}>` matn placeholder
+                bilan, holbuki autorizatsiya paneli +998 prefiksi va
+                paste tozalashi bo'lgan `PhoneInput` ni ishlatardi —
+                bitta oqimda ikki xil telefon maydoni. `normalizePhone`
+                9 raqamli mahalliy qiymatni ham qabul qiladi, shuning
+                uchun tekshirish va yuborish mantiqi o'zgarmadi.
+              */}
+              <div className="mf-checkout-field">
+                <PhoneInput
                   id="checkout-phone"
-                  autoComplete="tel"
-                  type="tel"
-                  maxLength={40}
-                  aria-invalid={Boolean(errors.phone)}
-                  className="mf-input"
-                  placeholder="+998 90 123 45 67"
                   value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
+                  onChange={setPhone}
+                  invalid={Boolean(errors.phone)}
+                  {...(errors.phone ? { describedBy: "checkout-phone-error" } : {})}
                 />
-                <FieldError message={errors.phone} />
-              </label>
+                <FieldError id="checkout-phone-error" message={errors.phone} />
+              </div>
             </div>
             <label className="mf-checkout-field mf-order-comment">
               Buyurtmaga izoh
@@ -874,8 +884,18 @@ function CheckoutFlow() {
   );
 }
 
-function FieldError({ message }: { message: string | undefined }) {
-  return message ? <p className="mf-checkout-error">{message}</p> : null;
+function FieldError({
+  message,
+  id,
+}: {
+  message: string | undefined;
+  id?: string;
+}) {
+  return message ? (
+    <p className="mf-checkout-error" {...(id ? { id } : {})}>
+      {message}
+    </p>
+  ) : null;
 }
 
 let memoryAttempt: { id: string; signature: string } | null = null;

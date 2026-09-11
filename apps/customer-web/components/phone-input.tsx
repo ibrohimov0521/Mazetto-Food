@@ -16,10 +16,23 @@ export function PhoneInput({
   value,
   onChange,
   disabled = false,
+  id,
+  invalid = false,
+  describedBy,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /*
+   * `id`, `invalid` va `describedBy` checkout uchun qo'shildi: u
+   * birinchi xato maydoniga fokus beradi (`checkout-<maydon>` id'si
+   * bo'yicha) va xato matnini `aria-describedby` bilan bog'laydi,
+   * shunda ekran o'qish dasturi "yaroqsiz" deb aytganda SABABINI ham
+   * o'qiydi.
+   */
+  id?: string;
+  invalid?: boolean;
+  describedBy?: string;
 }) {
   return (
     <label className="grid min-w-0 gap-2 text-sm font-semibold text-[#07373a]">
@@ -40,8 +53,9 @@ export function PhoneInput({
           autoComplete="tel-national"
           inputMode="tel"
           type="tel"
-          required
-          pattern="[0-9]{9}"
+          {...(id ? { id } : {})}
+          {...(invalid ? { "aria-invalid": true } : {})}
+          {...(describedBy ? { "aria-describedby": describedBy } : {})}
           maxLength={18}
           placeholder="90 123 45 67"
           value={value}
