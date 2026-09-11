@@ -138,7 +138,7 @@ export function CourierOrdersPage() {
       setShiftError("");
     } catch (caught) {
       setShiftError(
-        caught instanceof Error ? caught.message : "Kuryer kassasi yuklanmadi",
+        caught instanceof Error ? caught.message : "Xodim kassasi yuklanmadi",
       );
     }
   }, []);
@@ -368,10 +368,10 @@ export function CourierOrdersPage() {
           />
         </div>
       </div>
-      <section className={styles.shiftSummary} aria-label="Kuryer kassasi">
+      <section className={styles.shiftSummary} aria-label="Xodim kassasi">
         <div className={styles.toolbar}>
           <div>
-            <h2>Kuryer kassasi</h2>
+            <h2>Umumiy xodim kassasi</h2>
             <p className={styles.muted}>
               {courierShift
                 ? "Smena #" +
