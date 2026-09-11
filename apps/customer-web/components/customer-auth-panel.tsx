@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useCart, type CustomerSession } from "../lib/cart";
 import { hapticTap } from "./motion-primitives";
@@ -31,6 +31,16 @@ export function CustomerAuthPanel({
   const [telegramBotUrl, setTelegramBotUrl] = useState<string | null>(null);
   const [requestingCode, setRequestingCode] = useState(false);
   const [verifyingCode, setVerifyingCode] = useState(false);
+  /*
+   * `expiresAt` server javobida BOR edi, lekin hech qayerda
+   * ko'rsatilmasdi: mijoz kodning qancha amal qilishini bilmasdi va
+   * "Qayta yuborish" ni cheklovsiz bosib, har bosishda yangi kod
+   * yaratardi (eskisi esa bekor bo'lardi).
+   */
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [resendAt, setResendAt] = useState<number | null>(null);
+  const codeField = useRef<HTMLInputElement | null>(null);
 
   async function requestCode() {
     if (requestingCode || phone.length !== 9) return;
@@ -48,6 +58,10 @@ export function CustomerAuthPanel({
       setPendingVerification(true);
       setCode("");
       setTelegramBotUrl(result.delivery.botUrl ?? null);
+      const expiry = Date.parse(result.challenge.expiresAt);
+      setExpiresAt(Number.isFinite(expiry) ? expiry : null);
+      // 30 soniya — server yangi kod yaratishidan oldingi eng qisqa oraliq.
+      setResendAt(Date.now() + 30_000);
 
       if (result.delivery.status === "TELEGRAM_LINK_REQUIRED") {
         setMessage(
@@ -100,6 +114,8 @@ export function CustomerAuthPanel({
       setPendingVerification(false);
       setCode("");
       setTelegramBotUrl(null);
+      setExpiresAt(null);
+      setResendAt(null);
       hapticTap([14, 30, 14]);
       showToast("Telefon tasdiqlandi");
       onAuthenticated?.();
@@ -116,6 +132,31 @@ export function CustomerAuthPanel({
       setVerifyingCode(false);
     }
   }
+
+  /*
+   * Soat FAQAT sanoq ketayotganda ishlaydi — aks holda panel har
+   * soniyada bekorga qayta chizilardi.
+   */
+  useEffect(() => {
+    if (!pendingVerification || (!expiresAt && !resendAt)) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [pendingVerification, expiresAt, resendAt]);
+
+  /*
+   * Kod maydoniga AVTOMATIK fokus. Ilgari kod yuborilgandan keyin
+   * fokus joyida qolardi va mijoz maydonni o'zi qidirishga majbur edi.
+   */
+  useEffect(() => {
+    if (pendingVerification) codeField.current?.focus();
+  }, [pendingVerification]);
+
+  const expiresInSeconds = expiresAt
+    ? Math.max(0, Math.ceil((expiresAt - now) / 1000))
+    : null;
+  const resendInSeconds = resendAt
+    ? Math.max(0, Math.ceil((resendAt - now) / 1000))
+    : 0;
 
   if (customer?.accessToken) {
     return (
@@ -135,7 +176,20 @@ export function CustomerAuthPanel({
   }
 
   return (
-    <div className="grid min-w-0 gap-3">
+    /*
+     * `<form>` ATAYLAB: ilgari bu oddiy `<div>` edi, shuning uchun
+     * Enter bosilganda hech narsa yuborilmasdi — mijoz sichqoncha bilan
+     * tugmani bosishga majbur edi va klaviatura bilan ishlash buzilgan
+     * edi. `onSubmit` qaysi qadamdaligiga qarab to'g'ri amalni chaqiradi.
+     */
+    <form
+      className="grid min-w-0 gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pendingVerification) void verifyCode();
+        else void requestCode();
+      }}
+    >
       <div>
         <h2 className="text-2xl font-black text-[#17314A]">{title}</h2>
         <p className="mt-2 text-sm font-semibold leading-6 text-[#586B7D]">
@@ -161,6 +215,8 @@ export function CustomerAuthPanel({
           setCode("");
           setMessage(null);
           setTelegramBotUrl(null);
+          setExpiresAt(null);
+          setResendAt(null);
         }}
       />
       {pendingVerification ? (
@@ -172,14 +228,24 @@ export function CustomerAuthPanel({
             inputMode="numeric"
             maxLength={6}
             placeholder="Telegram tasdiqlash kodi"
+            ref={codeField}
             value={code}
             onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
           />
+          {expiresInSeconds !== null ? (
+            <p
+              role="status"
+              className="text-xs font-bold text-[#586B7D]"
+            >
+              {expiresInSeconds > 0
+                ? `Kod ${expiresInSeconds} soniya amal qiladi`
+                : "Kod muddati tugadi. Yangi kod oling."}
+            </p>
+          ) : null}
           <button
             className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50"
             disabled={phone.length !== 9 || !code || verifyingCode}
-            onClick={() => void verifyCode()}
-            type="button"
+            type="submit"
           >
             {verifyingCode ? "Tekshirilmoqda..." : "Kodni tasdiqlash"}
           </button>
@@ -192,21 +258,31 @@ export function CustomerAuthPanel({
               Telegram botga o'tish
             </Link>
           ) : null}
+          {/*
+            Qayta yuborish CHEKLANGAN: har bosish serverda yangi kod
+            yaratadi va eskisini bekor qiladi, ya'ni tez-tez bosish
+            mijozning o'z kodini ishlamas holga keltirardi.
+          */}
           <button
             className="pressable ripple mf-button-secondary px-5 py-3 text-sm font-black disabled:opacity-50"
-            disabled={phone.length !== 9 || requestingCode}
+            disabled={
+              phone.length !== 9 || requestingCode || resendInSeconds > 0
+            }
             onClick={() => void requestCode()}
             type="button"
           >
-            {requestingCode ? "Yuborilmoqda..." : "Kodni qayta yuborish"}
+            {requestingCode
+              ? "Yuborilmoqda..."
+              : resendInSeconds > 0
+                ? `Qayta yuborish (${resendInSeconds})`
+                : "Kodni qayta yuborish"}
           </button>
         </>
       ) : (
         <button
           className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50"
           disabled={phone.length !== 9 || requestingCode}
-          onClick={() => void requestCode()}
-          type="button"
+          type="submit"
         >
           {requestingCode ? "Yuborilmoqda..." : "Kod olish"}
         </button>
@@ -219,6 +295,6 @@ export function CustomerAuthPanel({
           {message}
         </p>
       ) : null}
-    </div>
+    </form>
   );
 }
