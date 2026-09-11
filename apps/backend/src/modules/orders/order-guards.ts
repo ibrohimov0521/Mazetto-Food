@@ -96,6 +96,40 @@ export async function assertCashPaymentMethod(
 }
 
 /*
+ * Kod bo'yicha faol to'lov usulini topish.
+ *
+ * `assertCashPaymentMethod` ning umumlashtirilgani: kassa endi naqddan
+ * tashqari usullarni ham qabul qiladi. Filialga xos usul umumiysidan
+ * USTUN (`orderBy: branchId desc` `null` ni oxiriga suradi).
+ *
+ * Xato xabari usul kodini AYTADI: kassir "karta ishlamadi" deganda,
+ * qaysi usul sozlanmaganini admin darhol ko'radi.
+ */
+export async function resolveBranchPaymentMethod(
+  tx: TransactionClient,
+  branchId: string,
+  code: string,
+) {
+  const method = await tx.paymentMethod.findFirst({
+    where: {
+      code,
+      isActive: true,
+      OR: [{ branchId }, { branchId: null }],
+    },
+    orderBy: { branchId: "desc" },
+    select: { id: true, code: true, name: true },
+  });
+
+  if (!method) {
+    throw new BadRequestException(
+      `To'lov usuli "${code}" bu filialda mavjud emas`,
+    );
+  }
+
+  return method;
+}
+
+/*
  * Ochiq smenasiz POS sotuvi bo'lmaydi: aks holda pul hech qanday
  * smenaga bog'lanmasdan kassaga tushardi va kun oxirida hisob
  * chiqmasdi.

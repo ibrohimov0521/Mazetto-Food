@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
-import { OrderStatus, Prisma } from "@prisma/client";
+import { OrderStatus, OrderType, Prisma } from "@prisma/client";
 import { createHash, randomInt } from "node:crypto";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PosOrderStatus } from "./dto/order-status.dto";
@@ -63,12 +63,156 @@ export function assertPosCheckoutQuantities(dto: CreatePosCheckoutDto): void {
 }
 
 /*
+ * Kassa buyurtma turi.
+ *
+ * `DELIVERY` ataylab rad etiladi: yetkazish narxi mijoz koordinatasiga
+ * bog'liq (1 km ichida bepul, undan keyin sozlamadagi narx), bu endpoint
+ * esa manzil ham, koordinata ham qabul qilmaydi. Turni qabul qilib,
+ * narxni nolga qoldirish mijozdan KAM PUL olish degani bo'lardi.
+ *
+ * `DINE_IN` stolsiz bo'lmaydi: aks holda ovqat kimga tayyorlanganini
+ * oshxona ham, ofitsiant ham bilmaydi.
+ */
+export function assertPosCheckoutType(dto: CreatePosCheckoutDto): OrderType {
+  const type = dto.type ?? OrderType.TAKEAWAY;
+
+  if (type === OrderType.DELIVERY) {
+    throw new BadRequestException(
+      "Yetkazib berish buyurtmasi kassa checkout'ida qabul qilinmaydi",
+    );
+  }
+
+  if (type === OrderType.DINE_IN && !dto.tableId) {
+    throw new BadRequestException("Zal buyurtmasi uchun stol tanlanishi shart");
+  }
+
+  if (type !== OrderType.DINE_IN && dto.tableId) {
+    throw new BadRequestException("Stol faqat zal buyurtmasida tanlanadi");
+  }
+
+  return type;
+}
+
+/** Kod bo'yicha qidirish uchun bir xil shaklga keltirish. */
+export function normalizePaymentMethodCode(code: string): string {
+  return code.trim().toUpperCase();
+}
+
+export type NormalizedPosTender = {
+  paymentMethodCode: string;
+  amount: Prisma.Decimal;
+  transactionId: string | null;
+};
+
+/*
+ * To'lov bo'laklarini tekshirish va normallashtirish.
+ *
+ * `payments` berilmasa — eski yo'l: butun summa naqd. Bu holat `null`
+ * bilan ifodalanadi, chunki summa faqat SERVERDA (mahsulot narxlari
+ * hisoblangandan keyin) ma'lum bo'ladi.
+ *
+ * Bir xil usul ikki marta kelishi rad etiladi: bu deyarli har doim
+ * kassa ekranidagi xato, va u ikkita alohida `Payment` yozuvini
+ * yaratib, hisobotni chalkashtirardi.
+ */
+export function normalizePosCheckoutTenders(
+  dto: CreatePosCheckoutDto,
+): NormalizedPosTender[] | null {
+  if (!dto.payments) return null;
+
+  if (!dto.payments.length) {
+    throw new BadRequestException("Kamida bitta to'lov usuli kerak");
+  }
+
+  const seen = new Set<string>();
+
+  return dto.payments.map((tender) => {
+    const code = normalizePaymentMethodCode(tender.paymentMethodCode);
+
+    if (!code) {
+      throw new BadRequestException("To'lov usuli ko'rsatilmagan");
+    }
+
+    if (seen.has(code)) {
+      throw new BadRequestException(
+        "Bir xil to'lov usuli ikki marta yuborilgan",
+      );
+    }
+
+    seen.add(code);
+    const amount = new Prisma.Decimal(tender.amount);
+
+    if (amount.lessThanOrEqualTo(0)) {
+      throw new BadRequestException("To'lov summasi noldan katta bo'lishi kerak");
+    }
+
+    return {
+      paymentMethodCode: code,
+      amount,
+      transactionId: tender.transactionId ?? null,
+    };
+  });
+}
+
+export type PosPaymentSummary = {
+  /** Asosiy usul kodi — eski kassa mijozi shu maydonni o'qiydi. */
+  method: string;
+  methods: { code: string; amount: string }[];
+  cashReceived: string;
+  change: string;
+};
+
+/*
+ * Kassa javobidagi to'lov xulosasi.
+ *
+ * SOF FUNKSIYA, ataylab: bu xulosa ikki joyda kerak — yangi buyurtma
+ * yaratilganda va TAKRORIY so'rov kelganda. Takroriy yo'lda bazada
+ * qayta o'qish o'rniga shu yerda qayta hisoblanadi, chunki `requestHash`
+ * mos tushgani so'rov mazmuni aynan bir xil ekanini kafolatlaydi.
+ *
+ * Qaytim FAQAT naqd bo'lagidan hisoblanadi: karta bilan to'langan
+ * summadan qaytim bo'lmaydi.
+ */
+export function summarizePosPayment(
+  dto: CreatePosCheckoutDto,
+  orderTotal: Prisma.Decimal,
+): PosPaymentSummary {
+  const tenders = dto.payments?.length
+    ? dto.payments.map((tender) => ({
+        code: normalizePaymentMethodCode(tender.paymentMethodCode),
+        amount: new Prisma.Decimal(tender.amount),
+      }))
+    : [{ code: "CASH", amount: orderTotal }];
+  const cashTender = tenders.find((tender) => tender.code === "CASH");
+  const cashReceived = cashTender
+    ? new Prisma.Decimal(dto.cashReceived ?? cashTender.amount)
+    : new Prisma.Decimal(0);
+  const change = cashTender
+    ? cashReceived.sub(cashTender.amount)
+    : new Prisma.Decimal(0);
+
+  return {
+    method: tenders[0]?.code ?? "CASH",
+    methods: tenders.map((tender) => ({
+      code: tender.code,
+      amount: tender.amount.toFixed(2),
+    })),
+    cashReceived: cashReceived.toFixed(2),
+    change: change.toFixed(2),
+  };
+}
+
+/*
  * So'rov hash'i idempotentlik uchun: bir xil kalit BOSHQA mazmun bilan
  * kelsa, bu takroriy yuborish emas, xato — va uni aniqlash kerak.
  *
  * NORMALLASHTIRISH SHART: `Decimal` ning `toFixed` i "5" va "5.00" ni
  * bir xil qiladi, modifikatorlar esa saralanadi, chunki mijoz ularni
  * boshqa tartibda yuborishi mumkin va bu bir xil buyurtma.
+ *
+ * Tur, stol va to'lov bo'laklari ham hash'ga KIRADI: ular buyurtmaning
+ * mazmuni, va bir xil kalit bilan boshqa tur yoki boshqa to'lov usuli
+ * kelsa, bu takroriy yuborish emas.
  */
 export function createPosCheckoutRequestHash(
   dto: CreatePosCheckoutDto,
@@ -78,7 +222,25 @@ export function createPosCheckoutRequestHash(
   const normalized = {
     branchId,
     employeeId,
-    cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
+    type: dto.type ?? OrderType.TAKEAWAY,
+    tableId: dto.tableId ?? null,
+    cashReceived:
+      dto.cashReceived === undefined
+        ? null
+        : new Prisma.Decimal(dto.cashReceived).toFixed(2),
+    payments: dto.payments
+      ? dto.payments
+          .map((tender) => ({
+            paymentMethodCode: normalizePaymentMethodCode(
+              tender.paymentMethodCode,
+            ),
+            amount: new Prisma.Decimal(tender.amount).toFixed(2),
+            transactionId: tender.transactionId ?? null,
+          }))
+          .sort((left, right) =>
+            left.paymentMethodCode.localeCompare(right.paymentMethodCode),
+          )
+      : null,
     notes: dto.notes ?? null,
     items: dto.items.map((item) => ({
       productId: item.productId,

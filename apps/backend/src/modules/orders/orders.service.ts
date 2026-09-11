@@ -44,27 +44,30 @@ import { allocateDisplayOrderNumber } from "./order-display-number";
 import {
   assertOrderCanChange,
   assertPosCheckoutQuantities,
+  assertPosCheckoutType,
   calculateItemTotal,
   createOrderNumber,
   createPosCheckoutRequestHash,
   createPosIdempotencyKey,
   isRetryableTransactionConflict,
   isUniqueConstraintError,
+  normalizePosCheckoutTenders,
   orderInclude,
   requireEmployee,
   resolveEmployeeId,
+  summarizePosPayment,
   toStoredStatus,
   unavailableProductWhere,
   type ModifierSnapshot,
 } from "./order-rules";
 import {
   assertBranchExists,
-  assertCashPaymentMethod,
   assertEmployeeInBranch,
   assertOpenCashierShift,
   assertTableInBranch,
   createModifierSnapshot,
   recalculateOrderTotals,
+  resolveBranchPaymentMethod,
 } from "./order-guards";
 
 type TransactionClient = Prisma.TransactionClient;
@@ -188,11 +191,58 @@ export class OrdersService {
       },
     });
 
+    /*
+     * To'lov usullari FILIAL SOZLAMASIDAN olinadi.
+     *
+     * Ilgari bu yerda `[{ code: "CASH" }]` qattiq yozilgan edi va kassa
+     * ekrani shuning uchun faqat naqdni bilardi — karta bilan keladigan
+     * mijozga xizmat ko'rsatib bo'lmasdi. Filialga xos usul umumiysidan
+     * ustun (`orderBy: branchId desc`), shu sababli bir xil kod ikki
+     * marta chiqmasligi uchun kod bo'yicha filtrlanadi.
+     */
+    const branchPaymentMethods = await this.prisma.paymentMethod.findMany({
+      where: { isActive: true, OR: [{ branchId }, { branchId: null }] },
+      orderBy: [{ branchId: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, code: true, name: true, sortOrder: true },
+    });
+    const seenMethodCodes = new Set<string>();
+    const paymentMethods = branchPaymentMethods
+      .filter((method) => {
+        if (seenMethodCodes.has(method.code)) return false;
+        seenMethodCodes.add(method.code);
+        return true;
+      })
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+      .map((method) => ({
+        code: method.code,
+        name: method.name,
+        active: true,
+      }));
+
+    /*
+     * Zal buyurtmasi uchun stollar. Faqat faol stollar, zal bo'yicha
+     * guruhlash uchun `hall` bilan.
+     */
+    const tables = await this.prisma.restaurantTable.findMany({
+      where: { branchId, isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        number: true,
+        capacity: true,
+        status: true,
+        hall: { select: { id: true, name: true } },
+      },
+    });
+
     return {
       branchId,
       categories,
       products,
-      paymentMethods: [{ code: "CASH", name: "Naqd", active: true }],
+      paymentMethods,
+      tables,
     };
   }
 
@@ -206,6 +256,8 @@ export class OrdersService {
     > | null = null;
 
     assertPosCheckoutQuantities(dto);
+    const orderType = assertPosCheckoutType(dto);
+    const requestedTenders = normalizePosCheckoutTenders(dto);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       kitchenTicket = null;
@@ -232,7 +284,10 @@ export class OrdersService {
               branchId,
               employeeId,
             );
-            const cashMethod = await assertCashPaymentMethod(tx, branchId);
+            if (dto.tableId) {
+              await assertTableInBranch(tx, dto.tableId, branchId);
+            }
+
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
               OrderSource.POS,
@@ -245,13 +300,17 @@ export class OrdersService {
                 ...displayOrder,
                 shiftId: openShift.id,
                 source: OrderSource.POS,
-                type: OrderType.TAKEAWAY,
+                type: orderType,
+                tableId: dto.tableId ?? null,
                 status: OrderStatus.NEW,
                 paymentStatus: PaymentStatus.PENDING,
                 createdById: employeeId,
                 acceptedById: employeeId,
                 notes: dto.notes ?? null,
-                kitchenComment: "POS counter order",
+                kitchenComment:
+                  orderType === OrderType.DINE_IN
+                    ? "POS zal buyurtmasi"
+                    : "POS olib ketish buyurtmasi",
               },
             });
 
@@ -313,56 +372,113 @@ export class OrdersService {
               throw new NotFoundException("Order not found");
             }
 
-            const cashReceived = new Prisma.Decimal(dto.cashReceived);
+            /*
+             * `payments` berilmagan bo'lsa — eski yo'l: butun summa naqd.
+             * Bu shart eski kassa mijozi uchun saqlanadi.
+             */
+            const tenders =
+              requestedTenders ??
+              [
+                {
+                  paymentMethodCode: "CASH",
+                  amount: pricedOrder.total,
+                  transactionId: null,
+                },
+              ];
+            const tenderTotal = tenders.reduce(
+              (total, tender) => total.add(tender.amount),
+              new Prisma.Decimal(0),
+            );
 
-            if (cashReceived.lessThan(pricedOrder.total)) {
+            /*
+             * Kassa buyurtmasi TO'LIQ to'lanadi: qoldiq bilan chiqmaydi.
+             * Ortiqcha ham qabul qilinmaydi — 73 000 lik buyurtmaga
+             * 100 000 daromad yozish hisobotni buzardi. Mijoz bergan
+             * ortiqcha pul `cashReceived` da qoladi va qaytim sifatida
+             * qaytariladi.
+             */
+            if (!tenderTotal.equals(pricedOrder.total)) {
               throw new BadRequestException(
-                "Received cash is less than order total",
+                "To'lov summasi buyurtma summasiga teng bo'lishi kerak",
               );
             }
 
-            const payment = await tx.payment.create({
-              data: {
-                orderId: order.id,
-                paymentMethodId: cashMethod.id,
-                paymentOperationId: operation.id,
-                operationTenderIndex: 0,
-                acceptedById: employeeId,
-                createdById: user.id,
-                status: PaymentStatus.SUCCESS,
-                amount: pricedOrder.total,
-                methodCode: cashMethod.code,
-                reference: "POS cash payment",
-                paidAt: new Date(),
-              },
-            });
+            const cashTender = tenders.find(
+              (tender) => tender.paymentMethodCode === "CASH",
+            );
+            /*
+             * Naqd bo'lagi bo'lmasa `cashReceived` ma'nosiz — nolga
+             * tushadi va qaytim ham nol bo'ladi.
+             */
+            const cashReceived = cashTender
+              ? new Prisma.Decimal(dto.cashReceived ?? cashTender.amount)
+              : new Prisma.Decimal(0);
 
-            await tx.revenueRecord.create({
-              data: {
-                branchId,
-                orderId: order.id,
-                paymentId: payment.id,
-                shiftId: openShift.id,
-                employeeId,
-                source: RevenueRecordSource.ORDER,
-                amount: payment.amount,
-                description: "POS cash payment",
-              },
-            });
+            if (cashTender && cashReceived.lessThan(cashTender.amount)) {
+              throw new BadRequestException(
+                "Qabul qilingan naqd pul naqd to'lov summasidan kam",
+              );
+            }
 
-            await tx.cashTransaction.create({
-              data: {
+            for (const [index, tender] of tenders.entries()) {
+              const method = await resolveBranchPaymentMethod(
+                tx,
                 branchId,
-                shiftId: openShift.id,
-                employeeId,
-                orderId: order.id,
-                paymentId: payment.id,
-                type: CashTransactionType.SALE,
-                amount: payment.amount,
-                reason: "POS cash sale",
-                createdById: user.id,
-              },
-            });
+                tender.paymentMethodCode,
+              );
+
+              const payment = await tx.payment.create({
+                data: {
+                  orderId: order.id,
+                  paymentMethodId: method.id,
+                  paymentOperationId: operation.id,
+                  operationTenderIndex: index,
+                  acceptedById: employeeId,
+                  createdById: user.id,
+                  status: PaymentStatus.SUCCESS,
+                  amount: tender.amount,
+                  methodCode: method.code,
+                  transactionId: tender.transactionId,
+                  reference: `POS ${method.code} payment`,
+                  paidAt: new Date(),
+                },
+              });
+
+              await tx.revenueRecord.create({
+                data: {
+                  branchId,
+                  orderId: order.id,
+                  paymentId: payment.id,
+                  shiftId: openShift.id,
+                  employeeId,
+                  source: RevenueRecordSource.ORDER,
+                  amount: payment.amount,
+                  description: `POS ${method.code} payment`,
+                },
+              });
+
+              /*
+               * KASSA YOZUVI FAQAT NAQDGA. Karta yoki Click pul kassa
+               * yashigiga tushmaydi, shuning uchun smena yopilishida
+               * sanaladigan naqdga ham qo'shilmasligi kerak. Daromad
+               * yozuvi (yuqorida) esa har usulga yoziladi.
+               */
+              if (method.code === "CASH") {
+                await tx.cashTransaction.create({
+                  data: {
+                    branchId,
+                    shiftId: openShift.id,
+                    employeeId,
+                    orderId: order.id,
+                    paymentId: payment.id,
+                    type: CashTransactionType.SALE,
+                    amount: payment.amount,
+                    reason: "POS cash sale",
+                    createdById: user.id,
+                  },
+                });
+              }
+            }
 
             await tx.order.update({
               where: { id: order.id },
@@ -397,15 +513,16 @@ export class OrdersService {
           this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
         }
 
+        /*
+         * To'lov xulosasi TRANZAKSIYADAN TASHQARIDA hisoblanadi, chunki
+         * u takroriy so'rov yo'lida ham kerak: `requestHash` mos
+         * tushgani uchun so'rov mazmuni aynan bir xil, demak xulosa ham
+         * bir xil chiqadi. Aks holda idempotent javob to'lov ma'lumotini
+         * yo'qotardi.
+         */
         return {
           order,
-          payment: {
-            method: "CASH",
-            cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
-            change: new Prisma.Decimal(dto.cashReceived)
-              .sub(order.total)
-              .toFixed(2),
-          },
+          payment: summarizePosPayment(dto, order.total),
         };
       } catch (error) {
         if (isUniqueConstraintError(error)) {
@@ -422,13 +539,7 @@ export class OrdersService {
 
             return {
               order,
-              payment: {
-                method: "CASH",
-                cashReceived: new Prisma.Decimal(dto.cashReceived).toFixed(2),
-                change: new Prisma.Decimal(dto.cashReceived)
-                  .sub(order.total)
-                  .toFixed(2),
-              },
+              payment: summarizePosPayment(dto, order.total),
             };
           }
 

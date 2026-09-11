@@ -1,18 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
-import { OrderStatus, Prisma } from "@prisma/client";
+import { OrderStatus, OrderType, Prisma } from "@prisma/client";
 import {
   assertOrderCanChange,
   assertPosCheckoutQuantities,
+  assertPosCheckoutType,
   calculateItemTotal,
   createOrderNumber,
   createPosCheckoutRequestHash,
   createPosIdempotencyKey,
   isRetryableTransactionConflict,
   isUniqueConstraintError,
+  normalizePosCheckoutTenders,
   requireEmployee,
   resolveEmployeeId,
+  summarizePosPayment,
   toStoredStatus,
   unavailableProductWhere,
 } from "../src/modules/orders/order-rules";
@@ -260,4 +263,202 @@ test("buyurtma raqami o'ziga xos va formatli", () => {
   }
   // Bir soniyada yasalgan raqamlar ham asosan farq qilishi kerak.
   assert.ok(numbers.size > 40, `juda ko'p takror: ${numbers.size}/50`);
+});
+
+/*
+ * KASSA BUYURTMA TURI VA TO'LOV USULLARI.
+ *
+ * Bu qoidalar pulga tegadi: tur noto'g'ri bo'lsa oshxona buyurtmani
+ * noto'g'ri yo'naltiradi, to'lov bo'laklari noto'g'ri bo'lsa kassa
+ * hisobi chiqmaydi. Shuning uchun har biri alohida qulflangan.
+ */
+
+test("tur berilmasa olib ketish hisoblanadi", () => {
+  // Eski kassa mijozi bu maydonni yubormaydi va buzilmasligi kerak.
+  assert.equal(assertPosCheckoutType(checkout()), OrderType.TAKEAWAY);
+});
+
+test("kassada yetkazib berish rad etiladi", () => {
+  /*
+   * Yetkazish narxi mijoz koordinatasiga bog'liq, bu endpoint esa
+   * manzil qabul qilmaydi. Turni qabul qilib narxni nolga qoldirish
+   * mijozdan kam pul olish bo'lardi.
+   */
+  assert.throws(
+    () => assertPosCheckoutType(checkout({ type: OrderType.DELIVERY })),
+    BadRequestException,
+  );
+});
+
+test("zal buyurtmasi stolsiz bo'lmaydi", () => {
+  assert.throws(
+    () => assertPosCheckoutType(checkout({ type: OrderType.DINE_IN })),
+    BadRequestException,
+  );
+  assert.equal(
+    assertPosCheckoutType(
+      checkout({ type: OrderType.DINE_IN, tableId: "t1" }),
+    ),
+    OrderType.DINE_IN,
+  );
+});
+
+test("olib ketishda stol tanlanmaydi", () => {
+  // Aks holda stol band bo'lib qolardi, lekin hech kim o'tirmasdi.
+  assert.throws(
+    () =>
+      assertPosCheckoutType(
+        checkout({ type: OrderType.TAKEAWAY, tableId: "t1" }),
+      ),
+    BadRequestException,
+  );
+});
+
+test("to'lov bo'laklari berilmasa eski naqd yo'li tanlanadi", () => {
+  /*
+   * `null` — "server o'zi to'liq summani naqd deb yozadi" degani.
+   * Summa faqat serverda ma'lum, shuning uchun bu yerda yasalmaydi.
+   */
+  assert.equal(normalizePosCheckoutTenders(checkout()), null);
+});
+
+test("to'lov usuli kodi bir xil shaklga keltiriladi", () => {
+  const tenders = normalizePosCheckoutTenders(
+    checkout({ payments: [{ paymentMethodCode: " card ", amount: 1000 }] }),
+  );
+  assert.equal(tenders?.[0]?.paymentMethodCode, "CARD");
+});
+
+test("bir xil to'lov usuli ikki marta rad etiladi", () => {
+  /*
+   * Bu deyarli har doim kassa ekranidagi xato va u ikkita alohida
+   * to'lov yozuvi yaratib hisobotni chalkashtirardi.
+   */
+  assert.throws(
+    () =>
+      normalizePosCheckoutTenders(
+        checkout({
+          payments: [
+            { paymentMethodCode: "CASH", amount: 1000 },
+            { paymentMethodCode: "cash", amount: 2000 },
+          ],
+        }),
+      ),
+    BadRequestException,
+  );
+});
+
+test("nol yoki manfiy to'lov summasi rad etiladi", () => {
+  for (const amount of [0, -100]) {
+    assert.throws(
+      () =>
+        normalizePosCheckoutTenders(
+          checkout({ payments: [{ paymentMethodCode: "CASH", amount }] }),
+        ),
+      BadRequestException,
+      `summa ${amount} rad etilishi kerak edi`,
+    );
+  }
+});
+
+test("bo'sh to'lov ro'yxati rad etiladi", () => {
+  assert.throws(
+    () => normalizePosCheckoutTenders(checkout({ payments: [] })),
+    BadRequestException,
+  );
+});
+
+test("eski yo'lda qaytim naqddan hisoblanadi", () => {
+  const summary = summarizePosPayment(
+    checkout({ cashReceived: 100000 }),
+    new Prisma.Decimal(73000),
+  );
+  assert.equal(summary.method, "CASH");
+  assert.equal(summary.cashReceived, "100000.00");
+  assert.equal(summary.change, "27000.00");
+  assert.deepEqual(summary.methods, [{ code: "CASH", amount: "73000.00" }]);
+});
+
+test("kartada qaytim bo'lmaydi", () => {
+  /*
+   * Karta bilan to'langan summadan qaytim chiqmaydi. Ilgari javob har
+   * doim `cashReceived - total` ni hisoblardi va kartada bu manfiy
+   * son chiqarardi.
+   */
+  /*
+   * `cashReceived` ATAYLAB yuborilmaydi — kartada mijoz naqd bermaydi,
+   * shuning uchun kassa ekrani bu maydonni umuman qo'shmaydi.
+   */
+  const summary = summarizePosPayment(
+    {
+      idempotencyKey: "k1",
+      items: [{ productId: "p1", quantity: 1 }],
+      payments: [{ paymentMethodCode: "CARD", amount: 73000 }],
+    } as CreatePosCheckoutDto,
+    new Prisma.Decimal(73000),
+  );
+  assert.equal(summary.cashReceived, "0.00");
+  assert.equal(summary.change, "0.00");
+});
+
+test("aralash to'lovda qaytim faqat naqd bo'lagidan hisoblanadi", () => {
+  const summary = summarizePosPayment(
+    checkout({
+      cashReceived: 50000,
+      payments: [
+        { paymentMethodCode: "CASH", amount: 40000 },
+        { paymentMethodCode: "CARD", amount: 33000 },
+      ],
+    }),
+    new Prisma.Decimal(73000),
+  );
+  assert.equal(summary.change, "10000.00");
+  assert.equal(summary.methods.length, 2);
+});
+
+test("so'rov hash'i tur, stol va to'lovga bog'liq", () => {
+  /*
+   * Bir xil idempotentlik kaliti BOSHQA mazmun bilan kelsa, bu takroriy
+   * yuborish emas, xato. Bu maydonlar hash'ga kirmasa, kassir turni
+   * o'zgartirib qayta yuborganda server eski buyurtmani qaytarardi.
+   */
+  const base = createPosCheckoutRequestHash(checkout(), "b1", "e1");
+  const dineIn = createPosCheckoutRequestHash(
+    checkout({ type: OrderType.DINE_IN, tableId: "t1" }),
+    "b1",
+    "e1",
+  );
+  const byCard = createPosCheckoutRequestHash(
+    checkout({ payments: [{ paymentMethodCode: "CARD", amount: 73000 }] }),
+    "b1",
+    "e1",
+  );
+  assert.notEqual(base, dineIn);
+  assert.notEqual(base, byCard);
+  assert.notEqual(dineIn, byCard);
+});
+
+test("so'rov hash'i to'lov TARTIBIGA bog'liq emas", () => {
+  // Kassa ekrani bo'laklarni boshqa tartibda yuborishi mumkin.
+  const a = createPosCheckoutRequestHash(
+    checkout({
+      payments: [
+        { paymentMethodCode: "CARD", amount: 33000 },
+        { paymentMethodCode: "CASH", amount: 40000 },
+      ],
+    }),
+    "b1",
+    "e1",
+  );
+  const b = createPosCheckoutRequestHash(
+    checkout({
+      payments: [
+        { paymentMethodCode: "CASH", amount: 40000 },
+        { paymentMethodCode: "CARD", amount: 33000 },
+      ],
+    }),
+    "b1",
+    "e1",
+  );
+  assert.equal(a, b);
 });
