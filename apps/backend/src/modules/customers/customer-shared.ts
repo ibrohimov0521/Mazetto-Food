@@ -196,6 +196,17 @@ export function customerOrderInclude(options?: { includePayments?: boolean }) {
           orderBy: { createdAt: "asc" },
           select: {
             id: true,
+            /*
+             * `productId` va `variantId` "Qayta buyurtma" uchun kerak.
+             *
+             * Ilgari javobda faqat NOMLAR bo'lgani uchun mijoz o'tgan
+             * buyurtmani takrorlay olmasdi — savatni qo'lda qaytadan
+             * yig'ishga majbur bo'lardi. Narx esa qayta olinmaydi:
+             * savatga joriy katalog narxi tushadi, snapshot narxi
+             * o'tgan buyurtmaning o'zida o'zgarmas qoladi.
+             */
+            productId: true,
+            variantId: true,
             productName: true,
             variantName: true,
             quantity: true,

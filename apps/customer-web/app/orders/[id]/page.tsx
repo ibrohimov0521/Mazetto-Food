@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock3, UserRound } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock3,
+  MessageCircle,
+  Phone,
+  RotateCcw,
+  UserRound,
+} from "lucide-react";
 import { CustomerAuthPanel } from "../../../components/customer-auth-panel";
 import { MotionDiv, pageMotion, sectionMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
@@ -17,8 +24,16 @@ import {
 import { useOrderUpdates } from "../../../lib/use-order-updates";
 import { localizeMenuName } from "../../../lib/customer-display";
 import { formatMoney, useCart } from "../../../lib/cart";
+import { buildReorderItems, reorderMessage } from "../../../lib/reorder";
+import {
+  isSupportPhoneValid,
+  supportLinks,
+  supportPhone,
+} from "../../../lib/contact";
 
 type ModifierSnapshot = {
+  /* Modifikator id'si — qayta buyurtmada aynan shu qo'shimchani tiklash uchun. */
+  id?: string | null;
   name: string;
   quantity?: string;
   totalPrice?: string;
@@ -46,6 +61,9 @@ type CustomerOrderDetail = {
     status?: string;
     items: {
       id: string;
+      /* Qayta buyurtma uchun — server bu maydonlarni endi qaytaradi. */
+      productId?: string | null;
+      variantId?: string | null;
       productName: string;
       variantName?: string | null;
       quantity: string;
@@ -88,7 +106,8 @@ export default function OrderDetailPage() {
 
 function OrderDetail() {
   const params = useParams<{ id: string }>();
-  const { customer, refreshCustomer } = useCart();
+  const { addItem, customer, refreshCustomer, showToast } = useCart();
+  const [reordering, setReordering] = useState(false);
   const [order, setOrder] = useState<CustomerOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -134,6 +153,22 @@ function OrderDetail() {
     () => order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 0,
     [order],
   );
+
+  async function reorder() {
+    if (reordering || !order) return;
+    setReordering(true);
+    try {
+      const result = await buildReorderItems(order.order.items, {
+        accessToken: customer?.accessToken,
+      });
+      for (const item of result.restored) addItem(item);
+      showToast(reorderMessage(result));
+    } catch {
+      showToast("Menyu yuklanmadi. Qayta urinib ko'ring.");
+    } finally {
+      setReordering(false);
+    }
+  }
 
   if (!customer?.accessToken) {
     return (
@@ -193,6 +228,41 @@ function OrderDetail() {
             <Metric label="Jami" value={formatMoney(order.order.total)} />
           </div>
           <OrderProgress value={order} />
+          {/*
+            QAYTA BUYURTMA va ALOQA. Ilgari buyurtma sahifasida ikkisi
+            ham yo'q edi: doimiy mijoz savatni qaytadan yigardi, muammo
+            chiqsa esa sahifadan chiqib ketishdan boshqa yo'l yo'q edi
+            (`ContactFooter` faqat bosh sahifa, menyu va profilda).
+          */}
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button
+              className="mf-button-primary"
+              disabled={reordering}
+              onClick={() => void reorder()}
+              type="button"
+            >
+              <RotateCcw aria-hidden="true" size={17} />
+              {reordering ? "Qo'shilmoqda..." : "Qayta buyurtma"}
+            </button>
+            <a
+              className="mf-button-secondary"
+              href={supportLinks.telegram}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <MessageCircle aria-hidden="true" size={17} />
+              Yordam
+            </a>
+            {isSupportPhoneValid ? (
+              <a
+                className="mf-button-secondary"
+                href={`tel:${supportPhone.href}`}
+              >
+                <Phone aria-hidden="true" size={17} />
+                {supportPhone.display}
+              </a>
+            ) : null}
+          </div>
         </section>
 
         <StatusHistory entries={order.order.statusHistory ?? []} type={order.type} />
