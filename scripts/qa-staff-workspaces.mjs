@@ -239,7 +239,10 @@ async function setup(width = 1440, height = 900, roles = session) {
         method: req.method(),
         body: req.postDataJSON(),
       });
+    if (path === "/cash-register/courier-shift") return ok({ id: "cs1", shiftNumber: 24, currentCash: "0", status: "OPEN", openedAt: state.shift?.openedAt ?? new Date().toISOString() });
     if (path === "/cash-register/shift")
+    if (path === "/cash-register/transfers/receivers") return ok([]);
+    if (path === "/cash-register/transfers/pending") return ok([]);
       return state.failShift ? fail() : ok(state.shift);
     if (path === "/pos/catalog") return ok(state.catalog);
     if (path === "/pos/orders") {
@@ -286,6 +289,7 @@ async function setup(width = 1440, height = 900, roles = session) {
       );
       return ok(ticket);
     }
+    if (path === "/courier/orders/history") return ok(state.orders);
     if (path === "/courier/orders")
       return state.failCourier ? fail() : ok(state.orders);
     if (path.startsWith("/courier/orders/")) {
@@ -381,7 +385,7 @@ try {
       ["/kitchen", "Oshxona"],
       ["/courier", "Kuryer"],
       ["/pos", "Kassa"],
-      ["/shift", "Kassa smenasi"],
+      ["/shift", "Xodim kassasi"],
     ]) {
       await visit(page, path);
       assert.equal(
