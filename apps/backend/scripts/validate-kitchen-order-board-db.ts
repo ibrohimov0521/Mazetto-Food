@@ -244,7 +244,7 @@ async function proveBranchScope(
   assert.equal(visibleIds.has(ownBranch.ticketId), true);
   assert.equal(visibleIds.has(otherBranch.ticketId), false);
 
-  await assert.rejects(() => kitchenService.acceptTicket(otherBranch.ticketId, fixture.user), /Cannot access another branch/);
+  await assert.rejects(() => kitchenService.acceptTicket(otherBranch.ticketId, fixture.user), /Boshqa filialga kirish huquqi yo'q/);
   await kitchenService.acceptTicket(otherBranch.ticketId, fixture.globalUser);
   await assertOrderState(prisma, otherBranch.orderId, OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED);
 }

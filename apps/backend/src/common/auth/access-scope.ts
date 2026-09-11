@@ -14,11 +14,11 @@ export function resolveBranchScope(
   }
 
   if (!user.branchId) {
-    throw new ForbiddenException("Authenticated user is not assigned to a branch");
+    throw new ForbiddenException("Foydalanuvchi hech qanday filialga biriktirilmagan");
   }
 
   if (requestedBranchId && requestedBranchId !== user.branchId) {
-    throw new ForbiddenException("Cannot access another branch");
+    throw new ForbiddenException("Boshqa filialga kirish huquqi yo'q");
   }
 
   return user.branchId;
@@ -31,7 +31,7 @@ export function resolveRequiredBranchScope(
   const branchId = resolveBranchScope(user, requestedBranchId);
 
   if (!branchId) {
-    throw new ForbiddenException("Branch is required for this operation");
+    throw new ForbiddenException("Bu amal uchun filial tanlanishi shart");
   }
 
   return branchId;

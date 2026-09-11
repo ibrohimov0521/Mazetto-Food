@@ -65,7 +65,7 @@ export class KitchenService {
   ) {}
 
   async listOrders(user: AuthenticatedUser) {
-    const employeeId = this.requireEmployee(user);
+    this.requireEmployee(user);
     const branchId = resolveBranchScope(user);
     const day = this.todayTashkentRange();
 
@@ -90,19 +90,6 @@ export class KitchenService {
             KitchenTicketStatus.READY,
           ],
         },
-        OR: [
-          { status: KitchenTicketStatus.NEW },
-          {
-            order: {
-              statusHistory: {
-                some: {
-                  changedByEmployeeId: employeeId,
-                  createdAt: { gte: day.start, lt: day.end },
-                },
-              },
-            },
-          },
-        ],
       },
       include: this.ticketInclude(),
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],

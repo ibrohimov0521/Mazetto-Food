@@ -30,6 +30,11 @@ type CashTransfer = {
     employee?: { firstName: string; lastName?: string | null } | null;
   } | null;
 };
+type Branch = {
+  id: string;
+  name: string;
+  address?: string | null;
+};
 type Shift = {
   id: string;
   shiftNumber: number;
@@ -70,6 +75,9 @@ function ShiftConsole() {
   const [shift, setShift] = useState<Shift | null>(null);
   const [closedShift, setClosedShift] = useState<Shift | null>(null);
   const [openingCash, setOpeningCash] = useState("0");
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [openingBranchId, setOpeningBranchId] = useState("");
+  const needsBranchChoice = !user?.branchId;
   const [closingCash, setClosingCash] = useState("");
   const [isConfirmingClose, setIsConfirmingClose] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,7 +97,8 @@ function ShiftConsole() {
   const openingValid =
     openingCash !== "" &&
     Number.isFinite(Number(openingCash)) &&
-    Number(openingCash) >= 0;
+    Number(openingCash) >= 0 &&
+    (!needsBranchChoice || openingBranchId !== "");
 
   const loadShift = useCallback(async () => {
     loadRequest.current?.abort();
@@ -140,6 +149,13 @@ function ShiftConsole() {
     return () => loadRequest.current?.abort();
   }, [loadShift]);
 
+  useEffect(() => {
+    if (!needsBranchChoice) return;
+    apiFetch<Branch[]>("/branches")
+      .then(setBranches)
+      .catch(() => setBranches([]));
+  }, [needsBranchChoice]);
+
   async function acceptTransfer(id: string) {
     if (saving.current) return;
     saving.current = true;
@@ -170,7 +186,10 @@ function ShiftConsole() {
     try {
       const opened = await apiFetch<Shift>("/cash-register/shift/open", {
         method: "POST",
-        body: JSON.stringify({ openingBalance: Number(openingCash) }),
+        body: JSON.stringify({
+          openingBalance: Number(openingCash),
+          ...(needsBranchChoice ? { branchId: openingBranchId } : {}),
+        }),
         signal: AbortSignal.timeout(15000),
       });
       setShift(opened);
@@ -431,13 +450,34 @@ function ShiftConsole() {
             </section>
             <section className={styles.shiftFinance}>
               <h2 className={styles.pageHeading}>Smenani ochish</h2>
-              <label className={styles.field} style={{ marginTop: 20 }}>
+              {needsBranchChoice && (
+                <label className={styles.field} style={{ marginTop: 20 }}>
+                  Filial
+                  <select
+                    className={styles.input}
+                    value={openingBranchId}
+                    onChange={(event) => setOpeningBranchId(event.target.value)}
+                    disabled={isSaving}
+                  >
+                    <option value="">Filialni tanlang</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label
+                className={styles.field}
+                style={{ marginTop: needsBranchChoice ? 12 : 20 }}
+              >
                 Boshlang'ich naqd summa
                 <input
                   className={styles.input}
                   type="number"
                   min="0"
-                  step="1"
+                  step="1000"
                   inputMode="numeric"
                   value={openingCash}
                   onChange={(event) => setOpeningCash(event.target.value)}

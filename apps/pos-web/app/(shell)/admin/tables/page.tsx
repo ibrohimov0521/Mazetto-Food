@@ -1,11 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { AdminPageHeader } from "../../../../components/admin-shell/admin-page-header";
 import { Button } from "../../../../components/admin-ui/button";
-import { TextInput } from "../../../../components/admin-ui/form";
-import { EmptyState } from "../../../../components/admin-ui/feedback";
-import { apiFetch } from "../../../../lib/api";
+import { Card, CardHeader } from "../../../../components/admin-ui/card";
+import { EmptyState, ErrorState } from "../../../../components/admin-ui/feedback";
+import { FormField, Select, TextInput } from "../../../../components/admin-ui/form";
+import { useToast } from "../../../../components/admin-ui/toast";
+import { apiFetch, SessionExpiredError } from "../../../../lib/api";
 
 type TableStatus = "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING";
 type Table = {
@@ -17,6 +19,18 @@ type Table = {
   capacity: number | null;
   status: TableStatus;
   hall?: { id: string; name: string } | null;
+};
+type Branch = {
+  id: string;
+  name: string;
+  address?: string | null;
+};
+
+const statusLabels: Record<TableStatus, string> = {
+  AVAILABLE: "Bo'sh",
+  OCCUPIED: "Band",
+  RESERVED: "Bron qilingan",
+  CLEANING: "Tozalanmoqda",
 };
 
 export default function AdminTablesPage() {
@@ -33,6 +47,8 @@ export default function AdminTablesPage() {
 }
 
 function TableManagement() {
+  const { showToast } = useToast();
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
   const [branchId, setBranchId] = useState("");
   const [hallName, setHallName] = useState("");
@@ -40,15 +56,32 @@ function TableManagement() {
   const [tableName, setTableName] = useState("");
   const [number, setNumber] = useState("1");
   const [capacity, setCapacity] = useState("4");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSavingHall, setIsSavingHall] = useState(false);
+  const [isSavingTable, setIsSavingTable] = useState(false);
 
-  async function load() {
-    const path = branchId ? `/tables?branchId=${encodeURIComponent(branchId)}` : "/tables";
-    setTables(await apiFetch<Table[]>(path));
-  }
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const [nextBranches, nextTables] = await Promise.all([
+        apiFetch<Branch[]>("/branches"),
+        apiFetch<Table[]>(branchId ? `/tables?branchId=${encodeURIComponent(branchId)}` : "/tables"),
+      ]);
+      setBranches(nextBranches);
+      setTables(nextTables);
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      setError(caught instanceof Error ? caught.message : "Ma'lumotlarni yuklab bo'lmadi.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [branchId]);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const halls = useMemo(
     () =>
@@ -58,105 +91,224 @@ function TableManagement() {
 
   async function createHall(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/halls", {
-      method: "POST",
-      body: JSON.stringify({ branchId, name: hallName }),
-    });
-    setHallName("");
-    await load();
+    if (!branchId) {
+      showToast("Avval filialni tanlang.", "danger");
+      return;
+    }
+    setIsSavingHall(true);
+    try {
+      await apiFetch("/halls", {
+        method: "POST",
+        body: JSON.stringify({ branchId, name: hallName }),
+      });
+      setHallName("");
+      showToast("Zal qo'shildi.", "success");
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Zal qo'shib bo'lmadi.", "danger");
+    } finally {
+      setIsSavingHall(false);
+    }
   }
 
   async function createTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await apiFetch("/tables", {
-      method: "POST",
-      body: JSON.stringify({
-        branchId,
-        hallId,
-        number: Number(number),
-        name: tableName,
-        capacity: Number(capacity),
-      }),
-    });
-    setTableName("");
-    await load();
+    if (!branchId) {
+      showToast("Avval filialni tanlang.", "danger");
+      return;
+    }
+    if (!hallId) {
+      showToast("Avval zalni tanlang.", "danger");
+      return;
+    }
+    setIsSavingTable(true);
+    try {
+      await apiFetch("/tables", {
+        method: "POST",
+        body: JSON.stringify({
+          branchId,
+          hallId,
+          number: Number(number),
+          name: tableName,
+          capacity: Number(capacity),
+        }),
+      });
+      setTableName("");
+      showToast("Stol qo'shildi.", "success");
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Stol qo'shib bo'lmadi.", "danger");
+    } finally {
+      setIsSavingTable(false);
+    }
   }
 
   async function setStatus(tableId: string, status: TableStatus) {
-    await apiFetch(`/tables/${tableId}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    });
-    await load();
+    try {
+      await apiFetch(`/tables/${tableId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      await load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Holatni yangilab bo'lmadi.", "danger");
+    }
   }
 
   return (
-    <section className="grid gap-5">
-      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+    <div className="grid gap-5">
+      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+
+      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <aside className="grid gap-4">
-          <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-            <label className="grid gap-2 text-sm font-semibold text-mz-text">
-              Branch ID
-              <TextInput value={branchId} onChange={(event) => setBranchId(event.target.value)} placeholder="Required branch id" />
-            </label>
-          </section>
-
-          <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" onSubmit={createHall}>
-            <h3 className="font-semibold text-mz-text">Create hall</h3>
-            <TextInput value={hallName} onChange={(event) => setHallName(event.target.value)} placeholder="Main Hall" required />
-            <Button type="submit">Add hall</Button>
-          </form>
-
-          <form className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card" onSubmit={createTable}>
-            <h3 className="font-semibold text-mz-text">Create table</h3>
-            <select className="rounded-mz-control border border-mz-border bg-mz-surface px-4 py-3 text-sm text-mz-text outline-none" value={hallId} onChange={(event) => setHallId(event.target.value)} required>
-              <option value="">Select hall</option>
-              {halls.map((hall) => (
-                <option key={hall.id} value={hall.id}>{hall.name}</option>
-              ))}
-            </select>
-            <TextInput value={tableName} onChange={(event) => setTableName(event.target.value)} placeholder="Table 1" required />
-            <div className="grid grid-cols-2 gap-3">
-              <TextInput value={number} onChange={(event) => setNumber(event.target.value)} type="number" min="1" placeholder="Number" />
-              <TextInput value={capacity} onChange={(event) => setCapacity(event.target.value)} type="number" min="1" placeholder="Capacity" />
+          <Card>
+            <CardHeader title="Filial" description="Zal va stollar shu filial uchun ko'rsatiladi" />
+            <div className="p-4">
+              <FormField label="Filial">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={branchId}
+                    onChange={(event) => {
+                      setBranchId(event.target.value);
+                      setHallId("");
+                    }}
+                  >
+                    <option value="">Filialni tanlang</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
             </div>
-            <Button type="submit">Add table</Button>
-          </form>
+          </Card>
+
+          <Card as="div">
+            <CardHeader title="Yangi zal" />
+            <form className="grid gap-3 p-4" onSubmit={createHall}>
+              <FormField label="Zal nomi" required>
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    value={hallName}
+                    onChange={(event) => setHallName(event.target.value)}
+                    placeholder="Asosiy zal"
+                    required
+                  />
+                )}
+              </FormField>
+              <Button disabled={isSavingHall || !branchId} type="submit">
+                {isSavingHall ? "Qo'shilmoqda..." : "Zal qo'shish"}
+              </Button>
+            </form>
+          </Card>
+
+          <Card as="div">
+            <CardHeader title="Yangi stol" />
+            <form className="grid gap-3 p-4" onSubmit={createTable}>
+              <FormField label="Zal" required>
+                {(props) => (
+                  <Select {...props} value={hallId} onChange={(event) => setHallId(event.target.value)} required>
+                    <option value="">Zalni tanlang</option>
+                    {halls.map((hall) => (
+                      <option key={hall.id} value={hall.id}>
+                        {hall.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+              <FormField label="Stol nomi" required>
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    value={tableName}
+                    onChange={(event) => setTableName(event.target.value)}
+                    placeholder="Stol 1"
+                    required
+                  />
+                )}
+              </FormField>
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="Raqami">
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      value={number}
+                      onChange={(event) => setNumber(event.target.value)}
+                      type="number"
+                      min="1"
+                    />
+                  )}
+                </FormField>
+                <FormField label="Sig'imi">
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      value={capacity}
+                      onChange={(event) => setCapacity(event.target.value)}
+                      type="number"
+                      min="1"
+                    />
+                  )}
+                </FormField>
+              </div>
+              <Button disabled={isSavingTable || !branchId} type="submit">
+                {isSavingTable ? "Qo'shilmoqda..." : "Stol qo'shish"}
+              </Button>
+            </form>
+          </Card>
         </aside>
 
-        <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-          <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-mz-text">Floor layout</h3>
-            <span className="text-sm font-medium text-mz-text-muted">Drag-ready card grid</span>
-          </div>
-          {tables.length ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {tables.map((table) => (
-                <article className="cursor-grab rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card active:cursor-grabbing" draggable key={table.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase text-mz-info">{table.hall?.name ?? "No hall"}</p>
-                      <h4 className="mt-2 text-xl font-semibold text-mz-text">{table.name}</h4>
-                      <p className="mt-1 text-sm text-mz-text-muted">{table.capacity ?? 0} seats</p>
+        <Card as="div">
+          <CardHeader title="Zal sxemasi" description={isLoading ? "Yuklanmoqda..." : `${tables.length} ta stol`} />
+          <div className="p-4">
+            {tables.length ? (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {tables.map((table) => (
+                  <article
+                    className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card"
+                    key={table.id}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-mz-info">
+                          {table.hall?.name ?? "Zalsiz"}
+                        </p>
+                        <h4 className="mt-2 text-xl font-semibold text-mz-text">{table.name}</h4>
+                        <p className="mt-1 text-sm text-mz-text-muted">{table.capacity ?? 0} o'rin</p>
+                      </div>
+                      <StatusBadge status={table.status} />
                     </div>
-                    <StatusBadge status={table.status} />
-                  </div>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    {(["AVAILABLE", "RESERVED", "CLEANING", "OCCUPIED"] as TableStatus[]).map((nextStatus) => (
-                      <button className="rounded-mz-control border border-mz-border px-3 py-2 text-xs font-semibold text-mz-text hover:bg-mz-info-bg" key={nextStatus} onClick={() => void setStatus(table.id, nextStatus)} type="button">
-                        {nextStatus}
-                      </button>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <EmptyState title="No tables yet. Add a hall and table to start the floor plan." />
-          )}
-        </section>
+                    <div className="mt-5 grid grid-cols-2 gap-2">
+                      {(["AVAILABLE", "RESERVED", "CLEANING", "OCCUPIED"] as TableStatus[]).map((nextStatus) => (
+                        <button
+                          className="rounded-mz-control border border-mz-border px-3 py-2 text-xs font-semibold text-mz-text hover:bg-mz-info-bg"
+                          disabled={table.status === nextStatus}
+                          key={nextStatus}
+                          onClick={() => void setStatus(table.id, nextStatus)}
+                          type="button"
+                        >
+                          {statusLabels[nextStatus]}
+                        </button>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState title="Hali stol yo'q" description="Zal sxemasini boshlash uchun avval zal, so'ng stol qo'shing." />
+            )}
+          </div>
+        </Card>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -168,5 +320,9 @@ function StatusBadge({ status }: { status: TableStatus }) {
     CLEANING: "bg-mz-surface-sunken text-mz-text",
   };
 
-  return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${colors[status]}`}>{status}</span>;
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${colors[status]}`}>
+      {statusLabels[status]}
+    </span>
+  );
 }

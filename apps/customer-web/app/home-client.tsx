@@ -100,14 +100,14 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
 
       <MotionDiv {...sectionMotion} className="mx-auto w-full max-w-6xl px-4 pb-8">
         <div className="no-scrollbar mf-home-category-row flex max-w-full gap-2.5 overflow-x-auto pb-2 sm:gap-3">
-          {loading ? Array.from({ length: 5 }, (_, index) => <div className="skeleton h-24 w-24 shrink-0 rounded-[1.35rem]" key={index} />) : categories.map((category) => (
+          {loading ? Array.from({ length: 5 }, (_, index) => <div className="skeleton h-32 w-30 shrink-0 rounded-[1.15rem]" key={index} />) : categories.map((category) => (
             <Link className="pressable ripple mf-home-category-card shrink-0" href={`/menu?category=${category.id}`} key={category.id}>
               <MediaImage
                 alt={category.name}
-                aspectClassName="h-14 w-14"
+                aspectClassName="h-22 w-22"
                 className="rounded-full"
                 fallbackLabel={category.name}
-                sizes="56px"
+                sizes="88px"
                 src={category.imageUrl}
               />
               <span>{category.name}</span>

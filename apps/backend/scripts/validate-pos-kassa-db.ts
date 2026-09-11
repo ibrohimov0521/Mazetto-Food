@@ -343,7 +343,7 @@ async function proveBranchAndStaffScope(
   fixture: Fixture,
 ): Promise<void> {
   await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "blocked", [{ productId: fixture.products.simpleId, quantity: 1 }], 50000), fixture.blockedCashier), /Employee is not active/);
-  await assert.rejects(() => ordersService.listPosCatalog(withoutBranch(fixture.noPosUser)), /Branch is required|assigned to a branch/);
+  await assert.rejects(() => ordersService.listPosCatalog(withoutBranch(fixture.noPosUser)), /Bu amal uchun filial tanlanishi shart|hech qanday filialga biriktirilmagan/);
 
   const otherBranchUser = { ...fixture.cashier, branchId: fixture.otherBranchId };
   await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "branch-tamper", [{ productId: fixture.products.simpleId, quantity: 1 }], 50000), otherBranchUser), /Employee is not active/);

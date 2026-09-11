@@ -25,6 +25,8 @@ export function Modal({
   children?: React.ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) {
@@ -36,7 +38,7 @@ export function Modal({
 
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -74,7 +76,12 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
-  }, [isOpen, onClose]);
+    // `onClose` intentionally excluded: call sites often pass a new inline
+    // function each render, and re-running this on every keystroke inside
+    // the modal would steal focus back to the panel from whatever input
+    // the user is typing in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const handleBackdrop = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {

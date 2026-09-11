@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     );
     await assertRejects(
       () => staffService.getStaff(otherBranchCashier.id, adminLogin.user),
-      /Cannot access another branch/,
+      /Boshqa filialga kirish huquqi yo'q/,
     );
     await assertRejects(
       () =>
