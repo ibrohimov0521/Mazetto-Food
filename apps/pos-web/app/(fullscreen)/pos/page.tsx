@@ -14,6 +14,7 @@ import {
   Search,
   ShoppingBag,
   Trash2,
+  Utensils,
   X,
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
@@ -50,10 +51,27 @@ type Product = {
   variants: Variant[];
   modifiers: Modifier[];
 };
+type PaymentMethodOption = { code: string; name: string; active?: boolean };
+type PosTable = {
+  id: string;
+  code: string;
+  name: string;
+  number?: number | null;
+  capacity?: number | null;
+  status: string;
+  hall?: { id: string; name: string } | null;
+};
 type Catalog = {
   branchId: string;
   categories: { id: string; name: string }[];
   products: Product[];
+  /*
+   * Server filialning sozlangan usullarini qaytaradi. Eski server
+   * javobida bo'lmasligi mumkin, shuning uchun ixtiyoriy — bunda
+   * naqdga qaytiladi.
+   */
+  paymentMethods?: PaymentMethodOption[];
+  tables?: PosTable[];
 };
 type CartLine = {
   key: string;
@@ -62,13 +80,29 @@ type CartLine = {
   modifiers: Modifier[];
   quantity: number;
 };
+/** Savatni sessiyada saqlash uchun ixcham shakl — narxlar katalogdan qayta olinadi. */
+type StoredCartLine = {
+  key: string;
+  productId: string;
+  variantId?: string | null;
+  modifierIds: string[];
+  quantity: number;
+};
+type OrderType = "TAKEAWAY" | "DINE_IN";
 type PosOrderResult = {
   order: {
+    id?: string;
     orderNumber: string;
     displayOrderNumber?: string | null;
     total: string;
+    receipts?: { id: string; receiptNumber: string }[];
   };
-  payment: { cashReceived: string; change: string };
+  payment: {
+    cashReceived: string;
+    change: string;
+    method?: string;
+    methods?: { code: string; amount: string }[];
+  };
 };
 type CurrentShift = {
   id: string;
@@ -106,6 +140,17 @@ type ShiftHistoryOrder = {
 const formatter = new Intl.NumberFormat("uz-UZ");
 const createCheckoutKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+/*
+ * O'zbekistonda amalda yuradigan nominallar. Ilgari faqat +50 000 va
+ * +100 000 bor edi, shuning uchun kassir 20 000 yoki 5 000 ni qo'lda
+ * terishga majbur bo'lardi.
+ */
+const cashDenominations = [1000, 5000, 10000, 20000, 50000, 100000, 200000];
+const cashMethodCode = "CASH";
+const fallbackPaymentMethods: PaymentMethodOption[] = [
+  { code: cashMethodCode, name: "Naqd" },
+];
+const cartStorageKey = (shiftId: string) => `mazetto.pos.cart.${shiftId}`;
 
 export default function PosPage() {
   return (
@@ -143,8 +188,16 @@ function PosTerminal() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
+  const [tableId, setTableId] = useState("");
+  const [paymentCode, setPaymentCode] = useState(cashMethodCode);
   const submissionLock = useRef(false);
   const loadRequest = useRef<AbortController | null>(null);
+  /*
+   * Savat sessiyadan TIKLANDIMI. Tiklanmagan holda saqlash effekti
+   * bo'sh savatni yozib, saqlangan savatni o'chirib yuborardi.
+   */
+  const cartRestored = useRef<string | null>(null);
 
   const loadTerminal = useCallback(async () => {
     loadRequest.current?.abort();
@@ -236,6 +289,164 @@ function PosTerminal() {
   const validCash =
     Number.isFinite(received) && received >= total && received >= 0;
   const change = Number.isFinite(received) ? Math.max(0, received - total) : 0;
+  const paymentMethods = catalog?.paymentMethods?.length
+    ? catalog.paymentMethods
+    : fallbackPaymentMethods;
+  const isCashPayment = paymentCode === cashMethodCode;
+  const tables = catalog?.tables ?? [];
+  const isDineIn = orderType === "DINE_IN";
+  /*
+   * Yuborish sharti to'lov usuliga QARAB o'zgaradi: naqd bo'lmaganda
+   * "qabul qilingan naqd" degan tushuncha yo'q, shuning uchun uni talab
+   * qilish kartani bloklab qo'yardi.
+   */
+  const canSubmit =
+    cart.length > 0 &&
+    (!isCashPayment || validCash) &&
+    (!isDineIn || Boolean(tableId));
+
+  /*
+   * Server tanlagan usulni bilmasa (masalan sozlamadan o'chirilgan),
+   * mavjud birinchisiga o'tiladi — aks holda kassir yo'q usul bilan
+   * yuborib, faqat serverdan xato olardi.
+   */
+  useEffect(() => {
+    if (paymentMethods.some((method) => method.code === paymentCode)) return;
+    setPaymentCode(paymentMethods[0]?.code ?? cashMethodCode);
+  }, [paymentMethods, paymentCode]);
+
+  /*
+   * Zaldan olib ketishga o'tilsa tanlangan stol tozalanadi: server
+   * olib ketish buyurtmasida stolni rad etadi.
+   */
+  useEffect(() => {
+    if (!isDineIn && tableId) setTableId("");
+  }, [isDineIn, tableId]);
+
+  /*
+   * Idempotentlik kaliti so'rov MAZMUNI o'zgarganda yangilanadi.
+   *
+   * Server `requestHash` ni tur, stol, to'lov usuli va naqd summasidan
+   * ham yasaydi. Kalit o'zgarmasa, kassir turni o'zgartirib qayta
+   * yuborganda server "boshqa mazmun" deb rad etardi. Mazmun
+   * o'zgarmaganda esa kalit SAQLANADI — tarmoq uzilganda qayta urinish
+   * shu tufayli ikkinchi buyurtma yaratmaydi.
+   */
+  const payloadSignature = useMemo(
+    () =>
+      JSON.stringify({
+        orderType,
+        tableId: isDineIn ? tableId : null,
+        paymentCode,
+        cashReceived: isCashPayment ? received : null,
+        items: cart.map((line) => [
+          line.product.id,
+          line.variant?.id ?? null,
+          line.quantity,
+          line.modifiers.map((modifier) => modifier.modifier.id).sort(),
+        ]),
+      }),
+    [orderType, tableId, isDineIn, paymentCode, isCashPayment, received, cart],
+  );
+
+  useEffect(() => {
+    setCheckoutKey(createCheckoutKey());
+  }, [payloadSignature]);
+
+  /*
+   * SAVAT SESSIYADA SAQLANADI.
+   *
+   * Ilgari savat faqat komponent holatida turardi: kassir "Smena"ga
+   * o'tsa, brauzerda orqaga bossa yoki planshet qayta yuklansa, butun
+   * savat jimgina yo'qolardi — bu tirbandlikda to'g'ridan-to'g'ri vaqt
+   * va pul yo'qotish edi.
+   *
+   * `sessionStorage` tanlandi, `localStorage` emas: savat SMENAGA
+   * tegishli va boshqa kunga o'tib ketmasligi kerak. Kalitga smena id'si
+   * kiritilgani uchun boshqa smena boshqa kassirning savatini ko'rmaydi.
+   *
+   * Mahsulotlar ID bo'yicha saqlanadi va katalogdan QAYTA tiklanadi:
+   * shunda narx har doim joriy narx bo'ladi va o'chirilgan mahsulot
+   * o'zidan-o'zi tushib qoladi.
+   */
+  useEffect(() => {
+    const shiftId = currentShift?.id;
+    if (!shiftId || !catalog || cartRestored.current === shiftId) return;
+    cartRestored.current = shiftId;
+    let stored: StoredCartLine[] = [];
+    try {
+      const raw = window.sessionStorage.getItem(cartStorageKey(shiftId));
+      if (raw) stored = JSON.parse(raw) as StoredCartLine[];
+    } catch {
+      // Buzilgan yozuv savatni bloklamasligi kerak — bo'sh savat bilan boshlanadi.
+      return;
+    }
+    if (!Array.isArray(stored) || !stored.length) return;
+    const restored = stored.flatMap((line) => {
+      const product = catalog.products.find(
+        (candidate) => candidate.id === line.productId,
+      );
+      if (!product || !(line.quantity > 0)) return [];
+      const variant = line.variantId
+        ? product.variants.find((candidate) => candidate.id === line.variantId)
+        : undefined;
+      // Saqlangan variant endi mavjud bo'lmasa, qator tiklanmaydi.
+      if (line.variantId && !variant) return [];
+      const modifiers = product.modifiers.filter((modifier) =>
+        line.modifierIds.includes(modifier.modifier.id),
+      );
+      return [
+        {
+          key: line.key,
+          product,
+          ...(variant ? { variant } : {}),
+          modifiers,
+          quantity: line.quantity,
+        } satisfies CartLine,
+      ];
+    });
+    if (restored.length) setCart(restored);
+  }, [catalog, currentShift?.id]);
+
+  useEffect(() => {
+    const shiftId = currentShift?.id;
+    if (!shiftId || cartRestored.current !== shiftId) return;
+    const key = cartStorageKey(shiftId);
+    try {
+      if (!cart.length) {
+        window.sessionStorage.removeItem(key);
+        return;
+      }
+      window.sessionStorage.setItem(
+        key,
+        JSON.stringify(
+          cart.map((line) => ({
+            key: line.key,
+            productId: line.product.id,
+            variantId: line.variant?.id ?? null,
+            modifierIds: line.modifiers.map((modifier) => modifier.modifier.id),
+            quantity: line.quantity,
+          })),
+        ),
+      );
+    } catch {
+      // Xotira to'lgan bo'lsa sotuvni to'xtatmaslik kerak.
+    }
+  }, [cart, currentShift?.id]);
+
+  /*
+   * Yorliq yopilishi `sessionStorage` ni ham o'chiradi, shuning uchun
+   * to'ldirilgan savat bilan chiqishda brauzer ogohlantiradi.
+   */
+  useEffect(() => {
+    if (!cart.length) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [cart.length]);
 
   function addProduct(product: Product) {
     if (submissionLock.current) return;
@@ -314,7 +525,11 @@ function PosTerminal() {
       setError("Buyurtma bo'sh");
       return;
     }
-    if (!validCash) {
+    if (isDineIn && !tableId) {
+      setError("Zal buyurtmasi uchun stolni tanlang");
+      return;
+    }
+    if (isCashPayment && !validCash) {
       setError("Qabul qilingan naqd summani tekshiring");
       return;
     }
@@ -326,7 +541,15 @@ function PosTerminal() {
         signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           idempotencyKey: checkoutKey,
-          cashReceived: received,
+          type: orderType,
+          ...(isDineIn ? { tableId } : {}),
+          /*
+           * Bo'lak summasi buyurtma summasiga TENG yuboriladi. Mijoz
+           * bergan ortiqcha naqd `cashReceived` da qoladi va qaytim
+           * sifatida qaytariladi — ortiqcha pul daromad deb yozilmaydi.
+           */
+          payments: [{ paymentMethodCode: paymentCode, amount: total }],
+          ...(isCashPayment ? { cashReceived: received } : {}),
           items: cart.map((line) => ({
             productId: line.product.id,
             variantId: line.variant?.id,
@@ -341,7 +564,10 @@ function PosTerminal() {
       setSuccess(result);
       setCart([]);
       setCashReceived("");
+      setTableId("");
       setCheckoutKey(createCheckoutKey());
+      // Mobil'da keyingi mijoz uchun darhol menyuga qaytiladi.
+      setMobileView("menu");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Buyurtma yaratilmadi",
@@ -523,18 +749,56 @@ function PosTerminal() {
               <h2>Yangi buyurtma</h2>
               <span className={styles.badge}>{itemCount} ta</span>
             </div>
+            {/*
+              BUYURTMA TURI. Ilgari kassada bu tanlov umuman yo'q edi va
+              server har bir chiptani "olib ketish" deb yozardi —
+              oshxona zal buyurtmasini ham shunday ko'rardi.
+            */}
+            <div className={styles.segments} role="group" aria-label="Buyurtma turi">
+              <button
+                className={styles.segment}
+                aria-pressed={orderType === "TAKEAWAY"}
+                disabled={isSubmitting}
+                onClick={() => setOrderType("TAKEAWAY")}
+                type="button"
+              >
+                <ShoppingBag size={17} />
+                Olib ketish
+              </button>
+              <button
+                className={styles.segment}
+                aria-pressed={isDineIn}
+                disabled={isSubmitting}
+                onClick={() => setOrderType("DINE_IN")}
+                type="button"
+              >
+                <Utensils size={17} />
+                Zal
+              </button>
+            </div>
+            {isDineIn && (
+              <label className={styles.field}>
+                <span>Stol</span>
+                <select
+                  className={styles.input}
+                  disabled={isSubmitting || !tables.length}
+                  value={tableId}
+                  onChange={(event) => setTableId(event.target.value)}
+                >
+                  <option value="">
+                    {tables.length ? "Stolni tanlang" : "Stol sozlanmagan"}
+                  </option>
+                  {tables.map((table) => (
+                    <option key={table.id} value={table.id}>
+                      {table.hall?.name ? `${table.hall.name} · ` : ""}
+                      {table.name}
+                      {table.capacity ? ` (${table.capacity} o'rin)` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className={styles.cartLines}>
-              {success && (
-                <div className={styles.success} role="status">
-                  <strong>
-                    #
-                    {success.order.displayOrderNumber ??
-                      success.order.orderNumber}{" "}
-                    qabul qilindi
-                  </strong>
-                  <p>Qaytim: {money(success.payment.change)}</p>
-                </div>
-              )}
               {cart.length ? (
                 cart.map((line) => (
                   <div className={styles.cartLine} key={line.key}>
@@ -594,51 +858,85 @@ function PosTerminal() {
                 <span>Jami</span>
                 <strong>{money(total)}</strong>
               </div>
-              <label className={styles.field}>
-                <span>Qabul qilingan naqd pul</span>
-                <input
-                  className={styles.input}
-                  inputMode="numeric"
-                  type="number"
-                  min="0"
-                  step="1"
-                  placeholder="0"
-                  disabled={isSubmitting || !cart.length}
-                  value={cashReceived}
-                  onChange={(event) => setCashReceived(event.target.value)}
-                />
-              </label>
-              <div className={styles.quickCash}>
-                <button
-                  disabled={isSubmitting || !cart.length}
-                  onClick={() => setCashReceived(String(total))}
-                  type="button"
-                >
-                  Aniq summa
-                </button>
-                {[50000, 100000].map((amount) => (
-                  <button
-                    key={amount}
-                    disabled={isSubmitting || !cart.length}
-                    onClick={() =>
-                      setCashReceived(
-                        String(
-                          (Number.isFinite(received) ? received : 0) + amount,
-                        ),
-                      )
-                    }
-                    type="button"
-                  >
-                    +{formatter.format(amount)}
-                  </button>
-                ))}
-              </div>
-              <div className={styles.change}>
-                <span>{received < total ? "Yetishmayapti" : "Qaytim"}</span>
-                <strong>
-                  {money(received < total ? total - received : change)}
-                </strong>
-              </div>
+              {/*
+                TO'LOV USULI. Server filialning sozlangan usullarini
+                qaytaradi; ilgari bu ro'yxat "CASH" deb qattiq yozilgan
+                edi va kassada kartani qabul qilib bo'lmasdi.
+              */}
+              {paymentMethods.length > 1 && (
+                <div className={styles.choices} role="radiogroup" aria-label="To'lov usuli">
+                  {paymentMethods.map((method) => (
+                    <label className={styles.choice} key={method.code}>
+                      <input
+                        type="radio"
+                        name="pos-payment"
+                        value={method.code}
+                        checked={paymentCode === method.code}
+                        disabled={isSubmitting}
+                        onChange={() => setPaymentCode(method.code)}
+                      />
+                      <span>{method.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {isCashPayment && (
+                <>
+                  <label className={styles.field}>
+                    <span>Qabul qilingan naqd pul</span>
+                    <input
+                      className={styles.input}
+                      inputMode="numeric"
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      disabled={isSubmitting || !cart.length}
+                      value={cashReceived}
+                      onChange={(event) => setCashReceived(event.target.value)}
+                    />
+                  </label>
+                  <div className={styles.quickCash}>
+                    <button
+                      disabled={isSubmitting || !cart.length}
+                      onClick={() => setCashReceived(String(total))}
+                      type="button"
+                    >
+                      Aniq summa
+                    </button>
+                    {cashDenominations.map((amount) => (
+                      <button
+                        key={amount}
+                        disabled={isSubmitting || !cart.length}
+                        onClick={() =>
+                          setCashReceived(
+                            String(
+                              (Number.isFinite(received) ? received : 0) +
+                                amount,
+                            ),
+                          )
+                        }
+                        type="button"
+                      >
+                        +{formatter.format(amount)}
+                      </button>
+                    ))}
+                    <button
+                      disabled={isSubmitting || !cashReceived}
+                      onClick={() => setCashReceived("")}
+                      type="button"
+                    >
+                      Tozalash
+                    </button>
+                  </div>
+                  <div className={styles.change} role="status">
+                    <span>{received < total ? "Yetishmayapti" : "Qaytim"}</span>
+                    <strong>
+                      {money(received < total ? total - received : change)}
+                    </strong>
+                  </div>
+                </>
+              )}
               {error && (
                 <p className={styles.error} role="alert">
                   {error}
@@ -646,7 +944,7 @@ function PosTerminal() {
               )}
               <button
                 className={`${styles.primary} ${styles.full} ${styles.desktopPay}`}
-                disabled={isSubmitting || !cart.length || !validCash}
+                disabled={isSubmitting || !canSubmit}
                 onClick={() => void submitOrder()}
                 type="button"
               >
@@ -668,7 +966,7 @@ function PosTerminal() {
             disabled={
               isSubmitting ||
               !cart.length ||
-              (mobileView === "cart" && !validCash)
+              (mobileView === "cart" && !canSubmit)
             }
             onClick={() =>
               mobileView === "menu" ? setMobileView("cart") : void submitOrder()
@@ -688,6 +986,53 @@ function PosTerminal() {
             )}
           </button>
         </div>
+      )}
+      {/*
+        SOTUVDAN KEYINGI QADAM.
+        Ilgari muvaffaqiyat savat ichidagi kichik banner edi: qaytim
+        bir qatorda ko'rinardi, chekka o'tish yo'li yo'q edi (chek
+        sahifasi bor, lekin unga hech qayerdan havola qilinmagan) va
+        mobil'da kassir bo'sh "Buyurtma" ko'rinishida qolib ketardi.
+      */}
+      {success && (
+        <StaffDialog
+          title="Buyurtma qabul qilindi"
+          onClose={() => setSuccess(null)}
+        >
+          <p className={styles.ticketNumber}>
+            #{success.order.displayOrderNumber ?? success.order.orderNumber}
+          </p>
+          <div className={styles.change} role="status">
+            <span>Qaytim</span>
+            <strong>{money(success.payment.change)}</strong>
+          </div>
+          <div className={styles.totalRow}>
+            <span>Buyurtma summasi</span>
+            <strong>{money(success.order.total)}</strong>
+          </div>
+          <div className={styles.dialogActions}>
+            {success.order.receipts?.[0]?.id ? (
+              <button
+                className={styles.button}
+                onClick={() =>
+                  router.push(`/pos/receipt/${success.order.receipts![0]!.id}`)
+                }
+                type="button"
+              >
+                <ReceiptText size={18} />
+                Chek
+              </button>
+            ) : null}
+            <button
+              className={styles.primary}
+              onClick={() => setSuccess(null)}
+              type="button"
+            >
+              <Plus size={18} />
+              Yangi buyurtma
+            </button>
+          </div>
+        </StaffDialog>
       )}
       {historyOpen && (
         <StaffDialog title="Smena buyurtmalari tarixi" busy={historyLoading} onClose={() => setHistoryOpen(false)}>
