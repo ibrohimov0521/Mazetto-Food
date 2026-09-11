@@ -67,9 +67,33 @@ Tekshirish muhiti: `node_modules` o'rnatildi, Prisma client generatsiya qilindi.
 
 ---
 
-## 5. Hali tekshirilmagan / qolgan xavflar
+## 5. Brauzerda o'tkazilgan tekshiruv
 
-- **Brauzerda vizual QA o'tkazilmadi.** Playwright va `scripts/qa-*.mjs` mavjud, lekin ular ishlayotgan backend va ma'lumotlar bazasini talab qiladi. Barcha o'zgarishlar `tsc`, `eslint`, `next build` va backend testlari bilan tekshirildi; 375/390/768/1024px dagi joylashuv KODDAN o'qildi, ekranda ko'rilmadi.
+`scripts/qa-customer-contrast.mjs` qo'shildi (`pnpm qa:customer`). U yig'ilgan mijoz saytini headless Chromium'da 375, 390, 430, 768, 1024, 1366 va 1440 px da ochadi, har bir matn tugunining HAQIQIY fonini kaskaddan o'lchaydi, 11 px dan kichik matnni va haqiqiy gorizontal aylantirishni aniqlaydi. Chiqish kodi faqat shubhasiz muammolarda nolga teng bo'lmaydi.
+
+**Brauzer topgan, manbani o'qishda ko'rinmagan uch xato:**
+
+| Topilma | O'lchangan | Qaror |
+| --- | --- | --- |
+| Faol pastki nav yorlig'i | `#F5CF00` nav yuzasi `#08686a` ustida **4.32:1** (shell `#004f55` ustida 6.14:1 — oldingi tekshiruv faqat NOFAOL yorliqni ko'rgan) | `#FFE86B`, 5.32:1 |
+| Teal matn `#0B7F75` | oq ustida 4.88:1, ivory ustida **4.46:1**, ikkisida ham ishlatiladi | Hamma joyda `#0A7168`: 5.87:1 / 5.37:1 |
+| Footer krediti va hero "TAVSIYA" yorlig'i | 10 px, kredit 4.37:1 | 11 px, kredit 6.35:1 |
+
+**Brauzer xato deb belgilagan, lekin haqiqiy bo'lmagan holatlar** (qo'lda tekshirildi):
+
+- Desktop nav havolasi — fon 86% shaffof ivory teal ustida, ya'ni qora matn **9.41:1**. Prob 95% dan zich fonni talab qilgani uchun uni o'tkazib yuborgan.
+- Hero sarlavhasi, kategoriya kartalari va footer matni — RASM va GRADIENT ustida. Bunday matnni bu usul bilan o'lchab bo'lmaydi.
+- 18 ta "oqish" yozuvi — hammasida `doc === client`, ya'ni sahifa yon tomonga aylanmaydi. Belgilangan element kesilgan konteyner ichidagi `object-contain` rasm.
+
+**Tuzatishlardan keyin:** mayda matn 0, sahifa xatosi 0, haqiqiy gorizontal oqish 0.
+
+Skrinshotlar `.qa-screenshots/` ga yoziladi (gitignore'da).
+
+## 6. Hali tekshirilmagan / qolgan xavflar
+
+- **Xodim va admin ekranlari brauzerda ko'rilmadi.** Ular login va ma'lumotlar bazasini talab qiladi, shuning uchun faqat `tsc`, `eslint` va `next build` bilan tekshirildi. Oshxona shrift o'lchamlari va shoshilinchlik chegaralari haqiqiy chipta vaqtlari bilan sinalishi kerak.
+- **`DataTable` endi karta ichida aylanadi** (`max-h-[70vh]`) — sticky sarlavha shuni talab qiladi. 1024×600 kassa planshetida bu ~420 px, ko'zdan o'tkazish kerak.
+- **Mijoz saytining hero bloki** 390 px da matn va rasmni yonma-yon qo'yadi; CTA endi o'qiladi, lekin ustun hali ham tor (auditdagi 8.3, Low).
 - **Migratsiya talab qilinmadi.** Hech qanday sxema o'zgarishi kiritilmadi — `stockDeductedAt` va `type`/`tableId` maydonlari allaqachon mavjud edi.
 - **Chop etish faqat brauzer orqali.** Fizik printer integratsiyasi ataylab keyingi bosqichda qoldirildi va interfeys buni ochiq aytadi.
 - **`:has()` bilan chek chop etish** Chrome 105+ / Safari 15.4+ talab qiladi; eski kassa brauzerida chek butun interfeys bilan chiqadi (buzilmaydi, lekin chiroyli emas).
