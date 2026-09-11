@@ -34,7 +34,8 @@ function main(): void {
   assert.match(auth, /CASHIER: "\/shift"/);
   assert.match(shiftPage, /\/cash-register\/shift\/open/);
   assert.match(shiftPage, /\/cash-register\/shift\/\$\{shift\.id\}\/close/);
-  assert.match(shiftPage, /const needsBranchChoice = !user\?\.branchId/);
+  assert.match(shiftPage, /const needsBranchChoice = Boolean\(/);
+  assert.match(shiftPage, /user && \(user\.roles\.includes\("SUPER_ADMIN"\) \|\| !user\.branchId\)/);
   assert.match(shiftPage, /needsBranchChoice \? \{ branchId: openingBranchId \} : \{\}/);
   assert.match(shiftPage, /setShift\(current\?\.status === "OPEN" \? current : null\)/);
   assert.match(shiftPage, /setIsConfirmingClose\(true\)/);
