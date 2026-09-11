@@ -5,6 +5,7 @@ import { useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useCart, type CustomerSession } from "../lib/cart";
 import { hapticTap } from "./motion-primitives";
+import { PhoneInput, nationalPhoneValue } from "./phone-input";
 
 type CustomerAuthDelivery = {
   status: "SENT" | "TELEGRAM_LINK_REQUIRED" | "PENDING_INTEGRATION" | string;
@@ -23,7 +24,7 @@ export function CustomerAuthPanel({
 }) {
   const { customer, setCustomer, showToast } = useCart();
   const [name, setName] = useState(customer?.name ?? "");
-  const [phone, setPhone] = useState(customer?.phone ?? "");
+  const [phone, setPhone] = useState(nationalPhoneValue(customer?.phone ?? ""));
   const [code, setCode] = useState("");
   const [pendingVerification, setPendingVerification] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -32,32 +33,43 @@ export function CustomerAuthPanel({
   const [verifyingCode, setVerifyingCode] = useState(false);
 
   async function requestCode() {
+    if (requestingCode || phone.length !== 9) return;
     setRequestingCode(true);
     setMessage(null);
 
     try {
-      const result = await apiFetch<{ challenge: { phone: string; expiresAt: string }; delivery: CustomerAuthDelivery }>("/customer/auth/request-code", {
+      const result = await apiFetch<{
+        challenge: { phone: string; expiresAt: string };
+        delivery: CustomerAuthDelivery;
+      }>("/customer/auth/request-code", {
         method: "POST",
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone: "+998" + phone }),
       });
       setPendingVerification(true);
       setCode("");
       setTelegramBotUrl(result.delivery.botUrl ?? null);
 
       if (result.delivery.status === "TELEGRAM_LINK_REQUIRED") {
-        setMessage("Telefon raqamingiz Telegram botga ulanmagan. Botga o'tib /start bosing, telefon raqamingizni yuboring va shu sahifaga qayting.");
+        setMessage(
+          "Telefon raqamingiz Telegram botga ulanmagan. Botga o'tib /start bosing, telefon raqamingizni yuboring va shu sahifaga qayting.",
+        );
         return;
       }
 
       if (result.delivery.status === "PENDING_INTEGRATION") {
         setPendingVerification(false);
-        setMessage("Telegram orqali kod yuborish hozircha sozlanmagan. Keyinroq qayta urinib ko'ring.");
+        setMessage(
+          "Telegram orqali kod yuborish hozircha sozlanmagan. Keyinroq qayta urinib ko'ring.",
+        );
         return;
       }
 
-      setMessage(result.delivery.message || "Tasdiqlash kodi Telegram orqali yuborildi.");
+      setMessage(
+        result.delivery.message || "Tasdiqlash kodi Telegram orqali yuborildi.",
+      );
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Kod yuborib bo'lmadi.";
+      const text =
+        error instanceof Error ? error.message : "Kod yuborib bo'lmadi.";
       setMessage(text);
       showToast("Kod yuborilmadi");
     } finally {
@@ -66,13 +78,23 @@ export function CustomerAuthPanel({
   }
 
   async function verifyCode() {
+    if (verifyingCode || phone.length !== 9) return;
     setVerifyingCode(true);
     setMessage(null);
 
     try {
-      const result = await apiFetch<{ customer: Omit<CustomerSession, "accessToken" | "refreshToken" | "tokenType">; tokens: Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType"> }>("/customer/auth/verify-code", {
+      const result = await apiFetch<{
+        customer: Omit<
+          CustomerSession,
+          "accessToken" | "refreshToken" | "tokenType"
+        >;
+        tokens: Pick<
+          CustomerSession,
+          "accessToken" | "refreshToken" | "tokenType"
+        >;
+      }>("/customer/auth/verify-code", {
         method: "POST",
-        body: JSON.stringify({ name, phone, code }),
+        body: JSON.stringify({ name, phone: "+998" + phone, code }),
       });
       setCustomer({ ...result.customer, ...result.tokens });
       setPendingVerification(false);
@@ -82,8 +104,13 @@ export function CustomerAuthPanel({
       showToast("Telefon tasdiqlandi");
       onAuthenticated?.();
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Kodni tasdiqlab bo'lmadi.";
-      setMessage(text.includes("expired") || text.includes("Invalid") ? "Kod noto'g'ri yoki muddati tugagan. Qayta kod oling." : text);
+      const text =
+        error instanceof Error ? error.message : "Kodni tasdiqlab bo'lmadi.";
+      setMessage(
+        text.includes("expired") || text.includes("Invalid")
+          ? "Kod noto'g'ri yoki muddati tugagan. Qayta kod oling."
+          : text,
+      );
       showToast("Kod tasdiqlanmadi");
     } finally {
       setVerifyingCode(false);
@@ -94,8 +121,13 @@ export function CustomerAuthPanel({
     return (
       <div className="mf-card-soft p-4">
         <p className="text-sm font-black text-[#17314A]">Profil ulangan</p>
-        <p className="mt-1 text-sm font-semibold text-[#17314A]/62">{customer.name} · {customer.phone}</p>
-        <Link className="pressable ripple mf-button-secondary mt-4 inline-flex px-4 py-3 text-sm font-black" href="/orders">
+        <p className="mt-1 text-sm font-semibold text-[#17314A]/62">
+          {customer.name} · {customer.phone}
+        </p>
+        <Link
+          className="pressable ripple mf-button-secondary mt-4 inline-flex px-4 py-3 text-sm font-black"
+          href="/orders"
+        >
           Buyurtmalarim
         </Link>
       </div>
@@ -106,31 +138,87 @@ export function CustomerAuthPanel({
     <div className="grid min-w-0 gap-3">
       <div>
         <h2 className="text-2xl font-black text-[#17314A]">{title}</h2>
-        <p className="mt-2 text-sm font-semibold leading-6 text-[#17314A]/64">{description}</p>
+        <p className="mt-2 text-sm font-semibold leading-6 text-[#17314A]/64">
+          {description}
+        </p>
       </div>
-      <label className="grid gap-1.5 text-sm font-semibold">Ismingiz<input autoComplete="name" className="mf-input px-4 py-3" placeholder="Ismingiz" value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <label className="grid gap-1.5 text-sm font-semibold">Telefon raqam<input autoComplete="tel" className="mf-input px-4 py-3" type="tel" placeholder="+998 telefon raqam" value={phone} disabled={requestingCode || verifyingCode} onChange={(event) => { setPhone(event.target.value); setPendingVerification(false); setCode(""); setMessage(null); }} /></label>
+      <label className="grid gap-1.5 text-sm font-semibold">
+        Ismingiz
+        <input
+          autoComplete="name"
+          className="mf-input px-4 py-3"
+          placeholder="Ismingiz"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <PhoneInput
+        value={phone}
+        disabled={requestingCode || verifyingCode}
+        onChange={(value) => {
+          setPhone(value);
+          setPendingVerification(false);
+          setCode("");
+          setMessage(null);
+          setTelegramBotUrl(null);
+        }}
+      />
       {pendingVerification ? (
         <>
-          <input aria-label="Telegram tasdiqlash kodi" autoComplete="one-time-code" className="mf-input px-4 py-3" inputMode="numeric" maxLength={6} placeholder="Telegram tasdiqlash kodi" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} />
-          <button className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50" disabled={!phone || !code || verifyingCode} onClick={() => void verifyCode()} type="button">
+          <input
+            aria-label="Telegram tasdiqlash kodi"
+            autoComplete="one-time-code"
+            className="mf-input px-4 py-3"
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="Telegram tasdiqlash kodi"
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
+          />
+          <button
+            className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50"
+            disabled={phone.length !== 9 || !code || verifyingCode}
+            onClick={() => void verifyCode()}
+            type="button"
+          >
             {verifyingCode ? "Tekshirilmoqda..." : "Kodni tasdiqlash"}
           </button>
           {telegramBotUrl ? (
-            <Link className="pressable ripple mf-button-secondary rounded-2xl px-5 py-4 text-center font-black" href={telegramBotUrl} target="_blank">
+            <Link
+              className="pressable ripple mf-button-secondary rounded-2xl px-5 py-4 text-center font-black"
+              href={telegramBotUrl}
+              target="_blank"
+            >
               Telegram botga o'tish
             </Link>
           ) : null}
-          <button className="pressable ripple mf-button-secondary px-5 py-3 text-sm font-black disabled:opacity-50" disabled={!phone || requestingCode} onClick={() => void requestCode()} type="button">
+          <button
+            className="pressable ripple mf-button-secondary px-5 py-3 text-sm font-black disabled:opacity-50"
+            disabled={phone.length !== 9 || requestingCode}
+            onClick={() => void requestCode()}
+            type="button"
+          >
             {requestingCode ? "Yuborilmoqda..." : "Kodni qayta yuborish"}
           </button>
         </>
       ) : (
-        <button className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50" disabled={!phone || requestingCode} onClick={() => void requestCode()} type="button">
+        <button
+          className="pressable ripple mf-button-primary px-5 py-4 font-black disabled:opacity-50"
+          disabled={phone.length !== 9 || requestingCode}
+          onClick={() => void requestCode()}
+          type="button"
+        >
           {requestingCode ? "Yuborilmoqda..." : "Kod olish"}
         </button>
       )}
-      {message ? <p role="status" className="mf-surface-note rounded-xl px-4 py-3 text-sm font-bold">{message}</p> : null}
+      {message ? (
+        <p
+          role="status"
+          className="mf-surface-note rounded-xl px-4 py-3 text-sm font-bold"
+        >
+          {message}
+        </p>
+      ) : null}
     </div>
   );
 }

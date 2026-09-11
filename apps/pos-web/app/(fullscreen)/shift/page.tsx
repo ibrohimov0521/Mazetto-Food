@@ -20,6 +20,8 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
+import { hasPermission } from "../../../lib/auth";
+import { CashHandover, type OutgoingTransfer } from "../../../components/staff/cash-handover";
 
 type CashTransfer = {
   id: string;
@@ -36,6 +38,7 @@ type Branch = {
   address?: string | null;
 };
 type Shift = {
+  outgoingCashTransfers?: OutgoingTransfer[];
   id: string;
   shiftNumber: number;
   status: "OPEN" | "CLOSED";
@@ -80,6 +83,9 @@ export default function ShiftPage() {
 function ShiftConsole() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const canTrade = hasPermission(user, "POS_USE");
+  const canReceive = Boolean(user?.roles.some(role => ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"].includes(role))) && hasPermission(user, "CASH_TRANSACTION_CREATE");
+  const [transferConfirmation, setTransferConfirmation] = useState<{ transfer: CashTransfer; action: "accept" | "reject" } | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
   const [closedShift, setClosedShift] = useState<Shift | null>(null);
   const [openingCash, setOpeningCash] = useState("0");
@@ -124,7 +130,7 @@ function ShiftConsole() {
       if (!controller.signal.aborted) {
         setShift(current?.status === "OPEN" ? current : null);
         setPendingTransfers(
-          current?.status === "OPEN"
+          current?.status === "OPEN" && canReceive
             ? await apiFetch<CashTransfer[]>(
                 "/cash-register/transfers/pending",
                 {
@@ -151,7 +157,7 @@ function ShiftConsole() {
     } finally {
       if (!controller.signal.aborted) setIsLoading(false);
     }
-  }, [logout]);
+  }, [logout, canReceive]);
   useEffect(() => {
     void loadShift();
     return () => loadRequest.current?.abort();
@@ -164,18 +170,19 @@ function ShiftConsole() {
       .catch(() => setBranches([]));
   }, [needsBranchChoice]);
 
-  async function acceptTransfer(id: string) {
+  async function processTransfer(id: string, action: "accept" | "reject") {
     if (saving.current) return;
     saving.current = true;
     setIsSaving(true);
     setError(null);
     try {
-      await apiFetch("/cash-register/transfers/" + id + "/accept", {
+      await apiFetch("/cash-register/transfers/" + id + "/" + action, {
         method: "POST",
         body: JSON.stringify({}),
         signal: AbortSignal.timeout(15000),
       });
       await loadShift();
+      setTransferConfirmation(null);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Topshirish qabul qilinmadi",
@@ -202,7 +209,8 @@ function ShiftConsole() {
       });
       setShift(opened);
       setClosedShift(null);
-      router.replace("/pos");
+      if (canTrade) router.replace("/pos");
+      else await loadShift();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Smena ochilmadi");
     } finally {
@@ -264,7 +272,7 @@ function ShiftConsole() {
             >
               <RefreshCw size={18} />
             </button>
-            {shift && (
+            {shift && canTrade && (
               <button
                 className={styles.primary}
                 disabled={isSaving}
@@ -300,14 +308,15 @@ function ShiftConsole() {
                 <strong>{shift.orderCount ?? 0} ta</strong>
               </div>
             </section>
+            <CashHandover shiftId={shift.id} balance={expectedCash} transfers={shift.outgoingCashTransfers ?? []} onChanged={loadShift} />
             {pendingTransfers.length > 0 && (
               <section
                 className={styles.shiftSummary}
-                aria-label="Kuryer topshiriqlari"
+                aria-label="Xodimlardan pul topshiriqlari"
               >
                 <div className={styles.toolbar}>
                   <div>
-                    <h2>Kuryerlardan topshiriqlar</h2>
+                    <h2>Xodimlardan pul topshiriqlari</h2>
                     <p className={styles.muted}>
                       Naqd kassaga qabul qilinmaguncha bu yerda kutadi.
                     </p>
@@ -321,7 +330,7 @@ function ShiftConsole() {
                     <article className={styles.historyOrder} key={transfer.id}>
                       <div>
                         <strong>
-                          {transfer.fromShift?.employee?.firstName ?? "Kuryer"}{" "}
+                          {transfer.fromShift?.employee?.firstName ?? "Xodim"}{" "}
                           {transfer.fromShift?.employee?.lastName ?? ""}
                         </strong>
                         <span className={styles.muted}>
@@ -334,12 +343,13 @@ function ShiftConsole() {
                         <button
                           className={styles.primary}
                           disabled={isSaving}
-                          onClick={() => void acceptTransfer(transfer.id)}
+                          onClick={() => setTransferConfirmation({ transfer, action: "accept" })}
                           type="button"
                         >
                           <Check size={16} />
                           Qabul qilish
                         </button>
+                        <button className={styles.secondary} disabled={isSaving} onClick={() => setTransferConfirmation({ transfer, action: "reject" })} type="button">Rad etish</button>
                       </div>
                     </article>
                   ))}
@@ -390,7 +400,7 @@ function ShiftConsole() {
                 </div>
               </section>
               <section className={styles.shiftFinance}>
-                <h2 className={styles.pageHeading}>Kassa topshirish</h2>
+                <h2 className={styles.pageHeading}>Smenani yakunlash</h2>
                 <div className={styles.totalRow} style={{ marginTop: 20 }}>
                   <span>Kutilgan naqd</span>
                   <strong>{money(expectedCash)}</strong>
@@ -555,6 +565,12 @@ function ShiftConsole() {
           </div>
         </StaffDialog>
       )}
+      {transferConfirmation && <StaffDialog busy={isSaving} title={transferConfirmation.action === "reject" ? "Pul topshirishni rad etish" : "Naqd pulni qabul qilish"} onClose={() => { if (!isSaving) setTransferConfirmation(null); }}>
+        <p>{transferConfirmation?.transfer.fromShift?.employee?.firstName} - <strong>{money(transferConfirmation?.transfer.amount ?? 0)}</strong></p>
+        <p className={styles.muted}>{transferConfirmation?.action === "reject" ? "Summa xodim kassasiga qaytariladi." : "Pulni sanab olganingizni tasdiqlang. Summa umumiy kassangizga qo'shiladi."}</p>
+        {error && <p className={styles.error} role="alert">{error}</p>}
+        <button className={styles.primary} disabled={isSaving} type="button" onClick={() => transferConfirmation && void processTransfer(transferConfirmation.transfer.id, transferConfirmation.action)}><Check size={16} />{isSaving ? "Saqlanmoqda..." : "Tasdiqlash"}</button>
+      </StaffDialog>}
     </StaffShell>
   );
 }

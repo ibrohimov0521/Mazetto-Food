@@ -28,17 +28,21 @@ function methodSource(source: string, name: string): string {
   return source.slice(start, next === -1 ? undefined : next);
 }
 
-test("kitchen active and history orders stay scoped to today and the acting employee", () => {
+test("kitchen queue is shared within today's branch, while history belongs to the acting employee", () => {
   const active = methodSource(kitchenSource, "listOrders");
   const history = methodSource(kitchenSource, "listHistory");
 
   for (const method of [active, history]) {
-    assert.match(method, /const employeeId = this\.requireEmployee\(user\)/);
+    assert.match(method, /this\.requireEmployee\(user\)/);
+    assert.match(method, /resolveBranchScope\(user\)/);
     assert.match(method, /const day = this\.todayTashkentRange\(\)/);
     assert.match(method, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
-    assert.match(method, /changedByEmployeeId: employeeId/);
   }
 
+  // New branch tickets have no employee status history until someone acts on them.
+  assert.doesNotMatch(active, /changedByEmployeeId: employeeId/);
+  assert.match(history, /const employeeId = this\.requireEmployee\(user\)/);
+  assert.match(history, /changedByEmployeeId: employeeId/);
   assert.match(active, /take: 250/);
   assert.match(history, /take: this\.parseLimit\(query\.limit\)/);
 });

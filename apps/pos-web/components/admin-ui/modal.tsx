@@ -80,7 +80,6 @@ export function Modal({
     // function each render, and re-running this on every keystroke inside
     // the modal would steal focus back to the panel from whatever input
     // the user is typing in.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleBackdrop = useCallback(

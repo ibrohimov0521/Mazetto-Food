@@ -30,7 +30,18 @@ export class CashRegisterService {
       include: {
         branch: true,
         employee: true,
-        cashTransactions: { orderBy: { occurredAt: "desc" }, take: 50 },
+        cashTransactions: { orderBy: { occurredAt: "desc" } },
+        outgoingCashTransfers: {
+          orderBy: { createdAt: "desc" },
+          take: 100,
+          include: {
+            toShift: {
+              select: {
+                employee: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+        },
         revenueRecords: { include: { payment: { include: { method: true } } } },
       },
       orderBy: { openedAt: "desc" },
@@ -43,6 +54,7 @@ export class CashRegisterService {
     return {
       ...shift,
       ...this.calculateShiftSummary(shift),
+      cashTransactions: shift.cashTransactions.slice(0, 50),
     };
   }
 

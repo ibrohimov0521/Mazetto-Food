@@ -51,7 +51,7 @@ export class CashRegisterController {
     return this.cashRegisterService.openCourierShift(dto, user);
   }
 
-  @Post("courier-shift/transfers")
+  @Post(["transfers", "courier-shift/transfers"])
   @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
   createCashTransfer(
     @Body() dto: CreateCashTransferDto,

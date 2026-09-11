@@ -1,10 +1,30 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { CashTransactionType, CashTransferStatus, PaymentStatus, Prisma, ShiftStatus, ShiftType } from "@prisma/client";
-import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  CashTransactionType,
+  CashTransferStatus,
+  PaymentStatus,
+  Prisma,
+  ShiftStatus,
+  ShiftType,
+} from "@prisma/client";
+import {
+  resolveBranchScope,
+  resolveRequiredBranchScope,
+} from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListShiftsDto } from "./dto/list-shifts.dto";
-import type { CloseShiftDto, CreateCashTransactionDto, CreateCashTransferDto, OpenShiftDto } from "./dto/shift.dto";
+import type {
+  CloseShiftDto,
+  CreateCashTransactionDto,
+  CreateCashTransferDto,
+  OpenShiftDto,
+} from "./dto/shift.dto";
 
 @Injectable()
 export class ShiftsService {
@@ -47,7 +67,9 @@ export class ShiftsService {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
 
     if (!employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -79,7 +101,9 @@ export class ShiftsService {
       });
 
       if (existingOpenShift) {
-        throw new BadRequestException("Employee already has an open shift in this branch");
+        throw new BadRequestException(
+          "Employee already has an open shift in this branch",
+        );
       }
 
       const latestShift = await tx.shift.findFirst({
@@ -121,74 +145,105 @@ export class ShiftsService {
     const employeeId = user.employeeId;
 
     if (!employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await this.prisma.$transaction(
           async (tx) => {
-        const shift = await tx.shift.findUnique({ where: { id } });
+            await tx.$queryRawUnsafe(
+              'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+              id,
+            );
+            const shift = await tx.shift.findUnique({ where: { id } });
 
-        if (!shift) {
-          throw new NotFoundException("Shift not found");
-        }
+            if (!shift) {
+              throw new NotFoundException("Shift not found");
+            }
 
-        if (shift.status !== ShiftStatus.OPEN) {
-          throw new BadRequestException("Shift is already closed");
-        }
+            if (shift.status !== ShiftStatus.OPEN) {
+              throw new BadRequestException("Shift is already closed");
+            }
 
-        await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
-        this.assertCanOperateShift(user, shift.employeeId);
+            await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
+            this.assertCanOperateShift(user, shift.employeeId);
 
-        const payments = await tx.payment.findMany({
-          where: {
-            status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS] },
-            revenueRecords: { some: { shiftId: id } },
+            const pendingTransfer = await tx.cashTransfer.findFirst({
+              where: { fromShiftId: id, status: CashTransferStatus.PENDING },
+              select: { id: true },
+            });
+            if (pendingTransfer) {
+              throw new BadRequestException(
+                "Pul topshirish hali tasdiqlanmagan. Avval kassir qabul qilishi yoki rad etishi kerak.",
+              );
+            }
+
+            const payments = await tx.payment.findMany({
+              where: {
+                status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS] },
+                revenueRecords: { some: { shiftId: id } },
+              },
+              include: { method: true },
+            });
+            const cashTransactions = await tx.cashTransaction.findMany({
+              where: { shiftId: id },
+            });
+            const orderIds = new Set(
+              payments.map((payment) => payment.orderId),
+            );
+            const totals = this.calculateShiftTotals(
+              payments,
+              cashTransactions,
+              orderIds.size,
+            );
+            const closingBalance = new Prisma.Decimal(dto.closingBalance);
+            const expectedCash = this.calculateExpectedCash(
+              shift.openingBalance,
+              totals,
+              cashTransactions,
+            );
+            const cashDifference = closingBalance.sub(expectedCash);
+
+            const closed = await tx.shift.updateMany({
+              where: { id, status: ShiftStatus.OPEN },
+              data: {
+                status: ShiftStatus.CLOSED,
+                closedAt: new Date(),
+                closingBalance,
+                expectedCash,
+                cashDifference,
+                ...totals,
+              },
+            });
+
+            if (closed.count !== 1) {
+              throw new BadRequestException("Shift is already closed");
+            }
+
+            await tx.cashTransaction.create({
+              data: {
+                branchId: shift.branchId,
+                shiftId: id,
+                employeeId,
+                type: CashTransactionType.CLOSING_BALANCE,
+                amount: closingBalance,
+                reason: "Shift closed",
+                createdById: user.id,
+              },
+            });
+
+            return tx.shift.findUniqueOrThrow({
+              where: { id },
+              include: this.shiftInclude(),
+            });
           },
-          include: { method: true },
-        });
-        const cashTransactions = await tx.cashTransaction.findMany({ where: { shiftId: id } });
-        const orderIds = new Set(payments.map((payment) => payment.orderId));
-        const totals = this.calculateShiftTotals(payments, cashTransactions, orderIds.size);
-        const closingBalance = new Prisma.Decimal(dto.closingBalance);
-        const expectedCash = this.calculateExpectedCash(shift.openingBalance, totals, cashTransactions);
-        const cashDifference = closingBalance.sub(expectedCash);
-
-        const closed = await tx.shift.updateMany({
-          where: { id, status: ShiftStatus.OPEN },
-          data: {
-            status: ShiftStatus.CLOSED,
-            closedAt: new Date(),
-            closingBalance,
-            expectedCash,
-            cashDifference,
-            ...totals,
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: 15000,
           },
-        });
-
-        if (closed.count !== 1) {
-          throw new BadRequestException("Shift is already closed");
-        }
-
-        await tx.cashTransaction.create({
-          data: {
-            branchId: shift.branchId,
-            shiftId: id,
-            employeeId,
-            type: CashTransactionType.CLOSING_BALANCE,
-            amount: closingBalance,
-            reason: "Shift closed",
-            createdById: user.id,
-          },
-        });
-
-        return tx.shift.findUniqueOrThrow({
-          where: { id },
-          include: this.shiftInclude(),
-        });
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 },
         );
       } catch (error) {
         if (this.isRetryableTransactionConflict(error) && attempt < 2) {
@@ -210,7 +265,9 @@ export class ShiftsService {
     const employeeId = user.employeeId;
 
     if (!employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -221,7 +278,9 @@ export class ShiftsService {
       }
 
       if (shift.status !== ShiftStatus.OPEN) {
-        throw new BadRequestException("Cash transactions require an open shift");
+        throw new BadRequestException(
+          "Cash transactions require an open shift",
+        );
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
@@ -269,7 +328,7 @@ export class ShiftsService {
       include: {
         branch: { select: { id: true, code: true, name: true } },
         employee: { select: { id: true, firstName: true, lastName: true } },
-        cashTransactions: { orderBy: { occurredAt: "desc" }, take: 200 },
+        cashTransactions: { orderBy: { occurredAt: "desc" } },
         outgoingCashTransfers: {
           where: { status: CashTransferStatus.PENDING },
           orderBy: { createdAt: "desc" },
@@ -288,6 +347,7 @@ export class ShiftsService {
         shift.openingBalance,
         shift.cashTransactions,
       ),
+      cashTransactions: shift.cashTransactions.slice(0, 200),
     };
   }
 
@@ -317,6 +377,17 @@ export class ShiftsService {
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
       resolveBranchScope(user, shift.branchId);
 
+      await tx.$queryRawUnsafe(
+        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+        shift.id,
+      );
+      const current = await tx.shift.findUnique({ where: { id: shift.id } });
+      if (current?.status !== ShiftStatus.OPEN) {
+        throw new BadRequestException(
+          "Smena yopilgan. Pul topshirib bo'lmaydi.",
+        );
+      }
+
       const transactions = await tx.cashTransaction.findMany({
         where: { shiftId: shift.id },
         select: { amount: true, type: true },
@@ -328,7 +399,7 @@ export class ShiftsService {
       const amount = new Prisma.Decimal(dto.amount);
       if (balance.lessThan(amount)) {
         throw new BadRequestException(
-          "Transfer amount exceeds courier cash balance",
+          "Topshirish summasi kassadagi naqd puldan oshmasligi kerak",
         );
       }
 
@@ -337,7 +408,7 @@ export class ShiftsService {
           branchId: shift.branchId,
           fromShiftId: shift.id,
           amount,
-          reason: dto.reason ?? "Courier cash handover",
+          reason: dto.reason ?? "Xodim naqd pulni kassirga topshirdi",
           createdById: user.id,
         },
       });
@@ -366,10 +437,14 @@ export class ShiftsService {
   }
 
   async listPendingCashTransfers(user: AuthenticatedUser) {
+    this.assertCashReceiver(user);
+    const employeeId = user.employeeId;
+    if (!employeeId) throw new ForbiddenException("Employee profile is required");
     const branchId = resolveBranchScope(user);
     return this.prisma.cashTransfer.findMany({
       where: {
         status: CashTransferStatus.PENDING,
+        fromShift: { employeeId: { not: employeeId } },
         ...(branchId ? { branchId } : {}),
       },
       include: {
@@ -382,6 +457,7 @@ export class ShiftsService {
   }
 
   async acceptCashTransfer(id: string, user: AuthenticatedUser) {
+    this.assertCashReceiver(user);
     const employeeId = user.employeeId;
     if (!employeeId) {
       throw new ForbiddenException(
@@ -402,6 +478,15 @@ export class ShiftsService {
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, cashierShift.branchId);
+      await tx.$queryRawUnsafe(
+        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+        cashierShift.id,
+      );
+      const current = await tx.shift.findUnique({
+        where: { id: cashierShift.id },
+      });
+      if (current?.status !== ShiftStatus.OPEN)
+        throw new BadRequestException("Kassir smenasi yopilgan");
       const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
         'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
         id,
@@ -422,6 +507,11 @@ export class ShiftsService {
       }
       if (transfer.branchId !== cashierShift.branchId) {
         throw new ForbiddenException("Cash transfer belongs to another branch");
+      }
+      if (transfer.fromShift.employeeId === employeeId) {
+        throw new ForbiddenException(
+          "O'zingiz topshirgan pulni o'zingiz qabul qila olmaysiz",
+        );
       }
 
       await tx.cashTransaction.create({
@@ -458,6 +548,7 @@ export class ShiftsService {
     reason: string | undefined,
     user: AuthenticatedUser,
   ) {
+    this.assertCashReceiver(user);
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
         'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
@@ -479,7 +570,19 @@ export class ShiftsService {
       }
 
       resolveBranchScope(user, transfer.branchId);
-      if (transfer.fromShift.status === ShiftStatus.OPEN) {
+      if (transfer.fromShift.employeeId === user.employeeId) {
+        throw new ForbiddenException(
+          "O'zingizning topshirig'ingizni rad eta olmaysiz",
+        );
+      }
+      await tx.$queryRawUnsafe(
+        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+        transfer.fromShiftId,
+      );
+      const sourceShift = await tx.shift.findUniqueOrThrow({
+        where: { id: transfer.fromShiftId },
+      });
+      if (sourceShift.status === ShiftStatus.OPEN) {
         await tx.cashTransaction.create({
           data: {
             branchId: transfer.branchId,
@@ -498,7 +601,7 @@ export class ShiftsService {
         where: { id },
         data: {
           status:
-            transfer.fromShift.status === ShiftStatus.OPEN
+            sourceShift.status === ShiftStatus.OPEN
               ? CashTransferStatus.REJECTED
               : CashTransferStatus.DISPUTED,
           reason: reason ?? transfer.reason,
@@ -510,6 +613,19 @@ export class ShiftsService {
         },
       });
     });
+  }
+
+  private assertCashReceiver(user: AuthenticatedUser) {
+    if (
+      !user.employeeId ||
+      !user.roles.some((role) =>
+        ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"].includes(role),
+      )
+    ) {
+      throw new ForbiddenException(
+        "Pulni faqat kassir yoki mas'ul menejer qabul qiladi",
+      );
+    }
   }
 
   private calculateCashBalance(
@@ -547,7 +663,10 @@ export class ShiftsService {
       new Prisma.Decimal(0),
     );
     const cashTotal = this.sumPaymentsByCodes(payments, ["CASH"]);
-    const terminalTotal = this.sumPaymentsByCodes(payments, ["CARD", "TERMINAL"]);
+    const terminalTotal = this.sumPaymentsByCodes(payments, [
+      "CARD",
+      "TERMINAL",
+    ]);
     const clickTotal = this.sumPaymentsByCodes(payments, ["CLICK"]);
     const paymeTotal = this.sumPaymentsByCodes(payments, ["PAYME"]);
     const knownCodes = new Set(["CASH", "CARD", "TERMINAL", "CLICK", "PAYME"]);
@@ -556,12 +675,16 @@ export class ShiftsService {
         knownCodes.has(payment.method.code) ? total : total.add(payment.amount),
       new Prisma.Decimal(0),
     );
-    const expensesTotal = this.sumCashTransactions(cashTransactions, [CashTransactionType.EXPENSE]);
+    const expensesTotal = this.sumCashTransactions(cashTransactions, [
+      CashTransactionType.EXPENSE,
+    ]);
     const incomeTotal = this.sumCashTransactions(cashTransactions, [
       CashTransactionType.INCOME,
       CashTransactionType.CASH_IN,
     ]);
-    const refundsTotal = this.sumCashTransactions(cashTransactions, [CashTransactionType.REFUND]);
+    const refundsTotal = this.sumCashTransactions(cashTransactions, [
+      CashTransactionType.REFUND,
+    ]);
 
     return {
       salesTotal,
@@ -605,7 +728,8 @@ export class ShiftsService {
     codes: string[],
   ) {
     return payments.reduce(
-      (total, payment) => (codes.includes(payment.method.code) ? total.add(payment.amount) : total),
+      (total, payment) =>
+        codes.includes(payment.method.code) ? total.add(payment.amount) : total,
       new Prisma.Decimal(0),
     );
   }
@@ -616,7 +740,9 @@ export class ShiftsService {
   ) {
     return cashTransactions.reduce(
       (total, transaction) =>
-        types.includes(transaction.type) ? total.add(transaction.amount) : total,
+        types.includes(transaction.type)
+          ? total.add(transaction.amount)
+          : total,
       new Prisma.Decimal(0),
     );
   }
@@ -644,14 +770,19 @@ export class ShiftsService {
       return;
     }
 
-    const device = await tx.device.findFirst({ where: { id: deviceId, branchId, isActive: true } });
+    const device = await tx.device.findFirst({
+      where: { id: deviceId, branchId, isActive: true },
+    });
 
     if (!device) {
       throw new NotFoundException("Device not found");
     }
   }
 
-  private resolveTargetEmployee(employeeId: string | undefined, user: AuthenticatedUser): string | undefined {
+  private resolveTargetEmployee(
+    employeeId: string | undefined,
+    user: AuthenticatedUser,
+  ): string | undefined {
     if (!employeeId || employeeId === user.employeeId) {
       return user.employeeId;
     }
@@ -663,8 +794,14 @@ export class ShiftsService {
     throw new ForbiddenException("Cannot operate another employee shift");
   }
 
-  private assertCanOperateShift(user: AuthenticatedUser, shiftEmployeeId: string): void {
-    if (shiftEmployeeId === user.employeeId || this.canManageBranchShift(user)) {
+  private assertCanOperateShift(
+    user: AuthenticatedUser,
+    shiftEmployeeId: string,
+  ): void {
+    if (
+      shiftEmployeeId === user.employeeId ||
+      this.canManageBranchShift(user)
+    ) {
       return;
     }
 
@@ -672,11 +809,16 @@ export class ShiftsService {
   }
 
   private canManageBranchShift(user: AuthenticatedUser): boolean {
-    return user.roles.some((role) => ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role));
+    return user.roles.some((role) =>
+      ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role),
+    );
   }
 
   private isRetryableTransactionConflict(error: unknown): boolean {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    ) {
       return true;
     }
 
@@ -687,7 +829,10 @@ export class ShiftsService {
       return true;
     }
 
-    if (error instanceof Error && /write conflict|deadlock|could not serialize access/i.test(error.message)) {
+    if (
+      error instanceof Error &&
+      /write conflict|deadlock|could not serialize access/i.test(error.message)
+    ) {
       return true;
     }
 
