@@ -92,9 +92,19 @@ export function paymentStatusTone(status: PaymentStatus): BadgeTone {
 }
 
 const moneyFormatter = new Intl.NumberFormat("uz-UZ");
+/*
+ * Vaqt mintaqasi QAT'IY belgilangan.
+ *
+ * Ilgari brauzer mintaqasi ishlatilardi. Xodim ekranlarining boshqa
+ * joylari (masalan `StaffSync`) esa "Asia/Tashkent" ni ochiq belgilaydi,
+ * natijada bitta ekranda ikki xil vaqt chiqishi mumkin edi. Smena,
+ * chek va buyurtma vaqti filial vaqti bo'lishi kerak — kassa
+ * planshetining sozlamasi emas.
+ */
 const dateTimeFormatter = new Intl.DateTimeFormat("uz-UZ", {
   dateStyle: "short",
   timeStyle: "short",
+  timeZone: "Asia/Tashkent",
 });
 
 export function formatMoney(value: string | number | null | undefined): string {
