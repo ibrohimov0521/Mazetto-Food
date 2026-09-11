@@ -9,7 +9,11 @@ import { MotionDiv, pageMotion, sectionMotion } from "../../../components/motion
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
 import { OrderProgress } from "../../../components/order-progress";
-import { trackingLabel, trackingStatus } from "../../../lib/order-tracking";
+import {
+  paymentStatusLabel,
+  trackingLabel,
+  trackingStatus,
+} from "../../../lib/order-tracking";
 import { useOrderUpdates } from "../../../lib/use-order-updates";
 import { localizeMenuName } from "../../../lib/customer-display";
 import { formatMoney, useCart } from "../../../lib/cart";
@@ -242,9 +246,9 @@ function OrderDetail() {
                   <span>{payment.method?.name ?? payment.methodCode ?? "To'lov"}</span>
                   <span className="text-[#0B7F75]">{formatMoney(payment.amount)}</span>
                 </div>
-                <p className="mt-1 text-xs text-[#586B7D]">{payment.status}</p>
+                <p className="mt-1 text-xs text-[#586B7D]">{paymentStatusLabel(payment.status)}</p>
               </div>
-            )) : <p className="text-sm font-semibold text-[#586B7D]">To'lov ma'lumoti hali biriktirilmagan.</p>}
+            )) : <p className="text-sm font-semibold text-[#586B7D]">Buyurtmani olganda to'lanadi.</p>}
           </div>
         </section>
       </aside>

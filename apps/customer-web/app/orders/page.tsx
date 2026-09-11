@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { OrderProgress } from "../../components/order-progress";
-import { trackingLabel, trackingStatus } from "../../lib/order-tracking";
+import {
+  trackingLabel,
+  trackingStatus,
+  trackingTone,
+} from "../../lib/order-tracking";
 import { useOrderUpdates } from "../../lib/use-order-updates";
 import { CustomerAuthPanel } from "../../components/customer-auth-panel";
 import { MotionDiv, AnimatedNumber, pageMotion, sectionMotion } from "../../components/motion-primitives";
@@ -260,9 +264,8 @@ function orderSummary(order: CustomerOrder): string {
 }
 
 function StatusChip({ status, type }: { status: string; type: string }) {
-  const cancelled = status === "CANCELLED";
   return (
-    <span className={`rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wide ${cancelled ? "bg-red-500/12 text-red-700" : "bg-[#F5CF00]/28 text-[#07373A]"}`}>
+    <span className="mf-status-chip" data-tone={trackingTone(status)}>
       {trackingLabel(status, type)}
     </span>
   );

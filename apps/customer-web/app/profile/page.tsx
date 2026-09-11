@@ -11,6 +11,11 @@ import { SiteShell } from "../../components/site-shell";
 import { apiFetch } from "../../lib/api";
 import { localizeMenuName } from "../../lib/customer-display";
 import { formatMoney, useCart } from "../../lib/cart";
+import {
+  trackingLabel,
+  trackingStatus,
+  trackingTone,
+} from "../../lib/order-tracking";
 
 type Dashboard = {
   id: string;
@@ -24,18 +29,20 @@ type Dashboard = {
     address?: string | null;
     deliveryAddress?: string | null;
     createdAt: string;
-    order: { orderNumber: string; displayOrderNumber?: string | null; total: string };
+    /*
+     * `status` ham keladi (server buyurtmaning barcha skalyar
+     * maydonlarini qaytaradi) va `trackingStatus()` unga ustunlik
+     * beradi — mijoz ko'rgan holat xodim panelidagi bilan bir xil
+     * bo'lishi uchun.
+     */
+    order: {
+      orderNumber: string;
+      displayOrderNumber?: string | null;
+      total: string;
+      status?: string;
+    };
   }[];
   favorites: { product: { id: string; name: string; imageUrl?: string | null; sellingPrice: string } }[];
-};
-const statusLabels: Record<string, string> = {
-  NEW: "Yangi",
-  CONFIRMED: "Tasdiqlandi",
-  PREPARING: "Tayyorlanmoqda",
-  COOKING: "Tayyorlanmoqda",
-  READY: "Tayyor",
-  COMPLETED: "Yakunlandi",
-  CANCELLED: "Bekor qilindi",
 };
 const typeLabels: Record<string, string> = {
   DELIVERY: "Yetkazib berish",
@@ -159,7 +166,7 @@ function Profile() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-black text-[#17314A]">{order.order.displayOrderNumber ?? order.order.orderNumber}</p>
-                      <p className="mt-1 text-xs font-semibold leading-5 text-[#586B7D]">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
+                      <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold leading-5 text-[#586B7D]"><span className="mf-status-chip" data-tone={trackingTone(trackingStatus(order))}>{trackingLabel(trackingStatus(order), order.type)}</span><span>{typeLabels[order.type] ?? order.type}</span></p>
                     </div>
                     <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>
                   </div>
@@ -203,9 +210,7 @@ function Profile() {
   );
 }
 
-function statusLabel(status: string): string {
-  return statusLabels[status] ?? status;
-}
+
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (

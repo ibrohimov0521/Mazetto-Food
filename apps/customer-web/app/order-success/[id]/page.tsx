@@ -6,7 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 import { MotionDiv, hapticTap, pageMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
 import { apiFetch } from "../../../lib/api";
+import { Check, X } from "lucide-react";
 import { formatMoney, useCart } from "../../../lib/cart";
+import { trackingLabel, trackingStatus } from "../../../lib/order-tracking";
 
 type CustomerOrder = {
   id: string;
@@ -23,15 +25,6 @@ type CustomerOrder = {
   };
 };
 
-const statusLabels: Record<string, string> = {
-  NEW: "Yangi",
-  CONFIRMED: "Tasdiqlandi",
-  PREPARING: "Tayyorlanmoqda",
-  COOKING: "Tayyorlanmoqda",
-  READY: "Tayyor",
-  COMPLETED: "Yakunlandi",
-  CANCELLED: "Bekor qilindi",
-};
 
 export default function OrderSuccessPage() {
   return (
@@ -133,14 +126,19 @@ function OrderSuccess() {
       <section className="mx-auto max-w-3xl px-4 py-5">
       <MotionDiv {...pageMotion}>
         <div className="px-4 pb-6 pt-2 text-center text-white">
-          <div aria-hidden="true" className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#F5CF00] text-3xl font-black text-[#07373A]">{order.status === "CANCELLED" ? "×" : "✓"}</div>
+          {/*
+            Bekor qilingan buyurtma ham SARIQ doira bilan ko'rsatilardi,
+            ya'ni muvaffaqiyat va bekor bir xil ko'rinardi. Endi rang
+            holatdan keladi: yashil - qabul qilindi, qizil - bekor.
+          */}
+          <div aria-hidden="true" className={`mx-auto grid h-16 w-16 place-items-center rounded-full text-3xl font-black ${order.status === "CANCELLED" ? "bg-[#FDEAE8] text-[#A3231D]" : "bg-[#E5F4EC] text-[#1F6640]"}`}>{order.status === "CANCELLED" ? <X size={34} strokeWidth={3} /> : <Check size={34} strokeWidth={3} />}</div>
           <h1 className="mt-4 text-2xl font-black">{order.status === "CANCELLED" ? "Buyurtma bekor qilingan" : "Buyurtmangiz qabul qilindi!"}</h1>
           <p className="mt-2 text-sm font-bold text-white/70">{customerOrderNumber(order.order)}</p>
         </div>
 
         <div className="mf-success-content grid gap-4 rounded-2xl bg-[#F5F5EF] p-4 sm:p-5">
           <div className="mf-order-metrics grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Metric label="Holat" value={statusLabel(order.order.status ?? order.status)} />
+            <Metric label="Holat" value={trackingLabel(trackingStatus(order), order.type)} />
             <Metric label="Mahsulot" value={`${itemCount} dona`} />
             <Metric label="Jami" value={formatMoney(order.order.total)} />
           </div>
@@ -188,9 +186,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function statusLabel(status: string): string {
-  return statusLabels[status] ?? status;
-}
+
 
 function customerOrderNumber(order: { displayOrderNumber?: string | null; orderNumber: string }): string {
   return order.displayOrderNumber ?? order.orderNumber;
