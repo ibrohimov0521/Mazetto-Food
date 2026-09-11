@@ -88,7 +88,8 @@ try {
     const state = await page.evaluate(() => ({
       cart: JSON.parse(localStorage.getItem("mazetto.customer.cart")),
       selected: JSON.parse(
-        sessionStorage.getItem("mazetto.customer.fulfillment.guest"),
+        localStorage.getItem("mazetto.customer.fulfillment.guest") ??
+          sessionStorage.getItem("mazetto.customer.fulfillment.guest"),
       ),
     }));
     assert.equal(state.cart.length, 1);

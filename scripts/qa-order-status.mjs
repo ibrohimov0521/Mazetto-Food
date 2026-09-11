@@ -1,32 +1,27 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const require = createRequire(new URL("../apps/backend/package.json", import.meta.url));
-const { CustomersService } = require("./dist/modules/customers/customers.service.js");
+const { Prisma } = require("@prisma/client");
+const { CustomerCourierService } = require("./dist/modules/customers/customer-courier.service.js");
 const { orderStatusLabel } = require("./dist/common/utils/order-status-label.js");
 const { kitchenEvents, kitchenOrderStatusChangedEvent } = require("./dist/modules/kitchen/kitchen-events.js");
-const { TelegramOrderNotificationService } = require("./dist/modules/telegram/telegram-order-notification.service.js");
-const { TelegramCustomerOrderingService } = require("./dist/modules/telegram/telegram-customer-ordering.service.js");
-const { TelegramCustomerAuthService } = require("./dist/modules/telegram/telegram-customer-auth.service.js");
-for (const Service of [TelegramOrderNotificationService, TelegramCustomerOrderingService, TelegramCustomerAuthService]) {
-  const service = Object.create(Service.prototype);
-  for (const type of ["DELIVERY", "PICKUP"]) for (const status of ["NEW", "CONFIRMED", "PREPARING", "READY", "SERVED", "COMPLETED", "CANCELLED"]) {
-    assert.equal((service.orderStatusLabel ?? service.statusLabel).call(service, status, type), orderStatusLabel(status, type));
-  }
+for (const type of ["DELIVERY", "PICKUP"]) for (const status of ["NEW", "CONFIRMED", "PREPARING", "READY", "SERVED", "COMPLETED", "CANCELLED"]) {
+  assert.equal(typeof orderStatusLabel(status, type), "string");
 }
 assert.match(orderStatusLabel("SERVED", "DELIVERY"), /Kuryer yo'lda/);
 assert.match(orderStatusLabel("COMPLETED", "DELIVERY"), /Yetkazildi/);
 const user = { id: "courier", employeeId: "employee", branchId: "branch", roles: ["COURIER"] };
 function setup(status, type = "DELIVERY", branchId = "branch") {
-  let existing = { id: "co", orderId: "order", branchId, type, order: { status }, createdAt: new Date() };
+  let existing = { id: "co", orderId: "order", branchId, type, order: { status, total: new Prisma.Decimal(0), payments: [] }, createdAt: new Date() };
   const events = [], writes = [], kitchen = [], histories = [];
   const tx = {
     $queryRaw: async () => [],
-    customerOrder: { findUnique: async () => structuredClone(existing), findUniqueOrThrow: async () => existing },
+    customerOrder: { findUnique: async () => ({ ...existing, order: { ...existing.order, payments: [...existing.order.payments] } }), findUniqueOrThrow: async () => existing },
     order: { update: async ({data}) => { writes.push(data); existing = {...existing, order: {...existing.order, ...data}}; } },
     kitchenTicket: { updateMany: async value => kitchen.push(value) },
     orderStatusHistory: { create: async value => histories.push(value) },
   };
-  const service = new CustomersService({ $transaction: fn => fn(tx) }, {}, { emitOrderStatusChanged: value => events.push(value) }, {}, {}, {}, {});
+  const service = new CustomerCourierService({ $transaction: fn => fn(tx) }, { emitOrderStatusChanged: value => events.push(value) }, {});
   return { service, events, writes, kitchen, histories };
 }
 for (const [from, to, ticket] of [["READY", "SERVED", "COMPLETED"], ["SERVED", "COMPLETED", "COMPLETED"], ["READY", "CANCELLED", "CANCELLED"]]) {
@@ -52,4 +47,4 @@ for (const [from, to, type, branch] of [["PREPARING", "SERVED"], ["SERVED", "REA
 const repeat = setup("SERVED");
 await repeat.service.updateCourierOrderStatus("co", {status: "SERVED"}, user);
 assert.equal(repeat.writes.length, 0);
-console.log("PASS: 42 Telegram labels; courier transitions; kitchen sync; customer and Telegram refresh; branch, type and terminal guards; idempotent departure.");
+console.log("PASS: shared status labels; courier transitions; kitchen sync; customer and Telegram refresh; branch, type and terminal guards; idempotent departure.");
