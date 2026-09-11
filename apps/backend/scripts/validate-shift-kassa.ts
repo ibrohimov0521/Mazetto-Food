@@ -34,12 +34,13 @@ function main(): void {
   assert.match(auth, /CASHIER: "\/shift"/);
   assert.match(shiftPage, /\/cash-register\/shift\/open/);
   assert.match(shiftPage, /\/cash-register\/shift\/\$\{shift\.id\}\/close/);
-  assert.doesNotMatch(shiftPage, /branchId/);
+  assert.match(shiftPage, /const needsBranchChoice = !user\?\.branchId/);
+  assert.match(shiftPage, /needsBranchChoice \? \{ branchId: openingBranchId \} : \{\}/);
   assert.match(shiftPage, /setShift\(current\?\.status === "OPEN" \? current : null\)/);
   assert.match(shiftPage, /setIsConfirmingClose\(true\)/);
   assert.match(shiftPage, /Smenani yakunlaysizmi\?/);
   assert.match(shiftPage, /isSaving \? "Yopilmoqda\.\.\." : "Yakunlash"/);
-  assert.match(shiftPage, /closingCash !== "" && Number\.isFinite\(closingValue\) && closingValue >= 0/);
+  assert.match(shiftPage, /closingCash !== "" &&\s+Number\.isFinite\(closingValue\) &&\s+closingValue >= 0/);
   assert.match(shiftPage, /disabled=\{isSaving \|\| !closingValid\}/);
   assert.match(shiftPage, /const difference = closingValue - expectedCash/);
   assert.match(shiftPage, /differenceText\(difference\)/);

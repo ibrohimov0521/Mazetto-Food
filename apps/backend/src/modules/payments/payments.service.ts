@@ -144,6 +144,7 @@ export class PaymentsService {
     overrideEmployeeId?: string,
     requestedStatus?: PaymentStatus,
     reference?: string,
+    transaction?: Prisma.TransactionClient,
   ) {
     const employeeId = overrideEmployeeId ?? user.employeeId;
 
@@ -169,8 +170,7 @@ export class PaymentsService {
     );
 
     try {
-      return await this.prisma.$transaction(
-        async (tx) => {
+      const execute = async (tx: Prisma.TransactionClient) => {
           const existingOperation = await tx.paymentOperation.findUnique({
             where: { idempotencyKey: dto.idempotencyKey },
           });
@@ -402,10 +402,15 @@ export class PaymentsService {
           });
 
           return this.buildOperationResult(tx, operation.id, order.id);
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      );
+        };
+      return await (transaction
+        ? execute(transaction)
+        : this.prisma.$transaction(execute, {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          }));
     } catch (error) {
+      // The owning transaction must roll back before a conflict can be retried.
+      if (transaction) throw error;
       // FAQAT idempotency kaliti bo'yicha to'qnashuv shu yo'lga tushadi —
       // boshqa har qanday unique buzilishi o'z holicha ko'tariladi.
       if (this.isUniqueConstraintErrorOn(error, "idempotencyKey")) {

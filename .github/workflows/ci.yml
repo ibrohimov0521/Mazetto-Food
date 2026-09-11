@@ -116,6 +116,15 @@ jobs:
       - name: pnpm run ci (generate, typecheck, lint, test, build, validate)
         run: pnpm run ci
 
+      - name: Unified employee cash integration
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/cash_qa
+          MAZETTO_CASH_DB_SMOKE: "1"
+        run: |
+          docker exec ${{ job.services.postgres.id }} createdb -U ci cash_qa
+          pnpm --filter backend prisma:migrate:deploy
+          pnpm --filter backend exec node --import tsx scripts/validate-unified-cash-db.ts
+
       # typecheck va build Nest'ning DI xatolarini, env tekshiruvini va
       # ishga tushishdagi yiqilishlarni ko'rmaydi — ular faqat real boot'da
       # chiqadi. Sirlar faqat CI uchun, hech qayerda ishlatilmaydi.

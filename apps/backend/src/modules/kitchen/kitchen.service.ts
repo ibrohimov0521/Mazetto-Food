@@ -578,6 +578,14 @@ export class KitchenService {
       );
     }
 
+    const openShift = await tx.shift.updateMany({
+      where: { id: shift.id, status: "OPEN" },
+      data: { updatedAt: occurredAt },
+    });
+    if (openShift.count !== 1) {
+      throw new BadRequestException("Xodim smenasi yopilgan. Naqd pul qabul qilinmadi.");
+    }
+
     const branchCashMethod = await tx.paymentMethod.findFirst({
       where: {
         branchId: order.branchId,

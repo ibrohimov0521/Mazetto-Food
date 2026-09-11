@@ -231,67 +231,11 @@ export class CustomerCourierService {
     const scopedBranchId = resolveBranchScope(user);
     const nextStatus = dto.status as OrderStatus;
 
-    if (nextStatus === OrderStatus.COMPLETED) {
-      const paymentOrder = await this.prisma.customerOrder.findUnique({
-        where: { id: customerOrderId },
-        include: { order: { include: { payments: true } } },
-      });
-
-      if (!paymentOrder) {
-        throw new NotFoundException("Online order not found");
-      }
-
-      const successfulPaymentStatuses: PaymentStatus[] = [
-        PaymentStatus.PAID,
-        PaymentStatus.SUCCESS,
-      ];
-      const paidTotal = paymentOrder.order.payments
-        .filter((payment) => successfulPaymentStatuses.includes(payment.status))
-        .reduce(
-          (total, payment) => total.add(payment.amount),
-          new Prisma.Decimal(0),
-        );
-      const outstanding = paymentOrder.order.total.sub(paidTotal);
-
-      if (outstanding.greaterThan(0)) {
-        const courierShift = await this.prisma.shift.findFirst({
-          where: {
-            employeeId,
-            status: ShiftStatus.OPEN,
-          },
-          orderBy: { openedAt: "desc" },
-          select: { id: true, branchId: true },
-        });
-
-        if (!courierShift || courierShift.branchId !== paymentOrder.branchId) {
-          throw new BadRequestException(
-            "Naqd pulni yig'ishdan oldin xodim smenasi ochiq bo'lishi shart",
-          );
-        }
-
-        await this.paymentsService.processOrderPayment(
-          {
-            orderId: paymentOrder.orderId,
-            idempotencyKey:
-              dto.idempotencyKey ?? "courier-cash-" + paymentOrder.orderId,
-            shiftId: dto.shiftId ?? courierShift.id,
-            payments: [
-              {
-                paymentMethodCode: dto.paymentMethodCode ?? "CASH",
-                amount: dto.amount ?? Number(outstanding),
-              },
-            ],
-          },
-          user,
-        );
-      }
-    }
-
     const customerOrder = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id WHERE c.id = ${customerOrderId} FOR UPDATE OF o`;
       const existing = await tx.customerOrder.findUnique({
         where: { id: customerOrderId },
-        include: { order: true },
+        include: { order: { include: { payments: true } } },
       });
 
       if (!existing) {
@@ -344,6 +288,31 @@ export class CustomerCourierService {
             "Buyurtma hali oshxonada tayyor bo'lmagan.",
           );
         }
+        if (nextStatus === OrderStatus.COMPLETED) {
+          const paidTotal = existing.order.payments
+            .filter(payment => payment.status === PaymentStatus.PAID || payment.status === PaymentStatus.SUCCESS)
+            .reduce((total, payment) => total.add(payment.amount), new Prisma.Decimal(0));
+          const outstanding = existing.order.total.sub(paidTotal);
+          if (outstanding.greaterThan(0)) {
+            if (dto.amount !== undefined && !outstanding.equals(dto.amount)) {
+              throw new BadRequestException("Buyurtmani yakunlash uchun qolgan summa to'liq qabul qilinishi kerak");
+            }
+            const courierShift = await tx.shift.findFirst({
+              where: { employeeId, branchId: existing.branchId, status: ShiftStatus.OPEN },
+              orderBy: { openedAt: "desc" },
+              select: { id: true },
+            });
+            if (!courierShift) throw new BadRequestException("Naqd pulni yig'ishdan oldin xodim smenasi ochiq bo'lishi shart");
+            if (dto.shiftId && dto.shiftId !== courierShift.id) throw new ForbiddenException("To'lov faqat o'zingizning ochiq smenangizga yoziladi");
+            await this.paymentsService.processOrderPayment({
+              orderId: existing.orderId,
+              idempotencyKey: dto.idempotencyKey ?? "courier-cash-" + existing.orderId,
+              shiftId: courierShift.id,
+              payments: [{ paymentMethodCode: dto.paymentMethodCode ?? "CASH", amount: Number(outstanding) }],
+            }, user, undefined, undefined, undefined, tx);
+          }
+        }
+
         await tx.order.update({
           where: { id: existing.orderId },
           data: {
