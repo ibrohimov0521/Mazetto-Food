@@ -195,7 +195,7 @@ function startHealthServer(botConfig: TelegramBotConfig, agentState: AgentState)
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
     if (url.pathname === "/health") {
-      sendJson(response, agentState.mode === "ready" || agentState.mode === "degraded" ? 200 : 503, {
+      sendJson(response, agentState.mode === "ready" ? 200 : 503, {
         ok: agentState.mode === "ready",
         mode: agentState.mode,
         backendOk: agentState.backendOk,
