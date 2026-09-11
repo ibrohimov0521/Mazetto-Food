@@ -53,7 +53,7 @@ async function runLevel(users) {
     p95: percentile(latencies, 0.95),
     p99: percentile(latencies, 0.99),
     slowest: latencies.at(-1) ?? 0,
-    failedByEndpoint: countBy(failures, (sample) => `${sample.name} ${sample.status ?? "ERR"}`),
+    failedByEndpoint: countBy(failures, (sample) => `${sample.name} ${sample.status ?? sample.error ?? "ERR"}: ${sample.errorMessage ?? ""}`.trim()),
   };
 }
 
