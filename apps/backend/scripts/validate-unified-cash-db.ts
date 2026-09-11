@@ -27,6 +27,10 @@ async function main() {
     const actor = async (name: string, roles: string[]): Promise<AuthenticatedUser> => {
       const user = await prisma.user.create({ data: { email: name + id + "@example.test", displayName: name } });
       const employee = await prisma.employee.create({ data: { userId: user.id, branchId: branch.id, employeeCode: name + id, firstName: name, status: "ACTIVE" } });
+      for (const code of roles) {
+        const role = await prisma.role.upsert({ where: { code }, update: {}, create: { code, name: code } });
+        await prisma.userRole.create({ data: { userId: user.id, roleId: role.id } });
+      }
       return { id: user.id, employeeId: employee.id, branchId: branch.id, roles, permissions: ["*"] };
     };
     const worker = await actor("Worker", ["KITCHEN", "CASHIER", "COURIER"]);
