@@ -4,7 +4,6 @@ import {
   OrderStatus,
   Prisma,
   ShiftStatus,
-  ShiftType,
 } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -27,7 +26,7 @@ export class CashRegisterService {
   async getCurrentShift(user: AuthenticatedUser) {
     const employeeId = this.requireEmployee(user);
     const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, type: ShiftType.CASHIER, status: ShiftStatus.OPEN },
+      where: { employeeId, status: ShiftStatus.OPEN },
       include: {
         branch: true,
         employee: true,
@@ -127,7 +126,7 @@ export class CashRegisterService {
   ) {
     const employeeId = this.requireEmployee(user);
     const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, type: ShiftType.CASHIER, status: ShiftStatus.OPEN },
+      where: { employeeId, status: ShiftStatus.OPEN },
       orderBy: { openedAt: "desc" },
       select: { id: true, branchId: true, employeeId: true },
     });
@@ -169,6 +168,26 @@ export class CashRegisterService {
           : {}),
       },
       include: {
+        statusHistory: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            reason: true,
+            createdAt: true,
+            changedByEmployee: {
+              select: {
+                firstName: true,
+                lastName: true,
+                employeeCode: true,
+              },
+            },
+            changedByUser: {
+              select: { displayName: true, email: true },
+            },
+          },
+        },
         items: { orderBy: { createdAt: "asc" } },
         payments: { include: { method: true }, orderBy: { createdAt: "asc" } },
       },
@@ -253,7 +272,7 @@ export class CashRegisterService {
       return;
     }
 
-    throw new ForbiddenException("Cannot access another cashier shift");
+    throw new ForbiddenException("Cannot access another employee shift");
   }
 
   private todayTashkentRange(): { start: Date; end: Date } {

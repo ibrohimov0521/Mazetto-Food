@@ -68,6 +68,17 @@ type OrderStatusHistory = {
   toStatus: OrderStatus;
   reason?: string | null;
   createdAt: string;
+  changedByEmployee?: {
+    id: string;
+    firstName: string;
+    lastName?: string | null;
+    employeeCode?: string | null;
+  } | null;
+  changedByUser?: {
+    id: string;
+    displayName?: string | null;
+    email?: string | null;
+  } | null;
 };
 
 type BulkOrderStatusResult = {
@@ -557,6 +568,19 @@ export function AdminOrdersPage() {
  * Shuning uchun bu yerda tugmalarni ko'rsatib, 403 ni kutib o'tirmaymiz —
  * sababi bilan oldindan bloklaymiz.
  */
+function statusActor(entry: OrderStatusHistory): string {
+  const employee = entry.changedByEmployee;
+  if (employee) {
+    return ["employee:", employee.firstName, employee.lastName]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return entry.changedByUser?.displayName
+    ? "user: " + entry.changedByUser.displayName
+    : "system";
+}
+
 function statusChangeBlockReason(
   user: AuthUser | null,
   order: AdminOrder,
@@ -803,6 +827,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                     </Badge>
                     <span className="text-xs text-mz-text-muted">
                       {formatDateTime(entry.createdAt)}
+                    </span>
+                    <span className="text-xs text-mz-text-muted">
+                      {statusActor(entry)}
                     </span>
                     {entry.reason ? (
                       <span className="text-xs text-mz-text-faint">

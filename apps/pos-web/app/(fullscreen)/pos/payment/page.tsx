@@ -203,7 +203,7 @@ function PaymentTerminal() {
                 <span>Remaining: {formatMoney(remaining)}</span>
               </div>
               {tenders.some((tender) => tender.code === "CASH") && !currentShift?.id ? (
-                <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">Open a cashier shift before accepting cash.</p>
+                <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">Open an employee shift before accepting cash.</p>
               ) : null}
               {message ? <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
               <button

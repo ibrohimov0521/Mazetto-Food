@@ -34,6 +34,21 @@ type DeliveryPoint = {
   label?: string;
   address?: string;
 };
+type CourierStatusHistoryEntry = {
+  id: string;
+  toStatus: OrderStatus;
+  reason?: string | null;
+  createdAt: string;
+  changedByEmployee?: {
+    firstName: string;
+    lastName?: string | null;
+    employeeCode?: string | null;
+  } | null;
+  changedByUser?: {
+    displayName?: string | null;
+    email?: string | null;
+  } | null;
+};
 type CourierOrder = {
   id: string;
   status: OrderStatus;
@@ -60,6 +75,7 @@ type CourierOrder = {
       quantity: string;
       totalPrice: string;
     }[];
+    statusHistory?: CourierStatusHistoryEntry[];
   } | null;
 };
 type DeliveryAction = "SERVED" | "COMPLETED" | "CANCELLED";
@@ -70,6 +86,14 @@ type CourierShift = {
   status: "OPEN" | "CLOSED";
   openedAt: string;
 };
+function historyActor(entry: CourierStatusHistoryEntry): string {
+  const employee = entry.changedByEmployee;
+  if (employee) {
+    return [employee.firstName, employee.lastName].filter(Boolean).join(" ");
+  }
+  return entry.changedByUser?.displayName || entry.changedByUser?.email || "Tizim";
+}
+
 const readyForDelivery = (order: CourierOrder) =>
   ["READY", "SERVED"].includes(order.order?.status ?? order.status);
 const courierHistoryStatuses = ["SERVED", "COMPLETED", "CANCELLED"] as const;
@@ -114,7 +138,7 @@ export function CourierOrdersPage() {
       setShiftError("");
     } catch (caught) {
       setShiftError(
-        caught instanceof Error ? caught.message : "Kuryer kassasi yuklanmadi",
+        caught instanceof Error ? caught.message : "Xodim kassasi yuklanmadi",
       );
     }
   }, []);
@@ -293,7 +317,7 @@ export function CourierOrdersPage() {
       setCourierShift(opened);
     } catch (caught) {
       setShiftError(
-        caught instanceof Error ? caught.message : "Kuryer smenasi ochilmadi",
+        caught instanceof Error ? caught.message : "Xodim smenasi ochilmadi",
       );
     } finally {
       setShiftBusy(false);
@@ -344,10 +368,10 @@ export function CourierOrdersPage() {
           />
         </div>
       </div>
-      <section className={styles.shiftSummary} aria-label="Kuryer kassasi">
+      <section className={styles.shiftSummary} aria-label="Xodim kassasi">
         <div className={styles.toolbar}>
           <div>
-            <h2>Kuryer kassasi</h2>
+            <h2>Umumiy xodim kassasi</h2>
             <p className={styles.muted}>
               {courierShift
                 ? "Smena #" +
@@ -551,6 +575,21 @@ export function CourierOrdersPage() {
                         {order.customer?.name ?? "Mijoz"} ·{" "}
                         {formatMoney(order.order?.total)}
                       </span>
+                      {order.order?.statusHistory?.length ? (
+                        <details className={styles.deliveryDetails}>
+                          <summary><Clock3 size={14} /> Statuslar tarixi</summary>
+                          <ul className={styles.itemList}>
+                            {order.order.statusHistory.map((entry) => (
+                              <li key={entry.id}>
+                                <span>{orderStatusLabels[entry.toStatus] ?? entry.toStatus}</span>
+                                <span className={styles.muted}>
+                                  {historyActor(entry)} · {new Date(entry.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tashkent" })}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
                     </div>
                     <span
                       className={styles.badge}

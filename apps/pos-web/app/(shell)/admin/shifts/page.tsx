@@ -12,7 +12,7 @@ export default function AdminShiftsPageRoute() {
           { label: "Kassa va moliya" },
           { label: "Smenalar" },
         ]}
-        description="Kassir smenalari va kassa solishtiruvi"
+        description="Xodimlarning umumiy kassasi va smena solishtiruvi"
         title="Smenalar"
       />
       <AdminShiftsPage />

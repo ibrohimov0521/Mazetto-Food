@@ -61,7 +61,15 @@ type Shift = {
 
 export default function ShiftPage() {
   return (
-    <RoleGuard roles={["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"]}>
+    <RoleGuard
+      roles={[
+        "CASHIER",
+        "BRANCH_MANAGER",
+        "SUPER_ADMIN",
+        "KITCHEN",
+        "COURIER",
+      ]}
+    >
       <PermissionGuard permission="SHIFT_VIEW_OWN">
         <ShiftConsole />
       </PermissionGuard>
@@ -230,7 +238,7 @@ function ShiftConsole() {
   }
 
   return (
-    <StaffShell title="Kassa smenasi">
+    <StaffShell title="Xodim kassasi">
       <div className={`${styles.content} ${styles.shiftContent}`}>
         <div className={styles.overview}>
           <div>
@@ -278,7 +286,7 @@ function ShiftConsole() {
           <StaffEmpty title="Smena yuklanmoqda..." />
         ) : shift ? (
           <>
-            <section className={styles.stats} aria-label="Kassa xulosasi">
+            <section className={styles.stats} aria-label="Umumiy kassa xulosasi">
               <div className={styles.stat}>
                 <span>Boshlang'ich naqd</span>
                 <strong>{money(shift.openingBalance)}</strong>
@@ -353,7 +361,7 @@ function ShiftConsole() {
                 <p className={styles.muted}>
                   Ochilgan: {dateTime(shift.openedAt)}
                 </p>
-                <h3 className={styles.subheading}>Kassa harakatlari</h3>
+                <h3 className={styles.subheading}>Umumiy kassa harakatlari</h3>
                 <div className={styles.shiftRows}>
                   {shift.cashTransactions?.length ? (
                     shift.cashTransactions.map((item) => (

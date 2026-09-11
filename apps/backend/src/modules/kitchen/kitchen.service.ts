@@ -5,10 +5,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  CashTransactionType,
   KitchenTicketStatus,
   OrderItemStatus,
   OrderStatus,
   OrderType,
+  PaymentStatus,
   Prisma,
 } from "@prisma/client";
 import { randomInt } from "node:crypto";
@@ -48,6 +50,10 @@ type KitchenTransitionOrder = {
   acceptedById: string | null;
   cancelledAt: Date | null;
   cancellationReason: string | null;
+  paymentStatus: PaymentStatus;
+  total: Prisma.Decimal;
+  payments: { amount: Prisma.Decimal; status: PaymentStatus }[];
+  customerOrder: { paymentMethod: string | null } | null;
   kitchenTickets: {
     id: string;
     orderId: string;
@@ -277,6 +283,14 @@ export class KitchenService {
       }
 
       const now = new Date();
+      if (
+        transition.orderStatus === OrderStatus.SERVED &&
+        order.type === OrderType.TAKEAWAY &&
+        order.customerOrder?.paymentMethod?.toUpperCase() === "CASH"
+      ) {
+        await this.capturePickupCash(tx, order, actor.user, now);
+      }
+
       const orderData: Prisma.OrderUpdateInput = {};
       const user = actor.user;
 
@@ -519,6 +533,116 @@ export class KitchenService {
     throw new BadRequestException("Bu statusdan bunday amal bajarib bo'lmaydi");
   }
 
+  private async capturePickupCash(
+    tx: TransactionClient,
+    order: Pick<
+      KitchenTransitionOrder,
+      "id" | "branchId" | "paymentStatus" | "total" | "payments"
+    >,
+    actor: AuthenticatedUser | undefined,
+    occurredAt: Date,
+  ): Promise<void> {
+    const successfulStatuses: PaymentStatus[] = [
+      PaymentStatus.PAID,
+      PaymentStatus.SUCCESS,
+    ];
+    const paidTotal = order.payments
+      .filter((payment) => successfulStatuses.includes(payment.status))
+      .reduce(
+        (total, payment) => total.add(payment.amount),
+        new Prisma.Decimal(0),
+      );
+    const outstanding = order.total.sub(paidTotal);
+    if (outstanding.lessThanOrEqualTo(0)) {
+      return;
+    }
+
+    if (!actor?.employeeId) {
+      throw new ForbiddenException(
+        "Pickup cash requires an employee-linked account",
+      );
+    }
+
+    const shift = await tx.shift.findFirst({
+      where: {
+        branchId: order.branchId,
+        employeeId: actor.employeeId,
+        status: "OPEN",
+      },
+      orderBy: { openedAt: "desc" },
+      select: { id: true },
+    });
+    if (!shift) {
+      throw new BadRequestException(
+        "Open employee shift is required before accepting pickup cash",
+      );
+    }
+
+    const branchCashMethod = await tx.paymentMethod.findFirst({
+      where: {
+        branchId: order.branchId,
+        code: "CASH",
+        isActive: true,
+      },
+    });
+    const cashMethod =
+      branchCashMethod ??
+      (await tx.paymentMethod.findFirst({
+        where: { branchId: null, code: "CASH", isActive: true },
+      }));
+    if (!cashMethod) {
+      throw new BadRequestException("Cash payment method is not available");
+    }
+
+    const payment = await tx.payment.create({
+      data: {
+        orderId: order.id,
+        paymentMethodId: cashMethod.id,
+        acceptedById: actor.employeeId,
+        createdById: actor.id,
+        amount: outstanding,
+        status: PaymentStatus.PAID,
+        methodCode: cashMethod.code,
+        reference: "Pickup cash at kitchen handoff",
+        paidAt: occurredAt,
+      },
+    });
+
+    await tx.revenueRecord.create({
+      data: {
+        branchId: order.branchId,
+        orderId: order.id,
+        paymentId: payment.id,
+        shiftId: shift.id,
+        employeeId: actor.employeeId,
+        source: "ORDER",
+        amount: outstanding,
+        description: "Pickup cash payment",
+        recordedAt: occurredAt,
+      },
+    });
+
+    await tx.cashTransaction.create({
+      data: {
+        branchId: order.branchId,
+        shiftId: shift.id,
+        employeeId: actor.employeeId,
+        orderId: order.id,
+        paymentId: payment.id,
+        type: CashTransactionType.SALE,
+        amount: outstanding,
+        reason: "Pickup cash received at kitchen handoff",
+        createdById: actor.id,
+        occurredAt,
+      },
+    });
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: { paymentStatus: PaymentStatus.PAID },
+    });
+  }
+
   private async findOrderForTransition(
     tx: TransactionClient,
     orderId: string,
@@ -530,6 +654,10 @@ export class KitchenService {
         branchId: true,
         type: true,
         status: true,
+        paymentStatus: true,
+        total: true,
+        customerOrder: { select: { paymentMethod: true } },
+        payments: { select: { amount: true, status: true } },
         acceptedAt: true,
         acceptedById: true,
         cancelledAt: true,
@@ -581,6 +709,17 @@ export class KitchenService {
           branch: true,
           table: { include: { hall: true } },
           waiter: true,
+          statusHistory: {
+            orderBy: { createdAt: "asc" },
+            include: {
+              changedByEmployee: {
+                select: { id: true, firstName: true, lastName: true, employeeCode: true },
+              },
+              changedByUser: {
+                select: { id: true, displayName: true, email: true },
+              },
+            },
+          },
           items: {
             where: { status: OrderItemStatus.ACTIVE },
             orderBy: { createdAt: "asc" },

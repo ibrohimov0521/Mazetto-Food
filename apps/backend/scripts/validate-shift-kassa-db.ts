@@ -50,7 +50,7 @@ async function main(): Promise<void> {
 
     await assert.rejects(
       () => ordersService.createPosCheckout(posDto(fixture, "without-shift", 1, 12000), fixture.cashier),
-      /Open cashier shift/i,
+      /Open employee shift/i,
     );
 
     const opened = await cashRegisterService.openShift({ openingBalance: 100000 }, fixture.cashier);
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
 
     await assert.rejects(
       () => cashRegisterService.closeShift(opened.id, { closingBalance: 124000 }, fixture.otherCashier),
-      /another cashier shift/i,
+      /another employee shift/i,
     );
     await assert.rejects(
       () => cashRegisterService.openShift({ branchId: fixture.otherBranchId, openingBalance: 0 }, fixture.cashier),
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
 
     await assert.rejects(
       () => ordersService.createPosCheckout(posDto(fixture, "after-close", 1, 12000), fixture.cashier),
-      /Open cashier shift/i,
+      /Open employee shift/i,
     );
 
     const reopened = await cashRegisterService.openShift({ openingBalance: 0 }, fixture.cashier);

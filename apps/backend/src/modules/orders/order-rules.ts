@@ -154,6 +154,14 @@ export function orderInclude() {
     },
     statusHistory: {
       orderBy: { createdAt: "asc" },
+      include: {
+        changedByEmployee: {
+          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        },
+        changedByUser: {
+          select: { id: true, displayName: true, email: true },
+        },
+      },
     },
   } satisfies Prisma.OrderInclude;
 }

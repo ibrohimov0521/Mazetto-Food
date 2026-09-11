@@ -123,7 +123,7 @@ const workspacePanels: WorkspacePanel[] = [
     description: "Smena ochish, POS va to'lovlarni yuritish",
     href: "/shift",
     permission: "SHIFT_VIEW_OWN",
-    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "CASHIER"],
+    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "CASHIER", "KITCHEN", "COURIER"],
   },
   {
     title: "POS terminal",
