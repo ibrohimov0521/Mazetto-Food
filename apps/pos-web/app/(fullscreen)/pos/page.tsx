@@ -77,6 +77,22 @@ type CurrentShift = {
   openedAt?: string;
   branch?: { name?: string | null } | null;
 };
+type StatusHistoryEntry = {
+  id: string;
+  fromStatus: OrderStatus | null;
+  toStatus: OrderStatus;
+  reason?: string | null;
+  createdAt: string;
+  changedByEmployee?: {
+    firstName: string;
+    lastName?: string | null;
+    employeeCode?: string | null;
+  } | null;
+  changedByUser?: {
+    displayName?: string | null;
+    email?: string | null;
+  } | null;
+};
 type ShiftHistoryOrder = {
   id: string;
   orderNumber: string;
@@ -85,6 +101,7 @@ type ShiftHistoryOrder = {
   total: string;
   createdAt: string;
   items: { id: string; productName: string; quantity: string; totalPrice: string }[];
+  statusHistory?: StatusHistoryEntry[];
 };
 const formatter = new Intl.NumberFormat("uz-UZ");
 const createCheckoutKey = () =>
@@ -172,6 +189,14 @@ function PosTerminal() {
     void loadTerminal();
     return () => loadRequest.current?.abort();
   }, [loadTerminal]);
+
+  function historyActor(entry: StatusHistoryEntry): string {
+    const employee = entry.changedByEmployee;
+    if (employee) {
+      return [employee.firstName, employee.lastName].filter(Boolean).join(" ");
+    }
+    return entry.changedByUser?.displayName || entry.changedByUser?.email || "Tizim";
+  }
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -701,6 +726,21 @@ function PosTerminal() {
                   <div>
                     <strong>#{order.displayOrderNumber ?? order.orderNumber}</strong>
                     <span className={styles.muted}>{order.items.length} ta mahsulot · {new Date(order.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tashkent" })}</span>
+                    {order.statusHistory?.length ? (
+                      <details className={styles.deliveryDetails}>
+                        <summary><Clock3 size={14} /> Statuslar tarixi</summary>
+                        <ul className={styles.itemList}>
+                          {order.statusHistory.map((entry) => (
+                            <li key={entry.id}>
+                              <span>{orderStatusLabels[entry.toStatus] ?? entry.toStatus}</span>
+                              <span className={styles.muted}>
+                                {historyActor(entry)} · {new Date(entry.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tashkent" })}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
                   </div>
                   <div className={styles.historyAmount}>
                     <span className={styles.badge} data-tone={order.status === "CANCELLED" ? "late" : order.status === "COMPLETED" || order.status === "SERVED" ? "ready" : "waiting"}>

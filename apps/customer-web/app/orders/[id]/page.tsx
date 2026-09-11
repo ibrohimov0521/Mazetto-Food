@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Clock3, UserRound } from "lucide-react";
 import { CustomerAuthPanel } from "../../../components/customer-auth-panel";
 import { MotionDiv, pageMotion, sectionMotion } from "../../../components/motion-primitives";
 import { SiteShell } from "../../../components/site-shell";
@@ -50,6 +51,15 @@ type CustomerOrderDetail = {
       notes?: string | null;
     }[];
     payments?: Payment[];
+    statusHistory?: {
+      id: string;
+      fromStatus?: string | null;
+      toStatus: string;
+      reason?: string | null;
+      createdAt: string;
+      changedByEmployee?: { id: string; firstName: string; lastName: string } | null;
+      changedByUser?: { id: string; displayName?: string | null } | null;
+    }[];
   };
 };
 
@@ -181,6 +191,8 @@ function OrderDetail() {
           <OrderProgress value={order} />
         </section>
 
+        <StatusHistory entries={order.order.statusHistory ?? []} type={order.type} />
+
         <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
           <h2 className="text-2xl font-black text-[#17314A]">Mahsulotlar</h2>
           <div className="mt-4 grid gap-3">
@@ -237,6 +249,75 @@ function OrderDetail() {
         </section>
       </aside>
     </MotionDiv>
+  );
+}
+
+function StatusHistory({
+  entries,
+  type,
+}: {
+  entries: NonNullable<CustomerOrderDetail["order"]["statusHistory"]>;
+  type: string;
+}) {
+  return (
+    <section className="mf-checkout-card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0B7F75]">
+            Buyurtma jurnali
+          </p>
+          <h2 className="mt-1 text-2xl font-black text-[#17314A]">
+            Holatlar tarixi
+          </h2>
+        </div>
+        <Clock3 className="mt-1 text-[#0B7F75]" size={22} aria-hidden="true" />
+      </div>
+      {entries.length ? (
+        <ol className="mt-5 grid gap-0">
+          {entries.map((entry, index) => {
+            const employee = entry.changedByEmployee;
+            const actor =
+              employee
+                ? [employee.firstName, employee.lastName].filter(Boolean).join(" ")
+                : entry.changedByUser?.displayName || "Tizim";
+            return (
+              <li className="relative flex gap-3 pb-5 last:pb-0" key={entry.id}>
+                {index < entries.length - 1 ? (
+                  <span className="absolute left-[13px] top-7 h-[calc(100%-18px)] w-px bg-[#0B7F75]/18" />
+                ) : null}
+                <span className="relative z-10 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#0B7F75]/10 text-[#0B7F75]">
+                  <CheckCircle2 size={17} aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                    <p className="font-black text-[#17314A]">
+                      {trackingLabel(entry.toStatus, type)}
+                    </p>
+                    <time
+                      className="text-xs font-semibold text-[#17314A]/48"
+                      dateTime={entry.createdAt}
+                    >
+                      {new Date(entry.createdAt).toLocaleString("uz-UZ")}
+                    </time>
+                  </div>
+                  <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-[#17314A]/55">
+                    <UserRound size={13} aria-hidden="true" />
+                    {actor}
+                  </p>
+                  {entry.reason ? (
+                    <p className="mt-1 text-xs text-[#17314A]/45">{entry.reason}</p>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="mt-4 text-sm font-semibold text-[#17314A]/55">
+          Holatlar tarixi hali shakllanmagan.
+        </p>
+      )}
+    </section>
   );
 }
 

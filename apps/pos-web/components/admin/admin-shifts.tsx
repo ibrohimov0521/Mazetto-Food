@@ -15,7 +15,7 @@ import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 
 /*
- * Kassir smenalari va kassa solishtiruvi.
+ * Xodimlarning umumiy kassasi va smena solishtiruvi.
  *
  * `GET /shifts` 4-bosqichda qo'shildi (`SHIFT_VIEW_BRANCH` permission'i bilan).
  * Ilgari faqat JORIY foydalanuvchi smenasi ko'rinardi, shuning uchun admin
@@ -258,7 +258,7 @@ export function AdminShiftsPage() {
         </FilterBar>
 
         <DataTable
-          caption="Kassir smenalari"
+          caption="Xodim smenalari"
           columns={columns}
           emptyDescription="Filtrni o'zgartirib ko'ring yoki boshqa sahifaga o'ting."
           emptyTitle="Smena topilmadi"

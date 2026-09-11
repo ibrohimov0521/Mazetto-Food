@@ -12,7 +12,6 @@ import {
   PaymentStatus,
   Prisma,
   RevenueRecordSource,
-  ShiftType,
   TableStatus,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -218,7 +217,7 @@ export class PaymentsService {
 
           if (hasCashTender && !dto.shiftId) {
             throw new BadRequestException(
-              "Cash payments require an open cashier shift",
+              "Cash payments require an open employee shift",
             );
           }
 
@@ -228,9 +227,6 @@ export class PaymentsService {
               dto.shiftId,
               order.branchId,
               employeeId,
-              order.type === "DINE_IN" || order.source === OrderSource.POS
-                ? ShiftType.CASHIER
-                : undefined,
             );
           }
 
@@ -278,7 +274,7 @@ export class PaymentsService {
 
             if (method.code === "CASH" && !dto.shiftId) {
               throw new BadRequestException(
-                "Cash payments require an open cashier shift",
+                "Cash payments require an open employee shift",
               );
             }
 
@@ -782,7 +778,6 @@ export class PaymentsService {
     shiftId: string,
     branchId: string,
     employeeId: string,
-    expectedType?: ShiftType,
   ): Promise<void> {
     const shift = await tx.shift.findFirst({
       where: {
@@ -790,7 +785,6 @@ export class PaymentsService {
         branchId,
         employeeId,
         status: "OPEN",
-        ...(expectedType ? { type: expectedType } : {}),
       },
     });
 

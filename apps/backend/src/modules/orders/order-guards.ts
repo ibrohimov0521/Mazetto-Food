@@ -7,7 +7,6 @@ import {
   OrderItemStatus,
   Prisma,
   ShiftStatus,
-  ShiftType,
 } from "@prisma/client";
 import type { PrismaService } from "../../prisma/prisma.service";
 import type { OrderItemModifierDto } from "./dto/order-item.dto";
@@ -117,7 +116,6 @@ export async function assertOpenCashierShift(
       branchId,
       employeeId,
       status: ShiftStatus.OPEN,
-      type: ShiftType.CASHIER,
     },
     orderBy: { openedAt: "desc" },
     select: { id: true },
@@ -125,7 +123,7 @@ export async function assertOpenCashierShift(
 
   if (!shift) {
     throw new BadRequestException(
-      "Open cashier shift is required before POS sales",
+      "Open employee shift is required before POS sales",
     );
   }
 
@@ -135,14 +133,13 @@ export async function assertOpenCashierShift(
       branchId,
       employeeId,
       status: ShiftStatus.OPEN,
-      type: ShiftType.CASHIER,
     },
     data: { updatedAt: new Date() },
   });
 
   if (touched.count !== 1) {
     throw new BadRequestException(
-      "Open cashier shift is required before POS sales",
+      "Open employee shift is required before POS sales",
     );
   }
 

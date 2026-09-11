@@ -93,7 +93,9 @@ export class ShiftsService {
           employeeId,
           deviceId: dto.deviceId ?? null,
           shiftNumber: (latestShift?.shiftNumber ?? 0) + 1,
-          type: dto.type ?? ShiftType.CASHIER,
+          // Cash is owned by one employee shift. type is retained only
+          // for legacy rows and must not create a second cash drawer.
+          type: ShiftType.CASHIER,
           openingBalance: new Prisma.Decimal(dto.openingBalance),
         },
         include: this.shiftInclude(),
@@ -249,7 +251,7 @@ export class ShiftsService {
     }
 
     return this.openShift(
-      { ...dto, employeeId: user.employeeId, type: ShiftType.COURIER },
+      { ...dto, employeeId: user.employeeId, type: ShiftType.CASHIER },
       user,
     );
   }
@@ -263,7 +265,7 @@ export class ShiftsService {
     }
 
     const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, type: ShiftType.COURIER, status: ShiftStatus.OPEN },
+      where: { employeeId, status: ShiftStatus.OPEN },
       include: {
         branch: { select: { id: true, code: true, name: true } },
         employee: { select: { id: true, firstName: true, lastName: true } },
@@ -304,13 +306,12 @@ export class ShiftsService {
       const shift = await tx.shift.findFirst({
         where: {
           employeeId,
-          type: ShiftType.COURIER,
           status: ShiftStatus.OPEN,
         },
         orderBy: { openedAt: "desc" },
       });
       if (!shift) {
-        throw new BadRequestException("Open courier shift is required");
+        throw new BadRequestException("Open employee shift is required");
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
@@ -392,13 +393,12 @@ export class ShiftsService {
       const cashierShift = await tx.shift.findFirst({
         where: {
           employeeId,
-          type: ShiftType.CASHIER,
           status: ShiftStatus.OPEN,
         },
         orderBy: { openedAt: "desc" },
       });
       if (!cashierShift) {
-        throw new BadRequestException("Open cashier shift is required");
+        throw new BadRequestException("Open employee shift is required");
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, cashierShift.branchId);
@@ -660,7 +660,7 @@ export class ShiftsService {
       return employeeId;
     }
 
-    throw new ForbiddenException("Cannot operate another cashier shift");
+    throw new ForbiddenException("Cannot operate another employee shift");
   }
 
   private assertCanOperateShift(user: AuthenticatedUser, shiftEmployeeId: string): void {
@@ -668,7 +668,7 @@ export class ShiftsService {
       return;
     }
 
-    throw new ForbiddenException("Cannot operate another cashier shift");
+    throw new ForbiddenException("Cannot operate another employee shift");
   }
 
   private canManageBranchShift(user: AuthenticatedUser): boolean {

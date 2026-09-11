@@ -176,6 +176,22 @@ export function customerOrderInclude(options?: { includePayments?: boolean }) {
         displayOrderNumber: true,
         status: true,
         total: true,
+        statusHistory: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            reason: true,
+            createdAt: true,
+            changedByEmployee: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+            changedByUser: {
+              select: { id: true, displayName: true },
+            },
+          },
+        },
         items: {
           orderBy: { createdAt: "asc" },
           select: {

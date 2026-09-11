@@ -9,7 +9,6 @@ import {
   PaymentStatus,
   Prisma,
   ShiftStatus,
-  ShiftType,
 } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -102,6 +101,26 @@ export class CustomerCourierService {
         },
         order: {
           include: {
+            statusHistory: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                fromStatus: true,
+                toStatus: true,
+                reason: true,
+                createdAt: true,
+                changedByEmployee: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    employeeCode: true,
+                  },
+                },
+                changedByUser: {
+                  select: { displayName: true, email: true },
+                },
+              },
+            },
             items: {
               orderBy: { createdAt: "asc" },
               select: {
@@ -164,6 +183,26 @@ export class CustomerCourierService {
         },
         order: {
           include: {
+            statusHistory: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                fromStatus: true,
+                toStatus: true,
+                reason: true,
+                createdAt: true,
+                changedByEmployee: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    employeeCode: true,
+                  },
+                },
+                changedByUser: {
+                  select: { displayName: true, email: true },
+                },
+              },
+            },
             items: {
               orderBy: { createdAt: "asc" },
               select: {
@@ -218,7 +257,6 @@ export class CustomerCourierService {
         const courierShift = await this.prisma.shift.findFirst({
           where: {
             employeeId,
-            type: ShiftType.COURIER,
             status: ShiftStatus.OPEN,
           },
           orderBy: { openedAt: "desc" },
@@ -227,7 +265,7 @@ export class CustomerCourierService {
 
         if (!courierShift || courierShift.branchId !== paymentOrder.branchId) {
           throw new BadRequestException(
-            "Open courier shift is required before collecting cash",
+            "Open employee shift is required before collecting cash",
           );
         }
 
@@ -358,7 +396,27 @@ export class CustomerCourierService {
           },
           order: {
             include: {
-              items: {
+              statusHistory: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                fromStatus: true,
+                toStatus: true,
+                reason: true,
+                createdAt: true,
+                changedByEmployee: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    employeeCode: true,
+                  },
+                },
+                changedByUser: {
+                  select: { displayName: true, email: true },
+                },
+              },
+            },
+            items: {
                 orderBy: { createdAt: "asc" },
                 select: {
                   id: true,
