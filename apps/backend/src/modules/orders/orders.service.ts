@@ -27,6 +27,7 @@ import {
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { customerVisibleProductCodes } from "../customers/customer-catalog-visibility";
+import { buildOrderSearchWhere } from "../customers/customer-shared";
 import { InventoryService } from "../inventory/inventory.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import type { CreateOrderDto } from "./dto/create-order.dto";
@@ -631,6 +632,14 @@ export class OrdersService {
 
   async listOrders(query: ListOrdersDto, user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user, query.branchId);
+    const search = query.search?.trim();
+    const createdAt =
+      query.from || query.to
+        ? {
+            ...(query.from ? { gte: new Date(query.from) } : {}),
+            ...(query.to ? { lte: new Date(query.to) } : {}),
+          }
+        : undefined;
 
     return this.prisma.order.findMany({
       where: {
@@ -638,6 +647,8 @@ export class OrdersService {
         ...(query.status ? { status: query.status } : {}),
         ...(query.type ? { type: query.type } : {}),
         ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
+        ...(createdAt ? { createdAt } : {}),
+        ...(search ? buildOrderSearchWhere(search) : {}),
       },
       orderBy: { createdAt: "desc" },
       skip: query.offset,
