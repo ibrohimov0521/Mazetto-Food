@@ -559,7 +559,7 @@ export class KitchenService {
 
     if (!actor?.employeeId) {
       throw new ForbiddenException(
-        "Pickup cash requires an employee-linked account",
+        "Naqd pulni qabul qilish uchun xodimga biriktirilgan hisob kerak",
       );
     }
 
@@ -574,7 +574,7 @@ export class KitchenService {
     });
     if (!shift) {
       throw new BadRequestException(
-        "Open employee shift is required before accepting pickup cash",
+        "Naqd pulni qabul qilishdan oldin xodim smenasi ochiq bo'lishi shart",
       );
     }
 
@@ -591,7 +591,7 @@ export class KitchenService {
         where: { branchId: null, code: "CASH", isActive: true },
       }));
     if (!cashMethod) {
-      throw new BadRequestException("Cash payment method is not available");
+      throw new BadRequestException("Naqd pul to'lov usuli mavjud emas");
     }
 
     const payment = await tx.payment.create({

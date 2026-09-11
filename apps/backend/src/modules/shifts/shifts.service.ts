@@ -311,7 +311,7 @@ export class ShiftsService {
         orderBy: { openedAt: "desc" },
       });
       if (!shift) {
-        throw new BadRequestException("Open employee shift is required");
+        throw new BadRequestException("Xodim smenasi ochiq bo'lishi shart");
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
@@ -398,7 +398,7 @@ export class ShiftsService {
         orderBy: { openedAt: "desc" },
       });
       if (!cashierShift) {
-        throw new BadRequestException("Open employee shift is required");
+        throw new BadRequestException("Xodim smenasi ochiq bo'lishi shart");
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, cashierShift.branchId);

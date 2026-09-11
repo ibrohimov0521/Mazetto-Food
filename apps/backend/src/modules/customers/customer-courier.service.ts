@@ -265,7 +265,7 @@ export class CustomerCourierService {
 
         if (!courierShift || courierShift.branchId !== paymentOrder.branchId) {
           throw new BadRequestException(
-            "Open employee shift is required before collecting cash",
+            "Naqd pulni yig'ishdan oldin xodim smenasi ochiq bo'lishi shart",
           );
         }
 
