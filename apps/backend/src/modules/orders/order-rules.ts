@@ -1,5 +1,10 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
-import { OrderStatus, OrderType, Prisma } from "@prisma/client";
+import {
+  OrderItemStatus,
+  OrderStatus,
+  OrderType,
+  Prisma,
+} from "@prisma/client";
 import { createHash, randomInt } from "node:crypto";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PosOrderStatus } from "./dto/order-status.dto";
@@ -297,6 +302,34 @@ export function calculateItemTotal(
   return unitPrice.add(modifierTotal).mul(quantity);
 }
 
+/*
+ * Zaxirasi HALI ayirilmagan buyurtma qatorlari.
+ *
+ * `stockDeductedAt` maydoni sxemada bor va hatto INDEKSLANGAN
+ * (`@@index([stockDeductedAt])`), lekin u faqat YOZILARDI — hech qachon
+ * o'qilmasdi. Natijada `confirmOrderForPreparation` ikkinchi marta
+ * chaqirilganda (u `CONFIRMED` holatni ataylab qabul qiladi) barcha
+ * faol qatorlar qaytadan ayirilardi va ombor qoldig'i har qayta
+ * yuborishda kamayib ketardi.
+ *
+ * Filtr qo'shilgach xatti-harakat ikki tomondan to'g'ri bo'ladi:
+ * o'zgarmagan buyurtmani qayta tasdiqlash hech narsani ayirmaydi
+ * (idempotent), keyin qo'shilgan yangi qatorlar esa ayiriladi.
+ *
+ * `variantId: { not: null }` saqlanadi: retsept variantga bog'langan,
+ * variantsiz qatorning ayirish uchun retsepti yo'q.
+ */
+export function pendingStockDeductionWhere(
+  orderId: string,
+): Prisma.OrderItemWhereInput {
+  return {
+    orderId,
+    status: OrderItemStatus.ACTIVE,
+    variantId: { not: null },
+    stockDeductedAt: null,
+  };
+}
+
 /** Buyurtma o'qishda BIR XIL shakl — javob tuzilishi joydan joyga farq qilmasin. */
 export function orderInclude() {
   return {
@@ -312,6 +345,24 @@ export function orderInclude() {
       orderBy: { createdAt: "asc" },
       include: {
         method: { select: { id: true, code: true, name: true } },
+      },
+    },
+    /*
+     * Chek — faqat ishoratlar, MAZMUNSIZ.
+     *
+     * `content` (butun chek JSON'i) ataylab olinmaydi: u har bir
+     * buyurtma javobini bejiz kattalashtirardi. Bu yerda kerak bo'lgani
+     * — chek bor-yo'qligi va uning id'si, ya'ni kassa va admin ekrani
+     * chekka havola qo'ya olishi. Bitta buyurtmaga bitta chek
+     * (`@@unique([orderId])`).
+     */
+    receipts: {
+      select: {
+        id: true,
+        receiptNumber: true,
+        printed: true,
+        printedAt: true,
+        createdAt: true,
       },
     },
     statusHistory: {

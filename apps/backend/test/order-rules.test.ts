@@ -13,6 +13,7 @@ import {
   isRetryableTransactionConflict,
   isUniqueConstraintError,
   normalizePosCheckoutTenders,
+  pendingStockDeductionWhere,
   requireEmployee,
   resolveEmployeeId,
   summarizePosPayment,
@@ -461,4 +462,18 @@ test("so'rov hash'i to'lov TARTIBIGA bog'liq emas", () => {
     "e1",
   );
   assert.equal(a, b);
+});
+
+test("zaxira ayirish filtri ikki marta ayirishni to'xtatadi", () => {
+  /*
+   * `stockDeductedAt` sxemada bor va INDEKSLANGAN, lekin faqat
+   * yozilardi. `confirmOrderForPreparation` `CONFIRMED` holatni ataylab
+   * qabul qiladi, shuning uchun qayta yuborishda barcha faol qatorlar
+   * ikkinchi marta ayirilardi va ombor qoldig'i kamayib ketardi.
+   */
+  const where = pendingStockDeductionWhere("o1");
+  assert.equal(where.orderId, "o1");
+  assert.equal(where.stockDeductedAt, null);
+  assert.deepEqual(where.variantId, { not: null });
+  assert.equal(where.status, "ACTIVE");
 });

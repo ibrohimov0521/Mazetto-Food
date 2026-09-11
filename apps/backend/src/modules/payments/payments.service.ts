@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { ensureOrderReceipt } from "../receipts/receipt-writer";
 import type { ListPaymentsDto } from "./dto/list-payments.dto";
 import type {
   CreatePaymentDto,
@@ -31,17 +32,6 @@ type NormalizedPaymentTender = {
   amount: Prisma.Decimal;
   transactionId?: string;
 };
-
-type OrderForReceipt = Prisma.OrderGetPayload<{
-  include: {
-    branch: true;
-    items: true;
-    payments: { include: { method: true } };
-    receipts: true;
-  };
-}>;
-
-const RECEIPT_NUMBER_ATTEMPTS = 5;
 
 @Injectable()
 export class PaymentsService {
@@ -392,7 +382,7 @@ export class PaymentsService {
                 });
               }
 
-              await this.createReceipt(tx, order.id);
+              await ensureOrderReceipt(tx, order.id);
             }
           }
 
@@ -659,109 +649,6 @@ export class PaymentsService {
     // Ustun nomi aniqlanmasa idempotency yo'liga tushmaymiz: noto'g'ri talqin
     // qilishdan ko'ra xatoni ochiq ko'tarish xavfsizroq.
     return false;
-  }
-
-  private async createReceipt(
-    tx: Prisma.TransactionClient,
-    orderId: string,
-  ): Promise<void> {
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
-      include: {
-        branch: true,
-        items: true,
-        payments: { include: { method: true } },
-        receipts: true,
-      },
-    });
-
-    if (!order || order.receipts.length > 0) {
-      return;
-    }
-
-    await this.createReceiptRow(tx, order);
-  }
-
-  /*
-   * Chek raqami tasodifiy sondan yasaladi va uning fazosi KUNIGA atigi
-   * 900 000 (soniyada emas). Tug'ilgan kun paradoksi bo'yicha kuniga 500 ta
-   * chekda to'qnashuv ehtimoli ~13%, 1000 tada ~43%.
-   *
-   * To'qnashuv shunchaki chekni emas, BUTUN to'lov tranzaksiyasini bekor
-   * qilardi (PHASE 6 H4). Shuning uchun raqam chegaralangan qayta urinish
-   * bilan olinadi — oshxona ticket raqamidagi naqsh bilan bir xil.
-   *
-   * Qayta urinish `tx` ichida ishlaydi, ya'ni PostgreSQL xatodan keyin
-   * tranzaksiyani bekor qilmasligi uchun har urinish o'z savepoint'ida
-   * bo'lishi kerak — Prisma buni ichki `$transaction` bilan bermaydi, shuning
-   * uchun raqam OLDINDAN band emasligiga ishonch hosil qilinadi.
-   */
-  private async createReceiptRow(
-    tx: Prisma.TransactionClient,
-    order: OrderForReceipt,
-  ): Promise<void> {
-    const receiptNumber = await this.allocateReceiptNumber(tx);
-
-    await tx.receipt.create({
-      data: {
-        orderId: order.id,
-        branchId: order.branchId,
-        receiptNumber,
-        total: order.total,
-        content: {
-          title: "MAZETTO FOOD",
-          branchName: order.branch.name,
-          orderNumber: order.orderNumber,
-          items: order.items.map((item) => ({
-            name: item.productName,
-            variant: item.variantName,
-            quantity: item.quantity.toFixed(3),
-            total: item.totalPrice.toFixed(2),
-          })),
-          payments: order.payments.map((payment) => ({
-            method: payment.method.code,
-            amount: payment.amount.toFixed(2),
-          })),
-          total: order.total.toFixed(2),
-          dateTime: new Date().toISOString(),
-        },
-      },
-    });
-  }
-
-  /**
-   * Band bo'lmagan chek raqamini qaytaradi.
-   *
-   * Nomzod avval `findUnique` bilan tekshiriladi, keyin yoziladi. Bu poygani
-   * BUTUNLAY yopmaydi — ikki tranzaksiya bir xil nomzodni bir vaqtda tekshirib
-   * o'tishi mumkin — lekin to'qnashuv ehtimolini urinishlar soniga qarab
-   * eksponensial kamaytiradi. Uni butunlay yopish uchun kunlik ketma-ket
-   * hisoblagich va `pg_advisory_xact_lock` kerak (buyurtmaning ko'rinadigan
-   * raqamida shunday qilingan); u chek formatini o'zgartiradi, ya'ni alohida
-   * qaror.
-   */
-  private async allocateReceiptNumber(
-    tx: Prisma.TransactionClient,
-  ): Promise<string> {
-    for (let attempt = 0; attempt < RECEIPT_NUMBER_ATTEMPTS; attempt += 1) {
-      const candidate = this.createReceiptNumber();
-      const existing = await tx.receipt.findUnique({
-        where: { receiptNumber: candidate },
-        select: { id: true },
-      });
-
-      if (!existing) {
-        return candidate;
-      }
-    }
-
-    throw new BadRequestException("Unable to allocate a receipt number");
-  }
-
-  private createReceiptNumber(): string {
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-    return `RCPT-${date}-${Math.floor(Math.random() * 900000 + 100000)}`;
   }
 
   private async assertEmployeeInBranch(

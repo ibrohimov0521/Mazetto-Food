@@ -40,6 +40,7 @@ import type {
   UpdateOrderStatusDto,
 } from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
+import { ensureOrderReceipt } from "../receipts/receipt-writer";
 import { allocateDisplayOrderNumber } from "./order-display-number";
 import {
   assertOrderCanChange,
@@ -53,6 +54,7 @@ import {
   isUniqueConstraintError,
   normalizePosCheckoutTenders,
   orderInclude,
+  pendingStockDeductionWhere,
   requireEmployee,
   resolveEmployeeId,
   summarizePosPayment,
@@ -484,6 +486,16 @@ export class OrdersService {
               where: { id: order.id },
               data: { paymentStatus: PaymentStatus.PAID },
             });
+
+            /*
+             * Kassa sotuvi ham CHEK yozuvini yaratadi.
+             *
+             * Ilgari bu qadam yo'q edi: chek faqat `PaymentsService`
+             * ichida, o'z `private` metodida yaratilardi. Natijada POS
+             * naqd sotuvining cheki hech qachon yozilmasdi va admin
+             * paneldagi cheklar ro'yxatida kassa sotuvlari ko'rinmasdi.
+             */
+            await ensureOrderReceipt(tx, order.id);
 
             const confirmed = await this.confirmOrderForPreparation(tx, {
               orderId: order.id,
@@ -1117,11 +1129,7 @@ export class OrdersService {
     userId: string | null,
   ): Promise<void> {
     const items = await tx.orderItem.findMany({
-      where: {
-        orderId,
-        status: OrderItemStatus.ACTIVE,
-        variantId: { not: null },
-      },
+      where: pendingStockDeductionWhere(orderId),
       include: {
         variant: {
           include: {
