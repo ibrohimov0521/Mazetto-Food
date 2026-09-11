@@ -202,6 +202,21 @@ pnpm release:gate <sha>
 - `production` tegidan beri qaysi ilovalar o'zgargani va yangi migratsiyalar
   ro'yxatini chiqaradi. Boshqa nuqta bilan solishtirish: `--since <sha>`.
 
+**Migratsiya — production konteynerida** (backup olingandan keyin,
+`MAZETTO_RELEASE_READINESS_CHECKLIST.md` 2-qadam):
+
+```bash
+B=$(docker ps --format '{{.Names}}' | grep -m1 mazetto-food-backend)
+docker exec -w /app/apps/backend "$B" ./node_modules/.bin/prisma migrate status
+docker exec -w /app/apps/backend "$B" ./node_modules/.bin/prisma migrate deploy
+```
+
+Prisma `node_modules/.bin` dan to'g'ridan-to'g'ri chaqiriladi va sozlamani
+`prisma.config.ts` dan oladi. O'sha config ATAYLAB o'zi-yetarli: image'ga faqat
+`dist` ko'chiriladi, `src` yo'q, shuning uchun u `src/` dan hech narsa import
+qilmaydi. 2026-09-11 gacha import bor edi va konteynerda har qanday prisma
+buyrug'i "Cannot find module './src/config/env'" bilan yiqilardi.
+
 **Deploy'dan KEYIN:**
 
 ```bash
