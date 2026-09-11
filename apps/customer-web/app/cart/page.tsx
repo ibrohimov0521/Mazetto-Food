@@ -109,7 +109,7 @@ function CartReview() {
                       &#215;
                     </button>
                   </div>
-                  {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#0B7F75]">{item.modifiers.map((modifier) => localizeMenuName(modifier.name)).join(", ")}</p> : null}
+                  {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#0A7168]">{item.modifiers.map((modifier) => localizeMenuName(modifier.name)).join(", ")}</p> : null}
                   {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-[#586B7D]">Izoh: {item.notes}</p> : null}
                   <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
                     <div className="flex shrink-0 items-center gap-2">
@@ -117,7 +117,7 @@ function CartReview() {
                       <span className="mf-count-pop w-8 text-center font-bold text-[#17314A]" key={item.quantity}>{item.quantity}</span>
                       <button aria-label={`${item.productName} qo'shish`} className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity + 1); }} type="button">+</button>
                     </div>
-                    <span className="min-w-0 break-words text-right font-black text-[#0B7F75]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
+                    <span className="min-w-0 break-words text-right font-black text-[#0A7168]"><AnimatedMoney value={(Number(item.unitPrice) + item.modifiers.reduce((sum, modifier) => sum + Number(modifier.price), 0)) * item.quantity} /></span>
                   </div>
                 </div>
               </div>
@@ -148,7 +148,7 @@ function CartReview() {
             <span>Yetkazib berish</span>
             <span className="min-w-0 break-words text-right">Rasmiylashtirishda</span>
           </div>
-          <div className="h-px bg-[#0B7F75]/12" />
+          <div className="h-px bg-[#0A7168]/12" />
           <div className="flex min-w-0 justify-between gap-3 text-lg font-black text-[#17314A]">
             <span>Jami</span>
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={total} /></span>

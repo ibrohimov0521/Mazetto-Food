@@ -145,7 +145,7 @@ function OrderSuccess() {
 
           {order.branch ? (
             <div className="mf-cart-row p-4">
-              <p className="text-xs font-black uppercase text-[#0B7F75]">Filial</p>
+              <p className="text-xs font-black uppercase text-[#0A7168]">Filial</p>
               <p className="mt-2 text-lg font-black text-[#17314A]">{order.branch.name}</p>
               {order.branch.address ? <p className="mt-1 text-sm font-semibold text-[#586B7D]">{order.branch.address}</p> : null}
             </div>
@@ -155,9 +155,9 @@ function OrderSuccess() {
             <h2 className="text-lg font-black text-[#17314A]">Mahsulotlar</h2>
             <div className="mt-3 grid gap-2">
               {order.order.items.map((item) => (
-                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-[#0B7F75]/12 py-3 text-sm font-bold text-[#17314A]" key={item.id}>
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-[#0A7168]/12 py-3 text-sm font-bold text-[#17314A]" key={item.id}>
                   <span className="break-words">{Number(item.quantity)}x {item.productName}</span>
-                  <span className="whitespace-nowrap text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
+                  <span className="whitespace-nowrap text-[#0A7168]">{formatMoney(item.totalPrice)}</span>
                 </div>
               ))}
             </div>
@@ -179,8 +179,8 @@ function OrderSuccess() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 border-b border-[#0B7F75]/12 py-3">
-      <p className="text-[10px] font-bold uppercase text-[#0B7F75]">{label}</p>
+    <div className="min-w-0 border-b border-[#0A7168]/12 py-3">
+      <p className="text-[10px] font-bold uppercase text-[#0A7168]">{label}</p>
       <p className="mt-2 break-words text-sm font-bold text-[#17314A]">{value}</p>
     </div>
   );

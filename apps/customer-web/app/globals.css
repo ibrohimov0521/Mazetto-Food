@@ -1537,7 +1537,12 @@ img {
 
   .mf-hero-eyebrow {
     padding: 6px 12px;
-    font-size: 10px;
+    /*
+     * Hero ustidagi "Tavsiya" belgisi 10px edi — brauzer tekshiruvi
+     * uni mayda matn sifatida aniqladi. Bu ma'lumot beruvchi yorliq,
+     * dekoratsiya emas.
+     */
+    font-size: 11px;
   }
 
   .mf-hero-copy h1 {

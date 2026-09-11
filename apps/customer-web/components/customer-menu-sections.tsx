@@ -306,13 +306,13 @@ function SearchBox({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-2xl leading-none text-[#0B7F75]/72">
+      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-2xl leading-none text-[#0A7168]/72">
         ⌕
       </span>
       {query ? (
         <button
           aria-label="Qidiruvni tozalash"
-          className="pressable absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-[#0B7F75]/10 text-lg font-black text-[#0B7F75]"
+          className="pressable absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-[#0A7168]/10 text-lg font-black text-[#0A7168]"
           onClick={onClear}
           type="button"
         >

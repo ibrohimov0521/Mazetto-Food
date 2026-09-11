@@ -139,17 +139,17 @@ function OrdersDashboard() {
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-3 py-5 sm:px-4 sm:py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid min-w-0 gap-5">
         <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
-          <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtmani kuzatish</p>
+          <p className="text-sm font-black uppercase text-[#0A7168]">Buyurtmani kuzatish</p>
           <h1 className="mt-1 text-[1.65rem] font-black leading-tight text-[#17314A] sm:text-3xl">Buyurtmalarim</h1>
           {activeOrder ? (
             <div className="mf-active-order-card mt-4 min-w-0 pt-4">
               <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                 <div className="min-w-0">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[#0B7F75]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-[#0B7F75]">Faol buyurtma</span>
+                    <span className="rounded-full bg-[#0A7168]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-[#0A7168]">Faol buyurtma</span>
                     <StatusChip status={trackingStatus(activeOrder)} type={activeOrder.type} />
                   </div>
-                  <Link className="mt-3 block break-words text-2xl font-black leading-tight text-[#07373A] transition hover:text-[#0B7F75] sm:text-3xl" href={`/orders/${activeOrder.id}`}>
+                  <Link className="mt-3 block break-words text-2xl font-black leading-tight text-[#07373A] transition hover:text-[#0A7168] sm:text-3xl" href={`/orders/${activeOrder.id}`}>
                     {customerOrderNumber(activeOrder.order)}
                   </Link>
                   <div className="mt-3 flex min-w-0 flex-wrap gap-2">
@@ -168,7 +168,7 @@ function OrdersDashboard() {
                   <div className="mf-active-order-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-3 text-sm text-[#17314A]" key={item.id}>
                     <div className="min-w-0">
                       <p className="break-words font-black leading-snug">
-                        <span className="text-[#0B7F75]">{Number(item.quantity)}x</span> {localizeMenuName(item.productName)}
+                        <span className="text-[#0A7168]">{Number(item.quantity)}x</span> {localizeMenuName(item.productName)}
                       </p>
                       {item.variantName || item.modifierSnapshot?.length ? (
                         <p className="mt-1 break-words text-xs font-semibold leading-5 text-[#586B7D]">
@@ -176,7 +176,7 @@ function OrdersDashboard() {
                         </p>
                       ) : null}
                     </div>
-                    <span className="shrink-0 whitespace-nowrap text-right font-black text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
+                    <span className="shrink-0 whitespace-nowrap text-right font-black text-[#0A7168]">{formatMoney(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
@@ -210,7 +210,7 @@ function OrdersDashboard() {
                     </p>
                     <p className="mt-2 break-words text-sm font-semibold leading-5 text-[#586B7D]">{orderSummary(order)}</p>
                   </div>
-                  <span className="shrink-0 whitespace-nowrap font-black text-[#0B7F75] sm:text-right">{formatMoney(order.order.total)}</span>
+                  <span className="shrink-0 whitespace-nowrap font-black text-[#0A7168] sm:text-right">{formatMoney(order.order.total)}</span>
                 </div>
               </Link>
             )) : (
@@ -228,14 +228,14 @@ function OrdersDashboard() {
 
       <aside className="grid min-w-0 content-start gap-5">
         <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
-          <p className="text-sm font-bold text-[#0B7F75]">Bonuslar</p>
+          <p className="text-sm font-bold text-[#0A7168]">Bonuslar</p>
           <p className="mt-2 break-words text-3xl font-black text-[#17314A] sm:text-4xl"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> so'm</p>
         </div>
         <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
           <h2 className="text-xl font-black text-[#17314A]">Sevimlilar</h2>
           <div className="mt-4 grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
-              <Link className="pressable grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-2xl bg-[#0B7F75]/7 p-2" href={`/product/${product.id}`} key={product.id}>
+              <Link className="pressable grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-2xl bg-[#0A7168]/7 p-2" href={`/product/${product.id}`} key={product.id}>
                 <MediaImage
                   alt={product.name}
                   aspectClassName="h-16 w-16"
@@ -245,7 +245,7 @@ function OrdersDashboard() {
                 />
                 <div className="min-w-0">
                   <p className="break-words font-bold leading-tight text-[#17314A]">{localizeMenuName(product.name)}</p>
-                  <p className="mt-1 whitespace-nowrap text-sm text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
+                  <p className="mt-1 whitespace-nowrap text-sm text-[#0A7168]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
             )) : <p className="text-sm text-[#586B7D]">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
@@ -273,7 +273,7 @@ function StatusChip({ status, type }: { status: string; type: string }) {
 
 function InfoChip({ label }: { label: string }) {
   return (
-    <span className="min-w-0 rounded-full border border-[#0B7F75]/12 bg-white/64 px-3 py-1.5 text-xs font-black text-[#0A4F55] shadow-[0_8px_18px_rgba(0,79,85,0.07)]">
+    <span className="min-w-0 rounded-full border border-[#0A7168]/12 bg-white/64 px-3 py-1.5 text-xs font-black text-[#0A4F55] shadow-[0_8px_18px_rgba(0,79,85,0.07)]">
       {label}
     </span>
   );

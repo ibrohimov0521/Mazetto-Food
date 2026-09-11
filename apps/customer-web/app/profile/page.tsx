@@ -180,10 +180,10 @@ function Profile() {
       ) : null}
       <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
         <div className={`${styles.identity} min-w-0 p-4 sm:p-5`}>
-          <p className="text-xs font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>
+          <p className="text-xs font-black uppercase text-[#0A7168]">Telefon orqali profil</p>
           <h1 className="mt-1 break-words text-2xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
           <p className="mt-1 text-sm font-bold text-[#586B7D]">{dashboard?.phone ?? customer.phone}</p>
-          <div className="mt-3 inline-flex rounded-full bg-[#0B7F75]/10 px-3 py-1 text-xs font-black text-[#0B7F75]">
+          <div className="mt-3 inline-flex rounded-full bg-[#0A7168]/10 px-3 py-1 text-xs font-black text-[#0A7168]">
             Profil ulangan
           </div>
 
@@ -224,7 +224,7 @@ function Profile() {
                       <p className="font-black text-[#17314A]">{order.order.displayOrderNumber ?? order.order.orderNumber}</p>
                       <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold leading-5 text-[#586B7D]"><span className="mf-status-chip" data-tone={trackingTone(trackingStatus(order))}>{trackingLabel(trackingStatus(order), order.type)}</span><span>{typeLabels[order.type] ?? order.type}</span></p>
                     </div>
-                    <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>
+                    <span className="shrink-0 font-black text-[#0A7168]">{formatMoney(order.order.total)}</span>
                   </div>
                 </Link>
               ))
@@ -237,7 +237,7 @@ function Profile() {
         <Panel title="Sevimlilar">
           <div className="grid gap-3">
             {favorites.length ? favorites.map(({ product }) => (
-              <Link className="pressable grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl bg-[#0B7F75]/7 p-2 transition hover:bg-[#0B7F75]/10" href={`/product/${product.id}`} key={product.id}>
+              <Link className="pressable grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl bg-[#0A7168]/7 p-2 transition hover:bg-[#0A7168]/10" href={`/product/${product.id}`} key={product.id}>
                 <MediaImage
                   alt={product.name}
                   aspectClassName="h-[72px] w-[72px]"
@@ -247,7 +247,7 @@ function Profile() {
                 />
                 <div className="min-w-0">
                   <p className="break-words font-bold text-[#17314A]">{localizeMenuName(product.name)}</p>
-                  <p className="mt-1 text-sm font-bold text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
+                  <p className="mt-1 text-sm font-bold text-[#0A7168]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
             )) : <p className="text-sm font-semibold text-[#586B7D]">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
@@ -321,7 +321,7 @@ function Panel({ children, title }: { children: React.ReactNode; title: string }
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className={`${styles.stat} min-w-0 p-2.5`}>
-      <p className="text-[11px] font-bold text-[#0B7F75]">{label}</p>
+      <p className="text-[11px] font-bold text-[#0A7168]">{label}</p>
       <p className="mt-1 break-words text-sm font-black text-[#17314A] sm:text-base">{value}</p>
     </div>
   );

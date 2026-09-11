@@ -56,10 +56,10 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                         className="mazetto-liquid-active absolute inset-0 rounded-[1rem]"
                       />
                     ) : null}
-                    <span className={`mf-nav-icon relative ${item.href === "/cart" ? "grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-[#F5CF00] to-[#FFD83D] text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.28)]" : active ? "text-[#F5CF00]" : ""}`} data-active={active ? "true" : "false"} data-cart={item.href === "/cart" ? "true" : "false"}>
+                    <span className={`mf-nav-icon relative ${item.href === "/cart" ? "grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-[#F5CF00] to-[#FFD83D] text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.28)]" : active ? "text-[#FFE86B]" : ""}`} data-active={active ? "true" : "false"} data-cart={item.href === "/cart" ? "true" : "false"}>
                       <Icon />
                     </span>
-                    <span className={`relative max-w-full whitespace-nowrap ${active ? "text-[#F5CF00]" : ""}`}>{item.href === "/cart" && items.length ? subtotal.toLocaleString("uz-UZ") : mobileNavLabel(item.href)}</span>
+                    <span className={`relative max-w-full whitespace-nowrap ${active ? "text-[#FFE86B]" : ""}`}>{item.href === "/cart" && items.length ? subtotal.toLocaleString("uz-UZ") : mobileNavLabel(item.href)}</span>
                     {item.href === "/cart" && items.length ? (
                       <span className="absolute right-1 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#F5CF00] px-1 text-[10px] font-black leading-none text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.24)]">
                         {formatCartCount(itemCount)}

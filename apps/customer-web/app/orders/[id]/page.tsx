@@ -217,7 +217,7 @@ function OrderDetail() {
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid min-w-0 gap-5">
         <section className="mf-checkout-card p-5">
-          <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma tafsiloti</p>
+          <p className="text-sm font-black uppercase text-[#0A7168]">Buyurtma tafsiloti</p>
           <h1 className="mt-2 break-words text-3xl font-black text-[#17314A]">{customerOrderNumber(order.order)}</h1>
           <p className="mt-2 text-sm font-semibold text-[#586B7D]">
             {new Date(order.createdAt).toLocaleString("uz-UZ")} · {typeLabels[order.type] ?? order.type}
@@ -277,12 +277,12 @@ function OrderDetail() {
                     <h3 className="break-words font-black text-[#17314A]">{Number(item.quantity)}x {localizeMenuName(item.productName)}</h3>
                     {item.variantName ? <p className="mt-1 text-sm font-semibold text-[#586B7D]">{localizeMenuName(item.variantName)}</p> : null}
                   </div>
-                  <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
+                  <span className="shrink-0 font-black text-[#0A7168]">{formatMoney(item.totalPrice)}</span>
                 </div>
                 {modifiersFor(item.modifierSnapshot).length ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {modifiersFor(item.modifierSnapshot).map((modifier, index) => (
-                      <span className="rounded-full bg-[#0B7F75]/10 px-3 py-1 text-xs font-black text-[#0B7F75]" key={`${modifier.name}-${index}`}>
+                      <span className="rounded-full bg-[#0A7168]/10 px-3 py-1 text-xs font-black text-[#0A7168]" key={`${modifier.name}-${index}`}>
                         {localizeMenuName(modifier.name)}
                       </span>
                     ))}
@@ -314,7 +314,7 @@ function OrderDetail() {
               <div className="mf-cart-row p-3 text-sm font-bold text-[#17314A]" key={payment.id}>
                 <div className="flex justify-between gap-3">
                   <span>{payment.method?.name ?? payment.methodCode ?? "To'lov"}</span>
-                  <span className="text-[#0B7F75]">{formatMoney(payment.amount)}</span>
+                  <span className="text-[#0A7168]">{formatMoney(payment.amount)}</span>
                 </div>
                 <p className="mt-1 text-xs text-[#586B7D]">{paymentStatusLabel(payment.status)}</p>
               </div>
@@ -337,14 +337,14 @@ function StatusHistory({
     <section className="mf-checkout-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0B7F75]">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0A7168]">
             Buyurtma jurnali
           </p>
           <h2 className="mt-1 text-2xl font-black text-[#17314A]">
             Holatlar tarixi
           </h2>
         </div>
-        <Clock3 className="mt-1 text-[#0B7F75]" size={22} aria-hidden="true" />
+        <Clock3 className="mt-1 text-[#0A7168]" size={22} aria-hidden="true" />
       </div>
       {entries.length ? (
         <ol className="mt-5 grid gap-0">
@@ -357,9 +357,9 @@ function StatusHistory({
             return (
               <li className="relative flex gap-3 pb-5 last:pb-0" key={entry.id}>
                 {index < entries.length - 1 ? (
-                  <span className="absolute left-[13px] top-7 h-[calc(100%-18px)] w-px bg-[#0B7F75]/18" />
+                  <span className="absolute left-[13px] top-7 h-[calc(100%-18px)] w-px bg-[#0A7168]/18" />
                 ) : null}
-                <span className="relative z-10 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#0B7F75]/10 text-[#0B7F75]">
+                <span className="relative z-10 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#0A7168]/10 text-[#0A7168]">
                   <CheckCircle2 size={17} aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -398,7 +398,7 @@ function StatusHistory({
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="mf-cart-row min-w-0 p-4">
-      <p className="text-xs font-black uppercase text-[#0B7F75]">{label}</p>
+      <p className="text-xs font-black uppercase text-[#0A7168]">{label}</p>
       <p className="mt-2 break-words text-lg font-black text-[#17314A]">{value}</p>
     </div>
   );
@@ -406,7 +406,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 justify-between gap-3 border-b border-[#0B7F75]/12 pb-3 last:border-b-0 last:pb-0">
+    <div className="flex min-w-0 justify-between gap-3 border-b border-[#0A7168]/12 pb-3 last:border-b-0 last:pb-0">
       <span className="shrink-0 text-[#586B7D]">{label}</span>
       <span className="min-w-0 break-words text-right text-[#17314A]">{value}</span>
     </div>

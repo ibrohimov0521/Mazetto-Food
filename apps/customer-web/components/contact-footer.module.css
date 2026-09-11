@@ -156,9 +156,13 @@
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  font-size: 10px;
-  color: #c2d9d2;
-  opacity: 0.82;
+  /*
+   * 10px va 82% shaffoflik brauzerda 4.37:1 berardi. O'lcham 11px ga,
+   * rang esa 6.35:1 ga ko'tarildi.
+   */
+  font-size: 11px;
+  color: #dff0ea;
+  opacity: 0.92;
   text-decoration: none;
 }
 .credit img {

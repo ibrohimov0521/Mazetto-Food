@@ -99,7 +99,7 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
           <h2 className="text-xl font-black text-[#17314A] sm:text-2xl">Hech narsa qolib ketmadimi?</h2>
           <p className="mt-0.5 text-xs font-semibold text-[#586B7D] sm:text-sm">Sous, ichimlik yoki gazak qo'shing.</p>
         </div>
-        <Link className="hidden text-sm font-black text-[#0B7F75] sm:inline" href="/menu">Menyu</Link>
+        <Link className="hidden text-sm font-black text-[#0A7168] sm:inline" href="/menu">Menyu</Link>
       </div>
       <div
         aria-label="Qo'shimcha mahsulotlar"
@@ -141,7 +141,7 @@ function UpsellCard({
       <div className="grid min-w-0 gap-2 p-2.5">
         <h3 className="line-clamp-2 min-h-[2.25rem] text-sm font-black leading-tight text-[#17314A]">{product.name}</h3>
         <div className="flex min-w-0 items-center justify-between gap-1.5">
-          <span className="min-w-0 truncate text-xs font-black text-[#0B7F75]">{formatMoney(price)}</span>
+          <span className="min-w-0 truncate text-xs font-black text-[#0A7168]">{formatMoney(price)}</span>
           {canQuickAdd ? (
             <MotionButton
               {...buttonMotion}

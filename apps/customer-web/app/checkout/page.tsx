@@ -516,7 +516,7 @@ function CheckoutFlow() {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-checkout-card p-8">
-          <p className="text-sm font-black uppercase text-[#0B7F75]">
+          <p className="text-sm font-black uppercase text-[#0A7168]">
             Rasmiylashtirish
           </p>
           <CustomerAuthPanel
