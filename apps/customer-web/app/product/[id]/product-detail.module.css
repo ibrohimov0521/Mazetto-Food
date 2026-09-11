@@ -159,9 +159,15 @@
     gap: 12px;
     margin-top: 14px;
   }
+  /*
+   * Sahifaning ASOSIY tugmasi eng kichik matnda bo'lmasligi kerak.
+   * Ilgari 12px/8px edi; balandlik 48px ga ko'tarildi, chunki dizayn
+   * qoidasi asosiy amal uchun shuni talab qiladi.
+   */
   .options :global(.mf-detail-add) {
-    font-size: 12px;
-    padding: 8px;
+    min-height: 48px;
+    font-size: 14px;
+    padding: 10px;
     gap: 4px;
   }
 }

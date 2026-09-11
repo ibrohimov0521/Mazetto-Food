@@ -119,7 +119,7 @@ function Profile() {
         <div className={`${styles.identity} min-w-0 p-4 sm:p-5`}>
           <p className="text-xs font-black uppercase text-[#0B7F75]">Telefon orqali profil</p>
           <h1 className="mt-1 break-words text-2xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
-          <p className="mt-1 text-sm font-bold text-[#17314A]/60">{dashboard?.phone ?? customer.phone}</p>
+          <p className="mt-1 text-sm font-bold text-[#586B7D]">{dashboard?.phone ?? customer.phone}</p>
           <div className="mt-3 inline-flex rounded-full bg-[#0B7F75]/10 px-3 py-1 text-xs font-black text-[#0B7F75]">
             Profil ulangan
           </div>
@@ -159,14 +159,14 @@ function Profile() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-black text-[#17314A]">{order.order.displayOrderNumber ?? order.order.orderNumber}</p>
-                      <p className="mt-1 text-xs font-semibold leading-5 text-[#17314A]/65">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-[#586B7D]">{statusLabel(order.status)} · {typeLabels[order.type] ?? order.type}</p>
                     </div>
                     <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(order.order.total)}</span>
                   </div>
                 </Link>
               ))
             ) : (
-              <p className="text-sm font-semibold text-[#17314A]/56">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>
+              <p className="text-sm font-semibold text-[#586B7D]">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>
             )}
           </div>
         </Panel>
@@ -187,7 +187,7 @@ function Profile() {
                   <p className="mt-1 text-sm font-bold text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm font-semibold text-[#17314A]/56">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
+            )) : <p className="text-sm font-semibold text-[#586B7D]">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
           </div>
         </Panel>
       </MotionDiv>
@@ -196,7 +196,7 @@ function Profile() {
         <div className="flex flex-wrap gap-3">
           {addresses.length ? addresses.map((address) => (
             <span className="rounded-2xl bg-[#0B7F75]/10 px-4 py-3 text-sm font-bold text-[#0B7F75]" key={address}>{address}</span>
-          )) : <span className="rounded-2xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-semibold text-[#17314A]/56">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
+          )) : <span className="rounded-2xl bg-[#0B7F75]/7 px-4 py-3 text-sm font-semibold text-[#586B7D]">Yetkazib berish manzillari buyurtmadan keyin shu yerda saqlanadi.</span>}
         </div>
       </Panel>
     </MotionDiv>

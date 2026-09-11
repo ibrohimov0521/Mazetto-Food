@@ -105,7 +105,7 @@ export function BranchPicker({
         <span className="min-w-0 flex-1">
           <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-[#0B7F75]">{label}</span>
           <span className="mt-0.5 block break-words text-[15px] font-black leading-tight text-[#17314A]">{selectedBranch?.name ?? "Filial tanlang"}</span>
-          {selectedBranch?.address ? <span className="mt-0.5 block break-words text-[11px] font-bold leading-tight text-[#17314A]/58">{selectedBranch.address}</span> : null}
+          {selectedBranch?.address ? <span className="mt-0.5 block break-words text-[11px] font-bold leading-tight text-[#586B7D]">{selectedBranch.address}</span> : null}
         </span>
         <span className={`mf-branch-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
       </button>
@@ -140,7 +140,7 @@ export function BranchPicker({
                     >
                       <span className="min-w-0">
                         <span className="block break-words font-black text-[#17314A]">{branch.name}</span>
-                        {branch.address ? <span className="mt-1 block break-words text-xs font-semibold text-[#17314A]/58">{branch.address}</span> : null}
+                        {branch.address ? <span className="mt-1 block break-words text-xs font-semibold text-[#586B7D]">{branch.address}</span> : null}
                         <span className="mt-2 block text-xs font-black text-[#0B7F75]">{branchStatus(branch, orderType)}</span>
                       </span>
                       {active ? <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#F5CF00] text-sm font-black text-[#07373A]">✓</span> : null}

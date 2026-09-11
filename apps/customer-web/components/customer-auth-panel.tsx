@@ -121,7 +121,7 @@ export function CustomerAuthPanel({
     return (
       <div className="mf-card-soft p-4">
         <p className="text-sm font-black text-[#17314A]">Profil ulangan</p>
-        <p className="mt-1 text-sm font-semibold text-[#17314A]/62">
+        <p className="mt-1 text-sm font-semibold text-[#586B7D]">
           {customer.name} · {customer.phone}
         </p>
         <Link
@@ -138,7 +138,7 @@ export function CustomerAuthPanel({
     <div className="grid min-w-0 gap-3">
       <div>
         <h2 className="text-2xl font-black text-[#17314A]">{title}</h2>
-        <p className="mt-2 text-sm font-semibold leading-6 text-[#17314A]/64">
+        <p className="mt-2 text-sm font-semibold leading-6 text-[#586B7D]">
           {description}
         </p>
       </div>

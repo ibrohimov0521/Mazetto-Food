@@ -149,7 +149,7 @@ function OrderSuccess() {
             <div className="mf-cart-row p-4">
               <p className="text-xs font-black uppercase text-[#0B7F75]">Filial</p>
               <p className="mt-2 text-lg font-black text-[#17314A]">{order.branch.name}</p>
-              {order.branch.address ? <p className="mt-1 text-sm font-semibold text-[#17314A]/56">{order.branch.address}</p> : null}
+              {order.branch.address ? <p className="mt-1 text-sm font-semibold text-[#586B7D]">{order.branch.address}</p> : null}
             </div>
           ) : null}
 

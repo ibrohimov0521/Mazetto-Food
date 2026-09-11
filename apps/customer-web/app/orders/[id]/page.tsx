@@ -180,7 +180,7 @@ function OrderDetail() {
         <section className="mf-checkout-card p-5">
           <p className="text-sm font-black uppercase text-[#0B7F75]">Buyurtma tafsiloti</p>
           <h1 className="mt-2 break-words text-3xl font-black text-[#17314A]">{customerOrderNumber(order.order)}</h1>
-          <p className="mt-2 text-sm font-semibold text-[#17314A]/60">
+          <p className="mt-2 text-sm font-semibold text-[#586B7D]">
             {new Date(order.createdAt).toLocaleString("uz-UZ")} · {typeLabels[order.type] ?? order.type}
           </p>
           <div className="mf-order-metrics mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -201,7 +201,7 @@ function OrderDetail() {
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="break-words font-black text-[#17314A]">{Number(item.quantity)}x {localizeMenuName(item.productName)}</h3>
-                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-[#17314A]/58">{localizeMenuName(item.variantName)}</p> : null}
+                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-[#586B7D]">{localizeMenuName(item.variantName)}</p> : null}
                   </div>
                   <span className="shrink-0 font-black text-[#0B7F75]">{formatMoney(item.totalPrice)}</span>
                 </div>
@@ -214,7 +214,7 @@ function OrderDetail() {
                     ))}
                   </div>
                 ) : null}
-                {item.notes ? <p className="mt-3 text-sm font-semibold text-[#17314A]/56">Izoh: {item.notes}</p> : null}
+                {item.notes ? <p className="mt-3 text-sm font-semibold text-[#586B7D]">Izoh: {item.notes}</p> : null}
               </article>
             ))}
           </div>
@@ -224,7 +224,7 @@ function OrderDetail() {
       <aside className="grid min-w-0 content-start gap-5">
         <section className="mf-checkout-card p-5">
           <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
-          <div className="mt-4 grid gap-3 text-sm font-bold text-[#17314A]/68">
+          <div className="mt-4 grid gap-3 text-sm font-bold text-[#586B7D]">
             <SummaryRow label="Filial" value={order.branch?.name ?? "Ko'rsatilmagan"} />
             {order.branch?.address ? <SummaryRow label="Manzil" value={order.branch.address} /> : null}
             <SummaryRow label="Turi" value={typeLabels[order.type] ?? order.type} />
@@ -242,9 +242,9 @@ function OrderDetail() {
                   <span>{payment.method?.name ?? payment.methodCode ?? "To'lov"}</span>
                   <span className="text-[#0B7F75]">{formatMoney(payment.amount)}</span>
                 </div>
-                <p className="mt-1 text-xs text-[#17314A]/52">{payment.status}</p>
+                <p className="mt-1 text-xs text-[#586B7D]">{payment.status}</p>
               </div>
-            )) : <p className="text-sm font-semibold text-[#17314A]/56">To'lov ma'lumoti hali biriktirilmagan.</p>}
+            )) : <p className="text-sm font-semibold text-[#586B7D]">To'lov ma'lumoti hali biriktirilmagan.</p>}
           </div>
         </section>
       </aside>
@@ -294,18 +294,18 @@ function StatusHistory({
                       {trackingLabel(entry.toStatus, type)}
                     </p>
                     <time
-                      className="text-xs font-semibold text-[#17314A]/48"
+                      className="text-xs font-semibold text-[#586B7D]"
                       dateTime={entry.createdAt}
                     >
                       {new Date(entry.createdAt).toLocaleString("uz-UZ")}
                     </time>
                   </div>
-                  <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-[#17314A]/55">
+                  <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-[#586B7D]">
                     <UserRound size={13} aria-hidden="true" />
                     {actor}
                   </p>
                   {entry.reason ? (
-                    <p className="mt-1 text-xs text-[#17314A]/45">{entry.reason}</p>
+                    <p className="mt-1 text-xs text-[#586B7D]">{entry.reason}</p>
                   ) : null}
                 </div>
               </li>
@@ -313,7 +313,7 @@ function StatusHistory({
           })}
         </ol>
       ) : (
-        <p className="mt-4 text-sm font-semibold text-[#17314A]/55">
+        <p className="mt-4 text-sm font-semibold text-[#586B7D]">
           Holatlar tarixi hali shakllanmagan.
         </p>
       )}
@@ -333,7 +333,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 justify-between gap-3 border-b border-[#0B7F75]/12 pb-3 last:border-b-0 last:pb-0">
-      <span className="shrink-0 text-[#17314A]/52">{label}</span>
+      <span className="shrink-0 text-[#586B7D]">{label}</span>
       <span className="min-w-0 break-words text-right text-[#17314A]">{value}</span>
     </div>
   );

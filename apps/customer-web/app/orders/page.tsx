@@ -167,7 +167,7 @@ function OrdersDashboard() {
                         <span className="text-[#0B7F75]">{Number(item.quantity)}x</span> {localizeMenuName(item.productName)}
                       </p>
                       {item.variantName || item.modifierSnapshot?.length ? (
-                        <p className="mt-1 break-words text-xs font-semibold leading-5 text-[#17314A]/54">
+                        <p className="mt-1 break-words text-xs font-semibold leading-5 text-[#586B7D]">
                           {[item.variantName, ...(item.modifierSnapshot?.map((modifier) => modifier.name) ?? [])].filter(Boolean).join(" · ")}
                         </p>
                       ) : null}
@@ -178,7 +178,7 @@ function OrdersDashboard() {
               </div>
             </div>
           ) : loading ? <div className="skeleton mt-4 h-28 rounded-xl" /> : !error ? (
-            <div className="mf-cart-row mt-5 p-6 text-sm font-semibold text-[#17314A]/56">Hozir faol buyurtma yo'q.</div>
+            <div className="mf-cart-row mt-5 p-6 text-sm font-semibold text-[#586B7D]">Hozir faol buyurtma yo'q.</div>
           ) : null}
         </div>
 
@@ -188,7 +188,7 @@ function OrdersDashboard() {
             {error ? (
               <div className="mf-card-soft p-8 text-center">
                 <h3 className="text-2xl font-black text-[#17314A]">Buyurtmalar yuklanmadi</h3>
-                <p className="mt-2 text-sm font-semibold text-[#17314A]/62">{error}</p>
+                <p className="mt-2 text-sm font-semibold text-[#586B7D]">{error}</p>
                 <button className="pressable ripple mf-button-primary mt-5 px-5 py-3 font-black" onClick={() => void load()} type="button">
                   Qayta urinish
                 </button>
@@ -200,11 +200,11 @@ function OrdersDashboard() {
                 <div className="grid min-w-0 gap-2 sm:flex sm:justify-between sm:gap-3">
                   <div className="min-w-0">
                     <p className="break-words font-black leading-tight text-[#17314A]">{customerOrderNumber(order.order)}</p>
-                    <p className="mt-1 text-sm leading-5 text-[#17314A]/52">
+                    <p className="mt-1 text-sm leading-5 text-[#586B7D]">
                       {new Date(order.createdAt).toLocaleString("uz-UZ")} · {trackingLabel(trackingStatus(order), order.type)}
                       {order.branch ? ` · ${order.branch.name}` : ""}
                     </p>
-                    <p className="mt-2 break-words text-sm font-semibold leading-5 text-[#17314A]/60">{orderSummary(order)}</p>
+                    <p className="mt-2 break-words text-sm font-semibold leading-5 text-[#586B7D]">{orderSummary(order)}</p>
                   </div>
                   <span className="shrink-0 whitespace-nowrap font-black text-[#0B7F75] sm:text-right">{formatMoney(order.order.total)}</span>
                 </div>
@@ -212,7 +212,7 @@ function OrdersDashboard() {
             )) : (
               <div className="mf-card-soft p-8 text-center">
                 <h3 className="text-2xl font-black text-[#17314A]">Hali buyurtmalaringiz yo'q</h3>
-                <p className="mt-2 text-sm font-semibold text-[#17314A]/62">Birinchi buyurtmangiz shu yerda tarixi bilan ko'rinadi.</p>
+                <p className="mt-2 text-sm font-semibold text-[#586B7D]">Birinchi buyurtmangiz shu yerda tarixi bilan ko'rinadi.</p>
                 <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/menu">
                   Menyuni ko'rish
                 </Link>
@@ -244,7 +244,7 @@ function OrdersDashboard() {
                   <p className="mt-1 whitespace-nowrap text-sm text-[#0B7F75]">{formatMoney(product.sellingPrice)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm text-[#17314A]/56">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
+            )) : <p className="text-sm text-[#586B7D]">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
           </div>
         </div>
       </aside>

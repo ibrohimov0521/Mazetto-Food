@@ -97,7 +97,7 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
       <div className="mb-2.5 flex items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-[#17314A] sm:text-2xl">Hech narsa qolib ketmadimi?</h2>
-          <p className="mt-0.5 text-xs font-semibold text-[#17314A]/58 sm:text-sm">Sous, ichimlik yoki gazak qo'shing.</p>
+          <p className="mt-0.5 text-xs font-semibold text-[#586B7D] sm:text-sm">Sous, ichimlik yoki gazak qo'shing.</p>
         </div>
         <Link className="hidden text-sm font-black text-[#0B7F75] sm:inline" href="/menu">Menyu</Link>
       </div>

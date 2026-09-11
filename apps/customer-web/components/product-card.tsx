@@ -98,7 +98,7 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
           ♥
         </button>
         {product.isCombo ? (
-          <span className="absolute left-2.5 top-2.5 rounded-full bg-[#F5CF00] px-2.5 py-1 text-[10px] font-black uppercase text-[#07373A] shadow-[0_10px_22px_rgba(245,207,0,0.28)]">
+          <span className="absolute left-2.5 top-2.5 rounded-full bg-[#F5CF00] px-2.5 py-1 text-[11px] font-black uppercase text-[#07373A] shadow-[0_10px_22px_rgba(245,207,0,0.28)]">
             Set
           </span>
         ) : null}
@@ -111,11 +111,11 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
           <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} mf-product-title min-w-0 break-words font-black leading-tight text-white transition hover:text-[#F5CF00]`} href={`/product/${product.id}`}>
             {product.name}
           </Link>
-          <span className={`${compact ? "hidden" : "inline-flex mt-1"} mf-product-badge shrink-0 rounded-full bg-white/12 px-2 py-1 text-[10px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
+          <span className={`${compact ? "hidden" : "inline-flex mt-1"} mf-product-badge shrink-0 rounded-full bg-white/12 px-2 py-1 text-[11px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
             {product.preparationTime != null ? `${product.preparationTime} daq` : ""}
           </span>
         </div>
-        <p className={`${compact ? "line-clamp-2 text-[10px] leading-4 sm:text-[11px]" : "line-clamp-2 min-h-11 text-sm leading-5"} mf-product-description text-white/64`}>
+        <p className={`${compact ? "line-clamp-2 text-[12px] leading-4" : "line-clamp-2 min-h-11 text-sm leading-5"} mf-product-description text-white/80`}>
           {product.description?.trim() || "Buyurtmadan keyin issiq tayyorlanadi."}
         </p>
         <div className="mf-product-price-row flex min-w-0 items-center justify-between gap-2 sm:gap-3">

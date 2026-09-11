@@ -103,14 +103,14 @@ function CartReview() {
                   <div className="flex min-w-0 justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="break-words font-bold leading-snug text-[#17314A]">{localizeMenuName(item.productName)}</h2>
-                      <p className="text-sm text-[#17314A]/52">{localizeMenuName(item.variantName) || "Oddiy"}</p>
+                      <p className="text-sm text-[#586B7D]">{localizeMenuName(item.variantName) || "Oddiy"}</p>
                     </div>
                     <button aria-label={`${item.productName} savatdan olib tashlash`} title="Savatdan olib tashlash" className="pressable grid h-11 w-11 shrink-0 place-items-center rounded-xl text-xl text-[#087d78]" onClick={() => removeItem(item.key)} type="button">
                       &#215;
                     </button>
                   </div>
                   {item.modifiers.length ? <p className="mt-1 break-words text-sm font-semibold text-[#0B7F75]">{item.modifiers.map((modifier) => localizeMenuName(modifier.name)).join(", ")}</p> : null}
-                  {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-[#17314A]/50">Izoh: {item.notes}</p> : null}
+                  {item.notes ? <p className="mt-1 break-words text-xs font-semibold text-[#586B7D]">Izoh: {item.notes}</p> : null}
                   <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
                     <div className="flex shrink-0 items-center gap-2">
                       <button aria-label={`${item.productName} kamaytirish`} className="pressable mf-quantity-button h-9 w-9 rounded-full font-bold" onClick={() => { hapticTap(8); updateQuantity(item.key, item.quantity - 1); }} type="button">-</button>
@@ -140,11 +140,11 @@ function CartReview() {
           </div>
         ) : null}
         <div className="mt-5 grid gap-3 py-4">
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#586B7D]">
             <span>Mahsulotlar</span>
             <span className="min-w-0 break-words text-right"><AnimatedMoney value={subtotal} /></span>
           </div>
-          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#17314A]/62">
+          <div className="flex min-w-0 justify-between gap-3 text-sm font-bold text-[#586B7D]">
             <span>Yetkazib berish</span>
             <span className="min-w-0 break-words text-right">Rasmiylashtirishda</span>
           </div>

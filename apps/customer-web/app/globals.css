@@ -9,7 +9,17 @@
   --mf-border: rgba(0, 79, 85, 0.16);
   --mf-text: #07373a;
   --mf-muted: rgba(7, 55, 58, 0.72);
-  --mf-text-soft: rgba(7, 55, 58, 0.58);
+  /*
+   * Navy oilasidagi ikkilamchi matn. Ilgari `#17314A` ning 45-65%
+   * shaffofliklari ishlatilardi — hammasi 4.5:1 dan past edi.
+   * Bu qiymat oq ustida 5.51:1, ivory ustida 5.28:1.
+   */
+  --mf-ink-muted: #586b7d;
+  /*
+   * 0.58 shaffoflik ivory ustida 3.5:1 berardi va AA'dan o'tmasdi.
+   * 0.72 — 5.25:1, `--mf-muted` bilan bir xil chegara.
+   */
+  --mf-text-soft: rgba(7, 55, 58, 0.72);
   --mf-orange: #f5cf00;
   --mf-gold: #ffd83d;
   --mf-green: #3f9f68;
@@ -382,7 +392,7 @@ img {
   .mf-hero-description { display: none; }
   .mf-hero-price { font-size: 12px; padding: 8px 12px; }
   .mf-hero-actions { margin-top: 16px; gap: 8px; }
-  .mf-hero-copy .mf-home-order-cta { min-height: 44px; font-size: 12px; padding-inline: 12px; }
+  .mf-hero-copy .mf-home-order-cta { min-height: 46px; font-size: 13px; padding-inline: 12px; }
   .mf-hero-restored .mf-home-hero-media { grid-row: 1; }
   .mf-hero-navigation { grid-column: 1 / -1; padding: 8px 16px 12px; }
 }
@@ -537,9 +547,18 @@ img {
   position: relative;
   border: 1px solid rgba(210, 255, 244, 0.2);
   border-radius: var(--mf-radius);
-  background: linear-gradient(145deg, #258e88, #096b70);
+  /*
+   * YAXLIT fon, gradient emas.
+   *
+   * Gradientning yorug' uchi (#258e88) ustida sariq narx 2.60:1,
+   * tavsif 2.53:1 berardi — ya'ni kartadagi eng muhim ikki ma'lumot
+   * (narx va tavsif) o'qilmasdi va kontrast kartaning qaysi qismiga
+   * tushishiga qarab o'zgarardi. Yaxlit #01555a ustida sariq 5.64:1,
+   * 80% oq 6.11:1. Chuqurlik ichki yorug'lik bilan saqlanadi.
+   */
+  background: #01555a;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
     0 4px 6px rgba(0, 32, 35, 0.22);
 }
 
@@ -872,7 +891,7 @@ img {
 .mf-checkout-card .text-white\/42,
 .mf-checkout-card .text-white\/40,
 .mf-checkout-card .text-white\/35 {
-  color: rgba(23, 49, 74, 0.62);
+  color: #586b7d;
 }
 
 .mf-checkout-card .bg-white\/20,
@@ -986,7 +1005,7 @@ img {
 .mf-card-soft .text-white\/35,
 .mf-checkout-card .text-white\/70,
 .mf-checkout-card .text-white\/38 {
-  color: rgba(23, 49, 74, 0.62);
+  color: #586b7d;
 }
 
 .mf-card-light {
@@ -1035,7 +1054,14 @@ img {
 .mf-button-secondary:focus-visible,
 .mf-slider-arrow:focus-visible,
 .mf-category-tab:focus-visible {
-  outline: 3px solid var(--mf-lavender);
+  /*
+   * Fokus halqasi IKKI fon ustida ham ko'rinishi kerak: sariq tugmaning
+   * o'zida va ivory sahifada. Lavanda (`--mf-lavender`) sariqqa nisbatan
+   * 1.24:1, ivoryga nisbatan 1.72:1 edi — klaviatura bilan yuruvchi
+   * foydalanuvchi fokusni asosiy tugmalarda umuman ko'rmasdi (WCAG 2.2
+   * kamida 3:1 talab qiladi). Chuqur teal: sariqda 6.14:1, ivoryda 8.53:1.
+   */
+  outline: 3px solid var(--mf-bg);
   outline-offset: 3px;
 }
 
@@ -1152,9 +1178,15 @@ img {
 }
 
 .mf-input:focus {
-  border-color: var(--mf-orange);
-  outline: none;
-  box-shadow: 0 0 0 4px rgba(245, 207, 0, 0.22);
+  /*
+   * Sariq fokus oq input ustida 1.4:1 berardi, ya'ni ko'rinmasdi.
+   * Checkout esa alohida yashil outline bilan ustidan yozardi — bitta
+   * ilovada ikki xil fokus tili. Endi hamma joyda chuqur teal.
+   */
+  border-color: var(--mf-bg);
+  outline: 2px solid var(--mf-bg);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px rgba(0, 79, 85, 0.16);
 }
 
 .mazetto-glass,
@@ -1482,7 +1514,11 @@ img {
   .mf-bottom-nav a {
     gap: 0.12rem;
     border-radius: 0.8rem;
-    font-size: 10px;
+    /*
+     * Asosiy navigatsiya yorlig'i 10px edi. Nav 60px balandlikda va
+     * joy bor, mayda matn esa dizayn qoidasida taqiqlangan.
+     */
+    font-size: 11px;
   }
 
   .mf-bottom-nav svg {
@@ -1517,13 +1553,17 @@ img {
 
   .mf-hero-price {
     padding: 7px 10px;
-    font-size: 11px;
+    font-size: 12px;
   }
 
+  /*
+   * Bosh sahifaning asosiy CTA'si 11px edi — sahifadagi eng muhim
+   * tugma deyarli o'qilmasdi.
+   */
   .mf-hero-copy .mf-home-order-cta {
-    min-height: 44px;
+    min-height: 46px;
     padding: 9px 12px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .mf-hero-restored .mf-home-hero-media {
@@ -1671,7 +1711,7 @@ img {
   .mf-product-detail-description { font-size: 12px; line-height: 1.5; }
   .mf-product-detail-price { font-size: 17px; }
   .mf-product-action { grid-template-columns: 116px minmax(0, 1fr); gap: 10px; }
-  .mf-detail-add { gap: 3px; padding: 10px; font-size: 12px; }
+  .mf-detail-add { gap: 3px; padding: 10px; min-height: 48px; font-size: 14px; }
 }
 
 @media (max-width: 639px) {

@@ -50,7 +50,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                 const Icon = item.icon;
 
                 return (
-                  <Link aria-current={active ? "page" : undefined} aria-label={item.href === "/cart" ? cartAriaLabel(itemCount, subtotal) : item.label} className={`pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1rem] px-0.5 text-[9px] font-black leading-tight text-white/82 ${item.href === "/cart" ? "mf-nav-cart" : ""}`} data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
+                  <Link aria-current={active ? "page" : undefined} aria-label={item.href === "/cart" ? cartAriaLabel(itemCount, subtotal) : item.label} className={`pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1rem] px-0.5 text-[11px] font-black leading-tight text-white/82 ${item.href === "/cart" ? "mf-nav-cart" : ""}`} data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
                     {active ? (
                       <span
                         className="mazetto-liquid-active absolute inset-0 rounded-[1rem]"
@@ -61,7 +61,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                     </span>
                     <span className={`relative max-w-full whitespace-nowrap ${active ? "text-[#F5CF00]" : ""}`}>{item.href === "/cart" && items.length ? subtotal.toLocaleString("uz-UZ") : mobileNavLabel(item.href)}</span>
                     {item.href === "/cart" && items.length ? (
-                      <span className="absolute right-1 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#F5CF00] px-1 text-[9px] font-black leading-none text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.24)]">
+                      <span className="absolute right-1 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#F5CF00] px-1 text-[10px] font-black leading-none text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.24)]">
                         {formatCartCount(itemCount)}
                       </span>
                     ) : null}
