@@ -1556,3 +1556,1006 @@
     justify-self: end;
   }
 }
+
+/* ==========================================================================
+ * POS TO'LOV VA CHEK EKRANLARI (payment/page.tsx, receipt/[id]/page.tsx)
+ * FAQAT QO'SHIMCHA BLOK — yuqoridagi qoidalar o'zgartirilmagan.
+ *
+ * Rang semantikasi: sariq (--gold) faqat asosiy CTA va narxlar uchun,
+ * teal/aqua tanlangan holat uchun, yashil muvaffaqiyat, qizil faqat
+ * xato/o'chirish uchun. Barcha bosiladigan elementlar >= 44px.
+ * Harakat `@media (prefers-reduced-motion)` bloki bilan `.shell *`
+ * orqali allaqachon o'chiriladi.
+ * ========================================================================== */
+
+.payLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.payOrders {
+  min-width: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.payOrdersHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.payOrdersHead .subheading {
+  margin: 0;
+}
+.payOrderList {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  /* Telefonda ro'yxat gorizontal lenta bo'ladi: to'lov shakli va
+     asosiy tugma ekranning ostiga tushib ketmaydi. */
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.payOrderCard {
+  display: grid;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 172px;
+  min-height: 76px;
+  padding: 10px 12px;
+  text-align: left;
+  background: white;
+  border: 1px solid var(--border);
+  border-left: 3px solid #629788;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.payOrderCard strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+.payOrderCard b {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.payOrderCard:hover {
+  border-color: #91b5a6;
+  background: #f2f8f5;
+}
+.payOrderCard[aria-pressed="true"] {
+  border-color: #08686a;
+  border-left-color: #08686a;
+  background: #e7f3f2;
+  box-shadow: inset 0 0 0 1px #08686a;
+}
+.payOrderCard:disabled {
+  opacity: 0.6;
+}
+
+.payMain {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.payPanel {
+  min-width: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.payOrderHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.payOrderNumber {
+  margin: 2px 0;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.payTotalBox {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border-left: 4px solid var(--gold);
+  background: #fffbe9;
+  border-radius: 0 8px 8px 0;
+  text-align: right;
+}
+.payTotalBox span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #745900;
+}
+.payTotalBox strong {
+  font-size: 28px;
+  line-height: 1.25;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.payTotalBox small {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.payItems {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.payItemRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: #f4f8f6;
+  font-size: 13px;
+}
+.payItemRow b {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.payTenders {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.payTenderRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  background: #f4f8f6;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.payTenderSelect {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  background: white;
+  color: var(--ink);
+  border: 1px solid #b4ccc0;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.payFixedAmount {
+  display: grid;
+  gap: 4px;
+  padding: 4px 0;
+  color: #45645b;
+  font-size: 13px;
+  font-weight: 700;
+}
+.payFixedAmount strong {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.payRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 14px;
+  background: #fff3f2;
+  color: #ae2a32;
+  border: 1px solid #edc2c3;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.payRemove:hover:not(:disabled) {
+  background: #ffe2df;
+}
+.payRemove:disabled {
+  opacity: 0.5;
+}
+
+.paySummary {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f4f8f6;
+  border-radius: 8px;
+}
+.paySummaryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.paySummaryRow b {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.paySummaryRow[data-tone="total"] {
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.payCash {
+  margin-top: 14px;
+  padding: 14px;
+  background: #f4f8f6;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.payDenoms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.payDenoms button {
+  min-height: 48px;
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: white;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.payDenoms button:hover:not(:disabled) {
+  background: #fff2bc;
+  border-color: #ddc559;
+}
+.payDenoms button:disabled {
+  opacity: 0.5;
+}
+.payDenoms .payDenomExact {
+  background: #eaf4f1;
+  border-color: #91b5a6;
+}
+.payDenoms .payDenomClear {
+  max-width: 72px;
+}
+.payChange {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #edf9f1;
+  border: 1px solid #a2d3b6;
+  color: #1c5c3c;
+}
+.payChange span {
+  font-size: 14px;
+  font-weight: 700;
+}
+.payChange strong {
+  font-size: 32px;
+  line-height: 1.2;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.payChange[data-tone="short"] {
+  background: #fff0ed;
+  border-color: #edc2c3;
+  color: #a52230;
+}
+.payActions {
+  margin-top: 16px;
+}
+.payPrimary {
+  min-height: 56px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.payConfirmList {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+  padding: 12px;
+  background: #f4f8f6;
+  border-radius: 8px;
+}
+.payDialogChange {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border-left: 4px solid var(--gold);
+  background: #fffbe9;
+  border-radius: 0 8px 8px 0;
+}
+.payDialogChange span {
+  font-size: 14px;
+  font-weight: 700;
+  color: #745900;
+}
+.payDialogChange strong {
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* --- Chek (receipt) ------------------------------------------------------ */
+.receiptLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.receiptPaper {
+  min-width: 0;
+  max-width: 420px;
+  width: 100%;
+  padding: 20px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--ink);
+}
+.receiptBrand {
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+.receiptBrand strong {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.receiptBrand span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.receiptDivider {
+  margin: 14px 0;
+  border-top: 1px dashed #a9c2b8;
+}
+.receiptMeta {
+  display: grid;
+  gap: 5px;
+}
+.receiptItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.receiptRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.receiptRow span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.receiptRow b {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.receiptTotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-left: 4px solid var(--gold);
+  background: #fffbe9;
+  border-radius: 0 8px 8px 0;
+}
+.receiptTotal span {
+  font-size: 14px;
+  font-weight: 800;
+}
+.receiptTotal strong {
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.receiptFooter {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.receiptSide {
+  min-width: 0;
+  padding: 16px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.receiptSide .subheading {
+  margin-top: 0;
+}
+.receiptActions {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.receiptActions > * {
+  min-height: 48px;
+}
+
+@media (min-width: 720px) {
+  .payLayout {
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  }
+  .payOrderList {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+    max-height: 62vh;
+    overflow-y: auto;
+  }
+  .payOrderCard {
+    min-width: 0;
+  }
+  .payTenderRow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 180px) auto;
+  }
+  .receiptLayout {
+    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+  }
+}
+
+/*
+ * Brauzer orqali chop etish. Fizik kassa printeri (print-agent)
+ * integratsiyasi keyingi bosqichga qoldirilgan.
+ *
+ * `visibility` ishlatiladi (`display: none` emas): shunda StaffShell
+ * sarlavhasi va yon panelni qog'ozdan olib tashlash uchun ularning
+ * markup'iga tegish kerak bo'lmaydi.
+ *
+ * MUHIM: bu fayl BARCHA xodim ekranlariga yuklanadi, shuning uchun
+ * "hammasini yashirish" qoidasi `:has(.receiptPaper)` bilan FAQAT chek
+ * sahifasiga cheklangan. Aks holda oshxona yoki kassa ekranini chop
+ * etishga urinish bo'sh varaq bergan bo'lardi.
+ */
+@page {
+  margin: 8mm;
+}
+@media print {
+  .shell:has(.receiptPaper) {
+    background: white !important;
+    min-height: 0 !important;
+  }
+  .shell:has(.receiptPaper) * {
+    visibility: hidden !important;
+    box-shadow: none !important;
+  }
+  .receiptPaper,
+  .receiptPaper * {
+    visibility: visible !important;
+  }
+  .receiptPaper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    color: #000;
+    font-size: 12px;
+  }
+  .receiptPaper .receiptRow span,
+  .receiptPaper .receiptBrand span,
+  .receiptPaper .receiptFooter {
+    color: #000;
+  }
+  .receiptPaper .receiptTotal {
+    background: transparent;
+    border-left: 0;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+    padding: 8px 0;
+    border-radius: 0;
+  }
+  .receiptPaper .receiptDivider {
+    border-top-color: #000;
+  }
+}
+
+/* ==========================================================================
+   OFITSIANT (waiter) ISH STOLI — qo'shilgan blok.
+   Faqat YANGI qoidalar; yuqoridagi mavjud qoidalar o'zgartirilmagan.
+
+   Rang semantikasi (DESIGN_RULES): yashil = bo'sh stol, info ko'k = band,
+   sariq = bron, kulrang = tozalanmoqda. Qizil FAQAT buzg'unchi amal/xato
+   uchun — band stol normal ish holati, xato emas.
+   Quyidagi tokenlar qiymati yuqoridagi `.badge[data-tone]` qoidalaridan
+   AYNAN ko'chirilgan, ya'ni palitraga yangi rang kirmaydi.
+   ========================================================================== */
+.waiterWorkspace {
+  --t-free: #206b47;
+  --t-free-bg: #dff3e6;
+  --t-busy: #305b8f;
+  --t-busy-bg: #e5effc;
+  --t-hold: #755900;
+  --t-hold-bg: #fff2bc;
+  --t-idle: #49695b;
+  --t-idle-bg: #edf2ef;
+}
+.waiterBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+.waiterMain {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.waiterViewNav {
+  justify-self: start;
+}
+.waiterViewNav button {
+  min-height: 44px;
+}
+.waiterLoading {
+  display: grid;
+  gap: 14px;
+}
+.waiterAside {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: calc(100dvh - 32px);
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow:
+    0 2px 3px #003e4308,
+    0 8px 20px -10px #003e4333;
+}
+.waiterAsideBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+  scrollbar-width: thin;
+}
+.waiterHint {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.waiterNote {
+  font-size: 13px;
+}
+.waiterCount {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.waiterTextarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 12px;
+  background: white;
+  color: var(--ink);
+  border: 1px solid #b4ccc0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.waiterTextarea:focus-visible {
+  outline: 3px solid #128780;
+  outline-offset: 2px;
+}
+
+/* Zal xaritasi */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+}
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 12px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.legendDot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--t-idle);
+}
+.legendDot[data-status="AVAILABLE"] {
+  background: var(--t-free);
+}
+.legendDot[data-status="OCCUPIED"] {
+  background: var(--t-busy);
+}
+.legendDot[data-status="RESERVED"] {
+  background: var(--t-hold);
+}
+.hallSection {
+  min-width: 0;
+  margin-bottom: 20px;
+}
+.hallHeading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.hallHeading .badge {
+  font-size: 13px;
+  padding: 5px 9px;
+}
+.tableGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: 12px;
+}
+.tableCard {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  justify-items: start;
+  min-width: 0;
+  min-height: 132px;
+  padding: 12px 14px;
+  text-align: left;
+  background: white;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--t-idle);
+  border-radius: 8px;
+  color: var(--ink);
+  box-shadow: 0 2px 5px #123b260b;
+}
+.tableCard[data-status="AVAILABLE"] {
+  border-left-color: var(--t-free);
+}
+.tableCard[data-status="OCCUPIED"] {
+  border-left-color: var(--t-busy);
+}
+.tableCard[data-status="RESERVED"] {
+  border-left-color: var(--t-hold);
+}
+.tableCard:hover:not(:disabled) {
+  border-color: #91b5a6;
+}
+.tableCard[aria-pressed="true"] {
+  border-color: #08686a;
+  background: #edf6ee;
+  box-shadow: 0 0 0 3px #12878033;
+}
+.tableName {
+  font-size: 18px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.tableMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tableStatus {
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+.tableOrderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid #e5eee8;
+  font-size: 13px;
+}
+.tableOrderRow strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Menyu kartochkalari o'z matn o'lchamlari bilan */
+.waiterProductName {
+  font-size: 14px;
+  line-height: 1.3;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.waiterProductPrice {
+  font-weight: 800;
+  font-size: 14px;
+  color: #00645f;
+}
+
+/* Buyurtma paneli */
+.waiterOrderHead {
+  flex-shrink: 0;
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e4ece7;
+  background: #f8fbf9;
+}
+.waiterOrderTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.waiterOrderTitle h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.waiterOrderFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.waiterOrderFacts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.waiterOrderSwitch {
+  margin-bottom: 14px;
+}
+.waiterFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 0 0 14px;
+}
+.waiterFacts dt {
+  font-size: 13px;
+  color: var(--muted);
+}
+.waiterFacts dd {
+  margin: 3px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.waiterOpenForm {
+  display: grid;
+  gap: 14px;
+}
+.waiterLines {
+  display: grid;
+}
+.waiterLine {
+  padding: 14px 0;
+  border-bottom: 1px solid #e4ece7;
+}
+.waiterLine:first-child {
+  padding-top: 0;
+}
+.waiterLineTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.waiterLineTop > div:first-child {
+  min-width: 0;
+}
+.waiterLineTop strong {
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.waiterLineMeta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.waiterLineActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.waiterRemove {
+  color: #ae2a32;
+}
+.waiterRemove:hover:not(:disabled) {
+  background: #ffe2df;
+  border-color: #edc2c3;
+}
+.waiterLineBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+.waiterQty {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.waiterQty button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: #f2f7f3;
+  border: 0;
+  color: var(--ink);
+}
+.waiterQty button:hover:not(:disabled) {
+  background: var(--gold);
+}
+.waiterQty > span {
+  min-width: 40px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.waiterStepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 4px;
+}
+.waiterLineTotal {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.waiterFooter {
+  flex-shrink: 0;
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  background: #f8fbf9;
+}
+.waiterFooter .error {
+  margin-bottom: 0;
+}
+.waiterFooter .totalRow {
+  margin-bottom: 0;
+}
+.waiterActions {
+  display: grid;
+  gap: 10px;
+}
+.tall {
+  min-height: 52px;
+  font-size: 15px;
+}
+
+/* Tasdiqlash dialoglari */
+.confirmList {
+  list-style: none;
+  margin: 14px 0;
+  padding: 0;
+}
+.confirmList > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #e5eee8;
+}
+.confirmList > li:first-child {
+  border-top: 0;
+}
+.confirmList .itemName {
+  flex: 1;
+  font-size: 14px;
+}
+.confirmList .itemName small {
+  font-size: 13px;
+}
+
+@media (max-width: 1023px) {
+  .waiterBody {
+    grid-template-columns: 1fr;
+  }
+  .waiterAside {
+    position: static;
+    max-height: none;
+  }
+  .waiterAsideBody {
+    overflow-y: visible;
+  }
+}
+@media (max-width: 767px) {
+  .waiterWorkspace {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom));
+  }
+  .waiterViewNav {
+    justify-self: stretch;
+  }
+  .waiterWorkspace .mobilePaybar small {
+    font-size: 12px;
+  }
+  .tableGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .waiterFacts {
+    gap: 10px;
+  }
+}
+@media (max-width: 359px) {
+  .tableGrid {
+    grid-template-columns: 1fr;
+  }
+}

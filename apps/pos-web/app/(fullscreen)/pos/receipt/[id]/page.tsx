@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AuthShell } from "../../../../../components/auth/auth-shell";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Check, Printer, RotateCcw } from "lucide-react";
 import { PermissionGuard } from "../../../../../components/auth/permission-guard";
 import { RoleGuard } from "../../../../../components/auth/role-guard";
-import { EmptyState, PrimaryButton } from "../../../../../components/erp/erp-ui";
-import { apiFetch } from "../../../../../lib/api";
+import { useAuth } from "../../../../../components/auth/auth-provider";
+import {
+  StaffEmpty,
+  StaffShell,
+} from "../../../../../components/staff/staff-shell";
+import styles from "../../../../../components/staff/staff.module.css";
+import { paymentMethodLabel } from "../../../../../components/payment/payment-methods";
+import { apiFetch, SessionExpiredError } from "../../../../../lib/api";
+import { formatDateTime, formatMoney } from "../../../../../lib/order-display";
 
 type Receipt = {
   id: string;
@@ -18,8 +26,20 @@ type Receipt = {
   order: {
     orderNumber: string;
     displayOrderNumber?: string | null;
-    items: { id: string; productName: string; variantName?: string | null; quantity: string; totalPrice: string }[];
-    payments: { id: string; amount: string; method: { code: string; name: string }; acceptedBy?: { firstName: string; lastName: string } | null }[];
+    items: {
+      id: string;
+      productName: string;
+      variantName?: string | null;
+      quantity: string;
+      totalPrice: string;
+    }[];
+    payments: {
+      id: string;
+      amount: string;
+      methodCode?: string | null;
+      method?: { code: string; name: string } | null;
+      acceptedBy?: { firstName: string; lastName?: string | null } | null;
+    }[];
   };
 };
 
@@ -27,86 +47,224 @@ export default function ReceiptPage({ params }: { params: { id: string } }) {
   return (
     <RoleGuard roles={["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"]}>
       <PermissionGuard permission="RECEIPT_VIEW">
-        <AuthShell eyebrow="Receipt" title="Receipt preview">
-          <ReceiptPreview id={params.id} />
-        </AuthShell>
+        <ReceiptPreview id={params.id} />
       </PermissionGuard>
     </RoleGuard>
   );
 }
 
 function ReceiptPreview({ id }: { id: string }) {
+  const { logout } = useAuth();
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isMarking, setIsMarking] = useState(false);
+  const markLock = useRef(false);
 
-  async function load() {
-    setReceipt(await apiFetch<Receipt>(`/receipts/${id}`));
-  }
+  const describe = useCallback(
+    (caught: unknown, fallback: string): string => {
+      if (caught instanceof SessionExpiredError) {
+        void logout();
+        return caught.message;
+      }
+
+      return caught instanceof Error ? caught.message : fallback;
+    },
+    [logout],
+  );
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      setReceipt(
+        await apiFetch<Receipt>(`/receipts/${id}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(12000),
+        }),
+      );
+    } catch (caught) {
+      // Ilgari xato bo'lsa ekran abadiy "yuklanmoqda" holatida qolardi.
+      setReceipt(null);
+      setError(describe(caught, "Chek yuklanmadi."));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [describe, id]);
 
   useEffect(() => {
     void load();
-  }, [id]);
+  }, [load]);
 
-  async function markPrinted() {
-    setReceipt(await apiFetch<Receipt>(`/receipts/${id}/print`, { method: "PATCH" }));
-  }
+  /*
+   * Brauzer chop etishi. Fizik printer (print-agent) integratsiyasi
+   * KEYINGI BOSQICHGA qoldirilgan — shuning uchun bu tugma faqat
+   * brauzer dialogini ochadi va so'ng chekni "chop etilgan" deb
+   * belgilaydi. Belgilash muvaffaqiyatsiz bo'lsa chop etish bekor
+   * bo'lmaydi, faqat xato ko'rsatiladi.
+   */
+  async function printAndMark() {
+    if (markLock.current) {
+      return;
+    }
 
-  if (!receipt) {
-    return <EmptyState title="Receipt is loading." />;
+    markLock.current = true;
+    setIsMarking(true);
+    setError(null);
+    try {
+      window.print();
+      setReceipt(
+        await apiFetch<Receipt>(`/receipts/${id}/print`, {
+          method: "PATCH",
+          signal: AbortSignal.timeout(12000),
+        }),
+      );
+    } catch (caught) {
+      setError(describe(caught, "Chek holati saqlanmadi."));
+    } finally {
+      markLock.current = false;
+      setIsMarking(false);
+    }
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[420px_1fr]">
-      <article className="rounded-3xl border border-neutral-100 bg-white p-6 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-neutral-950">MAZETTO FOOD</h2>
-          <p className="mt-1 text-sm text-neutral-500">{receipt.branch.name}</p>
-          <p className="text-sm text-neutral-500">{receipt.branch.phone ?? ""}</p>
-        </div>
-        <div className="my-5 border-t border-dashed border-neutral-300" />
-        <div className="grid gap-1 text-sm text-neutral-600">
-          <p>Receipt: <span className="font-semibold text-neutral-950">{receipt.receiptNumber}</span></p>
-          <p>Order: <span className="font-semibold text-neutral-950">{receipt.order.displayOrderNumber ?? receipt.order.orderNumber}</span></p>
-          <p>Date: {new Date(receipt.createdAt).toLocaleString()}</p>
-        </div>
-        <div className="my-5 border-t border-dashed border-neutral-300" />
-        <div className="grid gap-3">
-          {receipt.order.items.map((item) => (
-            <div className="flex justify-between gap-4 text-sm" key={item.id}>
-              <span className="font-semibold text-neutral-800">{formatQuantity(item.quantity)}x {item.productName} {item.variantName ?? ""}</span>
-              <span className="text-neutral-600">{formatMoney(item.totalPrice)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="my-5 border-t border-dashed border-neutral-300" />
-        <div className="grid gap-2 text-sm">
-          {receipt.order.payments.map((payment) => (
-            <div className="flex justify-between" key={payment.id}>
-              <span className="text-neutral-600">{payment.method.name}</span>
-              <span className="font-semibold text-neutral-950">{formatMoney(payment.amount)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 flex justify-between rounded-2xl bg-emerald-50 px-4 py-3 text-lg font-bold text-neutral-950">
-          <span>Total</span>
-          <span>{formatMoney(receipt.total)}</span>
-        </div>
-      </article>
+    <StaffShell
+      title="Chek"
+      actions={
+        <Link className={styles.shiftLink} href="/pos">
+          <ArrowLeft size={17} aria-hidden="true" />
+          <span>Kassaga qaytish</span>
+        </Link>
+      }
+    >
+      <div className={`${styles.content} ${styles.narrowContent}`}>
+        {error ? (
+          <div className={styles.error} role="alert">
+            <span>{error}</span>
+            <button
+              className={styles.button}
+              disabled={isLoading}
+              onClick={() => void load()}
+              type="button"
+            >
+              <RotateCcw size={16} aria-hidden="true" />
+              Qayta urinish
+            </button>
+          </div>
+        ) : null}
 
-      <aside className="rounded-3xl border border-neutral-100 bg-white p-5 shadow-[0_14px_45px_rgba(17,24,39,0.08)]">
-        <h2 className="text-xl font-semibold text-neutral-950">Print status</h2>
-        <p className="mt-2 text-sm text-neutral-500">
-          {receipt.printed ? `Printed ${receipt.printedAt ? new Date(receipt.printedAt).toLocaleString() : ""}` : "Not printed yet"}
-        </p>
-        <div className="mt-5">
-          <PrimaryButton onClick={() => void markPrinted()}>Mark printed</PrimaryButton>
-        </div>
-      </aside>
-    </section>
+        {isLoading && !receipt ? (
+          <StaffEmpty title="Chek yuklanmoqda..." />
+        ) : !receipt ? (
+          <StaffEmpty title="Chek topilmadi">
+            Havolani tekshirib, qaytadan urinib ko'ring.
+          </StaffEmpty>
+        ) : (
+          <div className={styles.receiptLayout}>
+            <article className={styles.receiptPaper} aria-label="Chek">
+              <div className={styles.receiptBrand}>
+                <strong>MAZETTO FOOD</strong>
+                <span>{receipt.branch.name}</span>
+                {receipt.branch.address ? (
+                  <span>{receipt.branch.address}</span>
+                ) : null}
+                {receipt.branch.phone ? (
+                  <span>{receipt.branch.phone}</span>
+                ) : null}
+              </div>
+              <div className={styles.receiptDivider} />
+              <div className={styles.receiptMeta}>
+                <div className={styles.receiptRow}>
+                  <span>Chek</span>
+                  <b>{receipt.receiptNumber}</b>
+                </div>
+                <div className={styles.receiptRow}>
+                  <span>Buyurtma</span>
+                  <b>
+                    #
+                    {receipt.order.displayOrderNumber ??
+                      receipt.order.orderNumber}
+                  </b>
+                </div>
+                <div className={styles.receiptRow}>
+                  <span>Sana</span>
+                  <b>{formatDateTime(receipt.createdAt)}</b>
+                </div>
+              </div>
+              <div className={styles.receiptDivider} />
+              <ul className={styles.receiptItems}>
+                {receipt.order.items.map((item) => (
+                  <li className={styles.receiptRow} key={item.id}>
+                    <span>
+                      {formatQuantity(item.quantity)} × {item.productName}
+                      {item.variantName ? ` (${item.variantName})` : ""}
+                    </span>
+                    <b>{formatMoney(item.totalPrice)}</b>
+                  </li>
+                ))}
+              </ul>
+              <div className={styles.receiptDivider} />
+              <div className={styles.receiptMeta}>
+                {receipt.order.payments.map((payment) => (
+                  <div className={styles.receiptRow} key={payment.id}>
+                    <span>
+                      {payment.method?.name ??
+                        paymentMethodLabel(
+                          payment.methodCode ?? payment.method?.code ?? "",
+                        )}
+                    </span>
+                    <b>{formatMoney(payment.amount)}</b>
+                  </div>
+                ))}
+              </div>
+              <div className={styles.receiptTotal}>
+                <span>Jami</span>
+                <strong>{formatMoney(receipt.total)}</strong>
+              </div>
+              <p className={styles.receiptFooter}>Xaridingiz uchun rahmat!</p>
+            </article>
+
+            <aside className={styles.receiptSide} aria-label="Chek amallari">
+              <h3 className={styles.subheading}>Chop etish holati</h3>
+              <div
+                className={styles.badge}
+                data-tone={receipt.printed ? "ready" : "waiting"}
+              >
+                {receipt.printed ? "Chop etilgan" : "Chop etilmagan"}
+              </div>
+              {receipt.printed && receipt.printedAt ? (
+                <p className={styles.muted}>
+                  {formatDateTime(receipt.printedAt)}
+                </p>
+              ) : null}
+              <div className={styles.receiptActions}>
+                <button
+                  className={`${styles.primary} ${styles.full}`}
+                  disabled={isMarking}
+                  onClick={() => void printAndMark()}
+                  type="button"
+                >
+                  <Printer size={19} aria-hidden="true" />
+                  {isMarking ? "Chop etilmoqda..." : "Chop etish"}
+                </button>
+                <Link
+                  className={`${styles.button} ${styles.full}`}
+                  href="/pos"
+                >
+                  <Check size={18} aria-hidden="true" />
+                  Yangi buyurtma
+                </Link>
+              </div>
+              <p className={styles.note}>
+                Chek brauzer orqali chop etiladi. Kassa printeriga to'g'ridan
+                to'g'ri ulanish keyingi bosqichda qo'shiladi.
+              </p>
+            </aside>
+          </div>
+        )}
+      </div>
+    </StaffShell>
   );
-}
-
-function formatMoney(value: string | number): string {
-  return `${Number(value || 0).toLocaleString("uz-UZ")} UZS`;
 }
 
 function formatQuantity(value: string): string {
