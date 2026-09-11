@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Banknote,
   Check,
   ChevronDown,
   Clock3,
@@ -69,6 +70,13 @@ type CourierOrder = {
     displayOrderNumber?: string | null;
     status: OrderStatus;
     total: string;
+    /*
+     * Buyurtma allaqachon to'langanmi. Server buni har doim qaytaradi
+     * (`include: { order: ... }` skalyar maydonlarni beradi), lekin ilgari
+     * bu tipda e'lon qilinmagani uchun kuryer kartasida KO'RSATILMASDI —
+     * kuryer eshik oldida pul olish kerakmi-yo'qmi bilmasdi.
+     */
+    paymentStatus?: "PENDING" | "PAID" | "SUCCESS" | "FAILED" | "REFUNDED";
     items: {
       id: string;
       productName: string;
@@ -78,6 +86,16 @@ type CourierOrder = {
     statusHistory?: CourierStatusHistoryEntry[];
   } | null;
 };
+/*
+ * Mijozdan naqd yig'ish kerakmi.
+ *
+ * Server pul yozuvini faqat `outstanding > 0` bo'lganda yaratadi
+ * (`customer-courier.service.ts`), ya'ni onlayn to'langan buyurtma
+ * kuryer kassasiga tushmaydi. Bu funksiya shu qarorni EKRANDA ham
+ * ko'rsatish uchun: kuryer qancha pul olishini oldindan biladi.
+ */
+const needsCashCollection = (order: CourierOrder) =>
+  (order.order?.paymentStatus ?? "PENDING") !== "PAID";
 type DeliveryAction = "SERVED" | "COMPLETED" | "CANCELLED";
 type CourierShift = {
   id: string;
@@ -229,7 +247,7 @@ export function CourierOrdersPage() {
   const readyCount = orders.filter(readyForDelivery).length;
   const visible = useMemo(() => {
     const term = query.trim().toLocaleLowerCase();
-    return orders.filter((order) => {
+    const filtered = orders.filter((order) => {
       if (filter === "ready" && !readyForDelivery(order)) return false;
       if (filter === "waiting" && readyForDelivery(order)) return false;
       return (
@@ -242,6 +260,28 @@ export function CourierOrdersPage() {
           order.order?.orderNumber,
         ].some((value) => value?.toLocaleLowerCase().includes(term))
       );
+    });
+    /*
+     * Tartib: qo'lda olingan buyurtma tepada, keyin olishga tayyorlari,
+     * keyin yaqinlari, oxirida oshxonada kutayotganlari.
+     *
+     * Ilgari server tartibi (faqat `createdAt`) saqlanardi va tayyor
+     * buyurtma hali tayyorlanmagani bilan aralashib ketardi — kuryer
+     * butun ro'yxatni ko'zdan kechirishga majbur bo'lardi.
+     */
+    const rank = (order: CourierOrder) => {
+      const status = order.order?.status ?? order.status;
+      if (status === "SERVED") return 0;
+      if (readyForDelivery(order)) return 1;
+      return 2;
+    };
+    return filtered.sort((left, right) => {
+      const byRank = rank(left) - rank(right);
+      if (byRank !== 0) return byRank;
+      const leftDistance = left.distanceKm ?? Number.POSITIVE_INFINITY;
+      const rightDistance = right.distanceKm ?? Number.POSITIVE_INFINITY;
+      if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+      return left.createdAt.localeCompare(right.createdAt);
     });
   }, [orders, filter, query]);
 
@@ -276,7 +316,16 @@ export function CourierOrdersPage() {
         method: "PATCH",
         body: JSON.stringify({
           status,
-          ...(status === "COMPLETED"
+          /*
+           * To'lov usuli FAQAT haqiqatan pul yig'ilganda yuboriladi.
+           *
+           * Ilgari har bir yakunlashda `paymentMethodCode: "CASH"` ketardi —
+           * onlayn to'langan buyurtmada ham. Server uni e'tiborsiz
+           * qoldirardi (qoldiq 0 bo'lsa to'lov yozmaydi), lekin so'rov
+           * "naqd oldim" deb da'vo qilardi va bu audit izidan noto'g'ri
+           * o'qilardi. Endi da'vo faqat rost bo'lganda yuboriladi.
+           */
+          ...(status === "COMPLETED" && needsCashCollection(order)
             ? { shiftId: courierShift?.id, paymentMethodCode: "CASH" }
             : {}),
         }),
@@ -646,6 +695,24 @@ export function CourierOrdersPage() {
                 ? "Buyurtmani olganingizni tasdiqlang. Mijozga kuryer yo'lda ekanligi ko'rinadi."
                 : "Buyurtma bekor qilinadi va faol ro'yxatdan olinadi."}
           </p>
+          {/*
+            Yakunlashdan OLDIN pul haqida aniq gap. Kuryer "Tasdiqlash"ni
+            bosishdan avval mijozdan qancha naqd olishini yoki hech narsa
+            olmasligini ko'radi — ilgari bu ma'lumot ekranda yo'q edi.
+          */}
+          {confirmation.status === "COMPLETED" ? (
+            needsCashCollection(confirmation.order) ? (
+              <p className={styles.note}>
+                Mijozdan naqd oling:{" "}
+                <strong>{formatMoney(confirmation.order.order?.total)}</strong>.
+                Bu summa sizning ochiq smenangizga yoziladi.
+              </p>
+            ) : (
+              <p className={styles.muted}>
+                Buyurtma allaqachon to'langan. Mijozdan pul olinmaydi.
+              </p>
+            )
+          ) : null}
           {error && (
             <div className={styles.error} role="alert">
               {error}
@@ -694,6 +761,7 @@ function CourierOrderCard({
   const point = resolvePoint(order.deliveryLocation);
   const status = order.order?.status ?? order.status;
   const isReady = readyForDelivery(order);
+  const collectCash = needsCashCollection(order);
   const title =
     order.order?.displayOrderNumber ?? order.order?.orderNumber ?? "Buyurtma";
   const destination = point
@@ -715,19 +783,35 @@ function CourierOrderCard({
             · {order.branch?.name ?? "Filial"}
           </p>
         </div>
-        <span
-          className={styles.badge}
-          data-tone={isReady ? "ready" : "waiting"}
-        >
-          {status === "SERVED" ? (
-            <Truck size={14} />
-          ) : isReady ? (
-            <PackageCheck size={14} />
-          ) : (
-            <Clock3 size={14} />
-          )}
-          {status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}
-        </span>
+        <div className={styles.inlineActions}>
+          {/*
+            To'lov holati buyurtma holatining YONIDA turadi: kuryer kartaga
+            bir qarab, pul olish kerakmi-yo'qmi tushunadi. "ready" toni —
+            hech narsa qilinmaydi, "waiting" toni — e'tibor talab qiladi.
+          */}
+          <span
+            className={styles.badge}
+            data-tone={collectCash ? "waiting" : "ready"}
+          >
+            {collectCash ? <Banknote size={14} /> : <Check size={14} />}
+            {collectCash
+              ? `Naqd: ${formatMoney(order.order?.total)}`
+              : "To'langan"}
+          </span>
+          <span
+            className={styles.badge}
+            data-tone={isReady ? "ready" : "waiting"}
+          >
+            {status === "SERVED" ? (
+              <Truck size={14} />
+            ) : isReady ? (
+              <PackageCheck size={14} />
+            ) : (
+              <Clock3 size={14} />
+            )}
+            {status === "SERVED" ? "Kuryer yo'lda" : orderStatusLabels[status]}
+          </span>
+        </div>
       </div>
       <div className={styles.deliveryBody}>
         <div className={styles.addressRow}>
