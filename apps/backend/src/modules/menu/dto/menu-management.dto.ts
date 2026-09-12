@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -28,6 +29,15 @@ export class CreateCategoryDto {
   @IsString()
   image?: string;
 
+  /*
+   * Ota kategoriya. `Category.parentId` sxemada bor va `listCategories`
+   * uni qaytaradi, lekin DTO qabul qilmagani uchun quyi kategoriyalarni
+   * boshqarib bo'lmasdi.
+   */
+  @IsOptional()
+  @IsString()
+  parentId?: string;
+
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -48,6 +58,11 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsString()
   image?: string;
+
+  /* `null` — ota kategoriyadan ajratish (yuqori darajaga ko'tarish). */
+  @IsOptional()
+  @IsString()
+  parentId?: string | null;
 
   @IsOptional()
   @IsNumber()
@@ -85,6 +100,37 @@ export class ProductVariantDto {
 export class ProductModifierDto {
   @IsString()
   modifierId!: string;
+
+  /*
+   * GURUH SOZLAMALARI.
+   *
+   * `ProductModifier` jadvali bu maydonlarni SAQLAYDI va
+   * `GET /menu/products/:id` ularni QAYTARADI, lekin DTO ularni qabul
+   * qilmagani uchun admin paneldan o'zgartirib bo'lmasdi — mahsulot
+   * saqlanganda hammasi standart qiymatga tushib ketardi.
+   *
+   * Yuborilmasa, mavjud qiymat o'zgarmaydi (qarang `menu.service`).
+   */
+  @IsOptional()
+  @IsBoolean()
+  isRequired?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(20)
+  minSelect?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  maxSelect?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sortOrder?: number;
 }
 
 export class CreateProductDto {
@@ -193,6 +239,27 @@ export class CreateModifierDto {
   @IsNumber()
   @Min(0)
   price!: number;
+
+  /*
+   * `description`, `sortOrder` va `isActive` YARATISHDA ham qabul
+   * qilinadi. Ilgari faqat nom va narx olinardi, ya'ni admin panel
+   * har yangi modifikatordan keyin ikkinchi PATCH yuborishga majbur
+   * bo'lardi — va shu ikki so'rov orasida modifikator noto'g'ri
+   * tartibda ko'rinardi.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class UpdateModifierDto {
@@ -200,6 +267,12 @@ export class UpdateModifierDto {
   @IsString()
   @MaxLength(80)
   name?: string;
+
+  /* `Modifier.description` sxemada bor, lekin DTO uni qabul qilmasdi. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
 
   @IsOptional()
   @IsNumber()

@@ -31,9 +31,11 @@ import type {
   CreateOnlineOrderDto,
 } from "./dto/customer.dto";
 import {
+  buildOrderSearchWhere,
   customerCancelRejection,
   customerOrderInclude,
   productInclude,
+  toOrderStatus,
   withDerivedCustomerOrderStatus,
 } from "./customer-shared";
 import type { CancelCustomerOrderDto } from "./dto/cancel-customer-order.dto";
@@ -337,9 +339,29 @@ export class CustomersService {
 
   async listOnlineOrders(query: ListOnlineOrdersDto, user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user, query.branchId);
+    /*
+     * HOLAT va QIDIRUV endi HAQIQATAN ishlaydi.
+     *
+     * `ListOnlineOrdersDto` bu ikki maydonni allaqachon e'lon qilgan,
+     * lekin bu metod ularni E'TIBORSIZ qoldirardi — admin paneldagi
+     * qidiruv faqat joriy sahifa ichida ishlaydi deb ogohlantirishga
+     * majbur bo'lardi, va holat filtri umuman hech narsa qilmasdi.
+     *
+     * `buildOrderSearchWhere` kuryer ro'yxatida allaqachon ishlatiladi:
+     * buyurtma raqami, mijoz ismi/telefoni, manzil va taom nomi.
+     */
+    const status = toOrderStatus(query.status);
+    const search = query.search?.trim();
+    const orderFilters: Prisma.OrderWhereInput[] = [];
+
+    if (status) orderFilters.push({ status });
+    if (search) orderFilters.push(buildOrderSearchWhere(search));
 
     const customerOrders = await this.prisma.customerOrder.findMany({
-      where: branchId ? { branchId } : {},
+      where: {
+        ...(branchId ? { branchId } : {}),
+        ...(orderFilters.length ? { order: { AND: orderFilters } } : {}),
+      },
       orderBy: { createdAt: "desc" },
       skip: query.offset,
       take: query.limit,

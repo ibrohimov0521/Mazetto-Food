@@ -208,8 +208,8 @@ export class KitchenService {
     return result.ticket;
   }
 
-  async cancelTicket(id: string, user: AuthenticatedUser) {
-    const result = await this.applyTicketAction(id, "cancel", user);
+  async cancelTicket(id: string, user: AuthenticatedUser, reason?: string) {
+    const result = await this.applyTicketAction(id, "cancel", user, reason);
     return result.ticket;
   }
 
@@ -217,6 +217,7 @@ export class KitchenService {
     id: string,
     action: KitchenStaffAction,
     user: AuthenticatedUser,
+    reason?: string,
   ) {
     const existingTicket = await this.prisma.kitchenTicket.findUnique({
       where: { id },
@@ -227,10 +228,19 @@ export class KitchenService {
       throw new NotFoundException("Oshxona chiptasi topilmadi");
     }
 
+    /*
+     * Oshxona yozgan sabab SAQLANADI. Ilgari har bekor qilish bir xil
+     * qat'iy satr bilan yozilardi, ya'ni tarixdan nima bo'lganini
+     * bilib bo'lmasdi.
+     */
+    const trimmed = reason?.trim();
+
     return this.applyOrderAction(existingTicket.orderId, action, {
       user,
       reasonPrefix: "Kitchen UI",
-      cancellationReason: "Kitchen UI orqali bekor qilindi",
+      cancellationReason: trimmed
+        ? `Oshxona bekor qildi: ${trimmed}`
+        : "Oshxona bekor qildi",
     });
   }
 

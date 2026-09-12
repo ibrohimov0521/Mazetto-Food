@@ -15,6 +15,39 @@ import type {
   UpdateProductDto,
 } from "./dto/menu-management.dto";
 
+/*
+ * Mahsulot-modifikator bog'lamining guruh sozlamalari.
+ *
+ * So'rovda maydon KO'RSATILMAGAN bo'lsa, eski qiymat qaytariladi.
+ * Bu `deleteMany` + `createMany` naqshi uchun zarur: aks holda har
+ * saqlash sozlamalarni standart qiymatga qaytarardi.
+ *
+ * Eski yozuv ham bo'lmasa (yangi bog'lam) — sxemadagi standart
+ * qiymatlar: majburiy emas, kamida 0 ta tanlov.
+ *
+ * `maxSelect` sxemada `Int?` va `null` "yuqori chegara YO'Q" degani,
+ * shuning uchun u ataylab `null` bilan saqlanadi: uni 1 ga aylantirish
+ * cheksiz tanlovli guruhni jimgina bitta tanlovga qisib qo'yardi.
+ */
+export function productModifierSettings(
+  modifier: {
+    isRequired?: boolean;
+    minSelect?: number;
+    maxSelect?: number;
+  },
+  previous?: {
+    isRequired: boolean;
+    minSelect: number;
+    maxSelect: number | null;
+  },
+) {
+  return {
+    isRequired: modifier.isRequired ?? previous?.isRequired ?? false,
+    minSelect: modifier.minSelect ?? previous?.minSelect ?? 0,
+    maxSelect: modifier.maxSelect ?? previous?.maxSelect ?? null,
+  };
+}
+
 @Injectable()
 export class MenuService {
   constructor(private readonly prisma: PrismaService) {}
@@ -264,6 +297,7 @@ export class MenuService {
         name: dto.name,
         description: dto.description ?? null,
         imageUrl: dto.image ?? null,
+        parentId: dto.parentId ?? null,
         sortOrder: dto.sortOrder,
       },
     });
@@ -278,6 +312,7 @@ export class MenuService {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.image !== undefined ? { imageUrl: dto.image } : {}),
+        ...(dto.parentId !== undefined ? { parentId: dto.parentId } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
@@ -336,7 +371,8 @@ export class MenuService {
           data: dto.modifiers.map((modifier, index) => ({
             productId: product.id,
             modifierId: modifier.modifierId,
-            sortOrder: index,
+            ...productModifierSettings(modifier),
+            sortOrder: modifier.sortOrder ?? index,
           })),
           skipDuplicates: true,
         });
@@ -419,13 +455,44 @@ export class MenuService {
       }
 
       if (dto.modifiers) {
+        /*
+         * MAVJUD SOZLAMALAR SAQLANADI.
+         *
+         * Bu blok `deleteMany` + `createMany` qiladi, ya'ni har saqlashda
+         * bog'lamlar qaytadan yaratiladi. Ilgari faqat `modifierId` va
+         * indeks yozilardi — natijada mahsulot har saqlanganda
+         * `isRequired`, `minSelect`, `maxSelect` standart qiymatga
+         * tushib ketardi va admin buni sezmasdi ham.
+         *
+         * Endi eski qiymatlar OLDIN o'qiladi va so'rovda aniq
+         * ko'rsatilmagan maydonlar o'sha joyidan tiklanadi.
+         */
+        const previous = await tx.productModifier.findMany({
+          where: { productId: id },
+          select: {
+            modifierId: true,
+            isRequired: true,
+            minSelect: true,
+            maxSelect: true,
+            sortOrder: true,
+          },
+        });
+        const previousByModifier = new Map(
+          previous.map((link) => [link.modifierId, link]),
+        );
+
         await tx.productModifier.deleteMany({ where: { productId: id } });
         await tx.productModifier.createMany({
-          data: dto.modifiers.map((modifier, index) => ({
-            productId: id,
-            modifierId: modifier.modifierId,
-            sortOrder: index,
-          })),
+          data: dto.modifiers.map((modifier, index) => {
+            const before = previousByModifier.get(modifier.modifierId);
+
+            return {
+              productId: id,
+              modifierId: modifier.modifierId,
+              ...productModifierSettings(modifier, before),
+              sortOrder: modifier.sortOrder ?? before?.sortOrder ?? index,
+            };
+          }),
           skipDuplicates: true,
         });
       }
@@ -468,6 +535,9 @@ export class MenuService {
       data: {
         ...(dto.name === undefined ? {} : { name: dto.name }),
         ...(dto.price === undefined ? {} : { price: new Prisma.Decimal(dto.price) }),
+        ...(dto.description === undefined
+          ? {}
+          : { description: dto.description }),
         ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
         ...(dto.sortOrder === undefined ? {} : { sortOrder: dto.sortOrder }),
       },
@@ -488,6 +558,17 @@ export class MenuService {
         code: this.createCode(dto.name),
         name: dto.name,
         price: new Prisma.Decimal(dto.price),
+        /*
+         * Ilgari faqat nom va narx yozilardi, ya'ni admin panel har
+         * yangi modifikatordan keyin ikkinchi PATCH yuborishga majbur
+         * bo'lardi va shu ikki so'rov orasida modifikator noto'g'ri
+         * tartibda ko'rinardi.
+         */
+        ...(dto.description === undefined
+          ? {}
+          : { description: dto.description }),
+        ...(dto.sortOrder === undefined ? {} : { sortOrder: dto.sortOrder }),
+        ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
       },
     });
   }

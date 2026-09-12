@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Patch, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { CancelKitchenTicketDto } from "./dto/cancel-ticket.dto";
 import { KitchenService } from "./kitchen.service";
 
 @Controller("kitchen")
@@ -56,7 +57,8 @@ export class KitchenController {
   cancelOrder(
     @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CancelKitchenTicketDto,
   ) {
-    return this.kitchenService.cancelTicket(id, user);
+    return this.kitchenService.cancelTicket(id, user, dto.reason);
   }
 }
