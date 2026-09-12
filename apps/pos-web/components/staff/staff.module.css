@@ -2905,3 +2905,124 @@
     grid-template-columns: 1fr;
   }
 }
+
+.receiptFooter {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-top: 1px solid #d5e2dd;
+  background: #f8fbf9;
+}
+.checkoutTrigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 54px;
+  padding: 10px 14px;
+  border: 1px solid #dfbb29;
+  border-radius: 7px;
+  background: #ffd83d;
+  color: #07373a;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+.checkoutTrigger:hover {
+  background: #ffcf20;
+}
+.checkoutTrigger strong {
+  margin-left: auto;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.checkoutSheet {
+  position: fixed;
+  inset: auto 0 0;
+  width: min(480px, 100%);
+  max-height: min(760px, calc(100dvh - 16px));
+  margin: 0 auto;
+  padding: 18px 20px 24px;
+  border-radius: 14px 14px 0 0;
+  overscroll-behavior: contain;
+}
+.checkoutSheetBody {
+  display: grid;
+  gap: 14px;
+}
+.checkoutSheetBody .totalRow {
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #d5e2dd;
+}
+.checkoutSheetBody .totalRow strong {
+  font-size: 21px;
+}
+.checkoutSheetSection {
+  display: grid;
+  gap: 7px;
+}
+.checkoutLabel {
+  font-size: 13px;
+  font-weight: 800;
+}
+.checkoutSheetSection .segments {
+  margin: 0;
+}
+.checkoutTable {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.checkoutTable small {
+  color: #53706e;
+  font-weight: 400;
+}
+.checkoutTable select {
+  min-width: 0;
+  width: 60%;
+  min-height: 36px;
+  margin-left: auto;
+  padding: 6px 9px;
+  border: 1px solid #b4ccc0;
+  border-radius: 6px;
+  background: white;
+  color: #07373a;
+  font-size: 13px;
+}
+.checkoutSheetSection .paymentOptions {
+  gap: 6px;
+}
+.checkoutSheetSection .paymentOption {
+  min-height: 38px;
+}
+.checkoutSheetSection .input {
+  min-height: 44px;
+}
+.checkoutSheetSection .quickCash {
+  margin: 0;
+}
+.checkoutSheetSection .change {
+  margin: 0;
+}
+.checkoutSheetActions {
+  position: sticky;
+  bottom: -24px;
+  z-index: 1;
+  padding: 10px 0 0;
+  background: white;
+}
+.checkoutSheetActions .primary {
+  width: 100%;
+}
+@media (max-width: 767px) {
+  .receiptFooter {
+    display: none;
+  }
+  .checkoutSheet {
+    max-height: calc(100dvh - 12px);
+    padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+  }
+}

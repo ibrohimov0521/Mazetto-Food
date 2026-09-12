@@ -6,9 +6,7 @@ import {
   ArrowRight,
   Banknote,
   Check,
-  ChevronDown,
   Clock3,
-  CreditCard,
   History,
   Minus,
   Plus,
@@ -201,7 +199,7 @@ function PosTerminal() {
   const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
   const [tableId, setTableId] = useState("");
   const [paymentCode, setPaymentCode] = useState(cashMethodCode);
-  const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const submissionLock = useRef(false);
   const loadRequest = useRef<AbortController | null>(null);
   /*
@@ -310,9 +308,6 @@ function PosTerminal() {
   const paymentMethods = catalog?.paymentMethods?.length
     ? catalog.paymentMethods
     : fallbackPaymentMethods;
-  const selectedPaymentMethod = paymentMethods.find(
-    (method) => method.code === paymentCode,
-  );
   const isCashPayment = paymentCode === cashMethodCode;
   const tables = catalog?.tables ?? [];
   const isDineIn = orderType === "DINE_IN";
@@ -321,10 +316,7 @@ function PosTerminal() {
    * "qabul qilingan naqd" degan tushuncha yo'q, shuning uchun uni talab
    * qilish kartani bloklab qo'yardi.
    */
-  const canSubmit =
-    cart.length > 0 &&
-    (!isCashPayment || validCash) &&
-    (!isDineIn || Boolean(tableId));
+  const canSubmit = cart.length > 0 && (!isCashPayment || validCash);
 
   /*
    * Server tanlagan usulni bilmasa (masalan sozlamadan o'chirilgan),
@@ -539,15 +531,18 @@ function PosTerminal() {
     setSuccess(null);
   }
 
+  function openCheckout() {
+    if (!cart.length || isSubmitting) return;
+    setError(null);
+    if (isCashPayment && !cashReceived) setCashReceived(String(total));
+    setCheckoutOpen(true);
+  }
+
   async function submitOrder() {
     if (submissionLock.current) return;
     setError(null);
     if (!cart.length) {
       setError("Buyurtma bo'sh");
-      return;
-    }
-    if (isDineIn && !tableId) {
-      setError("Zal buyurtmasi uchun stolni tanlang");
       return;
     }
     if (isCashPayment && !validCash) {
@@ -563,7 +558,7 @@ function PosTerminal() {
         body: JSON.stringify({
           idempotencyKey: checkoutKey,
           type: orderType,
-          ...(isDineIn ? { tableId } : {}),
+          ...(isDineIn && tableId ? { tableId } : {}),
           /*
            * Bo'lak summasi buyurtma summasiga TENG yuboriladi. Mijoz
            * bergan ortiqcha naqd `cashReceived` da qoladi va qaytim
@@ -587,6 +582,7 @@ function PosTerminal() {
       setCashReceived("");
       setTableId("");
       setCheckoutKey(createCheckoutKey());
+      setCheckoutOpen(false);
       // Mobil'da keyingi mijoz uchun darhol menyuga qaytiladi.
       setMobileView("menu");
     } catch (caught) {
@@ -770,65 +766,6 @@ function PosTerminal() {
               <h2>Yangi buyurtma</h2>
               <span className={styles.badge}>{itemCount} ta</span>
             </div>
-            {/*
-              BUYURTMA TURI. Ilgari kassada bu tanlov umuman yo'q edi va
-              server har bir chiptani "olib ketish" deb yozardi —
-              oshxona zal buyurtmasini ham shunday ko'rardi.
-            */}
-            <div
-              className={styles.segments}
-              role="group"
-              aria-label="Buyurtma turi"
-            >
-              <button
-                className={styles.segment}
-                aria-pressed={orderType === "TAKEAWAY"}
-                disabled={isSubmitting}
-                onClick={() => setOrderType("TAKEAWAY")}
-                type="button"
-              >
-                <ShoppingBag size={17} />
-                Olib ketish
-              </button>
-              <button
-                className={styles.segment}
-                aria-pressed={isDineIn}
-                disabled={isSubmitting}
-                onClick={() => setOrderType("DINE_IN")}
-                type="button"
-              >
-                <Utensils size={17} />
-                Zal
-              </button>
-            </div>
-            {isDineIn && (
-              <label className={styles.field}>
-                <span>Stol</span>
-                <select
-                  className={styles.input}
-                  disabled={isSubmitting || !tables.length}
-                  value={tableId}
-                  onChange={(event) => setTableId(event.target.value)}
-                >
-                  <option value="">
-                    {tables.length ? "Stolni tanlang" : "Stol sozlanmagan"}
-                  </option>
-                  {tables.map((table) => (
-                    <option key={table.id} value={table.id}>
-                      {table.hall?.name ? `${table.hall.name} · ` : ""}
-                      {table.name}
-                      {table.capacity ? ` (${table.capacity} o'rin)` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {isDineIn && !tables.length && (
-              <p className={styles.fieldHint}>
-                Zal buyurtmasi uchun avval Admin panelidagi Stollar bo'limida
-                faol stol qo'shing.
-              </p>
-            )}
             <div className={styles.cartLines}>
               {cart.length ? (
                 cart.map((line) => (
@@ -884,129 +821,184 @@ function PosTerminal() {
                 </StaffEmpty>
               )}
             </div>
-            <div className={styles.checkout}>
-              <div className={styles.totalRow}>
+            <div className={styles.receiptFooter}>
+              <button
+                className={styles.checkoutTrigger}
+                disabled={isSubmitting || !cart.length}
+                onClick={openCheckout}
+                type="button"
+              >
                 <span>Jami</span>
                 <strong>{money(total)}</strong>
+                <ArrowRight size={20} aria-hidden="true" />
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+      {catalog && checkoutOpen && (
+        <StaffDialog
+          title="To'lov va buyurtma"
+          placement="bottom"
+          busy={isSubmitting}
+          onClose={() => {
+            setCheckoutOpen(false);
+            setError(null);
+          }}
+        >
+          <div className={styles.checkoutSheetBody}>
+            <div className={styles.totalRow}>
+              <span>{itemCount} ta mahsulot</span>
+              <strong>{money(total)}</strong>
+            </div>
+
+            <div className={styles.checkoutSheetSection}>
+              <span className={styles.checkoutLabel}>Buyurtma turi</span>
+              <div
+                className={styles.segments}
+                role="group"
+                aria-label="Buyurtma turi"
+              >
+                <button
+                  className={styles.segment}
+                  aria-pressed={orderType === "TAKEAWAY"}
+                  disabled={isSubmitting}
+                  onClick={() => setOrderType("TAKEAWAY")}
+                  type="button"
+                >
+                  <ShoppingBag size={16} />
+                  Olib ketish
+                </button>
+                <button
+                  className={styles.segment}
+                  aria-pressed={isDineIn}
+                  disabled={isSubmitting}
+                  onClick={() => setOrderType("DINE_IN")}
+                  type="button"
+                >
+                  <Utensils size={16} />
+                  Zal
+                </button>
               </div>
-              {/*
-                TO'LOV USULI. Server filialning sozlangan usullarini
-                qaytaradi; ilgari bu ro'yxat "CASH" deb qattiq yozilgan
-                edi va kassada kartani qabul qilib bo'lmasdi.
-              */}
-              {paymentMethods.length > 1 && (
-                <>
-                  <button
-                    className={styles.paymentPicker}
-                    onClick={() => setPaymentPickerOpen(true)}
-                    type="button"
-                    disabled={isSubmitting}
+              {isDineIn && (
+                <label className={styles.checkoutTable}>
+                  <span>
+                    Stol <small>(ixtiyoriy)</small>
+                  </span>
+                  <select
+                    aria-label="Stol (ixtiyoriy)"
+                    disabled={isSubmitting || !tables.length}
+                    value={tableId}
+                    onChange={(event) => setTableId(event.target.value)}
                   >
-                    <span className={styles.paymentPickerLabel}>
-                      <CreditCard size={16} />
-                      To'lov turi
-                    </span>
-                    <strong>{selectedPaymentMethod?.name ?? "Naqd"}</strong>
-                    <ChevronDown size={16} />
-                  </button>
-                  {paymentPickerOpen && (
-                    <StaffDialog
-                      title="To'lov turini tanlang"
-                      onClose={() => setPaymentPickerOpen(false)}
-                    >
-                      <div
-                        className={styles.paymentOptions}
-                        role="radiogroup"
-                        aria-label="To'lov usuli"
-                      >
-                        {paymentMethods.map((method) => (
-                          <button
-                            aria-pressed={paymentCode === method.code}
-                            className={styles.paymentOption}
-                            key={method.code}
-                            onClick={() => {
-                              setPaymentCode(method.code);
-                              setPaymentPickerOpen(false);
-                            }}
-                            type="button"
-                          >
-                            <span className={styles.paymentOptionMark}>
-                              {paymentCode === method.code ? (
-                                <Check size={14} />
-                              ) : null}
-                            </span>
-                            <span>{method.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </StaffDialog>
-                  )}
-                </>
-              )}
-              {isCashPayment && (
-                <>
-                  <label className={styles.field}>
-                    <span>Qabul qilingan naqd pul</span>
-                    <input
-                      className={styles.input}
-                      inputMode="numeric"
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="0"
-                      disabled={isSubmitting || !cart.length}
-                      value={cashReceived}
-                      onChange={(event) => setCashReceived(event.target.value)}
-                    />
-                  </label>
-                  <div className={styles.quickCash}>
-                    <button
-                      disabled={isSubmitting || !cart.length}
-                      onClick={() => setCashReceived(String(total))}
-                      type="button"
-                    >
-                      Aniq summa
-                    </button>
-                    {cashDenominations.map((amount) => (
-                      <button
-                        key={amount}
-                        disabled={isSubmitting || !cart.length}
-                        onClick={() =>
-                          setCashReceived(
-                            String(
-                              (Number.isFinite(received) ? received : 0) +
-                                amount,
-                            ),
-                          )
-                        }
-                        type="button"
-                      >
-                        +{formatter.format(amount)}
-                      </button>
+                    <option value="">Tanlanmagan</option>
+                    {tables.map((table) => (
+                      <option key={table.id} value={table.id}>
+                        {table.hall?.name
+                          ? table.hall.name + " · " + table.name
+                          : table.name}
+                      </option>
                     ))}
+                  </select>
+                </label>
+              )}
+            </div>
+
+            <div className={styles.checkoutSheetSection}>
+              <span className={styles.checkoutLabel}>To'lov turi</span>
+              <div
+                className={styles.paymentOptions}
+                role="group"
+                aria-label="To'lov usuli"
+              >
+                {paymentMethods.map((method) => (
+                  <button
+                    aria-pressed={paymentCode === method.code}
+                    className={styles.paymentOption}
+                    disabled={isSubmitting}
+                    key={method.code}
+                    onClick={() => {
+                      setPaymentCode(method.code);
+                      if (method.code === cashMethodCode && !cashReceived) {
+                        setCashReceived(String(total));
+                      }
+                    }}
+                    type="button"
+                  >
+                    <span className={styles.paymentOptionMark}>
+                      {paymentCode === method.code ? <Check size={14} /> : null}
+                    </span>
+                    <span>{method.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {isCashPayment && (
+              <div className={styles.checkoutSheetSection}>
+                <label className={styles.field}>
+                  <span>Qabul qilingan naqd pul</span>
+                  <input
+                    className={styles.input}
+                    inputMode="numeric"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    disabled={isSubmitting}
+                    value={cashReceived}
+                    onChange={(event) => setCashReceived(event.target.value)}
+                  />
+                </label>
+                <div className={styles.quickCash}>
+                  <button
+                    disabled={isSubmitting}
+                    onClick={() => setCashReceived(String(total))}
+                    type="button"
+                  >
+                    Aniq summa
+                  </button>
+                  {cashDenominations.map((amount) => (
                     <button
-                      disabled={isSubmitting || !cashReceived}
-                      onClick={() => setCashReceived("")}
+                      key={amount}
+                      disabled={isSubmitting}
+                      onClick={() =>
+                        setCashReceived(
+                          String(
+                            (Number.isFinite(received) ? received : 0) + amount,
+                          ),
+                        )
+                      }
                       type="button"
                     >
-                      Tozalash
+                      +{formatter.format(amount)}
                     </button>
-                  </div>
-                  <div className={styles.change} role="status">
-                    <span>{received < total ? "Yetishmayapti" : "Qaytim"}</span>
-                    <strong>
-                      {money(received < total ? total - received : change)}
-                    </strong>
-                  </div>
-                </>
-              )}
-              {error && (
-                <p className={styles.error} role="alert">
-                  {error}
-                </p>
-              )}
+                  ))}
+                  <button
+                    disabled={isSubmitting || !cashReceived}
+                    onClick={() => setCashReceived("")}
+                    type="button"
+                  >
+                    Tozalash
+                  </button>
+                </div>
+                <div className={styles.change} role="status">
+                  <span>{received < total ? "Yetishmayapti" : "Qaytim"}</span>
+                  <strong>
+                    {money(received < total ? total - received : change)}
+                  </strong>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <p className={styles.error} role="alert">
+                {error}
+              </p>
+            )}
+            <div className={styles.checkoutSheetActions}>
               <button
-                className={`${styles.primary} ${styles.full} ${styles.desktopPay}`}
+                className={styles.primary}
                 disabled={isSubmitting || !canSubmit}
                 onClick={() => void submitOrder()}
                 type="button"
@@ -1015,8 +1007,8 @@ function PosTerminal() {
                 {isSubmitting ? "Tasdiqlanmoqda..." : "Buyurtmani tasdiqlash"}
               </button>
             </div>
-          </aside>
-        </div>
+          </div>
+        </StaffDialog>
       )}
       {catalog && (
         <div className={styles.mobilePaybar}>
@@ -1026,27 +1018,14 @@ function PosTerminal() {
           </div>
           <button
             className={styles.primary}
-            disabled={
-              isSubmitting ||
-              !cart.length ||
-              (mobileView === "cart" && !canSubmit)
-            }
+            disabled={isSubmitting || !cart.length}
             onClick={() =>
-              mobileView === "menu" ? setMobileView("cart") : void submitOrder()
+              mobileView === "menu" ? setMobileView("cart") : openCheckout()
             }
             type="button"
           >
-            {mobileView === "menu" ? (
-              <>
-                Buyurtma
-                <ArrowRight size={18} />
-              </>
-            ) : (
-              <>
-                <Check size={18} />
-                {isSubmitting ? "Saqlanmoqda" : "Tasdiqlash"}
-              </>
-            )}
+            {mobileView === "menu" ? "Buyurtma" : "To'lov"}
+            <ArrowRight size={18} />
           </button>
         </div>
       )}

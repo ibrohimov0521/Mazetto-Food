@@ -91,7 +91,7 @@ export class CreatePosCheckoutDto {
   @IsEnum(OrderType)
   type?: OrderType;
 
-  /** `DINE_IN` uchun majburiy, boshqa turlarda qabul qilinmaydi. */
+  /** Zal buyurtmasi uchun ixtiyoriy; boshqa turlarda qabul qilinmaydi. */
   @IsOptional()
   @IsString()
   tableId?: string;

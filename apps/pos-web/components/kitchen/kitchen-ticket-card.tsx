@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronUp,
   ShoppingBag,
+  Utensils,
   Timer,
   Truck,
   X,
@@ -68,7 +69,9 @@ export function KitchenTicketCard({
     ? (ticket.order.table.name ?? `Stol ${ticket.order.table.number ?? ""}`)
     : ticket.order.type === "DELIVERY"
       ? "Yetkazish"
-      : "Olib ketish";
+      : ticket.order.type === "DINE_IN"
+        ? "Zal · stolsiz"
+        : "Olib ketish";
   const note = ticket.order.kitchenComment ?? ticket.order.notes;
 
   return (
@@ -94,6 +97,8 @@ export function KitchenTicketCard({
         <span className={styles.badge}>
           {ticket.order.type === "DELIVERY" ? (
             <Truck size={16} aria-hidden="true" />
+          ) : ticket.order.type === "DINE_IN" ? (
+            <Utensils size={16} aria-hidden="true" />
           ) : (
             <ShoppingBag size={16} aria-hidden="true" />
           )}

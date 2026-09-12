@@ -75,8 +75,8 @@ export function assertPosCheckoutQuantities(dto: CreatePosCheckoutDto): void {
  * esa manzil ham, koordinata ham qabul qilmaydi. Turni qabul qilib,
  * narxni nolga qoldirish mijozdan KAM PUL olish degani bo'lardi.
  *
- * `DINE_IN` stolsiz bo'lmaydi: aks holda ovqat kimga tayyorlanganini
- * oshxona ham, ofitsiant ham bilmaydi.
+ * Kassa zal buyurtmasi stolsiz ham olinadi: oshxona uni buyurtma
+ * raqami bilan ajratadi. Stol berilsa filialga tegishliligi tekshiriladi.
  */
 export function assertPosCheckoutType(dto: CreatePosCheckoutDto): OrderType {
   const type = dto.type ?? OrderType.TAKEAWAY;
@@ -85,10 +85,6 @@ export function assertPosCheckoutType(dto: CreatePosCheckoutDto): OrderType {
     throw new BadRequestException(
       "Yetkazib berish buyurtmasi kassa checkout'ida qabul qilinmaydi",
     );
-  }
-
-  if (type === OrderType.DINE_IN && !dto.tableId) {
-    throw new BadRequestException("Zal buyurtmasi uchun stol tanlanishi shart");
   }
 
   if (type !== OrderType.DINE_IN && dto.tableId) {
@@ -148,7 +144,9 @@ export function normalizePosCheckoutTenders(
     const amount = new Prisma.Decimal(tender.amount);
 
     if (amount.lessThanOrEqualTo(0)) {
-      throw new BadRequestException("To'lov summasi noldan katta bo'lishi kerak");
+      throw new BadRequestException(
+        "To'lov summasi noldan katta bo'lishi kerak",
+      );
     }
 
     return {
@@ -369,7 +367,12 @@ export function orderInclude() {
       orderBy: { createdAt: "asc" },
       include: {
         changedByEmployee: {
-          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeCode: true,
+          },
         },
         changedByUser: {
           select: { id: true, displayName: true, email: true },

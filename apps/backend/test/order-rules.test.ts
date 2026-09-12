@@ -50,7 +50,9 @@ test("idempotentlik kaliti prefikslanadi", () => {
 
 test("POS miqdori 1 va 99 orasida bo'lishi shart", () => {
   assert.doesNotThrow(() =>
-    assertPosCheckoutQuantities(checkout({ items: [{ productId: "p1", quantity: 99 }] } as never)),
+    assertPosCheckoutQuantities(
+      checkout({ items: [{ productId: "p1", quantity: 99 }] } as never),
+    ),
   );
   for (const quantity of [0, -1, 100]) {
     assert.throws(
@@ -140,12 +142,20 @@ test("hash raqam ko'rinishiga bog'liq emas, mazmuniga bog'liq", () => {
   // Boshqa filial = boshqa so'rov.
   assert.notEqual(
     a,
-    createPosCheckoutRequestHash(checkout({ cashReceived: 5 } as never), "b2", "e1"),
+    createPosCheckoutRequestHash(
+      checkout({ cashReceived: 5 } as never),
+      "b2",
+      "e1",
+    ),
   );
   // Boshqa summa = boshqa so'rov.
   assert.notEqual(
     a,
-    createPosCheckoutRequestHash(checkout({ cashReceived: 6 } as never), "b1", "e1"),
+    createPosCheckoutRequestHash(
+      checkout({ cashReceived: 6 } as never),
+      "b1",
+      "e1",
+    ),
   );
 });
 
@@ -210,7 +220,10 @@ test("xodim aniqlanmasa rad etiladi", () => {
   // DTO'dagi qiymat ustun.
   assert.equal(resolveEmployeeId("e2", withEmployee), "e2");
   assert.equal(resolveEmployeeId("e2", without), "e2");
-  assert.throws(() => resolveEmployeeId(undefined, without), ForbiddenException);
+  assert.throws(
+    () => resolveEmployeeId(undefined, without),
+    ForbiddenException,
+  );
 
   assert.equal(requireEmployee(withEmployee), "e1");
   assert.throws(() => requireEmployee(without), ForbiddenException);
@@ -291,15 +304,13 @@ test("kassada yetkazib berish rad etiladi", () => {
   );
 });
 
-test("zal buyurtmasi stolsiz bo'lmaydi", () => {
-  assert.throws(
-    () => assertPosCheckoutType(checkout({ type: OrderType.DINE_IN })),
-    BadRequestException,
+test("kassada zal buyurtmasi stol bilan ham, stolsiz ham qabul qilinadi", () => {
+  assert.equal(
+    assertPosCheckoutType(checkout({ type: OrderType.DINE_IN })),
+    OrderType.DINE_IN,
   );
   assert.equal(
-    assertPosCheckoutType(
-      checkout({ type: OrderType.DINE_IN, tableId: "t1" }),
-    ),
+    assertPosCheckoutType(checkout({ type: OrderType.DINE_IN, tableId: "t1" })),
     OrderType.DINE_IN,
   );
 });

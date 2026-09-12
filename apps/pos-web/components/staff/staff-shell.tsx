@@ -55,7 +55,12 @@ export function StaffShell({
           </div>
         </div>
         <div className={styles.mobileRoleNav}>
-          <PanelSwitcher user={user} staffMode variant="dark" className={styles.roleNav ?? ""} />
+          <PanelSwitcher
+            user={user}
+            staffMode
+            variant="dark"
+            className={styles.roleNav ?? ""}
+          />
         </div>
       </header>
       {children}
@@ -129,11 +134,13 @@ export function StaffDialog({
   children,
   onClose,
   busy = false,
+  placement = "center",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   busy?: boolean;
+  placement?: "center" | "bottom";
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -151,7 +158,9 @@ export function StaffDialog({
   return (
     <dialog
       ref={ref}
-      className={styles.dialog}
+      className={[styles.dialog, placement === "bottom" && styles.checkoutSheet]
+        .filter(Boolean)
+        .join(" ")}
       aria-labelledby="staff-dialog-title"
       onCancel={(event) => {
         event.preventDefault();
