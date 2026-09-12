@@ -6,6 +6,7 @@ import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { hasPermission } from "../../lib/auth";
 import { formatMoney } from "../../lib/order-display";
+import { productImage } from "../../lib/media";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
 import { Button, ButtonLink } from "../admin-ui/button";
@@ -668,8 +669,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                 {(props) => (
                   <div className="flex flex-col gap-2">
                     <ImageDropzone
+                      imageProfile="product"
                       onUploaded={(url) => setForm({ ...form, image: url })}
-                      value={form.image}
+                      value={form.image ? productImage(form.image) : ""}
                     />
                     {/*
                       Matn maydoni ATAYLAB qoldirilgan: mavjud 74 mahsulotning
@@ -987,8 +989,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
 
                   <p className="text-[13px] text-mz-text-muted">
                     Guruh sozlamalari (majburiy, eng kam va eng ko&apos;p
-                    tanlov) faqat ko&apos;rsatiladi — biriktirish
-                    payload&apos;i ularni qabul qilmaydi.
+                    tanlov) faqat ko&apos;rsatiladi — biriktirish payload&apos;i
+                    ularni qabul qilmaydi.
                   </p>
                 </>
               )}

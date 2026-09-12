@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { AdminPageHeader } from "../../../../components/admin-shell/admin-page-header";
 import { Badge, type BadgeTone } from "../../../../components/admin-ui/badge";
 import { Button } from "../../../../components/admin-ui/button";
@@ -35,6 +35,12 @@ type Branch = {
   id: string;
   name: string;
   address?: string | null;
+};
+type Hall = {
+  id: string;
+  branchId: string;
+  name: string;
+  sortOrder: number;
 };
 
 const statusLabels: Record<TableStatus, string> = {
@@ -130,21 +136,18 @@ function TableManagement() {
             ? `/tables?branchId=${encodeURIComponent(branchId)}`
             : "/tables",
         ),
+        apiFetch<Hall[]>(
+          branchId
+            ? `/halls?branchId=${encodeURIComponent(branchId)}`
+            : "/halls",
+        ),
       ]),
     [branchId],
     "Ma'lumotlarni yuklab bo'lmadi.",
   );
   const branches = data?.[0] ?? [];
   const tables = data?.[1] ?? [];
-
-  const halls = useMemo(
-    () => [
-      ...new Map(
-        tables.flatMap((table) => (table.hall ? [[table.hall.id, table.hall]] : [])),
-      ).values(),
-    ],
-    [tables],
-  );
+  const halls = data?.[2] ?? [];
 
   async function createHall(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

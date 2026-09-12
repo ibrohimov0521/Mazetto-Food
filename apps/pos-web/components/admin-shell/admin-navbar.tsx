@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { roleLabels } from "../../lib/auth";
 import type { AuthUser, MazettoRole } from "../../lib/auth";
 import { Icon } from "../admin-ui/icon";
@@ -65,6 +66,7 @@ export function AdminNavbar({
   onToggleCollapse: () => void;
   onLogout: () => void;
 }) {
+  const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -121,9 +123,22 @@ export function AdminNavbar({
         <Icon name={isCollapsed ? "chevronRight" : "chevronLeft"} />
       </button>
 
-      <span className="hidden shrink-0 px-1 text-xs font-black text-mz-primary sm:inline-flex">
-        MAZETTO
-      </span>
+      <button
+        aria-label="Orqaga"
+        className="flex h-8 shrink-0 items-center gap-1 rounded-mz-control px-2 text-xs font-semibold text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg"
+        onClick={() => {
+          if (window.history.length > 1) {
+            router.back();
+          } else {
+            router.push("/admin");
+          }
+        }}
+        title="Orqaga"
+        type="button"
+      >
+        <Icon className="h-4 w-4" name="chevronLeft" />
+        <span className="hidden sm:inline">Orqaga</span>
+      </button>
 
       <PanelSwitcher
         className="hidden min-w-0 flex-1 xl:flex"

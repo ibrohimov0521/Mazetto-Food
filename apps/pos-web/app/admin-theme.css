@@ -274,6 +274,15 @@
   }
 }
 
+/* Desktop admin zichligi: ishchi ma'lumot ko'proq ko'rinadi, mobil esa asl o'lchamda qoladi. */
+@media (min-width: 768px) {
+  .mz-admin {
+    zoom: 0.8;
+    width: 125%;
+    min-height: 125dvh;
+  }
+}
+
 /* Fokus halqasi — klaviatura navigatsiyasi uchun butun admin bo'ylab bir xil */
 .mz-admin :focus-visible {
   outline: 2px solid var(--color-mz-focus);

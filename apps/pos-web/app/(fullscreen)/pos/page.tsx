@@ -6,7 +6,9 @@ import {
   ArrowRight,
   Banknote,
   Check,
+  ChevronDown,
   Clock3,
+  CreditCard,
   History,
   Minus,
   Plus,
@@ -28,7 +30,10 @@ import {
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
 import { handleProductImageError, productImage } from "../../../lib/media";
-import { orderStatusLabels, type OrderStatus } from "../../../lib/order-display";
+import {
+  orderStatusLabels,
+  type OrderStatus,
+} from "../../../lib/order-display";
 
 type Variant = {
   id: string;
@@ -134,7 +139,12 @@ type ShiftHistoryOrder = {
   status: OrderStatus;
   total: string;
   createdAt: string;
-  items: { id: string; productName: string; quantity: string; totalPrice: string }[];
+  items: {
+    id: string;
+    productName: string;
+    quantity: string;
+    totalPrice: string;
+  }[];
   statusHistory?: StatusHistoryEntry[];
 };
 const formatter = new Intl.NumberFormat("uz-UZ");
@@ -191,6 +201,7 @@ function PosTerminal() {
   const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
   const [tableId, setTableId] = useState("");
   const [paymentCode, setPaymentCode] = useState(cashMethodCode);
+  const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
   const submissionLock = useRef(false);
   const loadRequest = useRef<AbortController | null>(null);
   /*
@@ -248,7 +259,9 @@ function PosTerminal() {
     if (employee) {
       return [employee.firstName, employee.lastName].filter(Boolean).join(" ");
     }
-    return entry.changedByUser?.displayName || entry.changedByUser?.email || "Tizim";
+    return (
+      entry.changedByUser?.displayName || entry.changedByUser?.email || "Tizim"
+    );
   }
 
   const loadHistory = useCallback(async () => {
@@ -259,13 +272,18 @@ function PosTerminal() {
     if (historySearch.trim()) params.set("search", historySearch.trim());
     try {
       setHistoryOrders(
-        await apiFetch<ShiftHistoryOrder[]>(`/cash-register/shift/orders?${params.toString()}`, {
-          cache: "no-store",
-          signal: AbortSignal.timeout(12000),
-        }),
+        await apiFetch<ShiftHistoryOrder[]>(
+          `/cash-register/shift/orders?${params.toString()}`,
+          {
+            cache: "no-store",
+            signal: AbortSignal.timeout(12000),
+          },
+        ),
       );
     } catch (caught) {
-      setHistoryError(caught instanceof Error ? caught.message : "Tarix yuklanmadi.");
+      setHistoryError(
+        caught instanceof Error ? caught.message : "Tarix yuklanmadi.",
+      );
     } finally {
       setHistoryLoading(false);
     }
@@ -292,6 +310,9 @@ function PosTerminal() {
   const paymentMethods = catalog?.paymentMethods?.length
     ? catalog.paymentMethods
     : fallbackPaymentMethods;
+  const selectedPaymentMethod = paymentMethods.find(
+    (method) => method.code === paymentCode,
+  );
   const isCashPayment = paymentCode === cashMethodCode;
   const tables = catalog?.tables ?? [];
   const isDineIn = orderType === "DINE_IN";
@@ -584,32 +605,32 @@ function PosTerminal() {
       terminal
       actions={
         <>
-        <button
-          className={styles.shiftLink}
-          title="Smena tarixi"
-          aria-label="Smena tarixi"
-          onClick={() => setHistoryOpen(true)}
-          disabled={isSubmitting}
-          type="button"
-        >
-          <History size={17} />
-          <span>Tarix</span>
-        </button>
-        <button
-          className={styles.shiftLink}
-          title="Kassa smenasi"
-          aria-label="Kassa smenasi"
-          onClick={() => router.push("/shift")}
-          disabled={isSubmitting}
-          type="button"
-        >
-          <Clock3 size={17} />
-          <span>
-            {currentShift
-              ? `Smena #${currentShift.shiftNumber ?? ""}`
-              : "Smena"}
-          </span>
-        </button>
+          <button
+            className={styles.shiftLink}
+            title="Smena tarixi"
+            aria-label="Smena tarixi"
+            onClick={() => setHistoryOpen(true)}
+            disabled={isSubmitting}
+            type="button"
+          >
+            <History size={17} />
+            <span>Tarix</span>
+          </button>
+          <button
+            className={styles.shiftLink}
+            title="Kassa smenasi"
+            aria-label="Kassa smenasi"
+            onClick={() => router.push("/shift")}
+            disabled={isSubmitting}
+            type="button"
+          >
+            <Clock3 size={17} />
+            <span>
+              {currentShift
+                ? `Smena #${currentShift.shiftNumber ?? ""}`
+                : "Smena"}
+            </span>
+          </button>
         </>
       }
     >
@@ -754,7 +775,11 @@ function PosTerminal() {
               server har bir chiptani "olib ketish" deb yozardi —
               oshxona zal buyurtmasini ham shunday ko'rardi.
             */}
-            <div className={styles.segments} role="group" aria-label="Buyurtma turi">
+            <div
+              className={styles.segments}
+              role="group"
+              aria-label="Buyurtma turi"
+            >
               <button
                 className={styles.segment}
                 aria-pressed={orderType === "TAKEAWAY"}
@@ -797,6 +822,12 @@ function PosTerminal() {
                   ))}
                 </select>
               </label>
+            )}
+            {isDineIn && !tables.length && (
+              <p className={styles.fieldHint}>
+                Zal buyurtmasi uchun avval Admin panelidagi Stollar bo'limida
+                faol stol qo'shing.
+              </p>
             )}
             <div className={styles.cartLines}>
               {cart.length ? (
@@ -864,21 +895,53 @@ function PosTerminal() {
                 edi va kassada kartani qabul qilib bo'lmasdi.
               */}
               {paymentMethods.length > 1 && (
-                <div className={styles.choices} role="radiogroup" aria-label="To'lov usuli">
-                  {paymentMethods.map((method) => (
-                    <label className={styles.choice} key={method.code}>
-                      <input
-                        type="radio"
-                        name="pos-payment"
-                        value={method.code}
-                        checked={paymentCode === method.code}
-                        disabled={isSubmitting}
-                        onChange={() => setPaymentCode(method.code)}
-                      />
-                      <span>{method.name}</span>
-                    </label>
-                  ))}
-                </div>
+                <>
+                  <button
+                    className={styles.paymentPicker}
+                    onClick={() => setPaymentPickerOpen(true)}
+                    type="button"
+                    disabled={isSubmitting}
+                  >
+                    <span className={styles.paymentPickerLabel}>
+                      <CreditCard size={16} />
+                      To'lov turi
+                    </span>
+                    <strong>{selectedPaymentMethod?.name ?? "Naqd"}</strong>
+                    <ChevronDown size={16} />
+                  </button>
+                  {paymentPickerOpen && (
+                    <StaffDialog
+                      title="To'lov turini tanlang"
+                      onClose={() => setPaymentPickerOpen(false)}
+                    >
+                      <div
+                        className={styles.paymentOptions}
+                        role="radiogroup"
+                        aria-label="To'lov usuli"
+                      >
+                        {paymentMethods.map((method) => (
+                          <button
+                            aria-pressed={paymentCode === method.code}
+                            className={styles.paymentOption}
+                            key={method.code}
+                            onClick={() => {
+                              setPaymentCode(method.code);
+                              setPaymentPickerOpen(false);
+                            }}
+                            type="button"
+                          >
+                            <span className={styles.paymentOptionMark}>
+                              {paymentCode === method.code ? (
+                                <Check size={14} />
+                              ) : null}
+                            </span>
+                            <span>{method.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </StaffDialog>
+                  )}
+                </>
               )}
               {isCashPayment && (
                 <>
@@ -1035,7 +1098,11 @@ function PosTerminal() {
         </StaffDialog>
       )}
       {historyOpen && (
-        <StaffDialog title="Smena buyurtmalari tarixi" busy={historyLoading} onClose={() => setHistoryOpen(false)}>
+        <StaffDialog
+          title="Smena buyurtmalari tarixi"
+          busy={historyLoading}
+          onClose={() => setHistoryOpen(false)}
+        >
           <div className={styles.historyControls}>
             <label className={styles.search}>
               <Search size={17} />
@@ -1054,14 +1121,25 @@ function PosTerminal() {
             >
               <option value="">Barcha holatlar</option>
               {Object.entries(orderStatusLabels).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+                <option key={value} value={value}>
+                  {label}
+                </option>
               ))}
             </select>
-            <button className={styles.button} onClick={() => void loadHistory()} disabled={historyLoading} type="button">
+            <button
+              className={styles.button}
+              onClick={() => void loadHistory()}
+              disabled={historyLoading}
+              type="button"
+            >
               Yangilash
             </button>
           </div>
-          {historyError && <div className={styles.error} role="alert">{historyError}</div>}
+          {historyError && (
+            <div className={styles.error} role="alert">
+              {historyError}
+            </div>
+          )}
           <div className={styles.historyList}>
             {historyLoading ? (
               <div className={styles.skeleton} />
@@ -1069,17 +1147,39 @@ function PosTerminal() {
               historyOrders.map((order) => (
                 <article className={styles.historyOrder} key={order.id}>
                   <div>
-                    <strong>#{order.displayOrderNumber ?? order.orderNumber}</strong>
-                    <span className={styles.muted}>{order.items.length} ta mahsulot · {new Date(order.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tashkent" })}</span>
+                    <strong>
+                      #{order.displayOrderNumber ?? order.orderNumber}
+                    </strong>
+                    <span className={styles.muted}>
+                      {order.items.length} ta mahsulot ·{" "}
+                      {new Date(order.createdAt).toLocaleTimeString("uz-UZ", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: "Asia/Tashkent",
+                      })}
+                    </span>
                     {order.statusHistory?.length ? (
                       <details className={styles.deliveryDetails}>
-                        <summary><Clock3 size={14} /> Statuslar tarixi</summary>
+                        <summary>
+                          <Clock3 size={14} /> Statuslar tarixi
+                        </summary>
                         <ul className={styles.itemList}>
                           {order.statusHistory.map((entry) => (
                             <li key={entry.id}>
-                              <span>{orderStatusLabels[entry.toStatus] ?? entry.toStatus}</span>
+                              <span>
+                                {orderStatusLabels[entry.toStatus] ??
+                                  entry.toStatus}
+                              </span>
                               <span className={styles.muted}>
-                                {historyActor(entry)} · {new Date(entry.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tashkent" })}
+                                {historyActor(entry)} ·{" "}
+                                {new Date(entry.createdAt).toLocaleTimeString(
+                                  "uz-UZ",
+                                  {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    timeZone: "Asia/Tashkent",
+                                  },
+                                )}
                               </span>
                             </li>
                           ))}
@@ -1088,7 +1188,17 @@ function PosTerminal() {
                     ) : null}
                   </div>
                   <div className={styles.historyAmount}>
-                    <span className={styles.badge} data-tone={order.status === "CANCELLED" ? "late" : order.status === "COMPLETED" || order.status === "SERVED" ? "ready" : "waiting"}>
+                    <span
+                      className={styles.badge}
+                      data-tone={
+                        order.status === "CANCELLED"
+                          ? "late"
+                          : order.status === "COMPLETED" ||
+                              order.status === "SERVED"
+                            ? "ready"
+                            : "waiting"
+                      }
+                    >
                       {orderStatusLabels[order.status]}
                     </span>
                     <strong>{money(order.total)}</strong>
@@ -1096,7 +1206,9 @@ function PosTerminal() {
                 </article>
               ))
             ) : (
-              <StaffEmpty title="Tarix bo'sh">Bu smenada qabul qilingan buyurtmalar shu yerda ko'rinadi.</StaffEmpty>
+              <StaffEmpty title="Tarix bo'sh">
+                Bu smenada qabul qilingan buyurtmalar shu yerda ko'rinadi.
+              </StaffEmpty>
             )}
           </div>
         </StaffDialog>

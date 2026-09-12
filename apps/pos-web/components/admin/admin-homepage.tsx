@@ -8,7 +8,11 @@ import { productImage } from "../../lib/media";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
-import { DataTable, RowAction, type DataTableColumn } from "../admin-ui/data-table";
+import {
+  DataTable,
+  RowAction,
+  type DataTableColumn,
+} from "../admin-ui/data-table";
 import { ErrorState, Skeleton } from "../admin-ui/feedback";
 import { Checkbox, FormField, TextInput, Textarea } from "../admin-ui/form";
 import { ImageDropzone } from "../admin-ui/image-dropzone";
@@ -228,7 +232,8 @@ export function AdminHomepagePage() {
     const sortOrder = Number(form.sortOrder);
 
     if (!Number.isInteger(sortOrder) || sortOrder < 0) {
-      next.sortOrder = "Tartib raqami 0 yoki undan katta butun son bo'lishi kerak.";
+      next.sortOrder =
+        "Tartib raqami 0 yoki undan katta butun son bo'lishi kerak.";
     }
 
     if (form.discountPercent.trim()) {
@@ -580,6 +585,7 @@ export function AdminHomepagePage() {
             <p className="text-[13px] font-semibold text-mz-text">Rasm</p>
             <ImageDropzone
               folder="homepage"
+              imageProfile={editorKind === "hero" ? "hero" : "promotion"}
               onUploaded={(url) =>
                 setForm((current) => ({ ...current, imageUrl: url }))
               }

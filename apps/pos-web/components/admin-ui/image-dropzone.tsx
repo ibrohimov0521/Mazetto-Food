@@ -1,63 +1,135 @@
 "use client";
 
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "./button";
 import { Icon } from "./icon";
 import { getApiBaseUrl } from "../../lib/auth";
 import { readSession } from "../../lib/session";
 
-/*
- * Rasm yuklash zonasi (7-bosqich Q4).
- *
- * MUAMMO. Rasm maydoni ODDIY MATN edi: admin `/products/lavash-big.webp`
- * kabi yo'lni qo'lda yozardi va faylni serverga ALOHIDA joylashtirishi kerak
- * bo'lardi. Ikkita qadam bir-biridan uzilgani uchun qator bazada bo'lib,
- * fayl esa hech qachon serverga chiqmasligi mumkin edi — AUD-009 aynan shu.
- *
- * Matn maydoni ATAYLAB SAQLANADI: mavjud 74 mahsulotning yo'llari allaqachon
- * yozilgan va ularni yuklab qayta ishlash bu ishning qamrovidan tashqarida.
- * Yuklash yo'lni to'ldiradi, uni almashtirmaydi.
- */
-
 const ACCEPTED = "image/png,image/jpeg,image/webp,image/gif";
+const ACCEPTED_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
 const MAX_BYTES = 5 * 1024 * 1024;
 
 type UploadResponse = { url: string; objectName: string };
+type ImageProfile = "product" | "hero" | "promotion";
+type ImageDimensions = { width: number; height: number };
+
+const PROFILE_COPY: Record<
+  ImageProfile,
+  {
+    label: string;
+    recommendation: string;
+    minimum: ImageDimensions;
+    ratio: string;
+  }
+> = {
+  product: {
+    label: "Mahsulot rasmi",
+    recommendation: "Tavsiya: 1200 × 900 px (4:3).",
+    minimum: { width: 600, height: 450 },
+    ratio: "aspect-[4/3]",
+  },
+  hero: {
+    label: "Hero slayd rasmi",
+    recommendation:
+      "Tavsiya: 1600 × 900 px (16:9). Muhim obyektni markazga qo'ying.",
+    minimum: { width: 1200, height: 675 },
+    ratio: "aspect-[16/9]",
+  },
+  promotion: {
+    label: "Aksiya rasmi",
+    recommendation:
+      "Tavsiya: 1200 × 900 px (4:3). Muhim matn va obyekt markazda bo'lsin.",
+    minimum: { width: 600, height: 450 },
+    ratio: "aspect-[4/3]",
+  },
+};
+
+function readImageDimensions(file: File): Promise<ImageDimensions> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Rasmni o'qib bo'lmadi"));
+    };
+    image.src = objectUrl;
+  });
+}
 
 export function ImageDropzone({
   value,
   folder = "products",
+  imageProfile = "product",
   onUploaded,
 }: {
   value: string;
   folder?: "products" | "categories" | "homepage";
+  imageProfile?: ImageProfile;
   onUploaded: (url: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
   const describedBy = useId();
+  const copy = PROFILE_COPY[imageProfile];
+
+  useEffect(() => {
+    setDimensions(null);
+  }, [value]);
 
   const upload = useCallback(
     async (file: File) => {
       setError(null);
 
-      // Hajmni BROWZERDA ham tekshiramiz: server baribir rad etadi, lekin
-      // 6 MB ni yuklab, keyin 413 olish behuda kutish.
-      if (file.size > MAX_BYTES) {
-        setError("Fayl 5 MB dan katta");
+      if (!ACCEPTED_TYPES.has(file.type)) {
+        setError("Faqat PNG, JPEG, WebP yoki GIF rasm yuklang.");
         return;
       }
 
+      if (file.size > MAX_BYTES) {
+        setError(
+          "Fayl 5 MB dan katta. Sifatni saqlagan holda hajmini kamaytiring.",
+        );
+        return;
+      }
+
+      let nextDimensions: ImageDimensions;
+      try {
+        nextDimensions = await readImageDimensions(file);
+      } catch (caught) {
+        setError(
+          caught instanceof Error ? caught.message : "Rasmni o'qib bo'lmadi",
+        );
+        return;
+      }
+
+      if (
+        nextDimensions.width < copy.minimum.width ||
+        nextDimensions.height < copy.minimum.height
+      ) {
+        setError(
+          `Rasm juda kichik. Kamida ${copy.minimum.width} × ${copy.minimum.height} px bo'lishi kerak.`,
+        );
+        return;
+      }
+
+      setDimensions(nextDimensions);
       setUploading(true);
 
       try {
-        /*
-         * `apiFetch` ishlatilmaydi: u `Content-Type: application/json` qo'yadi
-         * va tanani JSON deb ko'radi. `FormData` uchun brauzer chegara
-         * (`boundary`) bilan o'z sarlavhasini qo'yishi SHART.
-         */
         const session = readSession();
         const response = await fetch(
           `${getApiBaseUrl()}/uploads/image?folder=${folder}`,
@@ -96,11 +168,35 @@ export function ImageDropzone({
         setUploading(false);
       }
     },
-    [folder, onUploaded],
+    [copy.minimum.height, copy.minimum.width, folder, onUploaded],
   );
 
   return (
     <div className="flex flex-col gap-2">
+      {value ? (
+        <div
+          className={`relative w-full overflow-hidden rounded-mz-card border border-mz-border bg-mz-surface-sunken ${copy.ratio}`}
+        >
+          <img
+            alt={`${copy.label} preview`}
+            className="h-full w-full object-cover"
+            onError={() =>
+              setError("Rasmni ko'rsatib bo'lmadi. Manzilni tekshiring.")
+            }
+            onLoad={(event) =>
+              setDimensions({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              })
+            }
+            src={value}
+          />
+          <span className="absolute bottom-2 left-2 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold text-white">
+            Mijoz ko'rinishi
+          </span>
+        </div>
+      ) : null}
+
       <div
         aria-describedby={describedBy}
         className={`flex flex-wrap items-center gap-3 rounded-mz-card border border-dashed p-3 transition ${
@@ -124,9 +220,6 @@ export function ImageDropzone({
         }}
       >
         {value ? (
-          // Oldindan ko'rish `<img>` bilan: `next/image` tashqi manzil uchun
-          // `remotePatterns` sozlamasini talab qiladi va 56px eskiz uchun
-          // hech narsa qo'shmaydi. Repo boshqa joyda ham `<img>` ishlatadi.
           <img
             alt=""
             className="h-14 w-14 shrink-0 rounded-mz-control border border-mz-border object-cover"
@@ -140,11 +233,18 @@ export function ImageDropzone({
 
         <div className="min-w-[12rem] flex-1">
           <p className="text-[13px] text-mz-text-muted" id={describedBy}>
-            Rasmni shu yerga tashlang yoki tanlang. PNG, JPEG, WebP, GIF — 5 MB
-            gacha.
+            {copy.recommendation} PNG, JPEG, WebP yoki GIF — 5 MB gacha.
+          </p>
+          <p className="mt-1 text-[12px] text-mz-text-faint">
+            {dimensions
+              ? `${dimensions.width} × ${dimensions.height} px · ${copy.label}`
+              : "Yuklashdan oldin piksel sifati tekshiriladi."}
           </p>
           {error ? (
-            <p className="mt-1 text-[13px] font-medium text-mz-danger" role="alert">
+            <p
+              className="mt-1 text-[13px] font-medium text-mz-danger"
+              role="alert"
+            >
               {error}
             </p>
           ) : null}
@@ -168,7 +268,6 @@ export function ImageDropzone({
               void upload(file);
             }
 
-            // Bir xil faylni qayta tanlash ham hodisa bersin.
             event.target.value = "";
           }}
           ref={inputRef}

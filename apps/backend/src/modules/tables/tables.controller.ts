@@ -23,6 +23,15 @@ import { TablesService } from "./tables.service";
 export class TablesController {
   constructor(private readonly tablesService: TablesService) {}
 
+  @Get("halls")
+  @Permissions(PERMISSIONS.TABLE_VIEW)
+  listHalls(
+    @Query("branchId") branchId: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tablesService.listHalls(branchId, user);
+  }
+
   @Get("tables")
   @Permissions(PERMISSIONS.TABLE_VIEW)
   listTables(

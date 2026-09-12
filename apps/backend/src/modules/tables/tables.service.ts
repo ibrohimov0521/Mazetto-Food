@@ -1,12 +1,31 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderSource, OrderStatus, OrderType, Prisma, TableStatus } from "@prisma/client";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  OrderSource,
+  OrderStatus,
+  OrderType,
+  Prisma,
+  TableStatus,
+} from "@prisma/client";
 import { randomInt } from "node:crypto";
-import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
+import {
+  resolveBranchScope,
+  resolveRequiredBranchScope,
+} from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
-import type { CreateHallDto, CreateTableDto, CreateTableOrderDto, UpdateTableStatusDto } from "./dto/tables.dto";
+import type {
+  CreateHallDto,
+  CreateTableDto,
+  CreateTableOrderDto,
+  UpdateTableStatusDto,
+} from "./dto/tables.dto";
 
 @Injectable()
 export class TablesService {
@@ -14,6 +33,24 @@ export class TablesService {
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
   ) {}
+
+  async listHalls(branchId: string | undefined, user: AuthenticatedUser) {
+    const scopedBranchId = resolveBranchScope(user, branchId);
+
+    return this.prisma.hall.findMany({
+      where: {
+        isActive: true,
+        ...(scopedBranchId ? { branchId: scopedBranchId } : {}),
+      },
+      select: {
+        id: true,
+        branchId: true,
+        name: true,
+        sortOrder: true,
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+  }
 
   async listTables(branchId: string | undefined, user: AuthenticatedUser) {
     const scopedBranchId = resolveBranchScope(user, branchId);
@@ -27,14 +64,26 @@ export class TablesService {
         hall: true,
         orders: {
           where: {
-            status: { in: [OrderStatus.NEW, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED] },
+            status: {
+              in: [
+                OrderStatus.NEW,
+                OrderStatus.CONFIRMED,
+                OrderStatus.PREPARING,
+                OrderStatus.READY,
+                OrderStatus.SERVED,
+              ],
+            },
           },
           orderBy: { createdAt: "desc" },
           take: 1,
           include: { items: true },
         },
       },
-      orderBy: [{ hall: { sortOrder: "asc" } }, { sortOrder: "asc" }, { number: "asc" }],
+      orderBy: [
+        { hall: { sortOrder: "asc" } },
+        { sortOrder: "asc" },
+        { number: "asc" },
+      ],
     });
   }
 
@@ -45,7 +94,15 @@ export class TablesService {
         hall: true,
         orders: {
           where: {
-            status: { in: [OrderStatus.NEW, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED] },
+            status: {
+              in: [
+                OrderStatus.NEW,
+                OrderStatus.CONFIRMED,
+                OrderStatus.PREPARING,
+                OrderStatus.READY,
+                OrderStatus.SERVED,
+              ],
+            },
           },
           include: { items: true, waiter: true },
           orderBy: { createdAt: "desc" },
@@ -92,7 +149,11 @@ export class TablesService {
     });
   }
 
-  async updateStatus(id: string, dto: UpdateTableStatusDto, user: AuthenticatedUser) {
+  async updateStatus(
+    id: string,
+    dto: UpdateTableStatusDto,
+    user: AuthenticatedUser,
+  ) {
     await this.assertTable(id, user);
 
     return this.prisma.restaurantTable.update({
@@ -101,7 +162,11 @@ export class TablesService {
     });
   }
 
-  async createOrderForTable(id: string, dto: CreateTableOrderDto, user: AuthenticatedUser) {
+  async createOrderForTable(
+    id: string,
+    dto: CreateTableOrderDto,
+    user: AuthenticatedUser,
+  ) {
     const waiterId = this.requireEmployee(user);
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -114,14 +179,25 @@ export class TablesService {
       await this.assertEmployeeInBranch(tx, waiterId, table.branchId);
       resolveBranchScope(user, table.branchId);
 
-      if (table.status === TableStatus.CLEANING || table.status === TableStatus.RESERVED) {
+      if (
+        table.status === TableStatus.CLEANING ||
+        table.status === TableStatus.RESERVED
+      ) {
         throw new BadRequestException("Table is not available for a new order");
       }
 
       const existingOrder = await tx.order.findFirst({
         where: {
           tableId: id,
-          status: { in: [OrderStatus.NEW, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED] },
+          status: {
+            in: [
+              OrderStatus.NEW,
+              OrderStatus.CONFIRMED,
+              OrderStatus.PREPARING,
+              OrderStatus.READY,
+              OrderStatus.SERVED,
+            ],
+          },
         },
       });
 
@@ -129,7 +205,10 @@ export class TablesService {
         throw new BadRequestException("Table already has an active order");
       }
 
-      const displayOrder = await allocateDisplayOrderNumber(tx, OrderSource.POS);
+      const displayOrder = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.POS,
+      );
       const order = await tx.order.create({
         data: {
           branchId: table.branchId,
@@ -177,7 +256,15 @@ export class TablesService {
     return this.prisma.order.findMany({
       where: {
         waiterId,
-        status: { in: [OrderStatus.NEW, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED] },
+        status: {
+          in: [
+            OrderStatus.NEW,
+            OrderStatus.CONFIRMED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY,
+            OrderStatus.SERVED,
+          ],
+        },
       },
       include: { table: true, items: true },
       orderBy: { createdAt: "desc" },
@@ -186,14 +273,22 @@ export class TablesService {
 
   private requireEmployee(user: AuthenticatedUser): string {
     if (!user.employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
     }
 
     return user.employeeId;
   }
 
-  private async assertTable(id: string, user: AuthenticatedUser): Promise<void> {
-    const table = await this.prisma.restaurantTable.findUnique({ where: { id }, select: { id: true, branchId: true } });
+  private async assertTable(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<void> {
+    const table = await this.prisma.restaurantTable.findUnique({
+      where: { id },
+      select: { id: true, branchId: true },
+    });
 
     if (!table) {
       throw new NotFoundException("Table not found");
@@ -202,7 +297,11 @@ export class TablesService {
     resolveBranchScope(user, table.branchId);
   }
 
-  private async assertEmployeeInBranch(tx: Prisma.TransactionClient, employeeId: string, branchId: string): Promise<void> {
+  private async assertEmployeeInBranch(
+    tx: Prisma.TransactionClient,
+    employeeId: string,
+    branchId: string,
+  ): Promise<void> {
     const employee = await tx.employee.findFirst({
       where: { id: employeeId, branchId, status: "ACTIVE" },
     });
@@ -213,7 +312,10 @@ export class TablesService {
   }
 
   private createCode(value: string): string {
-    return `${value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_${Date.now().toString(36).toUpperCase()}`;
+    return `${value
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")}_${Date.now().toString(36).toUpperCase()}`;
   }
 
   private createOrderNumber(): string {
