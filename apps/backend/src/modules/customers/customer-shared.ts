@@ -247,3 +247,56 @@ export function createOrderNumber(): string {
 
   return `WEB-${date}-${time}-${randomInt(1000, 10000)}`;
 }
+
+/*
+ * MIJOZ O'ZI BEKOR QILA OLADIGAN HOLATLAR.
+ *
+ * Egasining qoidasi: oshxona tayyorlashni BOSHLAGANDAN keyin bekor
+ * qilish faqat qo'ng'iroq orqali bo'ladi, undan oldin esa mijozda
+ * bekor qilish tugmasi bo'lishi kerak.
+ *
+ * `PREPARING` — oshxona ovqatni boshlagan payt, shuning uchun chegara
+ * aynan shu holatdan oldin turadi. `CONFIRMED` da chipta oshxonada
+ * ko'rinadi, lekin hali hech narsa pishirilmagan, ya'ni bekor qilish
+ * hech qanday mahsulotni yo'q qilmaydi.
+ */
+export const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
+  OrderStatus.NEW,
+  OrderStatus.CONFIRMED,
+];
+
+export function canCustomerCancel(status: OrderStatus): boolean {
+  return CUSTOMER_CANCELLABLE_STATUSES.includes(status);
+}
+
+/*
+ * Bekor qilishni RAD ETISH sabablari, mijoz tilida.
+ *
+ * To'langan buyurtma ATAYLAB bloklanadi: pulni qaytarish alohida
+ * teskari yozuvni (reversal) talab qiladi va uni jimgina o'tkazib
+ * yuborish pul hisobini buzardi. Hozir faqat naqd ishlaydi va naqd
+ * buyurtma topshirilgunga qadar to'lanmagan bo'ladi, ya'ni bu holat
+ * amalda uchramaydi — lekin qo'riqchi turishi kerak.
+ */
+export function customerCancelRejection(order: {
+  status: OrderStatus;
+  paymentStatus: string;
+}): string | null {
+  if (order.status === OrderStatus.CANCELLED) {
+    return "Bu buyurtma allaqachon bekor qilingan.";
+  }
+
+  if (order.status === OrderStatus.COMPLETED) {
+    return "Yakunlangan buyurtmani bekor qilib bo'lmaydi.";
+  }
+
+  if (order.paymentStatus === "PAID") {
+    return "Buyurtma to'langan. Bekor qilish uchun biz bilan bog'laning.";
+  }
+
+  if (!canCustomerCancel(order.status)) {
+    return "Oshxona tayyorlashni boshlagan. Bekor qilish uchun biz bilan bog'laning.";
+  }
+
+  return null;
+}

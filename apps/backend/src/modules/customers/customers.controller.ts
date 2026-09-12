@@ -17,6 +17,7 @@ import {
   AssignCourierDto,
   UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
+import { CancelCustomerOrderDto } from "./dto/cancel-customer-order.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
 import { CustomerAuth } from "../../common/decorators/customer-auth.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -168,6 +169,21 @@ export class CustomerPublicController {
     @Param("id") id: string,
   ) {
     return this.customersService.getCustomerOrder(customer.id, id);
+  }
+
+  /*
+   * Mijoz buyurtmani O'ZI bekor qiladi — faqat oshxona tayyorlashni
+   * boshlamagan bo'lsa. Qoidalar va rad etish xabarlari
+   * `customerCancelRejection` da.
+   */
+  @CustomerAuth()
+  @Patch("me/orders/:id/cancel")
+  cancelOrder(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Param("id") id: string,
+    @Body() dto: CancelCustomerOrderDto,
+  ) {
+    return this.customersService.cancelCustomerOrder(customer.id, id, dto);
   }
 }
 

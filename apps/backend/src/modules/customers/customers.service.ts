@@ -2,11 +2,12 @@ import { KitchenService } from "../kitchen/kitchen.service";
 import {
 } from "../kitchen/kitchen-events";
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma } from "@prisma/client";
+import { OrderStatus, Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {} from "../../config/auth.config";
@@ -30,10 +31,13 @@ import type {
   CreateOnlineOrderDto,
 } from "./dto/customer.dto";
 import {
+  customerCancelRejection,
   customerOrderInclude,
   productInclude,
   withDerivedCustomerOrderStatus,
 } from "./customer-shared";
+import type { CancelCustomerOrderDto } from "./dto/cancel-customer-order.dto";
+import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
 
 /*
  * Tasdiqlash kodi cheklovlari SOZLAMA REESTRIDA (7-bosqich Q1).
@@ -217,6 +221,104 @@ export class CustomersService {
     }
 
     return withDerivedCustomerOrderStatus(customerOrder);
+  }
+
+  /*
+   * MIJOZNING O'ZI BUYURTMANI BEKOR QILISHI.
+   *
+   * Egasining qoidasi: oshxona tayyorlashni boshlagandan keyin bekor
+   * qilish faqat qo'ng'iroq orqali. Shu sababli chegara `PREPARING`
+   * dan OLDIN turadi (`customerCancelRejection`), va rad etish xabari
+   * mijozga nima qilishini AYTADI — shunchaki "mumkin emas" demaydi.
+   *
+   * TRANZAKSIYA ichida: holat, bekor qilish izlari, oshxona chiptasi
+   * va tarix yozuvi birgalikda yoziladi yoki umuman yozilmaydi.
+   *
+   * ZAXIRA QAYTARILMAYDI. Bu ataylab: mavjud xodim tomonidagi bekor
+   * qilish ham zaxirani qaytarmaydi, ya'ni bu butun tizim bo'ylab
+   * bir xil xatti-harakat. Uni faqat bir joyda tuzatish ombor hisobini
+   * yana chalkashtirardi — alohida ish sifatida qilinishi kerak.
+   */
+  async cancelCustomerOrder(
+    customerId: string,
+    customerOrderId: string,
+    dto: CancelCustomerOrderDto,
+  ) {
+    const cancelled = await this.prisma.$transaction(async (tx) => {
+      const customerOrder = await tx.customerOrder.findFirst({
+        where: { id: customerOrderId, customerId },
+        select: { id: true, orderId: true },
+      });
+
+      if (!customerOrder) {
+        throw new NotFoundException("Customer order not found");
+      }
+
+      /*
+       * Qatorni QULFLASH: kassir yoki oshxona xuddi shu lahzada
+       * holatni o'zgartirayotgan bo'lishi mumkin, va qulfsiz mijoz
+       * allaqachon pishirilayotgan buyurtmani bekor qilib yuborardi.
+       */
+      await tx.$executeRaw`SELECT id FROM "orders" WHERE id = ${customerOrder.orderId} FOR UPDATE`;
+      const order = await tx.order.findUnique({
+        where: { id: customerOrder.orderId },
+        select: { id: true, status: true, paymentStatus: true, tableId: true },
+      });
+
+      if (!order) {
+        throw new NotFoundException("Order not found");
+      }
+
+      const rejection = customerCancelRejection(order);
+
+      if (rejection) {
+        throw new BadRequestException(rejection);
+      }
+
+      const reason = dto.reason?.trim();
+
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: OrderStatus.CANCELLED,
+          cancelledAt: new Date(),
+          cancellationReason: reason
+            ? `Mijoz bekor qildi: ${reason}`
+            : "Mijoz bekor qildi",
+        },
+      });
+
+      await syncKitchenTickets(tx, order.id, OrderStatus.CANCELLED);
+
+      /*
+       * `OrderStatusHistory` da mijoz uchun alohida maydon yo'q
+       * (faqat xodim va foydalanuvchi), shuning uchun aktor SABABDA
+       * ochiq yoziladi. Sxemani o'zgartirish migratsiya talab qiladi
+       * va alohida qaror.
+       */
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: order.id,
+          fromStatus: order.status,
+          toStatus: OrderStatus.CANCELLED,
+          reason: reason
+            ? `Mijoz bekor qildi: ${reason}`
+            : "Mijoz bekor qildi",
+        },
+      });
+
+      return tx.customerOrder.findFirst({
+        where: { id: customerOrderId },
+        include: customerOrderInclude({ includePayments: true }),
+      });
+    });
+
+    if (!cancelled) {
+      throw new NotFoundException("Customer order not found");
+    }
+
+    this.kitchenService.emitOrderStatusChanged(cancelled.order);
+    return withDerivedCustomerOrderStatus(cancelled);
   }
 
   listCustomers(query: ListCustomersDto, user: AuthenticatedUser) {

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   Clock3,
   MessageCircle,
   Phone,
   RotateCcw,
+  XCircle,
   UserRound,
 } from "lucide-react";
 import { CustomerAuthPanel } from "../../../components/customer-auth-panel";
@@ -108,6 +109,10 @@ function OrderDetail() {
   const params = useParams<{ id: string }>();
   const { addItem, customer, refreshCustomer, showToast } = useCart();
   const [reordering, setReordering] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [order, setOrder] = useState<CustomerOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -153,6 +158,45 @@ function OrderDetail() {
     () => order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 0,
     [order],
   );
+
+  /*
+   * Bekor qilish chegarasi SERVER bilan bir xil bo'lishi kerak
+   * (`customer-shared.ts` dagi `CUSTOMER_CANCELLABLE_STATUSES`):
+   * `PREPARING` dan oldin mumkin, undan keyin faqat qo'ng'iroq.
+   *
+   * Bu yerda takrorlangani ataylab: tugmani ko'rsatish qarori
+   * mijoz brauzerida olinadi, lekin YAKUNIY qarorni baribir server
+   * qabul qiladi va rad etsa, xatosi ekranda ko'rsatiladi.
+   */
+  const trackedStatus = order ? trackingStatus(order) : null;
+  const canCancel =
+    trackedStatus === "NEW" || trackedStatus === "CONFIRMED";
+  const showCallToCancel =
+    trackedStatus === "PREPARING" || trackedStatus === "READY";
+
+  async function cancelOrder() {
+    if (cancelling || !order) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await apiFetch(`/customer/me/orders/${order.id}/cancel`, {
+        method: "PATCH",
+        body: JSON.stringify(cancelReason.trim() ? { reason: cancelReason.trim() } : {}),
+        ...(customer?.accessToken ? { accessToken: customer.accessToken } : {}),
+      });
+      setCancelOpen(false);
+      setCancelReason("");
+      await load();
+    } catch (caught) {
+      setCancelError(
+        caught instanceof Error
+          ? caught.message
+          : "Buyurtmani bekor qilib bo'lmadi.",
+      );
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   async function reorder() {
     if (reordering || !order) return;
@@ -234,9 +278,15 @@ function OrderDetail() {
             chiqsa esa sahifadan chiqib ketishdan boshqa yo'l yo'q edi
             (`ContactFooter` faqat bosh sahifa, menyu va profilda).
           */}
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          {/*
+            O'lcham va joylashuv Tailwind klasslaridan keladi — `mf-button-*`
+            faqat rang va chegarani beradi. Uchtasi ham bir xil balandlik
+            (44px) va bir xil ichki bo'shliq oladi, shunda qator tekis
+            ko'rinadi.
+          */}
+          <div className="mt-5 flex flex-wrap items-center gap-2.5">
             <button
-              className="mf-button-primary"
+              className="pressable ripple mf-button-primary inline-flex min-h-11 items-center gap-2 px-5 py-3 text-sm font-black"
               disabled={reordering}
               onClick={() => void reorder()}
               type="button"
@@ -245,7 +295,7 @@ function OrderDetail() {
               {reordering ? "Qo'shilmoqda..." : "Qayta buyurtma"}
             </button>
             <a
-              className="mf-button-secondary"
+              className="pressable mf-button-secondary inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-bold"
               href={supportLinks.telegram}
               target="_blank"
               rel="noopener noreferrer"
@@ -255,14 +305,55 @@ function OrderDetail() {
             </a>
             {isSupportPhoneValid ? (
               <a
-                className="mf-button-secondary"
+                className="pressable mf-button-secondary inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-bold"
                 href={`tel:${supportPhone.href}`}
               >
                 <Phone aria-hidden="true" size={17} />
                 {supportPhone.display}
               </a>
             ) : null}
+            {/*
+              BEKOR QILISH — faqat oshxona tayyorlashni boshlamagan
+              bo'lsa. Uslubi ataylab "ozgina" destruktiv: chegarasi va
+              matni qizil, foni esa oq. To'ldirilgan qizil blok bu
+              qatordagi asosiy amal (qayta buyurtma) bilan raqobat
+              qilardi, holbuki bekor qilish kamdan-kam kerak bo'ladi.
+            */}
+            {canCancel ? (
+              <button
+                className="pressable mf-button-cancel inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-bold"
+                disabled={cancelling}
+                onClick={() => setCancelOpen(true)}
+                type="button"
+              >
+                <XCircle aria-hidden="true" size={17} />
+                {cancelling ? "Bekor qilinmoqda..." : "Bekor qilish"}
+              </button>
+            ) : null}
           </div>
+          {/*
+            Oshxona boshlagandan keyin bekor qilish faqat qo'ng'iroq
+            orqali (egasining qoidasi). Tugmani o'chirib qo'yish
+            o'rniga mijozga NIMA QILISHI aytiladi.
+          */}
+          {showCallToCancel ? (
+            <p className="mt-3 text-xs font-semibold leading-5 text-[#586B7D]">
+              Oshxona tayyorlashni boshladi. Bekor qilish uchun{" "}
+              {isSupportPhoneValid ? (
+                <a className="font-black underline" href={`tel:${supportPhone.href}`}>
+                  {supportPhone.display}
+                </a>
+              ) : (
+                "biz bilan"
+              )}{" "}
+              raqamiga qo'ng'iroq qiling.
+            </p>
+          ) : null}
+          {cancelError ? (
+            <p role="alert" className="mt-3 text-sm font-bold text-[#A3231D]">
+              {cancelError}
+            </p>
+          ) : null}
         </section>
 
         <StatusHistory entries={order.order.statusHistory ?? []} type={order.type} />
@@ -322,7 +413,99 @@ function OrderDetail() {
           </div>
         </section>
       </aside>
+      {/*
+        BEKOR QILISHNI TASDIQLASH. Native `<dialog>` ATAYLAB: u fokusni
+        o'zida ushlab turadi va Esc bilan yopiladi — ilovaning boshqa
+        joyida (fulfilment dialogi) ham shu naqsh ishlatiladi.
+      */}
+      {cancelOpen ? (
+        <CancelDialog
+          busy={cancelling}
+          reason={cancelReason}
+          onReasonChange={setCancelReason}
+          onClose={() => {
+            setCancelOpen(false);
+            setCancelError(null);
+          }}
+          onConfirm={() => void cancelOrder()}
+        />
+      ) : null}
     </MotionDiv>
+  );
+}
+
+function CancelDialog({
+  busy,
+  reason,
+  onReasonChange,
+  onClose,
+  onConfirm,
+}: {
+  busy: boolean;
+  reason: string;
+  onReasonChange: (value: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement | null>(null);
+
+  useEffect(() => {
+    const node = dialog.current;
+    if (!node) return;
+    if (!node.open) node.showModal();
+    const stop = (event: Event) => {
+      // Yuborilayotganda Esc bilan yopilishi so'rovni yarim qoldirardi.
+      if (busy) event.preventDefault();
+    };
+    node.addEventListener("cancel", stop);
+    return () => node.removeEventListener("cancel", stop);
+  }, [busy]);
+
+  return (
+    <dialog
+      className="mf-cancel-dialog"
+      ref={dialog}
+      onClose={onClose}
+      aria-labelledby="cancel-order-title"
+    >
+      <h2 className="text-xl font-black text-[#17314A]" id="cancel-order-title">
+        Buyurtmani bekor qilasizmi?
+      </h2>
+      <p className="mt-2 text-sm font-semibold leading-6 text-[#586B7D]">
+        Bekor qilingandan keyin buyurtma qaytarilmaydi. Kerak bo'lsa yangi
+        buyurtma berishingiz mumkin.
+      </p>
+      <label className="mt-4 grid gap-1.5 text-sm font-semibold text-[#17314A]">
+        Sabab (ixtiyoriy)
+        <textarea
+          className="mf-input px-4 py-3"
+          maxLength={300}
+          placeholder="Masalan: adashib buyurtma berdim"
+          rows={2}
+          value={reason}
+          onChange={(event) => onReasonChange(event.target.value)}
+        />
+      </label>
+      <div className="mt-5 flex flex-wrap justify-end gap-2.5">
+        <button
+          className="pressable mf-button-secondary inline-flex min-h-11 items-center px-4 py-3 text-sm font-bold"
+          disabled={busy}
+          onClick={onClose}
+          type="button"
+        >
+          Ortga
+        </button>
+        <button
+          className="pressable mf-button-cancel is-solid inline-flex min-h-11 items-center gap-2 px-5 py-3 text-sm font-black"
+          disabled={busy}
+          onClick={onConfirm}
+          type="button"
+        >
+          <XCircle aria-hidden="true" size={17} />
+          {busy ? "Bekor qilinmoqda..." : "Ha, bekor qilaman"}
+        </button>
+      </div>
+    </dialog>
   );
 }
 

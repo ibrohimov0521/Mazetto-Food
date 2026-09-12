@@ -8,7 +8,6 @@ import {
   ArrowRight,
   Banknote,
   Check,
-  CreditCard,
   MapPin,
   Pencil,
   ShoppingBag,
@@ -49,8 +48,12 @@ type OrderType = "DELIVERY" | "PICKUP";
  * Server yagona manba: `customer_payment_methods` sozlamasi qaysi usullar
  * OPERATSION ekanini aytadi. Bu yerdagi ro'yxat butun KATALOG — hali ishga
  * tushmaganlari ham bor, chunki ular yashirilmaydi.
+ *
+ * Egasining qaroriga ko'ra hozircha FAQAT naqd ishlaydi, keyinchalik
+ * Click va Payme qo'shiladi. Karta ro'yxatdan olib tashlandi: rejada
+ * yo'q usulni "Tez kunda" deb ko'rsatish mijozga yolg'on va'da berardi.
  */
-type PaymentMethod = "CASH" | "CARD" | "CLICK" | "PAYME";
+type PaymentMethod = "CASH" | "CLICK" | "PAYME";
 type CheckoutQuote = {
   subtotal: string;
   deliveryFee: string;
@@ -92,16 +95,6 @@ const paymentOptions: {
     summary: {
       delivery: "Buyurtmani olganda kuryerga naqd to'lov",
       pickup: "Buyurtmani olganda kassada naqd to'lov",
-    },
-  },
-  {
-    value: "CARD",
-    label: "Karta",
-    hint: "Terminal orqali",
-    icon: CreditCard,
-    summary: {
-      delivery: "Buyurtmani olganda kuryerning terminali orqali karta bilan",
-      pickup: "Buyurtmani olganda kassadagi terminal orqali karta bilan",
     },
   },
   {

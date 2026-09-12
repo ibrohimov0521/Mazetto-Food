@@ -1893,3 +1893,65 @@ img {
   background: #fdeae8;
   color: #a3231d;
 }
+
+/*
+ * BEKOR QILISH TUGMASI.
+ *
+ * Ikki darajali: qatordagi tugma faqat CHEGARASI va MATNI qizil,
+ * foni oq — bekor qilish kamdan-kam kerak bo'ladi va u qatordagi
+ * asosiy amal (qayta buyurtma) bilan raqobat qilmasligi kerak.
+ * Dialog ichidagi tasdiqlash tugmasi (`.is-solid`) esa to'ldirilgan,
+ * chunki o'sha yerda u AYNAN asosiy amal.
+ *
+ * Ranglar holat chipidagi "cancelled" toni bilan bir xil: matn
+ * #A3231D oq ustida 6.05:1, to'ldirilganda oq matn 6.04:1.
+ */
+.mf-button-cancel {
+  /* #e3a39e oq ustida 2.10:1 edi — UI chegarasi uchun 3:1 kerak. */
+  border: 1px solid #bd6a62;
+  border-radius: var(--mf-radius-control);
+  background: #ffffff;
+  color: #a3231d;
+  transform: translateZ(0);
+}
+
+.mf-button-cancel:hover {
+  background: #fdeae8;
+}
+
+.mf-button-cancel.is-solid {
+  border-color: #8e1e19;
+  background: #a3231d;
+  color: #ffffff;
+}
+
+.mf-button-cancel.is-solid:hover {
+  background: #8e1e19;
+}
+
+.mf-button-cancel:disabled {
+  opacity: 0.55;
+}
+
+.mf-button-cancel:focus-visible {
+  outline: 3px solid var(--mf-bg);
+  outline-offset: 3px;
+}
+
+/*
+ * Bekor qilish dialogi. Kenglik mobil ekranda ham chetdan 16px
+ * bo'shliq qoldiradi; `::backdrop` sahifani xiralashtiradi.
+ */
+.mf-cancel-dialog {
+  width: min(30rem, 100% - 2rem);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius-surface);
+  padding: 1.25rem;
+  background: var(--mf-ivory);
+  color: var(--mf-text);
+  box-shadow: 0 24px 60px rgba(0, 32, 35, 0.28);
+}
+
+.mf-cancel-dialog::backdrop {
+  background: rgba(0, 32, 35, 0.55);
+}

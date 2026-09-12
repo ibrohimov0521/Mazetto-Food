@@ -20,22 +20,28 @@
  * usul kassirga faqat xato ko'rsatardi.
  *
  * `GET /payments/methods` qo'shilganda faqat shu fayl o'zgaradi.
+ *
+ * EGASINING QARORI: hozircha FAQAT NAQD ishlaydi, keyinchalik Click va
+ * Payme qo'shiladi. Seed'da `CARD`, `UZCARD`, `HUMO`, `ONLINE` ham bor,
+ * lekin ular amalda ishlatilmaydi — kassirga tanlash mumkin, lekin
+ * hech kim qabul qilmaydigan usulni ko'rsatish faqat xatoga olib
+ * kelardi. Ishga tushganda kodni `POS_PAYMENT_METHOD_CODES` ga
+ * qo'shish kifoya, boshqa hech narsa o'zgartirilmaydi.
  */
 
-export const POS_PAYMENT_METHOD_CODES = [
-  "CASH",
-  "CARD",
-  "UZCARD",
-  "HUMO",
-  "CLICK",
-  "PAYME",
-  "ONLINE",
-] as const;
+export const POS_PAYMENT_METHOD_CODES = ["CASH"] as const;
+
+/*
+ * Rejada bor, lekin hali ishga tushmagan usullar. Kassa ekranida
+ * KO'RSATILMAYDI — bu ro'yxat faqat hujjat: yuqoridagi massivga
+ * qo'shilishi kerak bo'lgan kodlar.
+ */
+export const POS_PLANNED_PAYMENT_METHOD_CODES = ["CLICK", "PAYME"] as const;
 
 export type PaymentMethodCode = (typeof POS_PAYMENT_METHOD_CODES)[number];
 
 /** Kassir ekranida xom kod ("UZCARD") emas, odam o'qiydigan nom ko'rinadi. */
-const paymentMethodNames: Record<PaymentMethodCode, string> = {
+const paymentMethodNames: Record<string, string> = {
   CASH: "Naqd pul",
   CARD: "Bank kartasi",
   UZCARD: "Uzcard",

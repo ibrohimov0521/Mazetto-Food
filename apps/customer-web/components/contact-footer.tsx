@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Phone, UserRound, ReceiptText } from "lucide-react";
+import { MapPin, Phone, UserRound, ReceiptText } from "lucide-react";
 import { useCart } from "../lib/cart";
 import styles from "./contact-footer.module.css";
 import {
+  branchMapLinks,
   isSupportPhoneValid,
   supportLinks,
   supportPhone,
@@ -39,6 +40,17 @@ export function ContactFooter({ showProfile = false }: { showProfile?: boolean }
                 <Phone aria-hidden="true" size={17} /><span>{supportPhone.display}</span>
               </span>
             )}
+            {/*
+              Ikki xarita xizmati ATAYLAB: O'zbekistonda Yandex keng
+              tarqalgan, lekin hamma unda emas. Tanlov "xaritam
+              ochilmadi" holatini butunlay yo'q qiladi.
+            */}
+            <a className={styles.link} href={branchMapLinks.yandex} target="_blank" rel="noopener noreferrer">
+              <MapPin aria-hidden="true" size={17} /><span>Yandex xarita</span>
+            </a>
+            <a className={styles.link} href={branchMapLinks.google} target="_blank" rel="noopener noreferrer">
+              <MapPin aria-hidden="true" size={17} /><span>Google xarita</span>
+            </a>
           </div>
         </div>
         {showProfile ? (

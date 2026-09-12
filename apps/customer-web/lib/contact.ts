@@ -10,21 +10,16 @@
 import { formatPhone, normalizePhone } from "./phone";
 
 /*
- * DIQQAT — RAQAM TEKSHIRILISHI KERAK.
+ * Egasidan tasdiqlangan qo'llab-quvvatlash raqami.
  *
- * Kodda yozilgan qiymat `+998 95 855 406` bo'lib, `+998` dan keyin
- * ATIGI 8 raqam bor. O'zbekiston mobil raqami 9 raqamdan iborat, ya'ni
- * bu raqam noto'g'ri va `tel:` havolasi hech kimga ulanmaydi.
+ * Ilgari kodda `+99895855406` turardi — `+998` dan keyin 8 raqam, ya'ni
+ * bitta raqam tushib qolgan va `tel:` havolasi hech qayerga ulanmasdi.
+ * To'g'ri raqam egasi tomonidan berildi.
  *
- * To'g'ri raqam ma'lum bo'lmagani uchun o'ylab topilmadi: noto'g'ri
- * to'ldirilgan raqam begona odamga qo'ng'iroq qilinishiga olib kelardi.
- * Egasi tasdiqlagach shu yerda bitta joyda tuzatiladi.
- *
- * `isSupportPhoneValid` shuning uchun bor: raqam yaroqsiz bo'lsa
- * interfeys `tel:` havolasini ko'rsatmaydi va o'zini ishlaydigan
- * qilib ko'rsatmaydi.
+ * `isSupportPhoneValid` saqlanadi: raqam kelgusida yana buzilsa,
+ * interfeys ishlamaydigan havolani ko'rsatmaydi.
  */
-const supportPhoneRaw = "+99895855406";
+const supportPhoneRaw = "+998958554060";
 
 export const supportPhone = {
   raw: supportPhoneRaw,
@@ -39,4 +34,16 @@ export const isSupportPhoneValid = supportPhone.href !== null;
 export const supportLinks = {
   instagram: "https://www.instagram.com/mazetto_food",
   telegram: "https://t.me/MAZETTO_FOOD",
+};
+
+/*
+ * FILIAL JOYLASHUVI — egasi bergan xarita havolalari.
+ *
+ * Ikkitasi ham beriladi, chunki O'zbekistonda Yandex Xaritalar keng
+ * tarqalgan, lekin hamma unda emas. Foydalanuvchiga tanlash imkonini
+ * berish "xaritam ochilmadi" muammosini butunlay yo'q qiladi.
+ */
+export const branchMapLinks = {
+  google: "https://share.google/TkyFcp55Vyh3iD9TR",
+  yandex: "https://yandex.uz/maps/-/CTtIEYkg",
 };
