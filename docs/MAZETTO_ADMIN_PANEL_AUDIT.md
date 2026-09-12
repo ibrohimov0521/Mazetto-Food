@@ -27,11 +27,16 @@ Bular egasining "button qo'yilgan bosilmaydi" degan gapini aynan tasdiqlaydi.
 | **Chek "chop etilgan" filtri** | Faqat ekrandagi qatorlarni filtrlardi, pastdagi hisob esa filtrlanmagan sahifani sanardi. DTO'da `printed` allaqachon bor edi — fayldagi izoh yolg'on yozilgan edi | `admin-receipts.tsx` |
 | **Onlayn buyurtma qidiruvi** | DTO `status` va `search` ni e'lon qilgan, servis esa ikkalasini ham **e'tiborsiz** qoldirardi | `customers.service.listOnlineOrders` |
 | **Oshxonadan bekor qilish** | Sabab yozilmasdi: servis qat'iy bir satr yozardi, ya'ni tarixda "nima uchun" hech qachon ko'rinmasdi | `kitchen.service.cancelTicket` |
-| **Filial formasi** | Kodda to'g'ridan-to'g'ri "Filial saqlanadi, lekin hozircha ishlamayapti" deb yozilgan edi | `admin-branches.tsx:463` |
+
+### 1.1 Auditdagi noto'g'ri da'vo
+
+`admin-branches.tsx:463` dagi "Filial saqlanadi, lekin hozircha ishlamayapti" matni **buzilgan tugma emas edi**. Bu "Vaqtincha yopiq" toggle'ining TAVSIFI — ya'ni "filial o'chirilmaydi, faqat hozir ishlamayapti". Dastlabki auditda (va mening birinchi xulosamda) u interfeys o'zi haqida "ishlamayapti" deb tan olgan tugma deb o'qilgan edi.
+
+Tekshiruv: `isTemporarilyClosed` maydoni `CreateBranchDto` va `UpdateBranchDto` ikkalasida ham bor, ya'ni toggle har doim ishlagan. Matn faqat chalkash yozilgan edi va endi aniqroq qilib qayta yozildi.
 
 ---
 
-## 2. Faqat ko'rish uchun qobiq bo'lgan bo'limlar
+## 2. Faqat ko'rish uchun qobiq bo'lgan qismlar
 
 Skaner 11 komponentda hech qanday `POST`/`PATCH`/`DELETE` topmadi. Har biri alohida baholandi:
 

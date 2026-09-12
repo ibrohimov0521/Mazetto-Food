@@ -1,21 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useMemo, useState } from "react";
+import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { Badge } from "../admin-ui/badge";
+import { ButtonLink } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
-import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
-import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
-import { FilterBar, TextInput } from "../admin-ui/form";
+import { EmptyState, ErrorState, Skeleton } from "../admin-ui/feedback";
+import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
+import { Icon } from "../admin-ui/icon";
+import { StatGrid, InfoBox } from "../admin-ui/stat-box";
+import { roleCodeLabel } from "./people-branch-labels";
 
 /*
- * Rollar va permissionlar — FAQAT O'QISH.
+ * Rollar va permissionlar — FAQAT O'QISH, va bu backend cheklovi.
  *
- * Backend `/roles` va `/permissions` tayyor, lekin rol/permission YARATISH yoki
- * O'ZGARTIRISH endpoint'i yo'q — hozircha ular faqat seed orqali boshqariladi.
+ * TEKSHIRILDI (apps/backend/src/modules/roles/roles.controller.ts): butun
+ * modulda ikkita marshrut bor — `GET /roles` va `GET /permissions`. Rol
+ * yaratish, o'zgartirish, o'chirish yoki rolga permission biriktirish
+ * endpoint'i YO'Q, boshqa modullarda ham yo'q. Ya'ni "view-only" izohi
+ * to'g'ri: rol matritsasi hozir faqat seed orqali o'zgaradi.
  *
- * Boshqaruv 4-bosqichda `ROLE_MANAGE` / `PERMISSION_MANAGE` permissionlari
- * bilan birga qo'shiladi (RBAC JSON future_permission_plan.security_audit).
+ * SHUNING UCHUN bu ekranning vazifasi boshqa: mavjud matritsani
+ * O'QILADIGAN qilish. Ilgari u rol kartochkalarida xom permission kodlarini
+ * chip qilib to'kardi (SUPER_ADMIN kartochkasida bitta `*`), permission
+ * jadvalida esa faqat "nechta rolda" sanog'i bor edi — ya'ni "kassirga
+ * buyurtmani bekor qilish huquqi bormi?" degan savolga javob bermasdi.
+ *
+ * Endi ROL × PERMISSION MATRITSASI bor: satr — permission, ustun — rol,
+ * kesishma — huquq bor/yo'q. Aynan shu ko'rinish rol sozlashni tushunarli
+ * qiladi.
  */
 
 type Permission = {
@@ -34,170 +48,449 @@ type Role = {
   permissions: { permission: Permission }[];
 };
 
+/*
+ * Filial doirasidagi rollar (RBAC core_rules.branch_scoped_roles).
+ * Bu ro'yxat `lib/admin-nav.ts` va backend `staff-role-codes.ts` bilan bir xil.
+ */
+const branchScopedRoleCodes = new Set([
+  "ADMIN",
+  "BRANCH_MANAGER",
+  "CASHIER",
+  "WAITER",
+  "KITCHEN",
+  "COURIER",
+]);
+
+/** Permission kodining oldingi bo'lagi — modul bo'yicha guruhlash uchun. */
+function permissionGroup(code: string): string {
+  if (code === "*") {
+    return "BARCHASI";
+  }
+
+  return code.split("_")[0] ?? code;
+}
+
 export function AdminRolesPage() {
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [group, setGroup] = useState("");
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const [nextRoles, nextPermissions] = await Promise.all([
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () =>
+      Promise.all([
         apiFetch<Role[]>("/roles"),
         apiFetch<Permission[]>("/permissions"),
-      ]);
-      setRoles(nextRoles);
-      setPermissions(nextPermissions);
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
+      ]),
+    [],
+    "Rollarni yuklab bo'lmadi.",
+  );
+
+  const roles = data?.[0] ?? [];
+  const permissions = data?.[1] ?? [];
+
+  /*
+   * `*` — joker permission (SUPER_ADMIN). U matritsada alohida satr bo'lib
+   * turishi noto'g'ri bo'lardi: u BARCHA satrlarni qamrab oladi. Shuning
+   * uchun rol bo'yicha joker bayrog'i sifatida saqlanadi va matritsada
+   * o'sha ustunning hamma kesishmasi belgilangan bo'ladi.
+   */
+  const roleHasWildcard = useMemo(
+    () =>
+      new Map(
+        roles.map((role) => [
+          role.id,
+          role.permissions.some((item) => item.permission.code === "*"),
+        ]),
+      ),
+    [roles],
+  );
+
+  const rolePermissionCodes = useMemo(
+    () =>
+      new Map(
+        roles.map((role) => [
+          role.id,
+          new Set(role.permissions.map((item) => item.permission.code)),
+        ]),
+      ),
+    [roles],
+  );
+
+  const groups = useMemo(() => {
+    const seen = new Set<string>();
+
+    for (const permission of permissions) {
+      if (permission.code !== "*") {
+        seen.add(permissionGroup(permission.code));
       }
-
-      setError(
-        caught instanceof Error ? caught.message : "Rollarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
     }
-  }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+    return [...seen].sort();
+  }, [permissions]);
 
   const filteredPermissions = useMemo(() => {
     const needle = query.trim().toLowerCase();
 
-    if (!needle) {
-      return permissions;
-    }
+    return permissions
+      .filter((permission) => permission.code !== "*")
+      .filter((permission) => {
+        const matchesGroup =
+          !group || permissionGroup(permission.code) === group;
+        const matchesQuery =
+          !needle ||
+          [permission.code, permission.name, permission.description]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(needle);
 
-    return permissions.filter((permission) =>
-      [permission.code, permission.name, permission.description]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [permissions, query]);
+        return matchesGroup && matchesQuery;
+      });
+  }, [group, permissions, query]);
 
-  const permissionColumns: DataTableColumn<Permission>[] = [
-    {
-      key: "code",
-      header: "Kod",
-      primary: true,
-      render: (permission) => (
-        <code className="rounded bg-mz-surface-sunken px-1.5 py-0.5 text-xs font-semibold text-mz-text">
-          {permission.code}
-        </code>
-      ),
-    },
-    { key: "name", header: "Nomi", render: (permission) => permission.name },
-    {
-      key: "description",
-      header: "Tavsif",
-      hideOnMobile: true,
-      render: (permission) => (
-        <span className="text-xs text-mz-text-muted">
-          {permission.description ?? "—"}
-        </span>
-      ),
-    },
-    {
-      key: "roles",
-      header: "Rollarda",
-      align: "right",
-      render: (permission) => {
-        const count = roles.filter((role) =>
-          role.permissions.some(
-            (item) => item.permission.code === permission.code,
-          ),
-        ).length;
-
-        return `${count} ta`;
-      },
-    },
-  ];
+  const hasFilters = Boolean(query.trim() || group);
 
   if (isLoading) {
-    return <SkeletonRows rows={8} />;
+    return (
+      <div aria-busy="true" className="grid gap-5">
+        <span className="sr-only">Yuklanmoqda</span>
+        <Skeleton className="h-24 w-full" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((index) => (
+            <Skeleton className="h-20 w-full" key={index} />
+          ))}
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <ErrorState message={error} onRetry={load} />;
   }
 
   return (
     <div className="grid gap-5">
-      {error ? (
-        <ErrorState message={error} onRetry={() => void load()} />
-      ) : null}
-
+      {/*
+        FAQAT O'QISH sababi ANIQ aytiladi. Ilgari izoh "keyingi bosqichda
+        qo'shiladi" deb turardi va o'quvchi buni interfeys nuqsoni deb
+        o'ylashi mumkin edi.
+      */}
       <Card>
         <CardBody>
-          <p className="text-xs text-mz-text-muted">
-            Bu ekran faqat ko&apos;rish uchun. Rollar va permissionlar hozircha
-            seed orqali boshqariladi; boshqaruv interfeysi keyingi bosqichda{" "}
-            <code className="rounded bg-mz-surface-sunken px-1">
-              ROLE_MANAGE
-            </code>{" "}
-            permission&apos;i bilan qo&apos;shiladi.
-          </p>
+          <div className="flex flex-wrap items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-mz-info"
+            >
+              <Icon className="h-5 w-5" name="shield" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-mz-text">
+                Bu ekran faqat ko&apos;rish uchun
+              </p>
+              <p className="mt-1 text-[13px] text-mz-text-muted">
+                Serverda rol va permissionni o&apos;zgartiradigan endpoint
+                yo&apos;q — mavjudi faqat{" "}
+                <code className="rounded bg-mz-surface-sunken px-1">
+                  GET /roles
+                </code>{" "}
+                va{" "}
+                <code className="rounded bg-mz-surface-sunken px-1">
+                  GET /permissions
+                </code>
+                . Matritsa hozir seed bilan belgilanadi. Xodimga rol{" "}
+                <span className="font-semibold text-mz-text">biriktirish</span>{" "}
+                esa ishlaydi va xodim kartasida bajariladi.
+              </p>
+            </div>
+            <ButtonLink href="/admin/staff" variant="ghost">
+              Xodimlarga o&apos;tish
+            </ButtonLink>
+          </div>
         </CardBody>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {roles.map((role) => (
-          <Card key={role.id}>
-            <CardHeader
-              title={`${role.name} · ${role.code}`}
-              {...(role.description ? { description: role.description } : {})}
-              {...(role.isSystem
-                ? { actions: <Badge tone="warning">Tizim roli</Badge> }
-                : {})}
-            />
-            <CardBody>
-              <p className="mb-2 text-xs font-semibold text-mz-text-muted">
-                {role.permissions.length} ta permission
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {role.permissions.map((item) => (
-                  <Badge
-                    key={item.permission.id}
-                    tone={item.permission.code === "*" ? "warning" : "neutral"}
-                  >
-                    {item.permission.code}
-                  </Badge>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-        ))}
-      </div>
-
+      {/*
+        BIZNES QOIDALARI ko'rinadigan holga keltirilgan. Rol sozlayotgan odam
+        aynan shu uchta qoidani bilishi kerak, aks holda u kassirga global
+        rol berib qo'yadi yoki ikkinchi kassa kutadi.
+      */}
       <Card>
         <CardHeader
-          description={`Tizimda ${permissions.length} ta permission mavjud`}
-          title="Permission katalogi"
+          description="Rol biriktirishda amal qiladigan uchta qoida"
+          title="Rol, filial va kassa qoidalari"
         />
+        <CardBody className="grid gap-3 md:grid-cols-3">
+          <RuleNote
+            icon="users"
+            text="Bitta login bir vaqtda bir nechta rolni tashishi mumkin — kassir, oshxona, kuryer va ofitsiant birga bo'lishi normal holat."
+            title="Bir login, ko'p rol"
+          />
+          <RuleNote
+            icon="building"
+            text="Filial doirasidagi rol uchun filial MAJBURIY va xodim boshqa filial ma'lumotini ko'rmaydi. Global rol (bosh administrator, buxgalter) barcha filialni ko'radi."
+            title="Filial doirasi"
+          />
+          <RuleNote
+            icon="wallet"
+            text="Xodimning filialda bitta ochiq smenasi bo'ladi va u barcha vazifalari uchun umumiy kassa hisoblanadi — kuryer va kassir ishi uchun alohida kassa ochilmaydi."
+            title="Bitta umumiy kassa"
+          />
+        </CardBody>
+      </Card>
+
+      <StatGrid>
+        <InfoBox
+          icon="shield"
+          label="Rollar"
+          tone="brand"
+          value={`${roles.length} ta`}
+        />
+        <InfoBox
+          icon="check"
+          label="Permissionlar"
+          value={`${permissions.length} ta`}
+        />
+        <InfoBox
+          description="Filial biriktirilishi shart"
+          icon="building"
+          label="Filial doirasidagi rol"
+          value={`${roles.filter((role) => branchScopedRoleCodes.has(role.code)).length} ta`}
+        />
+        <InfoBox
+          description="Barcha filialni ko'radi"
+          icon="globe"
+          label="Global rol"
+          value={`${roles.filter((role) => !branchScopedRoleCodes.has(role.code)).length} ta`}
+        />
+      </StatGrid>
+
+      {/* --- Rol xulosalari ------------------------------------------------ */}
+      <Card>
+        <CardHeader
+          description="Har rolning huquq hajmi va doirasi"
+          title="Rollar"
+        />
+        <CardBody className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {roles.map((role) => {
+            const isWildcard = roleHasWildcard.get(role.id) ?? false;
+            const isBranchScoped = branchScopedRoleCodes.has(role.code);
+
+            return (
+              <div
+                className="grid gap-2 rounded-mz-control border border-mz-border p-3"
+                key={role.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-mz-text">
+                      {roleCodeLabel(role.code)}
+                    </p>
+                    <p className="truncate font-mono text-[13px] text-mz-text-faint">
+                      {role.code}
+                    </p>
+                  </div>
+                  {role.isSystem ? (
+                    <Badge tone="warning">Tizim roli</Badge>
+                  ) : null}
+                </div>
+
+                {role.description ? (
+                  <p className="text-[13px] text-mz-text-muted">
+                    {role.description}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge tone={isBranchScoped ? "info" : "neutral"}>
+                    {isBranchScoped ? "Filial doirasida" : "Global doira"}
+                  </Badge>
+                  <Badge tone={isWildcard ? "warning" : "neutral"}>
+                    {isWildcard
+                      ? "Barcha huquqlar"
+                      : `${role.permissions.length} ta huquq`}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })}
+        </CardBody>
+      </Card>
+
+      {/* --- Matritsa ------------------------------------------------------ */}
+      <Card>
+        <CardHeader
+          description="Satr — huquq, ustun — rol. Belgi qo'yilgan kesishmada rolda o'sha huquq bor."
+          title="Rol × permission matritsasi"
+        />
+
         <FilterBar>
           <div className="min-w-52 flex-1">
-            <TextInput
-              aria-label="Permission qidirish"
-              placeholder="Kod, nomi yoki tavsifi"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
+            <FormField label="Huquqni qidirish">
+              {(props) => (
+                <TextInput
+                  {...props}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Masalan: buyurtma, ORDER, bekor"
+                  value={query}
+                />
+              )}
+            </FormField>
           </div>
+          <div className="w-full sm:w-56">
+            <FormField label="Modul">
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) => setGroup(event.target.value)}
+                  value={group}
+                >
+                  <option value="">Barcha modullar</option>
+                  {groups.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+          </div>
+          <p className="ml-auto text-[13px] text-mz-text-muted">
+            {filteredPermissions.length} ta huquq ko&apos;rsatilmoqda
+          </p>
         </FilterBar>
-        <DataTable
-          caption="Permission katalogi"
-          columns={permissionColumns}
-          emptyTitle="Permission topilmadi"
-          getRowKey={(permission) => permission.id}
-          rows={filteredPermissions}
-        />
+
+        {filteredPermissions.length === 0 ? (
+          <EmptyState
+            description={
+              hasFilters
+                ? "Qidiruv yoki modul filtrini o'zgartirib ko'ring."
+                : "Serverdan permission ro'yxati kelmadi."
+            }
+            icon={hasFilters ? "search" : "inbox"}
+            title={hasFilters ? "Huquq topilmadi" : "Permission yo'q"}
+          />
+        ) : (
+          /*
+           * Matritsa KENG bo'lishi mumkin (8 rol × ustun). DESIGN_RULES
+           * jadvalga o'z `overflow-x` konteynerini ruxsat beradi — sahifa
+           * o'zi gorizontal siljimaydi.
+           */
+          <div className="mz-thin-scrollbar max-h-[70vh] overflow-auto">
+            <table className="w-full border-collapse text-sm">
+              <caption className="sr-only">
+                Rollar va permissionlar matritsasi
+              </caption>
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-mz-border bg-mz-surface-sunken">
+                  <th
+                    className="sticky left-0 z-20 min-w-56 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-left text-[13px] font-bold uppercase tracking-wide text-mz-text-muted"
+                    scope="col"
+                  >
+                    Huquq
+                  </th>
+                  {roles.map((role) => (
+                    <th
+                      className="border-b border-mz-border bg-mz-surface-sunken px-2 py-2.5 text-center text-[13px] font-bold text-mz-text-muted"
+                      key={role.id}
+                      scope="col"
+                    >
+                      <span className="block max-w-24 truncate">
+                        {roleCodeLabel(role.code)}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPermissions.map((permission) => (
+                  <tr
+                    className="border-b border-mz-border last:border-b-0 hover:bg-mz-surface-sunken"
+                    key={permission.id}
+                  >
+                    <th
+                      className="sticky left-0 z-10 bg-mz-surface px-3 py-2.5 text-left align-middle font-normal"
+                      scope="row"
+                    >
+                      <span className="block text-sm font-semibold text-mz-text">
+                        {permission.name}
+                      </span>
+                      <span className="block font-mono text-[13px] text-mz-text-faint">
+                        {permission.code}
+                      </span>
+                      {permission.description ? (
+                        <span className="block text-[13px] text-mz-text-muted">
+                          {permission.description}
+                        </span>
+                      ) : null}
+                    </th>
+                    {roles.map((role) => {
+                      const granted =
+                        (roleHasWildcard.get(role.id) ?? false) ||
+                        (rolePermissionCodes
+                          .get(role.id)
+                          ?.has(permission.code) ??
+                          false);
+
+                      return (
+                        <td
+                          className="px-2 py-2.5 text-center align-middle"
+                          key={role.id}
+                        >
+                          {granted ? (
+                            <span
+                              className="inline-grid h-6 w-6 place-items-center rounded-mz-control bg-mz-success-bg text-mz-success"
+                              title={`${roleCodeLabel(role.code)}: ${permission.name} — bor`}
+                            >
+                              <Icon className="h-4 w-4" name="check" />
+                              <span className="sr-only">Bor</span>
+                            </span>
+                          ) : (
+                            <span
+                              className="text-mz-text-faint"
+                              title={`${roleCodeLabel(role.code)}: ${permission.name} — yo'q`}
+                            >
+                              <span aria-hidden="true">·</span>
+                              <span className="sr-only">Yo&apos;q</span>
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
+    </div>
+  );
+}
+
+function RuleNote({
+  title,
+  text,
+  icon,
+}: {
+  title: string;
+  text: string;
+  icon: "users" | "building" | "wallet";
+}) {
+  return (
+    <div className="grid gap-1.5 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
+      <p className="flex items-center gap-2 text-sm font-semibold text-mz-text">
+        <span aria-hidden="true" className="text-mz-accent">
+          <Icon className="h-4 w-4" name={icon} />
+        </span>
+        {title}
+      </p>
+      <p className="text-[13px] text-mz-text-muted">{text}</p>
     </div>
   );
 }
