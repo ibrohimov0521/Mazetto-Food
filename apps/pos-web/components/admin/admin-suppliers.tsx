@@ -1,26 +1,54 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
+import { canSwitchBranch } from "../../lib/admin-nav";
+import { hasPermission } from "../../lib/auth";
+import { useAuth } from "../auth/auth-provider";
+import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
-import { Card, CardHeader } from "../admin-ui/card";
-import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
+import { Card, CardBody, CardHeader } from "../admin-ui/card";
+import {
+  DataTable,
+  RowAction,
+  type DataTableColumn,
+} from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
-import { FilterBar, FormField, TextInput } from "../admin-ui/form";
+import {
+  FilterBar,
+  focusFirstInvalidField,
+  FormField,
+  Select,
+  TextInput,
+} from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
+import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
 
 /*
  * Yetkazib beruvchilar.
  *
- * Backend `/suppliers` to'liq CRUD bilan tayyor edi, lekin admin panelda
- * ekrani yo'q edi.
+ * Backend `/suppliers` list / create / update / soft-delete beradi.
+ * `GET /suppliers/:id` YO'Q, xarid buyurtmasi, yetkazish hujjati va
+ * yetkazib beruvchi qarzi ham YO'Q — `Supplier` modelida faqat aloqa
+ * ma'lumoti bor va `StockMovement` da `supplierId` mavjud emas, ya'ni
+ * kelgan zaxirani yetkazib beruvchiga bog'lash imkoni yo'q. Shuning uchun
+ * bu ekran ATAYLAB aloqa kartotekasi: "Xarid buyurtmasi" yoki "Qarz"
+ * bo'limi bo'lsa, u bo'sh tugmalardan iborat bo'lardi.
  *
- * ESLATMA: backend `DELETE /suppliers/:id` ni qo'llab-quvvatlaydi, lekin
- * `listSuppliers` faqat `isActive: true` yozuvlarni qaytaradi — ya'ni
- * o'chirish amalda arxivlash. Bu `policy_decisions_to_finalize.MENU_DELETE`
- * dagi "hard delete o'rniga archive" tavsiyasiga mos.
+ * `DELETE /suppliers/:id` — `isActive: false`, ya'ni ARXIVLASH. Ro'yxat
+ * esa faqat faol yozuvlarni qaytaradi, ya'ni arxivlangandan keyin uni
+ * qaytarishning yo'li yo'q: `PATCH { isActive: true }` mavjud, lekin
+ * arxivlangan yozuvni KO'RSATADIGAN endpoint yo'q. Tasdiqlash oynasi
+ * shuni ochiq aytadi.
+ *
+ * Sahifalash yo'q: backend `take: 200` ni qotirib qo'ygan va `offset`
+ * qabul qilmaydi. 200 qator kelganda ekran ogohlantiradi — jimgina
+ * kesib tashlash noto'g'ri son ko'rsatardi.
  */
+
+const HARD_LIMIT = 200;
 
 type Supplier = {
   id: string;
@@ -35,47 +63,60 @@ type SupplierForm = {
   name: string;
   phone: string;
   address: string;
+  branchId: string;
 };
 
-const emptyForm: SupplierForm = { name: "", phone: "", address: "" };
+type SupplierErrors = Partial<Record<keyof SupplierForm, string>>;
+
+type Branch = { id: string; code: string; name: string };
+
+const emptyForm: SupplierForm = {
+  name: "",
+  phone: "",
+  address: "",
+  branchId: "",
+};
 
 export function AdminSuppliersPage() {
+  const { user } = useAuth();
   const { showToast } = useToast();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const isGlobalScope = canSwitchBranch(user);
+  const canCreate = hasPermission(user, "INVENTORY_CREATE");
+  const canEdit = hasPermission(user, "INVENTORY_EDIT");
+
   const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [branchId, setBranchId] = useState("");
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<SupplierForm>(emptyForm);
+  const [errors, setErrors] = useState<SupplierErrors>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Supplier | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource<Supplier[]>(
+    () =>
+      apiFetch<Supplier[]>(
+        `/suppliers${branchId ? `?branchId=${encodeURIComponent(branchId)}` : ""}`,
+      ),
+    [branchId],
+    "Yetkazib beruvchilarni yuklab bo'lmadi.",
+  );
+  const suppliers = data ?? [];
 
-    try {
-      setSuppliers(await apiFetch<Supplier[]>("/suppliers"));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Yetkazib beruvchilarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data: branchData } = useApiResource<Branch[]>(
+    () => (isGlobalScope ? apiFetch<Branch[]>("/branches") : Promise.resolve([])),
+    [isGlobalScope],
+    "Filiallarni yuklab bo'lmadi.",
+  );
+  const branches = branchData ?? [];
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -93,9 +134,19 @@ export function AdminSuppliersPage() {
     );
   }, [query, suppliers]);
 
+  const stats = useMemo(
+    () => ({
+      total: suppliers.length,
+      withPhone: suppliers.filter((supplier) => supplier.phone).length,
+      global: suppliers.filter((supplier) => !supplier.branchId).length,
+    }),
+    [suppliers],
+  );
+
   function openCreate(): void {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, branchId: branchId || "" });
+    setErrors({});
     setIsEditorOpen(true);
   }
 
@@ -105,18 +156,50 @@ export function AdminSuppliersPage() {
       name: supplier.name,
       phone: supplier.phone ?? "",
       address: supplier.address ?? "",
+      /* Backend `branchId` ni O'ZGARTIRMAYDI — shu sababdan faqat ko'rsatiladi. */
+      branchId: supplier.branchId ?? "",
     });
+    setErrors({});
     setIsEditorOpen(true);
+  }
+
+  function validate(draft: SupplierForm): SupplierErrors {
+    const next: SupplierErrors = {};
+
+    if (!draft.name.trim()) {
+      next.name = "Nomi kerak.";
+    } else if (draft.name.trim().length > 120) {
+      next.name = "Nomi 120 belgidan oshmasligi kerak.";
+    }
+
+    if (draft.phone.trim().length > 40) {
+      next.phone = "Telefon 40 belgidan oshmasligi kerak.";
+    }
+
+    if (draft.address.trim().length > 300) {
+      next.address = "Manzil 300 belgidan oshmasligi kerak.";
+    }
+
+    return next;
   }
 
   async function save(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+
+    const nextErrors = validate(form);
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      requestAnimationFrame(() => focusFirstInvalidField(formRef.current));
+      return;
+    }
+
     setIsSaving(true);
 
     const payload = {
       name: form.name.trim(),
-      phone: form.phone.trim() || undefined,
-      address: form.address.trim() || undefined,
+      ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
+      ...(form.address.trim() ? { address: form.address.trim() } : {}),
     };
 
     try {
@@ -129,46 +212,57 @@ export function AdminSuppliersPage() {
       } else {
         await apiFetch("/suppliers", {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            /* Filial berilmasa yozuv UMUMIY bo'ladi (`branchId: null`). */
+            ...(form.branchId ? { branchId: form.branchId } : {}),
+          }),
         });
         showToast("Yetkazib beruvchi qo'shildi.", "success");
       }
 
       setIsEditorOpen(false);
-      await load();
+      load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
       }
 
-      showToast(
-        caught instanceof Error ? caught.message : "Saqlab bo'lmadi.",
-        "danger",
-      );
+      setErrors({
+        name: caught instanceof Error ? caught.message : "Saqlab bo'lmadi.",
+      });
+      requestAnimationFrame(() => focusFirstInvalidField(formRef.current));
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function confirmDelete(): Promise<void> {
+  async function confirmArchive(): Promise<void> {
     if (!pendingDelete) {
       return;
     }
 
+    setIsArchiving(true);
+
     try {
       await apiFetch(`/suppliers/${pendingDelete.id}`, { method: "DELETE" });
-      showToast("Yetkazib beruvchi ro'yxatdan olib tashlandi.", "success");
+      showToast(
+        `${pendingDelete.name} arxivlandi va ro'yxatdan chiqdi.`,
+        "success",
+      );
       setPendingDelete(null);
-      await load();
+      load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
       }
 
       showToast(
-        caught instanceof Error ? caught.message : "O'chirib bo'lmadi.",
+        caught instanceof Error ? caught.message : "Arxivlab bo'lmadi.",
         "danger",
       );
+    } finally {
+      setIsArchiving(false);
     }
   }
 
@@ -184,7 +278,17 @@ export function AdminSuppliersPage() {
     {
       key: "phone",
       header: "Telefon",
-      render: (supplier) => supplier.phone ?? "—",
+      render: (supplier) =>
+        supplier.phone ? (
+          <a
+            className="tabular-nums text-mz-info underline decoration-dotted"
+            href={`tel:${supplier.phone}`}
+          >
+            {supplier.phone}
+          </a>
+        ) : (
+          <span className="text-mz-text-faint">—</span>
+        ),
     },
     {
       key: "address",
@@ -196,67 +300,157 @@ export function AdminSuppliersPage() {
       key: "scope",
       header: "Qamrov",
       hideOnMobile: true,
-      render: (supplier) => (supplier.branchId ? "Filial" : "Umumiy"),
-    },
-    {
-      key: "actions",
-      header: "",
-      align: "right",
       render: (supplier) => (
-        <span className="inline-flex gap-2">
-          <Button onClick={() => openEdit(supplier)} size="sm" variant="ghost">
-            Tahrir
-          </Button>
-          <Button
-            onClick={() => setPendingDelete(supplier)}
-            size="sm"
-            variant="danger"
-          >
-            Olib tashlash
-          </Button>
-        </span>
+        <Badge tone={supplier.branchId ? "info" : "neutral"}>
+          {supplier.branchId ? "Filial" : "Umumiy"}
+        </Badge>
       ),
     },
   ];
 
   return (
     <div className="grid gap-5">
-      {error ? (
-        <ErrorState message={error} onRetry={() => void load()} />
-      ) : null}
+      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
+
+      <StatGrid>
+        <InfoBox
+          icon="truck"
+          label="Faol yetkazib beruvchi"
+          value={`${stats.total} ta`}
+        />
+        <InfoBox
+          icon="bell"
+          label="Telefoni bor"
+          tone={stats.withPhone < stats.total ? "warning" : "success"}
+          value={`${stats.withPhone} ta`}
+        />
+        <InfoBox
+          description="Barcha filiallar uchun"
+          icon="building"
+          label="Umumiy yozuv"
+          value={`${stats.global} ta`}
+        />
+        <InfoBox
+          description="Qidiruvdan keyin"
+          icon="filter"
+          label="Ko'rsatilgan"
+          value={`${filtered.length} ta`}
+        />
+      </StatGrid>
 
       <Card>
         <CardHeader
           actions={
-            <Button onClick={openCreate}>Yangi yetkazib beruvchi</Button>
+            canCreate ? (
+              <Button onClick={openCreate} size="lg">
+                Yangi yetkazib beruvchi
+              </Button>
+            ) : undefined
           }
-          description="Faol yetkazib beruvchilar ro'yxati"
+          description="Aloqa kartotekasi — xarid buyurtmasi va qarz hisobi hali yo'q"
           title="Yetkazib beruvchilar"
         />
 
         <FilterBar>
           <div className="min-w-52 flex-1">
-            <TextInput
-              aria-label="Yetkazib beruvchi qidirish"
-              placeholder="Nomi, telefoni yoki manzili"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
+            <FormField label="Qidirish">
+              {(props) => (
+                <TextInput
+                  {...props}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Nomi, telefoni yoki manzili"
+                  type="search"
+                  value={query}
+                />
+              )}
+            </FormField>
           </div>
+
+          {isGlobalScope ? (
+            <div className="w-56">
+              <FormField label="Filial">
+                {(props) => (
+                  <Select
+                    {...props}
+                    onChange={(event) => setBranchId(event.target.value)}
+                    value={branchId}
+                  >
+                    <option value="">Barcha filiallar</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+            </div>
+          ) : null}
         </FilterBar>
 
         <DataTable
           caption="Yetkazib beruvchilar"
           columns={columns}
-          emptyDescription="Qidiruvni o'zgartiring yoki yangi yetkazib beruvchi qo'shing."
+          emptyDescription={
+            suppliers.length > 0
+              ? "Qidiruvga mos yozuv yo'q."
+              : "Yangi yetkazib beruvchi qo'shing."
+          }
+          emptyIcon="truck"
           emptyTitle="Yetkazib beruvchi topilmadi"
           getRowKey={(supplier) => supplier.id}
           isLoading={isLoading}
           rows={filtered}
+          {...(canEdit
+            ? {
+                rowActions: (supplier: Supplier) => (
+                  <>
+                    <RowAction
+                      icon="pencil"
+                      label={`${supplier.name} — tahrirlash`}
+                      onClick={() => openEdit(supplier)}
+                    />
+                    <RowAction
+                      icon="trash"
+                      label={`${supplier.name} — arxivlash`}
+                      onClick={() => setPendingDelete(supplier)}
+                      tone="danger"
+                    />
+                  </>
+                ),
+              }
+            : {})}
         />
+
+        {suppliers.length >= HARD_LIMIT ? (
+          <CardBody className="border-t border-mz-border">
+            <p className="rounded-mz-control border border-mz-border border-l-4 border-l-mz-warning bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
+              Server bir so&apos;rovda ko&apos;pi bilan {HARD_LIMIT} yozuv
+              qaytaradi va sahifalashni qo&apos;llab-quvvatlamaydi — ro&apos;yxat
+              to&apos;liq bo&apos;lmasligi mumkin. Filial filtri bilan
+              toraytirib ko&apos;ring.
+            </p>
+          </CardBody>
+        ) : null}
       </Card>
 
       <Modal
+        dismissOnBackdrop={false}
+        footer={
+          <>
+            <Button onClick={() => setIsEditorOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              form="supplier-form"
+              isLoading={isSaving}
+              size="lg"
+              type="submit"
+            >
+              Saqlash
+            </Button>
+          </>
+        }
         isOpen={isEditorOpen}
         onClose={() => setIsEditorOpen(false)}
         title={
@@ -265,74 +459,130 @@ export function AdminSuppliersPage() {
             : "Yangi yetkazib beruvchi"
         }
       >
-        <form className="grid gap-3" id="supplier-form" onSubmit={save}>
-          <FormField label="Nomi" required>
+        <form
+          className="grid gap-3"
+          id="supplier-form"
+          onSubmit={save}
+          ref={formRef}
+        >
+          <FormField
+            {...(errors.name ? { error: errors.name } : {})}
+            label="Nomi"
+            required
+          >
             {(props) => (
               <TextInput
                 {...props}
-                required
-                value={form.name}
+                maxLength={120}
                 onChange={(event) =>
                   setForm({ ...form, name: event.target.value })
                 }
+                value={form.name}
               />
             )}
           </FormField>
-          <FormField label="Telefon">
+
+          <FormField
+            {...(errors.phone ? { error: errors.phone } : {})}
+            hint="Masalan: +998901234567"
+            label="Telefon"
+          >
             {(props) => (
               <TextInput
                 {...props}
-                placeholder="+998901234567"
-                value={form.phone}
+                inputMode="tel"
+                maxLength={40}
                 onChange={(event) =>
                   setForm({ ...form, phone: event.target.value })
                 }
+                type="tel"
+                value={form.phone}
               />
             )}
           </FormField>
-          <FormField label="Manzil">
+
+          <FormField
+            {...(errors.address ? { error: errors.address } : {})}
+            label="Manzil"
+          >
             {(props) => (
               <TextInput
                 {...props}
-                value={form.address}
+                maxLength={300}
                 onChange={(event) =>
                   setForm({ ...form, address: event.target.value })
                 }
+                value={form.address}
               />
             )}
           </FormField>
-        </form>
 
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button onClick={() => setIsEditorOpen(false)} variant="ghost">
-            Bekor qilish
-          </Button>
-          <Button disabled={isSaving} form="supplier-form" type="submit">
-            {isSaving ? "Saqlanmoqda..." : "Saqlash"}
-          </Button>
-        </div>
+          {isGlobalScope && !editingId ? (
+            <FormField
+              hint="Bo'sh qoldirilsa yozuv barcha filiallar uchun umumiy bo'ladi. Keyinchalik o'zgartirilmaydi."
+              label="Filial"
+            >
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) =>
+                    setForm({ ...form, branchId: event.target.value })
+                  }
+                  value={form.branchId}
+                >
+                  <option value="">Umumiy (barcha filiallar)</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+          ) : null}
+
+          {editingId ? (
+            <p className="text-[13px] text-mz-text-muted">
+              Qamrov (filial yoki umumiy) yaratilgandan keyin
+              o&apos;zgartirilmaydi — backend `branchId` ni qabul qilmaydi.
+            </p>
+          ) : null}
+        </form>
       </Modal>
 
       <Modal
-        description="Yetkazib beruvchi ro'yxatdan olib tashlanadi. Mavjud zaxira harakatlari saqlanib qoladi."
+        description="Bu HARD DELETE emas: yozuv arxivlanadi va mavjud zaxira harakatlari saqlanib qoladi."
         footer={
           <>
             <Button onClick={() => setPendingDelete(null)} variant="ghost">
               Bekor qilish
             </Button>
-            <Button onClick={() => void confirmDelete()} variant="danger">
-              Olib tashlash
+            <Button
+              isLoading={isArchiving}
+              onClick={() => void confirmArchive()}
+              size="lg"
+              variant="danger"
+            >
+              Arxivlash
             </Button>
           </>
         }
         isOpen={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
-        title="Tasdiqlang"
+        title="Arxivlashni tasdiqlang"
       >
-        <p className="text-sm text-mz-text">
-          <span className="font-semibold">{pendingDelete?.name}</span> olib
-          tashlanadi.
-        </p>
+        <div className="grid gap-3">
+          <p className="text-sm text-mz-text">
+            <span className="font-semibold">{pendingDelete?.name}</span>{" "}
+            arxivlanadi va ro&apos;yxatda ko&apos;rinmaydi.
+          </p>
+          <p className="rounded-mz-control border border-mz-border border-l-4 border-l-mz-warning bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
+            Bu amalni panel orqali QAYTARIB BO&apos;LMAYDI: ro&apos;yxat faqat
+            faol yozuvlarni qaytaradi, arxivlanganlarni ko&apos;rsatadigan
+            endpoint hali yo&apos;q. Kerak bo&apos;lsa yozuvni qaytadan
+            qo&apos;shing.
+          </p>
+        </div>
       </Modal>
     </div>
   );

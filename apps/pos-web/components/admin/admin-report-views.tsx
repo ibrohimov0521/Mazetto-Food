@@ -3,6 +3,7 @@
 import { apiFetch } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { reportQueryParams, type ReportQuery } from "../../lib/report-query";
+import { formatMoney } from "../../lib/order-display";
 import { Card, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
@@ -22,20 +23,78 @@ import { InfoBox, StatGrid } from "../admin-ui/stat-box";
  * sana hisoblanmaydi.
  */
 
-const formatter = new Intl.NumberFormat("uz-UZ");
+/*
+ * Pul va son kataklari.
+ *
+ * DESIGN_RULES: "Money and counts use `font-variant-numeric: tabular-nums`
+ * and right alignment in tables." Proporsional raqamda ustundagi summalar
+ * bir-biriga nisbatan siljib ketadi va ko'z ularni ustunma-ustun
+ * solishtira olmaydi.
+ *
+ * `admin-ui` da bunday primitiv yo'q va uni qo'shishga ruxsat berilmagan,
+ * shuning uchun bu ikki klass shu yerda turadi va MONEY/STOCK ekranlari
+ * shuni import qiladi.
+ */
+export const moneyCell = "tabular-nums font-semibold text-mz-text";
+export const numberCell = "tabular-nums text-mz-text";
 
-function money(value: unknown): string {
-  const numeric = Number(value ?? 0);
+/*
+ * Hisobot sanasi yorlig'i.
+ *
+ * Grafik va jadval yorliqlari uchun: xom ISO sana ("2026-09-12") yorliq
+ * sifatida o'qilmaydi. Mintaqa QAT'IY Asia/Tashkent — `toLocaleDateString`
+ * brauzer mintaqasini olardi va bitta ekranda ikki xil sana chiqishi
+ * mumkin edi.
+ */
+const dayLabelFormatter = new Intl.DateTimeFormat("uz-UZ", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "Asia/Tashkent",
+});
+const monthLabelFormatter = new Intl.DateTimeFormat("uz-UZ", {
+  month: "short",
+  year: "2-digit",
+  timeZone: "Asia/Tashkent",
+});
+const dateFormatter = new Intl.DateTimeFormat("uz-UZ", {
+  dateStyle: "short",
+  timeZone: "Asia/Tashkent",
+});
 
-  return Number.isFinite(numeric)
-    ? `${formatter.format(Math.round(numeric))} so'm`
-    : "—";
+export function reportDateLabel(
+  value: string,
+  grain: "day" | "month" = "day",
+): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return grain === "month"
+    ? monthLabelFormatter.format(date)
+    : dayLabelFormatter.format(date);
 }
 
+export function reportDate(value: string): string {
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? "—" : dateFormatter.format(date);
+}
+
+const countFormatter = new Intl.NumberFormat("uz-UZ");
+
+/** Miqdor — butun bo'lsa butun, aks holda 3 kasr. */
 function decimal(value: unknown): string {
   const numeric = Number(value ?? 0);
 
-  return Number.isFinite(numeric) ? formatter.format(numeric) : "—";
+  if (!Number.isFinite(numeric)) {
+    return "—";
+  }
+
+  return countFormatter.format(
+    Number.isInteger(numeric) ? numeric : Number(numeric.toFixed(3)),
+  );
 }
 
 /** Hisobotni yuklab, yuklanish va xato holatini boshqaradigan umumiy ilgak. */
@@ -103,21 +162,23 @@ export function ProductReportView({ query }: { query: ReportQuery }) {
       key: "quantity",
       header: "Sotilgan",
       align: "right",
-      render: (row) => decimal(row.quantitySold),
+      render: (row) => (
+        <span className={numberCell}>{decimal(row.quantitySold)}</span>
+      ),
     },
     {
       key: "count",
       header: "Qator",
       align: "right",
       hideOnMobile: true,
-      render: (row) => row.itemCount,
+      render: (row) => <span className={numberCell}>{row.itemCount}</span>,
     },
     {
       key: "revenue",
       header: "Tushum",
       align: "right",
       render: (row) => (
-        <span className="font-semibold text-mz-text">{money(row.revenue)}</span>
+        <span className={moneyCell}>{formatMoney(row.revenue)}</span>
       ),
     },
   ];
@@ -139,7 +200,7 @@ export function ProductReportView({ query }: { query: ReportQuery }) {
           icon="wallet"
           label="Tushum"
           tone="brand"
-          value={money(revenue)}
+          value={formatMoney(revenue)}
         />
         <InfoBox
           icon="chart"
@@ -215,7 +276,7 @@ export function EmployeeReportView({ query }: { query: ReportQuery }) {
               ? `${row.employee.firstName} ${row.employee.lastName ?? ""}`.trim()
               : "Noma'lum xodim"}
           </p>
-          <p className="truncate text-xs text-mz-text-muted">
+          <p className="truncate text-[13px] text-mz-text-muted">
             {row.employee?.employeeCode ?? "—"}
           </p>
         </div>
@@ -225,23 +286,25 @@ export function EmployeeReportView({ query }: { query: ReportQuery }) {
       key: "orders",
       header: "Buyurtma",
       align: "right",
-      render: (row) => `${row.ordersHandled} ta`,
+      render: (row) => (
+        <span className={numberCell}>{`${row.ordersHandled} ta`}</span>
+      ),
     },
     {
       key: "shifts",
       header: "Smena",
       align: "right",
       hideOnMobile: true,
-      render: (row) => `${row.shifts.length} ta`,
+      render: (row) => (
+        <span className={numberCell}>{`${row.shifts.length} ta`}</span>
+      ),
     },
     {
       key: "sales",
       header: "Qabul qilgan to'lov",
       align: "right",
       render: (row) => (
-        <span className="font-semibold text-mz-text">
-          {money(row.salesAmount)}
-        </span>
+        <span className={moneyCell}>{formatMoney(row.salesAmount)}</span>
       ),
     },
   ];
@@ -256,7 +319,7 @@ export function EmployeeReportView({ query }: { query: ReportQuery }) {
           icon="wallet"
           label="Qabul qilingan"
           tone="brand"
-          value={money(sales)}
+          value={formatMoney(sales)}
         />
       </StatGrid>
 
@@ -333,14 +396,16 @@ export function ExpenseReportView({ query }: { query: ReportQuery }) {
       key: "count",
       header: "Soni",
       align: "right",
-      render: (row) => `${row.count} ta`,
+      render: (row) => (
+        <span className={numberCell}>{`${row.count} ta`}</span>
+      ),
     },
     {
       key: "amount",
       header: "Summa",
       align: "right",
       render: (row) => (
-        <span className="font-semibold text-mz-text">{money(row.amount)}</span>
+        <span className={moneyCell}>{formatMoney(row.amount)}</span>
       ),
     },
   ];
@@ -350,7 +415,9 @@ export function ExpenseReportView({ query }: { query: ReportQuery }) {
       key: "date",
       header: "Sana",
       primary: true,
-      render: (row) => new Date(row.expenseDate).toLocaleDateString("uz-UZ"),
+      render: (row) => (
+        <span className={numberCell}>{reportDate(row.expenseDate)}</span>
+      ),
     },
     { key: "category", header: "Kategoriya", render: (row) => row.category },
     {
@@ -366,7 +433,7 @@ export function ExpenseReportView({ query }: { query: ReportQuery }) {
       header: "Summa",
       align: "right",
       render: (row) => (
-        <span className="font-semibold text-mz-text">{money(row.amount)}</span>
+        <span className={moneyCell}>{formatMoney(row.amount)}</span>
       ),
     },
   ];
@@ -388,7 +455,7 @@ export function ExpenseReportView({ query }: { query: ReportQuery }) {
           icon="wallet"
           label="Jami"
           tone="brand"
-          value={money(data?.totalAmount)}
+          value={formatMoney(data?.totalAmount)}
         />
         <InfoBox
           icon="alert"
@@ -481,7 +548,7 @@ export function ZReportView({ query }: { query: ReportQuery }) {
           <p className="truncate font-semibold text-mz-text">
             {row.paymentMethod.name}
           </p>
-          <p className="truncate text-xs text-mz-text-muted">
+          <p className="truncate text-[13px] text-mz-text-muted">
             {row.paymentMethod.code}
           </p>
         </div>
@@ -492,7 +559,7 @@ export function ZReportView({ query }: { query: ReportQuery }) {
       header: "Summa",
       align: "right",
       render: (row) => (
-        <span className="font-semibold text-mz-text">{money(row.amount)}</span>
+        <span className={moneyCell}>{formatMoney(row.amount)}</span>
       ),
     },
   ];
@@ -504,21 +571,42 @@ export function ZReportView({ query }: { query: ReportQuery }) {
           icon="wallet"
           label="Tushum"
           tone="brand"
-          value={money(data.totalSales)}
+          value={formatMoney(data.totalSales)}
         />
         <InfoBox
           icon="receipt"
           label="Buyurtma"
           value={`${data.ordersCount} ta`}
         />
-        <InfoBox icon="banknote" label="Xarajat" value={money(data.expenses)} />
+        <InfoBox
+          description="Naqd to'lovlar (kassa qutisi)"
+          icon="banknote"
+          label="Naqd sotuv"
+          value={formatMoney(data.cashSales)}
+        />
         <InfoBox
           icon="chart"
           label="Foyda"
+          description="Tushum − xarajat"
           tone={Number(data.profit) < 0 ? "danger" : "success"}
-          value={money(data.profit)}
+          value={formatMoney(data.profit)}
         />
       </StatGrid>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoBox
+          description="Oraliqdagi qayd etilgan xarajatlar"
+          icon="wallet"
+          label="Xarajat"
+          value={formatMoney(data.expenses)}
+        />
+        <InfoBox
+          description="Bitta buyurtmaga o'rtacha"
+          icon="receipt"
+          label="O'rtacha chek"
+          value={formatMoney(data.averageOrder)}
+        />
+      </div>
 
       <Card>
         <CardHeader
@@ -536,7 +624,7 @@ export function ZReportView({ query }: { query: ReportQuery }) {
       </Card>
 
       {data.unavailableMetrics.length > 0 ? (
-        <p className="text-xs text-mz-text-muted">
+        <p className="rounded-mz-control border border-mz-border border-l-4 border-l-mz-warning bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
           {/*
            * Backend bu ko'rsatkichlarni `null` qaytaradi va o'zi ro'yxatlab
            * beradi. Nolga aylantirib ko'rsatish "karta bo'yicha savdo nol"

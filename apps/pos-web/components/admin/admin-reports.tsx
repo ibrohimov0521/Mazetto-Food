@@ -1,20 +1,27 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Button } from "../admin-ui/button";
-import { TextInput } from "../admin-ui/form";
-import { EmptyState } from "../admin-ui/feedback";
+import { useMemo, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
 import { reportQueryParams, type ReportQuery } from "../../lib/report-query";
-import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
-import { ChipGroup, Tabs, type TabItem } from "../admin-ui/tabs";
+import { formatMoney } from "../../lib/order-display";
 import { hasPermission } from "../../lib/auth";
 import { useAuth } from "../auth/auth-provider";
+import { Badge } from "../admin-ui/badge";
+import { Card, CardBody, CardHeader } from "../admin-ui/card";
+import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
+import { EmptyState, ErrorState, SkeletonRows } from "../admin-ui/feedback";
+import { FormField, Select, TextInput } from "../admin-ui/form";
+import { InfoBox, StatBox, StatGrid } from "../admin-ui/stat-box";
+import { ChipGroup, Tabs, type TabItem } from "../admin-ui/tabs";
 import {
   EmployeeReportView,
   ExpenseReportView,
   ProductReportView,
   ZReportView,
+  moneyCell,
+  numberCell,
+  reportDateLabel,
 } from "./admin-report-views";
 
 type Branch = {
@@ -22,8 +29,6 @@ type Branch = {
   name: string;
   address?: string | null;
 };
-
-type MoneyValue = string | number | null | undefined;
 
 type SalesReport = {
   period: {
@@ -127,12 +132,26 @@ type SalesReport = {
   };
 };
 
-const formatter = new Intl.NumberFormat("uz-UZ");
+const countFormatter = new Intl.NumberFormat("uz-UZ");
+
+function formatCount(value: string | number): string {
+  const numeric = Number(value || 0);
+
+  if (!Number.isFinite(numeric)) {
+    return "—";
+  }
+
+  return `${countFormatter.format(
+    Number.isInteger(numeric) ? numeric : Number(numeric.toFixed(3)),
+  )} ta`;
+}
+
 const yearOptions = Array.from(
   { length: 5 },
   (_, index) => new Date().getFullYear() - index,
 );
-const sourceLabels = {
+
+const sourceLabels: Record<"WEB" | "TELEGRAM" | "POS", string> = {
   WEB: "Web",
   TELEGRAM: "Telegram",
   POS: "Kassa",
@@ -180,195 +199,208 @@ const reportTabs: (TabItem & { permission: string })[] = [
   },
 ];
 
-const reportPresets = [
+/*
+ * Sana oralig'i — BITTA boshqaruv.
+ *
+ * Ilgari ekranda ikkita bor edi: chiplar darhol qo'llanardi, select esa
+ * "Ko'rish" bosilishini kutardi. Ikkisi bir-birini yangilamagani uchun
+ * ekranda "Bu oy" turib, ma'lumot "Bugun" bo'lishi mumkin edi. Endi faqat
+ * chiplar qoldi va BARCHA filtr darhol qo'llanadi — "Ko'rish" tugmasi ham
+ * shu bilan yo'qoldi.
+ */
+const reportPresets: TabItem[] = [
   { key: "today", label: "Bugun" },
   { key: "yesterday", label: "Kecha" },
   { key: "last7days", label: "7 kun" },
   { key: "thisMonth", label: "Bu oy" },
   { key: "year", label: "Yil" },
+  { key: "custom", label: "Maxsus" },
 ];
+
+function toDateInput(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function employeeName(employee: {
+  employeeCode: string;
+  firstName: string;
+  lastName?: string | null;
+}): string {
+  return (
+    [employee.firstName, employee.lastName].filter(Boolean).join(" ") ||
+    employee.employeeCode
+  );
+}
 
 export function AdminReportsPage() {
   const { user } = useAuth();
-  const visibleTabs = reportTabs.filter((tab) =>
-    hasPermission(user, tab.permission),
+  const visibleTabs = useMemo(
+    () => reportTabs.filter((item) => hasPermission(user, item.permission)),
+    [user],
   );
-  const [tab, setTab] = useState("sales");
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [report, setReport] = useState<SalesReport | null>(null);
+  /*
+   * Birinchi RUXSAT BERILGAN tab. Ilgari "sales" qotib qo'yilgan edi:
+   * `REPORT_SALES_VIEW` yo'q buxgalter bo'sh ekran ko'rardi va sahifa
+   * baribir `/reports/sales` ga so'rov yuborib 403 olardi.
+   */
+  const [tab, setTab] = useState(visibleTabs[0]?.key ?? "sales");
+  const activeTab = visibleTabs.some((item) => item.key === tab)
+    ? tab
+    : (visibleTabs[0]?.key ?? "");
+
   const [branchId, setBranchId] = useState("");
   const [source, setSource] = useState("");
   const [preset, setPreset] = useState("today");
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [from, setFrom] = useState(() => toDateInput(new Date()));
   const [to, setTo] = useState(() => toDateInput(new Date()));
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    void Promise.all([
-      apiFetch<Branch[]>("/branches"),
-      loadSalesReport({ preset: "today" }),
-    ])
-      .then(([nextBranches, nextReport]) => {
-        setBranches(nextBranches);
-        setReport(nextReport);
-      })
-      .catch(() => setError("Hisobot ma'lumotlarini yuklab bo'lmadi."))
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  const branchName = useMemo(
-    () =>
-      branches.find((branch) => branch.id === branchId)?.name ??
-      "Barcha ruxsat berilgan filiallar",
-    [branchId, branches],
+  const { data: branches } = useApiResource<Branch[]>(
+    () => apiFetch<Branch[]>("/branches"),
+    [],
+    "Filiallarni yuklab bo'lmadi.",
   );
-  const maxChartAmount = Math.max(
-    ...(report?.timeSeries.data.map((row) => Number(row.amount)) ?? [0]),
-    1,
-  );
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await reloadReport();
-  }
-
-  async function choosePreset(nextPreset: string) {
-    setPreset(nextPreset);
-    setError("");
-    setIsLoading(true);
-
-    try {
-      setReport(await loadSalesReport(buildQuery(nextPreset)));
-    } catch (reportError) {
-      setError(
-        reportError instanceof Error
-          ? reportError.message
-          : "Hisobot yuklanmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function reloadReport() {
-    setError("");
-    setIsLoading(true);
-
-    try {
-      setReport(await loadSalesReport(buildQuery(preset)));
-    } catch (reportError) {
-      setError(
-        reportError instanceof Error
-          ? reportError.message
-          : "Hisobot yuklanmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  function buildQuery(nextPreset: string): ReportQuery {
-    return {
-      preset: nextPreset,
-      branchId,
-      source,
-      from,
-      to,
-      year,
-    };
-  }
+  const branchOptions = branches ?? [];
 
   /*
-   * Filtr paneli barcha tablar uchun umumiy — sana oralig'ini almashtirib
-   * tabni o'zgartirsangiz, tanlov saqlanadi. Savdo hisoboti "Ko'rish"
-   * tugmasi bilan qo'lda yuklanadi, qolgan tablar esa so'rov o'zgarishi
-   * bilan o'zi qayta yuklanadi.
+   * Maxsus oraliq xatosi INLINE ko'rsatiladi va so'rov yuborilmaydi.
+   * Toast bu yerda yaramaydi: xato aynan qaysi maydonda ekanini aytmaydi.
    */
-  const currentQuery = buildQuery(preset);
+  const rangeError =
+    preset === "custom" && from && to && from > to
+      ? "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak."
+      : "";
+  const isRangeIncomplete = preset === "custom" && (!from || !to);
+
+  const query = useMemo<ReportQuery>(
+    () => ({ preset, branchId, source, from, to, year }),
+    [branchId, from, preset, source, to, year],
+  );
+  const queryKey = reportQueryParams(query).toString();
+  const isQueryReady = !rangeError && !isRangeIncomplete;
+
+  const {
+    data: report,
+    isLoading,
+    error,
+    reload,
+  } = useApiResource<SalesReport | null>(
+    () =>
+      isQueryReady && activeTab === "sales"
+        ? apiFetch<SalesReport>(`/reports/sales?${queryKey}`)
+        : Promise.resolve(null),
+    [queryKey, isQueryReady, activeTab],
+    "Savdo hisobotini yuklab bo'lmadi.",
+  );
+
+  const branchName =
+    branchOptions.find((branch) => branch.id === branchId)?.name ??
+    "Barcha ruxsat berilgan filiallar";
+  const sourceName = source
+    ? sourceLabels[source as keyof typeof sourceLabels]
+    : "Barcha kanallar";
 
   return (
     <div className="grid gap-5">
-      {error ? (
-        <ErrorState message={error} onRetry={() => void reloadReport()} />
-      ) : null}
-
-      <form
-        className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-4 shadow-mz-card xl:grid-cols-[150px_150px_130px_1fr_150px_auto]"
-        onSubmit={submit}
-      >
-        <select
-          className="report-select"
-          value={preset}
-          onChange={(event) => setPreset(event.target.value)}
-        >
-          <option value="today">Bugun</option>
-          <option value="yesterday">Kecha</option>
-          <option value="last7days">7 kun</option>
-          <option value="thisMonth">Bu oy</option>
-          <option value="year">Yil</option>
-          <option value="custom">Maxsus</option>
-        </select>
-        <TextInput
-          disabled={preset !== "custom"}
-          type="date"
-          value={from}
-          onChange={(event) => setFrom(event.target.value)}
+      <Card>
+        <CardHeader
+          description="Filtr darhol qo'llanadi — barcha hisobot tablari shu oraliqni ishlatadi"
+          title="Hisobot oralig'i"
         />
-        <TextInput
-          disabled={preset !== "custom"}
-          type="date"
-          value={to}
-          onChange={(event) => setTo(event.target.value)}
-        />
-        <select
-          className="report-select"
-          value={branchId}
-          onChange={(event) => setBranchId(event.target.value)}
-        >
-          <option value="">Barcha ruxsat berilgan filiallar</option>
-          {branches.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name} · {branch.address ?? ""}
-            </option>
-          ))}
-        </select>
-        <select
-          className="report-select"
-          value={source}
-          onChange={(event) => setSource(event.target.value)}
-        >
-          <option value="">Barcha kanallar</option>
-          <option value="WEB">Web</option>
-          <option value="TELEGRAM">Telegram</option>
-          <option value="POS">Kassa</option>
-        </select>
-        <select
-          className="report-select"
-          disabled={preset !== "year"}
-          value={year}
-          onChange={(event) => setYear(event.target.value)}
-        >
-          {yearOptions.map((yearOption) => (
-            <option key={yearOption} value={yearOption}>
-              {yearOption}
-            </option>
-          ))}
-        </select>
-        <Button type="submit">Ko'rish</Button>
-      </form>
+        <CardBody className="grid gap-3">
+          <ChipGroup
+            active={preset}
+            items={reportPresets}
+            label="Sana oralig'i"
+            onChange={setPreset}
+          />
 
-      <ChipGroup
-        active={preset}
-        items={reportPresets}
-        label="Sana oralig'i"
-        onChange={(key) => void choosePreset(key)}
-      />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {preset === "custom" ? (
+              <>
+                <FormField
+                  error={rangeError}
+                  label="Boshlanish sanasi"
+                  required
+                >
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      onChange={(event) => setFrom(event.target.value)}
+                      type="date"
+                      value={from}
+                    />
+                  )}
+                </FormField>
+                <FormField label="Tugash sanasi" required>
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      onChange={(event) => setTo(event.target.value)}
+                      type="date"
+                      value={to}
+                    />
+                  )}
+                </FormField>
+              </>
+            ) : null}
+
+            {preset === "year" ? (
+              <FormField label="Yil">
+                {(props) => (
+                  <Select
+                    {...props}
+                    onChange={(event) => setYear(event.target.value)}
+                    value={year}
+                  >
+                    {yearOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+            ) : null}
+
+            <FormField label="Filial">
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) => setBranchId(event.target.value)}
+                  value={branchId}
+                >
+                  <option value="">Barcha ruxsat berilgan filiallar</option>
+                  {branchOptions.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+
+            <FormField label="Kanal">
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) => setSource(event.target.value)}
+                  value={source}
+                >
+                  <option value="">Barcha kanallar</option>
+                  <option value="WEB">Web</option>
+                  <option value="TELEGRAM">Telegram</option>
+                  <option value="POS">Kassa</option>
+                </Select>
+              )}
+            </FormField>
+          </div>
+        </CardBody>
+      </Card>
 
       {visibleTabs.length > 1 ? (
         <Tabs
-          active={tab}
+          active={activeTab}
           items={visibleTabs}
           label="Hisobot turi"
           onChange={setTab}
@@ -377,443 +409,683 @@ export function AdminReportsPage() {
       ) : null}
 
       {/* `role="tab"` bog'liq panelni talab qiladi — Tabs unga `aria-controls` bilan ishora qiladi. */}
-      <div id="report-panel" role="tabpanel">
-        {tab === "products" ? <ProductReportView query={currentQuery} /> : null}
-        {tab === "employees" ? (
-          <EmployeeReportView query={currentQuery} />
+      <div className="grid gap-5" id="report-panel" role="tabpanel">
+        {visibleTabs.length === 0 ? (
+          <EmptyState
+            description="Hisobot ko'rish uchun ruxsat berilmagan."
+            icon="shield"
+            title="Ruxsat yo'q"
+          />
         ) : null}
-        {tab === "expenses" ? <ExpenseReportView query={currentQuery} /> : null}
-        {tab === "z" ? <ZReportView query={currentQuery} /> : null}
+
+        {activeTab === "products" ? <ProductReportView query={query} /> : null}
+        {activeTab === "employees" ? <EmployeeReportView query={query} /> : null}
+        {activeTab === "expenses" ? <ExpenseReportView query={query} /> : null}
+        {activeTab === "z" ? <ZReportView query={query} /> : null}
+
+        {activeTab === "sales" ? (
+          <>
+            {error ? (
+              <ErrorState message={error} onRetry={() => void reload()} />
+            ) : null}
+
+            {!isQueryReady ? (
+              <EmptyState
+                description={
+                  rangeError ||
+                  "Maxsus oraliq uchun boshlanish va tugash sanasini tanlang."
+                }
+                icon="filter"
+                title="Oraliq to'liq emas"
+              />
+            ) : isLoading ? (
+              <SkeletonRows rows={8} />
+            ) : !report ? (
+              !error ? (
+                <EmptyState
+                  description="Filtrni o'zgartirib qayta urinib ko'ring."
+                  icon="chart"
+                  title="Hisobot yo'q"
+                />
+              ) : null
+            ) : (
+              <SalesReportBody
+                branchName={branchName}
+                report={report}
+                sourceName={sourceName}
+              />
+            )}
+          </>
+        ) : null}
       </div>
-
-      {tab === "sales" && isLoading && !report ? (
-        <SkeletonRows rows={8} />
-      ) : null}
-
-      {tab === "sales" && report ? (
-        <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <Metric label="Jami savdo" value={formatMoney(report.totalSales)} />
-            <Metric
-              label="Buyurtmalar soni"
-              value={`${report.orderCount} ta`}
-            />
-            <Metric
-              label="O'rtacha chek"
-              value={formatMoney(report.averageOrderValue)}
-            />
-            <Metric label="Naqd sotuv" value={formatMoney(report.cashSales)} />
-            <Metric
-              label="Bekor qilingan"
-              value={`${report.cancelledOrders} ta`}
-              muted
-            />
-          </section>
-
-          <section className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">
-            <Panel
-              title={`${report.timeSeries.grain === "month" ? "Oyma-oy" : "Kunma-kun"} sotuv grafigi`}
-              subtitle={`${branchName} · ${source ? sourceLabels[source as keyof typeof sourceLabels] : "Barcha kanallar"}`}
-            >
-              {report.timeSeries.data.length ? (
-                <div className="grid gap-2">
-                  {report.timeSeries.data.map((row) => (
-                    <ChartRow
-                      key={row.date}
-                      label={row.date}
-                      value={formatMoney(row.amount)}
-                      width={`${Math.max(5, (Number(row.amount) / maxChartAmount) * 100)}%`}
-                      detail={`${row.orderCount} ta`}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState title="Bu davrda tasdiqlangan sotuv yo'q." />
-              )}
-            </Panel>
-
-            <Panel title="Kanal kesimi" subtitle="WEB · Telegram · Kassa">
-              <div className="grid gap-3">
-                {report.sourceBreakdown.map((row) => (
-                  <BreakdownRow
-                    key={row.source}
-                    label={sourceLabels[row.source]}
-                    value={formatMoney(row.amount)}
-                    detail={`${row.orderCount} buyurtma · ${row.paymentCount} to'lov`}
-                  />
-                ))}
-              </div>
-            </Panel>
-          </section>
-
-          <section className="grid gap-5 xl:grid-cols-2">
-            <Panel
-              title="Filiallar"
-              subtitle="Branch scope qoidasi bilan cheklangan"
-            >
-              <DataTable
-                empty="Bu davrda filial kesimida sotuv yo'q."
-                headers={["Filial", "Buyurtma", "Tushum"]}
-                rows={report.branchBreakdown.map((row) => [
-                  row.branch.name,
-                  `${row.orderCount} ta`,
-                  formatMoney(row.amount),
-                ])}
-              />
-            </Panel>
-
-            <Panel title="Kassirlar" subtitle="Faqat POS sotuvlar">
-              <DataTable
-                empty="Bu davrda POS kassir sotuvi yo'q."
-                headers={["Kassir", "Buyurtma", "Tushum"]}
-                rows={report.cashierBreakdown.map((row) => [
-                  employeeName(row.cashier),
-                  `${row.orderCount} ta`,
-                  formatMoney(row.amount),
-                ])}
-              />
-            </Panel>
-          </section>
-
-          <Panel
-            title="Smenalar"
-            subtitle="Yopilgan smenada snapshot, ochiq smenada live payment asosida"
-          >
-            <DataTable
-              empty="Bu davrda smena ma'lumoti yo'q."
-              headers={[
-                "Smena",
-                "Kassir",
-                "Holat",
-                "Buyurtma",
-                "Tushum",
-                "Kutilgan",
-                "Topshirildi",
-                "Farq",
-              ]}
-              rows={report.shiftBreakdown.map((shift) => [
-                `${shift.branch.name} #${shift.shiftNumber}`,
-                employeeName(shift.cashier),
-                shift.status === "OPEN" ? "Ochiq" : "Yopilgan",
-                `${shift.orderCount} ta`,
-                formatMoney(shift.grossSales),
-                formatMaybeMoney(shift.expectedCash),
-                formatMaybeMoney(shift.actualCash),
-                formatMaybeMoney(shift.cashDifference),
-              ])}
-            />
-          </Panel>
-
-          <section className="grid gap-5 xl:grid-cols-2">
-            <Panel
-              title="Top mahsulotlar"
-              subtitle="OrderItem snapshot nomlari asosida"
-            >
-              <DataTable
-                empty="Bu davrda mahsulot sotuvlari yo'q."
-                headers={["Mahsulot", "Soni", "Tushum"]}
-                rows={report.topProducts.map((row) => [
-                  row.productName,
-                  formatQuantity(row.quantity),
-                  formatMoney(row.amount),
-                ])}
-              />
-            </Panel>
-
-            <Panel
-              title="Kategoriya sotuvlari"
-              subtitle="Joriy product-category bog'lanishi asosida"
-            >
-              <DataTable
-                empty="Bu davrda kategoriya sotuvlari yo'q."
-                headers={["Kategoriya", "Soni", "Tushum"]}
-                rows={report.categorySales.map((row) => [
-                  row.category.name,
-                  formatQuantity(row.quantity),
-                  formatMoney(row.amount),
-                ])}
-              />
-            </Panel>
-          </section>
-
-          <section className="grid gap-5 lg:grid-cols-[1fr_360px]">
-            <Panel title="To'lovlar kesimi" subtitle={branchName}>
-              <div className="grid gap-3">
-                {report.paymentBreakdown.length ? (
-                  report.paymentBreakdown.map((row) => (
-                    <BreakdownRow
-                      key={row.paymentMethod.id}
-                      label={row.paymentMethod.name}
-                      value={formatMoney(row.amount)}
-                      detail={`${row.paymentMethod.code} · ${row.count} ta`}
-                    />
-                  ))
-                ) : (
-                  <EmptyState title="Bu davrda tasdiqlangan to'lov yozuvi yo'q." />
-                )}
-              </div>
-            </Panel>
-
-            <aside className="grid content-start gap-3">
-              <Readiness
-                title="Hisoblash qoidasi"
-                items={[
-                  "Faqat PAID/SUCCESS to'lovlar sotuvga kiradi",
-                  "Bekor qilingan, failed, pending va unpaid buyurtmalar tushumga kirmaydi",
-                  `Timezone: ${report.period.timezone}`,
-                ]}
-              />
-              <Readiness
-                title="N/A"
-                items={[
-                  report.refundHandling.note,
-                  report.limitations.onlinePayments,
-                  report.limitations.categorySales,
-                ]}
-                muted
-              />
-            </aside>
-          </section>
-        </>
-      ) : null}
     </div>
   );
 }
 
-async function loadSalesReport(query: ReportQuery): Promise<SalesReport> {
-  return apiFetch<SalesReport>(`/reports/sales?${reportQueryParams(query)}`);
-}
-
-function toDateInput(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function formatMoney(value: MoneyValue): string {
-  if (value === null || value === undefined) {
-    return "N/A";
-  }
-
-  return `${formatter.format(Math.round(Number(value || 0)))} so'm`;
-}
-
-function formatMaybeMoney(value: MoneyValue): string {
-  return value === null || value === undefined ? "N/A" : formatMoney(value);
-}
-
-function formatQuantity(value: string | number): string {
-  const numeric = Number(value || 0);
-  return `${formatter.format(Number.isInteger(numeric) ? numeric : Number(numeric.toFixed(3)))} ta`;
-}
-
-function employeeName(employee: {
-  employeeCode: string;
-  firstName: string;
-  lastName?: string | null;
-}) {
-  return (
-    [employee.firstName, employee.lastName].filter(Boolean).join(" ") ||
-    employee.employeeCode
-  );
-}
-
-function Metric({
-  label,
-  muted,
-  value,
+function SalesReportBody({
+  branchName,
+  report,
+  sourceName,
 }: {
-  label: string;
-  muted?: boolean;
-  value: string;
+  branchName: string;
+  report: SalesReport;
+  sourceName: string;
 }) {
-  return (
-    <article className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-      <p className="text-sm font-bold text-mz-text-muted">{label}</p>
-      <p
-        className={`mt-3 text-2xl font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}
-      >
-        {value}
-      </p>
-    </article>
-  );
-}
-
-function Panel({
-  children,
-  subtitle,
-  title,
-}: {
-  children: React.ReactNode;
-  subtitle?: string;
-  title: string;
-}) {
-  return (
-    <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-black text-mz-text">{title}</p>
-          {subtitle ? (
-            <p className="mt-1 text-sm font-semibold text-mz-text-muted">
-              {subtitle}
-            </p>
-          ) : null}
+  const shiftColumns: DataTableColumn<
+    SalesReport["shiftBreakdown"][number]
+  >[] = [
+    {
+      key: "shift",
+      header: "Smena",
+      primary: true,
+      render: (shift) => (
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-mz-text">
+            {shift.branch.name} #{shift.shiftNumber}
+          </p>
+          <p className="truncate text-[13px] text-mz-text-muted">
+            {employeeName(shift.cashier)}
+          </p>
         </div>
-      </div>
-      {children}
-    </section>
-  );
-}
+      ),
+    },
+    {
+      key: "status",
+      header: "Holat",
+      render: (shift) => (
+        <Badge tone={shift.status === "OPEN" ? "info" : "neutral"} withDot>
+          {shift.status === "OPEN" ? "Ochiq" : "Yopilgan"}
+        </Badge>
+      ),
+    },
+    {
+      key: "orders",
+      header: "Buyurtma",
+      align: "right",
+      hideOnMobile: true,
+      render: (shift) => (
+        <span className={numberCell}>{formatCount(shift.orderCount)}</span>
+      ),
+    },
+    {
+      key: "gross",
+      header: "Tushum",
+      align: "right",
+      render: (shift) => (
+        <span className={moneyCell}>{formatMoney(shift.grossSales)}</span>
+      ),
+    },
+    {
+      key: "expected",
+      header: "Kutilgan naqd",
+      align: "right",
+      hideOnMobile: true,
+      render: (shift) => (
+        <span className={numberCell}>{formatMoney(shift.expectedCash)}</span>
+      ),
+    },
+    {
+      key: "actual",
+      header: "Topshirilgan",
+      align: "right",
+      hideOnMobile: true,
+      render: (shift) => (
+        <span className={numberCell}>{formatMoney(shift.actualCash)}</span>
+      ),
+    },
+    {
+      key: "difference",
+      header: "Farq",
+      align: "right",
+      render: (shift) => <CashDifference value={shift.cashDifference} />,
+    },
+  ];
 
-function BreakdownRow({
-  detail,
-  label,
-  value,
-}: {
-  detail: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-mz-control bg-mz-surface-sunken px-4 py-3 text-sm">
-      <div>
-        <p className="font-black text-mz-text">{label}</p>
-        <p className="text-xs font-semibold text-mz-text-muted">{detail}</p>
-      </div>
-      <span className="text-right font-black text-mz-text">{value}</span>
-    </div>
-  );
-}
+  const branchColumns: DataTableColumn<
+    SalesReport["branchBreakdown"][number]
+  >[] = [
+    {
+      key: "branch",
+      header: "Filial",
+      primary: true,
+      render: (row) => (
+        <span className="font-semibold text-mz-text">{row.branch.name}</span>
+      ),
+    },
+    {
+      key: "orders",
+      header: "Buyurtma",
+      align: "right",
+      render: (row) => (
+        <span className={numberCell}>{formatCount(row.orderCount)}</span>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Tushum",
+      align: "right",
+      render: (row) => <span className={moneyCell}>{formatMoney(row.amount)}</span>,
+    },
+  ];
 
-function ChartRow({
-  detail,
-  label,
-  value,
-  width,
-}: {
-  detail: string;
-  label: string;
-  value: string;
-  width: string;
-}) {
-  return (
-    <div className="grid gap-1 rounded-mz-control bg-mz-surface-sunken p-3">
-      <div className="flex items-center justify-between gap-4 text-sm">
-        <span className="font-black text-mz-text">{label}</span>
-        <span className="text-right font-black text-mz-text">{value}</span>
-      </div>
-      <div className="h-3 overflow-hidden rounded-full bg-mz-surface">
-        <div className="h-full rounded-full bg-mz-primary" style={{ width }} />
-      </div>
-      <p className="text-xs font-semibold text-mz-text-muted">{detail}</p>
-    </div>
-  );
-}
+  const cashierColumns: DataTableColumn<
+    SalesReport["cashierBreakdown"][number]
+  >[] = [
+    {
+      key: "cashier",
+      header: "Kassir",
+      primary: true,
+      render: (row) => (
+        <span className="font-semibold text-mz-text">
+          {employeeName(row.cashier)}
+        </span>
+      ),
+    },
+    {
+      key: "orders",
+      header: "Buyurtma",
+      align: "right",
+      render: (row) => (
+        <span className={numberCell}>{formatCount(row.orderCount)}</span>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Tushum",
+      align: "right",
+      render: (row) => <span className={moneyCell}>{formatMoney(row.amount)}</span>,
+    },
+  ];
 
-/*
- * Hisobot jadvali.
- *
- * DESIGN_RULES: kichik ekranda jadval gorizontal overflow bermasdan
- * transformatsiya qilinishi kerak — shuning uchun `md` dan pastda
- * har bir qator label/value kartochkasiga aylanadi.
- */
-function DataTable({
-  empty,
-  headers,
-  rows,
-}: {
-  empty: string;
-  headers: string[];
-  rows: string[][];
-}) {
-  if (!rows.length) {
-    return <EmptyState title={empty} />;
-  }
+  const productColumns: DataTableColumn<SalesReport["topProducts"][number]>[] = [
+    {
+      key: "product",
+      header: "Mahsulot",
+      primary: true,
+      render: (row) => (
+        <span className="font-semibold text-mz-text">{row.productName}</span>
+      ),
+    },
+    {
+      key: "quantity",
+      header: "Soni",
+      align: "right",
+      render: (row) => (
+        <span className={numberCell}>{formatCount(row.quantity)}</span>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Tushum",
+      align: "right",
+      render: (row) => <span className={moneyCell}>{formatMoney(row.amount)}</span>,
+    },
+  ];
+
+  const categoryColumns: DataTableColumn<
+    SalesReport["categorySales"][number]
+  >[] = [
+    {
+      key: "category",
+      header: "Kategoriya",
+      primary: true,
+      render: (row) => (
+        <span className="font-semibold text-mz-text">{row.category.name}</span>
+      ),
+    },
+    {
+      key: "quantity",
+      header: "Soni",
+      align: "right",
+      render: (row) => (
+        <span className={numberCell}>{formatCount(row.quantity)}</span>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Tushum",
+      align: "right",
+      render: (row) => <span className={moneyCell}>{formatMoney(row.amount)}</span>,
+    },
+  ];
+
+  const paymentColumns: DataTableColumn<
+    SalesReport["paymentBreakdown"][number]
+  >[] = [
+    {
+      key: "method",
+      header: "To'lov usuli",
+      primary: true,
+      render: (row) => (
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-mz-text">
+            {row.paymentMethod.name}
+          </p>
+          <p className="truncate text-[13px] text-mz-text-muted">
+            {row.paymentMethod.code}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "count",
+      header: "Soni",
+      align: "right",
+      render: (row) => <span className={numberCell}>{formatCount(row.count)}</span>,
+    },
+    {
+      key: "amount",
+      header: "Summa",
+      align: "right",
+      render: (row) => <span className={moneyCell}>{formatMoney(row.amount)}</span>,
+    },
+  ];
+
+  const sourceColumns: DataTableColumn<
+    SalesReport["sourceBreakdown"][number]
+  >[] = [
+    {
+      key: "source",
+      header: "Kanal",
+      primary: true,
+      render: (row) => (
+        <span className="font-semibold text-mz-text">
+          {sourceLabels[row.source]}
+        </span>
+      ),
+    },
+    {
+      key: "orders",
+      header: "Buyurtma",
+      align: "right",
+      render: (row) => (
+        <span className={numberCell}>{formatCount(row.orderCount)}</span>
+      ),
+    },
+    {
+      key: "payments",
+      header: "To'lov",
+      align: "right",
+      hideOnMobile: true,
+      render: (row) => (
+        <span className={numberCell}>{formatCount(row.paymentCount)}</span>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Summa",
+      align: "right",
+      render: (row) => <span className={moneyCell}>{formatMoney(row.amount)}</span>,
+    },
+  ];
 
   return (
     <>
-      <div className="mz-thin-scrollbar hidden overflow-x-auto md:block">
-        <table className="min-w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-mz-text-muted">
-            <tr>
-              {headers.map((header) => (
-                <th
-                  className="whitespace-nowrap border-b border-mz-border px-3 py-2 font-black"
-                  key={header}
-                >
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, rowIndex) => (
-              <tr
-                className="border-b border-mz-border last:border-0"
-                key={`${row[0]}-${rowIndex}`}
-              >
-                {row.map((cell, cellIndex) => (
-                  <td
-                    className={`px-3 py-3 ${cellIndex === 0 ? "font-black text-mz-text" : "font-semibold text-mz-text-muted"}`}
-                    key={`${cell}-${cellIndex}`}
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <StatGrid>
+        <StatBox
+          icon="wallet"
+          label="Jami savdo"
+          tone="brand"
+          value={formatMoney(report.totalSales)}
+        />
+        <StatBox
+          icon="receipt"
+          label="Buyurtmalar soni"
+          value={formatCount(report.orderCount)}
+        />
+        <StatBox
+          icon="chart"
+          label="O'rtacha chek"
+          value={formatMoney(report.averageOrderValue)}
+        />
+        <StatBox
+          icon="banknote"
+          label="Naqd sotuv"
+          value={formatMoney(report.cashSales)}
+        />
+      </StatGrid>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <InfoBox
+          description="Tushumga kirmaydi"
+          icon="close"
+          label="Bekor qilingan"
+          tone={report.cancelledOrders > 0 ? "warning" : "neutral"}
+          value={formatCount(report.cancelledOrders)}
+        />
+        <InfoBox
+          description={
+            report.refundHandling.supported
+              ? "Tushumdan ayirilgan"
+              : "Hisoblanmaydi"
+          }
+          icon="arrowDown"
+          label="Qaytarilgan"
+          tone={report.refundHandling.supported ? "neutral" : "warning"}
+          value={
+            report.refundHandling.supported
+              ? formatMoney(report.refundHandling.amount)
+              : "N/A"
+          }
+        />
+        <InfoBox
+          description={`${report.period.from.slice(0, 10)} — ${report.period.to.slice(0, 10)} · ${report.period.timezone}`}
+          icon="clock"
+          label="Oraliq"
+          value={
+            reportPresets.find((item) => item.key === report.period.preset)
+              ?.label ?? report.period.preset
+          }
+        />
       </div>
 
-      <ul className="grid gap-2 md:hidden">
-        {rows.map((row, rowIndex) => (
-          <li
-            className="rounded-mz-control border border-mz-border bg-mz-surface p-3"
-            key={`${row[0]}-${rowIndex}`}
-          >
-            <p className="mb-1.5 text-sm font-bold text-mz-text">{row[0]}</p>
-            <dl className="grid gap-1">
-              {row.slice(1).map((cell, cellIndex) => (
-                <div
-                  className="flex items-start justify-between gap-3"
-                  key={`${cell}-${cellIndex}`}
-                >
-                  <dt className="text-xs font-medium text-mz-text-muted">
-                    {headers[cellIndex + 1] ?? ""}
-                  </dt>
-                  <dd className="text-right text-xs font-semibold text-mz-text">
-                    {cell}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </li>
-        ))}
-      </ul>
+      <Card>
+        <CardHeader
+          description={`${branchName} · ${sourceName}`}
+          title={`${report.timeSeries.grain === "month" ? "Oyma-oy" : "Kunma-kun"} sotuv grafigi`}
+        />
+        {report.timeSeries.data.length ? (
+          <CardBody className="grid gap-4">
+            <SalesChart
+              data={report.timeSeries.data}
+              grain={report.timeSeries.grain}
+            />
+
+            {/*
+             * Grafik o'zi bezak (`aria-hidden`), raqamlar esa shu jadvalda —
+             * ilgari butun oraliq 70px lik qatorlar ro'yxati edi va 30 kunlik
+             * oraliq ~2100px scroll bo'lardi.
+             */}
+            <details className="rounded-mz-control border border-mz-border">
+              <summary className="flex min-h-10 cursor-pointer items-center px-3 text-[13px] font-semibold text-mz-text">
+                Raqamlar jadvali ({report.timeSeries.data.length} nuqta)
+              </summary>
+              <div className="border-t border-mz-border">
+                <DataTable
+                  caption="Sotuv grafigi raqamlari"
+                  columns={[
+                    {
+                      key: "date",
+                      header: "Sana",
+                      primary: true,
+                      render: (row) => (
+                        <span className={numberCell}>
+                          {reportDateLabel(row.date, report.timeSeries.grain)}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "orders",
+                      header: "Buyurtma",
+                      align: "right",
+                      render: (row) => (
+                        <span className={numberCell}>
+                          {formatCount(row.orderCount)}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "amount",
+                      header: "Tushum",
+                      align: "right",
+                      render: (row) => (
+                        <span className={moneyCell}>
+                          {formatMoney(row.amount)}
+                        </span>
+                      ),
+                    },
+                  ]}
+                  getRowKey={(row) => row.date}
+                  rows={report.timeSeries.data}
+                  scrollHeightClass="max-h-96"
+                />
+              </div>
+            </details>
+          </CardBody>
+        ) : (
+          <EmptyState
+            description="Tanlangan oraliqda tasdiqlangan to'lov yozuvi topilmadi."
+            icon="chart"
+            title="Sotuv yo'q"
+          />
+        )}
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card>
+          <CardHeader description={branchName} title="To'lovlar kesimi" />
+          <DataTable
+            caption="To'lov usullari kesimi"
+            columns={paymentColumns}
+            emptyDescription="Bu oraliqda tasdiqlangan to'lov yozuvi yo'q."
+            emptyIcon="wallet"
+            emptyTitle="To'lov yo'q"
+            getRowKey={(row) => row.paymentMethod.id}
+            rows={report.paymentBreakdown}
+          />
+        </Card>
+
+        <Card>
+          <CardHeader
+            description="Web · Telegram · Kassa"
+            title="Kanal kesimi"
+          />
+          <DataTable
+            caption="Kanal kesimi"
+            columns={sourceColumns}
+            emptyDescription="Bu oraliqda kanal kesimida sotuv yo'q."
+            emptyIcon="globe"
+            emptyTitle="Kanal ma'lumoti yo'q"
+            getRowKey={(row) => row.source}
+            rows={report.sourceBreakdown}
+          />
+        </Card>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card>
+          <CardHeader
+            description="Filial qamrovi qoidasi bilan cheklangan"
+            title="Filiallar"
+          />
+          <DataTable
+            caption="Filial kesimi"
+            columns={branchColumns}
+            emptyDescription="Bu oraliqda filial kesimida sotuv yo'q."
+            emptyIcon="building"
+            emptyTitle="Filial ma'lumoti yo'q"
+            getRowKey={(row) => row.branch.id}
+            rows={report.branchBreakdown}
+          />
+        </Card>
+
+        <Card>
+          <CardHeader description="Faqat kassa sotuvlari" title="Kassirlar" />
+          <DataTable
+            caption="Kassir kesimi"
+            columns={cashierColumns}
+            emptyDescription="Bu oraliqda kassa sotuvi qayd etilmagan."
+            emptyIcon="users"
+            emptyTitle="Kassir ma'lumoti yo'q"
+            getRowKey={(row) => row.cashier.id}
+            rows={report.cashierBreakdown}
+          />
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader
+          description="Yopilgan smenada saqlangan qiymat, ochiq smenada joriy to'lovlar asosida"
+          title="Smenalar"
+        />
+        <DataTable
+          caption="Smena kesimi"
+          columns={shiftColumns}
+          emptyDescription="Bu oraliqda smena ma'lumoti yo'q."
+          emptyIcon="clock"
+          emptyTitle="Smena yo'q"
+          getRowKey={(shift) => shift.id}
+          rows={report.shiftBreakdown}
+        />
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card>
+          <CardHeader
+            description="Buyurtma yozuvidagi nomlar asosida"
+            title="Top mahsulotlar"
+          />
+          <DataTable
+            caption="Top mahsulotlar"
+            columns={productColumns}
+            emptyDescription="Bu oraliqda mahsulot sotuvi yo'q."
+            emptyIcon="utensils"
+            emptyTitle="Mahsulot yo'q"
+            getRowKey={(row) => row.productId ?? row.productName}
+            rows={report.topProducts}
+          />
+        </Card>
+
+        <Card>
+          <CardHeader
+            description="Joriy mahsulot-kategoriya bog'lanishi asosida"
+            title="Kategoriya sotuvlari"
+          />
+          <DataTable
+            caption="Kategoriya sotuvlari"
+            columns={categoryColumns}
+            emptyDescription="Bu oraliqda kategoriya sotuvi yo'q."
+            emptyIcon="folder"
+            emptyTitle="Kategoriya yo'q"
+            getRowKey={(row) => row.category.id ?? row.category.code}
+            rows={report.categorySales}
+          />
+        </Card>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card>
+          <CardHeader
+            description="Raqamlar qanday hisoblanadi"
+            title="Hisoblash qoidasi"
+          />
+          <CardBody>
+            <ul className="grid gap-2 text-sm text-mz-text">
+              <li>{report.salesRule.basis}</li>
+              <li>
+                Sotuvga kiradigan to'lov holatlari:{" "}
+                {report.salesRule.paymentStatuses.join(", ")}
+              </li>
+              <li>
+                Kiritilmaydigan buyurtma holatlari:{" "}
+                {report.salesRule.excludedOrderStatuses.join(", ")}
+              </li>
+              <li>Vaqt mintaqasi: {report.period.timezone}</li>
+            </ul>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            description="Bu raqamlar hali hisoblanmaydi"
+            title="Cheklovlar"
+          />
+          <CardBody>
+            <ul className="grid gap-2 text-sm text-mz-text-muted">
+              <li>{report.refundHandling.note}</li>
+              <li>{report.limitations.onlinePayments}</li>
+              <li>{report.limitations.categorySales}</li>
+            </ul>
+          </CardBody>
+        </Card>
+      </div>
     </>
   );
 }
 
-function Readiness({
-  items,
-  muted,
-  title,
-}: {
-  items: string[];
-  muted?: boolean;
-  title: string;
-}) {
+/**
+ * Kassa farqi.
+ *
+ * DESIGN_RULES: KAMOMAD hech qachon muvaffaqiyat rangida ko'rsatilmaydi.
+ * Ortiqcha pul ham normal emas — u OGOHLANTIRISH, chunki u ham hisobot
+ * xatosi yoki qayd etilmagan tushum belgisi.
+ */
+function CashDifference({ value }: { value: string | null | undefined }) {
+  if (value === null || value === undefined) {
+    return <span className="text-mz-text-faint">—</span>;
+  }
+
+  const difference = Number(value);
+
+  if (!Number.isFinite(difference)) {
+    return <span className="text-mz-text-faint">—</span>;
+  }
+
+  if (Math.abs(difference) < 0.01) {
+    return <span className="tabular-nums text-mz-success">To&apos;g&apos;ri</span>;
+  }
+
   return (
-    <section className="rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
-      <p
-        className={`text-sm font-black ${muted ? "text-mz-text-muted" : "text-mz-text"}`}
+    <span
+      className={`tabular-nums font-semibold ${
+        difference < 0 ? "text-mz-danger" : "text-mz-warning"
+      }`}
+    >
+      {difference > 0 ? "+" : ""}
+      {formatMoney(difference)}
+    </span>
+  );
+}
+
+/**
+ * Ustunli grafik.
+ *
+ * Ilgari har nuqta ~70px balandlikdagi alohida qator edi, ya'ni 30 kunlik
+ * oraliq ~2100px vertikal scroll bo'lardi va yorliq sifatida xom ISO sana
+ * turardi. Endi bu bitta ustunli grafik: yorliqlar qisqa sana, ma'lumot
+ * esa yonidagi jadvalda — grafikning o'zi `aria-hidden`.
+ */
+function SalesChart({
+  data,
+  grain,
+}: {
+  data: { date: string; amount: string; orderCount: number }[];
+  grain: "day" | "month";
+}) {
+  const max = Math.max(...data.map((row) => Number(row.amount) || 0), 1);
+  /* Ko'p nuqtada har bir yorliqni chizish o'qilmas bo'ladi — har N-chisi. */
+  const labelStep = data.length > 14 ? Math.ceil(data.length / 10) : 1;
+
+  return (
+    <div className="mz-thin-scrollbar overflow-x-auto pb-1">
+      <div
+        aria-hidden="true"
+        className="flex items-end gap-1.5"
+        style={{ minWidth: `${Math.max(data.length * 28, 240)}px` }}
       >
-        {title}
-      </p>
-      <ul className="mt-3 grid gap-2 text-sm font-semibold text-mz-text-muted">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </section>
+        {data.map((row, index) => {
+          const amount = Number(row.amount) || 0;
+          const height = Math.max(2, Math.round((amount / max) * 100));
+
+          return (
+            <div
+              className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
+              key={row.date}
+            >
+              <div className="flex h-40 w-full items-end">
+                <div
+                  className="w-full rounded-t-mz-control bg-mz-primary"
+                  style={{ height: `${height}%` }}
+                  title={`${reportDateLabel(row.date, grain)} · ${formatMoney(row.amount)}`}
+                />
+              </div>
+              <span className="h-4 whitespace-nowrap text-[13px] tabular-nums text-mz-text-muted">
+                {index % labelStep === 0 ? reportDateLabel(row.date, grain) : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

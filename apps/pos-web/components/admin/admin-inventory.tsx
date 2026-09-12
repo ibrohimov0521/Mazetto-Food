@@ -1,17 +1,20 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useMemo, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useApiResource } from "../../lib/use-api-resource";
+import { canSwitchBranch } from "../../lib/admin-nav";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
 import { hasPermission } from "../../lib/auth";
 import { useAuth } from "../auth/auth-provider";
 import { Badge, type BadgeTone } from "../admin-ui/badge";
-import { Button } from "../admin-ui/button";
-import { Card, CardHeader } from "../admin-ui/card";
+import { Button, GuardedButton } from "../admin-ui/button";
+import { Card, CardBody, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import {
   FilterBar,
+  focusFirstInvalidField,
   FormField,
   Select,
   TextInput,
@@ -21,20 +24,34 @@ import { Icon } from "../admin-ui/icon";
 import { Modal } from "../admin-ui/modal";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
+import { moneyCell, numberCell } from "./admin-report-views";
 
 /*
  * Ombor — zaxira va harakatlar.
  *
- * Oldingi ekran foydalanuvchidan ombor va ingredient ID sini QO'LDA
- * yozishni talab qilardi va harakat turini `IN` ga qotirgan edi, chunki
- * backend'da ro'yxat endpoint'lari yo'q edi. Endi `GET /inventory/warehouses`
- * va `GET /inventory/ingredients` qo'shildi, shuning uchun tanlagichlar bor
- * va to'rtala harakat turi mavjud.
+ * TUZATILGAN NUQSONLAR.
  *
- * Ingredient va ombor YARATISH ham shu ekranda: `POST /inventory/ingredients`
- * va `POST /inventory/warehouses` tayyor edi, lekin ekrani yo'q edi — ya'ni
- * yangi ingredient faqat seed orqali qo'shilardi va zaxira harakati uchun
- * tanlagich bo'sh qolaverardi.
+ * 1. "Harakat qo'shish" tugmasi ombor yoki ingredient yo'q bo'lganda
+ *    o'chirilardi va SABABI `title` atributida turardi — O'CHIRILGAN
+ *    elementda. Brauzer o'chirilgan tugmada tooltip ko'rsatmaydi va
+ *    klaviatura fokusi ham unga tushmaydi, ya'ni sabab hech kimga
+ *    ko'rinmasdi. Endi `GuardedButton` ishlatiladi: u sababni `sr-only`
+ *    matn sifatida ham beradi, tashqi o'ramga esa `title` qo'yadi.
+ *
+ * 2. Validatsiya toast'ga ketardi. Endi xato maydon yonida
+ *    (`FormField error`) va fokus birinchi noto'g'ri maydonga o'tadi.
+ *
+ * 3. Filtrlar mijoz tomonida edi. `InventoryQueryDto` da `branchId`,
+ *    `ingredientId`, `type`, `from`, `to` va `limit` bor — endi ular
+ *    serverga yuboriladi.
+ *
+ * BACKEND CHEKLOVI, ochiq aytilgan. `CreateStockMovementDto.quantity` da
+ * `@Min(0.001)` bor va ishorani server o'zi qo'yadi — FAQAT `OUT` va
+ * `WASTE` uchun minus. Ya'ni `ADJUSTMENT` shu API orqali qoldiqni faqat
+ * OSHIRA oladi, kamaytira olmaydi. Forma shuni aytadi va kamaytirish uchun
+ * `OUT`/`WASTE` ni taklif qiladi. Inventarizatsiya (stock-take) va kam
+ * qoldiq uchun alohida endpoint yo'q — "Kam qoldi" filtri shu sababdan
+ * mijoz tomonida.
  */
 
 type StockStatus = "NORMAL" | "LOW_STOCK" | "OUT_OF_STOCK";
@@ -68,6 +85,7 @@ type Warehouse = {
   branchId: string;
   branch?: { name: string } | null;
 };
+
 type Ingredient = {
   id: string;
   name: string;
@@ -85,6 +103,14 @@ const stockStatusLabels: Record<StockStatus, string> = {
 const movementTypeLabels: Record<MovementType, string> = {
   IN: "Kirim",
   OUT: "Chiqim",
+  ADJUSTMENT: "Tuzatish (faqat oshirish)",
+  WASTE: "Yo'qotish",
+};
+
+/** Jadvaldagi qisqa nom — yorliq uzun bo'lsa ustun kengayib ketardi. */
+const movementTypeShort: Record<MovementType, string> = {
+  IN: "Kirim",
+  OUT: "Chiqim",
   ADJUSTMENT: "Tuzatish",
   WASTE: "Yo'qotish",
 };
@@ -97,13 +123,29 @@ const ingredientUnits = [
   { value: "PIECE", label: "Dona" },
 ];
 
-const emptyIngredientDraft = {
+type MovementForm = {
+  warehouseId: string;
+  ingredientId: string;
+  type: MovementType;
+  quantity: string;
+  reason: string;
+};
+
+type IngredientForm = {
+  name: string;
+  unit: string;
+  minimumStock: string;
+  costPerUnit: string;
+};
+
+type WarehouseForm = { branchId: string; name: string };
+
+const emptyIngredientDraft: IngredientForm = {
   name: "",
   unit: "KG",
   minimumStock: "0",
   costPerUnit: "0",
 };
-const emptyWarehouseDraft = { branchId: "", name: "" };
 
 function stockTone(status: StockStatus): BadgeTone {
   if (status === "NORMAL") return "success";
@@ -118,157 +160,134 @@ function movementTone(type: MovementType): BadgeTone {
   return "info";
 }
 
+/** Harakat miqdori serverdan ISHORALI keladi — chiqim manfiy. */
+function quantityLabel(movement: Movement): string {
+  const numeric = Number(movement.quantity);
+  const unit = movement.ingredient?.unit ?? "";
+
+  if (!Number.isFinite(numeric)) {
+    return "—";
+  }
+
+  return `${numeric > 0 ? "+" : ""}${numeric} ${unit}`.trim();
+}
+
+const movementLimits = [50, 100, 200, 500];
+
 export function AdminInventoryPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const canCreate = hasPermission(user, "INVENTORY_CREATE");
-  const [stock, setStock] = useState<StockRow[]>([]);
-  const [movements, setMovements] = useState<Movement[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [branches, setBranches] = useState<InventoryBranch[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const canEdit = hasPermission(user, "INVENTORY_EDIT");
+  const showBranchFilter = canSwitchBranch(user);
+
+  const [branchId, setBranchId] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [movementType, setMovementType] = useState("");
+  const [movementIngredient, setMovementIngredient] = useState("");
+  const [movementLimit, setMovementLimit] = useState(100);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isIngredientOpen, setIsIngredientOpen] = useState(false);
   const [isWarehouseOpen, setIsWarehouseOpen] = useState(false);
-  const [ingredientDraft, setIngredientDraft] = useState(emptyIngredientDraft);
-  const [warehouseDraft, setWarehouseDraft] = useState(emptyWarehouseDraft);
-  const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [form, setForm] = useState({
+
+  const [form, setForm] = useState<MovementForm>({
     warehouseId: "",
     ingredientId: "",
-    type: "IN" as MovementType,
+    type: "IN",
     quantity: "",
     reason: "",
   });
+  const [formErrors, setFormErrors] = useState<
+    Partial<Record<keyof MovementForm, string>>
+  >({});
+  const movementFormRef = useRef<HTMLFormElement>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
+  const [ingredientDraft, setIngredientDraft] =
+    useState<IngredientForm>(emptyIngredientDraft);
+  const [ingredientErrors, setIngredientErrors] = useState<
+    Partial<Record<keyof IngredientForm, string>>
+  >({});
+  const ingredientFormRef = useRef<HTMLFormElement>(null);
 
-    try {
-      const [
-        nextStock,
-        nextMovements,
-        nextWarehouses,
-        nextIngredients,
-        nextBranches,
-      ] = await Promise.all([
-        apiFetch<StockRow[]>("/inventory/stock"),
-        apiFetch<Movement[]>("/inventory/movements"),
-        apiFetch<Warehouse[]>("/inventory/warehouses"),
-        apiFetch<Ingredient[]>("/inventory/ingredients"),
-        apiFetch<InventoryBranch[]>("/branches"),
-      ]);
-      setStock(nextStock);
-      setMovements(nextMovements);
-      setWarehouses(nextWarehouses);
-      setIngredients(nextIngredients);
-      setBranches(nextBranches);
-      setWarehouseDraft((current) => ({
-        ...current,
-        branchId: current.branchId || (nextBranches[0]?.id ?? ""),
-      }));
-      setForm((current) => ({
-        ...current,
-        warehouseId: current.warehouseId || (nextWarehouses[0]?.id ?? ""),
-        ingredientId: current.ingredientId || (nextIngredients[0]?.id ?? ""),
-      }));
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
+  const [warehouseDraft, setWarehouseDraft] = useState<WarehouseForm>({
+    branchId: "",
+    name: "",
+  });
+  const [warehouseErrors, setWarehouseErrors] = useState<
+    Partial<Record<keyof WarehouseForm, string>>
+  >({});
+  const warehouseFormRef = useRef<HTMLFormElement>(null);
 
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Ombor ma'lumotlarini yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const branchQuery = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: stockData,
+    isLoading: isStockLoading,
+    error: stockError,
+    reload: reloadStock,
+  } = useApiResource<StockRow[]>(
+    () => apiFetch<StockRow[]>(`/inventory/stock${branchQuery}`),
+    [branchQuery],
+    "Zaxirani yuklab bo'lmadi.",
+  );
 
-  async function createIngredient(): Promise<void> {
-    if (!ingredientDraft.name.trim()) {
-      showToast("Ingredient nomi kerak.", "danger");
-      return;
-    }
+  const movementParams = useMemo(() => {
+    const params = new URLSearchParams({ limit: String(movementLimit) });
+    if (branchId) params.set("branchId", branchId);
+    if (movementType) params.set("type", movementType);
+    if (movementIngredient) params.set("ingredientId", movementIngredient);
+    return params.toString();
+  }, [branchId, movementIngredient, movementLimit, movementType]);
 
-    setIsCreating(true);
+  const {
+    data: movementData,
+    isLoading: isMovementLoading,
+    error: movementError,
+    reload: reloadMovements,
+  } = useApiResource<Movement[]>(
+    () => apiFetch<Movement[]>(`/inventory/movements?${movementParams}`),
+    [movementParams],
+    "Harakatlarni yuklab bo'lmadi.",
+  );
 
-    try {
-      await apiFetch("/inventory/ingredients", {
-        method: "POST",
-        body: JSON.stringify({
-          name: ingredientDraft.name.trim(),
-          unit: ingredientDraft.unit,
-          minimumStock: Number(ingredientDraft.minimumStock) || 0,
-          costPerUnit: Number(ingredientDraft.costPerUnit) || 0,
-        }),
-      });
+  const { data: warehouseData, reload: reloadWarehouses } = useApiResource<
+    Warehouse[]
+  >(
+    () => apiFetch<Warehouse[]>(`/inventory/warehouses${branchQuery}`),
+    [branchQuery],
+    "Omborlarni yuklab bo'lmadi.",
+  );
 
-      showToast("Ingredient qo'shildi.", "success");
-      setIngredientDraft(emptyIngredientDraft);
-      setIsIngredientOpen(false);
-      await load();
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
+  /* Ingredientlar GLOBAL — backend bu endpoint'da filial filtri qabul qilmaydi. */
+  const { data: ingredientData, reload: reloadIngredients } = useApiResource<
+    Ingredient[]
+  >(
+    () => apiFetch<Ingredient[]>("/inventory/ingredients"),
+    [],
+    "Ingredientlarni yuklab bo'lmadi.",
+  );
 
-      showToast(
-        caught instanceof Error ? caught.message : "Qo'shib bo'lmadi.",
-        "danger",
-      );
-    } finally {
-      setIsCreating(false);
-    }
-  }
+  const { data: branchData } = useApiResource<InventoryBranch[]>(
+    () => apiFetch<InventoryBranch[]>("/branches"),
+    [],
+    "Filiallarni yuklab bo'lmadi.",
+  );
 
-  async function createWarehouse(): Promise<void> {
-    if (!warehouseDraft.name.trim() || !warehouseDraft.branchId) {
-      showToast("Ombor nomi va filial kerak.", "danger");
-      return;
-    }
+  const stock = stockData ?? [];
+  const movements = movementData ?? [];
+  const warehouses = warehouseData ?? [];
+  const ingredients = ingredientData ?? [];
+  const branches = branchData ?? [];
 
-    setIsCreating(true);
-
-    try {
-      await apiFetch("/inventory/warehouses", {
-        method: "POST",
-        body: JSON.stringify({
-          branchId: warehouseDraft.branchId,
-          name: warehouseDraft.name.trim(),
-        }),
-      });
-
-      showToast("Ombor qo'shildi.", "success");
-      setWarehouseDraft(emptyWarehouseDraft);
-      setIsWarehouseOpen(false);
-      await load();
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      showToast(
-        caught instanceof Error ? caught.message : "Qo'shib bo'lmadi.",
-        "danger",
-      );
-    } finally {
-      setIsCreating(false);
-    }
-  }
+  const reloadAll = useCallback(() => {
+    reloadStock();
+    reloadMovements();
+    reloadWarehouses();
+    reloadIngredients();
+  }, [reloadIngredients, reloadMovements, reloadStock, reloadWarehouses]);
 
   const filteredStock = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -295,15 +314,76 @@ export function AdminInventoryPage() {
     return { low, out, value, total: stock.length };
   }, [stock]);
 
+  /*
+   * Harakat tugmasining o'chirilish SABABI. `GuardedButton` uni ko'rinadigan
+   * qiladi — `title` o'chirilgan tugmada hech kimga yetib bormasdi.
+   */
+  const movementBlockedReason = !canEdit
+    ? "Zaxira harakati yozish uchun INVENTORY_EDIT ruxsati kerak."
+    : warehouses.length === 0 && ingredients.length === 0
+      ? "Avval kamida bitta ombor va bitta ingredient qo'shing."
+      : warehouses.length === 0
+        ? "Avval kamida bitta ombor qo'shing."
+        : ingredients.length === 0
+          ? "Avval kamida bitta ingredient qo'shing."
+          : null;
+
+  function openMovementForm(): void {
+    setForm({
+      warehouseId: warehouses[0]?.id ?? "",
+      ingredientId: ingredients[0]?.id ?? "",
+      type: "IN",
+      quantity: "",
+      reason: "",
+    });
+    setFormErrors({});
+    setIsFormOpen(true);
+  }
+
+  function openWarehouseForm(): void {
+    setWarehouseDraft({ branchId: branchId || (branches[0]?.id ?? ""), name: "" });
+    setWarehouseErrors({});
+    setIsWarehouseOpen(true);
+  }
+
+  function openIngredientForm(): void {
+    setIngredientDraft(emptyIngredientDraft);
+    setIngredientErrors({});
+    setIsIngredientOpen(true);
+  }
+
+  function failureMessage(caught: unknown, fallback: string): string {
+    return caught instanceof Error ? caught.message : fallback;
+  }
+
   async function submitMovement(
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
 
     const quantity = Number(form.quantity);
+    const next: Partial<Record<keyof MovementForm, string>> = {};
 
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      showToast("Miqdor musbat son bo'lishi kerak.", "danger");
+    if (!form.warehouseId) next.warehouseId = "Omborni tanlang.";
+    if (!form.ingredientId) next.ingredientId = "Ingredientni tanlang.";
+
+    if (form.quantity.trim() === "") {
+      next.quantity = "Miqdorni kiriting.";
+    } else if (!Number.isFinite(quantity) || quantity < 0.001) {
+      next.quantity = "Miqdor 0.001 dan kichik bo'lmasligi kerak.";
+    }
+
+    if ((form.type === "WASTE" || form.type === "ADJUSTMENT") && !form.reason.trim()) {
+      next.reason =
+        "Yo'qotish va tuzatish uchun sabab yozilishi shart — bu zaxira auditi yozuvi.";
+    }
+
+    setFormErrors(next);
+
+    if (Object.keys(next).length > 0) {
+      requestAnimationFrame(() =>
+        focusFirstInvalidField(movementFormRef.current),
+      );
       return;
     }
 
@@ -317,21 +397,141 @@ export function AdminInventoryPage() {
           ingredientId: form.ingredientId,
           type: form.type,
           quantity,
-          reason: form.reason.trim() || undefined,
+          ...(form.reason.trim() ? { reason: form.reason.trim() } : {}),
         }),
       });
-      showToast(`${movementTypeLabels[form.type]} yozildi.`, "success");
+      showToast(`${movementTypeShort[form.type]} yozildi.`, "success");
       setIsFormOpen(false);
-      setForm((current) => ({ ...current, quantity: "", reason: "" }));
-      await load();
+      setFormErrors({});
+      reloadAll();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
       }
 
-      showToast(
-        caught instanceof Error ? caught.message : "Harakat yozilmadi.",
-        "danger",
+      /* "Stock cannot go below zero" — bu aynan miqdor maydonining xatosi. */
+      setFormErrors({
+        quantity: failureMessage(caught, "Harakat yozilmadi."),
+      });
+      requestAnimationFrame(() =>
+        focusFirstInvalidField(movementFormRef.current),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function submitIngredient(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+
+    const next: Partial<Record<keyof IngredientForm, string>> = {};
+    const minimum = Number(ingredientDraft.minimumStock);
+    const cost = Number(ingredientDraft.costPerUnit);
+
+    if (!ingredientDraft.name.trim()) {
+      next.name = "Ingredient nomi kerak.";
+    } else if (ingredientDraft.name.trim().length > 100) {
+      next.name = "Nom 100 belgidan oshmasligi kerak.";
+    }
+
+    if (!Number.isFinite(minimum) || minimum < 0) {
+      next.minimumStock = "Minimal zaxira 0 yoki katta son bo'lishi kerak.";
+    }
+
+    if (!Number.isFinite(cost) || cost < 0) {
+      next.costPerUnit = "Tannarx 0 yoki katta son bo'lishi kerak.";
+    }
+
+    setIngredientErrors(next);
+
+    if (Object.keys(next).length > 0) {
+      requestAnimationFrame(() =>
+        focusFirstInvalidField(ingredientFormRef.current),
+      );
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      await apiFetch("/inventory/ingredients", {
+        method: "POST",
+        body: JSON.stringify({
+          name: ingredientDraft.name.trim(),
+          unit: ingredientDraft.unit,
+          minimumStock: minimum,
+          costPerUnit: cost,
+        }),
+      });
+      showToast("Ingredient qo'shildi.", "success");
+      setIsIngredientOpen(false);
+      setIngredientDraft(emptyIngredientDraft);
+      reloadAll();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      setIngredientErrors({
+        name: failureMessage(caught, "Ingredient qo'shilmadi."),
+      });
+      requestAnimationFrame(() =>
+        focusFirstInvalidField(ingredientFormRef.current),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function submitWarehouse(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+
+    const next: Partial<Record<keyof WarehouseForm, string>> = {};
+
+    if (!warehouseDraft.branchId) next.branchId = "Filialni tanlang.";
+
+    if (!warehouseDraft.name.trim()) {
+      next.name = "Ombor nomi kerak.";
+    } else if (warehouseDraft.name.trim().length > 100) {
+      next.name = "Nom 100 belgidan oshmasligi kerak.";
+    }
+
+    setWarehouseErrors(next);
+
+    if (Object.keys(next).length > 0) {
+      requestAnimationFrame(() =>
+        focusFirstInvalidField(warehouseFormRef.current),
+      );
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      await apiFetch("/inventory/warehouses", {
+        method: "POST",
+        body: JSON.stringify({
+          branchId: warehouseDraft.branchId,
+          name: warehouseDraft.name.trim(),
+        }),
+      });
+      showToast("Ombor qo'shildi.", "success");
+      setIsWarehouseOpen(false);
+      reloadAll();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) {
+        return;
+      }
+
+      setWarehouseErrors({
+        name: failureMessage(caught, "Ombor qo'shilmadi."),
+      });
+      requestAnimationFrame(() =>
+        focusFirstInvalidField(warehouseFormRef.current),
       );
     } finally {
       setIsSaving(false);
@@ -348,7 +548,7 @@ export function AdminInventoryPage() {
           <p className="truncate font-semibold text-mz-text">
             {row.ingredient.name}
           </p>
-          <p className="truncate text-xs text-mz-text-muted">
+          <p className="truncate text-[13px] text-mz-text-muted">
             {row.warehouse.name}
           </p>
         </div>
@@ -358,24 +558,35 @@ export function AdminInventoryPage() {
       key: "quantity",
       header: "Qoldiq",
       align: "right",
-      render: (row) => `${row.currentQuantity} ${row.ingredient.unit}`,
+      render: (row) => (
+        <span className={numberCell}>
+          {row.currentQuantity} {row.ingredient.unit}
+        </span>
+      ),
     },
     {
       key: "minimum",
       header: "Minimal",
       align: "right",
       hideOnMobile: true,
-      render: (row) => `${row.minimumQuantity} ${row.ingredient.unit}`,
+      render: (row) => (
+        <span className={numberCell}>
+          {row.minimumQuantity} {row.ingredient.unit}
+        </span>
+      ),
     },
     {
       key: "value",
       header: "Qiymat",
       align: "right",
       hideOnMobile: true,
-      render: (row) =>
-        formatMoney(
-          Number(row.currentQuantity) * Number(row.ingredient.costPerUnit),
-        ),
+      render: (row) => (
+        <span className={moneyCell}>
+          {formatMoney(
+            Number(row.currentQuantity) * Number(row.ingredient.costPerUnit),
+          )}
+        </span>
+      ),
     },
     {
       key: "status",
@@ -399,7 +610,7 @@ export function AdminInventoryPage() {
           <p className="truncate font-semibold text-mz-text">
             {movement.ingredient?.name ?? "—"}
           </p>
-          <p className="truncate text-xs text-mz-text-muted">
+          <p className="truncate text-[13px] text-mz-text-muted">
             {formatDateTime(movement.createdAt)} ·{" "}
             {movement.warehouse?.name ?? "—"}
           </p>
@@ -411,7 +622,7 @@ export function AdminInventoryPage() {
       header: "Turi",
       render: (movement) => (
         <Badge tone={movementTone(movement.type)}>
-          {movementTypeLabels[movement.type]}
+          {movementTypeShort[movement.type] ?? movement.type}
         </Badge>
       ),
     },
@@ -419,15 +630,36 @@ export function AdminInventoryPage() {
       key: "quantity",
       header: "Miqdor",
       align: "right",
-      render: (movement) =>
-        `${movement.quantity} ${movement.ingredient?.unit ?? ""}`,
+      render: (movement) => {
+        const numeric = Number(movement.quantity);
+
+        return (
+          <span
+            className={`tabular-nums font-semibold ${
+              numeric < 0 ? "text-mz-danger" : "text-mz-text"
+            }`}
+          >
+            {quantityLabel(movement)}
+          </span>
+        );
+      },
+    },
+    {
+      key: "who",
+      header: "Kim",
+      hideOnMobile: true,
+      render: (movement) => (
+        <span className="text-[13px] text-mz-text-muted">
+          {movement.createdBy?.displayName ?? "—"}
+        </span>
+      ),
     },
     {
       key: "reason",
       header: "Sabab",
       hideOnMobile: true,
       render: (movement) => (
-        <span className="text-xs text-mz-text-muted">
+        <span className="text-[13px] text-mz-text-muted">
           {movement.reason ?? "—"}
         </span>
       ),
@@ -436,8 +668,8 @@ export function AdminInventoryPage() {
 
   return (
     <div className="grid gap-5">
-      {error ? (
-        <ErrorState message={error} onRetry={() => void load()} />
+      {stockError ? (
+        <ErrorState message={stockError} onRetry={() => reloadStock()} />
       ) : null}
 
       <StatGrid>
@@ -459,6 +691,7 @@ export function AdminInventoryPage() {
           value={`${stats.out} ta`}
         />
         <InfoBox
+          description="Qoldiq × birlik tannarxi"
           icon="wallet"
           label="Zaxira qiymati"
           tone="brand"
@@ -473,34 +706,26 @@ export function AdminInventoryPage() {
               {canCreate ? (
                 <>
                   <Button
-                    onClick={() => setIsIngredientOpen(true)}
+                    onClick={openIngredientForm}
                     size="sm"
                     variant="ghost"
                   >
                     <Icon className="h-4 w-4" name="plus" />
                     Ingredient
                   </Button>
-                  <Button
-                    onClick={() => setIsWarehouseOpen(true)}
-                    size="sm"
-                    variant="ghost"
-                  >
+                  <Button onClick={openWarehouseForm} size="sm" variant="ghost">
                     <Icon className="h-4 w-4" name="plus" />
                     Ombor
                   </Button>
                 </>
               ) : null}
-              <Button
-                disabled={warehouses.length === 0 || ingredients.length === 0}
-                onClick={() => setIsFormOpen(true)}
-                title={
-                  warehouses.length === 0 || ingredients.length === 0
-                    ? "Avval kamida bitta ombor va ingredient qo'shing"
-                    : undefined
-                }
+              <GuardedButton
+                blockedReason={movementBlockedReason}
+                onClick={openMovementForm}
+                size="lg"
               >
                 Harakat qo&apos;shish
-              </Button>
+              </GuardedButton>
             </>
           }
           description="Ombor bo'yicha ingredient qoldiqlari"
@@ -509,56 +734,188 @@ export function AdminInventoryPage() {
 
         <FilterBar>
           <div className="min-w-52 flex-1">
-            <TextInput
-              aria-label="Ingredient qidirish"
-              placeholder="Ingredient yoki ombor nomi"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+            <FormField label="Qidirish">
+              {(props) => (
+                <TextInput
+                  {...props}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Ingredient yoki ombor nomi"
+                  value={search}
+                />
+              )}
+            </FormField>
           </div>
+
           <div className="w-44">
-            <Select
-              aria-label="Holat bo'yicha filtr"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="">Barcha holatlar</option>
-              {Object.entries(stockStatusLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
+            <FormField label="Holat">
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  value={statusFilter}
+                >
+                  <option value="">Barcha holatlar</option>
+                  {Object.entries(stockStatusLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
           </div>
+
+          {showBranchFilter ? (
+            <div className="w-56">
+              <FormField label="Filial">
+                {(props) => (
+                  <Select
+                    {...props}
+                    onChange={(event) => setBranchId(event.target.value)}
+                    value={branchId}
+                  >
+                    <option value="">Barcha filiallar</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+            </div>
+          ) : null}
         </FilterBar>
 
         <DataTable
           caption="Zaxira qoldiqlari"
           columns={stockColumns}
-          emptyDescription="Ombor yoki ingredient qo'shilmagan bo'lishi mumkin."
+          emptyDescription={
+            stock.length > 0
+              ? "Qidiruv yoki holat filtriga mos qator yo'q."
+              : "Ombor yoki ingredient qo'shilmagan bo'lishi mumkin."
+          }
+          emptyIcon="boxes"
           emptyTitle="Zaxira qatori yo'q"
           getRowKey={(row) => row.id}
-          isLoading={isLoading}
+          isLoading={isStockLoading}
           rows={filteredStock}
         />
+
+        <CardBody className="border-t border-mz-border">
+          <p className="text-[13px] text-mz-text-muted">
+            Qidiruv va holat filtri shu ro&apos;yxat ichida ishlaydi: backend
+            zaxirani sahifalamaydi va &quot;kam qoldi&quot; uchun alohida
+            endpoint bermaydi.
+          </p>
+        </CardBody>
       </Card>
 
       <Card>
         <CardHeader
-          description="Oxirgi kirim, chiqim, tuzatish va yo'qotishlar"
+          description="Kirim, chiqim, tuzatish va yo'qotishlar"
           title="Harakatlar"
         />
-        <DataTable
-          caption="Zaxira harakatlari"
-          columns={movementColumns}
-          emptyTitle="Harakat yo'q"
-          getRowKey={(movement) => movement.id}
-          isLoading={isLoading}
-          rows={movements}
-        />
+
+        <FilterBar>
+          <div className="w-48">
+            <FormField label="Harakat turi">
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) => setMovementType(event.target.value)}
+                  value={movementType}
+                >
+                  <option value="">Barcha turlar</option>
+                  {Object.entries(movementTypeShort).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+          </div>
+
+          <div className="w-56">
+            <FormField label="Ingredient">
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) => setMovementIngredient(event.target.value)}
+                  value={movementIngredient}
+                >
+                  <option value="">Barcha ingredientlar</option>
+                  {ingredients.map((ingredient) => (
+                    <option key={ingredient.id} value={ingredient.id}>
+                      {ingredient.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+          </div>
+
+          <div className="w-40">
+            <FormField hint="Sahifalash yo'q" label="Ko'rsatish">
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) =>
+                    setMovementLimit(Number(event.target.value))
+                  }
+                  value={String(movementLimit)}
+                >
+                  {movementLimits.map((limit) => (
+                    <option key={limit} value={limit}>
+                      Oxirgi {limit} ta
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+          </div>
+        </FilterBar>
+
+        {movementError ? (
+          <CardBody>
+            <ErrorState
+              message={movementError}
+              onRetry={() => reloadMovements()}
+            />
+          </CardBody>
+        ) : (
+          <DataTable
+            caption="Zaxira harakatlari"
+            columns={movementColumns}
+            emptyDescription="Tanlangan filtr bo'yicha harakat qayd etilmagan."
+            emptyIcon="boxes"
+            emptyTitle="Harakat yo'q"
+            getRowKey={(movement) => movement.id}
+            isLoading={isMovementLoading}
+            rows={movements}
+          />
+        )}
       </Card>
 
       <Modal
+        description="Miqdor doim MUSBAT kiritiladi — chiqim va yo'qotish uchun ishorani server qo'yadi."
+        dismissOnBackdrop={false}
+        footer={
+          <>
+            <Button onClick={() => setIsFormOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              form="movement-form"
+              isLoading={isSaving}
+              size="lg"
+              type="submit"
+            >
+              Yozish
+            </Button>
+          </>
+        }
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
         title="Zaxira harakati"
@@ -567,17 +924,22 @@ export function AdminInventoryPage() {
           className="grid gap-3"
           id="movement-form"
           onSubmit={submitMovement}
+          ref={movementFormRef}
         >
-          <FormField label="Ombor" required>
+          <FormField
+            {...(formErrors.warehouseId ? { error: formErrors.warehouseId } : {})}
+            label="Ombor"
+            required
+          >
             {(props) => (
               <Select
                 {...props}
-                required
-                value={form.warehouseId}
                 onChange={(event) =>
                   setForm({ ...form, warehouseId: event.target.value })
                 }
+                value={form.warehouseId}
               >
+                <option value="">Tanlang…</option>
                 {warehouses.map((warehouse) => (
                   <option key={warehouse.id} value={warehouse.id}>
                     {warehouse.name}
@@ -588,16 +950,22 @@ export function AdminInventoryPage() {
             )}
           </FormField>
 
-          <FormField label="Ingredient" required>
+          <FormField
+            {...(formErrors.ingredientId
+              ? { error: formErrors.ingredientId }
+              : {})}
+            label="Ingredient"
+            required
+          >
             {(props) => (
               <Select
                 {...props}
-                required
-                value={form.ingredientId}
                 onChange={(event) =>
                   setForm({ ...form, ingredientId: event.target.value })
                 }
+                value={form.ingredientId}
               >
+                <option value="">Tanlang…</option>
                 {ingredients.map((ingredient) => (
                   <option key={ingredient.id} value={ingredient.id}>
                     {ingredient.name} ({ingredient.unit})
@@ -608,17 +976,25 @@ export function AdminInventoryPage() {
           </FormField>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Harakat turi" required>
+            <FormField
+              {...(form.type === "ADJUSTMENT"
+                ? {
+                    hint: "Tuzatish qoldiqni faqat OSHIRADI. Kamaytirish uchun Chiqim yoki Yo'qotish tanlang.",
+                  }
+                : {})}
+              label="Harakat turi"
+              required
+            >
               {(props) => (
                 <Select
                   {...props}
-                  value={form.type}
                   onChange={(event) =>
                     setForm({
                       ...form,
                       type: event.target.value as MovementType,
                     })
                   }
+                  value={form.type}
                 >
                   {Object.entries(movementTypeLabels).map(([value, label]) => (
                     <option key={value} value={value}>
@@ -628,61 +1004,62 @@ export function AdminInventoryPage() {
                 </Select>
               )}
             </FormField>
-            <FormField label="Miqdor" required>
+
+            <FormField
+              {...(formErrors.quantity ? { error: formErrors.quantity } : {})}
+              label="Miqdor"
+              required
+            >
               {(props) => (
                 <TextInput
                   {...props}
+                  inputMode="decimal"
                   min={0.001}
-                  required
-                  step={0.001}
-                  type="number"
-                  value={form.quantity}
                   onChange={(event) =>
                     setForm({ ...form, quantity: event.target.value })
                   }
+                  step={0.001}
+                  type="number"
+                  value={form.quantity}
                 />
               )}
             </FormField>
           </div>
 
           <FormField
-            hint="Yo'qotish va tuzatish uchun sababni yozish tavsiya etiladi"
+            {...(formErrors.reason ? { error: formErrors.reason } : {})}
+            hint="Yo'qotish va tuzatish uchun majburiy — audit yozuvi."
             label="Sabab"
+            required={form.type === "WASTE" || form.type === "ADJUSTMENT"}
           >
             {(props) => (
               <Textarea
                 {...props}
                 maxLength={500}
-                value={form.reason}
                 onChange={(event) =>
                   setForm({ ...form, reason: event.target.value })
                 }
+                value={form.reason}
               />
             )}
           </FormField>
         </form>
-
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button onClick={() => setIsFormOpen(false)} variant="ghost">
-            Bekor qilish
-          </Button>
-          <Button disabled={isSaving} form="movement-form" type="submit">
-            {isSaving ? "Yozilmoqda..." : "Yozish"}
-          </Button>
-        </div>
       </Modal>
 
       <Modal
+        dismissOnBackdrop={false}
         footer={
           <>
             <Button onClick={() => setIsIngredientOpen(false)} variant="ghost">
               Bekor qilish
             </Button>
             <Button
-              disabled={isCreating}
-              onClick={() => void createIngredient()}
+              form="ingredient-form"
+              isLoading={isSaving}
+              size="lg"
+              type="submit"
             >
-              {isCreating ? "Qo'shilmoqda…" : "Qo'shish"}
+              Qo&apos;shish
             </Button>
           </>
         }
@@ -690,11 +1067,21 @@ export function AdminInventoryPage() {
         onClose={() => setIsIngredientOpen(false)}
         title="Yangi ingredient"
       >
-        <div className="grid gap-3">
-          <FormField label="Nomi" required>
+        <form
+          className="grid gap-3"
+          id="ingredient-form"
+          onSubmit={submitIngredient}
+          ref={ingredientFormRef}
+        >
+          <FormField
+            {...(ingredientErrors.name ? { error: ingredientErrors.name } : {})}
+            label="Nomi"
+            required
+          >
             {(props) => (
               <TextInput
                 {...props}
+                maxLength={100}
                 onChange={(event) =>
                   setIngredientDraft((current) => ({
                     ...current,
@@ -706,7 +1093,11 @@ export function AdminInventoryPage() {
             )}
           </FormField>
 
-          <FormField label="O'lchov birligi" required>
+          <FormField
+            hint="Yaratilgandan keyin o'zgartirilmaydi — backend'da tahrirlash yo'q."
+            label="O'lchov birligi"
+            required
+          >
             {(props) => (
               <Select
                 {...props}
@@ -727,61 +1118,74 @@ export function AdminInventoryPage() {
             )}
           </FormField>
 
-          <FormField
-            hint="Shu miqdordan pastda 'Kam qoldi' deb belgilanadi"
-            label="Minimal zaxira"
-          >
-            {(props) => (
-              <TextInput
-                {...props}
-                min="0"
-                onChange={(event) =>
-                  setIngredientDraft((current) => ({
-                    ...current,
-                    minimumStock: event.target.value,
-                  }))
-                }
-                step="0.001"
-                type="number"
-                value={ingredientDraft.minimumStock}
-              />
-            )}
-          </FormField>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField
+              {...(ingredientErrors.minimumStock
+                ? { error: ingredientErrors.minimumStock }
+                : {})}
+              hint="Shu miqdordan pastda 'Kam qoldi' deb belgilanadi"
+              label="Minimal zaxira"
+            >
+              {(props) => (
+                <TextInput
+                  {...props}
+                  inputMode="decimal"
+                  min="0"
+                  onChange={(event) =>
+                    setIngredientDraft((current) => ({
+                      ...current,
+                      minimumStock: event.target.value,
+                    }))
+                  }
+                  step="0.001"
+                  type="number"
+                  value={ingredientDraft.minimumStock}
+                />
+              )}
+            </FormField>
 
-          <FormField
-            hint="Zaxira qiymatini hisoblashda ishlatiladi"
-            label="Birlik tannarxi"
-          >
-            {(props) => (
-              <TextInput
-                {...props}
-                min="0"
-                onChange={(event) =>
-                  setIngredientDraft((current) => ({
-                    ...current,
-                    costPerUnit: event.target.value,
-                  }))
-                }
-                step="0.01"
-                type="number"
-                value={ingredientDraft.costPerUnit}
-              />
-            )}
-          </FormField>
-        </div>
+            <FormField
+              {...(ingredientErrors.costPerUnit
+                ? { error: ingredientErrors.costPerUnit }
+                : {})}
+              hint="Zaxira qiymatini hisoblashda ishlatiladi"
+              label="Birlik tannarxi"
+            >
+              {(props) => (
+                <TextInput
+                  {...props}
+                  inputMode="decimal"
+                  min="0"
+                  onChange={(event) =>
+                    setIngredientDraft((current) => ({
+                      ...current,
+                      costPerUnit: event.target.value,
+                    }))
+                  }
+                  step="0.01"
+                  type="number"
+                  value={ingredientDraft.costPerUnit}
+                />
+              )}
+            </FormField>
+          </div>
+        </form>
       </Modal>
 
       <Modal
+        dismissOnBackdrop={false}
         footer={
           <>
             <Button onClick={() => setIsWarehouseOpen(false)} variant="ghost">
               Bekor qilish
             </Button>
             <Button
-              disabled={isCreating}
-              onClick={() => void createWarehouse()}
+              form="warehouse-form"
+              isLoading={isSaving}
+              size="lg"
+              type="submit"
             >
-              {isCreating ? "Qo'shilmoqda…" : "Qo'shish"}
+              Qo&apos;shish
             </Button>
           </>
         }
@@ -789,8 +1193,19 @@ export function AdminInventoryPage() {
         onClose={() => setIsWarehouseOpen(false)}
         title="Yangi ombor"
       >
-        <div className="grid gap-3">
-          <FormField label="Filial" required>
+        <form
+          className="grid gap-3"
+          id="warehouse-form"
+          onSubmit={submitWarehouse}
+          ref={warehouseFormRef}
+        >
+          <FormField
+            {...(warehouseErrors.branchId
+              ? { error: warehouseErrors.branchId }
+              : {})}
+            label="Filial"
+            required
+          >
             {(props) => (
               <Select
                 {...props}
@@ -802,6 +1217,7 @@ export function AdminInventoryPage() {
                 }
                 value={warehouseDraft.branchId}
               >
+                <option value="">Tanlang…</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
                     {branch.name}
@@ -811,10 +1227,15 @@ export function AdminInventoryPage() {
             )}
           </FormField>
 
-          <FormField label="Nomi" required>
+          <FormField
+            {...(warehouseErrors.name ? { error: warehouseErrors.name } : {})}
+            label="Nomi"
+            required
+          >
             {(props) => (
               <TextInput
                 {...props}
+                maxLength={100}
                 onChange={(event) =>
                   setWarehouseDraft((current) => ({
                     ...current,
@@ -826,7 +1247,7 @@ export function AdminInventoryPage() {
               />
             )}
           </FormField>
-        </div>
+        </form>
       </Modal>
     </div>
   );
