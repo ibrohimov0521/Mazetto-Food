@@ -557,6 +557,21 @@
   margin-left: auto;
   text-align: right;
 }
+.receipt .choices {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+}
+.receipt .choice {
+  min-height: 40px;
+  padding: 7px 9px;
+  gap: 7px;
+  font-size: 12px;
+}
+.receipt .choice input {
+  width: 16px;
+  height: 16px;
+}
 .subheading {
   font-size: 14px;
   font-weight: 800;
@@ -596,12 +611,12 @@
   --kds-warn: #c07016; /* amber: muddat yaqinlashdi */
   --kds-late: #b9323c; /* qizil: kechikdi */
   --kds-critical: #8e1f27; /* to'q qizil: jiddiy kechikish */
-  --kds-number: 28px;
-  --kds-item: 22px;
-  --kds-small: 16px;
-  --kds-qty: 20px;
-  --kds-qty-box: 34px;
-  --kds-timer: 22px;
+  --kds-number: 22px;
+  --kds-item: 14px;
+  --kds-small: 12px;
+  --kds-qty: 14px;
+  --kds-qty-box: 28px;
+  --kds-timer: 15px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
@@ -644,10 +659,10 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
   flex-shrink: 0;
-  border-bottom: 4px solid var(--kds-new);
+  border-bottom: 3px solid var(--kds-new);
   background: #003e43;
   color: white;
 }
@@ -661,7 +676,7 @@
   border-color: var(--kds-ready);
 }
 .columnHeading h2 {
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 800;
   margin: 0;
   min-width: 0;
@@ -671,14 +686,14 @@
 .columnHeading span {
   display: grid;
   place-items: center;
-  height: 32px;
-  min-width: 32px;
-  padding: 0 8px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
   background: white;
   color: #07373a;
   border-radius: 6px;
   margin-left: auto;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -706,15 +721,15 @@
 .ticketList {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: 8px;
   min-height: 0;
 }
 .ticket {
   min-width: 0;
-  padding: 16px;
+  padding: 10px;
   background: white;
   border: 1px solid #d5e2dd;
-  border-left: 7px solid #b3c7c0;
+  border-left: 4px solid #b3c7c0;
   border-radius: 8px;
   box-shadow:
     0 2px 3px #003e4308,
@@ -759,13 +774,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: 10px 0 14px;
+  gap: 6px;
+  margin: 6px 0 8px;
 }
 .board .badge {
-  padding: 5px 9px;
-  gap: 6px;
-  font-size: 15px;
+  padding: 3px 6px;
+  gap: 4px;
+  font-size: 12px;
 }
 .ticketPriority {
   display: inline-flex;
@@ -817,8 +832,8 @@
   gap: 10px;
 }
 .board .itemList > li {
-  padding: 11px 0;
-  gap: 12px;
+  padding: 6px 0;
+  gap: 8px;
 }
 .itemQuantity {
   min-width: 26px;
@@ -882,22 +897,22 @@
 .ticketActions {
   display: flex;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 10px;
 }
 .ticketActions > :first-child {
   flex: 1;
 }
 .ticketPrimary {
-  min-height: 56px;
-  font-size: 18px;
+  min-height: 42px;
+  font-size: 14px;
 }
 .board[data-density="tv"] .ticketPrimary {
   min-height: 64px;
   font-size: 21px;
 }
 .ticketCancel {
-  width: 56px;
-  height: 56px;
+  width: 42px;
+  height: 42px;
 }
 /*
  * Amal xatosi chiptaning O'ZIDA ko'rinadi: to'rt ustunli taxtada sahifa
@@ -923,9 +938,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 44px;
+  min-height: 32px;
   color: #006860;
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 700;
   margin-top: 4px;
 }
@@ -986,8 +1001,8 @@
 /* Delivery addresses stay readable without loading an embedded map. */
 .deliveryGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+  gap: 12px;
 }
 .deliveryCard {
   min-width: 0;
@@ -1000,7 +1015,7 @@
   overflow: hidden;
 }
 .deliveryTop {
-  padding: 16px 18px;
+  padding: 10px 12px;
   border-bottom: 1px solid #dce7e0;
   display: flex;
   justify-content: space-between;
@@ -1010,12 +1025,12 @@
   border-top: 3px solid #00645f;
 }
 .deliveryBody {
-  padding: 18px;
+  padding: 10px 12px 12px;
 }
 .addressRow {
   display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 .addressIcon {
   flex-shrink: 0;
@@ -1023,7 +1038,7 @@
   margin-top: 2px;
 }
 .addressRow h3 {
-  font-size: 17px;
+  font-size: 14px;
   line-height: 1.4;
   font-weight: 800;
   margin: 0 0 6px;
@@ -1075,8 +1090,17 @@
 .deliveryFooter {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 10px;
+}
+.deliveryFooter .primary {
+  min-height: 40px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.deliveryFooter .iconButton {
+  width: 40px;
+  height: 40px;
 }
 .deliveryFooter > :first-child {
   flex: 1;
@@ -1145,8 +1169,8 @@
 }
 .productGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  grid-auto-rows: minmax(250px, auto);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-auto-rows: auto;
   flex: 1 1 0%;
   align-content: start;
   overflow-y: auto;
@@ -1183,7 +1207,7 @@
   position: relative;
   width: 100%;
   flex-shrink: 0;
-  aspect-ratio: 16/9;
+  aspect-ratio: 16/10;
   background: #004f55;
 }
 .productImage img {
@@ -1214,22 +1238,22 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 10px;
-  padding: 11px 12px 13px;
+  gap: 5px;
+  padding: 8px 9px 9px;
   background: linear-gradient(180deg, #ffffff 0%, #f4faf6 100%);
 }
 .productInfo h2 {
   min-height: 0;
-  font-size: 14px;
-  line-height: 1.3;
+  font-size: 13px;
+  line-height: 1.25;
   font-weight: 700;
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   overflow-wrap: anywhere;
 }
 .productInfo p {
   margin: 0;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 13px;
   color: #00645f;
 }
 .receipt {
@@ -1436,8 +1460,8 @@
     padding: 16px;
   }
   .productGrid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    grid-auto-rows: minmax(230px, auto);
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-auto-rows: auto;
     gap: 10px;
   }
   .product {
@@ -1600,7 +1624,7 @@
   }
   .productGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(218px, auto);
+    grid-auto-rows: auto;
     overflow: visible;
   }
   .product {

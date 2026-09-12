@@ -59,8 +59,7 @@ export function KitchenTicketCard({
   const action = canAct ? kitchenPrimaryAction(ticket.status) : null;
   const shownItems = expanded
     ? ticket.order.items
-    : ticket.order.items.slice(0, 3);
-  const hasMore = ticket.order.items.length > 3;
+    : ticket.order.items.slice(0, 1);
   const canCancel =
     hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
     ["NEW", "ACCEPTED", "COOKING"].includes(ticket.status);
@@ -100,12 +99,16 @@ export function KitchenTicketCard({
           )}
           {place}
         </span>
-        <span className={styles.badge}>{sourceLabels[ticket.order.source]}</span>
+        <span className={styles.badge}>
+          {sourceLabels[ticket.order.source]}
+        </span>
       </div>
       <ul className={styles.itemList}>
         {shownItems.map((item) => (
           <li key={item.id}>
-            <span className={styles.itemQuantity}>{Number(item.quantity)}x</span>
+            <span className={styles.itemQuantity}>
+              {Number(item.quantity)}x
+            </span>
             <div className={styles.itemName}>
               {item.productName}
               {item.variantName && <small>{item.variantName}</small>}
@@ -115,7 +118,7 @@ export function KitchenTicketCard({
           </li>
         ))}
       </ul>
-      {hasMore && (
+      {ticket.order.items.length > 0 && (
         <button
           className={styles.detailsButton}
           aria-expanded={expanded}
@@ -129,10 +132,12 @@ export function KitchenTicketCard({
           )}
           {expanded
             ? "Yig'ish"
-            : `Yana ${ticket.order.items.length - 3} ta mahsulot`}
+            : ticket.order.items.length > 1
+              ? `Batafsil · ${ticket.order.items.length} ta mahsulot`
+              : "Batafsil"}
         </button>
       )}
-      {note && <p className={styles.note}>{note}</p>}
+      {expanded && note && <p className={styles.note}>{note}</p>}
       <div className={styles.ticketActions}>
         {action && (
           <button

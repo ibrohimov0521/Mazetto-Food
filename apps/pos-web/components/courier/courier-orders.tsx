@@ -5,6 +5,7 @@ import {
   Banknote,
   Check,
   ChevronDown,
+  ChevronUp,
   Clock3,
   History,
   MapPin,
@@ -109,7 +110,9 @@ function historyActor(entry: CourierStatusHistoryEntry): string {
   if (employee) {
     return [employee.firstName, employee.lastName].filter(Boolean).join(" ");
   }
-  return entry.changedByUser?.displayName || entry.changedByUser?.email || "Tizim";
+  return (
+    entry.changedByUser?.displayName || entry.changedByUser?.email || "Tizim"
+  );
 }
 
 const readyForDelivery = (order: CourierOrder) =>
@@ -626,13 +629,26 @@ export function CourierOrdersPage() {
                       </span>
                       {order.order?.statusHistory?.length ? (
                         <details className={styles.deliveryDetails}>
-                          <summary><Clock3 size={14} /> Statuslar tarixi</summary>
+                          <summary>
+                            <Clock3 size={14} /> Statuslar tarixi
+                          </summary>
                           <ul className={styles.itemList}>
                             {order.order.statusHistory.map((entry) => (
                               <li key={entry.id}>
-                                <span>{orderStatusLabels[entry.toStatus] ?? entry.toStatus}</span>
+                                <span>
+                                  {orderStatusLabels[entry.toStatus] ??
+                                    entry.toStatus}
+                                </span>
                                 <span className={styles.muted}>
-                                  {historyActor(entry)} · {new Date(entry.createdAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tashkent" })}
+                                  {historyActor(entry)} ·{" "}
+                                  {new Date(entry.createdAt).toLocaleTimeString(
+                                    "uz-UZ",
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      timeZone: "Asia/Tashkent",
+                                    },
+                                  )}
                                 </span>
                               </li>
                             ))}
@@ -758,6 +774,7 @@ function CourierOrderCard({
   canUpdate: boolean;
   onStatus: (status: DeliveryAction) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const point = resolvePoint(order.deliveryLocation);
   const status = order.order?.status ?? order.status;
   const isReady = readyForDelivery(order);
@@ -831,71 +848,84 @@ function CourierOrderCard({
             </span>
           </div>
         </div>
-        <div className={styles.customerRow}>
-          <div>
-            <strong>{order.customer?.name ?? "Mijoz"}</strong>
-            <span className={styles.muted}>
-              {order.customer?.phone || "Telefon kiritilmagan"}
-            </span>
-          </div>
-          {order.customer?.phone && (
-            <a
-              href={`tel:${order.customer.phone}`}
-              className={styles.button}
-              aria-label={`${order.customer.name}: qo'ng'iroq qilish`}
-            >
-              <Phone size={18} />
-              <span className={styles.phoneText}>Qo'ng'iroq</span>
-            </a>
-          )}
-        </div>
-        {order.notes && <p className={styles.note}>{order.notes}</p>}
-        {destination ? (
-          <div className={styles.routeLinks}>
-            <a
-              className={styles.secondary}
-              href={`https://www.google.com/maps/dir/?api=1&destination=${destination}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Navigation size={17} />
-              Google Maps
-            </a>
-            <a
-              className={styles.button}
-              href={`https://yandex.com/maps/?rtext=~${destination}&rtt=auto`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <MapPin size={17} />
-              Yandex Maps
-            </a>
-          </div>
-        ) : (
-          <p className={styles.note}>
-            Lokatsiya belgilanmagan. Manzilni mijozdan aniqlashtiring.
-          </p>
-        )}
-        <details className={styles.deliveryDetails}>
-          <summary>
-            <ChevronDown size={16} />
-            {order.order?.items?.reduce(
-              (sum, item) => sum + Number(item.quantity),
-              0,
-            ) ?? 0}{" "}
-            ta mahsulot<strong>{formatMoney(order.order?.total)}</strong>
-          </summary>
-          <ul className={styles.itemList}>
-            {order.order?.items?.map((item) => (
-              <li key={item.id}>
-                <span className={styles.itemQuantity}>
-                  {Number(item.quantity)}x
+        <button
+          className={styles.detailsButton}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+          type="button"
+        >
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          {expanded ? "Yig'ish" : "Batafsil"}
+        </button>
+        {expanded && (
+          <>
+            <div className={styles.customerRow}>
+              <div>
+                <strong>{order.customer?.name ?? "Mijoz"}</strong>
+                <span className={styles.muted}>
+                  {order.customer?.phone || "Telefon kiritilmagan"}
                 </span>
-                <span className={styles.itemName}>{item.productName}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
+              </div>
+              {order.customer?.phone && (
+                <a
+                  href={`tel:${order.customer.phone}`}
+                  className={styles.button}
+                  aria-label={`${order.customer.name}: qo'ng'iroq qilish`}
+                >
+                  <Phone size={18} />
+                  <span className={styles.phoneText}>Qo'ng'iroq</span>
+                </a>
+              )}
+            </div>
+            {order.notes && <p className={styles.note}>{order.notes}</p>}
+            {destination ? (
+              <div className={styles.routeLinks}>
+                <a
+                  className={styles.secondary}
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${destination}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Navigation size={17} />
+                  Google Maps
+                </a>
+                <a
+                  className={styles.button}
+                  href={`https://yandex.com/maps/?rtext=~${destination}&rtt=auto`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <MapPin size={17} />
+                  Yandex Maps
+                </a>
+              </div>
+            ) : (
+              <p className={styles.note}>
+                Lokatsiya belgilanmagan. Manzilni mijozdan aniqlashtiring.
+              </p>
+            )}
+            <details className={styles.deliveryDetails}>
+              <summary>
+                <ChevronDown size={16} />
+                {order.order?.items?.reduce(
+                  (sum, item) => sum + Number(item.quantity),
+                  0,
+                ) ?? 0}{" "}
+                ta mahsulot<strong>{formatMoney(order.order?.total)}</strong>
+              </summary>
+              <ul className={styles.itemList}>
+                {order.order?.items?.map((item) => (
+                  <li key={item.id}>
+                    <span className={styles.itemQuantity}>
+                      {Number(item.quantity)}x
+                    </span>
+                    <span className={styles.itemName}>{item.productName}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </>
+        )}
         {canUpdate && (
           <div className={styles.deliveryFooter}>
             <button
