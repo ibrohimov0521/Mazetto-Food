@@ -67,7 +67,7 @@ export function FormField({
 
       {error ? (
         <p
-          className="text-xs font-medium text-mz-danger"
+          className="text-[13px] font-medium text-mz-danger"
           id={`${id}-error`}
           role="alert"
         >
@@ -75,7 +75,7 @@ export function FormField({
         </p>
       ) : null}
       {hint ? (
-        <p className="text-xs text-mz-text-muted" id={`${id}-hint`}>
+        <p className="text-[13px] text-mz-text-muted" id={`${id}-hint`}>
           {hint}
         </p>
       ) : null}
@@ -185,7 +185,7 @@ export function Checkbox({
         <span className="min-w-0">{label}</span>
       </label>
       {description ? (
-        <p className="px-3 text-xs text-mz-text-muted" id={`${id}-description`}>
+        <p className="px-3 text-[13px] text-mz-text-muted" id={`${id}-description`}>
           {description}
         </p>
       ) : null}
@@ -225,7 +225,7 @@ export function CheckboxGroup({
       {children}
       {error ? (
         <p
-          className="mt-1 text-xs font-medium text-mz-danger"
+          className="mt-1 text-[13px] font-medium text-mz-danger"
           id={`${id}-error`}
           role="alert"
         >
@@ -233,7 +233,7 @@ export function CheckboxGroup({
         </p>
       ) : null}
       {hint ? (
-        <p className="mt-1 text-xs text-mz-text-muted" id={`${id}-hint`}>
+        <p className="mt-1 text-[13px] text-mz-text-muted" id={`${id}-hint`}>
           {hint}
         </p>
       ) : null}

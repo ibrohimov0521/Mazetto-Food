@@ -51,7 +51,7 @@ export function StatBox({
   return (
     <div className={`rounded-mz-card p-4 shadow-mz-card ${statTones[tone]}`}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+        <p className="text-[13px] font-semibold uppercase tracking-wide opacity-80">
           {label}
         </p>
         {icon ? (
@@ -66,7 +66,7 @@ export function StatBox({
       <p className="mt-2 text-3xl font-bold leading-none lg:text-2xl xl:text-3xl">
         {value}
       </p>
-      {hint ? <p className="mt-2 text-xs opacity-75">{hint}</p> : null}
+      {hint ? <p className="mt-2 text-[13px] opacity-75">{hint}</p> : null}
     </div>
   );
 }
@@ -96,14 +96,14 @@ export function InfoBox({
         <Icon className="h-6 w-6" name={icon} />
       </span>
       <div className="min-w-0 flex-1 px-1">
-        <p className="truncate text-xs font-semibold uppercase tracking-wide text-mz-text-muted">
+        <p className="truncate text-[13px] font-semibold uppercase tracking-wide text-mz-text-muted">
           {label}
         </p>
         <p className="mt-0.5 truncate text-xl font-bold text-mz-text">
           {value}
         </p>
         {description ? (
-          <p className="truncate text-xs text-mz-text-muted">{description}</p>
+          <p className="truncate text-[13px] text-mz-text-muted">{description}</p>
         ) : null}
       </div>
     </div>

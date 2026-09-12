@@ -168,7 +168,7 @@ export function DataTable<T>({
                 />
               ))}
               {rowActions ? (
-                <th className="sticky top-0 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-right text-xs font-bold uppercase tracking-wide text-mz-text-muted">
+                <th className="sticky top-0 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-right text-[13px] font-bold uppercase tracking-wide text-mz-text-muted">
                   Amal
                 </th>
               ) : null}
@@ -219,7 +219,7 @@ export function DataTable<T>({
                   className="flex items-start justify-between gap-3"
                   key={column.key}
                 >
-                  <dt className="text-xs font-medium text-mz-text-muted">
+                  <dt className="text-[13px] font-medium text-mz-text-muted">
                     {column.header}
                   </dt>
                   <dd className="text-right text-sm text-mz-text">
@@ -262,7 +262,7 @@ function SortableHeader<T>({
             : "descending"
           : undefined
       }
-      className={`sticky top-0 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-xs font-bold uppercase tracking-wide ${
+      className={`sticky top-0 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-[13px] font-bold uppercase tracking-wide ${
         isSorted ? "text-mz-info" : "text-mz-text-muted"
       } ${alignClass}`}
       scope="col"

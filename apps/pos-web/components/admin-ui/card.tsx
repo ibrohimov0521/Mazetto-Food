@@ -39,7 +39,7 @@ export function CardHeader({
           {title}
         </h2>
         {description ? (
-          <p className="mt-0.5 text-xs text-mz-text-muted">{description}</p>
+          <p className="mt-0.5 text-[13px] text-mz-text-muted">{description}</p>
         ) : null}
       </div>
       {actions ? (

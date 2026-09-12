@@ -139,12 +139,12 @@ export function ImageDropzone({
         )}
 
         <div className="min-w-[12rem] flex-1">
-          <p className="text-xs text-mz-text-muted" id={describedBy}>
+          <p className="text-[13px] text-mz-text-muted" id={describedBy}>
             Rasmni shu yerga tashlang yoki tanlang. PNG, JPEG, WebP, GIF — 5 MB
             gacha.
           </p>
           {error ? (
-            <p className="mt-1 text-xs font-medium text-mz-danger" role="alert">
+            <p className="mt-1 text-[13px] font-medium text-mz-danger" role="alert">
               {error}
             </p>
           ) : null}

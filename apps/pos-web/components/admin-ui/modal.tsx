@@ -141,7 +141,7 @@ export function Modal({
             </h2>
             {description ? (
               <p
-                className="mt-0.5 text-xs text-mz-text-muted"
+                className="mt-0.5 text-[13px] text-mz-text-muted"
                 id="mz-modal-description"
               >
                 {description}

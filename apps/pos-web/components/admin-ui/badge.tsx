@@ -31,7 +31,7 @@ export function Badge({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-mz-pill px-2.5 py-0.5 text-xs font-bold ${tones[tone]}`}
+      className={`inline-flex items-center gap-1.5 rounded-mz-pill px-2.5 py-1 text-[13px] font-bold ${tones[tone]}`}
     >
       {withDot ? (
         <span

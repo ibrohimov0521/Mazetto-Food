@@ -43,7 +43,7 @@ export function Pagination({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
-      <p className="text-xs text-mz-text-muted" role="status">
+      <p className="text-[13px] text-mz-text-muted" role="status">
         {count === 0
           ? `${noun} yo'q`
           : total === undefined

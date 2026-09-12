@@ -61,7 +61,7 @@ export function Toggle({
           {label}
         </label>
         {description ? (
-          <p className="text-xs text-mz-text-muted" id={`${id}-description`}>
+          <p className="text-[13px] text-mz-text-muted" id={`${id}-description`}>
             {description}
           </p>
         ) : null}
