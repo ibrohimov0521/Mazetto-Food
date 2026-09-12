@@ -71,7 +71,7 @@ export const adminNavGroups: AdminNavGroup[] = [
        */
       {
         label: "Filial boshqaruvi",
-        icon: "building",
+        icon: "monitor",
         href: "/manager/dashboard",
         permission: "DASHBOARD_VIEW",
         roles: ["BRANCH_MANAGER"],
@@ -124,6 +124,55 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/kitchen-monitor",
         permission: "KITCHEN_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+      },
+    ],
+  },
+  {
+    id: "cash",
+    label: "Kassa va moliya",
+    items: [
+      {
+        label: "Smenalar",
+        icon: "clock",
+        href: "/admin/shifts",
+        // 4-bosqichda qo'shilgan permission — `SHIFT_VIEW_OWN` dan farqli,
+        // butun filial smenalarini ko'rish huquqini beradi.
+        permission: "SHIFT_VIEW_BRANCH",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+      },
+      {
+        label: "Cheklar",
+        icon: "scroll",
+        href: "/admin/receipts",
+        permission: "RECEIPT_VIEW",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+      },
+      {
+        label: "To'lovlar",
+        icon: "wallet",
+        href: "/admin/payments",
+        permission: "PAYMENT_VIEW",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+      },
+      {
+        label: "Xarajatlar",
+        icon: "arrowDown",
+        href: "/admin/expenses",
+        permission: "REPORT_EXPENSES_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+      },
+      /*
+       * Savdo hisoboti SHU guruhda: u pul oqimining bir qismi va
+       * o'zi uchun alohida guruh ochishga arzimaydi. Ilgari u yakka
+       * elementli "Hisobotlar" guruhi edi, ya'ni yon panelda bitta
+       * havola uchun butun sarlavha band qilinardi.
+       */
+      {
+        label: "Hisobotlar",
+        icon: "chart",
+        href: "/admin/reports",
+        permission: "REPORT_SALES_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
     ],
   },
@@ -182,7 +231,7 @@ export const adminNavGroups: AdminNavGroup[] = [
       },
       {
         label: "Yetkazib beruvchilar",
-        icon: "truck",
+        icon: "inbox",
         href: "/admin/suppliers",
         permission: "INVENTORY_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
@@ -218,19 +267,6 @@ export const adminNavGroups: AdminNavGroup[] = [
     ],
   },
   {
-    id: "reports",
-    label: "Hisobotlar",
-    items: [
-      {
-        label: "Savdo hisoboti",
-        icon: "chart",
-        href: "/admin/reports",
-        permission: "REPORT_SALES_VIEW",
-        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-      },
-    ],
-  },
-  {
     id: "settings",
     label: "Sozlamalar",
     items: [
@@ -252,7 +288,7 @@ export const adminNavGroups: AdminNavGroup[] = [
       {
         // Kill switch va cheklovlar — faqat SUPER_ADMIN.
         label: "Biznes sozlamalari",
-        icon: "gauge",
+        icon: "filter",
         href: "/admin/settings",
         permission: "SETTING_MANAGE",
         roles: ["SUPER_ADMIN"],
@@ -264,42 +300,6 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/audit",
         permission: "AUDIT_VIEW",
         roles: ["SUPER_ADMIN"],
-      },
-    ],
-  },
-  {
-    id: "cash",
-    label: "Kassa va moliya",
-    items: [
-      {
-        label: "Smenalar",
-        icon: "clock",
-        href: "/admin/shifts",
-        // 4-bosqichda qo'shilgan permission — `SHIFT_VIEW_OWN` dan farqli,
-        // butun filial smenalarini ko'rish huquqini beradi.
-        permission: "SHIFT_VIEW_BRANCH",
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
-      },
-      {
-        label: "Cheklar",
-        icon: "scroll",
-        href: "/admin/receipts",
-        permission: "RECEIPT_VIEW",
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-      },
-      {
-        label: "To'lovlar",
-        icon: "wallet",
-        href: "/admin/payments",
-        permission: "PAYMENT_VIEW",
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-      },
-      {
-        label: "Xarajatlar",
-        icon: "banknote",
-        href: "/admin/expenses",
-        permission: "REPORT_EXPENSES_VIEW",
-        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
     ],
   },
