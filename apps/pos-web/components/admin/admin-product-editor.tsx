@@ -19,6 +19,7 @@ import {
   Textarea,
   TextInput,
 } from "../admin-ui/form";
+import { Icon } from "../admin-ui/icon";
 import { Modal } from "../admin-ui/modal";
 import { ImageDropzone } from "../admin-ui/image-dropzone";
 import { useToast } from "../admin-ui/toast";
@@ -96,7 +97,12 @@ type Product = {
   sortOrder: number;
   catalogVisibility: "CANONICAL" | "LEGACY" | "INTERNAL";
   variants: Variant[];
-  modifiers?: { modifier: Modifier }[];
+  modifiers?: {
+    isRequired?: boolean;
+    minSelect?: number | null;
+    maxSelect?: number | null;
+    modifier: Modifier;
+  }[];
   bundleItems?: BundleItem[];
   branchAvailabilities?: BranchAvailability[];
 };
@@ -167,6 +173,21 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [baseline, setBaseline] = useState("");
   const [isDiscardOpen, setIsDiscardOpen] = useState(false);
+  const [modifierQuery, setModifierQuery] = useState("");
+  /** Saqlangan variantni olib tashlash tasdiqlanadi — u saqlashda yopiladi. */
+  const [pendingVariantRemoval, setPendingVariantRemoval] = useState<
+    number | null
+  >(null);
+  /*
+   * Biriktirilgan modifier'ning GURUH sozlamalari (majburiy, min, maks)
+   * `GET /menu/products/:id` da qaytadi, lekin `ProductModifierDto` faqat
+   * `modifierId` ni qabul qiladi — ya'ni ularni bu yerdan o'zgartirib
+   * bo'lmaydi. Shuning uchun ular FAQAT KO'RSATILADI, va `modifiers`
+   * massivi faqat tanlov O'ZGARGANDA yuboriladi: aks holda `updateProduct`
+   * ni har saqlash `deleteMany` + `createMany` qilib, bu sozlamalarni
+   * jimgina nolga tushirardi.
+   */
+  const [savedModifierIds, setSavedModifierIds] = useState<string[]>([]);
 
   const [form, setForm] = useState<ProductFormState>({
     name: "",
@@ -218,6 +239,15 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   const branches = data?.branches ?? [];
   const product = data?.product ?? null;
 
+  const modifierNeedle = modifierQuery.trim().toLowerCase();
+  const visibleModifiers = modifierNeedle
+    ? modifierCatalog.filter(
+        (modifier) =>
+          modifier.name.toLowerCase().includes(modifierNeedle) ||
+          modifier.code.toLowerCase().includes(modifierNeedle),
+      )
+    : modifierCatalog;
+
   useEffect(() => {
     if (!data) return;
 
@@ -240,6 +270,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
         return nextForm;
       });
       setSelectedModifierIds([]);
+      setSavedModifierIds([]);
       return;
     }
 
@@ -269,6 +300,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
 
     setVariants(nextVariants);
     setSelectedModifierIds(nextModifierIds);
+    setSavedModifierIds(nextModifierIds);
     setForm(nextForm);
     setBaseline(snapshot(nextForm, nextVariants, nextModifierIds));
   }, [data]);
@@ -417,13 +449,27 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
 
     setIsSaving(true);
 
+    /*
+     * `isActive` FAQAT PATCH da yuboriladi.
+     *
+     * `CreateProductDto` da bunday maydon yo'q, `main.ts` da esa
+     * `forbidNonWhitelisted: true` — ya'ni uni POST bilan yuborish
+     * "property isActive should not exist" degan 400 qaytarardi va YANGI
+     * MAHSULOT UMUMAN YARATILMASDI. Backend yangi mahsulotni har holda
+     * faol qiladi (`isAvailable: true`), shuning uchun yaratish formasida
+     * bu bayroq ko'rsatilmaydi ham.
+     */
+    const modifiersChanged =
+      [...selectedModifierIds].sort().join(",") !==
+      [...savedModifierIds].sort().join(",");
+
     const body = {
       categoryId: form.categoryId,
       name: form.name.trim(),
       description: form.description.trim() || undefined,
       image: form.image.trim() || undefined,
       preparationTime: Number(form.preparationTime) || undefined,
-      isActive: form.isActive,
+      ...(isNew ? {} : { isActive: form.isActive }),
       isRecommended: form.isRecommended,
       sortOrder: Number(form.sortOrder) || 0,
       variants: cleanVariants.map((variant) => ({
@@ -435,7 +481,13 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
           : {}),
         isDefault: variant.isDefault,
       })),
-      modifiers: selectedModifierIds.map((modifierId) => ({ modifierId })),
+      ...(isNew || modifiersChanged
+        ? {
+            modifiers: selectedModifierIds.map((modifierId) => ({
+              modifierId,
+            })),
+          }
+        : {}),
     };
 
     try {
@@ -638,14 +690,23 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
               </FormField>
 
               <div className="flex flex-wrap gap-3">
-                <Checkbox
-                  boxed
-                  checked={form.isActive}
-                  label="Faol"
-                  onChange={(checked) =>
-                    setForm({ ...form, isActive: checked })
-                  }
-                />
+                {/*
+                  "Faol" FAQAT tahrirlashda: yaratish endpoint'i bu maydonni
+                  qabul qilmaydi va mahsulotni har holda faol qiladi.
+                  Ilgari u yaratish formasida ham turardi va hech narsaga
+                  ta'sir qilmasdi (aslida so'rovni 400 bilan buzardi).
+                */}
+                {isNew ? null : (
+                  <Checkbox
+                    boxed
+                    checked={form.isActive}
+                    description="Nofaol mahsulot menyuda va mijoz saytida ko'rinmaydi"
+                    label="Faol"
+                    onChange={(checked) =>
+                      setForm({ ...form, isActive: checked })
+                    }
+                  />
+                )}
                 <Checkbox
                   boxed
                   checked={form.isRecommended}
@@ -655,6 +716,12 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                   }
                 />
               </div>
+              {isNew ? (
+                <p className="text-[13px] text-mz-text-muted">
+                  Yangi mahsulot darhol faol bo&apos;ladi. Uni menyudan olish
+                  saqlangandan keyin mumkin.
+                </p>
+              ) : null}
             </CardBody>
           </Card>
 
@@ -671,7 +738,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
             <CardBody className="grid gap-3">
               {errors.variantDefault ? (
                 <p
-                  className="rounded-mz-control bg-mz-danger-bg px-3 py-2 text-xs font-medium text-mz-danger"
+                  className="rounded-mz-control bg-mz-danger-bg px-3 py-2 text-[13px] font-medium text-mz-danger"
                   role="alert"
                 >
                   {errors.variantDefault}
@@ -758,7 +825,20 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                     </Button>
                     <Button
                       disabled={variants.length === 1}
-                      onClick={() => removeVariant(index)}
+                      onClick={() => {
+                        /*
+                          Saqlangan variantni olib tashlash MIJOZGA
+                          ko'rinadigan o'zgarish (saqlashda u yopiladi),
+                          shuning uchun tasdiqlanadi. Hali saqlanmagan
+                          qatorni olib tashlash esa oddiy forma tahriri.
+                        */
+                        if (variant.id) {
+                          setPendingVariantRemoval(index);
+                          return;
+                        }
+
+                        removeVariant(index);
+                      }}
                       size="sm"
                       variant="danger"
                     >
@@ -770,6 +850,18 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
             </CardBody>
           </Card>
 
+          {/*
+            QO'SHIMCHA BIRIKTIRISH.
+
+            Ilgari bu tekis, 28px balandlikdagi `text-xs` chiplar ro'yxati
+            edi: qidiruv yo'q, tanlanganlar aralash turardi va guruh
+            sozlamalari (majburiy / min / maks) umuman ko'rinmasdi. Endi:
+              - chip balandligi 40px, matn 13px;
+              - qidiruv maydoni (katalog o'sganda kerak);
+              - tanlanganlar tepada, alohida bo'limda, olib tashlash bilan;
+              - biriktirilgan modifier'ning guruh sozlamalari ko'rsatiladi
+                (ular faqat o'qish uchun).
+          */}
           <Card>
             <CardHeader
               actions={
@@ -777,42 +869,128 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                   Katalogni ochish
                 </ButtonLink>
               }
-              description={`${selectedModifierIds.length} ta tanlangan`}
+              description={`${selectedModifierIds.length} ta biriktirilgan`}
               title="Qo'shimchalar (modifier)"
             />
-            <CardBody>
+            <CardBody className="grid gap-3">
               {modifierCatalog.length === 0 ? (
-                <p className="text-sm text-mz-text-muted">
-                  Modifier katalogi bo&apos;sh. Avval qo&apos;shimcha yarating.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {modifierCatalog.map((modifier) => {
-                    const isSelected = selectedModifierIds.includes(
-                      modifier.id,
-                    );
-
-                    return (
-                      <button
-                        aria-pressed={isSelected}
-                        className={`inline-flex min-h-9 items-center rounded-mz-pill border px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                          isSelected
-                            ? "border-mz-accent bg-mz-info-bg text-mz-info"
-                            : "border-mz-border bg-mz-surface text-mz-text-muted hover:border-mz-accent"
-                        } ${modifier.isActive ? "" : "opacity-55"}`}
-                        key={modifier.id}
-                        onClick={() => toggleModifier(modifier.id)}
-                        type="button"
-                      >
-                        {modifier.name}
-                        {Number(modifier.price) > 0
-                          ? ` · ${formatMoney(modifier.price)}`
-                          : ""}
-                        {modifier.isActive ? "" : " (nofaol)"}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-mz-text-muted">
+                    Modifier katalogi bo&apos;sh.
+                  </p>
+                  <ButtonLink href="/admin/modifiers" size="sm" variant="ghost">
+                    Qo&apos;shimcha yaratish
+                  </ButtonLink>
                 </div>
+              ) : (
+                <>
+                  {selectedModifierIds.length > 0 ? (
+                    <div className="grid gap-2 rounded-mz-control bg-mz-info-bg/60 p-3">
+                      <p className="text-[13px] font-semibold text-mz-text">
+                        Biriktirilgan
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedModifierIds.map((modifierId) => {
+                          const modifier = modifierCatalog.find(
+                            (entry) => entry.id === modifierId,
+                          );
+                          const group = (product?.modifiers ?? []).find(
+                            (entry) => entry.modifier.id === modifierId,
+                          );
+
+                          if (!modifier) {
+                            return null;
+                          }
+
+                          return (
+                            <span
+                              className="inline-flex min-h-10 items-center gap-2 rounded-mz-pill border border-mz-accent bg-mz-surface px-3.5 py-1.5 text-[13px] font-semibold text-mz-info"
+                              key={modifierId}
+                            >
+                              {modifier.name}
+                              {Number(modifier.price) > 0
+                                ? ` · ${formatMoney(modifier.price)}`
+                                : ""}
+                              {group?.isRequired ? (
+                                <Badge tone="warning">majburiy</Badge>
+                              ) : null}
+                              {group && (group.minSelect || group.maxSelect) ? (
+                                <Badge tone="neutral">
+                                  {group.minSelect ?? 0}
+                                  {"–"}
+                                  {group.maxSelect ?? "∞"}
+                                </Badge>
+                              ) : null}
+                              <button
+                                aria-label={`${modifier.name} — biriktirishni olib tashlash`}
+                                className="grid h-6 w-6 place-items-center rounded-mz-pill text-mz-text-muted transition hover:bg-mz-danger-bg hover:text-mz-danger"
+                                onClick={() => toggleModifier(modifierId)}
+                                type="button"
+                              >
+                                <Icon className="h-3.5 w-3.5" name="close" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {modifierCatalog.length > 8 ? (
+                    <FormField label="Katalogdan qidirish">
+                      {(props) => (
+                        <TextInput
+                          {...props}
+                          placeholder="Qo'shimcha nomi"
+                          value={modifierQuery}
+                          onChange={(event) =>
+                            setModifierQuery(event.target.value)
+                          }
+                        />
+                      )}
+                    </FormField>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-2">
+                    {visibleModifiers.map((modifier) => {
+                      const isSelected = selectedModifierIds.includes(
+                        modifier.id,
+                      );
+
+                      return (
+                        <button
+                          aria-pressed={isSelected}
+                          className={`inline-flex min-h-10 items-center rounded-mz-pill border px-3.5 py-2 text-[13px] font-semibold transition ${
+                            isSelected
+                              ? "border-mz-accent bg-mz-info-bg text-mz-info"
+                              : "border-mz-border-strong bg-mz-surface text-mz-text hover:border-mz-accent"
+                          } ${modifier.isActive ? "" : "opacity-60"}`}
+                          key={modifier.id}
+                          onClick={() => toggleModifier(modifier.id)}
+                          type="button"
+                        >
+                          {modifier.name}
+                          {Number(modifier.price) > 0
+                            ? ` · ${formatMoney(modifier.price)}`
+                            : ""}
+                          {modifier.isActive ? "" : " (nofaol)"}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {visibleModifiers.length === 0 ? (
+                    <p className="text-[13px] text-mz-text-muted">
+                      Qidiruvga mos qo&apos;shimcha topilmadi.
+                    </p>
+                  ) : null}
+
+                  <p className="text-[13px] text-mz-text-muted">
+                    Guruh sozlamalari (majburiy, eng kam va eng ko&apos;p
+                    tanlov) faqat ko&apos;rsatiladi — biriktirish
+                    payload&apos;i ularni qabul qilmaydi.
+                  </p>
+                </>
               )}
             </CardBody>
           </Card>
@@ -840,7 +1018,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                 )}
                 {product?.isCombo ? <Badge tone="info">SET</Badge> : null}
               </div>
-              <p className="text-xs text-mz-text-muted">
+              <p className="text-[13px] text-mz-text-muted">
                 Yangi mahsulot avtomatik ommaviy katalogga kirmaydi. Katalog
                 siyosati alohida tasdiqlanadi.
               </p>
@@ -904,7 +1082,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
               <CardBody className="grid gap-1.5">
                 {product.bundleItems.map((item) => (
                   <div
-                    className="flex justify-between rounded-mz-control bg-mz-surface-sunken px-3 py-2 text-xs"
+                    className="flex justify-between rounded-mz-control bg-mz-surface-sunken px-3 py-2 text-[13px]"
                     key={item.id}
                   >
                     <span className="text-mz-text">{item.componentName}</span>
@@ -920,12 +1098,12 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
           <Card>
             <CardHeader title="Rasm boshqaruvi" />
             <CardBody>
-              <p className="text-xs text-mz-text-muted">
+              <p className="text-[13px] text-mz-text-muted">
                 Rasm to&apos;g&apos;ridan-to&apos;g&apos;ri yuklanadi va media
                 serverida saqlanadi. Fayl nomi avtomatik beriladi, ya&apos;ni
                 bir xil nomli ikki rasm bir-birini almashtirmaydi.
               </p>
-              <p className="mt-2 text-xs text-mz-text-muted">
+              <p className="mt-2 text-[13px] text-mz-text-muted">
                 Mavjud mahsulotlarning yo&apos;llari o&apos;zgarmadi — quyidagi
                 matn maydonini qo&apos;lda tahrirlash ham ishlaydi.
               </p>
@@ -951,7 +1129,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
       <div className="sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-3 rounded-mz-card border border-mz-border bg-mz-surface px-4 py-3 shadow-mz-overlay">
         <p
           aria-live="polite"
-          className="mr-auto flex items-center gap-2 text-xs font-medium text-mz-text-muted"
+          className="mr-auto flex items-center gap-2 text-[13px] font-medium text-mz-text-muted"
         >
           {isDirty ? (
             <>
@@ -988,6 +1166,39 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
           {isSaving ? "Saqlanmoqda" : "Saqlash"}
         </Button>
       </div>
+
+      <Modal
+        description="Variant saqlaganingizda yopiladi — buyurtma tarixi saqlanadi. Standart variant olib tashlansa, birinchi qolgan variant standart bo'ladi."
+        footer={
+          <>
+            <Button
+              onClick={() => setPendingVariantRemoval(null)}
+              variant="ghost"
+            >
+              Bekor qilish
+            </Button>
+            <Button
+              onClick={() => {
+                if (pendingVariantRemoval !== null) {
+                  removeVariant(pendingVariantRemoval);
+                }
+
+                setPendingVariantRemoval(null);
+              }}
+              variant="danger"
+            >
+              Olib tashlash
+            </Button>
+          </>
+        }
+        isOpen={pendingVariantRemoval !== null}
+        onClose={() => setPendingVariantRemoval(null)}
+        title={
+          pendingVariantRemoval !== null
+            ? `${variants[pendingVariantRemoval]?.name || "Variant"} olib tashlansinmi?`
+            : "Variantni olib tashlash"
+        }
+      />
 
       <Modal
         description="Kiritilgan o'zgarishlar saqlanmaydi."

@@ -12,7 +12,7 @@ export default function KitchenMonitorPage() {
           { label: "Operatsiya" },
           { label: "Oshxona" },
         ]}
-        description="Faol ticketlar — faqat kuzatish, holat o'zgartirilmaydi"
+        description="Faol ticketlar, kutish vaqti va ruxsat bo'lsa oshxona qadamlari"
         title="Oshxona monitoringi"
       />
       <AdminKitchenMonitor />

@@ -12,7 +12,7 @@ export default function OnlineOrdersPage() {
           { label: "Operatsiya" },
           { label: "Online buyurtmalar" },
         ]}
-        description="Sayt va Telegram orqali kelgan mijoz buyurtmalari"
+        description="Sayt va Telegram buyurtmalarini tasdiqlash, bekor qilish va kuryerga biriktirish"
         title="Online buyurtmalar"
       />
       <AdminOnlineOrdersPage />

@@ -1,28 +1,49 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { hasPermission } from "../../lib/auth";
 import { formatMoney } from "../../lib/order-display";
+import { useApiResource } from "../../lib/use-api-resource";
+import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
-import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
+import {
+  DataTable,
+  RowAction,
+  type DataTableColumn,
+} from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
-import { FormField, TextInput } from "../admin-ui/form";
+import {
+  Checkbox,
+  FilterBar,
+  focusFirstInvalidField,
+  FormField,
+  Select,
+  TextInput,
+} from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
 import { useToast } from "../admin-ui/toast";
 
 /*
  * Qo'shimchalar (modifier) katalogi.
  *
- * Backend'da faqat `POST /menu/modifiers` bor edi — ro'yxat ham, tahrirlash ham
- * yo'q edi. Katalog 2-bosqichida `GET /menu/modifiers` va
- * `PATCH /menu/modifiers/:id` qo'shildi.
- *
  * O'chirish endpoint'i yo'q va ataylab qo'shilmadi: modifier buyurtma
  * tarixidagi `modifierSnapshot` bilan bog'liq. Uni nofaol qilish
- * (`isActive: false`) tarixiy yaxlitlikni saqlaydi — bu
- * `policy_decisions_to_finalize.MENU_DELETE` dagi arxivlash tavsiyasiga mos.
+ * (`isActive: false`) tarixiy yaxlitlikni saqlaydi.
+ *
+ * Bu qayta ishlashda tuzatilganlar:
+ *   - "Nofaol qilish" QIZIL `danger` tugma edi. U qaytariladigan amal —
+ *     qizil faqat buzuvchi harakatlar uchun. Endi u qator amali
+ *     (ikonka + `aria-label`), neytral ohangda.
+ *   - Amallar oddiy ustunda edi, ya'ni mobil kartochkada "Holat: [tugma]"
+ *     ko'rinishida chiqardi. Endi `DataTable` ning `rowActions` i.
+ *   - Har o'zgarishdan keyin jadval to'liq skeletonga aylanardi; endi
+ *     oldingi ma'lumot ko'rinib turadi.
+ *   - Katalog o'sib borishi uchun qidiruv va holat filtri qo'shildi.
+ *   - Forma tugmalari `<form>` dan tashqarida, oynaning tanasida edi; endi
+ *     `Modal` ning `footer` slotida.
  */
 
 type Modifier = {
@@ -50,46 +71,56 @@ const emptyForm: ModifierForm = {
 };
 
 export function AdminModifiersPage() {
+  const { user } = useAuth();
   const { showToast } = useToast();
-  const [modifiers, setModifiers] = useState<Modifier[]>([]);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const canCreate = hasPermission(user, "MENU_CREATE");
+  const canEdit = hasPermission(user, "MENU_EDIT");
+
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("ALL");
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ModifierForm>(emptyForm);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  /** Qaysi qator hozir serverga yozilmoqda — takroriy bosishni to'sadi. */
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () => apiFetch<Modifier[]>("/menu/modifiers?includeInactive=true"),
+    [],
+    "Qo'shimchalarni yuklab bo'lmadi.",
+  );
+  const modifiers = data ?? [];
 
-    try {
-      setModifiers(
-        await apiFetch<Modifier[]>("/menu/modifiers?includeInactive=true"),
-      );
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
 
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Qo'shimchalarni yuklab bo'lmadi.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    return modifiers.filter((modifier) => {
+      const matchesSearch =
+        !needle ||
+        modifier.name.toLowerCase().includes(needle) ||
+        modifier.code.toLowerCase().includes(needle);
+      const matchesStatus =
+        status === "ALL" ||
+        (status === "ACTIVE" ? modifier.isActive : !modifier.isActive);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+      return matchesSearch && matchesStatus;
+    });
+  }, [modifiers, query, status]);
+
+  const isFiltered = query.trim() !== "" || status !== "ALL";
 
   function openCreate(): void {
     setEditingId(null);
     setForm(emptyForm);
+    setErrors({});
     setIsEditorOpen(true);
   }
 
@@ -101,16 +132,33 @@ export function AdminModifiersPage() {
       sortOrder: String(modifier.sortOrder),
       isActive: modifier.isActive,
     });
+    setErrors({});
     setIsEditorOpen(true);
   }
 
-  async function save(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-
+  async function save(): Promise<void> {
+    const nextErrors: Record<string, string> = {};
     const price = Number(form.price);
+    const sortOrder = Number(form.sortOrder);
 
-    if (!Number.isFinite(price) || price < 0) {
-      showToast("Narx noto'g'ri.", "danger");
+    if (!form.name.trim()) {
+      nextErrors.name = "Qo'shimcha nomi kiritilishi shart.";
+    }
+
+    if (form.price === "" || !Number.isFinite(price) || price < 0) {
+      nextErrors.price = "Narx 0 yoki undan katta son bo'lishi kerak.";
+    }
+
+    if (editingId && (!Number.isFinite(sortOrder) || sortOrder < 0)) {
+      nextErrors.sortOrder = "Tartib 0 yoki undan katta son bo'lishi kerak.";
+    }
+
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      window.requestAnimationFrame(() =>
+        focusFirstInvalidField(document.getElementById("modifier-form")),
+      );
       return;
     }
 
@@ -123,13 +171,18 @@ export function AdminModifiersPage() {
           body: JSON.stringify({
             name: form.name.trim(),
             price,
-            sortOrder: Number(form.sortOrder) || 0,
+            sortOrder,
             isActive: form.isActive,
           }),
         });
         showToast("Qo'shimcha yangilandi.", "success");
       } else {
-        // Yaratish endpoint'i faqat nom va narxni qabul qiladi.
+        /*
+         * `CreateModifierDto` FAQAT `name` va `price` ni qabul qiladi
+         * (`main.ts` da `forbidNonWhitelisted: true`, ya'ni ortiqcha maydon
+         * 400 beradi). Shuning uchun tartib va faollik yaratilgandan keyin
+         * tahrirlanadi — forma ham shuni aytadi.
+         */
         await apiFetch("/menu/modifiers", {
           method: "POST",
           body: JSON.stringify({ name: form.name.trim(), price }),
@@ -138,7 +191,7 @@ export function AdminModifiersPage() {
       }
 
       setIsEditorOpen(false);
-      await load();
+      load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
@@ -153,17 +206,30 @@ export function AdminModifiersPage() {
     }
   }
 
+  /*
+   * Faollikni almashtirish QAYTARILADIGAN amal — tasdiqlash oynasi kerak
+   * emas, lekin natija ko'rinishi shart: qator band bo'lganda ikkinchi
+   * bosish o'tmaydi va javob toast bilan aytiladi.
+   */
   async function toggleActive(modifier: Modifier): Promise<void> {
+    if (busyId) {
+      return;
+    }
+
+    setBusyId(modifier.id);
+
     try {
       await apiFetch(`/menu/modifiers/${modifier.id}`, {
         method: "PATCH",
         body: JSON.stringify({ isActive: !modifier.isActive }),
       });
       showToast(
-        modifier.isActive ? "Nofaol qilindi." : "Faollashtirildi.",
+        modifier.isActive
+          ? `${modifier.name} nofaol qilindi.`
+          : `${modifier.name} faollashtirildi.`,
         "success",
       );
-      await load();
+      load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
@@ -173,6 +239,8 @@ export function AdminModifiersPage() {
         caught instanceof Error ? caught.message : "O'zgartirib bo'lmadi.",
         "danger",
       );
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -184,7 +252,9 @@ export function AdminModifiersPage() {
       render: (modifier) => (
         <div className="min-w-0">
           <p className="truncate font-semibold text-mz-text">{modifier.name}</p>
-          <code className="text-xs text-mz-text-muted">{modifier.code}</code>
+          <p className="truncate text-[13px] text-mz-text-muted">
+            {modifier.code}
+          </p>
         </div>
       ),
     },
@@ -192,13 +262,27 @@ export function AdminModifiersPage() {
       key: "price",
       header: "Narx",
       align: "right",
-      render: (modifier) => formatMoney(modifier.price),
+      render: (modifier) =>
+        Number(modifier.price) > 0 ? (
+          <span className="font-semibold text-mz-text">
+            {formatMoney(modifier.price)}
+          </span>
+        ) : (
+          <span className="text-mz-text-muted">Bepul</span>
+        ),
     },
     {
       key: "products",
       header: "Mahsulotlarda",
       align: "right",
       render: (modifier) => `${modifier._count?.products ?? 0} ta`,
+    },
+    {
+      key: "sortOrder",
+      header: "Tartib",
+      align: "right",
+      hideOnMobile: true,
+      render: (modifier) => modifier.sortOrder,
     },
     {
       key: "status",
@@ -209,67 +293,144 @@ export function AdminModifiersPage() {
         </Badge>
       ),
     },
-    {
-      key: "actions",
-      header: "",
-      align: "right",
-      render: (modifier) => (
-        <span className="inline-flex gap-2">
-          <Button onClick={() => openEdit(modifier)} size="sm" variant="ghost">
-            Tahrir
-          </Button>
-          <Button
-            onClick={() => void toggleActive(modifier)}
-            size="sm"
-            variant={modifier.isActive ? "danger" : "secondary"}
-          >
-            {modifier.isActive ? "Nofaol qilish" : "Faollashtirish"}
-          </Button>
-        </span>
-      ),
-    },
   ];
 
   return (
-    <div className="grid gap-5">
-      {error ? (
-        <ErrorState message={error} onRetry={() => void load()} />
-      ) : null}
+    <div className="grid gap-4">
+      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
 
       <Card>
         <CardHeader
-          actions={<Button onClick={openCreate}>Yangi qo&apos;shimcha</Button>}
-          description="Qo'shimchalar mahsulot tahrirlash sahifasida biriktiriladi"
+          description={
+            isLoading || busyId
+              ? "Yangilanmoqda…"
+              : `${filtered.length} / ${modifiers.length} ta qo'shimcha`
+          }
           title="Qo'shimchalar katalogi"
+          {...(canCreate
+            ? {
+                actions: (
+                  <Button onClick={openCreate} size="lg">
+                    Yangi qo&apos;shimcha
+                  </Button>
+                ),
+              }
+            : {})}
         />
+
+        <FilterBar>
+          <div className="min-w-52 flex-1">
+            <FormField label="Qidiruv">
+              {(props) => (
+                <TextInput
+                  {...props}
+                  placeholder="Nomi yoki kodi"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              )}
+            </FormField>
+          </div>
+          <div className="w-full sm:w-44">
+            <FormField label="Holat">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value)}
+                >
+                  <option value="ALL">Barchasi</option>
+                  <option value="ACTIVE">Faol</option>
+                  <option value="INACTIVE">Nofaol</option>
+                </Select>
+              )}
+            </FormField>
+          </div>
+          {isFiltered ? (
+            <Button
+              onClick={() => {
+                setQuery("");
+                setStatus("ALL");
+              }}
+              variant="ghost"
+            >
+              Tozalash
+            </Button>
+          ) : null}
+        </FilterBar>
+
         <DataTable
           caption="Modifier katalogi"
           columns={columns}
-          emptyDescription="Qo'shimcha yarating, so'ng uni mahsulotlarga biriktiring."
-          emptyTitle="Qo'shimcha yo'q"
+          emptyDescription={
+            isFiltered
+              ? "Qidiruv yoki holat filtrini o'zgartirib ko'ring."
+              : "Qo'shimcha yarating, so'ng uni mahsulot tahrirlash sahifasida biriktiring."
+          }
+          emptyIcon={isFiltered ? "search" : "inbox"}
+          emptyTitle={
+            isFiltered ? "Mos qo'shimcha topilmadi" : "Qo'shimcha yo'q"
+          }
           getRowKey={(modifier) => modifier.id}
-          isLoading={isLoading}
-          rows={modifiers}
+          isLoading={isLoading && !data}
+          rows={filtered}
+          {...(canEdit
+            ? {
+                rowActions: (modifier: Modifier) => (
+                  <>
+                    <RowAction
+                      icon="pencil"
+                      label={`${modifier.name} — tahrirlash`}
+                      onClick={() => openEdit(modifier)}
+                    />
+                    <RowAction
+                      icon={modifier.isActive ? "close" : "check"}
+                      label={
+                        modifier.isActive
+                          ? `${modifier.name} — nofaol qilish`
+                          : `${modifier.name} — faollashtirish`
+                      }
+                      onClick={() => void toggleActive(modifier)}
+                    />
+                  </>
+                ),
+              }
+            : {})}
         />
-        <p className="border-t border-mz-border px-4 py-2.5 text-xs text-mz-text-muted">
+        <p className="border-t border-mz-border px-4 py-2.5 text-[13px] text-mz-text-muted">
           Qo&apos;shimchalar o&apos;chirilmaydi — ular buyurtma tarixidagi
           qo&apos;shimcha nusxalari bilan bog&apos;liq. Ishlatilmaydigan
-          qo&apos;shimchani nofaol qiling.
+          qo&apos;shimchani nofaol qiling: u yangi buyurtmalarda
+          ko&apos;rinmaydi, tarix esa buzilmaydi.
         </p>
       </Card>
 
       <Modal
+        dismissOnBackdrop={false}
+        footer={
+          <>
+            <Button onClick={() => setIsEditorOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button isLoading={isSaving} onClick={() => void save()} size="lg">
+              Saqlash
+            </Button>
+          </>
+        }
         isOpen={isEditorOpen}
         onClose={() => setIsEditorOpen(false)}
         title={editingId ? "Qo'shimchani tahrirlash" : "Yangi qo'shimcha"}
       >
-        <form className="grid gap-3" id="modifier-form" onSubmit={save}>
-          <FormField label="Nomi" required>
+        <div className="grid gap-3" id="modifier-form">
+          <FormField
+            label="Nomi"
+            required
+            {...(errors.name ? { error: errors.name } : {})}
+          >
             {(props) => (
               <TextInput
                 {...props}
                 maxLength={80}
-                required
                 value={form.name}
                 onChange={(event) =>
                   setForm({ ...form, name: event.target.value })
@@ -277,7 +438,12 @@ export function AdminModifiersPage() {
               />
             )}
           </FormField>
-          <FormField hint="0 bo'lsa qo'shimcha bepul" label="Narx">
+
+          <FormField
+            hint="0 bo'lsa qo'shimcha bepul"
+            label="Narx (so'm)"
+            {...(errors.price ? { error: errors.price } : {})}
+          >
             {(props) => (
               <TextInput
                 {...props}
@@ -293,7 +459,11 @@ export function AdminModifiersPage() {
 
           {editingId ? (
             <>
-              <FormField label="Saralash tartibi">
+              <FormField
+                hint="Kichik raqam yuqorida turadi"
+                label="Saralash tartibi"
+                {...(errors.sortOrder ? { error: errors.sortOrder } : {})}
+              >
                 {(props) => (
                   <TextInput
                     {...props}
@@ -306,32 +476,20 @@ export function AdminModifiersPage() {
                   />
                 )}
               </FormField>
-              <label className="inline-flex w-fit items-center gap-2 rounded-mz-control border border-mz-border px-3 py-2 text-sm font-semibold text-mz-text">
-                <input
-                  checked={form.isActive}
-                  className="h-4 w-4 accent-mz-accent"
-                  type="checkbox"
-                  onChange={(event) =>
-                    setForm({ ...form, isActive: event.target.checked })
-                  }
-                />
-                Faol
-              </label>
+              <Checkbox
+                boxed
+                checked={form.isActive}
+                description="Nofaol qo'shimcha yangi buyurtmalarda tanlanmaydi"
+                label="Faol"
+                onChange={(checked) => setForm({ ...form, isActive: checked })}
+              />
             </>
           ) : (
-            <p className="text-xs text-mz-text-muted">
-              Saralash va faollik yaratilgandan keyin tahrirlanadi.
+            <p className="text-[13px] text-mz-text-muted">
+              Saralash tartibi va faollik yaratilgandan keyin tahrirlanadi —
+              yaratish endpoint&apos;i faqat nom va narxni qabul qiladi.
             </p>
           )}
-        </form>
-
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button onClick={() => setIsEditorOpen(false)} variant="ghost">
-            Bekor qilish
-          </Button>
-          <Button disabled={isSaving} form="modifier-form" type="submit">
-            {isSaving ? "Saqlanmoqda..." : "Saqlash"}
-          </Button>
         </div>
       </Modal>
     </div>

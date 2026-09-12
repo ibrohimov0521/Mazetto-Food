@@ -1,13 +1,24 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { AdminPageHeader } from "../../../../components/admin-shell/admin-page-header";
+import { Badge, type BadgeTone } from "../../../../components/admin-ui/badge";
 import { Button } from "../../../../components/admin-ui/button";
 import { Card, CardHeader } from "../../../../components/admin-ui/card";
-import { EmptyState, ErrorState } from "../../../../components/admin-ui/feedback";
-import { FormField, Select, TextInput } from "../../../../components/admin-ui/form";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonRows,
+} from "../../../../components/admin-ui/feedback";
+import {
+  FormField,
+  Select,
+  TextInput,
+} from "../../../../components/admin-ui/form";
+import { Modal } from "../../../../components/admin-ui/modal";
 import { useToast } from "../../../../components/admin-ui/toast";
 import { apiFetch, SessionExpiredError } from "../../../../lib/api";
+import { useApiResource } from "../../../../lib/use-api-resource";
 
 type TableStatus = "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING";
 type Table = {
@@ -33,11 +44,40 @@ const statusLabels: Record<TableStatus, string> = {
   CLEANING: "Tozalanmoqda",
 };
 
+/*
+ * RANG SEMANTIKASI.
+ *
+ * Ilgari OCCUPIED QIZIL edi — ya'ni to'la ishlayotgan restoran zali
+ * butunlay xatolik rangida ko'rinardi, qizil esa dizayn qoidasida FAQAT
+ * buzuvchi/xato holat uchun. Band stol — normal ish holati:
+ *   bo'sh          yashil (muvaffaqiyat, sotishga tayyor)
+ *   band           teal (ma'lumot, jarayonda)
+ *   bron qilingan  sariq (diqqat, kutilmoqda)
+ *   tozalanmoqda   neytral
+ */
+const statusTones: Record<TableStatus, BadgeTone> = {
+  AVAILABLE: "success",
+  OCCUPIED: "info",
+  RESERVED: "warning",
+  CLEANING: "neutral",
+};
+
+const statusOrder: TableStatus[] = [
+  "AVAILABLE",
+  "RESERVED",
+  "CLEANING",
+  "OCCUPIED",
+];
+
 export default function AdminTablesPage() {
   return (
     <>
       <AdminPageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Operatsiya" }, { label: "Stollar" }]}
+        breadcrumbs={[
+          { label: "Admin", href: "/admin/dashboard" },
+          { label: "Operatsiya" },
+          { label: "Stollar" },
+        ]}
         description="Zal tuzilmasi va stol holati"
         title="Stollar va zallar"
       />
@@ -48,44 +88,61 @@ export default function AdminTablesPage() {
 
 function TableManagement() {
   const { showToast } = useToast();
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [tables, setTables] = useState<Table[]>([]);
   const [branchId, setBranchId] = useState("");
   const [hallName, setHallName] = useState("");
   const [hallId, setHallId] = useState("");
   const [tableName, setTableName] = useState("");
   const [number, setNumber] = useState("1");
   const [capacity, setCapacity] = useState("4");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isSavingHall, setIsSavingHall] = useState(false);
   const [isSavingTable, setIsSavingTable] = useState(false);
+  /*
+   * Stol holatini o'zgartirish TASDIQLANADI.
+   *
+   * Ilgari kartochkadagi tugma bosilishi bilan holat o'zgarardi. "Bo'sh"
+   * ni tasodifan bosish ofitsiantdan band stolni tortib olishga teng
+   * (`PATCH /tables/:id/status` bu yerda hech qanday shart qo'ymaydi va
+   * ortga qaytarish tarixi ham yo'q), shuning uchun bir qadam kerak.
+   */
+  const [pending, setPending] = useState<{
+    table: Table;
+    status: TableStatus;
+  } | null>(null);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-    try {
-      const [nextBranches, nextTables] = await Promise.all([
+  /*
+   * `useApiResource` — filial tez almashtirilganda SEKINROQ javob
+   * oxirgi bo'lib kelib boshqa filialning stollarini ko'rsatib
+   * qo'ymasligi uchun (hook navbat raqami bilan eskirgan javobni
+   * tashlaydi). Ilgari bu ekranda qo'lda yozilgan try/catch turardi.
+   */
+  const {
+    data,
+    isLoading,
+    error,
+    reload: load,
+  } = useApiResource(
+    () =>
+      Promise.all([
         apiFetch<Branch[]>("/branches"),
-        apiFetch<Table[]>(branchId ? `/tables?branchId=${encodeURIComponent(branchId)}` : "/tables"),
-      ]);
-      setBranches(nextBranches);
-      setTables(nextTables);
-    } catch (caught) {
-      if (caught instanceof SessionExpiredError) return;
-      setError(caught instanceof Error ? caught.message : "Ma'lumotlarni yuklab bo'lmadi.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [branchId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+        apiFetch<Table[]>(
+          branchId
+            ? `/tables?branchId=${encodeURIComponent(branchId)}`
+            : "/tables",
+        ),
+      ]),
+    [branchId],
+    "Ma'lumotlarni yuklab bo'lmadi.",
+  );
+  const branches = data?.[0] ?? [];
+  const tables = data?.[1] ?? [];
 
   const halls = useMemo(
-    () =>
-      [...new Map(tables.flatMap((table) => (table.hall ? [[table.hall.id, table.hall]] : []))).values()],
+    () => [
+      ...new Map(
+        tables.flatMap((table) => (table.hall ? [[table.hall.id, table.hall]] : [])),
+      ).values(),
+    ],
     [tables],
   );
 
@@ -103,10 +160,13 @@ function TableManagement() {
       });
       setHallName("");
       showToast("Zal qo'shildi.", "success");
-      await load();
+      load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) return;
-      showToast(caught instanceof Error ? caught.message : "Zal qo'shib bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Zal qo'shib bo'lmadi.",
+        "danger",
+      );
     } finally {
       setIsSavingHall(false);
     }
@@ -136,36 +196,54 @@ function TableManagement() {
       });
       setTableName("");
       showToast("Stol qo'shildi.", "success");
-      await load();
+      load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) return;
-      showToast(caught instanceof Error ? caught.message : "Stol qo'shib bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Stol qo'shib bo'lmadi.",
+        "danger",
+      );
     } finally {
       setIsSavingTable(false);
     }
   }
 
-  async function setStatus(tableId: string, status: TableStatus) {
+  async function applyStatus() {
+    if (!pending) return;
+    setIsSavingStatus(true);
     try {
-      await apiFetch(`/tables/${tableId}/status`, {
+      await apiFetch(`/tables/${pending.table.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status: pending.status }),
       });
-      await load();
+      showToast(
+        `${pending.table.name}: ${statusLabels[pending.status].toLowerCase()}.`,
+        "success",
+      );
+      setPending(null);
+      load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) return;
-      showToast(caught instanceof Error ? caught.message : "Holatni yangilab bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Holatni yangilab bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsSavingStatus(false);
     }
   }
 
   return (
     <div className="grid gap-5">
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
 
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <aside className="grid gap-4">
           <Card>
-            <CardHeader title="Filial" description="Zal va stollar shu filial uchun ko'rsatiladi" />
+            <CardHeader
+              title="Filial"
+              description="Zal va stollar shu filial uchun ko'rsatiladi"
+            />
             <div className="p-4">
               <FormField label="Filial">
                 {(props) => (
@@ -203,8 +281,17 @@ function TableManagement() {
                   />
                 )}
               </FormField>
-              <Button disabled={isSavingHall || !branchId} type="submit">
-                {isSavingHall ? "Qo'shilmoqda..." : "Zal qo'shish"}
+              {/*
+               * Ikkinchi darajali harakat: bu ekranda bitta asosiy
+               * (oltin) tugma bo'lishi kerak — "Stol qo'shish".
+               */}
+              <Button
+                disabled={!branchId}
+                isLoading={isSavingHall}
+                type="submit"
+                variant="secondary"
+              >
+                Zal qo&apos;shish
               </Button>
             </form>
           </Card>
@@ -214,7 +301,12 @@ function TableManagement() {
             <form className="grid gap-3 p-4" onSubmit={createTable}>
               <FormField label="Zal" required>
                 {(props) => (
-                  <Select {...props} value={hallId} onChange={(event) => setHallId(event.target.value)} required>
+                  <Select
+                    {...props}
+                    value={hallId}
+                    onChange={(event) => setHallId(event.target.value)}
+                    required
+                  >
                     <option value="">Zalni tanlang</option>
                     {halls.map((hall) => (
                       <option key={hall.id} value={hall.id}>
@@ -259,17 +351,29 @@ function TableManagement() {
                   )}
                 </FormField>
               </div>
-              <Button disabled={isSavingTable || !branchId} type="submit">
-                {isSavingTable ? "Qo'shilmoqda..." : "Stol qo'shish"}
+              <Button
+                disabled={!branchId}
+                isLoading={isSavingTable}
+                size="lg"
+                type="submit"
+              >
+                Stol qo&apos;shish
               </Button>
             </form>
           </Card>
         </aside>
 
         <Card as="div">
-          <CardHeader title="Zal sxemasi" description={isLoading ? "Yuklanmoqda..." : `${tables.length} ta stol`} />
+          <CardHeader
+            title="Zal sxemasi"
+            description={
+              isLoading ? "Yuklanmoqda..." : `${tables.length} ta stol`
+            }
+          />
           <div className="p-4">
-            {tables.length ? (
+            {isLoading ? (
+              <SkeletonRows rows={6} />
+            ) : tables.length ? (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {tables.map((table) => (
                   <article
@@ -277,52 +381,90 @@ function TableManagement() {
                     key={table.id}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase text-mz-info">
                           {table.hall?.name ?? "Zalsiz"}
                         </p>
-                        <h4 className="mt-2 text-xl font-semibold text-mz-text">{table.name}</h4>
-                        <p className="mt-1 text-sm text-mz-text-muted">{table.capacity ?? 0} o'rin</p>
+                        {/*
+                         * `h3` — `CardHeader` `h2` ishlatadi, ya'ni bu
+                         * yerda `h4` sarlavha darajasini sakratardi
+                         * (WCAG 1.3.1 tuzilma).
+                         */}
+                        <h3 className="mt-2 truncate text-xl font-semibold text-mz-text">
+                          {table.name}
+                        </h3>
+                        <p className="mt-1 text-sm text-mz-text-muted">
+                          {table.capacity ?? 0} o&apos;rin
+                        </p>
                       </div>
-                      <StatusBadge status={table.status} />
+                      <Badge tone={statusTones[table.status]} withDot>
+                        {statusLabels[table.status]}
+                      </Badge>
                     </div>
                     <div className="mt-5 grid grid-cols-2 gap-2">
-                      {(["AVAILABLE", "RESERVED", "CLEANING", "OCCUPIED"] as TableStatus[]).map((nextStatus) => (
-                        <button
-                          className="rounded-mz-control border border-mz-border px-3 py-2 text-xs font-semibold text-mz-text hover:bg-mz-info-bg"
+                      {statusOrder.map((nextStatus) => (
+                        <Button
                           disabled={table.status === nextStatus}
                           key={nextStatus}
-                          onClick={() => void setStatus(table.id, nextStatus)}
-                          type="button"
+                          onClick={() =>
+                            setPending({ table, status: nextStatus })
+                          }
+                          variant="ghost"
                         >
                           {statusLabels[nextStatus]}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </article>
                 ))}
               </div>
             ) : (
-              <EmptyState title="Hali stol yo'q" description="Zal sxemasini boshlash uchun avval zal, so'ng stol qo'shing." />
+              <EmptyState
+                title="Hali stol yo'q"
+                description="Zal sxemasini boshlash uchun avval zal, so'ng stol qo'shing."
+              />
             )}
           </div>
         </Card>
       </div>
+
+      <Modal
+        description="Stol holati ofitsiant va kassa ekranlarida darhol ko'rinadi."
+        footer={
+          <>
+            <Button
+              disabled={isSavingStatus}
+              onClick={() => setPending(null)}
+              variant="ghost"
+            >
+              Ortga
+            </Button>
+            <Button
+              isLoading={isSavingStatus}
+              onClick={() => void applyStatus()}
+            >
+              Holatni o&apos;zgartirish
+            </Button>
+          </>
+        }
+        isOpen={pending !== null}
+        onClose={() => setPending(null)}
+        title={
+          pending
+            ? `${pending.table.name} → ${statusLabels[pending.status]}`
+            : "Stol holati"
+        }
+      >
+        <p className="text-sm text-mz-text">
+          {pending
+            ? `Hozirgi holat: ${statusLabels[pending.table.status]}.`
+            : ""}
+          {pending?.table.status === "OCCUPIED" &&
+          pending.status === "AVAILABLE"
+            ? " Band stolni bo'sh qilish ochiq xizmatni uzib qo'yishi mumkin."
+            : ""}
+        </p>
+      </Modal>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: TableStatus }) {
-  const colors: Record<TableStatus, string> = {
-    AVAILABLE: "bg-mz-info-bg text-mz-info",
-    OCCUPIED: "bg-mz-danger-bg text-mz-danger",
-    RESERVED: "bg-mz-warning-bg text-mz-warning",
-    CLEANING: "bg-mz-surface-sunken text-mz-text",
-  };
-
-  return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${colors[status]}`}>
-      {statusLabels[status]}
-    </span>
   );
 }

@@ -12,11 +12,14 @@ import {
   type OrderStatus,
 } from "../../lib/order-display";
 import { Badge } from "../admin-ui/badge";
+import { Button } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
-import { FilterBar, Select, TextInput } from "../admin-ui/form";
+import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
+import { Modal } from "../admin-ui/modal";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
+import { useToast } from "../admin-ui/toast";
 
 /*
  * Kuryerlar nazorati (5.5).
@@ -65,10 +68,26 @@ function courierName(courier: Courier): string {
 }
 
 export function AdminCouriersPage() {
+  const { showToast } = useToast();
   const [query, setQuery] = useState("");
   const [assignFilter, setAssignFilter] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState("");
+  /*
+   * BIRIKTIRISHNI TASDIQLASH.
+   *
+   * Ilgari biriktirish `<select onChange>` da DARHOL ketardi: ro'yxatni
+   * klaviatura o'qlari bilan aylantirish ham (har o'q bosishi `change`
+   * beradi) buyurtmani boshqa odamga o'tkazib yuborardi va orqaga
+   * qaytarish yo'li yo'q edi. Buyurtmani kuryerga berish operatsion
+   * majburiyat: u kuryer ekranida darhol ko'rinadi.
+   *
+   * Endi tanlash faqat NIYAT — amal tasdiqlash oynasida bajariladi.
+   */
+  const [pending, setPending] = useState<{
+    order: DeliveryOrder;
+    employeeId: string;
+  } | null>(null);
 
   /*
    * Ikkala ro'yxat PARALLEL: ular bir-biriga bog'liq emas va ketma-ket
@@ -170,6 +189,11 @@ export function AdminCouriersPage() {
         method: "PATCH",
         body: JSON.stringify({ employeeId }),
       });
+      showToast(
+        employeeId ? "Kuryer biriktirildi." : "Biriktirish bekor qilindi.",
+        "success",
+      );
+      setPending(null);
       // Statistikalar ham o'zgargani uchun ikkala ro'yxat qayta o'qiladi.
       await load();
     } catch (caught) {
@@ -294,39 +318,44 @@ export function AdminCouriersPage() {
         const assigned = servedById ? courierById.get(servedById) : undefined;
 
         /*
-         * Boshqa filialning kuryeri ro'yxatda bo'lmaydi, lekin buyurtma unga
-         * biriktirilgan bo'lishi mumkin (filial filtri o'zgargan holat).
-         * Bunday qiymatni `<select>` ga qo'ymasak, u jimgina "biriktirilmagan"
-         * ga tushib qolardi — ya'ni ekran yolg'on gapirardi.
+         * Boshqa filialning kuryeri ro'yxatda bo'lmaydi, lekin buyurtma
+         * unga biriktirilgan bo'lishi mumkin. Bunday qatorni
+         * "biriktirilmagan" deb ko'rsatish ekranni yolg'onchi qilardi.
          */
-        const unknownAssignee = servedById && !assigned;
-
         return (
-          <Select
-            aria-label="Kuryerni biriktirish"
-            disabled={savingId === item.id}
-            value={servedById}
-            onChange={(event) =>
-              void assign(item.id, event.target.value || null)
-            }
-          >
-            <option value="">Biriktirilmagan</option>
-            {unknownAssignee ? (
-              <option value={servedById}>Boshqa filial kuryeri</option>
-            ) : null}
-            {couriers.map((courier) => (
-              <option key={courier.id} value={courier.id}>
-                {courierName(courier)}
-                {courier.activeDeliveries
-                  ? ` (${courier.activeDeliveries} yo'lda)`
-                  : ""}
-              </option>
-            ))}
-          </Select>
+          <span className="text-sm text-mz-text">
+            {assigned
+              ? courierName(assigned)
+              : servedById
+                ? "Boshqa filial kuryeri"
+                : "Biriktirilmagan"}
+          </span>
         );
       },
     },
   ];
+
+  function assignRowAction(item: DeliveryOrder): React.ReactNode {
+    return (
+      <Button
+        isLoading={savingId === item.id}
+        onClick={() =>
+          setPending({
+            order: item,
+            employeeId: item.order?.servedById ?? "",
+          })
+        }
+        size="sm"
+        variant="ghost"
+      >
+        {item.order?.servedById ? "O'zgartirish" : "Biriktirish"}
+      </Button>
+    );
+  }
+
+  const pendingCurrentCourier = pending?.order.order?.servedById
+    ? courierById.get(pending.order.order.servedById)
+    : undefined;
 
   return (
     <div className="grid gap-5">
@@ -403,13 +432,98 @@ export function AdminCouriersPage() {
         <DataTable
           caption="Yo'ldagi yetkazishlar"
           columns={orderColumns}
-          emptyDescription="Qidiruv yoki filtrni o'zgartirib ko'ring."
+          emptyDescription={
+            query || assignFilter
+              ? "Qidiruv yoki filtrni o'zgartirib ko'ring."
+              : "Ayni paytda yo'lda yetkazish yo'q."
+          }
           emptyTitle="Yo'lda yetkazish yo'q"
           getRowKey={(item) => item.id}
           isLoading={isLoading}
+          rowActions={assignRowAction}
           rows={filtered}
         />
       </Card>
+
+      <Modal
+        description="Biriktirish kuryer ekranida darhol ko'rinadi va buyurtma oldingi kuryerdan olinadi."
+        dismissOnBackdrop={false}
+        footer={
+          <>
+            <Button
+              disabled={savingId !== null}
+              onClick={() => setPending(null)}
+              variant="ghost"
+            >
+              Ortga
+            </Button>
+            <Button
+              isLoading={savingId !== null}
+              onClick={() => {
+                if (pending) {
+                  void assign(pending.order.id, pending.employeeId || null);
+                }
+              }}
+              variant="primary"
+            >
+              Biriktirishni saqlash
+            </Button>
+          </>
+        }
+        isOpen={pending !== null}
+        onClose={() => setPending(null)}
+        title={`${
+          pending?.order.order?.displayOrderNumber ??
+          pending?.order.order?.orderNumber ??
+          "Buyurtma"
+        } · kuryer`}
+      >
+        <div className="grid gap-3">
+          <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken px-3 py-2 text-[13px]">
+            <span className="text-mz-text">
+              {pending?.order.deliveryAddress ?? "Manzil ko'rsatilmagan"}
+            </span>
+            <span className="text-mz-text-muted">
+              Hozir:{" "}
+              {pendingCurrentCourier
+                ? courierName(pendingCurrentCourier)
+                : pending?.order.order?.servedById
+                  ? "boshqa filial kuryeri"
+                  : "biriktirilmagan"}
+            </span>
+          </div>
+
+          <FormField
+            hint="Bo'sh qoldirilsa biriktirish bekor qilinadi va buyurtmani istalgan kuryer olishi mumkin."
+            label="Kuryer"
+          >
+            {(props) => (
+              <Select
+                {...props}
+                onChange={(event) => {
+                  if (pending) {
+                    setPending({
+                      order: pending.order,
+                      employeeId: event.target.value,
+                    });
+                  }
+                }}
+                value={pending?.employeeId ?? ""}
+              >
+                <option value="">Biriktirilmagan</option>
+                {couriers.map((courier) => (
+                  <option key={courier.id} value={courier.id}>
+                    {courierName(courier)}
+                    {courier.activeDeliveries
+                      ? ` (${courier.activeDeliveries} yo'lda)`
+                      : ""}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
+        </div>
+      </Modal>
     </div>
   );
 }
