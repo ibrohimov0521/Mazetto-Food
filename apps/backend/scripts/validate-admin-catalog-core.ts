@@ -127,7 +127,11 @@ assert.match(
   /apiFetch<Category\[]>\("\/menu\/categories\?includeInactive=true"\)/,
 );
 assert.match(adminCatalog, /catalogVisibility/);
-assert.doesNotMatch(adminCatalog, /method: "DELETE"/);
+assert.match(
+  adminCatalog,
+  /method: "DELETE"/,
+  "mahsulotni arxivlash amali yo'q",
+);
 
 /*
  * Mahsulot editori `admin-product-editor.tsx` ga ko'chirildi (katalog 2-bosqichi).

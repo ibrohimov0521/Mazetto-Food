@@ -9,6 +9,7 @@ const kitchenService = readSource("apps/backend/src/modules/kitchen/kitchen.serv
 const kitchenController = readSource("apps/backend/src/modules/kitchen/kitchen.controller.ts");
 const telegramStaff = readSource("apps/backend/src/modules/telegram/telegram-order-notification.service.ts");
 const kitchenPage = readSource("apps/pos-web/app/(fullscreen)/kitchen/page.tsx");
+const kitchenTypes = readSource("apps/pos-web/components/kitchen/kitchen-types.ts");
 
 // Tur ko'p qatorli formatlanishi mumkin — qiymatlar muhim, joylashuvi emas.
 assert.match(
@@ -38,7 +39,7 @@ assert.match(kitchenPage, /document\.addEventListener\("visibilitychange"/);
 // Amal ticket va harakat bo'yicha manzillanadi. `apiFetch(` chaqiruvi
 // ko'p qatorga bo'linishi mumkin, shuning uchun faqat manzil tekshiriladi.
 assert.match(kitchenPage, /`\/kitchen\/orders\/\$\{ticket\.id\}\/\$\{action\}`/);
-assert.match(kitchenPage, /type KitchenAction = "accept" \| "start" \| "ready" \| "complete" \| "cancel"/);
+assert.match(kitchenTypes, /export type KitchenAction = "accept" \| "start" \| "ready" \| "complete" \| "cancel"/);
 assert.match(kitchenPage, /Bekor qilish/);
 assert.doesNotMatch(kitchenPage, /from "socket\.io-client"/);
 assert.doesNotMatch(kitchenPage, /redis/i);

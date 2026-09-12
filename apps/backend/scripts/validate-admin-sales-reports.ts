@@ -56,7 +56,7 @@ for (const uiText of [
   "Smenalar",
   "Top mahsulotlar",
   "Kategoriya sotuvlari",
-  "Faqat PAID/SUCCESS to'lovlar sotuvga kiradi",
+  "Sotuvga kiradigan to'lov holatlari:",
 ]) {
   assert.match(reportsUi, new RegExp(escapeRegExp(uiText)));
 }
