@@ -1170,9 +1170,10 @@
 .productGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  grid-auto-rows: auto;
+  grid-auto-rows: max-content;
   flex: 1 1 0%;
   align-content: start;
+  align-items: start;
   overflow-y: auto;
   min-height: 0;
   gap: 14px;
@@ -1461,7 +1462,7 @@
   }
   .productGrid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    grid-auto-rows: auto;
+    grid-auto-rows: max-content;
     gap: 10px;
   }
   .product {
@@ -1624,7 +1625,7 @@
   }
   .productGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: auto;
+    grid-auto-rows: max-content;
     overflow: visible;
   }
   .product {
