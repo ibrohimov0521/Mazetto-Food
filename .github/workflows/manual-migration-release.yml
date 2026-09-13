@@ -1,0 +1,105 @@
+name: Manual migration release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full, CI-verified main commit SHA
+        required: true
+        type: string
+      phase:
+        description: Deploy backend first; run prisma migrate deploy; then deploy POS
+        required: true
+        type: choice
+        options:
+          - backend
+          - pos-web
+      verified_backup_path:
+        description: Path of the independently verified production PostgreSQL dump
+        required: true
+        type: string
+      migrations_applied:
+        description: Confirm production prisma migrate deploy completed (required for POS)
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    permissions:
+      contents: read
+      checks: read
+    env:
+      SHA: ${{ inputs.release_sha }}
+      PHASE: ${{ inputs.phase }}
+      BACKUP_PATH: ${{ inputs.verified_backup_path }}
+      MIGRATIONS_APPLIED: ${{ inputs.migrations_applied }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Release gate
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Full SHA required'; exit 1; }
+          [[ "$BACKUP_PATH" == /*.dump ]] || { echo 'Verified dump path required'; exit 1; }
+          git fetch --quiet --force origin refs/tags/production:refs/tags/production
+          node scripts/release-gate.mjs "$SHA" --github-output
+
+      - name: Confirm release phase
+        env:
+          APPS: ${{ steps.gate.outputs.apps }}
+          MIGRATIONS: ${{ steps.gate.outputs.migrations }}
+          SINCE: ${{ steps.gate.outputs.since }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SINCE" && -n "$MIGRATIONS" ]] || { echo 'This workflow is only for migration releases'; exit 1; }
+          [[ " $(git ls-remote origin refs/heads/main | cut -f1) " == " $SHA " ]] || { echo 'main moved; release stopped'; exit 1; }
+          [[ " $APPS " == *" $PHASE "* ]] || { echo "No $PHASE change in release gate"; exit 1; }
+          if [[ "$PHASE" == pos-web && "$MIGRATIONS_APPLIED" != true ]]; then
+            echo 'Apply production migrations before deploying POS'; exit 1
+          fi
+          printf '### Manual release %s\n\n- Phase: %s\n- Backup supplied by operator: %s\n- Migrations: %s\n' "$SHA" "$PHASE" "$BACKUP_PATH" "$MIGRATIONS" >> "$GITHUB_STEP_SUMMARY"
+          echo 'The workflow records the backup path but cannot independently verify the remote archive.'
+
+      - name: Deploy selected service
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_APP_BACKEND: ${{ vars.DOKPLOY_APP_BACKEND }}
+          DOKPLOY_APP_POS_WEB: ${{ vars.DOKPLOY_APP_POS_WEB }}
+        run: node scripts/dokploy-deploy.mjs --sha "$SHA" "$PHASE"
+
+      - name: Production smoke after POS
+        if: inputs.phase == 'pos-web'
+        run: |
+          for attempt in 1 2 3 4; do
+            node scripts/smoke-production.mjs && exit 0
+            [ "$attempt" = 4 ] || sleep 30
+          done
+          exit 1
+
+      - name: Next step
+        run: |
+          if [[ "$PHASE" == backend ]]; then
+            echo 'Backend deployed. Run production prisma migrate deploy now; then dispatch pos-web with migrations_applied=true.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'POS deployed. Verify the release manually, then move the production tag to the release SHA.' >> "$GITHUB_STEP_SUMMARY"
+          fi
