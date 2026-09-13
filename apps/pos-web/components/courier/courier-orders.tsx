@@ -139,6 +139,7 @@ export function CourierOrdersPage() {
   const [transferAmount, setTransferAmount] = useState("");
   const [shiftBusy, setShiftBusy] = useState(false);
   const [shiftError, setShiftError] = useState("");
+  const [cashPanelOpen, setCashPanelOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{
     order: CourierOrder;
     status: DeliveryAction;
@@ -420,39 +421,35 @@ export function CourierOrdersPage() {
           />
         </div>
       </div>
-      <section className={styles.shiftSummary} aria-label="Xodim kassasi">
-        <div className={styles.toolbar}>
+      <section className={styles.courierCashPanel} aria-label="Xodim kassasi">
+        <div className={styles.courierCashSummary}>
           <div>
-            <h2>Umumiy xodim kassasi</h2>
-            <p className={styles.muted}>
+            <span>Xodim kassasi</span>
+            <strong>
               {courierShift
-                ? "Smena #" +
-                  courierShift.shiftNumber +
-                  " - Qo'ldagi naqd: " +
-                  formatMoney(courierShift.currentCash ?? 0)
-                : "Yetkazilgan naqdlar shu smenada hisoblanadi."}
-            </p>
+                ? formatMoney(courierShift.currentCash ?? 0)
+                : "Smena ochilmagan"}
+            </strong>
+            <small>
+              {courierShift
+                ? `Smena #${courierShift.shiftNumber}`
+                : "Yetkazilgan naqdlar shu yerda yuritiladi"}
+            </small>
           </div>
           {courierShift ? (
-            <div className={styles.inlineActions}>
-              <input
-                className={styles.input}
-                inputMode="decimal"
-                min="0"
-                placeholder="Summa"
-                aria-label="Kassirga topshiriladigan summa"
-                value={transferAmount}
-                onChange={(event) => setTransferAmount(event.target.value)}
-              />
-              <button
-                className={styles.primary}
-                disabled={shiftBusy || !transferAmount}
-                onClick={() => void transferCash()}
-                type="button"
-              >
-                Kassirga topshirish
-              </button>
-            </div>
+            <button
+              aria-expanded={cashPanelOpen}
+              className={styles.button}
+              onClick={() => setCashPanelOpen((current) => !current)}
+              type="button"
+            >
+              {cashPanelOpen ? (
+                <ChevronUp size={17} />
+              ) : (
+                <ChevronDown size={17} />
+              )}
+              {cashPanelOpen ? "Yig'ish" : "Kassani boshqarish"}
+            </button>
           ) : (
             <button
               className={styles.primary}
@@ -464,6 +461,27 @@ export function CourierOrdersPage() {
             </button>
           )}
         </div>
+        {courierShift && cashPanelOpen ? (
+          <div className={styles.courierCashControls}>
+            <input
+              className={styles.input}
+              inputMode="decimal"
+              min="0"
+              placeholder="Topshiriladigan summa"
+              aria-label="Kassirga topshiriladigan summa"
+              value={transferAmount}
+              onChange={(event) => setTransferAmount(event.target.value)}
+            />
+            <button
+              className={styles.primary}
+              disabled={shiftBusy || !transferAmount}
+              onClick={() => void transferCash()}
+              type="button"
+            >
+              Kassirga topshirish
+            </button>
+          </div>
+        ) : null}
         {shiftError && (
           <p className={styles.error} role="alert">
             {shiftError}

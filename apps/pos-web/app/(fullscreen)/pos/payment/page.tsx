@@ -223,7 +223,8 @@ function PaymentTerminal() {
   const cash = resolveCash(cashDue > 0 ? cashReceived : "", cashDue);
   const needsShift = cashDue > 0;
   const shiftMissing = needsShift && currentShift?.status !== "OPEN";
-  const splitMismatch = isSplit && Math.round(payloadTotal) !== Math.round(outstanding);
+  const splitMismatch =
+    isSplit && Math.round(payloadTotal) !== Math.round(outstanding);
   const canSubmit =
     !!selectedOrder &&
     outstanding > 0 &&
@@ -370,6 +371,7 @@ function PaymentTerminal() {
   return (
     <StaffShell
       title="To'lov"
+      sidebar={false}
       actions={
         <Link className={styles.shiftLink} href="/pos">
           <ArrowLeft size={17} aria-hidden="true" />
@@ -406,7 +408,10 @@ function PaymentTerminal() {
           <StaffEmpty title="Buyurtmalar yuklanmoqda..." />
         ) : !orders ? null : (
           <div className={styles.payLayout}>
-            <aside className={styles.payOrders} aria-label="To'lanmagan buyurtmalar">
+            <aside
+              className={styles.payOrders}
+              aria-label="To'lanmagan buyurtmalar"
+            >
               <div className={styles.payOrdersHead}>
                 <h3 className={styles.subheading}>To'lanmagan buyurtmalar</h3>
                 <span className={styles.badge}>{orders.length} ta</span>
@@ -438,7 +443,10 @@ function PaymentTerminal() {
             </aside>
 
             {selectedOrder ? (
-              <section className={styles.payMain} aria-label="To'lov ma'lumotlari">
+              <section
+                className={styles.payMain}
+                aria-label="To'lov ma'lumotlari"
+              >
                 <div className={styles.payPanel}>
                   <div className={styles.payOrderHead}>
                     <div>
@@ -463,8 +471,7 @@ function PaymentTerminal() {
                     {selectedOrder.items.map((item) => (
                       <li className={styles.payItemRow} key={item.id}>
                         <span>
-                          {formatQuantity(item.quantity)} ×{" "}
-                          {item.productName}
+                          {formatQuantity(item.quantity)} × {item.productName}
                           {item.variantName ? ` (${item.variantName})` : ""}
                         </span>
                         <b>{formatMoney(item.totalPrice)}</b>
@@ -656,7 +663,10 @@ function PaymentTerminal() {
           </p>
           <div className={styles.payConfirmList}>
             {payload.map((item, index) => (
-              <div className={styles.paySummaryRow} key={`${item.code}-${index}`}>
+              <div
+                className={styles.paySummaryRow}
+                key={`${item.code}-${index}`}
+              >
                 <span>{paymentMethodLabel(item.code)}</span>
                 <b>{formatMoney(item.amount)}</b>
               </div>
@@ -679,8 +689,8 @@ function PaymentTerminal() {
             </div>
           ) : null}
           <p className={styles.note}>
-            <TriangleAlert size={15} aria-hidden="true" /> Tasdiqlangandan
-            keyin to'lov bekor qilinmaydi.
+            <TriangleAlert size={15} aria-hidden="true" /> Tasdiqlangandan keyin
+            to'lov bekor qilinmaydi.
           </p>
           {submitError ? (
             <p className={styles.error} role="alert">
@@ -710,13 +720,10 @@ function PaymentTerminal() {
       ) : null}
 
       {completion ? (
-        <StaffDialog
-          title="To'lov qabul qilindi"
-          onClose={resetForNextOrder}
-        >
+        <StaffDialog title="To'lov qabul qilindi" onClose={resetForNextOrder}>
           <div className={styles.success} role="status">
-            #{completion.orderLabel} uchun {formatMoney(completion.paid)}{" "}
-            qabul qilindi.
+            #{completion.orderLabel} uchun {formatMoney(completion.paid)} qabul
+            qilindi.
           </div>
           <div className={styles.payDialogChange}>
             <span>Qaytim</span>

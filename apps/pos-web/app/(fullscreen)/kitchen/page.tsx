@@ -57,10 +57,9 @@ function KitchenDisplay() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyTicketIds, setBusyTicketIds] = useState<Set<string>>(new Set());
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [expandedTicketIds, setExpandedTicketIds] = useState<Set<string>>(
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(
     new Set(),
   );
-  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
   const [mobileStatus, setMobileStatus] = useState<string>("NEW");
   const [query, setQuery] = useState("");
   const [cancelTicket, setCancelTicket] = useState<KitchenTicket | null>(null);
@@ -117,13 +116,18 @@ function KitchenDisplay() {
     if (historySearch.trim()) params.set("search", historySearch.trim());
     try {
       setHistoryTickets(
-        await apiFetch<KitchenTicket[]>(`/kitchen/orders/history?${params.toString()}`, {
-          cache: "no-store",
-          signal: AbortSignal.timeout(12000),
-        }),
+        await apiFetch<KitchenTicket[]>(
+          `/kitchen/orders/history?${params.toString()}`,
+          {
+            cache: "no-store",
+            signal: AbortSignal.timeout(12000),
+          },
+        ),
       );
     } catch (caught) {
-      setHistoryError(caught instanceof Error ? caught.message : "Tarix yuklanmadi.");
+      setHistoryError(
+        caught instanceof Error ? caught.message : "Tarix yuklanmadi.",
+      );
     } finally {
       setHistoryLoading(false);
     }
@@ -179,8 +183,7 @@ function KitchenDisplay() {
     [tickets],
   );
   const unacknowledgedCount = useMemo(
-    () =>
-      newTickets.filter((ticket) => !acknowledgedIds.has(ticket.id)).length,
+    () => newTickets.filter((ticket) => !acknowledgedIds.has(ticket.id)).length,
     [acknowledgedIds, newTickets],
   );
   const chime = useKitchenChime({
@@ -191,7 +194,8 @@ function KitchenDisplay() {
   /* Filial qatori faqat ko'rish doirasi bir nechta filialni qamrasa kerak. */
   const showBranch = useMemo(
     () =>
-      new Set(tickets.map((ticket) => ticket.order.branch?.name ?? "")).size > 1,
+      new Set(tickets.map((ticket) => ticket.order.branch?.name ?? "")).size >
+      1,
     [tickets],
   );
 
@@ -261,15 +265,6 @@ function KitchenDisplay() {
       });
       await loadTickets(true);
     }
-  }
-
-  function toggleTicket(id: string) {
-    setExpandedTicketIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   }
 
   function toggleSound() {
@@ -417,7 +412,10 @@ function KitchenDisplay() {
                 )}
                 <span>{column.tickets.length}</span>
               </div>
-              <div className={styles.ticketList}>
+              <div
+                className={styles.ticketList}
+                data-count={column.tickets.length}
+              >
                 {isLoading ? (
                   <div
                     className={styles.skeleton}
@@ -432,8 +430,6 @@ function KitchenDisplay() {
                       busy={busyTicketIds.has(ticket.id)}
                       error={actionErrors[ticket.id]}
                       showBranch={showBranch}
-                      expanded={expandedTicketIds.has(ticket.id)}
-                      onToggle={() => toggleTicket(ticket.id)}
                       onAction={(action) => {
                         if (action === "cancel") setCancelTicket(ticket);
                         else void runAction(ticket, action);
@@ -449,7 +445,11 @@ function KitchenDisplay() {
         </div>
       </div>
       {historyOpen && (
-        <StaffDialog title="Smenadagi oshxona tarixi" busy={historyLoading} onClose={() => setHistoryOpen(false)}>
+        <StaffDialog
+          title="Smenadagi oshxona tarixi"
+          busy={historyLoading}
+          onClose={() => setHistoryOpen(false)}
+        >
           <div className={styles.historyControls}>
             <label className={styles.search}>
               <Search size={17} />
@@ -468,14 +468,25 @@ function KitchenDisplay() {
             >
               <option value="">Barcha holatlar</option>
               {Object.entries(kitchenStatusLabels).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+                <option key={value} value={value}>
+                  {label}
+                </option>
               ))}
             </select>
-            <button className={styles.button} onClick={() => void loadHistory()} disabled={historyLoading} type="button">
+            <button
+              className={styles.button}
+              onClick={() => void loadHistory()}
+              disabled={historyLoading}
+              type="button"
+            >
               Yangilash
             </button>
           </div>
-          {historyError && <div className={styles.error} role="alert">{historyError}</div>}
+          {historyError && (
+            <div className={styles.error} role="alert">
+              {historyError}
+            </div>
+          )}
           <div className={styles.historyList}>
             {historyLoading ? (
               <div className={styles.skeleton} />
@@ -483,16 +494,35 @@ function KitchenDisplay() {
               historyTickets.map((ticket) => (
                 <article className={styles.historyOrder} key={ticket.id}>
                   <div>
-                    <strong>#{ticket.order.displayOrderNumber ?? ticket.order.orderNumber}</strong>
-                    <span className={styles.muted}>{ticket.order.items.length} ta mahsulot · {ticket.order.branch?.name ?? "Filial"}</span>
+                    <strong>
+                      #
+                      {ticket.order.displayOrderNumber ??
+                        ticket.order.orderNumber}
+                    </strong>
+                    <span className={styles.muted}>
+                      {ticket.order.items.length} ta mahsulot ·{" "}
+                      {ticket.order.branch?.name ?? "Filial"}
+                    </span>
                   </div>
-                  <span className={styles.badge} data-tone={ticket.status === "CANCELLED" ? "late" : ticket.status === "READY" || ticket.status === "COMPLETED" ? "ready" : "cooking"}>
+                  <span
+                    className={styles.badge}
+                    data-tone={
+                      ticket.status === "CANCELLED"
+                        ? "late"
+                        : ticket.status === "READY" ||
+                            ticket.status === "COMPLETED"
+                          ? "ready"
+                          : "cooking"
+                    }
+                  >
                     {kitchenStatusLabels[ticket.status]}
                   </span>
                 </article>
               ))
             ) : (
-              <StaffEmpty title="Tarix bo'sh">Bu smenada siz qabul qilgan buyurtmalar shu yerda ko'rinadi.</StaffEmpty>
+              <StaffEmpty title="Tarix bo'sh">
+                Bu smenada siz qabul qilgan buyurtmalar shu yerda ko'rinadi.
+              </StaffEmpty>
             )}
           </div>
         </StaffDialog>

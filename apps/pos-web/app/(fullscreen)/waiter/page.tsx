@@ -631,7 +631,10 @@ function WaiterFloor() {
           </button>
         </div>
       ) : (
-        <div className={styles.waiterBody}>
+        <div
+          className={styles.waiterBody}
+          data-has-order={selectedTableId ? "true" : "false"}
+        >
           <div className={styles.waiterMain}>
             <div
               className={`${styles.segments} ${styles.waiterViewNav}`}
@@ -685,35 +688,39 @@ function WaiterFloor() {
             )}
           </div>
 
-          <aside
-            className={styles.waiterAside}
-            aria-label="Joriy buyurtma"
-            ref={asideRef}
-          >
-            <OrderPanel
-              table={panelTable}
-              orders={openOrders}
-              order={currentOrder}
-              detailError={detailError}
-              guestCount={guestCount}
-              openNote={openNote}
-              pendingAction={pendingAction}
-              busyLineId={busyLineId}
-              actionError={actionError}
-              onSelectOrder={setSelectedOrderId}
-              onGuestCountChange={(next) =>
-                setGuestCount(Math.min(maxGuestCount, Math.max(1, next)))
-              }
-              onOpenNoteChange={setOpenNote}
-              onOpenTable={() => void openTable()}
-              onGoToMenu={() => setPane("menu")}
-              onEditLine={setEditTarget}
-              onChangeQuantity={changeLineQuantity}
-              onRemoveLine={(line) => setConfirmation({ kind: "remove", line })}
-              onSendKitchen={() => setConfirmation({ kind: "kitchen" })}
-              onRequestPayment={() => setConfirmation({ kind: "payment" })}
-            />
-          </aside>
+          {selectedTableId ? (
+            <aside
+              className={styles.waiterAside}
+              aria-label="Joriy buyurtma"
+              ref={asideRef}
+            >
+              <OrderPanel
+                table={panelTable}
+                orders={openOrders}
+                order={currentOrder}
+                detailError={detailError}
+                guestCount={guestCount}
+                openNote={openNote}
+                pendingAction={pendingAction}
+                busyLineId={busyLineId}
+                actionError={actionError}
+                onSelectOrder={setSelectedOrderId}
+                onGuestCountChange={(next) =>
+                  setGuestCount(Math.min(maxGuestCount, Math.max(1, next)))
+                }
+                onOpenNoteChange={setOpenNote}
+                onOpenTable={() => void openTable()}
+                onGoToMenu={() => setPane("menu")}
+                onEditLine={setEditTarget}
+                onChangeQuantity={changeLineQuantity}
+                onRemoveLine={(line) =>
+                  setConfirmation({ kind: "remove", line })
+                }
+                onSendKitchen={() => setConfirmation({ kind: "kitchen" })}
+                onRequestPayment={() => setConfirmation({ kind: "payment" })}
+              />
+            </aside>
+          ) : null}
         </div>
       )}
 

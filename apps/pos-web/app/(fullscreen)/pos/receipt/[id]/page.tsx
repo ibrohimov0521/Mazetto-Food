@@ -130,6 +130,7 @@ function ReceiptPreview({ id }: { id: string }) {
   return (
     <StaffShell
       title="Chek"
+      sidebar={false}
       actions={
         <Link className={styles.shiftLink} href="/pos">
           <ArrowLeft size={17} aria-hidden="true" />
@@ -247,10 +248,7 @@ function ReceiptPreview({ id }: { id: string }) {
                   <Printer size={19} aria-hidden="true" />
                   {isMarking ? "Chop etilmoqda..." : "Chop etish"}
                 </button>
-                <Link
-                  className={`${styles.button} ${styles.full}`}
-                  href="/pos"
-                >
+                <Link className={`${styles.button} ${styles.full}`} href="/pos">
                   <Check size={18} aria-hidden="true" />
                   Yangi buyurtma
                 </Link>

@@ -2,8 +2,6 @@
 
 import {
   Check,
-  ChevronDown,
-  ChevronUp,
   ShoppingBag,
   Utensils,
   Timer,
@@ -34,20 +32,16 @@ const sourceLabels: Record<KitchenTicket["order"]["source"], string> = {
 export function KitchenTicketCard({
   ticket,
   now,
-  expanded,
   busy,
   error,
   showBranch,
-  onToggle,
   onAction,
 }: {
   ticket: KitchenTicket;
   now: number;
-  expanded: boolean;
   busy: boolean;
   error?: string | undefined;
   showBranch: boolean;
-  onToggle: () => void;
   onAction: (action: KitchenAction) => void;
 }) {
   const { user } = useAuth();
@@ -58,9 +52,10 @@ export function KitchenTicketCard({
     ticket.status === "NEW" ? "KITCHEN_ACCEPT" : "KITCHEN_STATUS_UPDATE",
   );
   const action = canAct ? kitchenPrimaryAction(ticket.status) : null;
-  const shownItems = expanded
-    ? ticket.order.items
-    : ticket.order.items.slice(0, 1);
+  // Oshpaz bitta buyurtmaning barcha mahsulotini bir qarashda ko'rishi kerak.
+  // Avval faqat birinchi qator ko'rinar, qolganlari alohida "Batafsil" ostida
+  // yashirinardi va navbatni ko'zdan kechirish sekinlashardi.
+  const shownItems = ticket.order.items;
   const canCancel =
     hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
     ["NEW", "ACCEPTED", "COOKING"].includes(ticket.status);
@@ -123,26 +118,7 @@ export function KitchenTicketCard({
           </li>
         ))}
       </ul>
-      {ticket.order.items.length > 0 && (
-        <button
-          className={styles.detailsButton}
-          aria-expanded={expanded}
-          onClick={onToggle}
-          type="button"
-        >
-          {expanded ? (
-            <ChevronUp size={18} aria-hidden="true" />
-          ) : (
-            <ChevronDown size={18} aria-hidden="true" />
-          )}
-          {expanded
-            ? "Yig'ish"
-            : ticket.order.items.length > 1
-              ? `Batafsil · ${ticket.order.items.length} ta mahsulot`
-              : "Batafsil"}
-        </button>
-      )}
-      {expanded && note && <p className={styles.note}>{note}</p>}
+      {note && <p className={styles.note}>{note}</p>}
       <div className={styles.ticketActions}>
         {action && (
           <button
