@@ -18,6 +18,7 @@ import {
 } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { writeAuditLog } from "../audit/audit-write";
 import type { ListShiftsDto } from "./dto/list-shifts.dto";
 import type {
   CloseShiftDto,
@@ -177,6 +178,21 @@ export class ShiftsService {
           amount,
           reason: "Admin majburiy topshiruvi — kassaga qabul qilindi",
           createdById: user.id,
+        },
+      });
+
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "CASH_HANDOVER_FORCED",
+        entity: "Shift",
+        entityId: source.id,
+        metadata: {
+          branchId: source.branchId,
+          transferId: transfer.id,
+          fromShiftId: source.id,
+          toShiftId: receiver.id,
+          amount: amount.toString(),
+          reason: transfer.reason,
         },
       });
 

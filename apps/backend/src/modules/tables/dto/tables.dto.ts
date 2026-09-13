@@ -118,6 +118,10 @@ export class CreateTableOrderDto {
   type: OrderType = OrderType.DINE_IN;
 
   @IsOptional()
+  @IsBoolean()
+  isSupplemental?: boolean;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   guestCount?: number;

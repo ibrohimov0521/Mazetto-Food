@@ -81,6 +81,7 @@ const staffSelect = {
           code: true,
           name: true,
           description: true,
+          isBranchScoped: true,
         },
       },
     },
@@ -124,7 +125,7 @@ export class StaffService {
     const normalized = this.normalizeLogin(dto.email, dto.phone);
     this.assertHasLogin(normalized);
     const roleCodes = this.resolveRequestedRoleCodes(dto);
-    this.assertCanAssignRoles(actor, roleCodes);
+    await this.assertCanAssignRoles(actor, roleCodes);
 
     const branchId = await this.resolveBranchForRoles(actor, roleCodes, dto.branchId);
     const passwordHash = await hash(dto.password, 12);
@@ -232,7 +233,7 @@ export class StaffService {
     const existing = await this.findStaffOrThrow(id);
     this.assertCanManageStaffRecord(actor, existing);
     const roleCodes = this.resolveRequestedRoleCodes(dto);
-    this.assertCanAssignRoles(actor, roleCodes);
+    await this.assertCanAssignRoles(actor, roleCodes);
     await this.assertCanRemoveCurrentSuperAdmin(existing, !roleCodes.includes("SUPER_ADMIN"));
 
     const branchId = await this.resolveBranchForRoles(
@@ -599,10 +600,10 @@ export class StaffService {
     return role;
   }
 
-  private async findActiveRoles(tx: Prisma.TransactionClient, codes: StaffRoleCode[]) {
+  private async findActiveRoles(tx: Prisma.TransactionClient, codes: string[]) {
     const roles = await tx.role.findMany({
       where: { code: { in: codes }, isActive: true },
-      select: { id: true, code: true },
+      select: { id: true, code: true, isBranchScoped: true },
     });
 
     const found = new Set(roles.map((role) => role.code));
@@ -615,38 +616,47 @@ export class StaffService {
     return codes.map((code) => roles.find((role) => role.code === code)!);
   }
 
-  private assertCanAssignRole(actor: AuthenticatedUser, roleCode: StaffRoleCode): void {
-    this.assertCanAssignRoles(actor, [roleCode]);
-  }
-
-  private assertCanAssignRoles(actor: AuthenticatedUser, roleCodes: StaffRoleCode[]): void {
+  private async assertCanAssignRoles(
+    actor: AuthenticatedUser,
+    roleCodes: string[],
+  ): Promise<void> {
     if (roleCodes.includes("SUPER_ADMIN") && !actor.roles.includes("SUPER_ADMIN")) {
       throw new ForbiddenException("Only SUPER_ADMIN can assign SUPER_ADMIN");
     }
 
-    const hasGlobalRole = roleCodes.some((roleCode) => !branchScopedStaffRoles.has(roleCode));
+    const roles = await this.findRoleScopes(roleCodes);
+    const hasCustomRole = roles.some((role) => !role.isSystem);
+
+    if (!actor.roles.includes("SUPER_ADMIN") && hasCustomRole) {
+      throw new ForbiddenException("Only SUPER_ADMIN can assign custom staff roles");
+    }
+
+    const hasGlobalRole = roles.some(
+      (role) =>
+        !role.isBranchScoped &&
+        !branchScopedStaffRoles.has(role.code as StaffRoleCode),
+    );
 
     if (!actor.roles.includes("SUPER_ADMIN") && hasGlobalRole) {
       throw new ForbiddenException("Only SUPER_ADMIN can assign global staff roles");
     }
   }
 
-  private async resolveBranchForRole(
-    actor: AuthenticatedUser,
-    roleCode: StaffRoleCode,
-    requestedBranchId?: string | null,
-  ): Promise<string | null> {
-    return this.resolveBranchForRoles(actor, [roleCode], requestedBranchId);
-  }
-
   private async resolveBranchForRoles(
     actor: AuthenticatedUser,
-    roleCodes: StaffRoleCode[],
+    roleCodes: string[],
     requestedBranchId?: string | null,
   ): Promise<string | null> {
     const branchId = requestedBranchId?.trim() || null;
+    const roles = await this.findRoleScopes(roleCodes);
 
-    if (roleCodes.some((roleCode) => branchScopedStaffRoles.has(roleCode))) {
+    if (
+      roles.some(
+        (role) =>
+          role.isBranchScoped ||
+          branchScopedStaffRoles.has(role.code as StaffRoleCode),
+      )
+    ) {
       const resolvedBranchId = resolveBranchScope(actor, branchId ?? undefined);
 
       if (!resolvedBranchId) {
@@ -735,27 +745,25 @@ export class StaffService {
     }
   }
 
-  private hasRole(staff: StaffRecord, roleCode: StaffRoleCode): boolean {
+  private hasRole(staff: StaffRecord, roleCode: string): boolean {
     return staff.roles.some((userRole) => userRole.role.code === roleCode);
   }
 
-  private primaryRoleCode(staff: StaffRecord): StaffRoleCode {
+  private primaryRoleCode(staff: StaffRecord): string {
     const roleCode = this.roleCodesFromStaff(staff)[0];
 
-    if (!roleCode || !this.isStaffRoleCode(roleCode)) {
+    if (!roleCode) {
       throw new BadRequestException("Staff user does not have a manageable role");
     }
 
     return roleCode;
   }
 
-  private roleCodesFromStaff(staff: StaffRecord): StaffRoleCode[] {
-    return staff.roles
-      .map((userRole) => userRole.role.code)
-      .filter((roleCode): roleCode is StaffRoleCode => this.isStaffRoleCode(roleCode));
+  private roleCodesFromStaff(staff: StaffRecord): string[] {
+    return staff.roles.map((userRole) => userRole.role.code);
   }
 
-  private resolveRequestedRoleCodes(dto: { roleCode?: StaffRoleCode; roleCodes?: StaffRoleCode[] }): StaffRoleCode[] {
+  private resolveRequestedRoleCodes(dto: { roleCode?: string; roleCodes?: string[] }): string[] {
     const requested = dto.roleCodes?.length ? dto.roleCodes : dto.roleCode ? [dto.roleCode] : [];
     const unique = [...new Set(requested)];
 
@@ -766,16 +774,19 @@ export class StaffService {
     return unique;
   }
 
-  private isStaffRoleCode(value: string): value is StaffRoleCode {
-    return [
-      "SUPER_ADMIN",
-      "ADMIN",
-      "BRANCH_MANAGER",
-      "CASHIER",
-      "WAITER",
-      "KITCHEN",
-      "ACCOUNTANT",
-    ].includes(value);
+  private async findRoleScopes(codes: string[]) {
+    const roles = await this.prisma.role.findMany({
+      where: { code: { in: codes }, isActive: true },
+      select: { code: true, isBranchScoped: true, isSystem: true },
+    });
+    const found = new Set(roles.map((role) => role.code));
+    const missing = codes.filter((code) => !found.has(code));
+    if (missing.length) {
+      throw new NotFoundException(
+        `Role ${missing.join(", ")} is not available`,
+      );
+    }
+    return roles;
   }
 
   private async syncEmployee(

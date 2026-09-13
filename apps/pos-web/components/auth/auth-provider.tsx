@@ -117,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 async function getLoginRedirect(session: AuthSession): Promise<string> {
-  const fallbackRedirect = getPrimaryRedirect(session.user.roles);
+  const fallbackRedirect = getPrimaryRedirect(session.user);
 
   if (fallbackRedirect !== "/shift") {
     return fallbackRedirect;

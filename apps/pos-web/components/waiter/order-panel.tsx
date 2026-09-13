@@ -21,6 +21,7 @@ import {
 } from "../../lib/order-display";
 import {
   activeLines,
+  canOpenSupplementalOrder,
   canRequestPayment,
   canSendToKitchen,
   isOrderEditable,
@@ -38,7 +39,12 @@ import {
   type WaiterTable,
 } from "./waiter-model";
 
-export type WaiterAction = "open" | "line" | "kitchen" | "payment";
+export type WaiterAction =
+  | "open"
+  | "additional"
+  | "line"
+  | "kitchen"
+  | "payment";
 
 export function OrderPanel({
   table,
@@ -54,6 +60,7 @@ export function OrderPanel({
   onGuestCountChange,
   onOpenNoteChange,
   onOpenTable,
+  onOpenAdditional,
   onGoToMenu,
   onEditLine,
   onChangeQuantity,
@@ -74,6 +81,7 @@ export function OrderPanel({
   onGuestCountChange: (next: number) => void;
   onOpenNoteChange: (next: string) => void;
   onOpenTable: () => void;
+  onOpenAdditional: () => void;
   onGoToMenu: () => void;
   onEditLine: (line: OrderLine) => void;
   onChangeQuantity: (line: OrderLine, delta: number) => void;
@@ -95,6 +103,9 @@ export function OrderPanel({
   const busy = pendingAction !== null;
   const lines = activeLines(order);
   const blockReason = tableOpenBlockReason(table, orders);
+  const canOpenAdditional = Boolean(
+    order && canOpenSupplementalOrder(order, orders),
+  );
 
   return (
     <>
@@ -139,7 +150,8 @@ export function OrderPanel({
                   onClick={() => onSelectOrder(entry.id)}
                   type="button"
                 >
-                  #{orderLabel(entry)}
+                  {entry.isSupplemental ? "Qo'shimcha " : ""}#
+                  {orderLabel(entry)}
                 </button>
               ))}
             </div>
@@ -151,7 +163,10 @@ export function OrderPanel({
             <dl className={styles.waiterFacts}>
               <div>
                 <dt>Buyurtma</dt>
-                <dd>#{orderLabel(order)}</dd>
+                <dd>
+                  {order.isSupplemental ? "Qo'shimcha " : ""}#
+                  {orderLabel(order)}
+                </dd>
               </div>
               <div>
                 <dt>Holat</dt>
@@ -338,12 +353,24 @@ export function OrderPanel({
             <div className={styles.waiterActions}>
               <button
                 className={`${styles.button} ${styles.tall} ${styles.full}`}
-                disabled={busy || !isOrderEditable(order)}
-                onClick={onGoToMenu}
+                disabled={
+                  busy || (!isOrderEditable(order) && !canOpenAdditional)
+                }
+                onClick={
+                  isOrderEditable(order) ? onGoToMenu : onOpenAdditional
+                }
                 type="button"
               >
-                <Utensils size={18} aria-hidden="true" />
-                Mahsulot qo&apos;shish
+                {isOrderEditable(order) ? (
+                  <Utensils size={18} aria-hidden="true" />
+                ) : (
+                  <ClipboardList size={18} aria-hidden="true" />
+                )}
+                {pendingAction === "additional"
+                  ? "Ochilmoqda..."
+                  : isOrderEditable(order)
+                    ? "Mahsulot qo'shish"
+                    : "Qo'shimcha buyurtma"}
               </button>
               <button
                 className={`${styles.primary} ${styles.tall} ${styles.full}`}

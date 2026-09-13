@@ -10,6 +10,13 @@ const branchManager: AuthenticatedUser = {
   roles: ["BRANCH_MANAGER"],
   permissions: ["TABLE_CREATE", "TABLE_EDIT"],
 };
+const waiter: AuthenticatedUser = {
+  id: "waiter-user",
+  employeeId: "waiter-1",
+  branchId: "branch-1",
+  roles: ["WAITER"],
+  permissions: ["TABLE_VIEW", "ORDER_CREATE"],
+};
 
 function createService(prisma: Record<string, unknown>): TablesService {
   return new TablesService(
@@ -126,5 +133,108 @@ test("ochiq buyurtmali stol arxivlanmaydi", async () => {
   await assert.rejects(
     () => service.updateTable("table-1", { isActive: false }, branchManager),
     BadRequestException,
+  );
+});
+
+test("ochiq buyurtmali stol qo'lda bo'shatilmaydi", async () => {
+  const service = createService({
+    restaurantTable: {
+      findUnique: async () => ({
+        id: "table-1",
+        branchId: "branch-1",
+        hallId: "hall-1",
+      }),
+    },
+    order: { findFirst: async () => ({ id: "open-order" }) },
+  });
+
+  await assert.rejects(
+    () => service.updateStatus("table-1", { status: "AVAILABLE" }, branchManager),
+    /faqat Band/,
+  );
+});
+
+test("buyurtmasiz stol qo'lda Band holatiga o'tkazilmaydi", async () => {
+  const service = createService({
+    restaurantTable: {
+      findUnique: async () => ({
+        id: "table-1",
+        branchId: "branch-1",
+        hallId: "hall-1",
+      }),
+    },
+    order: { findFirst: async () => null },
+  });
+
+  await assert.rejects(
+    () => service.updateStatus("table-1", { status: "OCCUPIED" }, branchManager),
+    /ochiq buyurtma yaratilganda/,
+  );
+});
+
+function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
+  let createdData: Record<string, unknown> | undefined;
+  const tx = {
+    $queryRawUnsafe: async () => [{ id: "table-1" }],
+    $executeRaw: async () => 1,
+    $queryRaw: async () => [{ sequence: 100 }],
+    employee: { findFirst: async () => ({ id: "waiter-1" }) },
+    restaurantTable: {
+      findUnique: async () => ({
+        id: "table-1",
+        branchId: "branch-1",
+        isActive: true,
+        status: "OCCUPIED",
+      }),
+      update: async () => undefined,
+    },
+    order: {
+      findMany: async () => existingOrders,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        createdData = data;
+        return { id: "new-order" };
+      },
+      findUnique: async () => ({
+        id: "new-order",
+        ...createdData,
+        table: { id: "table-1" },
+        items: [],
+      }),
+    },
+    orderStatusHistory: { create: async () => undefined },
+  };
+  const prisma = {
+    $transaction: async (callback: (client: typeof tx) => unknown) =>
+      callback(tx),
+  };
+  return { service: createService(prisma), getCreatedData: () => createdData };
+}
+
+test("tasdiqlangan order ortidan alohida qo'shimcha order ochiladi", async () => {
+  const fixture = tableOrderFixture([{ id: "first", status: "CONFIRMED" }]);
+  const created = await fixture.service.createOrderForTable(
+    "table-1",
+    { isSupplemental: true, guestCount: 3, type: "DINE_IN" },
+    waiter,
+  );
+
+  assert.equal(fixture.getCreatedData()?.isSupplemental, true);
+  assert.equal(created?.id, "new-order");
+});
+
+test("stolda yangi draft turganda ikkinchi qo'shimcha order ochilmaydi", async () => {
+  const fixture = tableOrderFixture([
+    { id: "first", status: "CONFIRMED" },
+    { id: "draft", status: "NEW" },
+  ]);
+
+  await assert.rejects(
+    () =>
+      fixture.service.createOrderForTable(
+        "table-1",
+        { isSupplemental: true, type: "DINE_IN" },
+        waiter,
+      ),
+    /allaqachon ochilgan/,
   );
 });

@@ -49,14 +49,10 @@ import { moneyCell, numberCell } from "./admin-report-views";
  *     ko'rsatiladi — bittasini ikkinchisidan chiqarib tashlamaydi.
  *   · Kamomad hech qachon yashil emas.
  *
- * NIMA QO'SHILMADI va NEGA. Kassa topshirish (`POST /cash-register/transfers`)
- * FAQAT chaqiruvchining o'z ochiq smenasidan ishlaydi — admin boshqa
- * xodimning kassasidan pul topshira olmaydi. Shuning uchun bu ekranda
- * topshirish yaratish tugmasi YO'Q. Topshiruvlar RO'YXATINI beradigan
- * admin endpoint'i ham yo'q (`/cash-register/transfers/pending` ham
- * chaqiruvchining ochiq smenasini talab qiladi) — kassa harakatlari
- * jadvalida topshirishga bog'langan yozuv belgilanadi, lekin kimdan kimga
- * ekanini ayta olmaydi. Kerakli endpoint hisobotda ko'rsatilgan.
+ * CASH_HANDOVER_FORCE ruxsati bor rahbar ochiq smenadagi naqdni shu
+ * filialdagi faol qabul qiluvchi kassaga majburan topshirishi mumkin.
+ * Backend ikkala smenani qulflaydi va CASH_OUT/CASH_IN yozuvlarini bitta
+ * serializable tranzaksiyada yaratadi.
  */
 
 type Branch = { id: string; code: string; name: string };

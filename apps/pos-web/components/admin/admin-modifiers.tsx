@@ -50,6 +50,7 @@ type Modifier = {
   id: string;
   code: string;
   name: string;
+  description?: string | null;
   price: string;
   isActive: boolean;
   sortOrder: number;
@@ -58,6 +59,7 @@ type Modifier = {
 
 type ModifierForm = {
   name: string;
+  description: string;
   price: string;
   sortOrder: string;
   isActive: boolean;
@@ -65,6 +67,7 @@ type ModifierForm = {
 
 const emptyForm: ModifierForm = {
   name: "",
+  description: "",
   price: "0",
   sortOrder: "0",
   isActive: true,
@@ -128,6 +131,7 @@ export function AdminModifiersPage() {
     setEditingId(modifier.id);
     setForm({
       name: modifier.name,
+      description: modifier.description ?? "",
       price: String(modifier.price),
       sortOrder: String(modifier.sortOrder),
       isActive: modifier.isActive,
@@ -149,7 +153,7 @@ export function AdminModifiersPage() {
       nextErrors.price = "Narx 0 yoki undan katta son bo'lishi kerak.";
     }
 
-    if (editingId && (!Number.isFinite(sortOrder) || sortOrder < 0)) {
+    if (!Number.isFinite(sortOrder) || sortOrder < 0) {
       nextErrors.sortOrder = "Tartib 0 yoki undan katta son bo'lishi kerak.";
     }
 
@@ -170,6 +174,7 @@ export function AdminModifiersPage() {
           method: "PATCH",
           body: JSON.stringify({
             name: form.name.trim(),
+            description: form.description.trim(),
             price,
             sortOrder,
             isActive: form.isActive,
@@ -177,15 +182,15 @@ export function AdminModifiersPage() {
         });
         showToast("Qo'shimcha yangilandi.", "success");
       } else {
-        /*
-         * `CreateModifierDto` FAQAT `name` va `price` ni qabul qiladi
-         * (`main.ts` da `forbidNonWhitelisted: true`, ya'ni ortiqcha maydon
-         * 400 beradi). Shuning uchun tartib va faollik yaratilgandan keyin
-         * tahrirlanadi — forma ham shuni aytadi.
-         */
         await apiFetch("/menu/modifiers", {
           method: "POST",
-          body: JSON.stringify({ name: form.name.trim(), price }),
+          body: JSON.stringify({
+            name: form.name.trim(),
+            description: form.description.trim() || undefined,
+            price,
+            sortOrder,
+            isActive: form.isActive,
+          }),
         });
         showToast("Qo'shimcha yaratildi.", "success");
       }
@@ -256,6 +261,16 @@ export function AdminModifiersPage() {
             {modifier.code}
           </p>
         </div>
+      ),
+    },
+    {
+      key: "description",
+      header: "Tavsif",
+      hideOnMobile: true,
+      render: (modifier) => (
+        <span className="text-mz-text-muted">
+          {modifier.description || "—"}
+        </span>
       ),
     },
     {
@@ -440,6 +455,21 @@ export function AdminModifiersPage() {
           </FormField>
 
           <FormField
+            label="Tavsif"
+          >
+            {(props) => (
+              <TextInput
+                {...props}
+                maxLength={500}
+                onChange={(event) =>
+                  setForm({ ...form, description: event.target.value })
+                }
+                value={form.description}
+              />
+            )}
+          </FormField>
+
+          <FormField
             hint="0 bo'lsa qo'shimcha bepul"
             label="Narx (so'm)"
             {...(errors.price ? { error: errors.price } : {})}
@@ -457,39 +487,30 @@ export function AdminModifiersPage() {
             )}
           </FormField>
 
-          {editingId ? (
-            <>
-              <FormField
-                hint="Kichik raqam yuqorida turadi"
-                label="Saralash tartibi"
-                {...(errors.sortOrder ? { error: errors.sortOrder } : {})}
-              >
-                {(props) => (
-                  <TextInput
-                    {...props}
-                    min={0}
-                    type="number"
-                    value={form.sortOrder}
-                    onChange={(event) =>
-                      setForm({ ...form, sortOrder: event.target.value })
-                    }
-                  />
-                )}
-              </FormField>
-              <Checkbox
-                boxed
-                checked={form.isActive}
-                description="Nofaol qo'shimcha yangi buyurtmalarda tanlanmaydi"
-                label="Faol"
-                onChange={(checked) => setForm({ ...form, isActive: checked })}
+          <FormField
+            hint="Kichik raqam yuqorida turadi"
+            label="Saralash tartibi"
+            {...(errors.sortOrder ? { error: errors.sortOrder } : {})}
+          >
+            {(props) => (
+              <TextInput
+                {...props}
+                min={0}
+                type="number"
+                value={form.sortOrder}
+                onChange={(event) =>
+                  setForm({ ...form, sortOrder: event.target.value })
+                }
               />
-            </>
-          ) : (
-            <p className="text-[13px] text-mz-text-muted">
-              Saralash tartibi va faollik yaratilgandan keyin tahrirlanadi —
-              yaratish endpoint&apos;i faqat nom va narxni qabul qiladi.
-            </p>
-          )}
+            )}
+          </FormField>
+          <Checkbox
+            boxed
+            checked={form.isActive}
+            description="Nofaol qo'shimcha yangi buyurtmalarda tanlanmaydi"
+            label="Faol"
+            onChange={(checked) => setForm({ ...form, isActive: checked })}
+          />
         </div>
       </Modal>
     </div>

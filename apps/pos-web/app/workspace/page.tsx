@@ -19,7 +19,7 @@ export default function WorkspacePage() {
       return;
     }
 
-    router.replace(getPrimaryRedirect(user.roles));
+    router.replace(getPrimaryRedirect(user));
   }, [isReady, router, user]);
 
   return <main className="min-h-screen bg-white" />;

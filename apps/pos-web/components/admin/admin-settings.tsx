@@ -54,6 +54,7 @@ type SettingRow = {
   value: string;
   isStored: boolean;
   isPublic: boolean;
+  affectsCustomer: boolean;
   rule: SettingRule;
   fallback: string;
 };
@@ -236,7 +237,7 @@ export function AdminSettings() {
    */
   const requestSave = useCallback(
     (row: SettingRow, value: string) => {
-      if (!row.isPublic) {
+      if (!row.affectsCustomer) {
         void save(row.key, value);
         return;
       }
@@ -257,8 +258,8 @@ export function AdminSettings() {
 
   const groups = useMemo(
     () => ({
-      customer: rows.filter((row) => row.isPublic),
-      internal: rows.filter((row) => !row.isPublic),
+      customer: rows.filter((row) => row.affectsCustomer),
+      internal: rows.filter((row) => !row.affectsCustomer),
     }),
     [rows],
   );

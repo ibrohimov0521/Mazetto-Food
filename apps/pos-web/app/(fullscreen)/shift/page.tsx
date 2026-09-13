@@ -11,7 +11,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
-import { RoleGuard } from "../../../components/auth/role-guard";
 import { useAuth } from "../../../components/auth/auth-provider";
 import {
   StaffDialog,
@@ -71,19 +70,9 @@ type Shift = {
 
 export default function ShiftPage() {
   return (
-    <RoleGuard
-      roles={[
-        "CASHIER",
-        "BRANCH_MANAGER",
-        "SUPER_ADMIN",
-        "KITCHEN",
-        "COURIER",
-      ]}
-    >
-      <PermissionGuard permission="SHIFT_VIEW_OWN">
-        <ShiftConsole />
-      </PermissionGuard>
-    </RoleGuard>
+    <PermissionGuard permission="SHIFT_VIEW_OWN">
+      <ShiftConsole />
+    </PermissionGuard>
   );
 }
 

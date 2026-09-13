@@ -102,6 +102,7 @@ type Product = {
     isRequired?: boolean;
     minSelect?: number | null;
     maxSelect?: number | null;
+    sortOrder?: number;
     modifier: Modifier;
   }[];
   bundleItems?: BundleItem[];
@@ -127,9 +128,23 @@ function snapshot(
   form: ProductFormState,
   variants: Variant[],
   modifierIds: string[],
+  modifierRules: Record<string, ModifierRule>,
 ): string {
-  return JSON.stringify([form, variants, [...modifierIds].sort()]);
+  return JSON.stringify([
+    form,
+    variants,
+    [...modifierIds].sort(),
+    [...modifierIds]
+      .sort()
+      .map((modifierId) => [modifierId, modifierRules[modifierId]]),
+  ]);
 }
+
+type ModifierRule = {
+  isRequired: boolean;
+  minSelect: string;
+  maxSelect: string;
+};
 
 type ProductFormState = {
   name: string;
@@ -146,7 +161,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
-  const canEditBranchAvailability = hasPermission(user, "BRANCH_EDIT");
+  const canEdit = hasPermission(user, "MENU_EDIT");
+  const canEditBranchAvailability =
+    canEdit && hasPermission(user, "BRANCH_EDIT");
 
   /*
    * YARATILGAN ID NI USHLAB TURISH — takroriy mahsulot xatosi.
@@ -170,6 +187,9 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
+  const [modifierRules, setModifierRules] = useState<
+    Record<string, ModifierRule>
+  >({});
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [baseline, setBaseline] = useState("");
@@ -179,17 +199,6 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   const [pendingVariantRemoval, setPendingVariantRemoval] = useState<
     number | null
   >(null);
-  /*
-   * Biriktirilgan modifier'ning GURUH sozlamalari (majburiy, min, maks)
-   * `GET /menu/products/:id` da qaytadi, lekin `ProductModifierDto` faqat
-   * `modifierId` ni qabul qiladi — ya'ni ularni bu yerdan o'zgartirib
-   * bo'lmaydi. Shuning uchun ular FAQAT KO'RSATILADI, va `modifiers`
-   * massivi faqat tanlov O'ZGARGANDA yuboriladi: aks holda `updateProduct`
-   * ni har saqlash `deleteMany` + `createMany` qilib, bu sozlamalarni
-   * jimgina nolga tushirardi.
-   */
-  const [savedModifierIds, setSavedModifierIds] = useState<string[]>([]);
-
   const [form, setForm] = useState<ProductFormState>({
     name: "",
     description: "",
@@ -267,11 +276,11 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
           ...current,
           categoryId: data.categories[0]?.id ?? "",
         };
-        setBaseline(snapshot(nextForm, nextVariants, []));
+        setBaseline(snapshot(nextForm, nextVariants, [], {}));
         return nextForm;
       });
       setSelectedModifierIds([]);
-      setSavedModifierIds([]);
+      setModifierRules({});
       return;
     }
 
@@ -288,6 +297,19 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
     const nextModifierIds = (nextProduct.modifiers ?? []).map(
       (entry) => entry.modifier.id,
     );
+    const nextModifierRules = Object.fromEntries(
+      (nextProduct.modifiers ?? []).map((entry) => [
+        entry.modifier.id,
+        {
+          isRequired: entry.isRequired ?? false,
+          minSelect: String(entry.minSelect ?? 0),
+          maxSelect:
+            entry.maxSelect === null || entry.maxSelect === undefined
+              ? ""
+              : String(entry.maxSelect),
+        },
+      ]),
+    );
     const nextForm: ProductFormState = {
       name: nextProduct.name,
       description: nextProduct.description ?? "",
@@ -301,14 +323,16 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
 
     setVariants(nextVariants);
     setSelectedModifierIds(nextModifierIds);
-    setSavedModifierIds(nextModifierIds);
+    setModifierRules(nextModifierRules);
     setForm(nextForm);
-    setBaseline(snapshot(nextForm, nextVariants, nextModifierIds));
+    setBaseline(
+      snapshot(nextForm, nextVariants, nextModifierIds, nextModifierRules),
+    );
   }, [data]);
 
   const isDirty =
     baseline !== "" &&
-    snapshot(form, variants, selectedModifierIds) !== baseline;
+    snapshot(form, variants, selectedModifierIds, modifierRules) !== baseline;
 
   /*
    * Saqlanmagan o'zgarish bilan sahifadan chiqishni ogohlantirish.
@@ -370,11 +394,43 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   }
 
   function toggleModifier(modifierId: string): void {
-    setSelectedModifierIds((current) =>
-      current.includes(modifierId)
-        ? current.filter((id) => id !== modifierId)
-        : [...current, modifierId],
-    );
+    setSelectedModifierIds((current) => {
+      if (current.includes(modifierId)) {
+        setModifierRules((rules) => {
+          const next = { ...rules };
+          delete next[modifierId];
+          return next;
+        });
+        return current.filter((id) => id !== modifierId);
+      }
+
+      setModifierRules((rules) => ({
+        ...rules,
+        [modifierId]: {
+          isRequired: false,
+          minSelect: "0",
+          maxSelect: "",
+        },
+      }));
+      return [...current, modifierId];
+    });
+  }
+
+  function updateModifierRule(
+    modifierId: string,
+    patch: Partial<ModifierRule>,
+  ): void {
+    setModifierRules((current) => ({
+      ...current,
+      [modifierId]: {
+        ...(current[modifierId] ?? {
+          isRequired: false,
+          minSelect: "0",
+          maxSelect: "",
+        }),
+        ...patch,
+      },
+    }));
   }
 
   /*
@@ -429,6 +485,35 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
       next.variantDefault = "Bitta variant standart deb belgilanishi kerak.";
     }
 
+    selectedModifierIds.forEach((modifierId) => {
+      const rule = modifierRules[modifierId];
+      const minimum = Number(rule?.minSelect ?? 0);
+      const maximum =
+        rule?.maxSelect === "" || rule?.maxSelect === undefined
+          ? null
+          : Number(rule.maxSelect);
+
+      if (!Number.isInteger(minimum) || minimum < 0 || minimum > 20) {
+        next[`modifier-${modifierId}-min`] =
+          "Eng kam tanlov 0 dan 20 gacha bo'lishi kerak.";
+      }
+      if (
+        maximum !== null &&
+        (!Number.isInteger(maximum) || maximum < 1 || maximum > 20)
+      ) {
+        next[`modifier-${modifierId}-max`] =
+          "Eng ko'p tanlov 1 dan 20 gacha bo'lishi kerak.";
+      }
+      if (maximum !== null && minimum > maximum) {
+        next[`modifier-${modifierId}-max`] =
+          "Eng ko'p tanlov eng kamidan kichik bo'lmaydi.";
+      }
+      if (rule?.isRequired && minimum < 1) {
+        next[`modifier-${modifierId}-min`] =
+          "Majburiy qo'shimcha uchun eng kam tanlov kamida 1.";
+      }
+    });
+
     return next;
   }
 
@@ -460,10 +545,6 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
      * faol qiladi (`isAvailable: true`), shuning uchun yaratish formasida
      * bu bayroq ko'rsatilmaydi ham.
      */
-    const modifiersChanged =
-      [...selectedModifierIds].sort().join(",") !==
-      [...savedModifierIds].sort().join(",");
-
     const body = {
       categoryId: form.categoryId,
       name: form.name.trim(),
@@ -482,13 +563,16 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
           : {}),
         isDefault: variant.isDefault,
       })),
-      ...(isNew || modifiersChanged
-        ? {
-            modifiers: selectedModifierIds.map((modifierId) => ({
-              modifierId,
-            })),
-          }
-        : {}),
+      modifiers: selectedModifierIds.map((modifierId, sortOrder) => {
+        const rule = modifierRules[modifierId];
+        return {
+          modifierId,
+          isRequired: rule?.isRequired ?? false,
+          minSelect: Number(rule?.minSelect ?? 0),
+          ...(rule?.maxSelect ? { maxSelect: Number(rule.maxSelect) } : {}),
+          sortOrder,
+        };
+      }),
     };
 
     try {
@@ -568,7 +652,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
 
   return (
     <form className="space-y-5 pb-2" onSubmit={save} ref={formRef}>
-      <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+      <fieldset className="contents" disabled={!canEdit}>
+        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
         <div className="grid gap-5">
           <Card>
             <CardHeader title="Asosiy ma'lumot" />
@@ -861,8 +946,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
               - chip balandligi 40px, matn 13px;
               - qidiruv maydoni (katalog o'sganda kerak);
               - tanlanganlar tepada, alohida bo'limda, olib tashlash bilan;
-              - biriktirilgan modifier'ning guruh sozlamalari ko'rsatiladi
-                (ular faqat o'qish uchun).
+              - har bir biriktirilgan modifier uchun majburiy, min va maks
+                tanlov qoidalari shu yerning o'zida boshqariladi.
           */}
           <Card>
             <CardHeader
@@ -887,54 +972,114 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
               ) : (
                 <>
                   {selectedModifierIds.length > 0 ? (
-                    <div className="grid gap-2 rounded-mz-control bg-mz-info-bg/60 p-3">
+                    <div className="grid gap-3">
                       <p className="text-[13px] font-semibold text-mz-text">
-                        Biriktirilgan
+                        Biriktirilgan va tanlov qoidalari
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedModifierIds.map((modifierId) => {
-                          const modifier = modifierCatalog.find(
-                            (entry) => entry.id === modifierId,
-                          );
-                          const group = (product?.modifiers ?? []).find(
-                            (entry) => entry.modifier.id === modifierId,
-                          );
+                      {selectedModifierIds.map((modifierId) => {
+                        const modifier = modifierCatalog.find(
+                          (entry) => entry.id === modifierId,
+                        );
+                        const rule = modifierRules[modifierId] ?? {
+                          isRequired: false,
+                          minSelect: "0",
+                          maxSelect: "",
+                        };
 
-                          if (!modifier) {
-                            return null;
-                          }
+                        if (!modifier) {
+                          return null;
+                        }
 
-                          return (
-                            <span
-                              className="inline-flex min-h-10 items-center gap-2 rounded-mz-pill border border-mz-accent bg-mz-surface px-3.5 py-1.5 text-[13px] font-semibold text-mz-info"
-                              key={modifierId}
+                        return (
+                          <div
+                            className="grid gap-3 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3 lg:grid-cols-[minmax(0,1fr)_9rem_9rem_auto]"
+                            key={modifierId}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-mz-text">
+                                {modifier.name}
+                              </p>
+                              <p className="text-[13px] text-mz-text-muted">
+                                {Number(modifier.price) > 0
+                                  ? formatMoney(modifier.price)
+                                  : "Bepul"}
+                              </p>
+                              <Checkbox
+                                checked={rule.isRequired}
+                                label="Majburiy"
+                                onChange={(checked) =>
+                                  updateModifierRule(modifierId, {
+                                    isRequired: checked,
+                                    ...(checked &&
+                                    Number(rule.minSelect || 0) < 1
+                                      ? { minSelect: "1" }
+                                      : {}),
+                                  })
+                                }
+                              />
+                            </div>
+                            <FormField
+                              label="Eng kam"
+                              {...(errors[`modifier-${modifierId}-min`]
+                                ? {
+                                    error:
+                                      errors[`modifier-${modifierId}-min`],
+                                  }
+                                : {})}
                             >
-                              {modifier.name}
-                              {Number(modifier.price) > 0
-                                ? ` · ${formatMoney(modifier.price)}`
-                                : ""}
-                              {group?.isRequired ? (
-                                <Badge tone="warning">majburiy</Badge>
-                              ) : null}
-                              {group && (group.minSelect || group.maxSelect) ? (
-                                <Badge tone="neutral">
-                                  {group.minSelect ?? 0}
-                                  {"–"}
-                                  {group.maxSelect ?? "∞"}
-                                </Badge>
-                              ) : null}
-                              <button
-                                aria-label={`${modifier.name} — biriktirishni olib tashlash`}
-                                className="grid h-6 w-6 place-items-center rounded-mz-pill text-mz-text-muted transition hover:bg-mz-danger-bg hover:text-mz-danger"
-                                onClick={() => toggleModifier(modifierId)}
-                                type="button"
-                              >
-                                <Icon className="h-3.5 w-3.5" name="close" />
-                              </button>
-                            </span>
-                          );
-                        })}
-                      </div>
+                              {(props) => (
+                                <TextInput
+                                  {...props}
+                                  max={20}
+                                  min={0}
+                                  onChange={(event) =>
+                                    updateModifierRule(modifierId, {
+                                      minSelect: event.target.value,
+                                    })
+                                  }
+                                  type="number"
+                                  value={rule.minSelect}
+                                />
+                              )}
+                            </FormField>
+                            <FormField
+                              hint="Bo'sh bo'lsa cheksiz"
+                              label="Eng ko'p"
+                              {...(errors[`modifier-${modifierId}-max`]
+                                ? {
+                                    error:
+                                      errors[`modifier-${modifierId}-max`],
+                                  }
+                                : {})}
+                            >
+                              {(props) => (
+                                <TextInput
+                                  {...props}
+                                  max={20}
+                                  min={1}
+                                  onChange={(event) =>
+                                    updateModifierRule(modifierId, {
+                                      maxSelect: event.target.value,
+                                    })
+                                  }
+                                  placeholder="Cheksiz"
+                                  type="number"
+                                  value={rule.maxSelect}
+                                />
+                              )}
+                            </FormField>
+                            <button
+                              aria-label={`${modifier.name} — biriktirishni olib tashlash`}
+                              className="grid h-9 w-9 place-items-center self-start rounded-mz-control border border-mz-border text-mz-text-muted transition hover:border-mz-danger hover:bg-mz-danger-bg hover:text-mz-danger lg:self-center"
+                              onClick={() => toggleModifier(modifierId)}
+                              title="Biriktirishni olib tashlash"
+                              type="button"
+                            >
+                              <Icon className="h-4 w-4" name="close" />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
 
@@ -988,9 +1133,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                   ) : null}
 
                   <p className="text-[13px] text-mz-text-muted">
-                    Guruh sozlamalari (majburiy, eng kam va eng ko&apos;p
-                    tanlov) faqat ko&apos;rsatiladi — biriktirish payload&apos;i
-                    ularni qabul qilmaydi.
+                    Eng ko&apos;p tanlov bo&apos;sh qolsa, yuqori chegara
+                    qo&apos;yilmaydi.
                   </p>
                 </>
               )}
@@ -1112,7 +1256,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
             </CardBody>
           </Card>
         </aside>
-      </div>
+        </div>
+      </fieldset>
 
       {/*
         `position: sticky` uchun MUHIM: yopishqoq element GRID ELEMENTI
@@ -1157,16 +1302,18 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
           }}
           variant="ghost"
         >
-          Bekor qilish
+          {canEdit ? "Bekor qilish" : "Orqaga"}
         </Button>
-        <Button
-          disabled={!isDirty}
-          isLoading={isSaving}
-          size="lg"
-          type="submit"
-        >
-          {isSaving ? "Saqlanmoqda" : "Saqlash"}
-        </Button>
+        {canEdit ? (
+          <Button
+            disabled={!isDirty}
+            isLoading={isSaving}
+            size="lg"
+            type="submit"
+          >
+            {isSaving ? "Saqlanmoqda" : "Saqlash"}
+          </Button>
+        ) : null}
       </div>
 
       <Modal

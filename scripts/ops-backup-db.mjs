@@ -1,7 +1,17 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import {
+  createReadStream,
+  createWriteStream,
+  mkdirSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
+import { pipeline } from "node:stream/promises";
 
 /*
  * Baza nusxasini olish va YAROQLILIGINI tekshirish (7-bosqich Q3.3).
@@ -27,10 +37,11 @@ const database = envValue("POSTGRES_DB", "mazetto");
 
 const stamp = new Date()
   .toISOString()
-  .replace(/[-:]/g, "")
-  .replace(/\..+/, "")
-  .replace("T", "-");
+  .replace(/[-:.]/g, "")
+  .replace("T", "-")
+  .replace("Z", "");
 const target = join(outDir, `mazetto-${stamp}.dump`);
+const partial = `${target}.partial`;
 
 mkdirSync(outDir, { recursive: true });
 
@@ -38,15 +49,23 @@ console.log(`Baza: ${database} (konteyner ${container})`);
 
 // `-Fc` — maxsus format: `pg_restore` uni o'qiy oladi va tanlab tiklash
 // mumkin. Oddiy SQL dump'da `--list` tekshiruvi ishlamaydi.
-const dump = execFileSync(
+const dump = spawn(
   "docker",
   ["exec", container, "pg_dump", "-U", user, "-d", database, "-Fc"],
-  { maxBuffer: 1024 * 1024 * 512 },
+  { stdio: ["ignore", "pipe", "ignore"] },
 );
+const [[dumpCode]] = await Promise.all([
+  once(dump, "close"),
+  pipeline(
+    dump.stdout,
+    createWriteStream(partial, { flags: "wx", mode: 0o600 }),
+  ),
+]);
+if (dumpCode !== 0) {
+  throw new Error("pg_dump bajarilmadi — backup dalili yangilanmadi");
+}
 
-writeFileSync(target, dump);
-const size = statSync(target).size;
-console.log(`Yozildi: ${target} (${size.toLocaleString("en-US")} bayt)`);
+const size = statSync(partial).size;
 
 if (size === 0) {
   console.error("Dump BO'SH — backup yaroqsiz");
@@ -54,16 +73,44 @@ if (size === 0) {
 }
 
 try {
-  const listing = execFileSync(
+  const restore = spawn(
     "docker",
     ["exec", "-i", container, "pg_restore", "--list"],
-    { input: dump, maxBuffer: 1024 * 1024 * 128 },
-  ).toString();
-
-  const entries = listing.split("\n").filter((line) => line && !line.startsWith(";")).length;
+    { stdio: ["pipe", "pipe", "ignore"] },
+  );
+  let entries = 0;
+  const countEntries = (async () => {
+    for await (const line of createInterface({ input: restore.stdout })) {
+      if (line && !line.startsWith(";")) entries += 1;
+    }
+  })();
+  const [[restoreCode]] = await Promise.all([
+    once(restore, "close"),
+    pipeline(createReadStream(partial), restore.stdin),
+    countEntries,
+  ]);
+  if (restoreCode !== 0 || entries === 0) {
+    throw new Error("pg_restore arxivida yozuvlar yo'q");
+  }
+  renameSync(partial, target);
+  const statusFile = join(outDir, "latest-verified.json");
+  const statusPartial = `${statusFile}.${stamp}.partial`;
+  writeFileSync(
+    statusPartial,
+    JSON.stringify({
+      version: 1,
+      verifiedAt: new Date().toISOString(),
+      archiveName: `mazetto-${stamp}.dump`,
+      bytes: size,
+      archiveEntries: entries,
+      verification: "pg_restore_list",
+    }),
+    { flag: "wx", mode: 0o600 },
+  );
+  renameSync(statusPartial, statusFile);
+  console.log(`Yozildi: ${target} (${size.toLocaleString("en-US")} bayt)`);
   console.log(`Arxiv o'qildi — ${entries} ta yozuv. Backup yaroqli.`);
 } catch (error) {
   console.error("BACKUP YAROQSIZ — pg_restore arxivni o'qiy olmadi");
-  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }

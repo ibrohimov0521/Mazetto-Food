@@ -124,6 +124,9 @@ export function KitchenTicketCard({
         )}
       </div>
       <div className={styles.ticketMeta}>
+        {ticket.order.isSupplemental && (
+          <span className={styles.ticketPriority}>Qo&apos;shimcha</span>
+        )}
         <span className={styles.badge}>
           {ticket.order.type === "DELIVERY" ? (
             <Truck size={16} aria-hidden="true" />

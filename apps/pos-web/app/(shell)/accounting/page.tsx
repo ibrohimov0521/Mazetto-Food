@@ -5,7 +5,7 @@ import { AdminPageHeader } from "../../../components/admin-shell/admin-page-head
 import { useAuth } from "../../../components/auth/auth-provider";
 import { ButtonLink } from "../../../components/admin-ui/button";
 import { Card, CardBody, CardHeader } from "../../../components/admin-ui/card";
-import { hasPermission, hasRole } from "../../../lib/auth";
+import { hasPermission } from "../../../lib/auth";
 
 /*
  * ACCOUNTANT uchun login'dan keyingi asosiy sahifa (RBAC JSON default_route).
@@ -79,7 +79,7 @@ const moneyLinks: MoneyLink[] = [
 export default function AccountingPage() {
   const { user } = useAuth();
   const visibleLinks = moneyLinks.filter(
-    (link) => hasRole(user, link.roles) && hasPermission(user, link.permission),
+    (link) => hasPermission(user, link.permission),
   );
 
   return (

@@ -12,13 +12,13 @@ import {
   PaymentStatus,
   Prisma,
   RevenueRecordSource,
-  TableStatus,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ensureOrderReceipt } from "../receipts/receipt-writer";
+import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { ListPaymentsDto } from "./dto/list-payments.dto";
 import type {
   CreatePaymentDto,
@@ -345,10 +345,7 @@ export class PaymentsService {
 
             if (paymentStatus === PaymentStatus.PAID) {
               if (shouldCompleteOrder && order.tableId) {
-                await tx.restaurantTable.update({
-                  where: { id: order.tableId },
-                  data: { status: TableStatus.AVAILABLE },
-                });
+                await releaseTableIfNoActiveOrders(tx, order.tableId);
               }
 
               if (shouldCompleteOrder) {

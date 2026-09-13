@@ -1,4 +1,4 @@
-import { hasPermission, hasRole, type AuthUser } from "./auth";
+import { hasPermission, type AuthUser } from "./auth";
 
 /*
  * Qobiq ichidagi route'lar uchun ruxsat matritsasi — YAGONA manba.
@@ -25,8 +25,10 @@ export type RouteAccessRule = {
   /** `:` bilan boshlangan segment istalgan bitta segmentga mos keladi. */
   pattern: string;
   roles: string[];
-  /** Berilmasa faqat rol tekshiriladi (rolga xos landing sahifalari). */
+  /** Route uchun bevosita kerak bo'lgan permission. */
   permission?: string;
+  /** Shu ro'yxatdan kamida bittasi talab qilinadigan route'lar uchun. */
+  anyPermissions?: string[];
 };
 
 const SUPER = "SUPER_ADMIN";
@@ -35,9 +37,8 @@ const MANAGER = "BRANCH_MANAGER";
 const ACCOUNTANT = "ACCOUNTANT";
 
 export const routeAccessRules: RouteAccessRule[] = [
-  // Rolga xos landing sahifalari — permission talab qilmaydi.
-  { pattern: "/accounting", roles: [ACCOUNTANT, SUPER] },
-  { pattern: "/manager/dashboard", roles: [MANAGER, SUPER] },
+  { pattern: "/accounting", roles: [ACCOUNTANT, SUPER], permission: "DASHBOARD_VIEW" },
+  { pattern: "/manager/dashboard", roles: [MANAGER, SUPER], permission: "DASHBOARD_VIEW" },
 
   // `/admin` va `/admin/menu` — redirect sahifalari. Ular o'z maqsadining
   // qoidasini oladi, aks holda qobiq ularni noma'lum route deb rad etardi.
@@ -168,9 +169,19 @@ export const routeAccessRules: RouteAccessRule[] = [
     pattern: "/admin/reports",
     roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT],
     permission: "REPORT_SALES_VIEW",
+    anyPermissions: [
+      "REPORT_PRODUCTS_VIEW",
+      "REPORT_EMPLOYEES_VIEW",
+      "REPORT_EXPENSES_VIEW",
+    ],
   },
 
   // Filial daraxtidagi chuqur sahifalarda jadval huquqi ham kerak.
+  {
+    pattern: "/admin/branches/:branchId/devices",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "DEVICE_VIEW",
+  },
   {
     pattern: "/admin/branches/:branchId/halls/:hallId/tables/:tableId",
     roles: [SUPER, MANAGER],
@@ -197,6 +208,11 @@ export const routeAccessRules: RouteAccessRule[] = [
     permission: "RECEIPT_PRINT",
   },
   { pattern: "/admin/audit", roles: [SUPER], permission: "AUDIT_VIEW" },
+  {
+    pattern: "/admin/system-health",
+    roles: [SUPER],
+    permission: "SYSTEM_HEALTH_VIEW",
+  },
   // Kill switch va cheklov qiymatlari — filial darajasidagi qaror emas.
   { pattern: "/admin/settings", roles: [SUPER], permission: "SETTING_MANAGE" },
 
@@ -245,11 +261,19 @@ export function checkRouteAccess(
     return "unknown-route";
   }
 
-  if (!hasRole(user, rule.roles)) {
+  if (!user) {
     return "denied";
   }
 
-  if (rule.permission && !hasPermission(user, rule.permission)) {
+  if (pathname.startsWith("/admin") && !hasPermission(user, "ADMIN_ACCESS")) {
+    return "denied";
+  }
+
+  if (
+    rule.permission &&
+    !hasPermission(user, rule.permission) &&
+    !rule.anyPermissions?.some((permission) => hasPermission(user, permission))
+  ) {
     return "denied";
   }
 

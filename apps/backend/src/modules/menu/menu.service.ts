@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -41,11 +45,45 @@ export function productModifierSettings(
     maxSelect: number | null;
   },
 ) {
-  return {
-    isRequired: modifier.isRequired ?? previous?.isRequired ?? false,
-    minSelect: modifier.minSelect ?? previous?.minSelect ?? 0,
+  const isRequired = modifier.isRequired ?? previous?.isRequired ?? false;
+  const settings = {
+    isRequired,
+    minSelect:
+      modifier.minSelect ?? previous?.minSelect ?? (isRequired ? 1 : 0),
     maxSelect: modifier.maxSelect ?? previous?.maxSelect ?? null,
   };
+
+  if (settings.isRequired && settings.minSelect < 1) {
+    throw new BadRequestException(
+      "Majburiy qo'shimcha uchun eng kam tanlov kamida 1",
+    );
+  }
+  if (
+    settings.maxSelect !== null &&
+    settings.minSelect > settings.maxSelect
+  ) {
+    throw new BadRequestException(
+      "Eng ko'p tanlov eng kam tanlovdan kichik bo'la olmaydi",
+    );
+  }
+
+  return settings;
+}
+
+export function assertUniqueProductModifiers(
+  modifiers: Array<{ modifierId: string }> | undefined,
+): void {
+  if (!modifiers) return;
+  const ids = new Set<string>();
+
+  for (const modifier of modifiers) {
+    if (ids.has(modifier.modifierId)) {
+      throw new BadRequestException(
+        "Bir qo'shimchani mahsulotga ikki marta biriktirib bo'lmaydi",
+      );
+    }
+    ids.add(modifier.modifierId);
+  }
 }
 
 @Injectable()
@@ -72,6 +110,7 @@ export class MenuService {
         _count: {
           select: {
             products: true,
+            children: true,
           },
         },
       },
@@ -290,6 +329,12 @@ export class MenuService {
   }
 
   async createCategory(dto: CreateCategoryDto) {
+    await this.assertValidCategoryParent(
+      null,
+      dto.parentId ?? null,
+      dto.branchId ?? null,
+    );
+
     return this.prisma.category.create({
       data: {
         branchId: dto.branchId ?? null,
@@ -304,7 +349,21 @@ export class MenuService {
   }
 
   async updateCategory(id: string, dto: UpdateCategoryDto) {
-    await this.assertCategory(id);
+    const category = await this.prisma.category.findUnique({
+      where: { id },
+      select: { id: true, branchId: true },
+    });
+
+    if (!category) {
+      throw new NotFoundException("Category not found");
+    }
+    if (dto.parentId !== undefined) {
+      await this.assertValidCategoryParent(
+        id,
+        dto.parentId,
+        category.branchId,
+      );
+    }
 
     return this.prisma.category.update({
       where: { id },
@@ -321,6 +380,28 @@ export class MenuService {
 
   async deleteCategory(id: string) {
     await this.assertCategory(id);
+    const dependencies = await this.prisma.category.findUnique({
+      where: { id },
+      select: {
+        _count: {
+          select: {
+            children: { where: { isActive: true } },
+            products: { where: { isAvailable: true } },
+          },
+        },
+      },
+    });
+
+    if (dependencies?._count.children) {
+      throw new BadRequestException(
+        "Avval quyi kategoriyalarni ko'chiring yoki arxivlang",
+      );
+    }
+    if (dependencies?._count.products) {
+      throw new BadRequestException(
+        "Avval kategoriya mahsulotlarini ko'chiring yoki menyudan oling",
+      );
+    }
 
     return this.prisma.category.update({
       where: { id },
@@ -329,7 +410,12 @@ export class MenuService {
   }
 
   async createProduct(dto: CreateProductDto) {
+    assertUniqueProductModifiers(dto.modifiers);
     const defaultVariant = dto.variants?.find((variant) => variant.isDefault) ?? dto.variants?.[0];
+    const defaultVariantIndex = Math.max(
+      dto.variants?.findIndex((variant) => variant === defaultVariant) ?? -1,
+      0,
+    );
     const sellingPrice = new Prisma.Decimal(defaultVariant?.price ?? 0);
 
     const product = await this.prisma.$transaction(async (tx) => {
@@ -359,7 +445,7 @@ export class MenuService {
             sellingPrice: new Prisma.Decimal(variant.price),
             costPrice:
               variant.costPrice !== undefined ? new Prisma.Decimal(variant.costPrice) : null,
-            isDefault: variant.isDefault || index === 0,
+            isDefault: index === defaultVariantIndex,
             isAvailable: true,
             sortOrder: index,
           })),
@@ -386,6 +472,7 @@ export class MenuService {
 
   async updateProduct(id: string, dto: UpdateProductDto) {
     await this.assertProduct(id);
+    assertUniqueProductModifiers(dto.modifiers);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.product.update({
@@ -404,6 +491,10 @@ export class MenuService {
 
       if (dto.variants) {
         const defaultVariant = dto.variants.find((variant) => variant.isDefault) ?? dto.variants[0];
+        const defaultVariantIndex = Math.max(
+          dto.variants.findIndex((variant) => variant === defaultVariant),
+          0,
+        );
 
         await tx.productVariant.updateMany({
           where: { productId: id },
@@ -412,6 +503,15 @@ export class MenuService {
 
         for (const [index, variant] of dto.variants.entries()) {
           if (variant.id) {
+            const ownedVariant = await tx.productVariant.findFirst({
+              where: { id: variant.id, productId: id },
+              select: { id: true },
+            });
+            if (!ownedVariant) {
+              throw new BadRequestException(
+                "Variant bu mahsulotga tegishli emas",
+              );
+            }
             await tx.productVariant.update({
               where: { id: variant.id },
               data: {
@@ -419,7 +519,7 @@ export class MenuService {
                 sellingPrice: new Prisma.Decimal(variant.price),
                 costPrice:
                   variant.costPrice !== undefined ? new Prisma.Decimal(variant.costPrice) : null,
-                isDefault: variant.isDefault,
+                isDefault: index === defaultVariantIndex,
                 isAvailable: true,
                 sortOrder: index,
               },
@@ -433,7 +533,7 @@ export class MenuService {
                 sellingPrice: new Prisma.Decimal(variant.price),
                 costPrice:
                   variant.costPrice !== undefined ? new Prisma.Decimal(variant.costPrice) : null,
-                isDefault: variant.isDefault,
+                isDefault: index === defaultVariantIndex,
                 sortOrder: index,
               },
             });
@@ -578,6 +678,50 @@ export class MenuService {
 
     if (!category) {
       throw new NotFoundException("Category not found");
+    }
+  }
+
+  private async assertValidCategoryParent(
+    categoryId: string | null,
+    parentId: string | null,
+    branchId: string | null,
+  ): Promise<void> {
+    if (!parentId) {
+      return;
+    }
+    if (parentId === categoryId) {
+      throw new BadRequestException("Kategoriya o'ziga ota bo'la olmaydi");
+    }
+
+    let parent = await this.prisma.category.findUnique({
+      where: { id: parentId },
+      select: { id: true, parentId: true, branchId: true },
+    });
+
+    if (!parent) {
+      throw new BadRequestException("Ota kategoriya topilmadi");
+    }
+    if (parent.branchId !== null && parent.branchId !== branchId) {
+      throw new BadRequestException(
+        "Ota kategoriya boshqa filialga tegishli",
+      );
+    }
+
+    const visited = new Set<string>();
+    while (parent) {
+      if (parent.id === categoryId || visited.has(parent.id)) {
+        throw new BadRequestException(
+          "Kategoriya daraxtida aylana hosil qilib bo'lmaydi",
+        );
+      }
+      visited.add(parent.id);
+      if (!parent.parentId) {
+        return;
+      }
+      parent = await this.prisma.category.findUnique({
+        where: { id: parent.parentId },
+        select: { id: true, parentId: true, branchId: true },
+      });
     }
   }
 

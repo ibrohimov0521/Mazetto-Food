@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.service";
 import {
+  affectsCustomerCheckout,
   describeSettingRule,
   isKnownSettingKey,
   isPublicSettingKey,
@@ -14,6 +15,7 @@ import {
   validateSettingValue,
   type SettingKey,
 } from "./setting-rules";
+import { writeAuditLog } from "../audit/audit-write";
 
 /*
  * Biznes sozlamalarini o'qish va yozish (7-bosqich Q1).
@@ -73,6 +75,7 @@ export class SettingsService {
       value: stored[key] ?? settingFallback(key),
       isStored: stored[key] !== undefined,
       isPublic: isPublicSettingKey(key),
+      affectsCustomer: affectsCustomerCheckout(key),
       rule: describeSettingRule(key),
       fallback: settingFallback(key),
     }));
@@ -97,16 +100,34 @@ export class SettingsService {
 
     const value = validateSettingValue(key, rawValue);
 
-    const saved = await this.prisma.setting.upsert({
-      where: { key },
-      update: { value, updatedById: user.id },
-      create: {
-        key,
-        value,
-        isPublic: isPublicSettingKey(key),
-        updatedById: user.id,
-      },
-      select: { key: true, value: true, isPublic: true, updatedAt: true },
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const previous = await tx.setting.findUnique({
+        where: { key },
+        select: { value: true },
+      });
+      const updated = await tx.setting.upsert({
+        where: { key },
+        update: { value, updatedById: user.id },
+        create: {
+          key,
+          value,
+          isPublic: isPublicSettingKey(key),
+          updatedById: user.id,
+        },
+        select: { key: true, value: true, isPublic: true, updatedAt: true },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "SETTING_UPDATED",
+        entity: "Setting",
+        entityId: key,
+        metadata: {
+          before: previous?.value ?? settingFallback(key),
+          after: value,
+          wasStored: previous !== null,
+        },
+      });
+      return updated;
     });
 
     await this.invalidateCache();

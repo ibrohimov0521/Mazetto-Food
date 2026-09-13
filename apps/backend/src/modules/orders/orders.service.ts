@@ -18,7 +18,6 @@ import {
   CashTransactionType,
   RevenueRecordSource,
   StockMovementType,
-  TableStatus,
 } from "@prisma/client";
 import {
   resolveBranchScope,
@@ -30,6 +29,7 @@ import { customerVisibleProductCodes } from "../customers/customer-catalog-visib
 import { buildOrderSearchWhere } from "../customers/customer-shared";
 import { InventoryService } from "../inventory/inventory.service";
 import { KitchenService } from "../kitchen/kitchen.service";
+import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { CreateOrderDto } from "./dto/create-order.dto";
 import type { ListOrdersDto } from "./dto/list-orders.dto";
 import type {
@@ -878,10 +878,7 @@ export class OrdersService {
         (nextStatus === OrderStatus.COMPLETED ||
           nextStatus === OrderStatus.CANCELLED)
       ) {
-        await tx.restaurantTable.update({
-          where: { id: order.tableId },
-          data: { status: TableStatus.AVAILABLE },
-        });
+        await releaseTableIfNoActiveOrders(tx, order.tableId);
       }
 
       await tx.orderStatusHistory.create({

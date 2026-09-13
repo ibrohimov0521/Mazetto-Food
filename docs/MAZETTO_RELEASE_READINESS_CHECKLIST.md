@@ -25,6 +25,20 @@ This checklist is for the next controlled production release. It is documentatio
    - Create a PostgreSQL dump before migration.
    - Verify the backup can be listed with `pg_restore --list`.
    - Record the backup path.
+   - `scripts/ops-backup-production.sh` writes a verified dump and
+     `latest-verified.json` into `MAZETTO_BACKUP_DIR`. A failed or empty dump
+     never updates that evidence file.
+   - For the Super Admin `Tizim holati` page, mount this backup directory
+     **read-only** in the backend container and set
+     `MAZETTO_BACKUP_STATUS_FILE` to its `latest-verified.json` path inside
+     the container. The backend also checks that the referenced dump exists
+     beside the evidence file and has the recorded byte size. Without the
+     mount, the page reports `Ulanmagan`; do not treat that as backup success.
+   - `pg_restore --list` proves that the archive is readable, not that a
+     database has been restored successfully. Schedule a restore drill into
+     an isolated database before calling disaster recovery verified.
+   - Dokploy/R2 application backups are separate from this PostgreSQL dump
+     evidence. Their status is not inferred by the admin page.
 
 3. Approved commit is on `main`
    - Changes reach `main` only through a PR whose `verify` check is green; direct pushes are blocked by branch protection.

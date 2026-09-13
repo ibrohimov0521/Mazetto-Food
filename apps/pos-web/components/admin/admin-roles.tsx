@@ -1,35 +1,33 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { hasPermission } from "../../lib/auth";
 import { useApiResource } from "../../lib/use-api-resource";
+import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
-import { ButtonLink } from "../admin-ui/button";
+import { Button, ButtonLink } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
 import { EmptyState, ErrorState, Skeleton } from "../admin-ui/feedback";
-import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
+import {
+  Checkbox,
+  FilterBar,
+  FormField,
+  Select,
+  Textarea,
+  TextInput,
+} from "../admin-ui/form";
 import { Icon } from "../admin-ui/icon";
+import { Modal } from "../admin-ui/modal";
 import { StatGrid, InfoBox } from "../admin-ui/stat-box";
+import { useToast } from "../admin-ui/toast";
 import { roleCodeLabel } from "./people-branch-labels";
 
 /*
- * Rollar va permissionlar — FAQAT O'QISH, va bu backend cheklovi.
- *
- * TEKSHIRILDI (apps/backend/src/modules/roles/roles.controller.ts): butun
- * modulda ikkita marshrut bor — `GET /roles` va `GET /permissions`. Rol
- * yaratish, o'zgartirish, o'chirish yoki rolga permission biriktirish
- * endpoint'i YO'Q, boshqa modullarda ham yo'q. Ya'ni "view-only" izohi
- * to'g'ri: rol matritsasi hozir faqat seed orqali o'zgaradi.
- *
- * SHUNING UCHUN bu ekranning vazifasi boshqa: mavjud matritsani
- * O'QILADIGAN qilish. Ilgari u rol kartochkalarida xom permission kodlarini
- * chip qilib to'kardi (SUPER_ADMIN kartochkasida bitta `*`), permission
- * jadvalida esa faqat "nechta rolda" sanog'i bor edi — ya'ni "kassirga
- * buyurtmani bekor qilish huquqi bormi?" degan savolga javob bermasdi.
- *
- * Endi ROL × PERMISSION MATRITSASI bor: satr — permission, ustun — rol,
- * kesishma — huquq bor/yo'q. Aynan shu ko'rinish rol sozlashni tushunarli
- * qiladi.
+ * Tizim rollari seed bilan boshqariladi va o'zgartirilmaydi. SUPER_ADMIN
+ * alohida nomlangan custom rollarni yaratadi, ularga permission va filial
+ * doirasini biriktiradi. Matritsa esa barcha rollarni yonma-yon tekshirish
+ * uchun qoladi.
  */
 
 type Permission = {
@@ -45,6 +43,7 @@ type Role = {
   name: string;
   description?: string | null;
   isSystem: boolean;
+  isBranchScoped: boolean;
   permissions: { permission: Permission }[];
 };
 
@@ -71,8 +70,22 @@ function permissionGroup(code: string): string {
 }
 
 export function AdminRolesPage() {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const canManage = hasPermission(user, "ROLE_MANAGE");
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("");
+  const [editing, setEditing] = useState<Role | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [roleName, setRoleName] = useState("");
+  const [roleDescription, setRoleDescription] = useState("");
+  const [isBranchScoped, setIsBranchScoped] = useState(true);
+  const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>(
+    [],
+  );
+  const [editorQuery, setEditorQuery] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [pendingArchive, setPendingArchive] = useState<Role | null>(null);
 
   const {
     data,
@@ -153,6 +166,107 @@ export function AdminRolesPage() {
   }, [group, permissions, query]);
 
   const hasFilters = Boolean(query.trim() || group);
+  const editorPermissions = permissions
+    .filter((permission) => permission.code !== "*")
+    .filter((permission) => {
+      const needle = editorQuery.trim().toLowerCase();
+      return (
+        !needle ||
+        [permission.name, permission.code, permission.description]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)
+      );
+    });
+
+  function openCreate(): void {
+    setEditing(null);
+    setRoleName("");
+    setRoleDescription("");
+    setIsBranchScoped(true);
+    setSelectedPermissionIds([]);
+    setEditorQuery("");
+    setIsCreating(true);
+  }
+
+  function openEdit(role: Role): void {
+    setEditing(role);
+    setRoleName(role.name);
+    setRoleDescription(role.description ?? "");
+    setIsBranchScoped(role.isBranchScoped);
+    setSelectedPermissionIds(
+      role.permissions
+        .filter((entry) => entry.permission.code !== "*")
+        .map((entry) => entry.permission.id),
+    );
+    setEditorQuery("");
+  }
+
+  function closeEditor(): void {
+    if (isSaving) return;
+    setEditing(null);
+    setIsCreating(false);
+  }
+
+  function togglePermission(permissionId: string): void {
+    setSelectedPermissionIds((current) =>
+      current.includes(permissionId)
+        ? current.filter((id) => id !== permissionId)
+        : [...current, permissionId],
+    );
+  }
+
+  async function saveRole(): Promise<void> {
+    if (!roleName.trim()) {
+      showToast("Rol nomini kiriting.", "danger");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const body = JSON.stringify({
+        name: roleName.trim(),
+        description: roleDescription.trim(),
+        permissionIds: selectedPermissionIds,
+        isBranchScoped,
+      });
+      await apiFetch(editing ? `/roles/${editing.id}` : "/roles", {
+        method: editing ? "PATCH" : "POST",
+        body,
+      });
+      showToast(editing ? "Maxsus rol yangilandi." : "Maxsus rol yaratildi.", "success");
+      setEditing(null);
+      setIsCreating(false);
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(
+        caught instanceof Error ? caught.message : "Rolni saqlab bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function archiveRole(): Promise<void> {
+    if (!pendingArchive) return;
+    setIsSaving(true);
+    try {
+      await apiFetch(`/roles/${pendingArchive.id}`, { method: "DELETE" });
+      showToast("Maxsus rol arxivlandi.", "success");
+      setPendingArchive(null);
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(
+        caught instanceof Error ? caught.message : "Rolni arxivlab bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -174,7 +288,7 @@ export function AdminRolesPage() {
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       {/*
         FAQAT O'QISH sababi ANIQ aytiladi. Ilgari izoh "keyingi bosqichda
         qo'shiladi" deb turardi va o'quvchi buni interfeys nuqsoni deb
@@ -191,21 +305,14 @@ export function AdminRolesPage() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-mz-text">
-                Bu ekran faqat ko&apos;rish uchun
+                {canManage
+                  ? "Tizim rollari himoyalangan, maxsus rollar boshqariladi"
+                  : "Bu ekran faqat ko'rish uchun"}
               </p>
               <p className="mt-1 text-[13px] text-mz-text-muted">
-                Serverda rol va permissionni o&apos;zgartiradigan endpoint
-                yo&apos;q — mavjudi faqat{" "}
-                <code className="rounded bg-mz-surface-sunken px-1">
-                  GET /roles
-                </code>{" "}
-                va{" "}
-                <code className="rounded bg-mz-surface-sunken px-1">
-                  GET /permissions
-                </code>
-                . Matritsa hozir seed bilan belgilanadi. Xodimga rol{" "}
-                <span className="font-semibold text-mz-text">biriktirish</span>{" "}
-                esa ishlaydi va xodim kartasida bajariladi.
+                {canManage
+                  ? "Kassir va oshxona kabi tizim rollari o'zgarmaydi. Aniq vazifa uchun kerakli huquqlardan maxsus rol tuzing va uni xodim kartasida biriktiring."
+                  : "Rol matritsasini ko'rishingiz mumkin. Maxsus rol yaratish va tahrirlash faqat bosh administratorga ochiq."}
               </p>
             </div>
             <ButtonLink href="/admin/staff" variant="ghost">
@@ -260,26 +367,35 @@ export function AdminRolesPage() {
           description="Filial biriktirilishi shart"
           icon="building"
           label="Filial doirasidagi rol"
-          value={`${roles.filter((role) => branchScopedRoleCodes.has(role.code)).length} ta`}
+          value={`${roles.filter((role) => role.isBranchScoped || branchScopedRoleCodes.has(role.code)).length} ta`}
         />
         <InfoBox
           description="Barcha filialni ko'radi"
           icon="globe"
           label="Global rol"
-          value={`${roles.filter((role) => !branchScopedRoleCodes.has(role.code)).length} ta`}
+          value={`${roles.filter((role) => !role.isBranchScoped && !branchScopedRoleCodes.has(role.code)).length} ta`}
         />
       </StatGrid>
 
       {/* --- Rol xulosalari ------------------------------------------------ */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader
+          actions={
+            canManage ? (
+              <Button onClick={openCreate}>
+                <Icon className="h-4 w-4" name="plus" />
+                Yangi maxsus rol
+              </Button>
+            ) : null
+          }
           description="Har rolning huquq hajmi va doirasi"
           title="Rollar"
         />
         <CardBody className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {roles.map((role) => {
             const isWildcard = roleHasWildcard.get(role.id) ?? false;
-            const isBranchScoped = branchScopedRoleCodes.has(role.code);
+            const isRoleBranchScoped =
+              role.isBranchScoped || branchScopedRoleCodes.has(role.code);
 
             return (
               <div
@@ -307,8 +423,8 @@ export function AdminRolesPage() {
                 ) : null}
 
                 <div className="flex flex-wrap gap-1.5">
-                  <Badge tone={isBranchScoped ? "info" : "neutral"}>
-                    {isBranchScoped ? "Filial doirasida" : "Global doira"}
+                  <Badge tone={isRoleBranchScoped ? "info" : "neutral"}>
+                    {isRoleBranchScoped ? "Filial doirasida" : "Global doira"}
                   </Badge>
                   <Badge tone={isWildcard ? "warning" : "neutral"}>
                     {isWildcard
@@ -316,6 +432,26 @@ export function AdminRolesPage() {
                       : `${role.permissions.length} ta huquq`}
                   </Badge>
                 </div>
+                {canManage && !role.isSystem ? (
+                  <div className="mt-1 flex flex-wrap gap-2 border-t border-mz-border pt-2">
+                    <Button
+                      onClick={() => openEdit(role)}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      <Icon className="h-4 w-4" name="pencil" />
+                      Tahrirlash
+                    </Button>
+                    <Button
+                      onClick={() => setPendingArchive(role)}
+                      size="sm"
+                      variant="danger"
+                    >
+                      <Icon className="h-4 w-4" name="trash" />
+                      Arxivlash
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -323,7 +459,7 @@ export function AdminRolesPage() {
       </Card>
 
       {/* --- Matritsa ------------------------------------------------------ */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader
           description="Satr — huquq, ustun — rol. Belgi qo'yilgan kesishmada rolda o'sha huquq bor."
           title="Rol × permission matritsasi"
@@ -381,7 +517,47 @@ export function AdminRolesPage() {
            * jadvalga o'z `overflow-x` konteynerini ruxsat beradi — sahifa
            * o'zi gorizontal siljimaydi.
            */
-          <div className="mz-thin-scrollbar max-h-[70vh] overflow-auto">
+          <>
+            <div className="grid gap-2 p-3 md:hidden">
+              {filteredPermissions.map((permission) => {
+                const grantedRoles = roles.filter(
+                  (role) =>
+                    (roleHasWildcard.get(role.id) ?? false) ||
+                    (rolePermissionCodes
+                      .get(role.id)
+                      ?.has(permission.code) ??
+                      false),
+                );
+
+                return (
+                  <div
+                    className="min-w-0 border-b border-mz-border pb-3 last:border-b-0"
+                    key={permission.id}
+                  >
+                    <p className="break-words text-sm font-semibold text-mz-text">
+                      {permission.name}
+                    </p>
+                    <p className="break-all font-mono text-[13px] text-mz-text-faint">
+                      {permission.code}
+                    </p>
+                    <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                      {grantedRoles.length ? (
+                        grantedRoles.map((role) => (
+                          <Badge key={role.id} tone="success">
+                            {roleCodeLabel(role.code)}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-[13px] text-mz-text-muted">
+                          Hech qaysi rolda yo&apos;q
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mz-thin-scrollbar hidden max-h-[70vh] max-w-full overflow-auto md:block">
             <table className="w-full border-collapse text-sm">
               <caption className="sr-only">
                 Rollar va permissionlar matritsasi
@@ -466,9 +642,108 @@ export function AdminRolesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Card>
+
+      <Modal
+        dismissOnBackdrop={false}
+        footer={
+          <>
+            <Button disabled={isSaving} onClick={closeEditor} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button isLoading={isSaving} onClick={() => void saveRole()}>
+              Saqlash
+            </Button>
+          </>
+        }
+        isOpen={isCreating || editing !== null}
+        onClose={closeEditor}
+        title={editing ? `${editing.name} — tahrirlash` : "Yangi maxsus rol"}
+      >
+        <div className="grid gap-4">
+          <FormField label="Rol nomi" required>
+            {(props) => (
+              <TextInput
+                {...props}
+                maxLength={80}
+                onChange={(event) => setRoleName(event.target.value)}
+                value={roleName}
+              />
+            )}
+          </FormField>
+          <FormField label="Tavsif">
+            {(props) => (
+              <Textarea
+                {...props}
+                maxLength={500}
+                onChange={(event) => setRoleDescription(event.target.value)}
+                value={roleDescription}
+              />
+            )}
+          </FormField>
+          <FormField label="Huquqlarni qidirish">
+            {(props) => (
+              <TextInput
+                {...props}
+                onChange={(event) => setEditorQuery(event.target.value)}
+                placeholder="Nomi yoki kodi"
+                value={editorQuery}
+              />
+            )}
+          </FormField>
+          <Checkbox
+            boxed
+            checked={isBranchScoped}
+            description="Bu rol xodimga berilganda filial tanlash majburiy bo'ladi"
+            label="Filial doirasidagi rol"
+            onChange={setIsBranchScoped}
+          />
+          <div className="mz-thin-scrollbar grid max-h-[42vh] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+            {editorPermissions.map((permission) => (
+              <Checkbox
+                boxed
+                checked={selectedPermissionIds.includes(permission.id)}
+                description={permission.code}
+                key={permission.id}
+                label={permission.name}
+                onChange={() => togglePermission(permission.id)}
+              />
+            ))}
+          </div>
+          <p className="text-[13px] text-mz-text-muted">
+            {selectedPermissionIds.length} ta huquq tanlandi. Barcha huquqlar
+            jokeri maxsus rolga berilmaydi.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        description="Rol faqat hech bir xodimga biriktirilmagan bo'lsa arxivlanadi."
+        footer={
+          <>
+            <Button
+              disabled={isSaving}
+              onClick={() => setPendingArchive(null)}
+              variant="ghost"
+            >
+              Bekor qilish
+            </Button>
+            <Button
+              isLoading={isSaving}
+              onClick={() => void archiveRole()}
+              variant="danger"
+            >
+              Arxivlash
+            </Button>
+          </>
+        }
+        isOpen={pendingArchive !== null}
+        onClose={() => setPendingArchive(null)}
+        title={pendingArchive ? `${pendingArchive.name} arxivlansinmi?` : "Rolni arxivlash"}
+      />
     </div>
   );
 }

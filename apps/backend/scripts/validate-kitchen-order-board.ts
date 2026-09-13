@@ -30,8 +30,8 @@ assert.match(telegramStaff, /this\.kitchenService\.applyOrderAction\(orderId, ac
 assert.doesNotMatch(telegramStaff, /private resolveTransition\(/);
 assert.doesNotMatch(telegramStaff, /tx\.order\.update\(\{ where: \{ id: orderId \}/);
 
-assert.match(kitchenPage, /RoleGuard roles=\{\["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"\]\}/);
 assert.match(kitchenPage, /PermissionGuard permission="KITCHEN_VIEW"/);
+assert.doesNotMatch(kitchenPage, /RoleGuard/);
 // Oshxona doskasi 5 soniyada yangilanadi. Aniq yozilishi emas, DAVRI muhim:
 // websocket o'rniga polling ataylab tanlangan (pastdagi `doesNotMatch`).
 assert.match(kitchenPage, /setInterval\(refresh, 5000\)/);

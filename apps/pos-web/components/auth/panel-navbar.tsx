@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { roleLabels } from "../../lib/auth";
 import type { AuthUser, MazettoRole } from "../../lib/auth";
 import { Icon } from "../admin-ui/icon";
@@ -118,7 +119,7 @@ export function PanelNavbar({
     >
       {hasNavigation && (
         <button
-          aria-controls={hasSidebar ? sidebarId : "staff-panel-menu"}
+          aria-controls={title ? "staff-panel-menu" : sidebarId}
           aria-expanded={isMobileOpen}
           aria-label={isMobileOpen ? "Menyuni yopish" : "Menyuni ochish"}
           className={`grid h-8 w-8 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg ${hasSidebar ? "lg:hidden" : ""}`}
@@ -140,7 +141,11 @@ export function PanelNavbar({
           onClick={onToggleCollapse}
           type="button"
         >
-          <Icon name={isCollapsed ? "chevronRight" : "chevronLeft"} />
+          {isCollapsed ? (
+            <PanelLeftOpen size={16} aria-hidden="true" />
+          ) : (
+            <PanelLeftClose size={16} aria-hidden="true" />
+          )}
         </button>
       )}
 

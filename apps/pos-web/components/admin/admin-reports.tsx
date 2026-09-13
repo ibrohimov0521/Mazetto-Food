@@ -5,14 +5,17 @@ import { apiFetch } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { reportQueryParams, type ReportQuery } from "../../lib/report-query";
 import { formatMoney } from "../../lib/order-display";
+import { downloadCsv } from "../../lib/csv";
 import { hasPermission } from "../../lib/auth";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
+import { Button } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { EmptyState, ErrorState, SkeletonRows } from "../admin-ui/feedback";
 import { FormField, Select, TextInput } from "../admin-ui/form";
 import { InfoBox, StatBox, StatGrid } from "../admin-ui/stat-box";
+import { Icon } from "../admin-ui/icon";
 import { ChipGroup, Tabs, type TabItem } from "../admin-ui/tabs";
 import {
   EmployeeReportView,
@@ -221,6 +224,19 @@ function toDateInput(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function customRangeError(from: string, to: string): string {
+  if (!from || !to) return "";
+  if (from > to) {
+    return "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak.";
+  }
+
+  const inclusiveDays =
+    (Date.parse(to) - Date.parse(from)) / 86_400_000 + 1;
+  return inclusiveDays > 366
+    ? "Maxsus hisobot oralig'i 366 kundan oshmasligi kerak."
+    : "";
+}
+
 function employeeName(employee: {
   employeeCode: string;
   firstName: string;
@@ -267,9 +283,7 @@ export function AdminReportsPage() {
    * Toast bu yerda yaramaydi: xato aynan qaysi maydonda ekanini aytmaydi.
    */
   const rangeError =
-    preset === "custom" && from && to && from > to
-      ? "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak."
-      : "";
+    preset === "custom" ? customRangeError(from, to) : "";
   const isRangeIncomplete = preset === "custom" && (!from || !to);
 
   const query = useMemo<ReportQuery>(
@@ -471,6 +485,36 @@ function SalesReportBody({
   report: SalesReport;
   sourceName: string;
 }) {
+  function exportSales(): void {
+    downloadCsv(
+      `savdo-${report.period.from.slice(0, 10)}-${report.period.to.slice(0, 10)}`,
+      ["Bo'lim", "Nomi", "Soni", "Summa"],
+      [
+        ["Umumiy", "Jami savdo", report.orderCount, report.totalSales],
+        ["Umumiy", "O'rtacha chek", "", report.averageOrderValue],
+        ["Umumiy", "Naqd sotuv", "", report.cashSales],
+        ...report.paymentBreakdown.map((row) => [
+          "To'lov usuli",
+          row.paymentMethod.name,
+          row.count,
+          row.amount,
+        ]),
+        ...report.branchBreakdown.map((row) => [
+          "Filial",
+          row.branch.name,
+          row.orderCount,
+          row.amount,
+        ]),
+        ...report.topProducts.map((row) => [
+          "Mahsulot",
+          row.productName,
+          row.quantity,
+          row.amount,
+        ]),
+      ],
+    );
+  }
+
   const shiftColumns: DataTableColumn<
     SalesReport["shiftBreakdown"][number]
   >[] = [
@@ -781,6 +825,12 @@ function SalesReportBody({
 
       <Card>
         <CardHeader
+          actions={
+            <Button onClick={exportSales} size="sm" variant="ghost">
+              <Icon className="h-4 w-4" name="download" />
+              CSV
+            </Button>
+          }
           description={`${branchName} · ${sourceName}`}
           title={`${report.timeSeries.grain === "month" ? "Oyma-oy" : "Kunma-kun"} sotuv grafigi`}
         />

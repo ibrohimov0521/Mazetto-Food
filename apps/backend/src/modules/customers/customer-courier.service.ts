@@ -101,6 +101,9 @@ export class CustomerCourierService {
         },
         order: {
           include: {
+            payments: {
+              select: { amount: true, status: true },
+            },
             statusHistory: {
               orderBy: { createdAt: "asc" },
               select: {
@@ -135,9 +138,31 @@ export class CustomerCourierService {
       },
     });
 
-    return customerOrders.map((customerOrder) =>
-      withDeliveryDistance(withDerivedCustomerOrderStatus(customerOrder)),
-    );
+    return customerOrders.map((customerOrder) => {
+      const { payments, ...order } = customerOrder.order;
+      const paidTotal = payments
+        .filter(
+          (payment) =>
+            payment.status === PaymentStatus.PAID ||
+            payment.status === PaymentStatus.SUCCESS,
+        )
+        .reduce(
+          (total, payment) => total.add(payment.amount),
+          new Prisma.Decimal(0),
+        );
+      const outstanding = order.total.sub(paidTotal);
+      return withDeliveryDistance(
+        withDerivedCustomerOrderStatus({
+          ...customerOrder,
+          order: {
+            ...order,
+            outstandingAmount: outstanding.greaterThan(0)
+              ? outstanding.toString()
+              : "0",
+          },
+        }),
+      );
+    });
   }
 
   async listCourierDeliveryOrderHistory(

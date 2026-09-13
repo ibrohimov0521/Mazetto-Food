@@ -6,6 +6,7 @@ export type AuthenticatedUser = {
   phone?: string;
   employeeId?: string;
   branchId?: string;
+  isGlobalScope?: boolean;
   roles: string[];
   permissions: string[];
 };

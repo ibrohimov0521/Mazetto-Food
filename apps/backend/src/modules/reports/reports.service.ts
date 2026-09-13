@@ -194,10 +194,17 @@ export class ReportsService {
       by: ["productId", "productName"],
       where: {
         status: OrderItemStatus.ACTIVE,
-        createdAt: { gte: range.from, lte: range.to },
         order: {
-          status: { not: OrderStatus.CANCELLED },
+          status: { in: [...successfulOrderStatuses] },
+          paymentStatus: { in: [...successfulPaymentStatuses] },
           ...(branchId ? { branchId } : {}),
+          ...(query.source ? { source: query.source } : {}),
+          payments: {
+            some: {
+              status: { in: [...successfulPaymentStatuses] },
+              paidAt: { gte: range.from, lte: range.to },
+            },
+          },
         },
       },
       _sum: {
@@ -383,6 +390,8 @@ export class ReportsService {
       averageOrder: report.averageOrderValue,
       expenses: expenseTotal,
       profit: report.totalSales.sub(expenseTotal),
+      profitDefinition:
+        "Muvaffaqiyatli tushumdan qayd etilgan operatsion xarajat ayirilgan. Tannarx va refund reconciliation hisoblanmagan.",
       paymentBreakdown: report.paymentBreakdown.map((group) => ({
         paymentMethod: group.paymentMethod,
         amount: group.amount,

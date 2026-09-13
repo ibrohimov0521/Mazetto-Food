@@ -12,7 +12,6 @@ import {
   X,
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
-import { RoleGuard } from "../../../components/auth/role-guard";
 import { KitchenTicketCard } from "../../../components/kitchen/kitchen-ticket-card";
 import {
   readKitchenDensity,
@@ -38,11 +37,9 @@ import { apiFetch } from "../../../lib/api";
 
 export default function KitchenPage() {
   return (
-    <RoleGuard roles={["KITCHEN", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="KITCHEN_VIEW">
-        <KitchenDisplay />
-      </PermissionGuard>
-    </RoleGuard>
+    <PermissionGuard permission="KITCHEN_VIEW">
+      <KitchenDisplay />
+    </PermissionGuard>
   );
 }
 
@@ -453,29 +450,21 @@ function KitchenDisplay() {
                     aria-label="Buyurtmalar yuklanmoqda"
                   />
                 ) : column.tickets.length ? (
-                  [0, 1].map((lane) => (
-                    <div className={styles.ticketLane} key={lane}>
-                      {column.tickets
-                        .filter((_, index) => index % 2 === lane)
-                        .map((ticket) => (
-                          <KitchenTicketCard
-                            key={ticket.id}
-                            ticket={ticket}
-                            now={now}
-                            busy={busyTicketIds.has(ticket.id)}
-                            error={actionErrors[ticket.id]}
-                            showBranch={showBranch}
-                            isCompact={compactTicketIds.has(ticket.id)}
-                            onToggleCompact={() =>
-                              toggleCompactTicket(ticket.id)
-                            }
-                            onAction={(action) => {
-                              if (action === "cancel") setCancelTicket(ticket);
-                              else void runAction(ticket, action);
-                            }}
-                          />
-                        ))}
-                    </div>
+                  column.tickets.map((ticket) => (
+                    <KitchenTicketCard
+                      key={ticket.id}
+                      ticket={ticket}
+                      now={now}
+                      busy={busyTicketIds.has(ticket.id)}
+                      error={actionErrors[ticket.id]}
+                      showBranch={showBranch}
+                      isCompact={compactTicketIds.has(ticket.id)}
+                      onToggleCompact={() => toggleCompactTicket(ticket.id)}
+                      onAction={(action) => {
+                        if (action === "cancel") setCancelTicket(ticket);
+                        else void runAction(ticket, action);
+                      }}
+                    />
                   ))
                 ) : (
                   <StaffEmpty title="Navbat bo'sh" />

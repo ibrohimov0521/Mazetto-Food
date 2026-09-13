@@ -34,7 +34,7 @@ export function TableMap({
   const halls = useMemo(() => groupByHall(tables), [tables]);
 
   return (
-    <div>
+    <div className={styles.waiterTableMap}>
       <ul className={styles.legend} aria-label="Stol holatlari izohi">
         {legendOrder.map((status) => (
           <li className={styles.legendItem} key={status}>

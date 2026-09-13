@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "../../lib/auth";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { orderStatusLabels, type OrderStatus } from "../../lib/order-display";
 import { useApiResource } from "../../lib/use-api-resource";
 import { useAuth } from "../auth/auth-provider";
 import { AdminPageHeader } from "../admin-shell/admin-page-header";
@@ -86,8 +87,9 @@ type TableDetail = Omit<TableSummary, "orders"> & {
   orders: Array<{
     id: string;
     orderNumber: string;
-    displayOrderNumber?: number | null;
-    status: string;
+    displayOrderNumber?: string | null;
+    status: OrderStatus;
+    isSupplemental?: boolean;
     createdAt: string;
     waiter?: { fullName?: string | null } | null;
   }>;
@@ -381,6 +383,16 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
                 </dd>
               </div>
             </dl>
+            {hasPermission(user, "DEVICE_VIEW") ? (
+              <ButtonLink
+                className="w-full"
+                href={`/admin/branches/${branch.id}/devices`}
+                variant="ghost"
+              >
+                <Icon className="h-4 w-4" name="monitor" />
+                Kassa va terminal qurilmalari
+              </ButtonLink>
+            ) : null}
             {hasPermission(user, "RECEIPT_PRINT") ? (
               <ButtonLink
                 className="w-full"
@@ -388,7 +400,7 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
                 variant="ghost"
               >
                 <Icon className="h-4 w-4" name="printer" />
-                Qurilmalar va printerlar
+                Printerlar
               </ButtonLink>
             ) : null}
           </CardBody>
@@ -398,14 +410,6 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
       <section className="mt-5" id="halls">
         <Card>
           <CardHeader
-            actions={
-              canCreateTables ? (
-                <Button onClick={openCreateHall} variant="ghost">
-                  <Icon className="h-4 w-4" name="plus" />
-                  Zal qo'shish
-                </Button>
-              ) : null
-            }
             description={
               canViewTables
                 ? `${halls.length} ta zal. Stol faqat tegishli zal ichidan qo'shiladi.`
@@ -418,7 +422,7 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-3 p-4">
                 {halls.map((hall) => (
                   <article
-                    className="flex min-h-44 flex-col rounded-mz-card border border-mz-border bg-mz-surface p-4"
+                    className="flex min-h-36 flex-col rounded-mz-card border border-mz-border bg-mz-surface p-4"
                     key={hall.id}
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
@@ -875,14 +879,6 @@ export function AdminHallWorkspace({
 
       <Card className="mt-5">
         <CardHeader
-          actions={
-            canCreateTables ? (
-              <Button onClick={openTableCreator} variant="ghost">
-                <Icon className="h-4 w-4" name="plus" />
-                Stol qo'shish
-              </Button>
-            ) : null
-          }
           description={`${hall.tables.length} ta faol stol`}
           title="Stollar"
         />
@@ -1280,6 +1276,11 @@ export function AdminTableWorkspace({
 
   const hallHref = `/admin/branches/${branchId}/halls/${hallId}`;
   const activeOrderCount = table.orders.length;
+  const statusOptions = (
+    Object.entries(statusLabels) as [TableStatus, string][]
+  ).filter(([value]) =>
+    activeOrderCount ? value === "OCCUPIED" : value !== "OCCUPIED",
+  );
 
   return (
     <>
@@ -1416,7 +1417,7 @@ export function AdminTableWorkspace({
                         }
                         value={status}
                       >
-                        {Object.entries(statusLabels).map(([value, label]) => (
+                        {statusOptions.map(([value, label]) => (
                           <option key={value} value={value}>
                             {label}
                           </option>
@@ -1472,10 +1473,18 @@ export function AdminTableWorkspace({
                       className="flex items-center justify-between gap-3 border-b border-mz-border pb-2 last:border-b-0 last:pb-0"
                       key={order.id}
                     >
-                      <span className="min-w-0 truncate text-sm font-semibold text-mz-text">
-                        #{order.displayOrderNumber ?? order.orderNumber}
-                      </span>
-                      <Badge tone="info">{order.status}</Badge>
+                      <ButtonLink
+                        className="min-w-0 justify-start truncate"
+                        href={`/admin/orders/${order.id}`}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        {order.isSupplemental ? "Qo'shimcha " : ""}#
+                        {order.displayOrderNumber ?? order.orderNumber}
+                      </ButtonLink>
+                      <Badge tone="info">
+                        {orderStatusLabels[order.status] ?? order.status}
+                      </Badge>
                     </li>
                   ))}
                 </ul>

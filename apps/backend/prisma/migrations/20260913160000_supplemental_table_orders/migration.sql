@@ -1,0 +1,2 @@
+ALTER TABLE "orders"
+ADD COLUMN "isSupplemental" BOOLEAN NOT NULL DEFAULT false;

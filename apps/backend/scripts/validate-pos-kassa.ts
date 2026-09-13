@@ -70,7 +70,7 @@ assert.doesNotMatch(posCheckoutBody, /dto\.total/);
 assert.doesNotMatch(posCheckoutBody, /dto\.source/);
 
 assert.match(posPage, /PermissionGuard permission="POS_USE"/);
-assert.match(posPage, /RoleGuard roles=\{\["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"\]\}/);
+assert.doesNotMatch(posPage, /RoleGuard/);
 assert.match(posPage, /"\/cash-register\/shift"/);
 assert.match(posPage, /router\.replace\("\/shift"\)/);
 assert.match(posPage, /"\/pos\/catalog"/);

@@ -427,6 +427,7 @@ model Role {
   name        String
   description String?
   isSystem    Boolean  @default(false)
+  isBranchScoped Boolean @default(false)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -895,6 +896,7 @@ model Order {
   staffTelegramMessageId Int?
   source                 OrderSource
   type                   OrderType
+  isSupplemental         Boolean       @default(false)
   status                 OrderStatus   @default(NEW)
   paymentStatus          PaymentStatus @default(PENDING)
   customerName           String?

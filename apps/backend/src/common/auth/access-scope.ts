@@ -7,7 +7,9 @@ export function resolveBranchScope(
   user: AuthenticatedUser,
   requestedBranchId?: string,
 ): string | undefined {
-  const hasGlobalScope = user.roles.some((role) => globalReportRoles.has(role));
+  const hasGlobalScope =
+    user.isGlobalScope ??
+    user.roles.some((role) => globalReportRoles.has(role));
 
   if (hasGlobalScope) {
     return requestedBranchId;
