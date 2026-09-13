@@ -17,7 +17,7 @@ assert.match(controller, /@Get\("sales"\)/);
 assert.match(controller, /PERMISSIONS\.REPORT_SALES_VIEW/);
 // Guardlar 6-bosqich A2 da sahifalardan `app/(shell)/layout.tsx` ga
 // ko'chdi; qoidalar endi ruxsat matritsasida e'lon qilinadi.
-assert.match(routeAccess, /pattern: "\/admin\/reports", roles: \[[^\]]*\], permission: "REPORT_SALES_VIEW"/);
+assertRouteRule(routeAccess, "/admin/reports", "REPORT_SALES_VIEW");
 
 for (const preset of ["TODAY", "YESTERDAY", "LAST_7_DAYS", "THIS_MONTH", "YEAR", "CUSTOM"]) {
   assert.match(dto, new RegExp(`${preset}\\s*=`));
@@ -101,4 +101,13 @@ function findRepoRoot(startPath: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertRouteRule(source: string, pattern: string, permission: string): void {
+  assert.match(
+    source,
+    new RegExp(
+      `pattern:\\s*"${escapeRegExp(pattern)}"[\\s\\S]*?roles:\\s*\\[[^\\]]*\\][\\s\\S]*?permission:\\s*"${permission}"`,
+    ),
+  );
 }
