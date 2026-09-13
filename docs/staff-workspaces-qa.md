@@ -2,6 +2,25 @@
 
 Updated: 2026-09-09. Scope: `apps/pos-web`.
 
+## Panel Shell Update (2026-09-13)
+
+Admin and staff workspaces now share `PanelNavbar`: menu and back controls on
+the left, workspace-specific actions followed by branch scope and the profile
+menu on the right. Logout stays inside the profile menu. Staff sidebars can be
+hidden and restored; the preference persists across pages and reloads.
+
+Staff screens match admin density: 80% at viewport widths of 768px and above,
+100% on phones. Full-height kitchen/POS layouts compensate for the scale.
+Printing remains at 100%. Kitchen retains four desktop status columns and two
+independent ticket lanes in each status, including collapsed cards.
+
+Local browser checks covered admin, accounting, POS, kitchen, waiter, courier
+and shift at 320, 390, 768, 1024 and 1440px. Checks included header order and
+bounds, density, profile menus, logout, history dialogs and the tablet drawer.
+Kitchen fixtures additionally covered 1200-1920px, collapse/reflow, sidebar
+persistence, TV mode and action failure/retry. These are frontend checks with
+local preview data, not live payment or production database tests.
+
 ## Changes
 
 - Shared compact brand header, granted-workspace links, accessible icon controls,

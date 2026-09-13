@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, Leaf, LogOut, Menu, RefreshCw, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Leaf, RefreshCw, X } from "lucide-react";
 import { useAuth } from "../auth/auth-provider";
+import { PanelNavbar } from "../auth/panel-navbar";
 import styles from "./staff.module.css";
 import {
   hasStaffPanelNavigation,
   StaffPanelNavigation,
 } from "./staff-panel-navigation";
+
+const sidebarStorageKey = "mazetto.staff.sidebar.hidden";
 
 export function StaffShell({
   title,
@@ -25,14 +28,44 @@ export function StaffShell({
 }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
-  const router = useRouter();
   const [isPanelMenuOpen, setIsPanelMenuOpen] = useState(false);
+  const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const hasPanelNavigation = hasStaffPanelNavigation(user);
   const showSidebar = sidebar && hasPanelNavigation;
 
   useEffect(() => {
+    try {
+      setIsSidebarHidden(
+        window.localStorage.getItem(sidebarStorageKey) === "1",
+      );
+    } catch {
+      // Storage can be unavailable; the toggle still works for this visit.
+    }
+  }, []);
+
+  function toggleSidebar() {
+    const next = !isSidebarHidden;
+    setIsSidebarHidden(next);
+    try {
+      window.localStorage.setItem(sidebarStorageKey, next ? "1" : "0");
+    } catch {
+      // Keep the in-memory preference when storage is blocked.
+    }
+  }
+
+  useEffect(() => {
     setIsPanelMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!showSidebar) return;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const closeDesktopDrawer = () => {
+      if (desktop.matches) setIsPanelMenuOpen(false);
+    };
+    desktop.addEventListener("change", closeDesktopDrawer);
+    return () => desktop.removeEventListener("change", closeDesktopDrawer);
+  }, [showSidebar]);
 
   useEffect(() => {
     if (!isPanelMenuOpen) return;
@@ -47,67 +80,21 @@ export function StaffShell({
 
   return (
     <main className={`${styles.shell} ${terminal ? styles.terminal : ""}`}>
-      <header className={styles.header}>
-        <div className={styles.headerRow}>
-          <div className={styles.brand}>
-            <img
-              className={styles.brandLogo}
-              src="/brand/header-logo.webp"
-              alt="Mazetto Food"
-              width={164}
-              height={40}
-            />
-            <span className={styles.brandMark} aria-hidden="true">
-              M
-            </span>
-            <span className={styles.brandDivider} />
-            <h1>{title}</h1>
-          </div>
-          <div className={styles.headerActions}>
-            <button
-              aria-label="Orqaga"
-              className={styles.headerIcon}
-              onClick={() => {
-                if (window.history.length > 1) router.back();
-                else router.push("/workspace");
-              }}
-              title="Orqaga"
-              type="button"
-            >
-              <ArrowLeft size={19} />
-            </button>
-            {hasPanelNavigation ? (
-              <button
-                aria-controls="staff-panel-menu"
-                aria-expanded={isPanelMenuOpen}
-                aria-label={isPanelMenuOpen ? "Menyuni yopish" : "Panellar"}
-                className={`${styles.headerIcon} ${showSidebar ? styles.mobilePanelToggle : ""}`}
-                onClick={() => setIsPanelMenuOpen((current) => !current)}
-                title={isPanelMenuOpen ? "Menyuni yopish" : "Panellar"}
-                type="button"
-              >
-                {isPanelMenuOpen ? <X size={19} /> : <Menu size={19} />}
-              </button>
-            ) : null}
-            {actions}
-            <span
-              className={styles.identity}
-              title={user?.email ?? user?.phone}
-            >
-              {user?.email ?? user?.phone ?? "Xodim"}
-            </span>
-            <button
-              className={styles.headerIcon}
-              title="Chiqish"
-              aria-label="Chiqish"
-              onClick={() => void logout()}
-              type="button"
-            >
-              <LogOut size={19} />
-            </button>
-          </div>
-        </div>
-      </header>
+      <PanelNavbar
+        user={user}
+        title={title}
+        actions={actions}
+        className={styles.header ?? ""}
+        hasNavigation={hasPanelNavigation}
+        hasSidebar={showSidebar}
+        sidebarId="staff-sidebar"
+        backHref="/workspace"
+        isCollapsed={isSidebarHidden}
+        isMobileOpen={isPanelMenuOpen}
+        onToggleCollapse={toggleSidebar}
+        onToggleMobile={() => setIsPanelMenuOpen((current) => !current)}
+        onLogout={() => void logout()}
+      />
       {hasPanelNavigation && isPanelMenuOpen ? (
         <>
           <button
@@ -141,10 +128,14 @@ export function StaffShell({
         </>
       ) : null}
       {showSidebar ? (
-        <div className={styles.staffLayout}>
+        <div
+          className={styles.staffLayout}
+          data-sidebar-hidden={isSidebarHidden}
+        >
           <aside
             aria-label="Ish joylari menyusi"
             className={styles.staffSidebar}
+            id="staff-sidebar"
           >
             <StaffPanelNavigation user={user} />
           </aside>
@@ -169,11 +160,14 @@ export function StaffSync({
   onRefresh: () => void;
 }) {
   return (
-    <div className={styles.sync}>
+    <div
+      className={styles.sync}
+      title={error ? "Aloqa uzildi" : updatedAt ? "Ulangan" : "Ulanmoqda"}
+    >
       <span
         className={`${styles.connection} ${error ? styles.connectionError : ""}`}
       />
-      <span>
+      <span className={styles.syncStatus}>
         {error ? "Aloqa uzildi" : updatedAt ? "Ulangan" : "Ulanmoqda"}
       </span>
       {updatedAt && (

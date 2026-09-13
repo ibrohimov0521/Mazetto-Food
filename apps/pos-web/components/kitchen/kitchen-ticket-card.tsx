@@ -11,7 +11,6 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
 import { useAuth } from "../auth/auth-provider";
 import { hasPermission } from "../../lib/auth";
 import styles from "../staff/staff.module.css";
@@ -46,6 +45,8 @@ export function KitchenTicketCard({
   busy,
   error,
   showBranch,
+  isCompact,
+  onToggleCompact,
   onAction,
 }: {
   ticket: KitchenTicket;
@@ -53,10 +54,11 @@ export function KitchenTicketCard({
   busy: boolean;
   error?: string | undefined;
   showBranch: boolean;
+  isCompact: boolean;
+  onToggleCompact: () => void;
   onAction: (action: KitchenAction) => void;
 }) {
   const { user } = useAuth();
-  const [isCompact, setIsCompact] = useState(false);
   const elapsed = kitchenElapsedMinutes(ticket, now);
   const urgency = kitchenUrgency(ticket.status, elapsed);
   const canAct = hasPermission(
@@ -64,9 +66,6 @@ export function KitchenTicketCard({
     ticket.status === "NEW" ? "KITCHEN_ACCEPT" : "KITCHEN_STATUS_UPDATE",
   );
   const action = canAct ? kitchenPrimaryAction(ticket.status) : null;
-  // Oshpaz bitta buyurtmaning barcha mahsulotini bir qarashda ko'rishi kerak.
-  // Avval faqat birinchi qator ko'rinar, qolganlari alohida "Batafsil" ostida
-  // yashirinardi va navbatni ko'zdan kechirish sekinlashardi.
   const shownItems = ticket.order.items;
   const canCancel =
     hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
@@ -89,45 +88,42 @@ export function KitchenTicketCard({
     >
       <div className={styles.ticketHeader}>
         <h3 className={styles.ticketNumber}>#{number}</h3>
-        <div className={styles.ticketHeaderTools}>
-          <button
-            aria-expanded={!isCompact}
-            aria-label={
-              isCompact
-                ? `#${number} buyurtma ma'lumotlarini ko'rsatish`
-                : `#${number} buyurtmani qisqartirish`
-            }
-            className={styles.ticketCollapse}
-            onClick={() => setIsCompact((current) => !current)}
-            title={isCompact ? "Ko'rsatish" : "Qisqartirish"}
-            type="button"
-          >
-            {isCompact ? (
-              <Maximize2 size={15} aria-hidden="true" />
-            ) : (
-              <Minimize2 size={15} aria-hidden="true" />
-            )}
-            <span className={styles.ticketCollapseLabel}>
-              {isCompact ? "Ko'rsatish" : "Yig'ish"}
-            </span>
-          </button>
-          <span
-            className={styles.ticketTime}
-            data-urgency={urgency}
-            title={kitchenUrgencyLabels[urgency]}
-          >
-            <Timer size={22} aria-hidden="true" />
-            {elapsed} daq
-          </span>
-        </div>
+        <button
+          aria-expanded={!isCompact}
+          aria-label={
+            isCompact
+              ? `#${number} buyurtma ma'lumotlarini ko'rsatish`
+              : `#${number} buyurtmani qisqartirish`
+          }
+          className={styles.ticketCollapse}
+          onClick={onToggleCompact}
+          title={isCompact ? "Ko'rsatish" : "Qisqartirish"}
+          type="button"
+        >
+          {isCompact ? (
+            <Maximize2 size={15} aria-hidden="true" />
+          ) : (
+            <Minimize2 size={15} aria-hidden="true" />
+          )}
+        </button>
       </div>
-      <div className={styles.ticketMeta}>
-        {!isCompact && ticket.priority > 0 && (
+      <div className={styles.ticketTiming}>
+        <span
+          className={styles.ticketTime}
+          data-urgency={urgency}
+          title={kitchenUrgencyLabels[urgency]}
+        >
+          <Timer size={14} aria-hidden="true" />
+          {elapsed} daq
+        </span>
+        {ticket.priority > 0 && (
           <span className={styles.ticketPriority}>
             <Zap size={16} aria-hidden="true" />
             Ustuvor
           </span>
         )}
+      </div>
+      <div className={styles.ticketMeta}>
         <span className={styles.badge}>
           {ticket.order.type === "DELIVERY" ? (
             <Truck size={16} aria-hidden="true" />
@@ -172,13 +168,15 @@ export function KitchenTicketCard({
         {action && (
           <button
             className={`${styles.primary} ${styles.ticketPrimary}`}
+            aria-label={busy ? "Saqlanmoqda..." : action.label}
+            title={action.label}
             disabled={busy}
             onClick={() => onAction(action.action)}
             type="button"
           >
             <Check size={20} aria-hidden="true" />
             {busy ? (
-              "Saqlanmoqda..."
+              <span className={styles.ticketBusyLabel}>Saqlanmoqda...</span>
             ) : (
               <>
                 <span className={styles.ticketPrimaryFullLabel}>

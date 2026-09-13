@@ -39,6 +39,7 @@ const staffPanelNavigation = readSource(
   "apps/pos-web/components/staff/staff-panel-navigation.tsx",
 );
 const staffShell = readSource("apps/pos-web/components/staff/staff-shell.tsx");
+const panelNavbar = readSource("apps/pos-web/components/auth/panel-navbar.tsx");
 const staffStyles = readSource(
   "apps/pos-web/components/staff/staff.module.css",
 );
@@ -130,7 +131,8 @@ assert.doesNotMatch(printersPage, /"CASHIER"/);
 // Xodim panellari umumiy, ruxsatga qarab tartiblangan navigator orqali
 // yuradi. Bitta ish joyi bo'lgan xodimga bo'sh sidebar ko'rsatilmaydi.
 assert.match(staffShell, /hasStaffPanelNavigation\(user\)/);
-assert.match(staffShell, /router\.back\(\)/);
+assert.match(staffShell, /<PanelNavbar/);
+assert.match(panelNavbar, /router\.back\(\)/);
 for (const href of [
   "/shift",
   "/pos",
@@ -143,10 +145,6 @@ for (const href of [
   assert.match(staffPanelNavigation, new RegExp(escapeRegExp(`"${href}"`)));
 }
 assert.match(kitchenTicketCard, /const shownItems = ticket\.order\.items/);
-assert.match(
-  kitchenTicketCard,
-  /const \[isCompact, setIsCompact\] = useState\(false\)/,
-);
 assert.match(kitchenTicketCard, /data-compact=\{isCompact\}/);
 assert.match(kitchenTicketCard, /ticketCompactSummary/);
 assert.doesNotMatch(kitchenTicketCard, /const \[expanded\b/);

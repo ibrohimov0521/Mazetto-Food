@@ -197,6 +197,70 @@
   background-color: var(--color-mz-shell-header);
   box-shadow: 0 4px 16px #002e321c;
 }
+.mz-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mz-panel-heading h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.mz-panel-brand {
+  display: grid;
+  flex-shrink: 0;
+  width: 24px;
+  height: 28px;
+  place-items: center;
+  background: linear-gradient(105deg, #e0d8ff 0 48%, #ffd83d 52% 100%);
+  background-clip: text;
+  color: transparent;
+  font-size: 25px;
+  font-weight: 900;
+  line-height: 1;
+}
+.mz-panel-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.mz-panel-header .mz-panel-actions > :is(button, a) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-mz-control);
+  background: transparent;
+  color: var(--color-mz-shell-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.mz-panel-header .mz-panel-actions > :is(button, a):hover {
+  background: var(--color-mz-primary);
+  color: var(--color-mz-primary-fg);
+}
+@media (max-width: 767px) {
+  .mz-panel-header {
+    gap: 4px;
+  }
+  .mz-panel-header .mz-panel-actions > :is(button, a) {
+    width: 32px;
+    padding: 0;
+  }
+  .mz-panel-actions > :is(button, a) > span {
+    display: none;
+  }
+}
 .mz-panel-nav {
   letter-spacing: 0;
   display: flex;
@@ -220,7 +284,8 @@
  */
 .mz-panel-nav a[aria-current="page"] {
   border-color: var(--color-mz-primary);
-  background-color: #ffffff1a;
+  background-color: var(--color-mz-primary);
+  color: var(--color-mz-primary-fg);
 }
 .mz-admin #admin-sidebar {
   background-color: var(--color-mz-shell-header);

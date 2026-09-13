@@ -56,6 +56,9 @@ function KitchenDisplay() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyTicketIds, setBusyTicketIds] = useState<Set<string>>(new Set());
+  const [compactTicketIds, setCompactTicketIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(
     new Set(),
@@ -178,6 +181,24 @@ function KitchenDisplay() {
     });
   }, [tickets]);
 
+  useEffect(() => {
+    setCompactTicketIds((current) => {
+      if (!current.size) return current;
+      const activeIds = new Set(tickets.map((ticket) => ticket.id));
+      const next = new Set([...current].filter((id) => activeIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [tickets]);
+
+  function toggleCompactTicket(id: string) {
+    setCompactTicketIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const newTickets = useMemo(
     () => tickets.filter((ticket) => ticket.status === "NEW"),
     [tickets],
@@ -285,21 +306,28 @@ function KitchenDisplay() {
     chime.unlock();
   }
 
+  const needsSoundUnlock = isSoundEnabled && chime.supported && !chime.unlocked;
+  const soundLabel = needsSoundUnlock
+    ? "Ovozni yoqish"
+    : `Ovoz ${isSoundEnabled ? "yoqilgan" : "o'chirilgan"}`;
+
   return (
     <StaffShell
       title="Oshxona"
       actions={
         <button
           className={styles.shiftLink}
+          aria-label="Oshxona tarixi"
+          title="Oshxona tarixi"
           onClick={() => setHistoryOpen(true)}
           type="button"
         >
           <History size={17} />
-          Tarix
+          <span>Tarix</span>
         </button>
       }
     >
-      <div className={styles.content}>
+      <div className={`${styles.content} ${styles.kitchenContent}`}>
         <div className={styles.overview}>
           <h2 className={styles.pageHeading}>
             Buyurtmalar navbati · {isLoading ? "..." : tickets.length}
@@ -322,18 +350,12 @@ function KitchenDisplay() {
             />
           </label>
           <div className={styles.toolbarGroup}>
-            {isSoundEnabled && chime.supported && !chime.unlocked && (
-              <button
-                className={styles.soundUnlock}
-                onClick={() => chime.unlock()}
-                type="button"
-              >
-                <BellRing size={18} aria-hidden="true" />
-                Ovozni yoqish uchun bosing
-              </button>
-            )}
             <button
               className={styles.button}
+              aria-label="TV rejimi"
+              title={
+                density === "tv" ? "Oddiy rejimga o'tish" : "TV rejimiga o'tish"
+              }
               aria-pressed={density === "tv"}
               onClick={toggleDensity}
               type="button"
@@ -343,20 +365,29 @@ function KitchenDisplay() {
               ) : (
                 <Monitor size={18} aria-hidden="true" />
               )}
-              {density === "tv" ? "TV rejimi" : "Oddiy rejim"}
+              <span className={styles.kitchenToolLabel}>
+                {density === "tv" ? "TV rejimi" : "Oddiy rejim"}
+              </span>
             </button>
             <button
               className={styles.button}
-              aria-pressed={isSoundEnabled}
-              onClick={toggleSound}
+              aria-label={soundLabel}
+              title={soundLabel}
+              aria-pressed={isSoundEnabled && !needsSoundUnlock}
+              onClick={() => {
+                if (needsSoundUnlock) chime.unlock();
+                else toggleSound();
+              }}
               type="button"
             >
-              {isSoundEnabled ? (
+              {needsSoundUnlock ? (
+                <BellRing size={18} aria-hidden="true" />
+              ) : isSoundEnabled ? (
                 <Volume2 size={18} aria-hidden="true" />
               ) : (
                 <VolumeX size={18} aria-hidden="true" />
               )}
-              Ovoz {isSoundEnabled ? "yoqilgan" : "o'chirilgan"}
+              <span className={styles.kitchenToolLabel}>{soundLabel}</span>
             </button>
           </div>
         </div>
@@ -403,11 +434,11 @@ function KitchenDisplay() {
                   <button
                     className={styles.columnAck}
                     aria-label={`${unacknowledgedCount} ta yangi buyurtmani tasdiqlash`}
+                    title="Yangi buyurtmalarni ko'rildi deb belgilash"
                     onClick={acknowledgeNew}
                     type="button"
                   >
                     <BellRing size={18} aria-hidden="true" />
-                    Tasdiqlash
                   </button>
                 )}
                 <span>{column.tickets.length}</span>
@@ -422,19 +453,29 @@ function KitchenDisplay() {
                     aria-label="Buyurtmalar yuklanmoqda"
                   />
                 ) : column.tickets.length ? (
-                  column.tickets.map((ticket) => (
-                    <KitchenTicketCard
-                      key={ticket.id}
-                      ticket={ticket}
-                      now={now}
-                      busy={busyTicketIds.has(ticket.id)}
-                      error={actionErrors[ticket.id]}
-                      showBranch={showBranch}
-                      onAction={(action) => {
-                        if (action === "cancel") setCancelTicket(ticket);
-                        else void runAction(ticket, action);
-                      }}
-                    />
+                  [0, 1].map((lane) => (
+                    <div className={styles.ticketLane} key={lane}>
+                      {column.tickets
+                        .filter((_, index) => index % 2 === lane)
+                        .map((ticket) => (
+                          <KitchenTicketCard
+                            key={ticket.id}
+                            ticket={ticket}
+                            now={now}
+                            busy={busyTicketIds.has(ticket.id)}
+                            error={actionErrors[ticket.id]}
+                            showBranch={showBranch}
+                            isCompact={compactTicketIds.has(ticket.id)}
+                            onToggleCompact={() =>
+                              toggleCompactTicket(ticket.id)
+                            }
+                            onAction={(action) => {
+                              if (action === "cancel") setCancelTicket(ticket);
+                              else void runAction(ticket, action);
+                            }}
+                          />
+                        ))}
+                    </div>
                   ))
                 ) : (
                   <StaffEmpty title="Navbat bo'sh" />
