@@ -7,6 +7,7 @@ import { ListShiftsDto } from "./dto/list-shifts.dto";
 import {
   CloseShiftDto,
   CreateCashTransactionDto,
+  ForceCashHandoverDto,
   OpenShiftDto,
 } from "./dto/shift.dto";
 import { ShiftsService } from "./shifts.service";
@@ -38,6 +39,16 @@ export class ShiftsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.shiftsService.closeShift(id, dto, user);
+  }
+
+  @Post(":id/force-handover")
+  @Permissions(PERMISSIONS.CASH_HANDOVER_FORCE)
+  forceCashHandover(
+    @Param("id") id: string,
+    @Body() dto: ForceCashHandoverDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.shiftsService.forceCashHandover(id, dto, user);
   }
 
   @Post(":id/cash-transactions")

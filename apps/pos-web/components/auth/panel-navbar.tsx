@@ -163,6 +163,13 @@ export function PanelNavbar({
 
       {title && (
         <div className="mz-panel-heading">
+          <img
+            className="mz-panel-logo"
+            src="/brand/header-logo.webp"
+            alt="Mazetto Food"
+            width={154}
+            height={38}
+          />
           <span className="mz-panel-brand" role="img" aria-label="Mazetto Food">
             M
           </span>
