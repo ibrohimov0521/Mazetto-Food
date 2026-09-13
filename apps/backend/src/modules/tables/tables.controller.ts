@@ -15,6 +15,8 @@ import {
   CreateHallDto,
   CreateTableDto,
   CreateTableOrderDto,
+  UpdateHallDto,
+  UpdateTableDto,
   UpdateTableStatusDto,
 } from "./dto/tables.dto";
 import { TablesService } from "./tables.service";
@@ -30,6 +32,12 @@ export class TablesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tablesService.listHalls(branchId, user);
+  }
+
+  @Get("halls/:id")
+  @Permissions(PERMISSIONS.TABLE_VIEW)
+  getHall(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.tablesService.getHall(id, user);
   }
 
   @Get("tables")
@@ -67,6 +75,16 @@ export class TablesController {
     return this.tablesService.updateStatus(id, dto, user);
   }
 
+  @Patch("tables/:id")
+  @Permissions(PERMISSIONS.TABLE_EDIT)
+  updateTable(
+    @Param("id") id: string,
+    @Body() dto: UpdateTableDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tablesService.updateTable(id, dto, user);
+  }
+
   @Post("halls")
   @Permissions(PERMISSIONS.TABLE_CREATE)
   createHall(
@@ -74,6 +92,16 @@ export class TablesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tablesService.createHall(dto, user);
+  }
+
+  @Patch("halls/:id")
+  @Permissions(PERMISSIONS.TABLE_EDIT)
+  updateHall(
+    @Param("id") id: string,
+    @Body() dto: UpdateHallDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tablesService.updateHall(id, dto, user);
   }
 
   @Post("tables")
