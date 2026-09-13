@@ -41,53 +41,193 @@ export const routeAccessRules: RouteAccessRule[] = [
 
   // `/admin` va `/admin/menu` — redirect sahifalari. Ular o'z maqsadining
   // qoidasini oladi, aks holda qobiq ularni noma'lum route deb rad etardi.
-  { pattern: "/admin", roles: [SUPER, ADMIN, MANAGER], permission: "DASHBOARD_VIEW" },
-  { pattern: "/admin/dashboard", roles: [SUPER, ADMIN, MANAGER], permission: "DASHBOARD_VIEW" },
-  { pattern: "/admin/menu", roles: [SUPER, ADMIN, MANAGER], permission: "MENU_VIEW" },
+  {
+    pattern: "/admin",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "DASHBOARD_VIEW",
+  },
+  {
+    pattern: "/admin/dashboard",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "DASHBOARD_VIEW",
+  },
+  {
+    pattern: "/admin/menu",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "MENU_VIEW",
+  },
 
-  { pattern: "/admin/orders/:id", roles: [SUPER, MANAGER], permission: "ORDER_VIEW" },
-  { pattern: "/admin/orders", roles: [SUPER, MANAGER], permission: "ORDER_VIEW" },
-  { pattern: "/admin/online-orders", roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT], permission: "ONLINE_ORDER_VIEW" },
-  { pattern: "/admin/couriers", roles: [SUPER, ADMIN, MANAGER], permission: "COURIER_MANAGE" },
-  { pattern: "/admin/tables", roles: [SUPER, MANAGER], permission: "TABLE_VIEW" },
-  { pattern: "/admin/kitchen-monitor", roles: [SUPER, MANAGER], permission: "KITCHEN_VIEW" },
+  {
+    pattern: "/admin/orders/:id",
+    roles: [SUPER, MANAGER],
+    permission: "ORDER_VIEW",
+  },
+  {
+    pattern: "/admin/orders",
+    roles: [SUPER, MANAGER],
+    permission: "ORDER_VIEW",
+  },
+  {
+    pattern: "/admin/online-orders",
+    roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT],
+    permission: "ONLINE_ORDER_VIEW",
+  },
+  {
+    pattern: "/admin/couriers",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "COURIER_MANAGE",
+  },
+  // Eski manzil saqlanadi, sahifa foydalanuvchini yangi filial daraxtiga olib boradi.
+  {
+    pattern: "/admin/tables",
+    roles: [SUPER, MANAGER],
+    permission: "TABLE_VIEW",
+  },
+  {
+    pattern: "/admin/kitchen-monitor",
+    roles: [SUPER, MANAGER],
+    permission: "KITCHEN_VIEW",
+  },
 
   // Mahsulot yozish sahifalari o'qishdan KUCHLIROQ permission talab qiladi,
   // shuning uchun ular ro'yxatda oldinroq turishi shart.
-  { pattern: "/admin/products/new", roles: [SUPER, ADMIN, MANAGER], permission: "MENU_CREATE" },
-  { pattern: "/admin/products/:id", roles: [SUPER, ADMIN, MANAGER], permission: "MENU_EDIT" },
-  { pattern: "/admin/products", roles: [SUPER, ADMIN, MANAGER], permission: "MENU_VIEW" },
-  { pattern: "/admin/categories", roles: [SUPER, ADMIN, MANAGER], permission: "MENU_VIEW" },
-  { pattern: "/admin/modifiers", roles: [SUPER, ADMIN, MANAGER], permission: "MENU_VIEW" },
-  { pattern: "/admin/homepage", roles: [SUPER, ADMIN, MANAGER], permission: "HOMEPAGE_MANAGE" },
+  {
+    pattern: "/admin/products/new",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "MENU_CREATE",
+  },
+  {
+    pattern: "/admin/products/:id",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "MENU_EDIT",
+  },
+  {
+    pattern: "/admin/products",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "MENU_VIEW",
+  },
+  {
+    pattern: "/admin/categories",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "MENU_VIEW",
+  },
+  {
+    pattern: "/admin/modifiers",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "MENU_VIEW",
+  },
+  {
+    pattern: "/admin/homepage",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "HOMEPAGE_MANAGE",
+  },
 
-  { pattern: "/admin/inventory", roles: [SUPER, MANAGER], permission: "INVENTORY_VIEW" },
-  { pattern: "/admin/recipes", roles: [SUPER, MANAGER], permission: "RECIPE_MANAGE" },
-  { pattern: "/admin/suppliers", roles: [SUPER, MANAGER], permission: "INVENTORY_VIEW" },
+  {
+    pattern: "/admin/inventory",
+    roles: [SUPER, MANAGER],
+    permission: "INVENTORY_VIEW",
+  },
+  {
+    pattern: "/admin/recipes",
+    roles: [SUPER, MANAGER],
+    permission: "RECIPE_MANAGE",
+  },
+  {
+    pattern: "/admin/suppliers",
+    roles: [SUPER, MANAGER],
+    permission: "INVENTORY_VIEW",
+  },
 
-  { pattern: "/admin/staff/new", roles: [SUPER, ADMIN, MANAGER], permission: "STAFF_CREATE" },
-  { pattern: "/admin/staff/:id", roles: [SUPER, ADMIN, MANAGER], permission: "STAFF_UPDATE" },
-  { pattern: "/admin/staff", roles: [SUPER, ADMIN, MANAGER], permission: "STAFF_VIEW" },
-  { pattern: "/admin/customers", roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT], permission: "CUSTOMER_VIEW" },
-  { pattern: "/admin/roles", roles: [SUPER, ADMIN, MANAGER], permission: "ROLE_VIEW" },
+  {
+    pattern: "/admin/staff/new",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "STAFF_CREATE",
+  },
+  {
+    pattern: "/admin/staff/:id",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "STAFF_UPDATE",
+  },
+  {
+    pattern: "/admin/staff",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "STAFF_VIEW",
+  },
+  {
+    pattern: "/admin/customers",
+    roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT],
+    permission: "CUSTOMER_VIEW",
+  },
+  {
+    pattern: "/admin/roles",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "ROLE_VIEW",
+  },
 
-  { pattern: "/admin/reports", roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT], permission: "REPORT_SALES_VIEW" },
+  {
+    pattern: "/admin/reports",
+    roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT],
+    permission: "REPORT_SALES_VIEW",
+  },
 
-  { pattern: "/admin/branches", roles: [SUPER, ADMIN, MANAGER], permission: "BRANCH_VIEW" },
-  { pattern: "/admin/printers", roles: [SUPER, MANAGER], permission: "RECEIPT_PRINT" },
+  // Filial daraxtidagi chuqur sahifalarda jadval huquqi ham kerak.
+  {
+    pattern: "/admin/branches/:branchId/halls/:hallId/tables/:tableId",
+    roles: [SUPER, MANAGER],
+    permission: "TABLE_VIEW",
+  },
+  {
+    pattern: "/admin/branches/:branchId/halls/:hallId",
+    roles: [SUPER, MANAGER],
+    permission: "TABLE_VIEW",
+  },
+  {
+    pattern: "/admin/branches/:branchId",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "BRANCH_VIEW",
+  },
+  {
+    pattern: "/admin/branches",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "BRANCH_VIEW",
+  },
+  {
+    pattern: "/admin/printers",
+    roles: [SUPER, MANAGER],
+    permission: "RECEIPT_PRINT",
+  },
   { pattern: "/admin/audit", roles: [SUPER], permission: "AUDIT_VIEW" },
   // Kill switch va cheklov qiymatlari — filial darajasidagi qaror emas.
   { pattern: "/admin/settings", roles: [SUPER], permission: "SETTING_MANAGE" },
 
-  { pattern: "/admin/shifts", roles: [SUPER, MANAGER], permission: "SHIFT_VIEW_BRANCH" },
-  { pattern: "/admin/receipts", roles: [SUPER, MANAGER, ACCOUNTANT], permission: "RECEIPT_VIEW" },
-  { pattern: "/admin/payments", roles: [SUPER, MANAGER, ACCOUNTANT], permission: "PAYMENT_VIEW" },
-  { pattern: "/admin/expenses", roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT], permission: "REPORT_EXPENSES_VIEW" },
+  {
+    pattern: "/admin/shifts",
+    roles: [SUPER, MANAGER],
+    permission: "SHIFT_VIEW_BRANCH",
+  },
+  {
+    pattern: "/admin/receipts",
+    roles: [SUPER, MANAGER, ACCOUNTANT],
+    permission: "RECEIPT_VIEW",
+  },
+  {
+    pattern: "/admin/payments",
+    roles: [SUPER, MANAGER, ACCOUNTANT],
+    permission: "PAYMENT_VIEW",
+  },
+  {
+    pattern: "/admin/expenses",
+    roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT],
+    permission: "REPORT_EXPENSES_VIEW",
+  },
 ];
 
 /** Joriy yo'l uchun qoidani topadi; noma'lum yo'l uchun `null`. */
 export function resolveRouteAccess(pathname: string): RouteAccessRule | null {
-  return routeAccessRules.find((rule) => matchesPattern(rule.pattern, pathname)) ?? null;
+  return (
+    routeAccessRules.find((rule) => matchesPattern(rule.pattern, pathname)) ??
+    null
+  );
 }
 
 export type RouteAccessVerdict = "allowed" | "denied" | "unknown-route";

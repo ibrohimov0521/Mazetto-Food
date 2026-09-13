@@ -18,8 +18,12 @@ const managementDto = readSource(
 const adminCatalog = readSource(
   "apps/pos-web/components/admin/admin-catalog.tsx",
 );
-const adminDashboard = readSource("apps/pos-web/app/(shell)/admin/dashboard/page.tsx");
-const adminProducts = readSource("apps/pos-web/app/(shell)/admin/products/page.tsx");
+const adminDashboard = readSource(
+  "apps/pos-web/app/(shell)/admin/dashboard/page.tsx",
+);
+const adminProducts = readSource(
+  "apps/pos-web/app/(shell)/admin/products/page.tsx",
+);
 const adminProductNew = readSource(
   "apps/pos-web/app/(shell)/admin/products/new/page.tsx",
 );
@@ -29,7 +33,9 @@ const adminProductEdit = readSource(
 const adminCategories = readSource(
   "apps/pos-web/app/(shell)/admin/categories/page.tsx",
 );
-const adminBranches = readSource("apps/pos-web/app/(shell)/admin/branches/page.tsx");
+const adminBranches = readSource(
+  "apps/pos-web/app/(shell)/admin/branches/page.tsx",
+);
 const routeAccess = readSource("apps/pos-web/lib/route-access.ts");
 const adminProductEditor = readSource(
   "apps/pos-web/components/admin/admin-product-editor.tsx",
@@ -38,6 +44,7 @@ const adminModifiers = readSource(
   "apps/pos-web/components/admin/admin-modifiers.tsx",
 );
 const posRouteVerifier = readSource("scripts/verify-pos-public-route.mjs");
+const compactRouteAccess = routeAccess.replace(/\s+/g, " ");
 
 assert.match(listDto, /includeInactive\?: string/);
 assert.match(menuController, /@Get\("products\/:id"\)/);
@@ -88,7 +95,7 @@ for (const pattern of [
   "/admin/branches",
 ]) {
   assert.ok(
-    routeAccess.includes(
+    compactRouteAccess.includes(
       `pattern: "${pattern}", roles: [SUPER, ADMIN, MANAGER]`,
     ),
     `${pattern}: matritsada SUPER/ADMIN/MANAGER rollari kutilgan edi`,
@@ -111,12 +118,12 @@ for (const pattern of [
  */
 // Guardlar 6-bosqich A2 da sahifalardan `app/(shell)/layout.tsx` ga
 // ko'chdi; qoidalar endi ruxsat matritsasida e'lon qilinadi.
-assert.match(routeAccess, /pattern: "\/admin\/dashboard", roles: \[[^\]]*\], permission: "DASHBOARD_VIEW"/);
-assert.match(routeAccess, /pattern: "\/admin\/products", roles: \[[^\]]*\], permission: "MENU_VIEW"/);
-assert.match(routeAccess, /pattern: "\/admin\/products\/new", roles: \[[^\]]*\], permission: "MENU_CREATE"/);
-assert.match(routeAccess, /pattern: "\/admin\/products\/:id", roles: \[[^\]]*\], permission: "MENU_EDIT"/);
-assert.match(routeAccess, /pattern: "\/admin\/categories", roles: \[[^\]]*\], permission: "MENU_VIEW"/);
-assert.match(routeAccess, /pattern: "\/admin\/branches", roles: \[[^\]]*\], permission: "BRANCH_VIEW"/);
+assert.match(routeAccess, routeRule("/admin/dashboard", "DASHBOARD_VIEW"));
+assert.match(routeAccess, routeRule("/admin/products", "MENU_VIEW"));
+assert.match(routeAccess, routeRule("/admin/products/new", "MENU_CREATE"));
+assert.match(routeAccess, routeRule("/admin/products/:id", "MENU_EDIT"));
+assert.match(routeAccess, routeRule("/admin/categories", "MENU_VIEW"));
+assert.match(routeAccess, routeRule("/admin/branches", "BRANCH_VIEW"));
 
 assert.match(
   adminCatalog,
@@ -210,6 +217,14 @@ assert.match(
 );
 
 console.info("Admin catalog core validation passed");
+
+function routeRule(pattern: string, permission: string): RegExp {
+  const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  return new RegExp(
+    `pattern:\\s*"${escapedPattern}",\\s*roles:\\s*\\[[^\\]]*\\],\\s*permission:\\s*"${permission}"`,
+  );
+}
 
 function readSource(path: string): string {
   return readFileSync(join(repoRoot, path), "utf8");

@@ -107,9 +107,14 @@ for (const block of navSource.matchAll(/^ {6}\{\n([\s\S]*?)^ {6}\},$/gm)) {
 
 assert.equal(
   items.length,
-  27,
+  25,
   `nav elementlari soni kutilganidan farq qiladi: ${items.length}`,
 );
+
+// Stol va printerlar umumiy yon panelda emas, filialning ichki ish maydonida.
+// Ular ro'yxatda qolsa foydalanuvchi filial kontekstini yo'qotadi.
+assert.ok(!items.some((item) => item.href === "/admin/tables"));
+assert.ok(!items.some((item) => item.href === "/admin/printers"));
 
 /*
  * Ruxsat matritsasi (`lib/route-access.ts`) — endi guardlarning yagona manbai.
@@ -121,7 +126,7 @@ type ShellRoute = { route: string; dirPath: string };
 
 const accessRules: AccessRule[] = [
   ...routeAccessSource.matchAll(
-    /\{ pattern: "([^"]+)", roles: \[([^\]]*)\](?:, permission: "([^"]+)")? \}/g,
+    /\{\s*pattern:\s*"([^"]+)",\s*roles:\s*\[([^\]]*)\](?:,\s*permission:\s*"([^"]+)")?\s*,?\s*\}/g,
   ),
 ].map((match) => ({
   pattern: match[1]!,
@@ -146,7 +151,8 @@ function findRule(pathname: string): AccessRule | undefined {
     }
 
     return patternSegments.every(
-      (segment, index) => segment.startsWith(":") || segment === pathSegments[index],
+      (segment, index) =>
+        segment.startsWith(":") || segment === pathSegments[index],
     );
   });
 }

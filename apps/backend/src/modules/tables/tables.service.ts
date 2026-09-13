@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -24,8 +25,18 @@ import type {
   CreateHallDto,
   CreateTableDto,
   CreateTableOrderDto,
+  UpdateHallDto,
+  UpdateTableDto,
   UpdateTableStatusDto,
 } from "./dto/tables.dto";
+
+const activeOrderStatuses: OrderStatus[] = [
+  OrderStatus.NEW,
+  OrderStatus.CONFIRMED,
+  OrderStatus.PREPARING,
+  OrderStatus.READY,
+  OrderStatus.SERVED,
+];
 
 @Injectable()
 export class TablesService {
@@ -45,11 +56,43 @@ export class TablesService {
       select: {
         id: true,
         branchId: true,
+        code: true,
         name: true,
+        description: true,
+        isActive: true,
         sortOrder: true,
+        _count: { select: { tables: true } },
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
+  }
+
+  async getHall(id: string, user: AuthenticatedUser) {
+    const hall = await this.prisma.hall.findUnique({
+      where: { id },
+      include: {
+        branch: {
+          select: { id: true, code: true, name: true, isActive: true },
+        },
+        tables: {
+          where: { isActive: true },
+          include: {
+            orders: {
+              where: { status: { in: activeOrderStatuses } },
+              select: { id: true },
+            },
+          },
+          orderBy: [{ sortOrder: "asc" }, { number: "asc" }],
+        },
+      },
+    });
+
+    if (!hall) {
+      throw new NotFoundException("Hall not found");
+    }
+
+    resolveBranchScope(user, hall.branchId);
+    return hall;
   }
 
   async listTables(branchId: string | undefined, user: AuthenticatedUser) {
@@ -64,15 +107,7 @@ export class TablesService {
         hall: true,
         orders: {
           where: {
-            status: {
-              in: [
-                OrderStatus.NEW,
-                OrderStatus.CONFIRMED,
-                OrderStatus.PREPARING,
-                OrderStatus.READY,
-                OrderStatus.SERVED,
-              ],
-            },
+            status: { in: activeOrderStatuses },
           },
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -91,18 +126,11 @@ export class TablesService {
     const table = await this.prisma.restaurantTable.findUnique({
       where: { id },
       include: {
+        branch: { select: { id: true, name: true } },
         hall: true,
         orders: {
           where: {
-            status: {
-              in: [
-                OrderStatus.NEW,
-                OrderStatus.CONFIRMED,
-                OrderStatus.PREPARING,
-                OrderStatus.READY,
-                OrderStatus.SERVED,
-              ],
-            },
+            status: { in: activeOrderStatuses },
           },
           include: { items: true, waiter: true },
           orderBy: { createdAt: "desc" },
@@ -121,19 +149,41 @@ export class TablesService {
 
   async createHall(dto: CreateHallDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await this.assertBranch(branchId);
+    const name = dto.name.trim();
 
     return this.prisma.hall.create({
       data: {
         branchId,
-        code: this.createCode(dto.name),
-        name: dto.name,
-        description: dto.description ?? null,
+        code: this.createCode(name),
+        name,
+        description: dto.description?.trim() || null,
+        sortOrder: dto.sortOrder,
       },
     });
   }
 
   async createTable(dto: CreateTableDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    const hall = await this.prisma.hall.findFirst({
+      where: { id: dto.hallId, branchId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!hall) {
+      throw new BadRequestException(
+        "Selected hall is not active in this branch",
+      );
+    }
+
+    const duplicate = await this.prisma.restaurantTable.findFirst({
+      where: { hallId: dto.hallId, number: dto.number, isActive: true },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      throw new ConflictException("A table with this number already exists");
+    }
 
     return this.prisma.restaurantTable.create({
       data: {
@@ -141,10 +191,10 @@ export class TablesService {
         hallId: dto.hallId,
         code: `T${dto.number}-${Date.now().toString(36).toUpperCase()}`,
         number: dto.number,
-        name: dto.name,
+        name: dto.name.trim(),
         capacity: dto.capacity,
         seats: dto.capacity,
-        sortOrder: dto.number,
+        sortOrder: dto.sortOrder ?? dto.number,
       },
     });
   }
@@ -159,6 +209,81 @@ export class TablesService {
     return this.prisma.restaurantTable.update({
       where: { id },
       data: { status: dto.status },
+    });
+  }
+
+  async updateHall(id: string, dto: UpdateHallDto, user: AuthenticatedUser) {
+    await this.assertHall(id, user);
+
+    if (dto.isActive === false) {
+      const activeTable = await this.prisma.restaurantTable.findFirst({
+        where: { hallId: id, isActive: true },
+        select: { name: true },
+      });
+
+      if (activeTable) {
+        throw new BadRequestException(
+          `Archive ${activeTable.name} before archiving this hall`,
+        );
+      }
+    }
+
+    return this.prisma.hall.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description.trim() || null }
+          : {}),
+        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+  }
+
+  async updateTable(id: string, dto: UpdateTableDto, user: AuthenticatedUser) {
+    const table = await this.assertTable(id, user);
+
+    if (dto.number !== undefined && table.hallId) {
+      const duplicate = await this.prisma.restaurantTable.findFirst({
+        where: {
+          hallId: table.hallId,
+          number: dto.number,
+          isActive: true,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+
+      if (duplicate) {
+        throw new ConflictException("A table with this number already exists");
+      }
+    }
+
+    if (dto.isActive === false) {
+      const activeOrder = await this.prisma.order.findFirst({
+        where: { tableId: id, status: { in: activeOrderStatuses } },
+        select: { id: true },
+      });
+
+      if (activeOrder) {
+        throw new BadRequestException(
+          "A table with an active order cannot be archived",
+        );
+      }
+    }
+
+    return this.prisma.restaurantTable.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.number !== undefined ? { number: dto.number } : {}),
+        ...(dto.capacity !== undefined
+          ? { capacity: dto.capacity, seats: dto.capacity }
+          : {}),
+        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
     });
   }
 
@@ -189,15 +314,7 @@ export class TablesService {
       const existingOrder = await tx.order.findFirst({
         where: {
           tableId: id,
-          status: {
-            in: [
-              OrderStatus.NEW,
-              OrderStatus.CONFIRMED,
-              OrderStatus.PREPARING,
-              OrderStatus.READY,
-              OrderStatus.SERVED,
-            ],
-          },
+          status: { in: activeOrderStatuses },
         },
       });
 
@@ -257,13 +374,7 @@ export class TablesService {
       where: {
         waiterId,
         status: {
-          in: [
-            OrderStatus.NEW,
-            OrderStatus.CONFIRMED,
-            OrderStatus.PREPARING,
-            OrderStatus.READY,
-            OrderStatus.SERVED,
-          ],
+          in: activeOrderStatuses,
         },
       },
       include: { table: true, items: true },
@@ -284,10 +395,10 @@ export class TablesService {
   private async assertTable(
     id: string,
     user: AuthenticatedUser,
-  ): Promise<void> {
+  ): Promise<{ id: string; branchId: string; hallId: string | null }> {
     const table = await this.prisma.restaurantTable.findUnique({
       where: { id },
-      select: { id: true, branchId: true },
+      select: { id: true, branchId: true, hallId: true },
     });
 
     if (!table) {
@@ -295,6 +406,31 @@ export class TablesService {
     }
 
     resolveBranchScope(user, table.branchId);
+    return table;
+  }
+
+  private async assertHall(id: string, user: AuthenticatedUser): Promise<void> {
+    const hall = await this.prisma.hall.findUnique({
+      where: { id },
+      select: { id: true, branchId: true },
+    });
+
+    if (!hall) {
+      throw new NotFoundException("Hall not found");
+    }
+
+    resolveBranchScope(user, hall.branchId);
+  }
+
+  private async assertBranch(id: string): Promise<void> {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!branch) {
+      throw new NotFoundException("Branch not found");
+    }
   }
 
   private async assertEmployeeInBranch(

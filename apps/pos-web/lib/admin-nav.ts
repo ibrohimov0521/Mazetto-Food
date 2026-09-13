@@ -47,11 +47,11 @@ export type AdminNavGroup = {
 
 export const adminNavGroups: AdminNavGroup[] = [
   {
-    id: "overview",
-    label: "Boshqaruv",
+    id: "home",
+    label: "Bosh sahifa",
     items: [
       {
-        label: "Dashboard",
+        label: "Bosh sahifa",
         icon: "gauge",
         href: "/admin/dashboard",
         permission: "DASHBOARD_VIEW",
@@ -70,14 +70,14 @@ export const adminNavGroups: AdminNavGroup[] = [
        * ko'rsatilmaydi.
        */
       {
-        label: "Filial boshqaruvi",
+        label: "Bosh sahifa",
         icon: "monitor",
         href: "/manager/dashboard",
         permission: "DASHBOARD_VIEW",
         roles: ["BRANCH_MANAGER"],
       },
       {
-        label: "Buxgalteriya",
+        label: "Bosh sahifa",
         icon: "banknote",
         href: "/accounting",
         permission: "DASHBOARD_VIEW",
@@ -87,7 +87,7 @@ export const adminNavGroups: AdminNavGroup[] = [
   },
   {
     id: "operations",
-    label: "Operatsiya",
+    label: "Operatsiyalar",
     items: [
       {
         label: "Buyurtmalar",
@@ -105,6 +105,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
+        label: "Oshxona monitoringi",
+        icon: "flame",
+        href: "/admin/kitchen-monitor",
+        permission: "KITCHEN_VIEW",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+      },
+      {
         label: "Kuryerlar",
         icon: "truck",
         href: "/admin/couriers",
@@ -112,24 +119,17 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
       },
       {
-        label: "Stollar va zallar",
-        icon: "grid",
-        href: "/admin/tables",
-        permission: "TABLE_VIEW",
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
-      },
-      {
-        label: "Oshxona monitoringi",
-        icon: "flame",
-        href: "/admin/kitchen-monitor",
-        permission: "KITCHEN_VIEW",
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+        label: "Mijozlar",
+        icon: "user",
+        href: "/admin/customers",
+        permission: "CUSTOMER_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
     ],
   },
   {
     id: "cash",
-    label: "Kassa va moliya",
+    label: "Kassa va hisobot",
     items: [
       {
         label: "Smenalar",
@@ -141,17 +141,17 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
-        label: "Cheklar",
-        icon: "scroll",
-        href: "/admin/receipts",
-        permission: "RECEIPT_VIEW",
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-      },
-      {
         label: "To'lovlar",
         icon: "wallet",
         href: "/admin/payments",
         permission: "PAYMENT_VIEW",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+      },
+      {
+        label: "Cheklar",
+        icon: "scroll",
+        href: "/admin/receipts",
+        permission: "RECEIPT_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
@@ -177,8 +177,8 @@ export const adminNavGroups: AdminNavGroup[] = [
     ],
   },
   {
-    id: "catalog",
-    label: "Katalog",
+    id: "menu-marketing",
+    label: "Menyu va marketing",
     items: [
       {
         label: "Mahsulotlar",
@@ -213,7 +213,7 @@ export const adminNavGroups: AdminNavGroup[] = [
   },
   {
     id: "inventory",
-    label: "Ombor",
+    label: "Ombor va ta'minot",
     items: [
       {
         label: "Zaxira",
@@ -239,8 +239,22 @@ export const adminNavGroups: AdminNavGroup[] = [
     ],
   },
   {
+    id: "branches",
+    label: "Filiallar",
+    items: [
+      {
+        label: "Filiallar",
+        icon: "building",
+        href: "/admin/branches",
+        permission: "BRANCH_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+        matchPrefix: "/admin/branches",
+      },
+    ],
+  },
+  {
     id: "people",
-    label: "Odamlar",
+    label: "Jamoa",
     items: [
       {
         label: "Xodimlar",
@@ -250,40 +264,18 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
         matchPrefix: "/admin/staff",
       },
+    ],
+  },
+  {
+    id: "system",
+    label: "Tizim",
+    items: [
       {
-        label: "Mijozlar",
-        icon: "user",
-        href: "/admin/customers",
-        permission: "CUSTOMER_VIEW",
-        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-      },
-      {
-        label: "Rollar va permissionlar",
+        label: "Rollar va ruxsatlar",
         icon: "shield",
         href: "/admin/roles",
         permission: "ROLE_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
-      },
-    ],
-  },
-  {
-    id: "settings",
-    label: "Sozlamalar",
-    items: [
-      {
-        label: "Filiallar",
-        icon: "building",
-        href: "/admin/branches",
-        permission: "BRANCH_VIEW",
-        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
-      },
-      {
-        label: "Printerlar",
-        icon: "printer",
-        href: "/admin/printers",
-        permission: "RECEIPT_PRINT",
-        // ADMIN da RECEIPT_PRINT yo'q — route'ning RoleGuard'i bilan mos.
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
         // Kill switch va cheklovlar — faqat SUPER_ADMIN.
@@ -341,6 +333,15 @@ export function isAdminNavItemActive(
   }
 
   return pathname === item.href;
+}
+
+/** Joriy yo'l joylashgan yuqori darajadagi navigatsiya guruhi. */
+export function findAdminNavGroup(pathname: string): AdminNavGroup | null {
+  return (
+    adminNavGroups.find((group) =>
+      group.items.some((item) => isAdminNavItemActive(item, pathname)),
+    ) ?? null
+  );
 }
 
 /**
