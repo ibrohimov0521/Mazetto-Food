@@ -51,11 +51,15 @@ export function StaffShell({
         <div className={styles.headerRow}>
           <div className={styles.brand}>
             <img
+              className={styles.brandLogo}
               src="/brand/header-logo.webp"
               alt="Mazetto Food"
               width={164}
               height={40}
             />
+            <span className={styles.brandMark} aria-hidden="true">
+              M
+            </span>
             <span className={styles.brandDivider} />
             <h1>{title}</h1>
           </div>

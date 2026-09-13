@@ -110,10 +110,23 @@
   gap: 12px;
   min-width: 0;
 }
-.brand img {
+.brandLogo {
   width: 164px;
   height: 40px;
   object-fit: contain;
+}
+.brandMark {
+  display: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  background: linear-gradient(105deg, #e0d8ff 0 48%, #ffd83d 52% 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 27px;
+  font-weight: 900;
+  line-height: 1;
 }
 .brandDivider {
   height: 28px;
@@ -791,7 +804,7 @@
   --kds-qty-box: 24px;
   --kds-timer: 12px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -903,6 +916,7 @@
 }
 .ticket {
   min-width: 0;
+  container-type: inline-size;
   padding: 8px;
   background: white;
   border: 1px solid #d5e2dd;
@@ -927,10 +941,41 @@
   box-shadow: 0 0 0 2px #b9323c4d;
 }
 .ticketHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.ticketHeaderTools {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.ticketCollapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 3px 5px;
+  border: 1px solid #bfd4ce;
+  border-radius: 5px;
+  background: #f6faf8;
+  color: #0b5658;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.ticketCollapse:hover {
+  border-color: #0f7f7a;
+  background: #e8f4f0;
+}
+.ticketCollapseLabel {
+  white-space: nowrap;
 }
 /*
  * ASOSIY qoida tiklandi. `.ticketNumber` oshxona ekranidan tashqarida
@@ -939,9 +984,11 @@
  * stilsiz qolardi. Oshxona kattalashtirishni o'zi alohida beradi.
  */
 .ticketNumber {
+  min-width: 0;
   font-size: 18px;
   font-weight: 800;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 .board .ticketNumber {
   font-size: var(--kds-number);
@@ -953,6 +1000,12 @@
   align-items: center;
   gap: 4px;
   margin: 4px 0 5px;
+}
+.ticketCompactSummary {
+  margin: 2px 0 4px;
+  color: #45635c;
+  font-size: 11px;
+  font-weight: 700;
 }
 .board .badge {
   padding: 2px 5px;
@@ -1074,15 +1127,20 @@
 .ticketActions {
   display: flex;
   gap: 6px;
+  min-width: 0;
   margin-top: 7px;
 }
 .ticketActions > :first-child {
   flex: 1;
 }
 .ticketPrimary {
+  min-width: 0;
   min-height: 36px;
   padding: 7px 9px;
   font-size: 12px;
+}
+.ticketPrimaryShortLabel {
+  display: none;
 }
 .board[data-density="tv"] .ticketPrimary {
   min-height: 64px;
@@ -1155,14 +1213,10 @@
   height: 180px;
   border-radius: 8px;
 }
-/*
- * Keng ekranda taxta balandligi qat'iy: har bir ustun ALOHIDA aylanadi,
- * shuning uchun 12 ta yangi chipta "Tayyor" ustuni sarlavhasini ekrandan
- * chiqarib yubormaydi.
- */
+/* Katta ekranda barcha holatlar yonma-yon ko'rinadi. Har bo'limning ichki
+   ro'yxati alohida aylanadi, lekin butun taxtada yon scroll bo'lmaydi. */
 @media (min-width: 1200px) {
   .board {
-    grid-template-rows: repeat(2, minmax(0, 1fr));
     height: calc(100dvh - 214px);
     min-height: 460px;
     align-items: stretch;
@@ -1176,7 +1230,6 @@
     scrollbar-gutter: stable;
   }
 }
-
 /* Delivery addresses stay readable without loading an embedded map. */
 .deliveryGrid {
   display: grid;
@@ -1673,9 +1726,15 @@
 }
 
 @media (max-width: 1199px) {
+  .kitchenFilters {
+    display: flex;
+    margin-bottom: 18px;
+  }
   .board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 12px;
+    grid-template-columns: 1fr;
+  }
+  .column[data-hidden="true"] {
+    display: none;
   }
   .posBody {
     grid-template-columns: minmax(0, 1fr) 320px;
@@ -1697,30 +1756,39 @@
 }
 @media (max-width: 767px) {
   .header {
-    padding: 10px 14px 0;
+    padding: 8px 10px 0;
   }
   .brand {
-    gap: 12px;
+    gap: 7px;
   }
-  .brand img {
-    width: 112px;
-    height: 30px;
-  }
-  .brandDivider {
+  .brandLogo {
     display: none;
   }
+  .brandMark {
+    display: grid;
+  }
+  .brandDivider {
+    display: block;
+    height: 24px;
+  }
   .brand h1 {
-    font-size: 17px;
+    font-size: 16px;
   }
   .headerRow {
-    gap: 8px;
+    min-height: 40px;
+    gap: 6px;
+    padding-bottom: 5px;
   }
   .headerActions {
-    gap: 6px;
+    gap: 4px;
   }
   .headerIcon {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
+  }
+  .header .shiftLink {
+    width: 36px;
+    min-height: 36px;
   }
   .content {
     padding: 18px 14px;
@@ -1761,18 +1829,8 @@
     font-size: 12px;
     gap: 5px;
   }
-  .kitchenFilters {
-    display: flex;
-    margin-bottom: 18px;
-  }
-  .board {
-    grid-template-columns: 1fr;
-  }
   .ticketList {
-    grid-template-columns: 1fr;
-  }
-  .column[data-hidden="true"] {
-    display: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .ticket {
     padding: 10px;
@@ -1928,6 +1986,42 @@
     border-left: 0;
     border-top: 1px solid var(--border);
     padding: 20px 0;
+  }
+}
+
+@container (max-width: 210px) {
+  .ticketCollapseLabel {
+    display: none;
+  }
+  .ticketTime {
+    gap: 3px;
+    padding: 3px 4px;
+    font-size: 10px;
+  }
+  .ticketTime svg {
+    width: 14px;
+    height: 14px;
+  }
+  .ticketPrimary {
+    gap: 4px;
+    padding: 6px 4px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .ticketPrimaryFullLabel {
+    display: none;
+  }
+  .ticketPrimaryShortLabel {
+    display: inline;
+  }
+  .ticketCancel {
+    width: 32px;
+    height: 32px;
+  }
+}
+@media (max-width: 359px) {
+  .ticketList {
+    grid-template-columns: 1fr;
   }
 }
 @media (prefers-reduced-motion: reduce) {

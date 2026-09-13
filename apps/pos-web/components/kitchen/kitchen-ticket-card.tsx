@@ -2,6 +2,8 @@
 
 import {
   Check,
+  Maximize2,
+  Minimize2,
   ShoppingBag,
   Utensils,
   Timer,
@@ -9,6 +11,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { useState } from "react";
 import { useAuth } from "../auth/auth-provider";
 import { hasPermission } from "../../lib/auth";
 import styles from "../staff/staff.module.css";
@@ -29,6 +32,14 @@ const sourceLabels: Record<KitchenTicket["order"]["source"], string> = {
   TELEGRAM: "Telegram",
 };
 
+const compactActionLabels: Record<KitchenAction, string> = {
+  accept: "Qabul",
+  start: "Boshlash",
+  ready: "Tayyor",
+  complete: "Topshirish",
+  cancel: "Bekor",
+};
+
 export function KitchenTicketCard({
   ticket,
   now,
@@ -45,6 +56,7 @@ export function KitchenTicketCard({
   onAction: (action: KitchenAction) => void;
 }) {
   const { user } = useAuth();
+  const [isCompact, setIsCompact] = useState(false);
   const elapsed = kitchenElapsedMinutes(ticket, now);
   const urgency = kitchenUrgency(ticket.status, elapsed);
   const canAct = hasPermission(
@@ -70,20 +82,47 @@ export function KitchenTicketCard({
   const note = ticket.order.kitchenComment ?? ticket.order.notes;
 
   return (
-    <article className={styles.ticket} data-urgency={urgency}>
+    <article
+      className={styles.ticket}
+      data-compact={isCompact}
+      data-urgency={urgency}
+    >
       <div className={styles.ticketHeader}>
         <h3 className={styles.ticketNumber}>#{number}</h3>
-        <span
-          className={styles.ticketTime}
-          data-urgency={urgency}
-          title={kitchenUrgencyLabels[urgency]}
-        >
-          <Timer size={22} aria-hidden="true" />
-          {elapsed} daq
-        </span>
+        <div className={styles.ticketHeaderTools}>
+          <button
+            aria-expanded={!isCompact}
+            aria-label={
+              isCompact
+                ? `#${number} buyurtma ma'lumotlarini ko'rsatish`
+                : `#${number} buyurtmani qisqartirish`
+            }
+            className={styles.ticketCollapse}
+            onClick={() => setIsCompact((current) => !current)}
+            title={isCompact ? "Ko'rsatish" : "Qisqartirish"}
+            type="button"
+          >
+            {isCompact ? (
+              <Maximize2 size={15} aria-hidden="true" />
+            ) : (
+              <Minimize2 size={15} aria-hidden="true" />
+            )}
+            <span className={styles.ticketCollapseLabel}>
+              {isCompact ? "Ko'rsatish" : "Yig'ish"}
+            </span>
+          </button>
+          <span
+            className={styles.ticketTime}
+            data-urgency={urgency}
+            title={kitchenUrgencyLabels[urgency]}
+          >
+            <Timer size={22} aria-hidden="true" />
+            {elapsed} daq
+          </span>
+        </div>
       </div>
       <div className={styles.ticketMeta}>
-        {ticket.priority > 0 && (
+        {!isCompact && ticket.priority > 0 && (
           <span className={styles.ticketPriority}>
             <Zap size={16} aria-hidden="true" />
             Ustuvor
@@ -99,26 +138,36 @@ export function KitchenTicketCard({
           )}
           {place}
         </span>
-        <span className={styles.badge}>
-          {sourceLabels[ticket.order.source]}
-        </span>
+        {!isCompact && (
+          <span className={styles.badge}>
+            {sourceLabels[ticket.order.source]}
+          </span>
+        )}
       </div>
-      <ul className={styles.itemList}>
-        {shownItems.map((item) => (
-          <li key={item.id}>
-            <span className={styles.itemQuantity}>
-              {Number(item.quantity)}x
-            </span>
-            <div className={styles.itemName}>
-              {item.productName}
-              {item.variantName && <small>{item.variantName}</small>}
-              <Modifiers value={item.modifierSnapshot} />
-              {item.notes && <p className={styles.note}>{item.notes}</p>}
-            </div>
-          </li>
-        ))}
-      </ul>
-      {note && <p className={styles.note}>{note}</p>}
+      {isCompact ? (
+        <p className={styles.ticketCompactSummary}>
+          {shownItems.length} xil mahsulot
+        </p>
+      ) : (
+        <>
+          <ul className={styles.itemList}>
+            {shownItems.map((item) => (
+              <li key={item.id}>
+                <span className={styles.itemQuantity}>
+                  {Number(item.quantity)}x
+                </span>
+                <div className={styles.itemName}>
+                  {item.productName}
+                  {item.variantName && <small>{item.variantName}</small>}
+                  <Modifiers value={item.modifierSnapshot} />
+                  {item.notes && <p className={styles.note}>{item.notes}</p>}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {note && <p className={styles.note}>{note}</p>}
+        </>
+      )}
       <div className={styles.ticketActions}>
         {action && (
           <button
@@ -128,7 +177,18 @@ export function KitchenTicketCard({
             type="button"
           >
             <Check size={20} aria-hidden="true" />
-            {busy ? "Saqlanmoqda..." : action.label}
+            {busy ? (
+              "Saqlanmoqda..."
+            ) : (
+              <>
+                <span className={styles.ticketPrimaryFullLabel}>
+                  {action.label}
+                </span>
+                <span className={styles.ticketPrimaryShortLabel}>
+                  {compactActionLabels[action.action]}
+                </span>
+              </>
+            )}
           </button>
         )}
         {canCancel && (
@@ -151,7 +211,7 @@ export function KitchenTicketCard({
           {error}
         </p>
       )}
-      {showBranch && (
+      {!isCompact && showBranch && (
         <p className={styles.ticketBranch}>
           {ticket.order.branch?.name ?? "Filial"}
         </p>
