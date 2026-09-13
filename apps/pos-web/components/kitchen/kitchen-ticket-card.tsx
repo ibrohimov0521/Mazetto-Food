@@ -2,8 +2,8 @@
 
 import {
   Check,
-  ChevronDown,
-  ChevronUp,
+  Maximize2,
+  Minimize2,
   ShoppingBag,
   Utensils,
   Timer,
@@ -31,23 +31,31 @@ const sourceLabels: Record<KitchenTicket["order"]["source"], string> = {
   TELEGRAM: "Telegram",
 };
 
+const compactActionLabels: Record<KitchenAction, string> = {
+  accept: "Qabul",
+  start: "Boshlash",
+  ready: "Tayyor",
+  complete: "Topshirish",
+  cancel: "Bekor",
+};
+
 export function KitchenTicketCard({
   ticket,
   now,
-  expanded,
   busy,
   error,
   showBranch,
-  onToggle,
+  isCompact,
+  onToggleCompact,
   onAction,
 }: {
   ticket: KitchenTicket;
   now: number;
-  expanded: boolean;
   busy: boolean;
   error?: string | undefined;
   showBranch: boolean;
-  onToggle: () => void;
+  isCompact: boolean;
+  onToggleCompact: () => void;
   onAction: (action: KitchenAction) => void;
 }) {
   const { user } = useAuth();
@@ -58,9 +66,7 @@ export function KitchenTicketCard({
     ticket.status === "NEW" ? "KITCHEN_ACCEPT" : "KITCHEN_STATUS_UPDATE",
   );
   const action = canAct ? kitchenPrimaryAction(ticket.status) : null;
-  const shownItems = expanded
-    ? ticket.order.items
-    : ticket.order.items.slice(0, 1);
+  const shownItems = ticket.order.items;
   const canCancel =
     hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
     ["NEW", "ACCEPTED", "COOKING"].includes(ticket.status);
@@ -75,25 +81,49 @@ export function KitchenTicketCard({
   const note = ticket.order.kitchenComment ?? ticket.order.notes;
 
   return (
-    <article className={styles.ticket} data-urgency={urgency}>
+    <article
+      className={styles.ticket}
+      data-compact={isCompact}
+      data-urgency={urgency}
+    >
       <div className={styles.ticketHeader}>
         <h3 className={styles.ticketNumber}>#{number}</h3>
+        <button
+          aria-expanded={!isCompact}
+          aria-label={
+            isCompact
+              ? `#${number} buyurtma ma'lumotlarini ko'rsatish`
+              : `#${number} buyurtmani qisqartirish`
+          }
+          className={styles.ticketCollapse}
+          onClick={onToggleCompact}
+          title={isCompact ? "Ko'rsatish" : "Qisqartirish"}
+          type="button"
+        >
+          {isCompact ? (
+            <Maximize2 size={15} aria-hidden="true" />
+          ) : (
+            <Minimize2 size={15} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      <div className={styles.ticketTiming}>
         <span
           className={styles.ticketTime}
           data-urgency={urgency}
           title={kitchenUrgencyLabels[urgency]}
         >
-          <Timer size={22} aria-hidden="true" />
+          <Timer size={14} aria-hidden="true" />
           {elapsed} daq
         </span>
-      </div>
-      <div className={styles.ticketMeta}>
         {ticket.priority > 0 && (
           <span className={styles.ticketPriority}>
             <Zap size={16} aria-hidden="true" />
             Ustuvor
           </span>
         )}
+      </div>
+      <div className={styles.ticketMeta}>
         <span className={styles.badge}>
           {ticket.order.type === "DELIVERY" ? (
             <Truck size={16} aria-hidden="true" />
@@ -104,55 +134,59 @@ export function KitchenTicketCard({
           )}
           {place}
         </span>
-        <span className={styles.badge}>
-          {sourceLabels[ticket.order.source]}
-        </span>
+        {!isCompact && (
+          <span className={styles.badge}>
+            {sourceLabels[ticket.order.source]}
+          </span>
+        )}
       </div>
-      <ul className={styles.itemList}>
-        {shownItems.map((item) => (
-          <li key={item.id}>
-            <span className={styles.itemQuantity}>
-              {Number(item.quantity)}x
-            </span>
-            <div className={styles.itemName}>
-              {item.productName}
-              {item.variantName && <small>{item.variantName}</small>}
-              <Modifiers value={item.modifierSnapshot} />
-              {item.notes && <p className={styles.note}>{item.notes}</p>}
-            </div>
-          </li>
-        ))}
-      </ul>
-      {ticket.order.items.length > 0 && (
-        <button
-          className={styles.detailsButton}
-          aria-expanded={expanded}
-          onClick={onToggle}
-          type="button"
-        >
-          {expanded ? (
-            <ChevronUp size={18} aria-hidden="true" />
-          ) : (
-            <ChevronDown size={18} aria-hidden="true" />
-          )}
-          {expanded
-            ? "Yig'ish"
-            : ticket.order.items.length > 1
-              ? `Batafsil · ${ticket.order.items.length} ta mahsulot`
-              : "Batafsil"}
-        </button>
+      {isCompact ? (
+        <p className={styles.ticketCompactSummary}>
+          {shownItems.length} xil mahsulot
+        </p>
+      ) : (
+        <>
+          <ul className={styles.itemList}>
+            {shownItems.map((item) => (
+              <li key={item.id}>
+                <span className={styles.itemQuantity}>
+                  {Number(item.quantity)}x
+                </span>
+                <div className={styles.itemName}>
+                  {item.productName}
+                  {item.variantName && <small>{item.variantName}</small>}
+                  <Modifiers value={item.modifierSnapshot} />
+                  {item.notes && <p className={styles.note}>{item.notes}</p>}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {note && <p className={styles.note}>{note}</p>}
+        </>
       )}
-      {expanded && note && <p className={styles.note}>{note}</p>}
       <div className={styles.ticketActions}>
         {action && (
           <button
             className={`${styles.primary} ${styles.ticketPrimary}`}
+            aria-label={busy ? "Saqlanmoqda..." : action.label}
+            title={action.label}
             disabled={busy}
             onClick={() => onAction(action.action)}
             type="button"
           >
             <Check size={20} aria-hidden="true" />
-            {busy ? "Saqlanmoqda..." : action.label}
+            {busy ? (
+              <span className={styles.ticketBusyLabel}>Saqlanmoqda...</span>
+            ) : (
+              <>
+                <span className={styles.ticketPrimaryFullLabel}>
+                  {action.label}
+                </span>
+                <span className={styles.ticketPrimaryShortLabel}>
+                  {compactActionLabels[action.action]}
+                </span>
+              </>
+            )}
           </button>
         )}
         {canCancel && (
@@ -175,7 +209,7 @@ export function KitchenTicketCard({
           {error}
         </p>
       )}
-      {showBranch && (
+      {!isCompact && showBranch && (
         <p className={styles.ticketBranch}>
           {ticket.order.branch?.name ?? "Filial"}
         </p>

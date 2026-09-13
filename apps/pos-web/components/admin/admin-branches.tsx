@@ -8,7 +8,11 @@ import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
-import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
+import {
+  DataTable,
+  RowAction,
+  type DataTableColumn,
+} from "../admin-ui/data-table";
 import { EmptyState, ErrorState, Skeleton } from "../admin-ui/feedback";
 import { FormField, TextInput } from "../admin-ui/form";
 import { Icon } from "../admin-ui/icon";
@@ -139,8 +143,7 @@ const customerFacingFlags = [
   {
     key: "isActive" as const,
     restrictiveWhen: false,
-    consequence:
-      "Filial mijoz saytida va Telegram botda butunlay ko'rinmaydi.",
+    consequence: "Filial mijoz saytida va Telegram botda butunlay ko'rinmaydi.",
   },
   {
     key: "isTemporarilyClosed" as const,
@@ -283,7 +286,8 @@ export function AdminBranchesPage() {
     const sortOrder = Number(draft.sortOrder);
 
     if (!Number.isInteger(sortOrder) || sortOrder < 0) {
-      next.sortOrder = "Tartib raqami 0 yoki undan katta butun son bo'lishi kerak.";
+      next.sortOrder =
+        "Tartib raqami 0 yoki undan katta butun son bo'lishi kerak.";
     }
 
     return next;
@@ -334,7 +338,10 @@ export function AdminBranchesPage() {
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        showToast("Filial yangilandi. O'zgarish mijozga darhol ko'rinadi.", "success");
+        showToast(
+          "Filial yangilandi. O'zgarish mijozga darhol ko'rinadi.",
+          "success",
+        );
       } else {
         await apiFetch("/branches", {
           method: "POST",
@@ -485,7 +492,9 @@ export function AdminBranchesPage() {
             {branch.deliveryEnabled ? "Yetkazish yoqilgan" : "Yetkazish o'chiq"}
           </Badge>
           <Badge tone={branch.pickupEnabled ? "info" : "neutral"}>
-            {branch.pickupEnabled ? "Olib ketish yoqilgan" : "Olib ketish o'chiq"}
+            {branch.pickupEnabled
+              ? "Olib ketish yoqilgan"
+              : "Olib ketish o'chiq"}
           </Badge>
         </div>
       ),
@@ -564,30 +573,35 @@ export function AdminBranchesPage() {
           emptyTitle="Filial yo'q"
           getRowKey={(branch) => branch.id}
           rows={branches}
-          {...(canEdit
-            ? {
-                rowActions: (branch: Branch) => (
-                  <>
-                    <Button
-                      onClick={() => openHours(branch)}
-                      size="sm"
-                      variant="ghost"
-                    >
-                      <Icon className="h-4 w-4" name="clock" />
-                      Ish vaqti
-                    </Button>
-                    <Button
-                      onClick={() => openEdit(branch)}
-                      size="sm"
-                      variant="ghost"
-                    >
-                      <Icon className="h-4 w-4" name="pencil" />
-                      Tahrirlash
-                    </Button>
-                  </>
-                ),
-              }
-            : {})}
+          rowActions={(branch: Branch) => (
+            <>
+              <RowAction
+                href={`/admin/branches/${branch.id}`}
+                icon="eye"
+                label={`${branch.name} - ochish`}
+              />
+              {canEdit ? (
+                <>
+                  <Button
+                    onClick={() => openHours(branch)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Icon className="h-4 w-4" name="clock" />
+                    Ish vaqti
+                  </Button>
+                  <Button
+                    onClick={() => openEdit(branch)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Icon className="h-4 w-4" name="pencil" />
+                    Tahrirlash
+                  </Button>
+                </>
+              ) : null}
+            </>
+          )}
         />
       </Card>
 
@@ -659,7 +673,9 @@ export function AdminBranchesPage() {
             </Button>
           </>
         }
-        isOpen={(isCreating || editing !== null) && pendingConsequences === null}
+        isOpen={
+          (isCreating || editing !== null) && pendingConsequences === null
+        }
         onClose={closeAll}
         title={editing ? `${editing.name} — tahrirlash` : "Yangi filial"}
       >
@@ -874,7 +890,11 @@ export function AdminBranchesPage() {
             <Button onClick={closeAll} variant="ghost">
               Bekor qilish
             </Button>
-            <Button isLoading={isSaving} onClick={() => void saveHours()} size="lg">
+            <Button
+              isLoading={isSaving}
+              onClick={() => void saveHours()}
+              size="lg"
+            >
               Saqlash
             </Button>
           </>

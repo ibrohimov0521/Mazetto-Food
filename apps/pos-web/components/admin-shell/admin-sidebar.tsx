@@ -2,8 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
-import { isAdminNavItemActive, resolveAdminNav } from "../../lib/admin-nav";
+import { useEffect, useMemo, useState } from "react";
+import {
+  findAdminNavGroup,
+  isAdminNavItemActive,
+  resolveAdminNav,
+} from "../../lib/admin-nav";
 import { Icon } from "../admin-ui/icon";
 import type { AuthUser } from "../../lib/auth";
 
@@ -32,6 +36,33 @@ export function AdminSidebar({
 }) {
   const pathname = usePathname();
   const groups = useMemo(() => resolveAdminNav(user), [user]);
+  const activeGroupId = useMemo(
+    () => findAdminNavGroup(pathname)?.id ?? null,
+    [pathname],
+  );
+  const [openGroupIds, setOpenGroupIds] = useState<string[]>(
+    () =>
+      Array.from(new Set(["home", activeGroupId].filter(Boolean))) as string[],
+  );
+
+  // Sahifa almashtirilganda foydalanuvchi joylashgan guruh doim ko'rinadi.
+  useEffect(() => {
+    if (!activeGroupId) {
+      return;
+    }
+
+    setOpenGroupIds((current) =>
+      current.includes(activeGroupId) ? current : [...current, activeGroupId],
+    );
+  }, [activeGroupId]);
+
+  function toggleGroup(groupId: string): void {
+    setOpenGroupIds((current) =>
+      current.includes(groupId)
+        ? current.filter((id) => id !== groupId)
+        : [...current, groupId],
+    );
+  }
 
   return (
     <aside
@@ -69,66 +100,92 @@ export function AdminSidebar({
         ) : null}
       </div>
 
-      <nav className="flex-1 px-1.5 py-2">
-        {groups.map((group) => (
-          <div className="mb-2.5 last:mb-0" key={group.id}>
-            {!isCollapsed ? (
-              <p className="px-2.5 pb-1 text-[11px] font-bold uppercase tracking-wider text-mz-shell-fg-muted">
-                {group.label}
-              </p>
-            ) : (
-              <div
-                aria-hidden="true"
-                className="mx-3 mb-2 border-t border-mz-shell-border"
-              />
-            )}
+      <nav className="flex-1 px-2 py-3">
+        {groups.map((group) => {
+          const isOpen = openGroupIds.includes(group.id);
+          const containsActiveItem = group.id === activeGroupId;
 
-            <ul className="space-y-0.5">
-              {group.items.map((item) => {
-                const isActive = isAdminNavItemActive(item, pathname);
+          return (
+            <div className="mb-1.5 last:mb-0" key={group.id}>
+              {!isCollapsed ? (
+                <button
+                  aria-expanded={isOpen}
+                  className={[
+                    "flex min-h-9 w-full items-center justify-between gap-2 rounded-mz-control px-2.5 text-left text-[11px] font-bold uppercase transition",
+                    containsActiveItem
+                      ? "bg-mz-shell-raised text-mz-shell-fg"
+                      : "text-mz-shell-fg-muted hover:bg-mz-shell-raised hover:text-mz-shell-fg",
+                  ].join(" ")}
+                  onClick={() => toggleGroup(group.id)}
+                  type="button"
+                >
+                  <span className="truncate">{group.label}</span>
+                  <Icon
+                    className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                      isOpen ? "rotate-180" : ""
+                    }`}
+                    name="chevronDown"
+                  />
+                </button>
+              ) : (
+                <div
+                  aria-hidden="true"
+                  className="mx-3 my-2 border-t border-mz-shell-border"
+                />
+              )}
 
-                return (
-                  <li key={item.href}>
-                    <Link
-                      aria-current={isActive ? "page" : undefined}
-                      className={[
-                        "relative flex min-h-11 items-center gap-2.5 rounded-mz-control px-2.5 py-2 text-[13px] transition",
-                        isCollapsed ? "justify-center" : "",
-                        isActive
-                          ? "bg-mz-shell-deep font-semibold text-mz-white"
-                          : "font-medium text-mz-shell-fg-muted hover:bg-mz-shell-raised hover:text-mz-shell-fg",
-                      ].join(" ")}
-                      href={item.href}
-                      onClick={onNavigate}
-                      title={isCollapsed ? item.label : undefined}
-                    >
-                      {isActive ? (
-                        <span
-                          aria-hidden="true"
-                          className="absolute inset-y-1 -left-2 w-[3px] rounded-r-mz-pill bg-mz-primary"
+              <ul
+                className={[
+                  "space-y-0.5",
+                  !isCollapsed && !isOpen ? "hidden" : "mt-1",
+                ].join(" ")}
+              >
+                {group.items.map((item) => {
+                  const isActive = isAdminNavItemActive(item, pathname);
+
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        aria-current={isActive ? "page" : undefined}
+                        className={[
+                          "relative flex min-h-11 items-center gap-2.5 rounded-mz-control px-2.5 py-2 text-[13px] transition",
+                          isCollapsed ? "justify-center" : "",
+                          isActive
+                            ? "bg-mz-shell-deep font-semibold text-mz-white"
+                            : "font-medium text-mz-shell-fg-muted hover:bg-mz-shell-raised hover:text-mz-shell-fg",
+                        ].join(" ")}
+                        href={item.href}
+                        onClick={onNavigate}
+                        title={isCollapsed ? item.label : undefined}
+                      >
+                        {isActive ? (
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-y-1 -left-2 w-[3px] rounded-r-mz-pill bg-mz-primary"
+                          />
+                        ) : null}
+                        <Icon
+                          className="h-[18px] w-[18px] shrink-0"
+                          name={item.icon}
                         />
-                      ) : null}
-                      <Icon
-                        className="h-[18px] w-[18px] shrink-0"
-                        name={item.icon}
-                      />
-                      {/*
+                        {/*
                         Yig'ilgan holatda ham nom DOM da QOLADI, faqat
                         ko'rinmas bo'ladi. Ilgari u butunlay olib
                         tashlanardi va havolaning nomi `title` ga
                         tushib qolardi — bu esa ekran o'qish
                         dasturlari uchun eng oxirgi manba.
                       */}
-                      <span className={isCollapsed ? "sr-only" : "truncate"}>
-                        {item.label}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
+                        <span className={isCollapsed ? "sr-only" : "truncate"}>
+                          {item.label}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
       </nav>
     </aside>
   );

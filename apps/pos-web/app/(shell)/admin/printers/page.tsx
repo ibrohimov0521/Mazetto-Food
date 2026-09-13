@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AdminPageHeader } from "../../../../components/admin-shell/admin-page-header";
 import { Badge, type BadgeTone } from "../../../../components/admin-ui/badge";
 import { Button } from "../../../../components/admin-ui/button";
@@ -14,10 +15,7 @@ import {
   RowAction,
   type DataTableColumn,
 } from "../../../../components/admin-ui/data-table";
-import {
-  ErrorState,
-  Skeleton,
-} from "../../../../components/admin-ui/feedback";
+import { ErrorState, Skeleton } from "../../../../components/admin-ui/feedback";
 import {
   FilterBar,
   FormField,
@@ -113,14 +111,24 @@ export default function PrintersPage() {
     <>
       <AdminPageHeader
         breadcrumbs={[
-          { label: "Admin", href: "/admin/dashboard" },
-          { label: "Sozlamalar" },
+          { label: "Bosh sahifa", href: "/admin/dashboard" },
+          { label: "Filiallar", href: "/admin/branches" },
           { label: "Printerlar" },
         ]}
         description="Chek va oshxona printerlarining ro'yxati va qo'lda belgilangan holati"
         title="Printerlar"
       />
-      <PrintersConsole />
+      <Suspense
+        fallback={
+          <div aria-busy="true" className="grid gap-5">
+            <span className="sr-only">Yuklanmoqda</span>
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-80 w-full" />
+          </div>
+        }
+      >
+        <PrintersConsole />
+      </Suspense>
     </>
   );
 }
@@ -148,8 +156,10 @@ function emptyEditor(branchId: string): EditorState {
 function PrintersConsole() {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const searchParams = useSearchParams();
 
   const isGlobalScope = canSwitchBranch(user);
+  const requestedBranchId = searchParams.get("branchId") ?? "";
   /*
    * Branch-scoped rol uchun filial QULFLANGAN. Backend `createPrinter` da
    * `resolveRequiredBranchScope` bilan baribir foydalanuvchining filialini
@@ -158,13 +168,21 @@ function PrintersConsole() {
    */
   const lockedBranchId = isGlobalScope ? "" : (user?.branchId ?? "");
 
-  const [filterBranchId, setFilterBranchId] = useState("");
+  const [filterBranchId, setFilterBranchId] = useState(requestedBranchId);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [pendingDeactivate, setPendingDeactivate] = useState<Printer | null>(
     null,
   );
+
+  // Filial ichidagi "Qurilmalar" havolasi shu filtrni beradi. URL o'zgarsa,
+  // bir marta ochilgan sahifa ham yangi filial bilan qayta yuklanadi.
+  useEffect(() => {
+    if (isGlobalScope) {
+      setFilterBranchId(requestedBranchId);
+    }
+  }, [isGlobalScope, requestedBranchId]);
 
   const branchesResource = useApiResource<Branch[]>(
     () => apiFetch<Branch[]>("/branches"),
@@ -433,7 +451,10 @@ function PrintersConsole() {
       <Card>
         <CardBody>
           <div className="flex flex-wrap items-start gap-3">
-            <span aria-hidden="true" className="mt-0.5 shrink-0 text-mz-warning">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-mz-warning"
+            >
               <Icon className="h-5 w-5" name="alert" />
             </span>
             <p className="min-w-0 flex-1 text-[13px] text-mz-text-muted">
@@ -442,9 +463,9 @@ function PrintersConsole() {
               </span>{" "}
               Bu ro&apos;yxat — qurilmalarning qaydnomasi, holat esa{" "}
               <span className="font-semibold text-mz-text">qo&apos;lda</span>{" "}
-              belgilanadi: u qurilma haqiqatan ishlayotganini isbotlamaydi va
-              bu yerdan chek yuborilmaydi. Haqiqiy chop etish integratsiyasi
-              (chek agenti va qurilma so&apos;rovi) hali ulanmagan.
+              belgilanadi: u qurilma haqiqatan ishlayotganini isbotlamaydi va bu
+              yerdan chek yuborilmaydi. Haqiqiy chop etish integratsiyasi (chek
+              agenti va qurilma so&apos;rovi) hali ulanmagan.
             </p>
           </div>
         </CardBody>

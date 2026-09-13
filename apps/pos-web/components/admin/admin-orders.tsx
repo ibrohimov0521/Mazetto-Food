@@ -268,7 +268,9 @@ export function AdminOrdersPage() {
     [appliedSearch, branchId, from, offset, paymentStatus, status, to, type],
     "Buyurtmalarni yuklab bo'lmadi.",
   );
-  const orders = data ?? [];
+  // `data` hali kelmagan yoki xato bo'lgan paytda yangi `[]` yaratish
+  // pastdagi selection-effect'ni har renderda qayta ishga tushirardi.
+  const orders = useMemo(() => data ?? [], [data]);
   /*
    * Yuklash xatosi va AMAL xatosi alohida: ommaviy amal yiqilganda
    * ro'yxat baribir ko'rinib turishi kerak, va keyingi qayta yuklash
@@ -280,7 +282,9 @@ export function AdminOrdersPage() {
   useEffect(() => {
     setSelectedOrderIds((current) => {
       const pageIds = new Set(orders.map((order) => order.id));
-      return new Set([...current].filter((id) => pageIds.has(id)));
+      const next = new Set([...current].filter((id) => pageIds.has(id)));
+
+      return next.size === current.size ? current : next;
     });
   }, [orders]);
 
@@ -702,8 +706,7 @@ export function AdminOrdersPage() {
             {!bulkStatusOptions.length ? (
               <p className="w-full text-[13px] text-mz-text-muted">
                 Tanlangan buyurtmalar turli holatlarda — ularning hammasiga
-                birdek qo&apos;llanadigan amal yo&apos;q. Tanlovni
-                toraytiring.
+                birdek qo&apos;llanadigan amal yo&apos;q. Tanlovni toraytiring.
               </p>
             ) : null}
           </div>

@@ -1,6 +1,3 @@
-.shell .brand img {
-  transform: scale(1.85);
-}
 .shell.terminal .header {
   position: relative;
 }
@@ -45,13 +42,20 @@
   --green: #004f55;
   --border: #d5e2dd;
   --gold: #ffd83d;
-  min-height: 100dvh;
+  --workspace-height: 100dvh;
+  min-height: var(--workspace-height);
   background: #f0f5f4;
   color: var(--ink);
   font-family: Arial, Helvetica, sans-serif;
   font-size: 14px;
   line-height: 1.45;
   letter-spacing: 0;
+}
+@media (min-width: 768px) {
+  .shell {
+    --workspace-height: 125dvh;
+    zoom: 0.8;
+  }
 }
 .shell *,
 .dialog * {
@@ -79,96 +83,100 @@
 }
 .header {
   flex-shrink: 0;
-  position: relative;
   background: #003e43;
-  color: #fff;
-  padding: 6px 16px 0;
-  border-bottom: 2px solid var(--gold);
   box-shadow: 0 4px 16px #002e321c;
 }
-.header::before {
-  content: "";
-  position: absolute;
-  inset: 0 18px 0 auto;
-  width: 140px;
-  background: url("/brand/botanical-sprig.svg") no-repeat right center / 138px;
-  opacity: 0.12;
-  pointer-events: none;
+.staffLayout {
+  min-width: 0;
 }
-.headerRow {
-  position: relative;
+.staffMain {
+  min-width: 0;
+}
+.staffSidebar {
+  display: none;
+}
+.panelNavigation {
+  display: grid;
+  gap: 18px;
+}
+.panelGroup {
+  display: grid;
+  gap: 6px;
+}
+.panelGroupLabel {
+  margin: 0;
+  padding: 0 8px;
+  color: #6a8580;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.panelGroupItems {
+  display: grid;
+  gap: 3px;
+}
+.panelLink {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  color: #41625a;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.panelLink span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panelLink:hover {
+  background: #e3efea;
+  color: #07373a;
+}
+.panelLink[data-active="true"] {
+  background: #004f55;
+  color: white;
+  box-shadow: 0 2px 5px #003e4324;
+}
+.panelMenuOverlay {
+  position: fixed;
+  z-index: var(--mz-z-sidebar-overlay);
+  inset: 0;
+  border: 0;
+  background: #002e328c;
+}
+.panelDrawer {
+  position: fixed;
+  z-index: var(--mz-z-sidebar);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(288px, calc(100vw - 36px));
+  padding: 14px;
+  overflow-y: auto;
+  border-right: 1px solid #c8dad0;
+  background: #f8fbfa;
+  box-shadow: 18px 0 48px #001b2438;
+}
+.panelDrawerHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 43px;
-  padding-bottom: 6px;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.brand img {
-  width: 164px;
-  height: 40px;
-  object-fit: contain;
-}
-.brandDivider {
-  height: 28px;
-  width: 1px;
-  background: #ffffff40;
-}
-.brand h1 {
-  font-size: 17px;
-  line-height: 1.2;
-  font-weight: 800;
-  margin: 0;
-}
-.headerActions {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-width: 0;
-}
-.identity {
-  max-width: 190px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #d2e6e2;
-  font-size: 12px;
-}
-.headerIcon {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid #ffffff45;
-  border-radius: 8px;
-  background: #ffffff0c;
-  color: white;
-  flex-shrink: 0;
-}
-.headerIcon:hover {
-  background: #ffd83d;
+  margin-bottom: 16px;
   color: #07373a;
 }
-.roleNav {
-  position: relative;
-  display: flex;
-  gap: 4px;
-  padding-bottom: 6px;
-  scrollbar-width: thin;
-}
-.roleNav a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 13px;
+.panelDrawerHeader strong {
+  font-size: 16px;
 }
 .content {
   width: 100%;
@@ -178,6 +186,30 @@
 }
 .narrowContent {
   max-width: 1320px;
+}
+@media (min-width: 1024px) {
+  .staffLayout {
+    display: grid;
+    grid-template-columns: 218px minmax(0, 1fr);
+    min-height: calc(var(--workspace-height) - var(--mz-header-h));
+  }
+  .staffSidebar {
+    position: sticky;
+    top: var(--mz-header-h);
+    display: block;
+    align-self: start;
+    height: calc(var(--workspace-height) - var(--mz-header-h));
+    padding: 16px 12px;
+    overflow-y: auto;
+    border-right: 1px solid #d5e2dd;
+    background: #f8fbfa;
+  }
+  .staffLayout[data-sidebar-hidden="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .staffLayout[data-sidebar-hidden="true"] .staffSidebar {
+    display: none;
+  }
 }
 .overview {
   display: flex;
@@ -253,6 +285,9 @@
   gap: 8px;
   font-size: 12px;
   color: var(--muted);
+}
+.syncStatus {
+  white-space: nowrap;
 }
 .syncTime {
   border-left: 1px solid var(--border);
@@ -477,7 +512,7 @@
   border: 1px solid #c8dad0;
   border-radius: 12px;
   width: min(520px, calc(100% - 24px));
-  max-height: calc(100dvh - 32px);
+  max-height: calc(var(--workspace-height, 100dvh) - 32px);
   padding: 22px;
   margin: auto;
   font:
@@ -686,25 +721,25 @@
   --kds-warn: #c07016; /* amber: muddat yaqinlashdi */
   --kds-late: #b9323c; /* qizil: kechikdi */
   --kds-critical: #8e1f27; /* to'q qizil: jiddiy kechikish */
-  --kds-number: 22px;
-  --kds-item: 14px;
-  --kds-small: 12px;
-  --kds-qty: 14px;
-  --kds-qty-box: 28px;
-  --kds-timer: 15px;
+  --kds-number: 18px;
+  --kds-item: 13px;
+  --kds-small: 11px;
+  --kds-qty: 12px;
+  --kds-qty-box: 24px;
+  --kds-timer: 12px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
+  gap: 12px;
   align-items: start;
 }
 /* "TV" zichligi - uzoqdagi devor ekrani uchun, qurilmada eslab qolinadi. */
 .board[data-density="tv"] {
-  --kds-number: 36px;
-  --kds-item: 28px;
-  --kds-small: 19px;
-  --kds-qty: 25px;
-  --kds-qty-box: 44px;
-  --kds-timer: 28px;
+  --kds-number: 22px;
+  --kds-item: 17px;
+  --kds-small: 13px;
+  --kds-qty: 14px;
+  --kds-qty-box: 28px;
+  --kds-timer: 14px;
 }
 .column {
   min-width: 0;
@@ -733,13 +768,18 @@
 .columnHeading {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
+  gap: 8px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
   flex-shrink: 0;
   border-bottom: 3px solid var(--kds-new);
   background: #003e43;
   color: white;
+  min-height: 40px;
+  flex-wrap: wrap;
+}
+.columnHeading > svg {
+  flex-shrink: 0;
 }
 .columnHeading[data-tone="accepted"] {
   border-color: var(--kds-accepted);
@@ -751,24 +791,25 @@
   border-color: var(--kds-ready);
 }
 .columnHeading h2 {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+  flex: 1;
 }
 /* Hisoblagich - neytral oq chip: tilla faqat CTA va pul uchun. */
 .columnHeading span {
   display: grid;
   place-items: center;
-  height: 28px;
-  min-width: 28px;
-  padding: 0 6px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 5px;
   background: white;
   color: #07373a;
   border-radius: 6px;
   margin-left: auto;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -776,14 +817,17 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 44px;
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  flex-shrink: 0;
   margin-left: auto;
-  padding: 0 12px;
+  padding: 0;
   border: 1px solid #ffffff66;
   border-radius: 6px;
   background: #ffffff26;
   color: white;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -795,17 +839,39 @@
 }
 .ticketList {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
+  align-items: start;
   gap: 8px;
   min-height: 0;
+  min-width: 0;
+}
+.ticketList > .empty,
+.ticketList > .skeleton {
+  grid-column: 1 / -1;
+}
+.ticketList > .empty {
+  padding: 24px 8px;
+  min-height: 110px;
+  gap: 8px;
+}
+.ticketList > .empty h3 {
+  font-size: 13px;
+}
+.ticketLane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 .ticket {
   min-width: 0;
-  padding: 10px;
+  container-type: inline-size;
+  padding: 8px;
   background: white;
   border: 1px solid #d5e2dd;
   border-left: 4px solid #b3c7c0;
-  border-radius: 8px;
+  border-radius: 6px;
   box-shadow:
     0 2px 3px #003e4308,
     0 8px 20px -10px #003e4333;
@@ -825,10 +891,37 @@
   box-shadow: 0 0 0 2px #b9323c4d;
 }
 .ticketHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+}
+.ticketTiming {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin: 4px 0;
+}
+.ticketCollapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #bfd4ce;
+  border-radius: 5px;
+  background: #f6faf8;
+  color: #0b5658;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.ticketCollapse:hover {
+  border-color: #0f7f7a;
+  background: #e8f4f0;
 }
 /*
  * ASOSIY qoida tiklandi. `.ticketNumber` oshxona ekranidan tashqarida
@@ -837,47 +930,65 @@
  * stilsiz qolardi. Oshxona kattalashtirishni o'zi alohida beradi.
  */
 .ticketNumber {
+  min-width: 0;
   font-size: 18px;
   font-weight: 800;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 .board .ticketNumber {
   font-size: var(--kds-number);
   line-height: 1.15;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .ticketMeta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin: 6px 0 8px;
+  gap: 4px;
+  margin: 4px 0 5px;
+}
+.ticketCompactSummary {
+  margin: 2px 0 4px;
+  color: #45635c;
+  font-size: 11px;
+  font-weight: 700;
 }
 .board .badge {
-  padding: 3px 6px;
-  gap: 4px;
-  font-size: 12px;
+  padding: 2px 5px;
+  gap: 3px;
+  font-size: 10px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.board .badge svg {
+  flex-shrink: 0;
 }
 .ticketPriority {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 9px;
+  padding: 3px 6px;
   border-radius: 4px;
   background: #fff1d8;
   color: #7a4708;
-  font-size: 15px;
+  font-size: 11px;
   font-weight: 800;
   white-space: nowrap;
 }
 .ticketTime {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
-  padding: 4px 10px;
+  padding: 3px 6px;
   border-radius: 6px;
   background: #eaf2ee;
   color: #07373a;
-  font-size: var(--kds-timer);
+  font-size: var(--kds-timer, 12px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   font-weight: 800;
@@ -907,8 +1018,8 @@
   gap: 10px;
 }
 .board .itemList > li {
-  padding: 6px 0;
-  gap: 8px;
+  padding: 4px 0;
+  gap: 6px;
 }
 .itemQuantity {
   min-width: 26px;
@@ -931,6 +1042,7 @@
   background: #07373a;
   color: white;
   font-size: var(--kds-qty);
+  flex-shrink: 0;
 }
 .itemName {
   min-width: 0;
@@ -947,10 +1059,10 @@
 }
 .board .itemName {
   font-size: var(--kds-item);
-  line-height: 1.25;
+  line-height: 1.18;
 }
 .board .itemName small {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #41625a;
   font-size: var(--kds-small);
 }
@@ -964,30 +1076,49 @@
   overflow-wrap: anywhere;
 }
 .board .note {
-  padding: 10px 12px;
-  border-left-width: 4px;
+  padding: 6px 8px;
+  border-left-width: 3px;
   font-size: var(--kds-small);
   font-weight: 700;
 }
 .ticketActions {
   display: flex;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 7px;
+  flex-wrap: wrap;
 }
 .ticketActions > :first-child {
   flex: 1;
 }
+.ticketActions svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
 .ticketPrimary {
-  min-height: 42px;
-  font-size: 14px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 9px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.ticketBusyLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ticketPrimaryShortLabel {
+  display: none;
 }
 .board[data-density="tv"] .ticketPrimary {
-  min-height: 64px;
-  font-size: 21px;
+  min-height: 40px;
+  font-size: 14px;
 }
 .ticketCancel {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
 }
 /*
  * Amal xatosi chiptaning O'ZIDA ko'rinadi: to'rt ustunli taxtada sahifa
@@ -1052,32 +1183,68 @@
   height: 180px;
   border-radius: 8px;
 }
-/*
- * Keng ekranda taxta balandligi qat'iy: har bir ustun ALOHIDA aylanadi,
- * shuning uchun 12 ta yangi chipta "Tayyor" ustuni sarlavhasini ekrandan
- * chiqarib yubormaydi.
- */
+.kitchenContent {
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.kitchenContent .overview,
+.kitchenContent .toolbar,
+.kitchenContent .kitchenFilters {
+  margin-bottom: 0;
+}
+.kitchenContent .overview,
+.kitchenContent .toolbar {
+  flex-shrink: 0;
+}
+.kitchenContent .pageHeading {
+  font-size: 18px;
+}
+.kitchenContent .sync .iconButton {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+}
+.kitchenContent .toolbar {
+  gap: 8px;
+}
+.kitchenContent .search {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  max-width: 420px;
+}
+.kitchenContent .toolbarGroup {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+/* Katta ekranda barcha holatlar yonma-yon ko'rinadi. Har bo'limning ichki
+   ro'yxati alohida aylanadi, lekin butun taxtada yon scroll bo'lmaydi. */
 @media (min-width: 1200px) {
+  .kitchenContent {
+    height: calc(var(--workspace-height) - var(--mz-header-h));
+    min-height: 0;
+  }
   .board {
-    height: calc(100dvh - 240px);
-    min-height: 420px;
+    flex: 1;
+    min-height: 0;
     align-items: stretch;
   }
   .column {
     height: 100%;
   }
   .ticketList {
+    flex: 1;
     overflow-y: auto;
-    padding-right: 4px;
-    scrollbar-gutter: stable;
+    padding: 2px;
   }
 }
-
 /* Delivery addresses stay readable without loading an embedded map. */
 .deliveryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 10px;
 }
 .deliveryCard {
   min-width: 0;
@@ -1090,22 +1257,22 @@
   overflow: hidden;
 }
 .deliveryTop {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid #dce7e0;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 10px;
+  gap: 8px;
   background: #eef5f1;
   border-top: 3px solid #00645f;
 }
 .deliveryBody {
-  padding: 10px 12px 12px;
+  padding: 8px 10px 10px;
 }
 .addressRow {
   display: flex;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .addressIcon {
   flex-shrink: 0;
@@ -1114,9 +1281,13 @@
 }
 .addressRow h3 {
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.3;
   font-weight: 800;
-  margin: 0 0 6px;
+  margin: 0 0 3px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
 }
 .customerRow {
@@ -1142,19 +1313,19 @@
   margin: 14px 0;
 }
 .deliveryDetails {
-  margin: 16px 0;
+  margin: 8px 0;
   border-top: 1px solid #e5eee8;
   border-bottom: 1px solid #e5eee8;
 }
 .deliveryDetails summary {
-  min-height: 44px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   font-weight: 700;
   font-size: 13px;
-  padding: 10px 0;
+  padding: 7px 0;
 }
 .deliveryDetails summary strong {
   margin-left: auto;
@@ -1166,7 +1337,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .deliveryFooter .primary {
   min-height: 40px;
@@ -1186,7 +1357,7 @@
 
 /* Cashier catalog and receipt have independent desktop scrolling. */
 .terminal {
-  height: 100dvh;
+  height: var(--workspace-height);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1497,6 +1668,46 @@
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 28px;
 }
+.courierCashPanel {
+  margin-bottom: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.courierCashSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.courierCashSummary > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.courierCashSummary span,
+.courierCashSummary small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.courierCashSummary strong {
+  font-size: 20px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.courierCashControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.courierCashControls .input {
+  min-height: 42px;
+  font-size: 15px;
+}
+.courierCashControls .primary {
+  min-height: 42px;
+  white-space: nowrap;
+}
 .shiftSummary {
   padding: 18px 0;
 }
@@ -1525,9 +1736,15 @@
 }
 
 @media (max-width: 1199px) {
+  .kitchenFilters {
+    display: flex;
+    margin-bottom: 18px;
+  }
   .board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 28px;
+    grid-template-columns: 1fr;
+  }
+  .column[data-hidden="true"] {
+    display: none;
   }
   .posBody {
     grid-template-columns: minmax(0, 1fr) 320px;
@@ -1543,40 +1760,8 @@
   .product {
     min-height: 0;
   }
-  .identity {
-    display: none;
-  }
 }
 @media (max-width: 767px) {
-  .header {
-    padding: 10px 14px 0;
-  }
-  .brand {
-    gap: 12px;
-  }
-  .brand img {
-    width: 112px;
-    height: 30px;
-  }
-  .brandDivider {
-    display: none;
-  }
-  .brand h1 {
-    font-size: 17px;
-  }
-  .headerRow {
-    gap: 8px;
-  }
-  .headerActions {
-    gap: 6px;
-  }
-  .headerIcon {
-    width: 40px;
-    height: 40px;
-  }
-  .roleNav a {
-    padding: 8px 12px;
-  }
   .content {
     padding: 18px 14px;
   }
@@ -1616,18 +1801,11 @@
     font-size: 12px;
     gap: 5px;
   }
-  .kitchenFilters {
-    display: flex;
-    margin-bottom: 18px;
-  }
-  .board {
-    grid-template-columns: 1fr;
-  }
-  .column[data-hidden="true"] {
-    display: none;
+  .ticketList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .ticket {
-    padding: 16px;
+    padding: 8px;
   }
   .ticketNumber {
     font-size: 20px;
@@ -1643,12 +1821,19 @@
     gap: 14px;
   }
   .deliveryTop {
-    padding: 14px 16px;
+    padding: 10px 12px;
   }
   .deliveryBody {
-    padding: 16px;
+    padding: 10px 12px 12px;
   }
   .deliverySearch {
+    width: 100%;
+  }
+  .courierCashControls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .courierCashControls .primary {
     width: 100%;
   }
   .customerRow {
@@ -1775,6 +1960,70 @@
     padding: 20px 0;
   }
 }
+
+@container (max-width: 210px) {
+  .ticketTime {
+    gap: 3px;
+    padding: 3px 4px;
+    font-size: 10px;
+  }
+  .ticketTime svg {
+    width: 14px;
+    height: 14px;
+  }
+  .ticketPrimary {
+    gap: 4px;
+    padding: 6px 4px;
+    font-size: 11px;
+    white-space: normal;
+  }
+  .ticketPrimaryFullLabel {
+    display: none;
+  }
+  .ticketPrimaryShortLabel {
+    display: inline;
+  }
+  .ticketCancel {
+    width: 32px;
+    height: 36px;
+  }
+}
+@container (max-width: 135px) {
+  .ticketActions {
+    gap: 4px;
+  }
+  .ticketPrimary > svg {
+    display: none;
+  }
+}
+@media (max-width: 767px) {
+  .kitchenToolLabel {
+    display: none;
+  }
+  .kitchenContent .toolbarGroup .button {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+  .kitchenContent .search {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+  .kitchenContent .search input {
+    padding: 0;
+  }
+  .kitchenContent .syncTime {
+    display: none;
+  }
+}
+@media (max-width: 599px) {
+  .kitchenContent .pageHeading {
+    font-size: 16px;
+  }
+  .kitchenContent .syncStatus {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .shell *,
   .dialog * {
@@ -1782,19 +2031,6 @@
     transition: none !important;
     scroll-behavior: auto !important;
   }
-}
-.desktopRoleNav {
-  min-width: 0;
-  flex: 1;
-}
-.desktopRoleNav > div {
-  justify-content: center;
-}
-.desktopRoleNav > nav {
-  justify-content: flex-start;
-}
-.desktopRoleNav a {
-  white-space: nowrap;
 }
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .ticket,
@@ -1811,24 +2047,6 @@
       0 12px 24px -12px #003e4347;
   }
 }
-.desktopRoleNav a {
-  min-height: 32px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-.mobileRoleNav {
-  display: none;
-}
-@media (max-width: 1023px) {
-  .desktopRoleNav {
-    display: none;
-  }
-  .mobileRoleNav {
-    display: block;
-  }
-}
-
 .inlineActions {
   display: flex;
   align-items: center;
@@ -2402,6 +2620,10 @@
   margin: 8mm;
 }
 @media print {
+  .shell {
+    --workspace-height: 100dvh;
+    zoom: 1;
+  }
   .shell:has(.receiptPaper) {
     background: white !important;
     min-height: 0 !important;
@@ -2467,9 +2689,12 @@
 }
 .waiterBody {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px;
   align-items: start;
+}
+.waiterBody:not([data-has-order="true"]) {
+  grid-template-columns: minmax(0, 1fr);
 }
 .waiterMain {
   min-width: 0;
@@ -2489,11 +2714,11 @@
 }
 .waiterAside {
   position: sticky;
-  top: 16px;
+  top: calc(var(--mz-header-h) + 16px);
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: calc(100dvh - 32px);
+  max-height: calc(var(--workspace-height) - var(--mz-header-h) - 32px);
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2597,8 +2822,8 @@
 }
 .tableGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+  gap: 10px;
 }
 .tableCard {
   display: grid;
@@ -2606,8 +2831,8 @@
   align-content: start;
   justify-items: start;
   min-width: 0;
-  min-height: 132px;
-  padding: 12px 14px;
+  min-height: 116px;
+  padding: 10px 12px;
   text-align: left;
   background: white;
   border: 1px solid var(--border);
@@ -2876,10 +3101,10 @@
   }
   .waiterAside {
     position: static;
-    max-height: none;
+    max-height: min(64dvh, 560px);
   }
   .waiterAsideBody {
-    overflow-y: visible;
+    overflow-y: auto;
   }
 }
 @media (max-width: 767px) {
@@ -2940,7 +3165,7 @@
   position: fixed;
   inset: auto 0 0;
   width: min(480px, 100%);
-  max-height: min(760px, calc(100dvh - 16px));
+  max-height: min(760px, calc(var(--workspace-height, 100dvh) - 16px));
   margin: 0 auto;
   padding: 18px 20px 24px;
   border-radius: 14px 14px 0 0;
