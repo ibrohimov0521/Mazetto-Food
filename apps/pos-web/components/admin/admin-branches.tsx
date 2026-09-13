@@ -61,6 +61,7 @@ type Branch = {
   address?: string | null;
   phone?: string | null;
   timezone?: string | null;
+  coordinates?: { latitude: number; longitude: number } | null;
   sortOrder?: number;
   isActive: boolean;
   isTemporarilyClosed?: boolean;
@@ -83,6 +84,9 @@ type BranchDraft = {
   name: string;
   address: string;
   phone: string;
+  latitude: string;
+  longitude: string;
+  timezone: string;
   sortOrder: string;
   isActive: boolean;
   isTemporarilyClosed: boolean;
@@ -96,6 +100,9 @@ const emptyDraft: BranchDraft = {
   name: "",
   address: "",
   phone: "",
+  latitude: "",
+  longitude: "",
+  timezone: "Asia/Tashkent",
   sortOrder: "0",
   isActive: true,
   isTemporarilyClosed: false,
@@ -110,6 +117,15 @@ function draftFrom(branch: Branch): BranchDraft {
     name: branch.name,
     address: branch.address ?? "",
     phone: branch.phone ?? "",
+    latitude:
+      branch.coordinates?.latitude === undefined
+        ? ""
+        : String(branch.coordinates.latitude),
+    longitude:
+      branch.coordinates?.longitude === undefined
+        ? ""
+        : String(branch.coordinates.longitude),
+    timezone: branch.timezone ?? "Asia/Tashkent",
     sortOrder: String(branch.sortOrder ?? 0),
     isActive: branch.isActive,
     isTemporarilyClosed: branch.isTemporarilyClosed ?? false,
@@ -283,6 +299,37 @@ export function AdminBranchesPage() {
       next.phone = "Telefon 40 belgidan oshmasligi kerak.";
     }
 
+    const latitude =
+      draft.latitude.trim() === "" ? null : Number(draft.latitude);
+    const longitude =
+      draft.longitude.trim() === "" ? null : Number(draft.longitude);
+
+    if ((latitude === null) !== (longitude === null)) {
+      next.coordinates = "Kenglik va uzunlik birga kiritilishi kerak.";
+    } else if (
+      latitude !== null &&
+      (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)
+    ) {
+      next.coordinates = "Kenglik -90 va 90 oralig'ida bo'lishi kerak.";
+    } else if (
+      longitude !== null &&
+      (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)
+    ) {
+      next.coordinates = "Uzunlik -180 va 180 oralig'ida bo'lishi kerak.";
+    }
+
+    if (!draft.timezone.trim()) {
+      next.timezone = "Vaqt mintaqasi kiritilishi shart.";
+    } else {
+      try {
+        new Intl.DateTimeFormat("uz-UZ", {
+          timeZone: draft.timezone.trim(),
+        }).format();
+      } catch {
+        next.timezone = "IANA vaqt mintaqasini kiriting, masalan Asia/Tashkent.";
+      }
+    }
+
     const sortOrder = Number(draft.sortOrder);
 
     if (!Number.isInteger(sortOrder) || sortOrder < 0) {
@@ -324,6 +371,13 @@ export function AdminBranchesPage() {
       ...(draft.code.trim() ? { code: draft.code.trim() } : {}),
       ...(draft.address.trim() ? { address: draft.address.trim() } : {}),
       ...(draft.phone.trim() ? { phone: draft.phone.trim() } : {}),
+      ...(draft.latitude.trim() && draft.longitude.trim()
+        ? {
+            latitude: Number(draft.latitude),
+            longitude: Number(draft.longitude),
+          }
+        : {}),
+      timezone: draft.timezone.trim(),
       sortOrder: Number(draft.sortOrder),
       isActive: draft.isActive,
       isTemporarilyClosed: draft.isTemporarilyClosed,
@@ -780,6 +834,73 @@ export function AdminBranchesPage() {
                 }
                 type="tel"
                 value={draft.phone}
+              />
+            )}
+          </FormField>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField
+              hint="Yetkazish masofasi va xarita uchun"
+              label="Kenglik (latitude)"
+              {...(errors.coordinates ? { error: errors.coordinates } : {})}
+            >
+              {(props) => (
+                <TextInput
+                  {...props}
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      latitude: event.target.value,
+                    }))
+                  }
+                  placeholder="41.2995"
+                  step="any"
+                  type="number"
+                  value={draft.latitude}
+                />
+              )}
+            </FormField>
+            <FormField
+              hint="Yetkazish masofasi va xarita uchun"
+              label="Uzunlik (longitude)"
+            >
+              {(props) => (
+                <TextInput
+                  {...props}
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      longitude: event.target.value,
+                    }))
+                  }
+                  placeholder="69.2401"
+                  step="any"
+                  type="number"
+                  value={draft.longitude}
+                />
+              )}
+            </FormField>
+          </div>
+
+          <FormField
+            hint="IANA nomi; ish vaqti shu mintaqa bo'yicha hisoblanadi"
+            label="Vaqt mintaqasi"
+            required
+            {...(errors.timezone ? { error: errors.timezone } : {})}
+          >
+            {(props) => (
+              <TextInput
+                {...props}
+                maxLength={80}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    timezone: event.target.value,
+                  }))
+                }
+                value={draft.timezone}
               />
             )}
           </FormField>

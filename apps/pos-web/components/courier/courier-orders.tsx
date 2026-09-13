@@ -78,6 +78,7 @@ type CourierOrder = {
      * kuryer eshik oldida pul olish kerakmi-yo'qmi bilmasdi.
      */
     paymentStatus?: "PENDING" | "PAID" | "SUCCESS" | "FAILED" | "REFUNDED";
+    outstandingAmount?: string;
     items: {
       id: string;
       productName: string;
@@ -95,8 +96,16 @@ type CourierOrder = {
  * kuryer kassasiga tushmaydi. Bu funksiya shu qarorni EKRANDA ham
  * ko'rsatish uchun: kuryer qancha pul olishini oldindan biladi.
  */
-const needsCashCollection = (order: CourierOrder) =>
-  (order.order?.paymentStatus ?? "PENDING") !== "PAID";
+const cashDue = (order: CourierOrder) => {
+  if (!order.order) return 0;
+  if (order.order.outstandingAmount !== undefined) {
+    return Math.max(0, Number(order.order.outstandingAmount) || 0);
+  }
+  return ["PAID", "SUCCESS"].includes(order.order.paymentStatus ?? "")
+    ? 0
+    : Number(order.order.total) || 0;
+};
+const needsCashCollection = (order: CourierOrder) => cashDue(order) > 0;
 type DeliveryAction = "SERVED" | "COMPLETED" | "CANCELLED";
 type CourierShift = {
   id: string;
@@ -104,6 +113,12 @@ type CourierShift = {
   currentCash?: string;
   status: "OPEN" | "CLOSED";
   openedAt: string;
+};
+type TransferReceiver = {
+  shiftId: string;
+  firstName: string;
+  lastName?: string | null;
+  employeeCode?: string | null;
 };
 function historyActor(entry: CourierStatusHistoryEntry): string {
   const employee = entry.changedByEmployee;
@@ -137,6 +152,8 @@ export function CourierOrdersPage() {
   const [historyError, setHistoryError] = useState("");
   const [courierShift, setCourierShift] = useState<CourierShift | null>(null);
   const [transferAmount, setTransferAmount] = useState("");
+  const [transferReceiverId, setTransferReceiverId] = useState("");
+  const [transferReceivers, setTransferReceivers] = useState<TransferReceiver[]>([]);
   const [shiftBusy, setShiftBusy] = useState(false);
   const [shiftError, setShiftError] = useState("");
   const [cashPanelOpen, setCashPanelOpen] = useState(false);
@@ -148,6 +165,13 @@ export function CourierOrdersPage() {
   const version = useRef(0);
   const actionLock = useRef(false);
   const canUpdate = hasPermission(user, "COURIER_DELIVERY_UPDATE");
+  const availableCash = Math.max(0, Number(courierShift?.currentCash ?? 0));
+  const parsedTransferAmount = Number(transferAmount);
+  const validTransferAmount =
+    transferAmount.trim() !== "" &&
+    Number.isFinite(parsedTransferAmount) &&
+    parsedTransferAmount > 0 &&
+    parsedTransferAmount <= availableCash;
 
   const loadCourierShift = useCallback(async () => {
     try {
@@ -164,6 +188,27 @@ export function CourierOrdersPage() {
       );
     }
   }, []);
+
+  const loadTransferReceivers = useCallback(async () => {
+    try {
+      const receivers = await apiFetch<TransferReceiver[]>(
+        "/cash-register/transfers/receivers",
+        { cache: "no-store", signal: AbortSignal.timeout(12000) },
+      );
+      setTransferReceivers(receivers);
+      setTransferReceiverId((current) =>
+        receivers.some((receiver) => receiver.shiftId === current) ? current : "",
+      );
+    } catch (caught) {
+      setShiftError(
+        caught instanceof Error ? caught.message : "Kassirlar ro'yxati yuklanmadi",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (courierShift && cashPanelOpen) void loadTransferReceivers();
+  }, [courierShift?.id, cashPanelOpen, loadTransferReceivers]);
 
   const load = useCallback(async (force = false) => {
     if (!force && (request.current || actionLock.current)) return;
@@ -378,15 +423,18 @@ export function CourierOrdersPage() {
   }
 
   async function transferCash() {
-    const amount = Number(transferAmount);
-    if (!courierShift || !Number.isFinite(amount) || amount <= 0 || shiftBusy)
+    if (!courierShift || !validTransferAmount || !transferReceiverId || shiftBusy)
       return;
     setShiftBusy(true);
     setShiftError("");
     try {
       await apiFetch("/cash-register/courier-shift/transfers", {
         method: "POST",
-        body: JSON.stringify({ amount, reason: "Kassirga topshirish" }),
+        body: JSON.stringify({
+          amount: parsedTransferAmount,
+          toShiftId: transferReceiverId,
+          reason: "Kassirga topshirish",
+        }),
         signal: AbortSignal.timeout(15000),
       });
       setTransferAmount("");
@@ -401,8 +449,8 @@ export function CourierOrdersPage() {
   }
 
   return (
-    <div className={`${styles.content} ${styles.narrowContent}`}>
-      <div className={styles.overview}>
+    <div className={`${styles.content} ${styles.narrowContent} ${styles.courierContent}`}>
+      <div className={`${styles.overview} ${styles.courierOverview}`}>
         <h2 className={styles.pageHeading}>Yetkazib berishlar</h2>
         <div className={styles.inlineActions}>
           <button
@@ -463,10 +511,27 @@ export function CourierOrdersPage() {
         </div>
         {courierShift && cashPanelOpen ? (
           <div className={styles.courierCashControls}>
+            <select
+              className={styles.input}
+              aria-label="Pulni qabul qiladigan kassir"
+              value={transferReceiverId}
+              onChange={(event) => setTransferReceiverId(event.target.value)}
+            >
+              <option value="">Kassirni tanlang</option>
+              {transferReceivers.map((receiver) => (
+                <option key={receiver.shiftId} value={receiver.shiftId}>
+                  {[receiver.firstName, receiver.lastName].filter(Boolean).join(" ")}
+                  {receiver.employeeCode ? ` (${receiver.employeeCode})` : ""}
+                </option>
+              ))}
+            </select>
             <input
               className={styles.input}
               inputMode="decimal"
-              min="0"
+              type="number"
+              min="0.01"
+              max={availableCash}
+              step="0.01"
               placeholder="Topshiriladigan summa"
               aria-label="Kassirga topshiriladigan summa"
               value={transferAmount}
@@ -474,7 +539,7 @@ export function CourierOrdersPage() {
             />
             <button
               className={styles.primary}
-              disabled={shiftBusy || !transferAmount}
+              disabled={shiftBusy || !validTransferAmount || !transferReceiverId}
               onClick={() => void transferCash()}
               type="button"
             >
@@ -482,34 +547,14 @@ export function CourierOrdersPage() {
             </button>
           </div>
         ) : null}
+        {courierShift && cashPanelOpen && !transferReceivers.length && !shiftError ? (
+          <p className={styles.muted}>Pul topshirish uchun kassirning ochiq smenasi kerak.</p>
+        ) : null}
         {shiftError && (
           <p className={styles.error} role="alert">
             {shiftError}
           </p>
         )}
-      </section>
-      <section className={styles.stats} aria-label="Yetkazishlar xulosasi">
-        <div className={styles.stat}>
-          <span>Faol buyurtmalar</span>
-          <strong>{isLoading ? "..." : orders.length}</strong>
-        </div>
-        <div className={styles.stat} data-tone="ready">
-          <span>Olib ketishga tayyor</span>
-          <strong>{isLoading ? "..." : readyCount}</strong>
-        </div>
-        <div className={styles.stat} data-tone="waiting">
-          <span>Buyurtmalar summasi</span>
-          <strong>
-            {isLoading
-              ? "..."
-              : formatMoney(
-                  orders.reduce(
-                    (sum, order) => sum + Number(order.order?.total ?? 0),
-                    0,
-                  ),
-                )}
-          </strong>
-        </div>
       </section>
       <div className={styles.toolbar}>
         <div className={styles.segments} aria-label="Yetkazish holati">
@@ -738,7 +783,7 @@ export function CourierOrdersPage() {
             needsCashCollection(confirmation.order) ? (
               <p className={styles.note}>
                 Mijozdan naqd oling:{" "}
-                <strong>{formatMoney(confirmation.order.order?.total)}</strong>.
+                <strong>{formatMoney(cashDue(confirmation.order))}</strong>.
                 Bu summa sizning ochiq smenangizga yoziladi.
               </p>
             ) : (
@@ -830,7 +875,7 @@ function CourierOrderCard({
           >
             {collectCash ? <Banknote size={14} /> : <Check size={14} />}
             {collectCash
-              ? `Naqd: ${formatMoney(order.order?.total)}`
+              ? `Naqd: ${formatMoney(cashDue(order))}`
               : "To'langan"}
           </span>
           <span
@@ -866,6 +911,31 @@ function CourierOrderCard({
             </span>
           </div>
         </div>
+        <div className={styles.deliveryQuickActions}>
+          <strong>{order.customer?.name ?? "Mijoz"}</strong>
+          {order.customer?.phone && (
+            <a
+              href={`tel:${order.customer.phone}`}
+              className={styles.iconButton}
+              aria-label={`${order.customer.name}: qo'ng'iroq qilish`}
+              title="Mijozga qo'ng'iroq qilish"
+            >
+              <Phone size={16} />
+            </a>
+          )}
+          {destination && (
+            <a
+              className={styles.iconButton}
+              href={`https://www.google.com/maps/dir/?api=1&destination=${destination}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`#${title} manzilini xaritada ochish`}
+              title="Google Maps'da yo'nalish"
+            >
+              <Navigation size={16} />
+            </a>
+          )}
+        </div>
         <button
           className={styles.detailsButton}
           aria-expanded={expanded}
@@ -877,36 +947,12 @@ function CourierOrderCard({
         </button>
         {expanded && (
           <>
-            <div className={styles.customerRow}>
-              <div>
-                <strong>{order.customer?.name ?? "Mijoz"}</strong>
-                <span className={styles.muted}>
-                  {order.customer?.phone || "Telefon kiritilmagan"}
-                </span>
-              </div>
-              {order.customer?.phone && (
-                <a
-                  href={`tel:${order.customer.phone}`}
-                  className={styles.button}
-                  aria-label={`${order.customer.name}: qo'ng'iroq qilish`}
-                >
-                  <Phone size={18} />
-                  <span className={styles.phoneText}>Qo'ng'iroq</span>
-                </a>
-              )}
-            </div>
+            <p className={styles.muted}>
+              {order.customer?.phone || "Telefon kiritilmagan"}
+            </p>
             {order.notes && <p className={styles.note}>{order.notes}</p>}
             {destination ? (
               <div className={styles.routeLinks}>
-                <a
-                  className={styles.secondary}
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${destination}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Navigation size={17} />
-                  Google Maps
-                </a>
                 <a
                   className={styles.button}
                   href={`https://yandex.com/maps/?rtext=~${destination}&rtt=auto`}

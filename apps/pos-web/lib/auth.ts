@@ -16,6 +16,7 @@ export type AuthUser = {
   phone?: string;
   employeeId?: string;
   branchId?: string;
+  isGlobalScope?: boolean;
   roles: string[];
   permissions: string[];
 };
@@ -61,6 +62,27 @@ export const roleRedirects: Record<MazettoRole, string> = {
   ACCOUNTANT: "/accounting",
 };
 
+const customAdminRedirects = [
+  { permission: "DASHBOARD_VIEW", href: "/admin/dashboard" },
+  { permission: "ORDER_VIEW", href: "/admin/orders" },
+  { permission: "ONLINE_ORDER_VIEW", href: "/admin/online-orders" },
+  { permission: "MENU_VIEW", href: "/admin/products" },
+  { permission: "BRANCH_VIEW", href: "/admin/branches" },
+  { permission: "STAFF_VIEW", href: "/admin/staff" },
+  { permission: "ROLE_VIEW", href: "/admin/roles" },
+  { permission: "REPORT_SALES_VIEW", href: "/admin/reports" },
+  { permission: "REPORT_PRODUCTS_VIEW", href: "/admin/reports" },
+  { permission: "REPORT_EMPLOYEES_VIEW", href: "/admin/reports" },
+  { permission: "REPORT_EXPENSES_VIEW", href: "/admin/reports" },
+  { permission: "INVENTORY_VIEW", href: "/admin/inventory" },
+  { permission: "SETTING_MANAGE", href: "/admin/settings" },
+  { permission: "AUDIT_VIEW", href: "/admin/audit" },
+] as const;
+
+const adminWorkspacePermissions = customAdminRedirects.map(
+  (entry) => entry.permission,
+);
+
 export function getApiBaseUrl(): string {
   if (
     typeof window !== "undefined" &&
@@ -73,7 +95,7 @@ export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
 }
 
-export function getPrimaryRedirect(roles: string[]): string {
+export function getPrimaryRedirect(user: AuthUser): string {
   const orderedRoles: MazettoRole[] = [
     "SUPER_ADMIN",
     "ADMIN",
@@ -84,9 +106,23 @@ export function getPrimaryRedirect(roles: string[]): string {
     "COURIER",
     "ACCOUNTANT",
   ];
-  const role = orderedRoles.find((candidate) => roles.includes(candidate));
+  const role = orderedRoles.find((candidate) => user.roles.includes(candidate));
 
-  return role ? roleRedirects[role] : "/access-denied";
+  if (role) {
+    return roleRedirects[role];
+  }
+
+  if (hasPermission(user, "ADMIN_ACCESS")) {
+    const adminRoute = customAdminRedirects.find((entry) =>
+      hasPermission(user, entry.permission),
+    );
+
+    if (adminRoute) {
+      return adminRoute.href;
+    }
+  }
+
+  return getAccessiblePanels(user)[0]?.href ?? "/access-denied";
 }
 
 export function hasPermission(
@@ -106,8 +142,8 @@ export type WorkspacePanel = {
   title: string;
   description: string;
   href: string;
-  permission: string;
-  roles: string[];
+  permissions: string[];
+  anyPermissions?: readonly string[];
 };
 
 const workspacePanels: WorkspacePanel[] = [
@@ -115,50 +151,44 @@ const workspacePanels: WorkspacePanel[] = [
     title: "Admin boshqaruv",
     description: "Filial, xodim, menyu va hisobotlarni boshqarish",
     href: "/admin/dashboard",
-    permission: "DASHBOARD_VIEW",
-    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+    permissions: ["ADMIN_ACCESS"],
+    anyPermissions: adminWorkspacePermissions,
   },
   {
     title: "Kassa",
     description: "Smena ochish, POS va to'lovlarni yuritish",
     href: "/shift",
-    permission: "SHIFT_VIEW_OWN",
-    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "CASHIER", "KITCHEN", "COURIER"],
+    permissions: ["SHIFT_VIEW_OWN"],
   },
   {
     title: "POS terminal",
     description: "Buyurtma yaratish va mahsulotlarni tez tanlash",
     href: "/pos",
-    permission: "POS_USE",
-    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "CASHIER"],
+    permissions: ["POS_USE"],
   },
   {
     title: "Oshxona",
     description: "Tayyorlash jarayoni va oshxona statuslari",
     href: "/kitchen",
-    permission: "KITCHEN_VIEW",
-    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "KITCHEN"],
+    permissions: ["KITCHEN_VIEW"],
   },
   {
     title: "Ofitsiant",
     description: "Stol buyurtmalari va zal xizmatlari",
     href: "/waiter",
-    permission: "TABLE_VIEW",
-    roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "WAITER"],
+    permissions: ["TABLE_VIEW"],
   },
   {
     title: "Kuryer",
     description: "Yetkazish manzillari, aloqa va navigatsiya",
     href: "/courier",
-    permission: "COURIER_DELIVERY_VIEW",
-    roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "COURIER"],
+    permissions: ["COURIER_DELIVERY_VIEW"],
   },
   {
     title: "Buxgalteriya",
     description: "Moliyaviy ko'rsatkichlar va hisobotlar",
     href: "/accounting",
-    permission: "DASHBOARD_VIEW",
-    roles: ["SUPER_ADMIN", "ACCOUNTANT"],
+    permissions: ["DASHBOARD_VIEW"],
   },
 ];
 
@@ -170,8 +200,12 @@ export function getAccessiblePanels(user: AuthUser | null): WorkspacePanel[] {
   const seen = new Set<string>();
 
   return workspacePanels.filter((panel) => {
-    const allowed =
-      hasRole(user, panel.roles) && hasPermission(user, panel.permission);
+    const allowed = panel.permissions.every((permission) =>
+      hasPermission(user, permission),
+    ) && (
+      !panel.anyPermissions ||
+      panel.anyPermissions.some((permission) => hasPermission(user, permission))
+    );
 
     if (!allowed || seen.has(panel.href)) {
       return false;

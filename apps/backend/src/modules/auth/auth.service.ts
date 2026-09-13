@@ -22,6 +22,7 @@ type UserWithAuthRelations = {
   roles: {
     role: {
       code: string;
+      isBranchScoped: boolean;
       permissions: { permission: { code: string } }[];
     };
   }[];
@@ -209,6 +210,9 @@ export class AuthService {
       ...(user.email ? { email: user.email } : {}),
       ...(user.phone ? { phone: user.phone } : {}),
       ...(user.employee ? { employeeId: user.employee.id, branchId: user.employee.branchId } : {}),
+      isGlobalScope: user.roles.some(
+        (userRole) => !userRole.role.isBranchScoped,
+      ),
       roles: user.roles.map((userRole) => userRole.role.code),
       permissions: user.roles.flatMap((userRole) =>
         userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),

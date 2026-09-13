@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Printer, RotateCcw } from "lucide-react";
 import { PermissionGuard } from "../../../../../components/auth/permission-guard";
-import { RoleGuard } from "../../../../../components/auth/role-guard";
 import { useAuth } from "../../../../../components/auth/auth-provider";
 import {
   StaffEmpty,
@@ -45,11 +44,9 @@ type Receipt = {
 
 export default function ReceiptPage({ params }: { params: { id: string } }) {
   return (
-    <RoleGuard roles={["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"]}>
-      <PermissionGuard permission="RECEIPT_VIEW">
-        <ReceiptPreview id={params.id} />
-      </PermissionGuard>
-    </RoleGuard>
+    <PermissionGuard permission="RECEIPT_VIEW">
+      <ReceiptPreview id={params.id} />
+    </PermissionGuard>
   );
 }
 

@@ -17,7 +17,7 @@
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node", "multer"],
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,

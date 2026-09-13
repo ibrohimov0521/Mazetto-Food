@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListAuditLogsDto } from "./dto/list-audit-logs.dto";
 
@@ -18,6 +18,11 @@ export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   listAuditLogs(query: ListAuditLogsDto) {
+    if (query.from && query.to && query.from > query.to) {
+      throw new BadRequestException(
+        "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak",
+      );
+    }
     const createdAt =
       query.from || query.to
         ? {
@@ -34,7 +39,7 @@ export class AuditService {
         ...(query.userId ? { userId: query.userId } : {}),
         ...(createdAt ? { createdAt } : {}),
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: query.offset,
       take: query.limit,
       select: {

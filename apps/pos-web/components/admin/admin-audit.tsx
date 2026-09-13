@@ -75,7 +75,12 @@ function actionTone(action: string): BadgeTone {
     return "danger";
   }
 
-  if (action.includes("PASSWORD") || action.includes("ROLE_CHANGED")) {
+  if (
+    action.includes("PASSWORD") ||
+    action.includes("ROLE_CHANGED") ||
+    action.includes("ROLE_UPDATED") ||
+    action.includes("HANDOVER_FORCED")
+  ) {
     return "warning";
   }
 
@@ -96,7 +101,8 @@ function actorName(user: AuditLog["user"]): string {
 
 /** `<input type="date">` qiymatini kun boshi/oxiri ISO vaqtiga aylantiradi. */
 function toIsoBoundary(day: string, edge: "start" | "end"): string {
-  return `${day}T${edge === "start" ? "00:00:00.000" : "23:59:59.999"}Z`;
+  const suffix = edge === "start" ? "T00:00:00.000" : "T23:59:59.999";
+  return new Date(`${day}${suffix}`).toISOString();
 }
 
 export function AdminAuditPage() {
@@ -110,6 +116,13 @@ export function AdminAuditPage() {
   const [to, setTo] = useState("");
   const [offset, setOffset] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const rangeError = useMemo(
+    () =>
+      from && to && from > to
+        ? "Boshlanish sanasi tugash sanasidan keyin."
+        : "",
+    [from, to],
+  );
 
   useEffect(() => {
     void apiFetch<AuditFacets>("/audit-logs/facets")
@@ -126,6 +139,7 @@ export function AdminAuditPage() {
     reload: load,
   } = useApiResource(
     () => {
+      if (rangeError) return Promise.resolve([] as AuditLog[]);
       const params = new URLSearchParams({
         limit: String(pageSize),
         offset: String(offset),
@@ -136,18 +150,12 @@ export function AdminAuditPage() {
       if (to) params.set("to", toIsoBoundary(to, "end"));
       return apiFetch<AuditLog[]>(`/audit-logs?${params.toString()}`);
     },
-    [action, entity, from, to, offset],
+    [action, entity, from, to, offset, rangeError],
     "Audit jurnalini yuklab bo'lmadi.",
   );
-  const logs = data ?? [];
+  const logs = rangeError ? [] : data ?? [];
 
   const hasFilters = Boolean(action || entity || from || to);
-
-  /** Sana oralig'i teskari bo'lsa server bo'sh natija beradi — oldin aytamiz. */
-  const rangeError = useMemo(
-    () => (from && to && from > to ? "Boshlanish sanasi tugash sanasidan keyin." : ""),
-    [from, to],
-  );
 
   function resetFilters(): void {
     setAction("");

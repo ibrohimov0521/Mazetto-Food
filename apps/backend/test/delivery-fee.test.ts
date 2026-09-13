@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CUSTOMER_CHECKOUT_SETTING_KEYS,
   PUBLIC_SETTING_KEYS,
   describeSettingRule,
   parseIntSetting,
@@ -87,5 +88,19 @@ test("buzuq radius default'ga tushadi", () => {
   assert.equal(
     parseIntSetting("customer_free_delivery_radius_meters", "salom"),
     1_000,
+  );
+});
+
+test("tekin zona radiusi mijoz checkout'iga ta'sir qiluvchi sozlama", () => {
+  assert.ok(
+    (CUSTOMER_CHECKOUT_SETTING_KEYS as readonly string[]).includes(
+      "customer_free_delivery_radius_meters",
+    ),
+  );
+  assert.ok(
+    !(PUBLIC_SETTING_KEYS as readonly string[]).includes(
+      "customer_free_delivery_radius_meters",
+    ),
+    "radius server ichida qoladi, ammo UI tasdiqlash talab qiladi",
   );
 });

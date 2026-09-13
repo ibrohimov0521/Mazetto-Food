@@ -18,7 +18,6 @@ import {
   X,
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
-import { RoleGuard } from "../../../components/auth/role-guard";
 import { useAuth } from "../../../components/auth/auth-provider";
 import {
   StaffDialog,
@@ -162,11 +161,9 @@ const cartStorageKey = (shiftId: string) => `mazetto.pos.cart.${shiftId}`;
 
 export default function PosPage() {
   return (
-    <RoleGuard roles={["CASHIER", "SUPER_ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="POS_USE">
-        <PosTerminal />
-      </PermissionGuard>
-    </RoleGuard>
+    <PermissionGuard permission="POS_USE">
+      <PosTerminal />
+    </PermissionGuard>
   );
 }
 
@@ -599,6 +596,7 @@ function PosTerminal() {
     <StaffShell
       title="Kassa"
       terminal
+      sidebar
       actions={
         <>
           <button
@@ -630,28 +628,30 @@ function PosTerminal() {
         </>
       }
     >
-      <div className={styles.mobilePosNav}>
-        <div className={styles.segments}>
-          <button
-            className={styles.segment}
-            aria-pressed={mobileView === "menu"}
-            onClick={() => setMobileView("menu")}
-            type="button"
-          >
-            <ShoppingBag size={17} />
-            Menyu
-          </button>
-          <button
-            className={styles.segment}
-            aria-pressed={mobileView === "cart"}
-            onClick={() => setMobileView("cart")}
-            type="button"
-          >
-            <ReceiptText size={17} />
-            Buyurtma<span>{itemCount}</span>
-          </button>
+      {catalog && !isCheckingShift ? (
+        <div className={styles.mobilePosNav}>
+          <div className={styles.segments}>
+            <button
+              className={styles.segment}
+              aria-pressed={mobileView === "menu"}
+              onClick={() => setMobileView("menu")}
+              type="button"
+            >
+              <ShoppingBag size={17} />
+              Menyu
+            </button>
+            <button
+              className={styles.segment}
+              aria-pressed={mobileView === "cart"}
+              onClick={() => setMobileView("cart")}
+              type="button"
+            >
+              <ReceiptText size={17} />
+              Buyurtma<span>{itemCount}</span>
+            </button>
+          </div>
         </div>
-      </div>
+      ) : null}
       {isCheckingShift ? (
         <StaffEmpty title="Kassa yuklanmoqda..." />
       ) : !catalog ? (

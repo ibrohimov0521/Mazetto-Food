@@ -123,6 +123,21 @@ export const PUBLIC_SETTING_KEYS = [
   "customer_delivery_fee",
 ] as const satisfies readonly SettingKey[];
 
+/**
+ * Checkout natijasiga darhol ta'sir qiladigan biznes sozlamalari.
+ *
+ * Bu ro'yxat `PUBLIC_SETTING_KEYS` bilan bir xil tushuncha emas. Masalan,
+ * tekin yetkazish radiusini browser bilishi shart emas (narxni server
+ * hisoblaydi), lekin uning o'zgarishi mijoz to'laydigan summani darhol
+ * almashtiradi va admin UI tasdiqlash so'rashi kerak.
+ */
+export const CUSTOMER_CHECKOUT_SETTING_KEYS = [
+  "customer_payment_methods",
+  "customer_delivery_enabled",
+  "customer_delivery_fee",
+  "customer_free_delivery_radius_meters",
+] as const satisfies readonly SettingKey[];
+
 export const settingKeys = Object.keys(SETTING_RULES) as SettingKey[];
 
 export function isKnownSettingKey(key: string): key is SettingKey {
@@ -131,6 +146,10 @@ export function isKnownSettingKey(key: string): key is SettingKey {
 
 export function isPublicSettingKey(key: SettingKey): boolean {
   return (PUBLIC_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+export function affectsCustomerCheckout(key: SettingKey): boolean {
+  return (CUSTOMER_CHECKOUT_SETTING_KEYS as readonly string[]).includes(key);
 }
 
 /*

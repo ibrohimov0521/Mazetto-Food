@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { ReportPreset, type ReportQueryDto } from "./dto/report-query.dto";
 
 export type ReportRange = {
@@ -16,10 +17,25 @@ export function resolveReportRange(query: ReportQueryDto): ReportRange {
   if (preset === ReportPreset.CUSTOM) {
     const fromDate = query.from ?? formatLocalDate(today);
     const toDate = query.to ?? fromDate;
+    const from = startOfTashkentDay(fromDate);
+    const to = endOfTashkentDay(toDate);
+
+    if (from > to) {
+      throw new BadRequestException(
+        "Hisobot boshlanish sanasi tugash sanasidan keyin bo'lishi mumkin emas",
+      );
+    }
+
+    const days = Math.ceil((to.getTime() - from.getTime()) / 86_400_000);
+    if (days > 366) {
+      throw new BadRequestException(
+        "Maxsus hisobot oralig'i 366 kundan oshmasligi kerak",
+      );
+    }
 
     return {
-      from: startOfTashkentDay(fromDate),
-      to: endOfTashkentDay(toDate),
+      from,
+      to,
       timezone: "Asia/Tashkent",
       preset,
     };

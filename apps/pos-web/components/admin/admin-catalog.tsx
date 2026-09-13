@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { hasPermission } from "../../lib/auth";
 import { formatMoney } from "../../lib/order-display";
@@ -79,6 +79,13 @@ export function AdminProductsPage() {
   const [categoryId, setCategoryId] = useState("ALL");
   const [visibility, setVisibility] = useState("ALL");
   const [status, setStatus] = useState("ALL");
+
+  useEffect(() => {
+    const requestedCategory = new URLSearchParams(window.location.search).get(
+      "categoryId",
+    );
+    if (requestedCategory) setCategoryId(requestedCategory);
+  }, []);
 
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [isMutating, setIsMutating] = useState(false);
@@ -356,10 +363,8 @@ export function AdminProductsPage() {
           getRowKey={(product) => product.id}
           isLoading={isLoading && !data}
           rows={filtered}
-          {...(canEdit || canArchive
-            ? {
-                rowActions: (product: Product) => (
-                  <>
+          rowActions={(product: Product) => (
+            <>
                     {/*
                       Tahrirlash `ButtonLink` (next/link) bilan: `RowAction`
                       ning `href` varianti oddiy `<a>` chiqaradi, ya'ni
@@ -393,10 +398,8 @@ export function AdminProductsPage() {
                         />
                       )
                     ) : null}
-                  </>
-                ),
-              }
-            : {})}
+            </>
+          )}
         />
       </Card>
 

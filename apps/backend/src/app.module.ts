@@ -16,6 +16,7 @@ import { BranchesModule } from "./modules/branches/branches.module";
 import { CashRegisterModule } from "./modules/cash-register/cash-register.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
+import { DevicesModule } from "./modules/devices/devices.module";
 import { EmployeesModule } from "./modules/employees/employees.module";
 import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { HomepageModule } from "./modules/homepage/homepage.module";
@@ -33,6 +34,7 @@ import { ReportsModule } from "./modules/reports/reports.module";
 import { RolesModule } from "./modules/roles/roles.module";
 import { SettingsModule } from "./modules/settings/settings.module";
 import { ShiftsModule } from "./modules/shifts/shifts.module";
+import { SystemHealthModule } from "./modules/system-health/system-health.module";
 import { StaffModule } from "./modules/staff/staff.module";
 import { SuppliersModule } from "./modules/suppliers/suppliers.module";
 import { TablesModule } from "./modules/tables/tables.module";
@@ -92,8 +94,10 @@ import { RedisService } from "./redis/redis.service";
     ReceiptsModule,
     PrintersModule,
     ShiftsModule,
+    SystemHealthModule,
     HomepageModule,
     DashboardModule,
+    DevicesModule,
     ReportsModule,
     StaffModule,
     InventoryModule,

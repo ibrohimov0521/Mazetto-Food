@@ -43,6 +43,7 @@ export type TableOrder = {
   orderNumber: string;
   displayOrderNumber?: string | null;
   status: OrderStatus;
+  isSupplemental?: boolean;
   total: string;
   guestCount?: number | null;
   notes?: string | null;
@@ -201,7 +202,17 @@ export function tableOpenBlockReason(
 }
 
 export function isOrderEditable(order: TableOrder): boolean {
-  return order.status !== "COMPLETED" && order.status !== "CANCELLED";
+  return order.status === "NEW";
+}
+
+export function canOpenSupplementalOrder(
+  order: TableOrder,
+  orders: TableOrder[],
+): boolean {
+  return (
+    ["CONFIRMED", "PREPARING", "READY"].includes(order.status) &&
+    !orders.some((entry) => entry.status === "NEW")
+  );
 }
 
 /**

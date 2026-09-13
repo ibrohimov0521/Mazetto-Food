@@ -2,6 +2,8 @@ import * as assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { adminNavGroups } from "../../pos-web/lib/admin-nav";
+import { resolveRouteAccess, routeAccessRules } from "../../pos-web/lib/route-access";
 
 /*
  * Admin navigatsiyasi va RBAC muvofiqligi.
@@ -36,12 +38,10 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 const permissionsSource = readSource(
   "apps/backend/src/common/auth/permissions.ts",
 );
-const navSource = readSource("apps/pos-web/lib/admin-nav.ts");
 const iconSource = readSource("apps/pos-web/components/admin-ui/icon.tsx");
 const sidebarSource = readSource(
   "apps/pos-web/components/admin-shell/admin-sidebar.tsx",
 );
-const routeAccessSource = readSource("apps/pos-web/lib/route-access.ts");
 const shellLayoutSource = readSource("apps/pos-web/app/(shell)/layout.tsx");
 
 const knownPermissions = new Set(
@@ -66,14 +66,6 @@ assert.ok(
   `ikonka to'plami juda kichik: ${definedIcons.size}`,
 );
 
-/* `route-access.ts` qisqartmalarni ishlatadi; bu yerda ular ochiladi. */
-const EXPANDED_ROLE: Record<string, string> = {
-  SUPER: "SUPER_ADMIN",
-  ADMIN: "ADMIN",
-  MANAGER: "BRANCH_MANAGER",
-  ACCOUNTANT: "ACCOUNTANT",
-};
-
 type NavItem = {
   label: string;
   href: string;
@@ -82,32 +74,11 @@ type NavItem = {
   roles: string[];
 };
 
-const items: NavItem[] = [];
-
-for (const block of navSource.matchAll(/^ {6}\{\n([\s\S]*?)^ {6}\},$/gm)) {
-  const body = block[1]!;
-  const label = body.match(/label: "([^"]+)"/)?.[1];
-  const href = body.match(/href: "([^"]+)"/)?.[1];
-  const permission = body.match(/permission: "([^"]+)"/)?.[1];
-  const icon = body.match(/icon: "([^"]+)"/)?.[1];
-  const roles = body.match(/roles: \[([^\]]*)\]/)?.[1];
-
-  if (!label || !href || !permission || !icon || roles === undefined) {
-    continue;
-  }
-
-  items.push({
-    label,
-    href,
-    permission,
-    icon,
-    roles: [...roles.matchAll(/"([A-Z_]+)"/g)].map((match) => match[1]!),
-  });
-}
+const items: NavItem[] = adminNavGroups.flatMap((group) => group.items);
 
 assert.equal(
   items.length,
-  25,
+  26,
   `nav elementlari soni kutilganidan farq qiladi: ${items.length}`,
 );
 
@@ -120,41 +91,18 @@ assert.ok(!items.some((item) => item.href === "/admin/printers"));
  * Ruxsat matritsasi (`lib/route-access.ts`) — endi guardlarning yagona manbai.
  * Naqsh tartibi muhim, shuning uchun ro'yxat sifatida o'qiladi.
  */
-type AccessRule = { pattern: string; roles: string[]; permission?: string };
 /** Matritsa uchun `:id`, disk uchun `[id]` — ikkalasi ham kerak. */
 type ShellRoute = { route: string; dirPath: string };
 
-const accessRules: AccessRule[] = [
-  ...routeAccessSource.matchAll(
-    /\{\s*pattern:\s*"([^"]+)",\s*roles:\s*\[([^\]]*)\](?:,\s*permission:\s*"([^"]+)")?\s*,?\s*\}/g,
-  ),
-].map((match) => ({
-  pattern: match[1]!,
-  roles: [...match[2]!.matchAll(/\b(SUPER|ADMIN|MANAGER|ACCOUNTANT)\b/g)].map(
-    (role) => EXPANDED_ROLE[role[1]!]!,
-  ),
-  ...(match[3] ? { permission: match[3] } : {}),
-}));
+const accessRules = routeAccessRules;
 
 assert.ok(
   accessRules.length > 25,
   `ruxsat matritsasi juda kichik: ${accessRules.length}`,
 );
 
-function findRule(pathname: string): AccessRule | undefined {
-  return accessRules.find((rule) => {
-    const patternSegments = rule.pattern.split("/").filter(Boolean);
-    const pathSegments = pathname.split("/").filter(Boolean);
-
-    if (patternSegments.length !== pathSegments.length) {
-      return false;
-    }
-
-    return patternSegments.every(
-      (segment, index) =>
-        segment.startsWith(":") || segment === pathSegments[index],
-    );
-  });
+function findRule(pathname: string) {
+  return resolveRouteAccess(pathname) ?? undefined;
 }
 
 const seenHrefs = new Map<string, string>();

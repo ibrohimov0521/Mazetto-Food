@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import {
+  ArrowLeft,
   ChefHat,
   LayoutGrid,
   ReceiptText,
@@ -10,7 +11,6 @@ import {
   Utensils,
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
-import { RoleGuard } from "../../../components/auth/role-guard";
 import { useAuth } from "../../../components/auth/auth-provider";
 import {
   StaffDialog,
@@ -59,13 +59,11 @@ const removeReason = "Ofitsiant qatorni o'chirdi";
 
 export default function WaiterPage() {
   return (
-    <RoleGuard roles={["WAITER", "SUPER_ADMIN", "BRANCH_MANAGER"]}>
-      <PermissionGuard permission="TABLE_VIEW">
-        <StaffShell title="Ofitsiant">
-          <WaiterFloor />
-        </StaffShell>
-      </PermissionGuard>
-    </RoleGuard>
+    <PermissionGuard permission="TABLE_VIEW">
+      <StaffShell title="Ofitsiant">
+        <WaiterFloor />
+      </StaffShell>
+    </PermissionGuard>
   );
 }
 
@@ -324,6 +322,12 @@ function WaiterFloor() {
     }
   }, [menuEnabled, pane]);
 
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [pane, selectedTableId]);
+
   const refreshAfterAction = useCallback(async () => {
     await Promise.all([
       loadFloor(),
@@ -377,35 +381,48 @@ function WaiterFloor() {
 
   function selectTable(tableId: string) {
     setSelectedTableId(tableId);
+    setPane("tables");
     setSelectedOrderId(null);
     setActionError(null);
     setOpenNote("");
     setGuestCount(2);
   }
 
-  async function openTable() {
+  async function openTable(isSupplemental = false) {
     if (!panelTable) {
       return;
     }
 
     const note = openNote.trim();
+    let createdOrderId: string | null = null;
     const created = await runAction(
-      "open",
-      () =>
-        apiFetch<{ id: string }>(`/tables/${panelTable.id}/orders`, {
+      isSupplemental ? "additional" : "open",
+      async () => {
+        const createdOrder = await apiFetch<{ id: string }>(
+          `/tables/${panelTable.id}/orders`,
+          {
           method: "POST",
           signal: AbortSignal.timeout(15000),
           body: JSON.stringify({
-            guestCount,
+            guestCount: isSupplemental
+              ? (currentOrder?.guestCount ?? guestCount)
+              : guestCount,
+            ...(isSupplemental ? { isSupplemental: true } : {}),
             ...(note ? { notes: note } : {}),
           }),
-        }),
-      "Stolni ochib bo'lmadi.",
+          },
+        );
+        createdOrderId = createdOrder.id;
+        return createdOrder;
+      },
+      isSupplemental
+        ? "Qo'shimcha buyurtma ochilmadi."
+        : "Stolni ochib bo'lmadi.",
     );
 
     if (created) {
       setOpenNote("");
-      setSelectedOrderId(null);
+      setSelectedOrderId(createdOrderId);
       setPane("menu");
     }
   }
@@ -634,6 +651,7 @@ function WaiterFloor() {
         <div
           className={styles.waiterBody}
           data-has-order={selectedTableId ? "true" : "false"}
+          data-pane={pane}
         >
           <div className={styles.waiterMain}>
             <div
@@ -648,7 +666,10 @@ function WaiterFloor() {
                 type="button"
               >
                 <LayoutGrid size={17} aria-hidden="true" />
-                Stollar
+                <span className={styles.waiterNavDesktop}>Stollar</span>
+                <span className={styles.waiterNavCompact}>
+                  {selectedTableId ? "Buyurtma" : "Stollar"}
+                </span>
               </button>
               <button
                 className={styles.segment}
@@ -694,6 +715,18 @@ function WaiterFloor() {
               aria-label="Joriy buyurtma"
               ref={asideRef}
             >
+              <button
+                className={`${styles.button} ${styles.waiterBack}`}
+                onClick={() => {
+                  setSelectedTableId(null);
+                  setSelectedOrderId(null);
+                  setPane("tables");
+                }}
+                type="button"
+              >
+                <ArrowLeft size={17} aria-hidden="true" />
+                Stollarga qaytish
+              </button>
               <OrderPanel
                 table={panelTable}
                 orders={openOrders}
@@ -709,7 +742,8 @@ function WaiterFloor() {
                   setGuestCount(Math.min(maxGuestCount, Math.max(1, next)))
                 }
                 onOpenNoteChange={setOpenNote}
-                onOpenTable={() => void openTable()}
+                onOpenTable={() => void openTable(false)}
+                onOpenAdditional={() => void openTable(true)}
                 onGoToMenu={() => setPane("menu")}
                 onEditLine={setEditTarget}
                 onChangeQuantity={changeLineQuantity}
@@ -724,7 +758,7 @@ function WaiterFloor() {
         </div>
       )}
 
-      {currentOrder && (
+      {currentOrder && pane === "menu" && (
         <div className={styles.mobilePaybar}>
           <div>
             <small>{totalQuantity(currentOrder)} ta mahsulot</small>
@@ -732,7 +766,10 @@ function WaiterFloor() {
           </div>
           <button
             className={styles.primary}
-            onClick={scrollToOrder}
+            onClick={() => {
+              setPane("tables");
+              window.requestAnimationFrame(scrollToOrder);
+            }}
             type="button"
           >
             <ReceiptText size={18} aria-hidden="true" />

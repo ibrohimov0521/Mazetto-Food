@@ -33,6 +33,7 @@ export type KitchenTicket = {
     displayOrderNumber?: string | null;
     source: "POS" | "WEB" | "TELEGRAM";
     type: "DINE_IN" | "TAKEAWAY" | "DELIVERY";
+    isSupplemental?: boolean;
     notes?: string | null;
     kitchenComment?: string | null;
     branch?: { name?: string | null } | null;

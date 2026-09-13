@@ -35,6 +35,8 @@ const roleDefinitions = [
       PERMISSIONS.DASHBOARD_VIEW,
       PERMISSIONS.BRANCH_VIEW,
       PERMISSIONS.BRANCH_EDIT,
+      PERMISSIONS.DEVICE_VIEW,
+      PERMISSIONS.DEVICE_MANAGE,
       PERMISSIONS.USER_VIEW,
       PERMISSIONS.ROLE_VIEW,
       PERMISSIONS.PERMISSION_VIEW,
@@ -97,6 +99,8 @@ const roleDefinitions = [
       PERMISSIONS.DASHBOARD_VIEW,
       PERMISSIONS.BRANCH_VIEW,
       PERMISSIONS.BRANCH_EDIT,
+      PERMISSIONS.DEVICE_VIEW,
+      PERMISSIONS.DEVICE_MANAGE,
       PERMISSIONS.USER_VIEW,
       PERMISSIONS.ROLE_VIEW,
       PERMISSIONS.PERMISSION_VIEW,
@@ -128,6 +132,7 @@ const roleDefinitions = [
     description: "POS access, order creation, payments, and receipts.",
     permissions: [
       PERMISSIONS.MENU_VIEW,
+      PERMISSIONS.DEVICE_VIEW,
       PERMISSIONS.POS_USE,
       PERMISSIONS.ORDER_VIEW,
       PERMISSIONS.ORDER_CREATE,
@@ -203,6 +208,15 @@ const roleDefinitions = [
   },
 ] as const;
 
+const branchScopedRoleCodes = new Set([
+  "ADMIN",
+  "BRANCH_MANAGER",
+  "CASHIER",
+  "WAITER",
+  "KITCHEN",
+  "COURIER",
+]);
+
 const permissionNames: Record<string, string> = {
   [PERMISSIONS.ALL]: "Full access",
   [PERMISSIONS.ADMIN_ACCESS]: "Access admin workspace",
@@ -210,8 +224,11 @@ const permissionNames: Record<string, string> = {
   [PERMISSIONS.BRANCH_VIEW]: "View branches",
   [PERMISSIONS.BRANCH_CREATE]: "Create branches",
   [PERMISSIONS.BRANCH_EDIT]: "Edit branch operational settings",
+  [PERMISSIONS.DEVICE_VIEW]: "View branch devices",
+  [PERMISSIONS.DEVICE_MANAGE]: "Manage branch devices",
   [PERMISSIONS.USER_VIEW]: "View users",
   [PERMISSIONS.ROLE_VIEW]: "View roles",
+  [PERMISSIONS.ROLE_MANAGE]: "Manage custom roles",
   [PERMISSIONS.PERMISSION_VIEW]: "View permissions",
   [PERMISSIONS.STAFF_VIEW]: "View staff accounts",
   [PERMISSIONS.STAFF_CREATE]: "Create staff accounts",
@@ -260,6 +277,7 @@ const permissionNames: Record<string, string> = {
   [PERMISSIONS.REPORT_EXPENSES_VIEW]: "View expense reports",
   [PERMISSIONS.EXPENSE_CREATE]: "Record branch expenses",
   [PERMISSIONS.AUDIT_VIEW]: "View security audit log",
+  [PERMISSIONS.SYSTEM_HEALTH_VIEW]: "View production health and backup evidence",
 };
 
 const paymentMethodDefinitions = [
@@ -295,6 +313,7 @@ async function main(): Promise<void> {
         name: roleDefinition.name,
         description: roleDefinition.description,
         isSystem: true,
+        isBranchScoped: branchScopedRoleCodes.has(roleDefinition.code),
         isActive: true,
       },
       create: {
@@ -302,6 +321,7 @@ async function main(): Promise<void> {
         name: roleDefinition.name,
         description: roleDefinition.description,
         isSystem: true,
+        isBranchScoped: branchScopedRoleCodes.has(roleDefinition.code),
         isActive: true,
       },
     });

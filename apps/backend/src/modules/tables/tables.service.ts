@@ -21,6 +21,7 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
+import { activeTableOrderStatuses } from "./table-order-state";
 import type {
   CreateHallDto,
   CreateTableDto,
@@ -29,14 +30,6 @@ import type {
   UpdateTableDto,
   UpdateTableStatusDto,
 } from "./dto/tables.dto";
-
-const activeOrderStatuses: OrderStatus[] = [
-  OrderStatus.NEW,
-  OrderStatus.CONFIRMED,
-  OrderStatus.PREPARING,
-  OrderStatus.READY,
-  OrderStatus.SERVED,
-];
 
 @Injectable()
 export class TablesService {
@@ -78,7 +71,7 @@ export class TablesService {
           where: { isActive: true },
           include: {
             orders: {
-              where: { status: { in: activeOrderStatuses } },
+              where: { status: { in: activeTableOrderStatuses } },
               select: { id: true },
             },
           },
@@ -107,7 +100,7 @@ export class TablesService {
         hall: true,
         orders: {
           where: {
-            status: { in: activeOrderStatuses },
+            status: { in: activeTableOrderStatuses },
           },
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -130,7 +123,7 @@ export class TablesService {
         hall: true,
         orders: {
           where: {
-            status: { in: activeOrderStatuses },
+            status: { in: activeTableOrderStatuses },
           },
           include: { items: true, waiter: true },
           orderBy: { createdAt: "desc" },
@@ -205,6 +198,21 @@ export class TablesService {
     user: AuthenticatedUser,
   ) {
     await this.assertTable(id, user);
+    const activeOrder = await this.prisma.order.findFirst({
+      where: { tableId: id, status: { in: activeTableOrderStatuses } },
+      select: { id: true },
+    });
+
+    if (activeOrder && dto.status !== TableStatus.OCCUPIED) {
+      throw new BadRequestException(
+        "Ochiq buyurtmali stol faqat Band holatida turishi mumkin",
+      );
+    }
+    if (!activeOrder && dto.status === TableStatus.OCCUPIED) {
+      throw new BadRequestException(
+        "Stol faqat ochiq buyurtma yaratilganda Band holatiga o'tadi",
+      );
+    }
 
     return this.prisma.restaurantTable.update({
       where: { id },
@@ -262,7 +270,7 @@ export class TablesService {
 
     if (dto.isActive === false) {
       const activeOrder = await this.prisma.order.findFirst({
-        where: { tableId: id, status: { in: activeOrderStatuses } },
+        where: { tableId: id, status: { in: activeTableOrderStatuses } },
         select: { id: true },
       });
 
@@ -303,6 +311,10 @@ export class TablesService {
 
       await this.assertEmployeeInBranch(tx, waiterId, table.branchId);
       resolveBranchScope(user, table.branchId);
+      await tx.$queryRawUnsafe(
+        'SELECT "id" FROM "restaurant_tables" WHERE "id" = $1 FOR UPDATE',
+        id,
+      );
 
       if (
         table.status === TableStatus.CLEANING ||
@@ -311,15 +323,38 @@ export class TablesService {
         throw new BadRequestException("Table is not available for a new order");
       }
 
-      const existingOrder = await tx.order.findFirst({
+      const existingOrders = await tx.order.findMany({
         where: {
           tableId: id,
-          status: { in: activeOrderStatuses },
+          status: { in: activeTableOrderStatuses },
         },
+        select: { id: true, status: true },
       });
 
-      if (existingOrder) {
+      if (!dto.isSupplemental && existingOrders.length) {
         throw new BadRequestException("Table already has an active order");
+      }
+      if (dto.isSupplemental) {
+        if (existingOrders.some((order) => order.status === OrderStatus.NEW)) {
+          throw new BadRequestException(
+            "Qo'shimcha buyurtma allaqachon ochilgan",
+          );
+        }
+        if (
+          !existingOrders.some((order) =>
+            (
+              [
+                OrderStatus.CONFIRMED,
+                OrderStatus.PREPARING,
+                OrderStatus.READY,
+              ] as OrderStatus[]
+            ).includes(order.status),
+          )
+        ) {
+          throw new BadRequestException(
+            "Qo'shimcha buyurtma uchun oshxonaga yuborilgan faol buyurtma kerak",
+          );
+        }
       }
 
       const displayOrder = await allocateDisplayOrderNumber(
@@ -336,6 +371,7 @@ export class TablesService {
           ...displayOrder,
           source: OrderSource.POS,
           type: dto.type ?? OrderType.DINE_IN,
+          isSupplemental: dto.isSupplemental ?? false,
           status: OrderStatus.NEW,
           guestCount: dto.guestCount ?? null,
           notes: dto.notes ?? null,
@@ -353,7 +389,9 @@ export class TablesService {
           toStatus: OrderStatus.NEW,
           changedByUserId: user.id,
           changedByEmployeeId: waiterId,
-          reason: "Waiter opened table order",
+          reason: dto.isSupplemental
+            ? "Waiter opened supplemental table order"
+            : "Waiter opened table order",
         },
       });
 
@@ -374,7 +412,7 @@ export class TablesService {
       where: {
         waiterId,
         status: {
-          in: activeOrderStatuses,
+          in: activeTableOrderStatuses,
         },
       },
       include: { table: true, items: true },

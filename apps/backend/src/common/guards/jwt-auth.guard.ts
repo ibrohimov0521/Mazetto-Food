@@ -109,6 +109,7 @@ export class JwtAuthGuard implements CanActivate {
             role: {
               select: {
                 code: true,
+                isBranchScoped: true,
                 permissions: {
                   select: {
                     permission: {
@@ -136,6 +137,9 @@ export class JwtAuthGuard implements CanActivate {
       ...(user.employee?.status === "ACTIVE"
         ? { employeeId: user.employee.id, branchId: user.employee.branchId }
         : {}),
+      isGlobalScope: user.roles.some(
+        (userRole) => !userRole.role.isBranchScoped,
+      ),
       roles: user.roles.map((userRole) => userRole.role.code),
       permissions: user.roles.flatMap((userRole) =>
         userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),

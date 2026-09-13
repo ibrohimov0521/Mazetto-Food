@@ -74,7 +74,7 @@ export default function ShellLayout({
   if (verdict === "denied") {
     return (
       <AdminLayout>
-        <AccessDeniedPanel homeHref={getPrimaryRedirect(user.roles)} />
+        <AccessDeniedPanel homeHref={getPrimaryRedirect(user)} />
       </AdminLayout>
     );
   }

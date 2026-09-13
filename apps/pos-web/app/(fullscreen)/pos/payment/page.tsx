@@ -14,7 +14,6 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { PermissionGuard } from "../../../../components/auth/permission-guard";
-import { RoleGuard } from "../../../../components/auth/role-guard";
 import { useAuth } from "../../../../components/auth/auth-provider";
 import {
   StaffDialog,
@@ -82,11 +81,9 @@ const successStatuses = ["PAID", "SUCCESS"];
 
 export default function PaymentPage() {
   return (
-    <RoleGuard roles={["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"]}>
-      <PermissionGuard permission="PAYMENT_CREATE">
-        <PaymentTerminal />
-      </PermissionGuard>
-    </RoleGuard>
+    <PermissionGuard permission="PAYMENT_CREATE">
+      <PaymentTerminal />
+    </PermissionGuard>
   );
 }
 

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { hasPermission } from "../../lib/auth";
 import { useApiResource } from "../../lib/use-api-resource";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
-import { Button } from "../admin-ui/button";
+import { Button, ButtonLink } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
 import {
   DataTable,
@@ -14,7 +14,12 @@ import {
   type DataTableColumn,
 } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
-import { focusFirstInvalidField, FormField, TextInput } from "../admin-ui/form";
+import {
+  focusFirstInvalidField,
+  FormField,
+  Select,
+  TextInput,
+} from "../admin-ui/form";
 import { Icon } from "../admin-ui/icon";
 import { ImageDropzone } from "../admin-ui/image-dropzone";
 import { Modal } from "../admin-ui/modal";
@@ -43,19 +48,22 @@ import { useToast } from "../admin-ui/toast";
 
 type Category = {
   id: string;
+  parentId?: string | null;
   code: string;
   name: string;
   description?: string | null;
   imageUrl?: string | null;
   isActive?: boolean;
   sortOrder: number;
-  _count?: { products: number };
+  _count?: { products: number; children?: number };
+  depth?: number;
 };
 
 type CategoryDraft = {
   name: string;
   description: string;
   image: string;
+  parentId: string;
   sortOrder: string;
   isActive: boolean;
 };
@@ -66,6 +74,7 @@ const emptyDraft: CategoryDraft = {
   name: "",
   description: "",
   image: "",
+  parentId: "",
   sortOrder: "0",
   isActive: true,
 };
@@ -96,6 +105,47 @@ export function AdminCategoriesPage() {
     "Kategoriyalarni yuklab bo'lmadi.",
   );
   const categories = data ?? [];
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  );
+  const categoryRows = useMemo(() => {
+    const byParent = new Map<string | null, Category[]>();
+    const visited = new Set<string>();
+    const rows: Category[] = [];
+
+    for (const category of categories) {
+      const parentId =
+        category.parentId && categoryById.has(category.parentId)
+          ? category.parentId
+          : null;
+      const siblings = byParent.get(parentId) ?? [];
+      siblings.push(category);
+      byParent.set(parentId, siblings);
+    }
+    for (const siblings of byParent.values()) {
+      siblings.sort(
+        (left, right) =>
+          left.sortOrder - right.sortOrder ||
+          left.name.localeCompare(right.name, "uz"),
+      );
+    }
+
+    function append(parentId: string | null, depth: number): void {
+      for (const category of byParent.get(parentId) ?? []) {
+        if (visited.has(category.id)) continue;
+        visited.add(category.id);
+        rows.push({ ...category, depth });
+        append(category.id, depth + 1);
+      }
+    }
+
+    append(null, 0);
+    for (const category of categories) {
+      if (!visited.has(category.id)) rows.push({ ...category, depth: 0 });
+    }
+    return rows;
+  }, [categories, categoryById]);
   const isFormOpen = isCreating || editing !== null;
 
   // Oyna yopilganda xato belgilari qolib ketmasin.
@@ -120,6 +170,7 @@ export function AdminCategoriesPage() {
       name: category.name,
       description: category.description ?? "",
       image: category.imageUrl ?? "",
+      parentId: category.parentId ?? "",
       sortOrder: String(category.sortOrder),
       isActive: category.isActive !== false,
     });
@@ -161,6 +212,7 @@ export function AdminCategoriesPage() {
           name: draft.name.trim(),
           description: draft.description.trim(),
           image: draft.image.trim(),
+          parentId: draft.parentId || null,
           sortOrder,
           isActive: draft.isActive,
         }
@@ -170,6 +222,7 @@ export function AdminCategoriesPage() {
             ? { description: draft.description.trim() }
             : {}),
           ...(draft.image.trim() ? { image: draft.image.trim() } : {}),
+          ...(draft.parentId ? { parentId: draft.parentId } : {}),
           sortOrder,
         };
 
@@ -247,9 +300,13 @@ export function AdminCategoriesPage() {
       header: "Nomi",
       primary: true,
       render: (category) => (
-        <div className="min-w-0">
+        <div
+          className="min-w-0"
+          style={{ paddingLeft: `${Math.min(category.depth ?? 0, 4) * 16}px` }}
+        >
           <p className="truncate font-semibold text-mz-text">{category.name}</p>
           <p className="truncate text-[13px] text-mz-text-muted">
+            {category.depth ? "Quyi bo'lim · " : ""}
             {category.code}
           </p>
         </div>
@@ -336,7 +393,7 @@ export function AdminCategoriesPage() {
           emptyTitle="Kategoriya yo'q"
           getRowKey={(category) => category.id}
           isLoading={isLoading && !data}
-          rows={categories}
+          rows={categoryRows}
           {...(canCreate
             ? {
                 emptyAction: (
@@ -347,10 +404,17 @@ export function AdminCategoriesPage() {
                 ),
               }
             : {})}
-          {...(canEdit || canArchive
-            ? {
-                rowActions: (category: Category) => (
-                  <>
+          rowActions={(category: Category) => (
+            <>
+              <ButtonLink
+                href={`/admin/products?categoryId=${encodeURIComponent(category.id)}`}
+                size="sm"
+                variant="ghost"
+              >
+                Mahsulotlar
+              </ButtonLink>
+              {canEdit || canArchive ? (
+                <>
                     {canEdit ? (
                       <RowAction
                         icon="pencil"
@@ -374,10 +438,10 @@ export function AdminCategoriesPage() {
                         />
                       )
                     ) : null}
-                  </>
-                ),
-              }
-            : {})}
+                </>
+              ) : null}
+            </>
+          )}
         />
       </Card>
 
@@ -438,6 +502,34 @@ export function AdminCategoriesPage() {
                 }
                 value={draft.description}
               />
+            )}
+          </FormField>
+
+          <FormField
+            hint="Bo'sh qoldirilsa yuqori darajada turadi"
+            label="Ota kategoriya"
+          >
+            {(props) => (
+              <Select
+                {...props}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    parentId: event.target.value,
+                  }))
+                }
+                value={draft.parentId}
+              >
+                <option value="">Yuqori daraja</option>
+                {categories
+                  .filter((category) => category.id !== editing?.id)
+                  .map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.parentId ? "— " : ""}
+                      {category.name}
+                    </option>
+                  ))}
+              </Select>
             )}
           </FormField>
 

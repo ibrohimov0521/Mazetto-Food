@@ -35,6 +35,8 @@ export type AdminNavItem = {
    * aks holda foydalanuvchi bosib `/access-denied` ga tushadi.
    */
   roles: string[];
+  /** Asosiy permission o'rniga shulardan bittasi ham elementni ochadi. */
+  anyPermissions?: string[];
   /** Faol holatni aniqlashda shu prefiksdagi barcha yo'llar hisobga olinadi. */
   matchPrefix?: string;
 };
@@ -172,6 +174,11 @@ export const adminNavGroups: AdminNavGroup[] = [
         icon: "chart",
         href: "/admin/reports",
         permission: "REPORT_SALES_VIEW",
+        anyPermissions: [
+          "REPORT_PRODUCTS_VIEW",
+          "REPORT_EMPLOYEES_VIEW",
+          "REPORT_EXPENSES_VIEW",
+        ],
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
     ],
@@ -293,6 +300,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         permission: "AUDIT_VIEW",
         roles: ["SUPER_ADMIN"],
       },
+      {
+        label: "Tizim holati",
+        icon: "chart",
+        href: "/admin/system-health",
+        permission: "SYSTEM_HEALTH_VIEW",
+        roles: ["SUPER_ADMIN"],
+      },
     ],
   },
 ];
@@ -309,10 +323,22 @@ export function resolveAdminNav(user: AuthUser | null): AdminNavGroup[] {
   return adminNavGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter(
-        (item) =>
-          hasPermission(user, item.permission) && hasRole(user, item.roles),
-      ),
+      items: group.items.filter((item) => {
+        if (
+          !hasPermission(user, item.permission) &&
+          !item.anyPermissions?.some((permission) =>
+            hasPermission(user, permission),
+          )
+        ) {
+          return false;
+        }
+
+        if (item.href.startsWith("/admin")) {
+          return hasPermission(user, "ADMIN_ACCESS");
+        }
+
+        return hasRole(user, item.roles);
+      }),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -383,6 +409,10 @@ export function canSwitchBranch(user: AuthUser | null): boolean {
 
   if (user.permissions.includes("*")) {
     return true;
+  }
+
+  if (user.isGlobalScope !== undefined) {
+    return user.isGlobalScope;
   }
 
   return !user.roles.some((role) => branchScopedRoles.includes(role));

@@ -4,10 +4,13 @@ import { apiFetch } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { reportQueryParams, type ReportQuery } from "../../lib/report-query";
 import { formatMoney } from "../../lib/order-display";
+import { downloadCsv } from "../../lib/csv";
+import { Button } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
 import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState, SkeletonRows } from "../admin-ui/feedback";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
+import { Icon } from "../admin-ui/icon";
 
 /*
  * Savdo hisobotidan tashqari to'rt hisobot.
@@ -211,6 +214,29 @@ export function ProductReportView({ query }: { query: ReportQuery }) {
 
       <Card>
         <CardHeader
+          actions={
+            products.length ? (
+              <Button
+                onClick={() =>
+                  downloadCsv(
+                    "mahsulotlar-hisoboti",
+                    ["Mahsulot", "Sotilgan miqdor", "Qatorlar", "Tushum"],
+                    products.map((row) => [
+                      row.productName,
+                      row.quantitySold,
+                      row.itemCount,
+                      row.revenue,
+                    ]),
+                  )
+                }
+                size="sm"
+                variant="ghost"
+              >
+                <Icon className="h-4 w-4" name="download" />
+                CSV
+              </Button>
+            ) : null
+          }
           description="Eng ko'p tushum keltirgan mahsulotlar birinchi"
           title="Mahsulotlar bo'yicha"
         />
@@ -325,6 +351,32 @@ export function EmployeeReportView({ query }: { query: ReportQuery }) {
 
       <Card>
         <CardHeader
+          actions={
+            rows.length ? (
+              <Button
+                onClick={() =>
+                  downloadCsv(
+                    "xodimlar-hisoboti",
+                    ["Xodim", "Kod", "Buyurtmalar", "Smenalar", "Qabul qilingan to'lov"],
+                    rows.map((row) => [
+                      row.employee
+                        ? `${row.employee.firstName} ${row.employee.lastName ?? ""}`.trim()
+                        : "Noma'lum xodim",
+                      row.employee?.employeeCode,
+                      row.ordersHandled,
+                      row.shifts.length,
+                      row.salesAmount,
+                    ]),
+                  )
+                }
+                size="sm"
+                variant="ghost"
+              >
+                <Icon className="h-4 w-4" name="download" />
+                CSV
+              </Button>
+            ) : null
+          }
           description="Buyurtma yaratgan va to'lov qabul qilgan xodimlar"
           title="Xodimlar bo'yicha"
         />
@@ -481,6 +533,29 @@ export function ExpenseReportView({ query }: { query: ReportQuery }) {
 
       <Card>
         <CardHeader
+          actions={
+            expenses.length ? (
+              <Button
+                onClick={() =>
+                  downloadCsv(
+                    "xarajatlar-hisoboti",
+                    ["Sana", "Kategoriya", "Izoh", "Summa"],
+                    expenses.map((row) => [
+                      row.expenseDate,
+                      row.category,
+                      row.description,
+                      row.amount,
+                    ]),
+                  )
+                }
+                size="sm"
+                variant="ghost"
+              >
+                <Icon className="h-4 w-4" name="download" />
+                CSV
+              </Button>
+            ) : null
+          }
           description="Oraliqdagi barcha yozuvlar"
           title="Xarajatlar"
         />
@@ -507,6 +582,7 @@ type ZReport = {
   averageOrder: string;
   expenses: string;
   profit: string;
+  profitDefinition: string;
   /*
    * `paymentMethod` — satr emas, PaymentMethod yozuvi. `reports.service.ts`
    * dagi `paymentBreakdown` butun obyektni saqlaydi va Z hisoboti uni
@@ -586,8 +662,8 @@ export function ZReportView({ query }: { query: ReportQuery }) {
         />
         <InfoBox
           icon="chart"
-          label="Foyda"
-          description="Tushum − xarajat"
+          label="Operatsion qoldiq"
+          description="Tushum - qayd etilgan xarajat"
           tone={Number(data.profit) < 0 ? "danger" : "success"}
           value={formatMoney(data.profit)}
         />
@@ -610,6 +686,35 @@ export function ZReportView({ query }: { query: ReportQuery }) {
 
       <Card>
         <CardHeader
+          actions={
+            data.paymentBreakdown.length ? (
+              <Button
+                onClick={() =>
+                  downloadCsv(
+                    "z-hisobot",
+                    ["Ko'rsatkich", "Qiymat"],
+                    [
+                      ["Jami tushum", data.totalSales],
+                      ["Naqd sotuv", data.cashSales],
+                      ["Buyurtmalar", data.ordersCount],
+                      ["O'rtacha chek", data.averageOrder],
+                      ["Xarajat", data.expenses],
+                      ["Operatsion qoldiq", data.profit],
+                      ...data.paymentBreakdown.map((row) => [
+                        `To'lov: ${row.paymentMethod.name}`,
+                        row.amount,
+                      ]),
+                    ],
+                  )
+                }
+                size="sm"
+                variant="ghost"
+              >
+                <Icon className="h-4 w-4" name="download" />
+                CSV
+              </Button>
+            ) : null
+          }
           description="Muvaffaqiyatli to'lovlar bo'yicha taqsimot"
           title="To'lov usullari"
         />
@@ -636,6 +741,9 @@ export function ZReportView({ query }: { query: ReportQuery }) {
           integratsiyasidan keyin paydo bo&apos;ladi.
         </p>
       ) : null}
+      <p className="rounded-mz-control border border-mz-border bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
+        {data.profitDefinition}
+      </p>
     </div>
   );
 }

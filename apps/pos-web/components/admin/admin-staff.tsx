@@ -53,6 +53,7 @@ type Role = {
   id: string;
   code: string;
   name: string;
+  isBranchScoped?: boolean;
 };
 
 type Branch = {
@@ -616,7 +617,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       next.roleCodes = "Kamida bitta rol tanlanishi kerak.";
     }
 
-    if (needsBranch(form.roleCodes) && !form.branchId) {
+    if (needsBranch(form.roleCodes, roles) && !form.branchId) {
       next.branchId = "Bu rol uchun filial tanlanishi kerak.";
     }
 
@@ -653,7 +654,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
     }
 
     const currentBranchId = staff.employee?.branchId ?? "";
-    const nextBranchId = needsBranch(form.roleCodes) ? form.branchId : "";
+    const nextBranchId = needsBranch(form.roleCodes, roles) ? form.branchId : "";
 
     if (currentBranchId !== nextBranchId) {
       consequences.push(
@@ -701,7 +702,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             phone: form.phone.trim() || undefined,
             password: form.password,
             roleCodes: form.roleCodes,
-            branchId: needsBranch(form.roleCodes) ? form.branchId : undefined,
+            branchId: needsBranch(form.roleCodes, roles) ? form.branchId : undefined,
             isActive: form.isActive,
           }),
         });
@@ -724,7 +725,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           method: "PATCH",
           body: JSON.stringify({
             roleCodes: form.roleCodes,
-            branchId: needsBranch(form.roleCodes) ? form.branchId : null,
+            branchId: needsBranch(form.roleCodes, roles) ? form.branchId : null,
           }),
         });
       }
@@ -736,7 +737,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           email: form.email.trim() || null,
           phone: form.phone.trim() || null,
           branchId: sameRoles(currentRoles, form.roleCodes)
-            ? needsBranch(form.roleCodes)
+            ? needsBranch(form.roleCodes, roles)
               ? form.branchId
               : null
             : undefined,
@@ -1035,7 +1036,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                 {(props) => (
                   <Select
                     {...props}
-                    disabled={!needsBranch(form.roleCodes)}
+                    disabled={!needsBranch(form.roleCodes, roles)}
                     value={form.branchId}
                     onChange={(event) =>
                       setForm({ ...form, branchId: event.target.value })
@@ -1556,9 +1557,15 @@ function OwnPasswordModal({
   );
 }
 
-function needsBranch(roleCodes: string[] | string): boolean {
+function needsBranch(
+  roleCodes: string[] | string,
+  roles: Role[] = [],
+): boolean {
   const codes = Array.isArray(roleCodes) ? roleCodes : [roleCodes];
-  return codes.some((roleCode) => branchScopedRoles.has(roleCode));
+  return codes.some((roleCode) => {
+    const role = roles.find((candidate) => candidate.code === roleCode);
+    return role?.isBranchScoped ?? branchScopedRoles.has(roleCode);
+  });
 }
 
 function sameRoles(left: string[], right: string[]): boolean {

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { productModifierSettings } from "../src/modules/menu/menu.service";
+import {
+  assertUniqueProductModifiers,
+  productModifierSettings,
+} from "../src/modules/menu/menu.service";
 
 /*
  * `updateProduct` modifikator bog'lamlarini `deleteMany` + `createMany`
@@ -56,4 +59,35 @@ test("yangi bog'lamda sxemadagi standart qiymatlar ishlatiladi", () => {
     minSelect: 0,
     maxSelect: null,
   });
+});
+
+test("majburiy yangi bog'lam kamida bitta tanlov talab qiladi", () => {
+  const result = productModifierSettings({
+    modifierId: "m1",
+    isRequired: true,
+  } as never);
+  assert.equal(result.minSelect, 1);
+});
+
+test("eng kam tanlov eng ko'pdan oshmaydi", () => {
+  assert.throws(
+    () =>
+      productModifierSettings({
+        modifierId: "m1",
+        minSelect: 3,
+        maxSelect: 2,
+      } as never),
+    /eng kam tanlovdan kichik/,
+  );
+});
+
+test("bir modifier ikki marta biriktirilmaydi", () => {
+  assert.throws(
+    () =>
+      assertUniqueProductModifiers([
+        { modifierId: "m1" },
+        { modifierId: "m1" },
+      ]),
+    /ikki marta/,
+  );
 });

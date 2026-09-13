@@ -121,6 +121,7 @@ export const auditEntityLabels: Record<string, string> = {
   Payment: "To'lov",
   Product: "Mahsulot",
   Printer: "Printer",
+  Device: "Qurilma",
 };
 
 export function auditEntityLabel(value: string): string {
@@ -147,6 +148,12 @@ const auditActionLabels: Record<string, string> = {
   STAFF_PASSWORD_RESET: "Parol reset qilindi",
   STAFF_PASSWORD_CHANGED: "Xodim parolini o'zgartirdi",
   SETTING_UPDATED: "Sozlama o'zgartirildi",
+  ROLE_CREATED: "Rol yaratildi",
+  ROLE_UPDATED: "Rol o'zgartirildi",
+  ROLE_ARCHIVED: "Rol arxivlandi",
+  DEVICE_CREATED: "Qurilma yaratildi",
+  DEVICE_UPDATED: "Qurilma o'zgartirildi",
+  CASH_HANDOVER_FORCED: "Naqd pul majburiy topshirildi",
   BRANCH_CREATED: "Filial yaratildi",
   BRANCH_UPDATED: "Filial o'zgartirildi",
   LOGIN_SUCCESS: "Muvaffaqiyatli kirish",
