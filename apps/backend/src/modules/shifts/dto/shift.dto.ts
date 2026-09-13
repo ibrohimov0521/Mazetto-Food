@@ -72,3 +72,18 @@ export class CreateCashTransferDto {
   @MaxLength(500)
   reason?: string;
 }
+
+export class ForceCashHandoverDto {
+  @IsString()
+  toShiftId!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  amount?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}

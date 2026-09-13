@@ -323,6 +323,25 @@ export class StaffService {
     return this.toStaffDto(updated);
   }
 
+  async deleteStaff(id: string, actor: AuthenticatedUser) {
+    const existing = await this.findStaffOrThrow(id);
+    this.assertCanManageStaffRecord(actor, existing);
+    if (id === actor.id) {
+      throw new BadRequestException("O'zingizning accountingizni o'chira olmaysiz");
+    }
+    await this.assertCanRemoveCurrentSuperAdmin(existing, true);
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.createAuditLog(tx, actor.id, "STAFF_DELETED", id, {
+        displayName: existing.displayName,
+        email: existing.email,
+      });
+      await tx.user.delete({ where: { id } });
+    });
+    await this.userAuthCache.invalidate(id);
+    return { deleted: true, id };
+  }
+
   async resetPassword(id: string, dto: ResetStaffPasswordDto, actor: AuthenticatedUser) {
     const existing = await this.findStaffOrThrow(id);
     this.assertCanManageStaffRecord(actor, existing);

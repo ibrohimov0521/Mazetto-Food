@@ -74,6 +74,7 @@ type Shift = {
   openedAt: string;
   closedAt?: string | null;
   openingBalance: string;
+  currentCash?: string | null;
   closingBalance?: string | null;
   expectedCash?: string | null;
   cashDifference?: string | null;
@@ -202,6 +203,7 @@ export function AdminShiftsPage() {
   const { showToast } = useToast();
   const showBranchFilter = canSwitchBranch(user);
   const canClose = hasPermission(user, "SHIFT_CLOSE");
+  const canForceHandover = hasPermission(user, "CASH_HANDOVER_FORCE");
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [status, setStatus] = useState("");
@@ -216,6 +218,12 @@ export function AdminShiftsPage() {
   const [closeError, setCloseError] = useState("");
   const [isClosing, setIsClosing] = useState(false);
   const closeFormRef = useRef<HTMLFormElement>(null);
+  const [handover, setHandover] = useState<Shift | null>(null);
+  const [handoverReceiverId, setHandoverReceiverId] = useState("");
+  const [handoverAmount, setHandoverAmount] = useState("");
+  const [handoverReason, setHandoverReason] = useState("");
+  const [handoverError, setHandoverError] = useState("");
+  const [isHandingOver, setIsHandingOver] = useState(false);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -285,6 +293,49 @@ export function AdminShiftsPage() {
     setCloseError("");
     setClosingBalance("");
   }, []);
+
+  const openHandoverDialog = useCallback((shift: Shift) => {
+    const receiver = shifts.find(
+      (candidate) => candidate.status === "OPEN" && candidate.id !== shift.id,
+    );
+    setHandover(shift);
+    setHandoverReceiverId(receiver?.id ?? "");
+    setHandoverAmount(shift.currentCash ? String(Number(shift.currentCash)) : "");
+    setHandoverReason("");
+    setHandoverError("");
+  }, [shifts]);
+
+  async function submitHandover(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!handover || !handoverReceiverId) {
+      setHandoverError("Qabul qiluvchi ochiq kassir smenasini tanlang.");
+      return;
+    }
+    const amount = Number(handoverAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > Number(handover.currentCash ?? 0)) {
+      setHandoverError("Summa joriy naqd qoldiqdan oshmasligi va 0 dan katta bo'lishi kerak.");
+      return;
+    }
+    setIsHandingOver(true);
+    setHandoverError("");
+    try {
+      await apiFetch(`/shifts/${handover.id}/force-handover`, {
+        method: "POST",
+        body: JSON.stringify({
+          toShiftId: handoverReceiverId,
+          amount,
+          reason: handoverReason.trim() || undefined,
+        }),
+      });
+      showToast("Naqd topshiruv qayd qilindi.", "success");
+      setHandover(null);
+      load();
+    } catch (caught) {
+      setHandoverError(caught instanceof Error ? caught.message : "Naqd topshirilmadi.");
+    } finally {
+      setIsHandingOver(false);
+    }
+  }
 
   async function submitClose(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -389,6 +440,19 @@ export function AdminShiftsPage() {
       hideOnMobile: true,
       render: (shift) => (
         <span className={numberCell}>{formatMoney(shift.expectedCash)}</span>
+      ),
+    },
+    {
+      key: "currentCash",
+      header: "Joriy naqd",
+      align: "right",
+      hideOnMobile: true,
+      render: (shift) => (
+        <span className={numberCell}>
+          {shift.status === "OPEN"
+            ? formatMoney(shift.currentCash)
+            : "—"}
+        </span>
       ),
     },
     {
@@ -579,6 +643,13 @@ export function AdminShiftsPage() {
                   onClick={() => openCloseDialog(shift)}
                 />
               ) : null}
+              {canForceHandover && shift.status === "OPEN" && Number(shift.currentCash ?? 0) > 0 ? (
+                <RowAction
+                  icon="send"
+                  label={`#${shift.shiftNumber} naqdini majburiy topshirish`}
+                  onClick={() => openHandoverDialog(shift)}
+                />
+              ) : null}
             </>
           )}
           rows={shifts}
@@ -596,10 +667,67 @@ export function AdminShiftsPage() {
 
       <ShiftDetailModal
         canClose={canClose}
+        canForceHandover={canForceHandover}
         onClose={() => setDetail(null)}
+        onRequestHandover={openHandoverDialog}
         onRequestShiftClose={openCloseDialog}
         shift={detail}
       />
+
+      <Modal
+        description="Bu amal tanlangan xodim smenasidan naqdni chiqarib, tanlangan kassir smenasiga darhol qabul qilingan deb yozadi."
+        dismissOnBackdrop={false}
+        footer={
+          <>
+            <Button onClick={() => setHandover(null)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              form="cash-force-handover-form"
+              isLoading={isHandingOver}
+              size="lg"
+              type="submit"
+              variant="danger"
+            >
+              Topshiruvni tasdiqlash
+            </Button>
+          </>
+        }
+        isOpen={handover !== null}
+        onClose={() => setHandover(null)}
+        title={handover ? `#${handover.shiftNumber} naqdini topshirish` : "Naqd topshirish"}
+      >
+        {handover ? (
+          <form className="grid gap-4" id="cash-force-handover-form" onSubmit={submitHandover}>
+            <dl className="grid gap-2 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3 text-sm">
+              <Row label="Xodim" value={employeeName(handover.employee)} />
+              <Row label="Joriy qoldiq" numeric value={formatMoney(handover.currentCash)} />
+            </dl>
+            <FormField error={handoverError} label="Qabul qiluvchi kassir smenasi" required>
+              {(props) => (
+                <Select {...props} value={handoverReceiverId} onChange={(event) => setHandoverReceiverId(event.target.value)}>
+                  <option value="">Smenani tanlang</option>
+                  {shifts
+                    .filter((candidate) => candidate.status === "OPEN" && candidate.id !== handover.id)
+                    .map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        #{candidate.shiftNumber} · {employeeName(candidate.employee)}
+                      </option>
+                    ))}
+                </Select>
+              )}
+            </FormField>
+            <FormField label="Topshiriladigan summa" required>
+              {(props) => (
+                <TextInput {...props} inputMode="decimal" min={0.01} step="0.01" type="number" value={handoverAmount} onChange={(event) => setHandoverAmount(event.target.value)} />
+              )}
+            </FormField>
+            <FormField label="Izoh">
+              {(props) => <TextInput {...props} value={handoverReason} onChange={(event) => setHandoverReason(event.target.value)} />}
+            </FormField>
+          </form>
+        ) : null}
+      </Modal>
 
       <Modal
         description="Smena BIR MARTA yopiladi va keyin o'zgartirilmaydi. Kutilgan naqd, topshirilgan naqd va farq alohida yoziladi."
@@ -705,12 +833,16 @@ function Row({
  */
 function ShiftDetailModal({
   canClose,
+  canForceHandover,
   onClose,
+  onRequestHandover,
   onRequestShiftClose,
   shift,
 }: {
   canClose: boolean;
+  canForceHandover: boolean;
   onClose: () => void;
+  onRequestHandover: (shift: Shift) => void;
   onRequestShiftClose: (shift: Shift) => void;
   shift: Shift | null;
 }) {
@@ -811,6 +943,11 @@ function ShiftDetailModal({
               size="lg"
             >
               Smenani yopish
+            </GuardedButton>
+          ) : null}
+          {canForceHandover && shift?.status === "OPEN" && Number(shift.currentCash ?? 0) > 0 ? (
+            <GuardedButton onClick={() => onRequestHandover(shift)} variant="danger">
+              Majburiy topshiruv
             </GuardedButton>
           ) : null}
         </>

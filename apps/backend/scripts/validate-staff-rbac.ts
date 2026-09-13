@@ -55,6 +55,7 @@ for (const permission of [
   "STAFF_UPDATE",
   "STAFF_PASSWORD_RESET",
   "STAFF_STATUS_CHANGE",
+  "STAFF_DELETE",
   "STAFF_ROLE_ASSIGN",
   "POS_USE",
   "SHIFT_VIEW_OWN",
@@ -86,6 +87,7 @@ assert.match(
   staffController,
   /@Permissions\(PERMISSIONS\.STAFF_STATUS_CHANGE\)/,
 );
+assert.match(staffController, /@Permissions\(PERMISSIONS\.STAFF_DELETE\)/);
 assert.match(
   staffController,
   /@Permissions\(PERMISSIONS\.STAFF_PASSWORD_RESET\)/,
@@ -101,6 +103,7 @@ assert.match(
 );
 assert.match(staffService, /Only SUPER_ADMIN can assign SUPER_ADMIN/);
 assert.match(staffService, /Only SUPER_ADMIN can assign global staff roles/);
+assert.match(staffService, /async deleteStaff/);
 assert.match(staffService, /normalizeCustomerPhone/);
 assert.doesNotMatch(staffController, /passwordHash/);
 assert.doesNotMatch(adminStaff, /passwordHash/);
@@ -177,11 +180,11 @@ assert.match(jwtGuard, /User is not active/);
 // TTL qisqa bo'lishi shart: u bekor qilish kechikishining eng yomon holati.
 assert.match(authCache, /const TTL_SECONDS = 30/);
 
-// Xodim profilini o'zgartiradigan har bir yo'l keshni tozalashi kerak.
+// Xodim profilini o'zgartiradigan yoki o'chiradigan har bir yo'l keshni tozalashi kerak.
 assert.equal(
   (staffService.match(/this\.userAuthCache\.invalidate\(/g) ?? []).length,
-  5,
-  "beshta mutatsiya yo'li ham keshni bekor qilishi kerak",
+  6,
+  "oltita mutatsiya yo'li ham keshni bekor qilishi kerak",
 );
 
 console.info("Staff RBAC static validation passed");

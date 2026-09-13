@@ -454,6 +454,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
+  const canDeleteStaff = hasPermission(user, "STAFF_DELETE");
   const formRef = useRef<HTMLFormElement>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -472,6 +473,8 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [baseline, setBaseline] = useState("");
   const [isDiscardOpen, setIsDiscardOpen] = useState(false);
@@ -828,6 +831,21 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
     }
   }
 
+  async function deleteStaff() {
+    if (!staffId || !staff) return;
+    setIsDeleting(true);
+    try {
+      await apiFetch(`/staff/${staffId}`, { method: "DELETE" });
+      showToast("Xodim accounti o'chirildi. Tarixiy kassa va buyurtma yozuvlari saqlandi.", "success");
+      router.push("/admin/staff");
+    } catch (caught) {
+      setIsDeleteOpen(false);
+      showToast(caught instanceof Error ? caught.message : "Account o'chirilmadi.", "danger");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   /*
    * RBAC staff_security_contract — UI qatlami.
    * Haqiqiy cheklov backend'da; bu yerda foydalanuvchi sababni oldindan ko'radi.
@@ -857,6 +875,17 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       })
     : null;
   const isProtectedSuperAdmin = staff ? isSuperAdminStaff(staff) : false;
+  const deleteBlock = !canDeleteStaff
+    ? "Sizda xodim accountini o'chirish ruxsati yo'q."
+    : staff?.id === user?.id
+      ? "O'zingizning accountingizni o'chira olmaysiz."
+      : staff &&
+          isSuperAdminStaff(staff) &&
+          allStaff.filter(
+            (item) => item.isActive && isSuperAdminStaff(item),
+          ).length <= 1
+        ? "Oxirgi faol SUPER_ADMIN accountini o'chirib bo'lmaydi."
+        : null;
 
   if (isLoading) {
     return <SkeletonRows rows={8} />;
@@ -975,11 +1004,26 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                       disabled={Boolean(roleChangeBlock)}
                       key={role.id}
                       label={roleCodeLabel(role.code)}
-                      onChange={(checked) =>
+                      onChange={(checked) => {
+                        const isLastActiveSuperAdmin =
+                          role.code === "SUPER_ADMIN" &&
+                          !checked &&
+                          Boolean(staff?.isActive) &&
+                          allStaff.filter(
+                            (item) =>
+                              item.isActive && isSuperAdminStaff(item),
+                          ).length <= 1;
+                        if (isLastActiveSuperAdmin) {
+                          showToast(
+                            "Tizimda kamida bitta faol SUPER_ADMIN qolishi kerak.",
+                            "danger",
+                          );
+                          return;
+                        }
                         setForm((current) =>
                           toggleRole(current, role.code, checked),
-                        )
-                      }
+                        );
+                      }}
                     />
                   ))}
                 </div>
@@ -1039,6 +1083,21 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                 </div>
               ) : null}
             </section>
+            {!isNew && staff ? (
+              <section className="grid gap-3 rounded-mz-card border border-mz-danger/30 bg-mz-surface p-5">
+                <p className="text-sm font-black text-mz-danger">Xavfli amal</p>
+                <p className="text-[13px] leading-5 text-mz-text-muted">
+                  Account o&apos;chiriladi, lekin uning buyurtma, kassa va audit tarixi saqlanib qoladi.
+                </p>
+                <GuardedButton
+                  blockedReason={deleteBlock}
+                  onClick={() => setIsDeleteOpen(true)}
+                  variant="danger"
+                >
+                  Accountni o&apos;chirish
+                </GuardedButton>
+              </section>
+            ) : null}
             {!isNew ? (
               <section className="grid gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
                 <p className="text-sm font-black text-mz-text">Parol reset</p>
@@ -1200,6 +1259,23 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           </Button>
         </div>
       </form>
+
+      <Modal
+        description="Bu accountga kirish darhol yopiladi. Buyurtma, kassa va audit tarixi o'chirilmaydi."
+        footer={
+          <>
+            <Button onClick={() => setIsDeleteOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button isLoading={isDeleting} onClick={() => void deleteStaff()} variant="danger">
+              O&apos;chirishni tasdiqlash
+            </Button>
+          </>
+        }
+        isOpen={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        title="Accountni o&apos;chirasizmi?"
+      />
 
       <Modal
         description="Kiritilgan o'zgarishlar saqlanmaydi."

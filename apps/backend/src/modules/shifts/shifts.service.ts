@@ -23,6 +23,7 @@ import type {
   CloseShiftDto,
   CreateCashTransactionDto,
   CreateCashTransferDto,
+  ForceCashHandoverDto,
   OpenShiftDto,
 } from "./dto/shift.dto";
 
@@ -48,7 +49,7 @@ export class ShiftsService {
           }
         : undefined;
 
-    return this.prisma.shift.findMany({
+    const shifts = await this.prisma.shift.findMany({
       where: {
         ...(branchId ? { branchId } : {}),
         ...(query.employeeId ? { employeeId: query.employeeId } : {}),
@@ -58,8 +59,135 @@ export class ShiftsService {
       orderBy: { openedAt: "desc" },
       skip: query.offset,
       take: query.limit,
-      include: this.shiftInclude(),
+      include: {
+        ...this.shiftInclude(),
+        cashTransactions: { select: { amount: true, type: true } },
+      },
     });
+
+    return shifts.map((shift) => ({
+      ...shift,
+      currentCash:
+        shift.status === ShiftStatus.OPEN
+          ? this.calculateCashBalance(shift.openingBalance, shift.cashTransactions)
+          : null,
+      cashTransactions: undefined,
+    }));
+  }
+
+  async forceCashHandover(
+    sourceShiftId: string,
+    dto: ForceCashHandoverDto,
+    user: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const sourceLock = await tx.$queryRawUnsafe<{ id: string }[]>(
+        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+        sourceShiftId,
+      );
+      if (sourceLock.length !== 1) {
+        throw new NotFoundException("Source shift not found");
+      }
+
+      const source = await tx.shift.findUnique({ where: { id: sourceShiftId } });
+      if (!source) throw new NotFoundException("Source shift not found");
+      if (source.status !== ShiftStatus.OPEN) {
+        throw new BadRequestException("Faqat ochiq smenadan pul topshiriladi");
+      }
+      resolveBranchScope(user, source.branchId);
+      if (sourceShiftId === dto.toShiftId) {
+        throw new BadRequestException("Manba va qabul qiluvchi smena bir xil bo'lmasligi kerak");
+      }
+
+      const receiverLock = await tx.$queryRawUnsafe<{ id: string }[]>(
+        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+        dto.toShiftId,
+      );
+      if (receiverLock.length !== 1) {
+        throw new NotFoundException("Qabul qiluvchi smena topilmadi");
+      }
+      const receiver = await tx.shift.findUnique({
+        where: { id: dto.toShiftId },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              status: true,
+              user: { select: { roles: { select: { role: { select: { code: true } } } } } },
+            },
+          },
+        },
+      });
+      if (!receiver || receiver.status !== ShiftStatus.OPEN) {
+        throw new BadRequestException("Qabul qiluvchi smena ochiq emas");
+      }
+      if (receiver.branchId !== source.branchId) {
+        throw new ForbiddenException("Pulni faqat shu filialdagi smenaga topshirish mumkin");
+      }
+      const receiverRoles = receiver.employee.user?.roles.map((item) => item.role.code) ?? [];
+      if (
+        receiver.employee.status !== "ACTIVE" ||
+        !receiverRoles.some((role) => ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"].includes(role))
+      ) {
+        throw new BadRequestException("Tanlangan xodim pul qabul qiluvchi kassir emas");
+      }
+
+      const transactions = await tx.cashTransaction.findMany({
+        where: { shiftId: source.id },
+        select: { amount: true, type: true },
+      });
+      const balance = this.calculateCashBalance(source.openingBalance, transactions);
+      const amount = new Prisma.Decimal(dto.amount ?? balance);
+      if (amount.lessThanOrEqualTo(0) || amount.greaterThan(balance)) {
+        throw new BadRequestException("Topshirish summasi kassadagi joriy naqd qoldiqdan oshmasligi kerak");
+      }
+
+      const transfer = await tx.cashTransfer.create({
+        data: {
+          branchId: source.branchId,
+          fromShiftId: source.id,
+          toShiftId: receiver.id,
+          status: CashTransferStatus.ACCEPTED,
+          amount,
+          reason: dto.reason?.trim() || "Admin majburiy naqd topshiruvi",
+          createdById: user.id,
+          acceptedById: user.id,
+          acceptedAt: new Date(),
+        },
+      });
+      await tx.cashTransaction.create({
+        data: {
+          branchId: source.branchId,
+          shiftId: source.id,
+          employeeId: source.employeeId,
+          cashTransferId: transfer.id,
+          type: CashTransactionType.CASH_OUT,
+          amount,
+          reason: "Admin majburiy topshiruvi — manba smenadan chiqarildi",
+          createdById: user.id,
+        },
+      });
+      await tx.cashTransaction.create({
+        data: {
+          branchId: source.branchId,
+          shiftId: receiver.id,
+          employeeId: receiver.employeeId,
+          cashTransferId: transfer.id,
+          type: CashTransactionType.CASH_IN,
+          amount,
+          reason: "Admin majburiy topshiruvi — kassaga qabul qilindi",
+          createdById: user.id,
+        },
+      });
+
+      return tx.cashTransfer.findUniqueOrThrow({
+        where: { id: transfer.id },
+        include: {
+          fromShift: { include: { employee: true } },
+          toShift: { include: { employee: true } },
+        },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async openShift(dto: OpenShiftDto, user: AuthenticatedUser) {

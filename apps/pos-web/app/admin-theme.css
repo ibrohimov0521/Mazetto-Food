@@ -210,18 +210,29 @@
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
+.mz-panel-logo {
+  display: block;
+  flex-shrink: 0;
+  width: 154px;
+  height: 38px;
+  object-fit: cover;
+}
 .mz-panel-brand {
-  display: grid;
+  display: none;
   flex-shrink: 0;
   width: 24px;
   height: 28px;
   place-items: center;
-  background: linear-gradient(105deg, #e0d8ff 0 48%, #ffd83d 52% 100%);
+  background: linear-gradient(110deg, #e5dcff 0 58%, #ffd83d 68% 100%);
   background-clip: text;
   color: transparent;
-  font-size: 25px;
+  font-family: "Arial Black", Impact, sans-serif;
+  font-size: 27px;
+  font-style: italic;
   font-weight: 900;
   line-height: 1;
+  -webkit-text-stroke: 0.5px #5d5275;
+  transform: skew(-8deg) rotate(-3deg);
 }
 .mz-panel-actions {
   display: flex;
@@ -252,6 +263,12 @@
 @media (max-width: 767px) {
   .mz-panel-header {
     gap: 4px;
+  }
+  .mz-panel-logo {
+    display: none;
+  }
+  .mz-panel-brand {
+    display: grid;
   }
   .mz-panel-header .mz-panel-actions > :is(button, a) {
     width: 32px;

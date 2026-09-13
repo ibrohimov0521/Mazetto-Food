@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -63,6 +63,15 @@ export class StaffController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.staffService.updateStatus(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Permissions(PERMISSIONS.STAFF_DELETE)
+  deleteStaff(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.staffService.deleteStaff(id, user);
   }
 
   @Post(":id/password-reset")

@@ -73,9 +73,5 @@ export function resolveStaffActionBlock({
     return "Bu tizimdagi oxirgi faol SUPER_ADMIN — uni bloklab bo'lmaydi.";
   }
 
-  if (action === "role") {
-    return "Bu tizimdagi oxirgi faol SUPER_ADMIN — uning rolini o'zgartirib bo'lmaydi.";
-  }
-
   return null;
 }
