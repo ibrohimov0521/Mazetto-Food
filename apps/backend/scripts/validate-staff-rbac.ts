@@ -76,10 +76,10 @@ assert.match(loginPage, /Xavfsiz kirish/);
 assert.match(accessDeniedPage, /Kirish cheklangan/);
 // Guardlar 6-bosqich A2 da sahifalardan `app/(shell)/layout.tsx` ga
 // ko'chdi; qoidalar endi ruxsat matritsasida e'lon qilinadi.
-assert.match(routeAccess, /pattern: "\/admin\/staff", roles: \[[^\]]*\], permission: "STAFF_VIEW"/);
-assert.match(routeAccess, /pattern: "\/admin\/staff\/new", roles: \[[^\]]*\], permission: "STAFF_CREATE"/);
-assert.match(routeAccess, /pattern: "\/admin\/staff\/:id", roles: \[[^\]]*\], permission: "STAFF_UPDATE"/);
-assert.match(routeAccess, /pattern: "\/admin\/reports", roles: \[[^\]]*\], permission: "REPORT_SALES_VIEW"/);
+assertRouteRule(routeAccess, "/admin/staff", "STAFF_VIEW");
+assertRouteRule(routeAccess, "/admin/staff/new", "STAFF_CREATE");
+assertRouteRule(routeAccess, "/admin/staff/:id", "STAFF_UPDATE");
+assertRouteRule(routeAccess, "/admin/reports", "REPORT_SALES_VIEW");
 assert.match(adminStaff, /apiFetch<Staff\[]>\("\/staff"\)/);
 assert.match(adminStaff, /password-reset/);
 assert.match(adminStaff, /\/staff\/me\/password/);
@@ -145,4 +145,17 @@ function findRepoRoot(startPath: string): string {
   }
 
   throw new Error("Could not locate mazetto-food repository root");
+}
+
+function assertRouteRule(source: string, pattern: string, permission: string): void {
+  assert.match(
+    source,
+    new RegExp(
+      `pattern:\\s*"${escapeRegExp(pattern)}"[\\s\\S]*?roles:\\s*\\[[^\\]]*\\][\\s\\S]*?permission:\\s*"${permission}"`,
+    ),
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
