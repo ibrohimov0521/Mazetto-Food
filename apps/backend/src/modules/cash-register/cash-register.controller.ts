@@ -72,6 +72,15 @@ export class CashRegisterController {
     return this.cashRegisterService.listPendingTransfers(user);
   }
 
+  @Get("transfers/:id")
+  @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
+  getTransferDetail(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.getTransferDetail(id, user);
+  }
+
   @Post("transfers/:id/accept")
   @Permissions(PERMISSIONS.CASH_TRANSACTION_CREATE)
   acceptTransfer(

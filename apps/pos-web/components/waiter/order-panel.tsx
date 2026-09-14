@@ -150,8 +150,10 @@ export function OrderPanel({
                   onClick={() => onSelectOrder(entry.id)}
                   type="button"
                 >
-                  {entry.isSupplemental ? "Qo'shimcha " : ""}#
-                  {orderLabel(entry)}
+                  {entry.isSupplemental
+                    ? `Qo'shimcha ${entry.supplementNumber ?? ""} · `
+                    : ""}
+                  #{orderLabel(entry)}
                 </button>
               ))}
             </div>
@@ -164,8 +166,10 @@ export function OrderPanel({
               <div>
                 <dt>Buyurtma</dt>
                 <dd>
-                  {order.isSupplemental ? "Qo'shimcha " : ""}#
-                  {orderLabel(order)}
+                  {order.isSupplemental
+                    ? `Qo'shimcha ${order.supplementNumber ?? ""} · `
+                    : ""}
+                  #{orderLabel(order)}
                 </dd>
               </div>
               <div>
@@ -356,9 +360,7 @@ export function OrderPanel({
                 disabled={
                   busy || (!isOrderEditable(order) && !canOpenAdditional)
                 }
-                onClick={
-                  isOrderEditable(order) ? onGoToMenu : onOpenAdditional
-                }
+                onClick={isOrderEditable(order) ? onGoToMenu : onOpenAdditional}
                 type="button"
               >
                 {isOrderEditable(order) ? (

@@ -330,7 +330,15 @@ export class TablesService {
           tableId: id,
           status: { in: activeTableOrderStatuses },
         },
-        select: { id: true, status: true },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          status: true,
+          isSupplemental: true,
+          parentOrderId: true,
+          supplementNumber: true,
+          createdAt: true,
+        },
       });
 
       if (!dto.isSupplemental && existingOrders.length) {
@@ -359,6 +367,28 @@ export class TablesService {
         }
       }
 
+      const parentOrder = dto.isSupplemental
+        ? existingOrders.find((candidate) => !candidate.isSupplemental)
+        : undefined;
+      if (dto.isSupplemental && !parentOrder) {
+        throw new BadRequestException(
+          "Qo'shimcha buyurtmaning asosiy buyurtmasi topilmadi",
+        );
+      }
+      const supplementNumber = parentOrder
+        ? Math.max(
+            0,
+            ...existingOrders
+              .filter(
+                (candidate) =>
+                  candidate.isSupplemental &&
+                  (!candidate.parentOrderId ||
+                    candidate.parentOrderId === parentOrder.id),
+              )
+              .map((candidate) => candidate.supplementNumber ?? 0),
+          ) + 1
+        : null;
+
       const displayOrder = await allocateDisplayOrderNumber(
         tx,
         OrderSource.POS,
@@ -374,6 +404,8 @@ export class TablesService {
           source: OrderSource.POS,
           type: dto.type ?? OrderType.DINE_IN,
           isSupplemental: dto.isSupplemental ?? false,
+          parentOrderId: parentOrder?.id ?? null,
+          supplementNumber,
           status: OrderStatus.NEW,
           guestCount: dto.guestCount ?? null,
           notes: dto.notes ?? null,
@@ -410,6 +442,8 @@ export class TablesService {
           legacyStatus: OrderStatus.NEW,
           type: order.type,
           isSupplemental: order.isSupplemental,
+          parentOrderId: order.parentOrderId,
+          supplementNumber: order.supplementNumber,
         },
         reasonCode: dto.isSupplemental
           ? "SUPPLEMENTAL_TABLE_ORDER_CREATED"

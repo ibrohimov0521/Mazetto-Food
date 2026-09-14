@@ -5,6 +5,7 @@ import { ArrowUpRight, Check, Clock3 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { StaffDialog } from "./staff-shell";
 import styles from "./staff.module.css";
+import { CashTransferDetailButton } from "./cash-transfer-detail";
 
 export type OutgoingTransfer = {
   id: string;
@@ -63,7 +64,9 @@ export function CashHandover({
 
   useEffect(() => {
     if (!receivers.some((candidate) => candidate.shiftId === receiverShiftId)) {
-      setReceiverShiftId(receivers.length === 1 ? receivers[0]?.shiftId ?? "" : "");
+      setReceiverShiftId(
+        receivers.length === 1 ? (receivers[0]?.shiftId ?? "") : "",
+      );
     }
   }, [receiverShiftId, receivers]);
 
@@ -208,6 +211,7 @@ export function CashHandover({
                 )}
                 {labels[transfer.status] ?? transfer.status}
               </span>
+              <CashTransferDetailButton transferId={transfer.id} />
             </article>
           ))}
         </div>
@@ -224,9 +228,9 @@ export function CashHandover({
           <p className={styles.muted}>
             {receiver
               ? `${receiver.firstName} ${receiver.lastName ?? ""} kassir smenasiga yuboriladi.`
-              : "Avval pulni qabul qiladigan kassirni tanlang."} Summa
-            kassangizdan chiqariladi va qabul qilinmaguncha topshirish holatida
-            turadi.
+              : "Avval pulni qabul qiladigan kassirni tanlang."}{" "}
+            Summa kassangizdan chiqariladi va qabul qilinmaguncha topshirish
+            holatida turadi.
           </p>
           {error && (
             <p className={styles.error} role="alert">

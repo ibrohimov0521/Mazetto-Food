@@ -18,17 +18,17 @@ import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
-import { eventForLegacyStatus, orderStateForLegacyStatus, recordOrderEvent } from "../orders/order-events";
+import {
+  eventForLegacyStatus,
+  orderStateForLegacyStatus,
+  recordOrderEvent,
+} from "../orders/order-events";
 import {
   kitchenEvents,
   kitchenOrderStatusChangedEvent,
 } from "./kitchen-events";
 import { KitchenGateway } from "./kitchen.gateway";
-import {
-  kitchenStatusForOrder,
-  orderStatusAfterKitchenHandoff,
-  syncKitchenTickets,
-} from "./kitchen-status-sync";
+import { orderStatusAfterKitchenHandoff } from "./kitchen-status-sync";
 
 type TransactionClient = Prisma.TransactionClient;
 export type KitchenStaffAction =
@@ -62,6 +62,7 @@ type KitchenTransitionOrder = {
     id: string;
     orderId: string;
     status: KitchenTicketStatus;
+    version: number;
     acceptedAt: Date | null;
     completedAt: Date | null;
   }[];
@@ -105,14 +106,16 @@ export class KitchenService {
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
       take: 250,
     });
-    return tickets.map((ticket) => ({
-      ...ticket,
-      status: kitchenStatusForOrder(ticket.order.status) ?? ticket.status,
-    }));
+    return tickets;
   }
 
   async listHistory(
-    query: { status?: string; search?: string; limit?: string; offset?: string },
+    query: {
+      status?: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
     user: AuthenticatedUser,
   ) {
     const employeeId = this.requireEmployee(user);
@@ -137,10 +140,21 @@ export class KitchenService {
             ? {
                 OR: [
                   { orderNumber: { contains: search, mode: "insensitive" } },
-                  { displayOrderNumber: { contains: search, mode: "insensitive" } },
+                  {
+                    displayOrderNumber: {
+                      contains: search,
+                      mode: "insensitive",
+                    },
+                  },
                   { customerName: { contains: search, mode: "insensitive" } },
                   { customerPhone: { contains: search, mode: "insensitive" } },
-                  { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+                  {
+                    items: {
+                      some: {
+                        productName: { contains: search, mode: "insensitive" },
+                      },
+                    },
+                  },
                 ],
               }
             : {}),
@@ -152,10 +166,7 @@ export class KitchenService {
       take: this.parseLimit(query.limit),
     });
 
-    return tickets.map((ticket) => ({
-      ...ticket,
-      status: kitchenStatusForOrder(ticket.order.status) ?? ticket.status,
-    }));
+    return tickets;
   }
 
   async createTicketForOrder(tx: TransactionClient, orderId: string) {
@@ -173,12 +184,65 @@ export class KitchenService {
       return existingTicket;
     }
 
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: {
+        version: true,
+        isSupplemental: true,
+        supplementNumber: true,
+        items: {
+          where: { status: OrderItemStatus.ACTIVE },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            productName: true,
+            variantName: true,
+            quantity: true,
+            notes: true,
+            modifierSnapshot: true,
+            status: true,
+          },
+        },
+      },
+    });
+    if (!order || order.items.length === 0) {
+      throw new BadRequestException(
+        "Oshxona chiptasi uchun kamida bitta faol mahsulot kerak",
+      );
+    }
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         return await tx.kitchenTicket.create({
           data: {
             orderId,
             ticketNumber: this.createTicketNumber(),
+            revisionNumber: order.supplementNumber ?? 1,
+            isSupplement: order.isSupplemental,
+            sourceOrderVersion: order.version,
+            items: {
+              create: order.items.map((item) => ({
+                orderItemId: item.id,
+                productName: item.productName,
+                variantName: item.variantName,
+                quantity: item.quantity,
+                notes: item.notes,
+                modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
+                status: item.status,
+              })),
+            },
+            events: {
+              create: {
+                eventType: order.isSupplemental
+                  ? "KitchenSupplementCreated"
+                  : "KitchenTicketCreated",
+                newStatus: KitchenTicketStatus.NEW,
+                reason: order.isSupplemental
+                  ? `Qo'shimcha #${order.supplementNumber ?? 1}`
+                  : "Asosiy buyurtma oshxonaga yuborildi",
+                version: 1,
+              },
+            },
           },
           include: this.ticketInclude(),
         });
@@ -266,7 +330,6 @@ export class KitchenService {
         resolveBranchScope(actor.user, order.branchId);
       }
 
-      await syncKitchenTickets(tx, orderId, order.status);
       const storedTicket = order.kitchenTickets[0] ?? null;
       const ticket =
         storedTicket &&
@@ -276,8 +339,7 @@ export class KitchenService {
         ].includes(storedTicket.status as "COMPLETED" | "CANCELLED")
           ? {
               ...storedTicket,
-              status:
-                kitchenStatusForOrder(order.status) ?? storedTicket.status,
+              status: storedTicket.status,
             }
           : storedTicket;
 
@@ -310,7 +372,9 @@ export class KitchenService {
 
       if (order.status !== transition.orderStatus) {
         orderData.status = transition.orderStatus;
-        orderData.orderState = orderStateForLegacyStatus(transition.orderStatus);
+        orderData.orderState = orderStateForLegacyStatus(
+          transition.orderStatus,
+        );
         orderData.version = { increment: 1 };
       }
 
@@ -336,7 +400,10 @@ export class KitchenService {
       }
 
       if (Object.keys(orderData).length > 0) {
-        const updated = await tx.order.update({ where: { id: orderId }, data: orderData });
+        const updated = await tx.order.update({
+          where: { id: orderId },
+          data: orderData,
+        });
         if (order.status !== transition.orderStatus) {
           await recordOrderEvent(tx, {
             orderId,
@@ -348,7 +415,11 @@ export class KitchenService {
             source: user ? "API" : "SYSTEM",
             previousState: order.orderState,
             newState: updated.orderState,
-            payload: { fromStatus: order.status, toStatus: transition.orderStatus, kitchenAction: action },
+            payload: {
+              fromStatus: order.status,
+              toStatus: transition.orderStatus,
+              kitchenAction: action,
+            },
             reasonCode: `KITCHEN_${action.toUpperCase()}`,
           });
         }
@@ -368,10 +439,11 @@ export class KitchenService {
       }
 
       if (ticket.status !== transition.ticketStatus) {
-        await tx.kitchenTicket.update({
+        const updatedTicket = await tx.kitchenTicket.update({
           where: { id: ticket.id },
           data: {
             status: transition.ticketStatus,
+            version: { increment: 1 },
             ...(transition.ticketStatus === KitchenTicketStatus.ACCEPTED ||
             transition.ticketStatus === KitchenTicketStatus.COOKING
               ? { acceptedAt: ticket.acceptedAt ?? now }
@@ -380,6 +452,20 @@ export class KitchenService {
             transition.ticketStatus === KitchenTicketStatus.CANCELLED
               ? { completedAt: ticket.completedAt ?? now }
               : {}),
+          },
+        });
+        await tx.kitchenTicketEvent.create({
+          data: {
+            ticketId: ticket.id,
+            eventType: `KitchenTicket${this.actionEventSuffix(action)}`,
+            previousStatus: ticket.status,
+            newStatus: transition.ticketStatus,
+            actorId: user?.id ?? null,
+            reason:
+              action === "cancel"
+                ? (actor.cancellationReason ?? null)
+                : `${actor.reasonPrefix}: ${this.actionLabel(action)}`,
+            version: updatedTicket.version,
           },
         });
       }
@@ -614,7 +700,9 @@ export class KitchenService {
       data: { updatedAt: occurredAt },
     });
     if (openShift.count !== 1) {
-      throw new BadRequestException("Xodim smenasi yopilgan. Naqd pul qabul qilinmadi.");
+      throw new BadRequestException(
+        "Xodim smenasi yopilgan. Naqd pul qabul qilinmadi.",
+      );
     }
 
     const branchCashMethod = await tx.paymentMethod.findFirst({
@@ -710,6 +798,7 @@ export class KitchenService {
             id: true,
             orderId: true,
             status: true,
+            version: true,
             acceptedAt: true,
             completedAt: true,
           },
@@ -743,8 +832,24 @@ export class KitchenService {
     return labels[action];
   }
 
+  private actionEventSuffix(action: KitchenStaffAction): string {
+    const suffixes: Record<KitchenStaffAction, string> = {
+      accept: "Accepted",
+      start_preparing: "PreparationStarted",
+      mark_ready: "MarkedReady",
+      complete: "HandedOff",
+      cancel: "Cancelled",
+    };
+    return suffixes[action];
+  }
+
   private ticketInclude() {
     return {
+      items: {
+        where: { status: OrderItemStatus.ACTIVE },
+        orderBy: { createdAt: "asc" },
+      },
+      events: { orderBy: { version: "asc" } },
       order: {
         include: {
           branch: true,
@@ -754,7 +859,12 @@ export class KitchenService {
             orderBy: { createdAt: "asc" },
             include: {
               changedByEmployee: {
-                select: { id: true, firstName: true, lastName: true, employeeCode: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  employeeCode: true,
+                },
               },
               changedByUser: {
                 select: { id: true, displayName: true, email: true },
@@ -772,7 +882,9 @@ export class KitchenService {
 
   private requireEmployee(user: AuthenticatedUser): string {
     if (!user.employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
     }
 
     return user.employeeId;
@@ -781,11 +893,12 @@ export class KitchenService {
   private todayTashkentRange(): { start: Date; end: Date } {
     const offsetMs = 5 * 60 * 60 * 1000;
     const shifted = new Date(Date.now() + offsetMs);
-    const startUtcMs = Date.UTC(
-      shifted.getUTCFullYear(),
-      shifted.getUTCMonth(),
-      shifted.getUTCDate(),
-    ) - offsetMs;
+    const startUtcMs =
+      Date.UTC(
+        shifted.getUTCFullYear(),
+        shifted.getUTCMonth(),
+        shifted.getUTCDate(),
+      ) - offsetMs;
 
     return {
       start: new Date(startUtcMs),
@@ -793,15 +906,21 @@ export class KitchenService {
     };
   }
 
-  private toKitchenTicketStatus(status?: string): KitchenTicketStatus | undefined {
-    return Object.values(KitchenTicketStatus).includes(status as KitchenTicketStatus)
+  private toKitchenTicketStatus(
+    status?: string,
+  ): KitchenTicketStatus | undefined {
+    return Object.values(KitchenTicketStatus).includes(
+      status as KitchenTicketStatus,
+    )
       ? (status as KitchenTicketStatus)
       : undefined;
   }
 
   private parseLimit(value?: string): number {
     const parsed = Number(value ?? 50);
-    return Number.isFinite(parsed) ? Math.min(100, Math.max(1, Math.trunc(parsed))) : 50;
+    return Number.isFinite(parsed)
+      ? Math.min(100, Math.max(1, Math.trunc(parsed)))
+      : 50;
   }
 
   private parseOffset(value?: string): number {

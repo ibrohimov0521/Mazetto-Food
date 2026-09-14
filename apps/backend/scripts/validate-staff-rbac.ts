@@ -95,7 +95,7 @@ assert.match(
 
 assert.match(staffDto, /MinLength\(8\)/);
 assert.match(staffService, /hash\(dto\.password, 12\)/);
-assert.match(staffService, /compare\(dto\.currentPassword/);
+assert.match(staffService, /compare\(\s*dto\.currentPassword/);
 assert.match(staffService, /revokeUserSessions/);
 assert.match(
   staffService,
@@ -147,7 +147,10 @@ for (const href of [
 ]) {
   assert.match(staffPanelNavigation, new RegExp(escapeRegExp(`"${href}"`)));
 }
-assert.match(kitchenTicketCard, /const shownItems = ticket\.order\.items/);
+assert.match(
+  kitchenTicketCard,
+  /const shownItems = ticket\.items\?\.length \? ticket\.items : ticket\.order\.items/,
+);
 assert.match(kitchenTicketCard, /data-compact=\{isCompact\}/);
 assert.match(kitchenTicketCard, /ticketCompactSummary/);
 assert.doesNotMatch(kitchenTicketCard, /const \[expanded\b/);
@@ -183,8 +186,8 @@ assert.match(authCache, /const TTL_SECONDS = 30/);
 // Xodim profilini o'zgartiradigan yoki o'chiradigan har bir yo'l keshni tozalashi kerak.
 assert.equal(
   (staffService.match(/this\.userAuthCache\.invalidate\(/g) ?? []).length,
-  6,
-  "oltita mutatsiya yo'li ham keshni bekor qilishi kerak",
+  8,
+  "sakkizta mutatsiya yo'li ham keshni bekor qilishi kerak",
 );
 
 console.info("Staff RBAC static validation passed");

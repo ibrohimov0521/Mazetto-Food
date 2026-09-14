@@ -70,7 +70,10 @@ export class ShiftsService {
       ...shift,
       currentCash:
         shift.status === ShiftStatus.OPEN
-          ? this.calculateCashBalance(shift.openingBalance, shift.cashTransactions)
+          ? this.calculateCashBalance(
+              shift.openingBalance,
+              shift.cashTransactions,
+            )
           : null,
       cashTransactions: undefined,
     }));
@@ -81,129 +84,161 @@ export class ShiftsService {
     dto: ForceCashHandoverDto,
     user: AuthenticatedUser,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const sourceLock = await tx.$queryRawUnsafe<{ id: string }[]>(
-        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
-        sourceShiftId,
-      );
-      if (sourceLock.length !== 1) {
-        throw new NotFoundException("Source shift not found");
-      }
+    return this.prisma.$transaction(
+      async (tx) => {
+        const sourceLock = await tx.$queryRawUnsafe<{ id: string }[]>(
+          'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+          sourceShiftId,
+        );
+        if (sourceLock.length !== 1) {
+          throw new NotFoundException("Source shift not found");
+        }
 
-      const source = await tx.shift.findUnique({ where: { id: sourceShiftId } });
-      if (!source) throw new NotFoundException("Source shift not found");
-      if (source.status !== ShiftStatus.OPEN) {
-        throw new BadRequestException("Faqat ochiq smenadan pul topshiriladi");
-      }
-      resolveBranchScope(user, source.branchId);
-      if (sourceShiftId === dto.toShiftId) {
-        throw new BadRequestException("Manba va qabul qiluvchi smena bir xil bo'lmasligi kerak");
-      }
+        const source = await tx.shift.findUnique({
+          where: { id: sourceShiftId },
+        });
+        if (!source) throw new NotFoundException("Source shift not found");
+        if (source.status !== ShiftStatus.OPEN) {
+          throw new BadRequestException(
+            "Faqat ochiq smenadan pul topshiriladi",
+          );
+        }
+        resolveBranchScope(user, source.branchId);
+        if (sourceShiftId === dto.toShiftId) {
+          throw new BadRequestException(
+            "Manba va qabul qiluvchi smena bir xil bo'lmasligi kerak",
+          );
+        }
 
-      const receiverLock = await tx.$queryRawUnsafe<{ id: string }[]>(
-        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
-        dto.toShiftId,
-      );
-      if (receiverLock.length !== 1) {
-        throw new NotFoundException("Qabul qiluvchi smena topilmadi");
-      }
-      const receiver = await tx.shift.findUnique({
-        where: { id: dto.toShiftId },
-        include: {
-          employee: {
-            select: {
-              id: true,
-              status: true,
-              user: { select: { roles: { select: { role: { select: { code: true } } } } } },
+        const receiverLock = await tx.$queryRawUnsafe<{ id: string }[]>(
+          'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+          dto.toShiftId,
+        );
+        if (receiverLock.length !== 1) {
+          throw new NotFoundException("Qabul qiluvchi smena topilmadi");
+        }
+        const receiver = await tx.shift.findUnique({
+          where: { id: dto.toShiftId },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                status: true,
+                user: {
+                  select: {
+                    roles: { select: { role: { select: { code: true } } } },
+                  },
+                },
+              },
             },
           },
-        },
-      });
-      if (!receiver || receiver.status !== ShiftStatus.OPEN) {
-        throw new BadRequestException("Qabul qiluvchi smena ochiq emas");
-      }
-      if (receiver.branchId !== source.branchId) {
-        throw new ForbiddenException("Pulni faqat shu filialdagi smenaga topshirish mumkin");
-      }
-      const receiverRoles = receiver.employee.user?.roles.map((item) => item.role.code) ?? [];
-      if (
-        receiver.employee.status !== "ACTIVE" ||
-        !receiverRoles.some((role) => ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"].includes(role))
-      ) {
-        throw new BadRequestException("Tanlangan xodim pul qabul qiluvchi kassir emas");
-      }
+        });
+        if (!receiver || receiver.status !== ShiftStatus.OPEN) {
+          throw new BadRequestException("Qabul qiluvchi smena ochiq emas");
+        }
+        if (receiver.branchId !== source.branchId) {
+          throw new ForbiddenException(
+            "Pulni faqat shu filialdagi smenaga topshirish mumkin",
+          );
+        }
+        const receiverRoles =
+          receiver.employee.user?.roles.map((item) => item.role.code) ?? [];
+        if (
+          receiver.employee.status !== "ACTIVE" ||
+          !receiverRoles.some((role) =>
+            ["CASHIER", "BRANCH_MANAGER", "SUPER_ADMIN"].includes(role),
+          )
+        ) {
+          throw new BadRequestException(
+            "Tanlangan xodim pul qabul qiluvchi kassir emas",
+          );
+        }
 
-      const transactions = await tx.cashTransaction.findMany({
-        where: { shiftId: source.id },
-        select: { amount: true, type: true },
-      });
-      const balance = this.calculateCashBalance(source.openingBalance, transactions);
-      const amount = new Prisma.Decimal(dto.amount ?? balance);
-      if (amount.lessThanOrEqualTo(0) || amount.greaterThan(balance)) {
-        throw new BadRequestException("Topshirish summasi kassadagi joriy naqd qoldiqdan oshmasligi kerak");
-      }
+        const transactions = await tx.cashTransaction.findMany({
+          where: { shiftId: source.id },
+          select: { amount: true, type: true },
+        });
+        const balance = this.calculateCashBalance(
+          source.openingBalance,
+          transactions,
+        );
+        const amount = new Prisma.Decimal(dto.amount ?? balance);
+        if (amount.lessThanOrEqualTo(0) || amount.greaterThan(balance)) {
+          throw new BadRequestException(
+            "Topshirish summasi kassadagi joriy naqd qoldiqdan oshmasligi kerak",
+          );
+        }
 
-      const transfer = await tx.cashTransfer.create({
-        data: {
-          branchId: source.branchId,
-          fromShiftId: source.id,
-          toShiftId: receiver.id,
-          status: CashTransferStatus.ACCEPTED,
+        const transfer = await tx.cashTransfer.create({
+          data: {
+            branchId: source.branchId,
+            fromShiftId: source.id,
+            toShiftId: receiver.id,
+            status: CashTransferStatus.ACCEPTED,
+            amount,
+            reason: dto.reason?.trim() || "Admin majburiy naqd topshiruvi",
+            createdById: user.id,
+            acceptedById: user.id,
+            acceptedAt: new Date(),
+          },
+        });
+        await this.createTransferAllocations(
+          tx,
+          transfer.id,
+          source.id,
           amount,
-          reason: dto.reason?.trim() || "Admin majburiy naqd topshiruvi",
-          createdById: user.id,
-          acceptedById: user.id,
-          acceptedAt: new Date(),
-        },
-      });
-      await tx.cashTransaction.create({
-        data: {
-          branchId: source.branchId,
-          shiftId: source.id,
-          employeeId: source.employeeId,
-          cashTransferId: transfer.id,
-          type: CashTransactionType.CASH_OUT,
-          amount,
-          reason: "Admin majburiy topshiruvi — manba smenadan chiqarildi",
-          createdById: user.id,
-        },
-      });
-      await tx.cashTransaction.create({
-        data: {
-          branchId: source.branchId,
-          shiftId: receiver.id,
-          employeeId: receiver.employeeId,
-          cashTransferId: transfer.id,
-          type: CashTransactionType.CASH_IN,
-          amount,
-          reason: "Admin majburiy topshiruvi — kassaga qabul qilindi",
-          createdById: user.id,
-        },
-      });
+        );
+        await tx.cashTransaction.create({
+          data: {
+            branchId: source.branchId,
+            shiftId: source.id,
+            employeeId: source.employeeId,
+            cashTransferId: transfer.id,
+            type: CashTransactionType.CASH_OUT,
+            amount,
+            reason: "Admin majburiy topshiruvi — manba smenadan chiqarildi",
+            createdById: user.id,
+          },
+        });
+        await tx.cashTransaction.create({
+          data: {
+            branchId: source.branchId,
+            shiftId: receiver.id,
+            employeeId: receiver.employeeId,
+            cashTransferId: transfer.id,
+            type: CashTransactionType.CASH_IN,
+            amount,
+            reason: "Admin majburiy topshiruvi — kassaga qabul qilindi",
+            createdById: user.id,
+          },
+        });
 
-      await writeAuditLog(tx, {
-        userId: user.id,
-        action: "CASH_HANDOVER_FORCED",
-        entity: "Shift",
-        entityId: source.id,
-        metadata: {
-          branchId: source.branchId,
-          transferId: transfer.id,
-          fromShiftId: source.id,
-          toShiftId: receiver.id,
-          amount: amount.toString(),
-          reason: transfer.reason,
-        },
-      });
+        await writeAuditLog(tx, {
+          userId: user.id,
+          action: "CASH_HANDOVER_FORCED",
+          entity: "Shift",
+          entityId: source.id,
+          metadata: {
+            branchId: source.branchId,
+            transferId: transfer.id,
+            fromShiftId: source.id,
+            toShiftId: receiver.id,
+            amount: amount.toString(),
+            reason: transfer.reason,
+          },
+        });
 
-      return tx.cashTransfer.findUniqueOrThrow({
-        where: { id: transfer.id },
-        include: {
-          fromShift: { include: { employee: true } },
-          toShift: { include: { employee: true } },
-        },
-      });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        return tx.cashTransfer.findUniqueOrThrow({
+          where: { id: transfer.id },
+          include: {
+            fromShift: { include: { employee: true } },
+            toShift: { include: { employee: true } },
+            allocations: this.transferAllocationInclude(),
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async openShift(dto: OpenShiftDto, user: AuthenticatedUser) {
@@ -589,9 +624,8 @@ export class ShiftsService {
           "O'zingizning smenangizni qabul qiluvchi sifatida tanlab bo'lmaydi",
         );
       }
-      const receiverRoles = receiverShift.employee.user?.roles.map(
-        (item) => item.role.code,
-      ) ?? [];
+      const receiverRoles =
+        receiverShift.employee.user?.roles.map((item) => item.role.code) ?? [];
       if (
         receiverShift.employee.status !== "ACTIVE" ||
         !receiverRoles.some((role) =>
@@ -614,6 +648,8 @@ export class ShiftsService {
         },
       });
 
+      await this.createTransferAllocations(tx, transfer.id, shift.id, amount);
+
       await tx.cashTransaction.create({
         data: {
           branchId: shift.branchId,
@@ -632,9 +668,30 @@ export class ShiftsService {
         include: {
           fromShift: { include: { employee: true } },
           toShift: { include: { employee: true } },
+          allocations: this.transferAllocationInclude(),
         },
       });
     });
+  }
+
+  async getCashTransferDetail(id: string, user: AuthenticatedUser) {
+    const transfer = await this.prisma.cashTransfer.findUnique({
+      where: { id },
+      include: {
+        branch: { select: { id: true, name: true } },
+        fromShift: { include: { employee: true } },
+        toShift: { include: { employee: true } },
+        allocations: this.transferAllocationInclude(),
+      },
+    });
+
+    if (!transfer) {
+      throw new NotFoundException("Pul topshiruvi topilmadi");
+    }
+
+    resolveBranchScope(user, transfer.branchId);
+    this.assertCanInspectShift(user, transfer.fromShift.employeeId);
+    return transfer;
   }
 
   async listCashTransferReceivers(user: AuthenticatedUser) {
@@ -697,7 +754,8 @@ export class ShiftsService {
   async listPendingCashTransfers(user: AuthenticatedUser) {
     this.assertCashReceiver(user);
     const employeeId = user.employeeId;
-    if (!employeeId) throw new ForbiddenException("Employee profile is required");
+    if (!employeeId)
+      throw new ForbiddenException("Employee profile is required");
     const receiverShift = await this.prisma.shift.findFirst({
       where: { employeeId, status: ShiftStatus.OPEN },
       orderBy: { openedAt: "desc" },
@@ -715,6 +773,7 @@ export class ShiftsService {
       include: {
         fromShift: { include: { employee: true } },
         toShift: { include: { employee: true } },
+        allocations: this.transferAllocationInclude(),
       },
       orderBy: { createdAt: "asc" },
       take: 100,
@@ -808,6 +867,7 @@ export class ShiftsService {
         include: {
           fromShift: { include: { employee: true } },
           toShift: { include: { employee: true } },
+          allocations: this.transferAllocationInclude(),
         },
       });
     });
@@ -940,6 +1000,234 @@ export class ShiftsService {
         ? balance.sub(transaction.amount)
         : balance.add(transaction.amount);
     }, startingBalance);
+  }
+
+  /**
+   * Free cash is reconstructed as FIFO source buckets. Every debit consumes
+   * the oldest remaining source; the new handover snapshots the exact buckets
+   * it consumes. This makes partial handovers explainable without rewriting
+   * historical orders or payments.
+   */
+  private async createTransferAllocations(
+    tx: Prisma.TransactionClient,
+    cashTransferId: string,
+    shiftId: string,
+    requestedAmount: Prisma.Decimal,
+  ) {
+    const shift = await tx.shift.findUniqueOrThrow({
+      where: { id: shiftId },
+      select: { openingBalance: true },
+    });
+    const transactions = await tx.cashTransaction.findMany({
+      where: { shiftId },
+      orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        type: true,
+        amount: true,
+        orderId: true,
+        paymentId: true,
+        cashTransferId: true,
+        reason: true,
+        order: {
+          select: {
+            orderNumber: true,
+            displayOrderNumber: true,
+          },
+        },
+        cashTransfer: {
+          select: {
+            allocations: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                sourceTransactionId: true,
+                orderId: true,
+                paymentId: true,
+                sourceType: true,
+                sourceLabel: true,
+                amount: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    type Bucket = {
+      sourceTransactionId: string | null;
+      orderId: string | null;
+      paymentId: string | null;
+      sourceType: string;
+      sourceLabel: string | null;
+      remaining: Prisma.Decimal;
+    };
+    const buckets: Bucket[] = [];
+    const hasOpeningEntry = transactions.some(
+      (item) =>
+        item.type === CashTransactionType.OPENING ||
+        item.type === CashTransactionType.OPENING_BALANCE,
+    );
+    if (!hasOpeningEntry && shift.openingBalance.greaterThan(0)) {
+      buckets.push({
+        sourceTransactionId: null,
+        orderId: null,
+        paymentId: null,
+        sourceType: "OPENING_BALANCE",
+        sourceLabel: "Smena boshlang'ich qoldig'i",
+        remaining: shift.openingBalance,
+      });
+    }
+
+    const creditTypes: CashTransactionType[] = [
+      CashTransactionType.OPENING,
+      CashTransactionType.OPENING_BALANCE,
+      CashTransactionType.SALE,
+      CashTransactionType.INCOME,
+      CashTransactionType.CASH_IN,
+    ];
+    const debitTypes: CashTransactionType[] = [
+      CashTransactionType.REFUND,
+      CashTransactionType.EXPENSE,
+      CashTransactionType.WITHDRAW,
+      CashTransactionType.CASH_OUT,
+    ];
+
+    const consume = (amount: Prisma.Decimal) => {
+      let remainder = amount;
+      for (const bucket of buckets) {
+        if (remainder.lessThanOrEqualTo(0)) break;
+        if (bucket.remaining.lessThanOrEqualTo(0)) continue;
+        const used = Prisma.Decimal.min(bucket.remaining, remainder);
+        bucket.remaining = bucket.remaining.sub(used);
+        remainder = remainder.sub(used);
+      }
+      return remainder;
+    };
+
+    for (const item of transactions) {
+      if (creditTypes.includes(item.type)) {
+        if (
+          item.type === CashTransactionType.CASH_IN &&
+          item.cashTransferId &&
+          item.cashTransfer?.allocations.length
+        ) {
+          for (const allocation of item.cashTransfer.allocations) {
+            buckets.push({
+              sourceTransactionId: allocation.sourceTransactionId,
+              orderId: allocation.orderId,
+              paymentId: allocation.paymentId,
+              sourceType: allocation.sourceType,
+              sourceLabel: allocation.sourceLabel,
+              remaining: allocation.amount,
+            });
+          }
+          continue;
+        }
+        const orderNumber =
+          item.order?.displayOrderNumber ?? item.order?.orderNumber;
+        buckets.push({
+          sourceTransactionId: item.id,
+          orderId: item.orderId,
+          paymentId: item.paymentId,
+          sourceType: item.type,
+          sourceLabel: orderNumber
+            ? `Buyurtma #${orderNumber}`
+            : item.reason?.trim() || this.cashSourceLabel(item.type),
+          remaining: item.amount,
+        });
+      } else if (debitTypes.includes(item.type)) {
+        consume(item.amount);
+      }
+    }
+
+    let remainder = requestedAmount;
+    const allocations: Array<{
+      cashTransferId: string;
+      sourceTransactionId: string | null;
+      orderId: string | null;
+      paymentId: string | null;
+      sourceType: string;
+      sourceLabel: string | null;
+      amount: Prisma.Decimal;
+    }> = [];
+    for (const bucket of buckets) {
+      if (remainder.lessThanOrEqualTo(0)) break;
+      if (bucket.remaining.lessThanOrEqualTo(0)) continue;
+      const used = Prisma.Decimal.min(bucket.remaining, remainder);
+      allocations.push({
+        cashTransferId,
+        sourceTransactionId: bucket.sourceTransactionId,
+        orderId: bucket.orderId,
+        paymentId: bucket.paymentId,
+        sourceType: bucket.sourceType,
+        sourceLabel: bucket.sourceLabel,
+        amount: used,
+      });
+      remainder = remainder.sub(used);
+    }
+
+    if (remainder.greaterThan(0)) {
+      throw new BadRequestException(
+        "Pul tarkibi joriy qoldiq bilan mos kelmadi. Smenani yangilab qayta urinib ko'ring.",
+      );
+    }
+
+    if (allocations.length > 0) {
+      await tx.cashTransferAllocation.createMany({ data: allocations });
+    }
+  }
+
+  private cashSourceLabel(type: CashTransactionType): string {
+    const labels: Partial<Record<CashTransactionType, string>> = {
+      OPENING: "Smena ochilishi",
+      OPENING_BALANCE: "Boshlang'ich qoldiq",
+      SALE: "Naqd savdo",
+      INCOME: "Boshqa kirim",
+      CASH_IN: "Xodimdan qabul qilingan naqd",
+    };
+    return labels[type] ?? type;
+  }
+
+  private assertCanInspectShift(
+    user: AuthenticatedUser,
+    shiftEmployeeId: string,
+  ): void {
+    if (
+      user.employeeId === shiftEmployeeId ||
+      user.roles.some((role) =>
+        ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role),
+      )
+    ) {
+      return;
+    }
+    throw new ForbiddenException("Boshqa xodim smenasini ko'rish mumkin emas");
+  }
+
+  private transferAllocationInclude() {
+    return {
+      include: {
+        sourceTransaction: {
+          select: { id: true, type: true, occurredAt: true, reason: true },
+        },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            displayOrderNumber: true,
+            total: true,
+            createdAt: true,
+          },
+        },
+        payment: {
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            method: { select: { code: true, name: true } },
+          },
+        },
+      },
+    } as const;
   }
 
   private calculateShiftTotals(

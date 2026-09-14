@@ -1,4 +1,15 @@
-import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 export class CreateStaffDto {
   @IsString()
@@ -81,6 +92,28 @@ export class UpdateStaffRoleDto {
 export class UpdateStaffStatusDto {
   @IsBoolean()
   isActive!: boolean;
+}
+
+export class TerminateStaffDto {
+  @IsOptional()
+  @IsDateString()
+  terminatedAt?: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason!: string;
+}
+
+export class RehireStaffDto {
+  @IsOptional()
+  @IsDateString()
+  hiredAt?: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason!: string;
 }
 
 export class ResetStaffPasswordDto {

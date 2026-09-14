@@ -25,6 +25,7 @@ import {
   type CashReceiver,
   type OutgoingTransfer,
 } from "../../../components/staff/cash-handover";
+import { CashTransferDetailButton } from "../../../components/staff/cash-transfer-detail";
 
 type CashTransfer = {
   id: string;
@@ -376,6 +377,7 @@ function ShiftConsole() {
                       </div>
                       <div className={styles.historyAmount}>
                         <strong>{money(transfer.amount)}</strong>
+                        <CashTransferDetailButton transferId={transfer.id} />
                         <button
                           className={styles.primary}
                           disabled={isSaving}

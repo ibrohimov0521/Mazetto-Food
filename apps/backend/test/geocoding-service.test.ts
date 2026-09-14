@@ -64,7 +64,11 @@ test("O'zbekistondan tashqaridagi nuqta inCity: false qaytaradi", async () => {
     address: { country_code: "kz", state: "Turkistan Region" },
   }));
   try {
-    const result = await new GeocodingService(cache).reverse(41.44, 69.16, "en");
+    const result = await new GeocodingService(cache).reverse(
+      41.44,
+      69.16,
+      "en",
+    );
     assert.equal(result.inCity, false);
   } finally {
     fetchStub.restore();
@@ -76,7 +80,11 @@ test("viloyat uchala tilda ham shahar emas deb hisoblanadi", async () => {
    * Nominatim `state` ni `accept-language` ga tarjima qiladi, shuning uchun
    * bitta tilga yozilgan regex qolgan ikkitasini jimgina o'tkazib yuborardi.
    */
-  const states = ["Toshkent viloyati", "Ташкентская область", "Tashkent Region"];
+  const states = [
+    "Toshkent viloyati",
+    "Ташкентская область",
+    "Tashkent Region",
+  ];
   for (const state of states) {
     const { service: cache } = fakeCache();
     const fetchStub = stubFetch(() => ({
@@ -84,7 +92,11 @@ test("viloyat uchala tilda ham shahar emas deb hisoblanadi", async () => {
       address: { country_code: "uz", state },
     }));
     try {
-      const result = await new GeocodingService(cache).reverse(41.3, 69.3, "uz");
+      const result = await new GeocodingService(cache).reverse(
+        41.3,
+        69.3,
+        "uz",
+      );
       assert.equal(result.inCity, false, `"${state}" rad etilishi kerak edi`);
     } finally {
       fetchStub.restore();
@@ -107,6 +119,28 @@ test("Toshkent shahri inCity: true", async () => {
     assert.equal(result.inCity, true);
     assert.match(result.label, /Toshkent/);
     assert.equal(store.size, 1, "muvaffaqiyatli natija keshlanishi kerak");
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+test("reverse geokoder aniq uy raqamini checkout uchun qaytaradi", async () => {
+  const { service: cache } = fakeCache();
+  const fetchStub = stubFetch(() => ({
+    display_name: "12A, Amir Temur ko'chasi, Toshkent",
+    address: {
+      country_code: "uz",
+      state: "Toshkent",
+      house_number: " 12A ",
+    },
+  }));
+  try {
+    const result = await new GeocodingService(cache).reverse(
+      TASHKENT.lat,
+      TASHKENT.lng,
+      "uz",
+    );
+    assert.equal(result.houseNumber, "12A");
   } finally {
     fetchStub.restore();
   }
