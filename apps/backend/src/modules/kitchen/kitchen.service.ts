@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -42,6 +43,16 @@ type KitchenTransitionActor = {
   reasonPrefix: string;
   cancellationReason?: string;
   suppressTelegramStaffRefresh?: boolean;
+  expectedVersion?: number;
+  correlationId?: string;
+  idempotencyKey?: string;
+  reasonCode?: string;
+};
+type KitchenTicketActionContext = {
+  expectedVersion?: number;
+  correlationId?: string;
+  idempotencyKey?: string;
+  reasonCode?: string;
 };
 type KitchenTransitionOrder = {
   id: string;
@@ -201,6 +212,12 @@ export class KitchenService {
             notes: true,
             modifierSnapshot: true,
             status: true,
+            product: {
+              select: {
+                printerRouting: true,
+                printer: { select: { id: true, name: true, type: true } },
+              },
+            },
           },
         },
       },
@@ -228,6 +245,10 @@ export class KitchenService {
                 quantity: item.quantity,
                 notes: item.notes,
                 modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
+                stationRouting: item.product?.printerRouting ?? "NONE",
+                printerIdSnapshot: item.product?.printer?.id ?? null,
+                printerNameSnapshot: item.product?.printer?.name ?? null,
+                printerTypeSnapshot: item.product?.printer?.type ?? null,
                 status: item.status,
               })),
             },
@@ -281,11 +302,80 @@ export class KitchenService {
     return result.ticket;
   }
 
+  async getTicket(id: string, user: AuthenticatedUser) {
+    this.requireEmployee(user);
+    const ticket = await this.prisma.kitchenTicket.findUnique({
+      where: { id },
+      include: this.ticketInclude(),
+    });
+    if (!ticket) {
+      throw new NotFoundException("Oshxona chiptasi topilmadi");
+    }
+    resolveBranchScope(user, ticket.order.branchId);
+    return ticket;
+  }
+
+  async recordItemCancellation(
+    tx: TransactionClient,
+    input: {
+      orderItemId: string;
+      actorId: string;
+      reason: string;
+      reasonCode: string;
+      correlationId?: string;
+      idempotencyKey?: string;
+    },
+  ): Promise<void> {
+    const linkedItems = await tx.kitchenTicketItem.findMany({
+      where: {
+        orderItemId: input.orderItemId,
+        status: OrderItemStatus.ACTIVE,
+      },
+      select: {
+        id: true,
+        ticketId: true,
+        ticket: { select: { status: true } },
+      },
+    });
+
+    for (const linkedItem of linkedItems) {
+      const cancelled = await tx.kitchenTicketItem.updateMany({
+        where: { id: linkedItem.id, status: OrderItemStatus.ACTIVE },
+        data: { status: OrderItemStatus.CANCELLED },
+      });
+      if (cancelled.count !== 1) {
+        continue;
+      }
+
+      const ticket = await tx.kitchenTicket.update({
+        where: { id: linkedItem.ticketId },
+        data: { version: { increment: 1 } },
+        select: { version: true },
+      });
+      await tx.kitchenTicketEvent.create({
+        data: {
+          ticketId: linkedItem.ticketId,
+          eventType: "KitchenItemCancelled",
+          previousStatus: linkedItem.ticket.status,
+          newStatus: linkedItem.ticket.status,
+          orderItemId: input.orderItemId,
+          actorId: input.actorId,
+          reason: input.reason,
+          correlationId: input.correlationId ?? null,
+          idempotencyKey: input.idempotencyKey ?? null,
+          payload: { reasonCode: input.reasonCode },
+          version: ticket.version,
+        },
+      });
+    }
+  }
+
   async applyTicketAction(
     id: string,
     action: KitchenStaffAction,
     user: AuthenticatedUser,
     reason?: string,
+    context?: KitchenTicketActionContext,
   ) {
     const existingTicket = await this.prisma.kitchenTicket.findUnique({
       where: { id },
@@ -309,6 +399,16 @@ export class KitchenService {
       cancellationReason: trimmed
         ? `Oshxona bekor qildi: ${trimmed}`
         : "Oshxona bekor qildi",
+      ...(context?.correlationId
+        ? { correlationId: context.correlationId }
+        : {}),
+      ...(context?.idempotencyKey
+        ? { idempotencyKey: context.idempotencyKey }
+        : {}),
+      ...(context?.reasonCode ? { reasonCode: context.reasonCode } : {}),
+      ...(context?.expectedVersion !== undefined
+        ? { expectedVersion: context.expectedVersion }
+        : {}),
     });
   }
 
@@ -348,6 +448,18 @@ export class KitchenService {
       }
 
       const transition = this.resolveTransition(order, ticket, action);
+
+      if (
+        transition.changed &&
+        actor.expectedVersion !== undefined &&
+        ticket.version !== actor.expectedVersion
+      ) {
+        throw new ConflictException({
+          message: "Oshxona chiptasi boshqa qurilmada yangilangan",
+          code: "KITCHEN_VERSION_CONFLICT",
+          details: { currentVersion: ticket.version },
+        });
+      }
 
       if (!transition.changed) {
         return {
@@ -421,6 +533,8 @@ export class KitchenService {
               kitchenAction: action,
             },
             reasonCode: `KITCHEN_${action.toUpperCase()}`,
+            correlationId: actor.correlationId,
+            idempotencyKey: actor.idempotencyKey,
           });
         }
       }
@@ -465,6 +579,12 @@ export class KitchenService {
               action === "cancel"
                 ? (actor.cancellationReason ?? null)
                 : `${actor.reasonPrefix}: ${this.actionLabel(action)}`,
+            correlationId: actor.correlationId ?? null,
+            idempotencyKey: actor.idempotencyKey ?? null,
+            payload: {
+              action,
+              reasonCode: actor.reasonCode ?? `KITCHEN_${action.toUpperCase()}`,
+            },
             version: updatedTicket.version,
           },
         });

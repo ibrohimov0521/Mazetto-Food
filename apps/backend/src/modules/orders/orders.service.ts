@@ -267,7 +267,11 @@ export class OrdersService {
     };
   }
 
-  async createPosCheckout(dto: CreatePosCheckoutDto, user: AuthenticatedUser, correlationId?: string) {
+  async createPosCheckout(
+    dto: CreatePosCheckoutDto,
+    user: AuthenticatedUser,
+    correlationId?: string,
+  ) {
     const branchId = resolveRequiredBranchScope(user);
     const employeeId = requireEmployee(user);
     const idempotencyKey = createPosIdempotencyKey(dto.idempotencyKey);
@@ -799,7 +803,19 @@ export class OrdersService {
     itemId: string,
     dto: UpdateOrderItemDto,
     user: AuthenticatedUser,
+    context?: OrderMutationContext,
   ) {
+    if (
+      dto.status === OrderItemStatus.CANCELLED &&
+      (context?.eventType !== ORDER_EVENTS.ITEM_CANCELLED ||
+        context.expectedVersion === undefined ||
+        !context.idempotencyKey ||
+        !context.correlationId)
+    ) {
+      throw new BadRequestException(
+        "Mahsulotni bekor qilish uchun maxsus action endpointidan foydalaning",
+      );
+    }
     const employeeId = requireEmployee(user);
 
     return this.prisma.$transaction(async (tx) => {
@@ -813,12 +829,48 @@ export class OrdersService {
       assertOrderCanChange(order.status);
       await assertEmployeeInBranch(tx, employeeId, order.branchId);
 
+      if (
+        context?.expectedVersion !== undefined &&
+        order.version !== context.expectedVersion
+      ) {
+        const completedReplay =
+          context.idempotencyKey && context.eventType
+            ? await tx.orderEvent.findFirst({
+                where: {
+                  orderId,
+                  eventType: context.eventType,
+                  idempotencyKey: context.idempotencyKey,
+                },
+                select: { id: true },
+              })
+            : null;
+        if (completedReplay) {
+          return this.findOrderById(orderId, tx);
+        }
+        throw new ConflictException({
+          message: "Buyurtma boshqa qurilmada yangilangan",
+          code: "ORDER_VERSION_CONFLICT",
+          details: { currentVersion: order.version },
+        });
+      }
+
       const item = await tx.orderItem.findFirst({
         where: { id: itemId, orderId },
       });
 
       if (!item) {
         throw new NotFoundException("Order item not found");
+      }
+
+      if (item.status === OrderItemStatus.CANCELLED) {
+        throw new BadRequestException(
+          "Buyurtma mahsuloti allaqachon bekor qilingan",
+        );
+      }
+      if (dto.status && dto.status !== OrderItemStatus.CANCELLED) {
+        throw new BadRequestException(
+          "Bekor qilingan mahsulot qayta faollashtirilmaydi",
+        );
       }
 
       const quantity = dto.quantity
@@ -866,6 +918,21 @@ export class OrdersService {
         data,
       });
 
+      if (isCancelling) {
+        await this.kitchenService.recordItemCancellation(tx, {
+          orderItemId: itemId,
+          actorId: user.id,
+          reason: dto.cancellationReason ?? "Mahsulot bekor qilindi",
+          reasonCode: context?.reasonCode ?? "ORDER_ITEM_CANCELLED",
+          ...(context?.correlationId
+            ? { correlationId: context.correlationId }
+            : {}),
+          ...(context?.idempotencyKey
+            ? { idempotencyKey: context.idempotencyKey }
+            : {}),
+        });
+      }
+
       await recalculateOrderTotals(tx, orderId);
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
@@ -876,16 +943,20 @@ export class OrdersService {
         orderId,
         branchId: order.branchId,
         aggregateVersion: updatedOrder.version,
-        eventType: ORDER_EVENTS.ITEM_UPDATED,
+        eventType: isCancelling
+          ? ORDER_EVENTS.ITEM_CANCELLED
+          : ORDER_EVENTS.ITEM_UPDATED,
         actorType: "STAFF",
         actorId: user.id,
         source: "API",
         previousState: updatedOrder.orderState,
         newState: updatedOrder.orderState,
         payload: { itemId, status: dto.status ?? item.status },
-        reasonCode: dto.cancellationReason
-          ? "ORDER_ITEM_CANCELLED"
+        reasonCode: isCancelling
+          ? (context?.reasonCode ?? "ORDER_ITEM_CANCELLED")
           : "ORDER_ITEM_UPDATED",
+        correlationId: context?.correlationId,
+        idempotencyKey: context?.idempotencyKey,
       });
       return this.findOrderById(orderId, tx);
     });

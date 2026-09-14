@@ -9,6 +9,7 @@ export const ORDER_EVENTS = {
   COMPLETED: "OrderCompleted",
   ITEM_ADDED: "OrderItemAdded",
   ITEM_UPDATED: "OrderItemUpdated",
+  ITEM_CANCELLED: "OrderItemCancelled",
   LEGACY_STATUS_CHANGED: "OrderLegacyStatusChanged",
 } as const;
 
@@ -100,7 +101,14 @@ export function orderStateForLegacyStatus(
 }
 
 export function eventForLegacyStatus(
-  status: "NEW" | "CONFIRMED" | "PREPARING" | "READY" | "SERVED" | "COMPLETED" | "CANCELLED",
+  status:
+    | "NEW"
+    | "CONFIRMED"
+    | "PREPARING"
+    | "READY"
+    | "SERVED"
+    | "COMPLETED"
+    | "CANCELLED",
 ): OrderEventName {
   if (status === "CONFIRMED") return ORDER_EVENTS.ACCEPTED;
   if (status === "COMPLETED") return ORDER_EVENTS.COMPLETED;

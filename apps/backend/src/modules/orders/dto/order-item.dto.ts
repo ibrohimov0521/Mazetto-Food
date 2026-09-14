@@ -2,11 +2,14 @@ import { OrderItemStatus } from "@prisma/client";
 import {
   IsArray,
   IsEnum,
+  IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
   MaxLength,
+  Min,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
@@ -70,4 +73,20 @@ export class UpdateOrderItemDto {
   @IsString()
   @MaxLength(500)
   cancellationReason?: string;
+}
+
+export class CancelOrderItemActionDto {
+  @IsInt()
+  @Min(1)
+  expectedVersion!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  reasonCode!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
 }

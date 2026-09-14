@@ -220,19 +220,10 @@
 .mz-panel-brand {
   display: none;
   flex-shrink: 0;
-  width: 24px;
+  width: 28px;
   height: 28px;
-  place-items: center;
-  background: linear-gradient(110deg, #e5dcff 0 58%, #ffd83d 68% 100%);
-  background-clip: text;
-  color: transparent;
-  font-family: "Arial Black", Impact, sans-serif;
-  font-size: 27px;
-  font-style: italic;
-  font-weight: 900;
-  line-height: 1;
-  -webkit-text-stroke: 0.5px #5d5275;
-  transform: skew(-8deg) rotate(-3deg);
+  border-radius: var(--radius-mz-control);
+  object-fit: cover;
 }
 .mz-panel-actions {
   display: flex;
@@ -268,7 +259,7 @@
     display: none;
   }
   .mz-panel-brand {
-    display: grid;
+    display: block;
   }
   .mz-panel-header .mz-panel-actions > :is(button, a) {
     width: 32px;

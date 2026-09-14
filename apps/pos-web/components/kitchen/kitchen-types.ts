@@ -2,10 +2,9 @@
  * Oshxona ekrani (KDS) uchun umumiy tiplar va ustunlar.
  *
  * Backend `/kitchen/orders` javobi `kitchen.service.ts` dagi
- * `ticketInclude()` bilan bir xil: chipta maydonlari (shu jumladan
- * `priority`) va buyurtma + `items` (OrderItem skalyarlari).
- * Mahsulot printer/stansiya yo'nalishi (`Product.printerRouting`)
- * bu javobda YO'Q — shuning uchun stansiya filtri qo'shilmagan.
+ * `ticketInclude()` bilan bir xil: chipta maydonlari, buyurtma va
+ * yuborilgan mahsulotlarning snapshotlari. Stansiya yo'nalishi snapshotda
+ * bor, ammo haqiqiy stansiya xaritasi tayyor bo'lmaguncha filtr qo'llanmaydi.
  */
 
 import { ChefHat, Flame, PackageCheck, ShoppingBag } from "lucide-react";
@@ -30,18 +29,20 @@ export type KitchenTicket = {
   ticketNumber: string;
   status: KitchenTicketStatus;
   priority: number;
-  version?: number;
+  version: number;
   revisionNumber?: number;
   isSupplement?: boolean;
   createdAt: string;
   acceptedAt?: string | null;
-  items?: {
+  items: {
     id: string;
     productName: string;
     variantName?: string | null;
     quantity: string;
     notes?: string | null;
     modifierSnapshot?: unknown;
+    stationRouting?: "KITCHEN" | "BAR" | "RECEIPT" | "NONE";
+    printerNameSnapshot?: string | null;
   }[];
   order: {
     id: string;

@@ -2,9 +2,10 @@
 
 ## Status
 
-`IN PROGRESS (LOCAL)`. The operational core described below is implemented and
-verified against an isolated PostgreSQL database. Production rollout, station
-routing and the remaining race/rollback scenarios are not complete phase gates.
+`RELEASE READY; DEPLOY PENDING`. The original operational core is deployed.
+Kitchen action hardening described below is implemented locally and its
+additive migration passed a production-backup restore/backfill/rollback
+rehearsal.
 
 ## Database changes
 
@@ -15,9 +16,13 @@ routing and the remaining race/rollback scenarios are not complete phase gates.
   parent, numbers supplements, versions kitchen tickets and snapshots the exact
   active items sent to the kitchen. Existing tickets and items are backfilled;
   no order, payment, ticket or staff history is deleted.
+- `20260914150000_kitchen_action_hardening` snapshots each ticket item's current
+  `KITCHEN/BAR/RECEIPT/NONE` route and printer identity, and adds correlation,
+  idempotency and item references to immutable kitchen events.
 
-Both migrations were applied to `mazetto_preview` on `127.0.0.1:55432`. Prisma
-reports 31 migrations and an up-to-date schema.
+The first two migrations were applied to `mazetto_preview` on
+`127.0.0.1:55432`. The third passed both a fresh 32-migration install and an
+isolated restore/backfill rehearsal using the 2026-09-14 production backup.
 
 ## Implemented behavior
 
@@ -32,6 +37,17 @@ reports 31 migrations and an up-to-date schema.
   status projection.
 - Waiter and kitchen views show `Qo'shimcha #N`; the kitchen card reads ticket
   snapshots rather than the current mutable menu/order projection.
+- Every HTTP kitchen action now requires the ticket version and an
+  `Idempotency-Key`. Concurrent device actions serialize on the order row;
+  duplicate equivalent actions are no-ops and conflicting stale transitions
+  return `KITCHEN_VERSION_CONFLICT`.
+- Item cancellation has a dedicated idempotent order action. It marks the
+  linked kitchen snapshot cancelled and appends `KitchenItemCancelled` with the
+  actor, reason, reason code, correlation and request identity.
+- Legacy item PATCH cannot cancel a line without the versioned action context;
+  an empty ticket snapshot never falls back to unrelated live order items.
+- Station and printer routing are snapshots. Later menu changes therefore do
+  not rewrite the routing history of an already-created ticket.
 
 ### Cash handover composition
 
@@ -63,9 +79,9 @@ reports 31 migrations and an up-to-date schema.
   aligned first, roles use the full available width, and dangerous actions stay
   in a separate compact section.
 
-## Local verification evidence
+## Verification evidence
 
-- Backend tests: `196/196` passed.
+- Backend tests: `208/208` passed after action hardening.
 - Backend and POS typecheck, lint and production builds passed.
 - API smoke created a main table order and `Qo'shimcha #1`; two distinct kitchen
   tickets contained one immutable item each and the supplement emitted
@@ -80,24 +96,42 @@ reports 31 migrations and an up-to-date schema.
   the remaining cash was handed over and the shift was closed.
 - Browser smoke confirmed the compact staff profile, `Tarkib` dialog and visible
   supplemental kitchen ticket without horizontal scrolling.
+- Service-level concurrency tests cover duplicate accept, stale cross-action
+  updates and cancel-versus-ready races from two devices.
+- A disposable PostgreSQL 18 cluster applied all `32/32` migrations from an
+  empty database and seeded 91 products successfully. The cluster was stopped
+  after verification.
+- The 2026-09-14 production backup restored into an isolated PostgreSQL 18
+  database with 90 orders, 227 order items, 90 kitchen tickets and 227 kitchen
+  item snapshots. Applying the hardening migration preserved every measured
+  row count, backfilled all 227 routes and produced zero orphan references or
+  duplicate ticket event versions.
+- A rollback compatibility transaction proved that the previous application
+  write shape can omit every new field; defaults/nulls remain valid and the
+  probe rolled back without residue.
+- A clone API canary advanced a ticket from version 1 to 2, replayed the same
+  idempotency key without a second event, rejected a stale action with HTTP 409
+  and propagated an item cancellation into one kitchen event and the active
+  ticket snapshot.
 
 ## Rollout and rollback
 
-1. Back up and restore-test a staging clone before applying either migration.
-2. Apply both additive migrations, deploy backend, then deploy POS. Old clients
+1. Back up and restore-test a staging clone before applying the new migration.
+2. Apply all additive migrations, deploy backend, then deploy POS. Old read
+   clients
    continue to read the existing order and ticket fields.
 3. Create one main plus supplemental order and one partial cash handover in a
    canary branch. Reconcile ticket/event and transfer/allocation sums.
 4. If application rollback is required, deploy the previous image and leave the
    additive tables/columns in place. Do not drop them on a live database.
 
-## Remaining Phase 2 gates
+## Remaining Phase 2 release gates
 
-- Add station/routing snapshots only after real grill/fryer/drinks ownership is
-  agreed; the current single-kitchen workflow must remain the default.
-- Add explicit kitchen endpoint idempotency keys and a two-device concurrency
-  integration test, including cancel-versus-ready races.
-- Add item-level kitchen void/cancellation events instead of mutating ticket
-  snapshots.
-- Run migration/backfill and rollback rehearsal on a production-like staging
-  clone. No production push or deploy is part of this local work.
+- Agree the real grill/fryer/drinks ownership and map products/printers in admin.
+  Until then `NONE` and the current single-kitchen board remain valid defaults.
+- Commit and deploy the migration/backend/POS release, then execute the same
+  canary against production and monitor errors before enabling station splits.
+
+After this gate, reliable print jobs are implemented backend-first. The final
+local print engine belongs inside MAZETTO Desktop; the existing Node print
+agent is retained only for compatibility and shadow/canary verification.

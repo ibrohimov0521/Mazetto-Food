@@ -98,6 +98,7 @@ function WaiterFloor() {
   const [dialogError, setDialogError] = useState<string | null>(null);
 
   const actionLock = useRef(false);
+  const itemActionKeys = useRef(new Map<string, string>());
   const floorRequest = useRef<AbortController | null>(null);
   const floorVersion = useRef(0);
   const detailRequest = useRef<AbortController | null>(null);
@@ -401,15 +402,15 @@ function WaiterFloor() {
         const createdOrder = await apiFetch<{ id: string }>(
           `/tables/${panelTable.id}/orders`,
           {
-          method: "POST",
-          signal: AbortSignal.timeout(15000),
-          body: JSON.stringify({
-            guestCount: isSupplemental
-              ? (currentOrder?.guestCount ?? guestCount)
-              : guestCount,
-            ...(isSupplemental ? { isSupplemental: true } : {}),
-            ...(note ? { notes: note } : {}),
-          }),
+            method: "POST",
+            signal: AbortSignal.timeout(15000),
+            body: JSON.stringify({
+              guestCount: isSupplemental
+                ? (currentOrder?.guestCount ?? guestCount)
+                : guestCount,
+              ...(isSupplemental ? { isSupplemental: true } : {}),
+              ...(note ? { notes: note } : {}),
+            }),
           },
         );
         createdOrderId = createdOrder.id;
@@ -533,15 +534,21 @@ function WaiterFloor() {
       return;
     }
 
+    const fingerprint = `${currentOrder.id}:${currentOrder.version}:${line.id}:cancel`;
+    const idempotencyKey =
+      itemActionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    itemActionKeys.current.set(fingerprint, idempotencyKey);
     const removed = await runAction(
       "line",
       () =>
-        apiFetch(`/orders/${currentOrder.id}/items/${line.id}`, {
-          method: "PATCH",
+        apiFetch(`/orders/${currentOrder.id}/items/${line.id}/actions/cancel`, {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
           signal: AbortSignal.timeout(15000),
           body: JSON.stringify({
-            status: "CANCELLED",
-            cancellationReason: removeReason,
+            expectedVersion: currentOrder.version,
+            reasonCode: "WAITER_REMOVED_ITEM",
+            reason: removeReason,
           }),
         }),
       "Qatorni o'chirib bo'lmadi.",
@@ -549,6 +556,7 @@ function WaiterFloor() {
     );
 
     if (removed) {
+      itemActionKeys.current.delete(fingerprint);
       setConfirmation(null);
     }
   }

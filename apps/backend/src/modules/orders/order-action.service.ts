@@ -1,4 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
+import { OrderItemStatus } from "@prisma/client";
 import { PosOrderStatus } from "./dto/order-status.dto";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { hasPermission } from "../../common/auth/authorization";
@@ -12,6 +13,7 @@ import type {
   AcceptOrderActionDto,
   CancelOrderActionDto,
 } from "./dto/order-action.dto";
+import type { CancelOrderItemActionDto } from "./dto/order-item.dto";
 import { ORDER_EVENTS } from "./order-events";
 import { OrdersService } from "./orders.service";
 
@@ -73,6 +75,40 @@ export class OrderActionService {
           source: "API",
         },
       ),
+    );
+  }
+
+  cancelItem(
+    orderId: string,
+    itemId: string,
+    dto: CancelOrderItemActionDto,
+    user: AuthenticatedUser,
+    context: ActionContext,
+  ) {
+    return this.runIdempotent(
+      "cancel_item",
+      orderId,
+      { itemId, ...dto },
+      user,
+      context,
+      () =>
+        this.orders.updateItem(
+          orderId,
+          itemId,
+          {
+            status: OrderItemStatus.CANCELLED,
+            cancellationReason: dto.reason,
+          },
+          user,
+          {
+            expectedVersion: dto.expectedVersion,
+            correlationId: context.correlationId,
+            idempotencyKey: context.idempotencyKey,
+            eventType: ORDER_EVENTS.ITEM_CANCELLED,
+            reasonCode: dto.reasonCode,
+            source: "API",
+          },
+        ),
     );
   }
 
@@ -146,7 +182,9 @@ export class OrderActionService {
       });
       return result;
     } catch (error) {
-      await this.idempotency.fail(decision.record.id, requestHash, "ORDER_ACTION_FAILED").catch(() => undefined);
+      await this.idempotency
+        .fail(decision.record.id, requestHash, "ORDER_ACTION_FAILED")
+        .catch(() => undefined);
       throw error;
     }
   }
