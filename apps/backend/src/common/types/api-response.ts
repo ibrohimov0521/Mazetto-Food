@@ -4,7 +4,9 @@ export type ApiErrorResponse = {
     statusCode: number;
     code: string;
     message: string | string[];
+    details?: unknown;
     path: string;
+    requestId: string;
     timestamp: string;
   };
 };

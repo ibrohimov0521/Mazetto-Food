@@ -1,4 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -7,6 +15,8 @@ import {
   ChangeOwnPasswordDto,
   CreateStaffDto,
   ResetStaffPasswordDto,
+  RehireStaffDto,
+  TerminateStaffDto,
   UpdateStaffDto,
   UpdateStaffRoleDto,
   UpdateStaffStatusDto,
@@ -31,7 +41,10 @@ export class StaffController {
 
   @Post()
   @Permissions(PERMISSIONS.STAFF_CREATE)
-  createStaff(@Body() dto: CreateStaffDto, @CurrentUser() user: AuthenticatedUser) {
+  createStaff(
+    @Body() dto: CreateStaffDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.staffService.createStaff(dto, user);
   }
 
@@ -67,11 +80,28 @@ export class StaffController {
 
   @Delete(":id")
   @Permissions(PERMISSIONS.STAFF_DELETE)
-  deleteStaff(
+  deleteStaff(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.staffService.deleteStaff(id, user);
+  }
+
+  @Post(":id/terminate")
+  @Permissions(PERMISSIONS.STAFF_DELETE)
+  terminateStaff(
     @Param("id") id: string,
+    @Body() dto: TerminateStaffDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.staffService.deleteStaff(id, user);
+    return this.staffService.terminateStaff(id, dto, user);
+  }
+
+  @Post(":id/rehire")
+  @Permissions(PERMISSIONS.STAFF_STATUS_CHANGE)
+  rehireStaff(
+    @Param("id") id: string,
+    @Body() dto: RehireStaffDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.staffService.rehireStaff(id, dto, user);
   }
 
   @Post(":id/password-reset")

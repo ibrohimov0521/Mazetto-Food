@@ -2155,6 +2155,55 @@
   gap: 5px;
   white-space: nowrap;
 }
+.detailButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #b9d0c6;
+  border-radius: 6px;
+  background: #fff;
+  color: #245c54;
+  font-size: 12px;
+  font-weight: 700;
+}
+.detailButton:hover {
+  background: #edf5f1;
+  border-color: #7fa99a;
+}
+.transferDetail,
+.transferSources {
+  display: grid;
+  gap: 10px;
+}
+.transferSource,
+.transferTotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #d8e7e0;
+}
+.transferSource > div {
+  min-width: 0;
+}
+.transferSource .muted {
+  display: block;
+  margin-top: 2px;
+}
+.transferSource > strong,
+.transferTotal > strong {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.transferTotal {
+  border-bottom: 0;
+  border-top: 2px solid #9bbcaf;
+  font-weight: 800;
+}
 @media (max-width: 767px) {
   .inlineActions {
     width: 100%;

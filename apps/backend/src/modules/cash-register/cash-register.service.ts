@@ -78,6 +78,10 @@ export class CashRegisterService {
     return this.shiftsService.listPendingCashTransfers(user);
   }
 
+  getTransferDetail(id: string, user: AuthenticatedUser) {
+    return this.shiftsService.getCashTransferDetail(id, user);
+  }
+
   acceptTransfer(id: string, user: AuthenticatedUser) {
     return this.shiftsService.acceptCashTransfer(id, user);
   }

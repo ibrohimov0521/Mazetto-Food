@@ -18,15 +18,31 @@ export type KitchenTicketStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-export type KitchenAction = "accept" | "start" | "ready" | "complete" | "cancel";
+export type KitchenAction =
+  | "accept"
+  | "start"
+  | "ready"
+  | "complete"
+  | "cancel";
 
 export type KitchenTicket = {
   id: string;
   ticketNumber: string;
   status: KitchenTicketStatus;
   priority: number;
+  version?: number;
+  revisionNumber?: number;
+  isSupplement?: boolean;
   createdAt: string;
   acceptedAt?: string | null;
+  items?: {
+    id: string;
+    productName: string;
+    variantName?: string | null;
+    quantity: string;
+    notes?: string | null;
+    modifierSnapshot?: unknown;
+  }[];
   order: {
     id: string;
     orderNumber: string;
@@ -34,6 +50,7 @@ export type KitchenTicket = {
     source: "POS" | "WEB" | "TELEGRAM";
     type: "DINE_IN" | "TAKEAWAY" | "DELIVERY";
     isSupplemental?: boolean;
+    supplementNumber?: number | null;
     notes?: string | null;
     kitchenComment?: string | null;
     branch?: { name?: string | null } | null;

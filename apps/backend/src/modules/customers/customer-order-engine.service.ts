@@ -9,16 +9,18 @@ import {
   CustomerOrderType,
   OrderItemStatus,
   OrderSource,
+  OrderState,
   OrderStatus,
   OrderType,
   Prisma,
 } from "@prisma/client";
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
 import { OrdersService } from "../orders/orders.service";
+import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { customerVisibleProductCodes } from "./customer-catalog-visibility";
 import type {
   CustomerCheckoutQuoteDto,
@@ -131,6 +133,7 @@ export class CustomerOrderEngineService {
         deliveryLocation,
       );
 
+      const correlationId = randomUUID();
       const result = await this.prisma.$transaction(
         async (tx) => {
           const orderSource = options?.source ?? OrderSource.WEB;
@@ -205,6 +208,27 @@ export class CustomerOrderEngineService {
             },
           });
 
+          await recordOrderEvent(tx, {
+            orderId: order.id,
+            branchId: dto.branchId,
+            aggregateVersion: order.version,
+            eventType: ORDER_EVENTS.PLACED,
+            actorType: "CUSTOMER",
+            actorId: customerId,
+            source:
+              options?.source === OrderSource.TELEGRAM
+                ? "TELEGRAM"
+                : "CUSTOMER_WEB",
+            newState: OrderState.PLACED,
+            payload: { legacyStatus: OrderStatus.NEW, type: order.type },
+            reasonCode:
+              options?.source === OrderSource.TELEGRAM
+                ? "TELEGRAM_ORDER_CREATED"
+                : "ONLINE_ORDER_CREATED",
+            correlationId,
+            idempotencyKey: dto.idempotencyKey,
+          });
+
           const confirmed = await this.ordersService.confirmOrderForPreparation(
             tx,
             {
@@ -213,6 +237,13 @@ export class CustomerOrderEngineService {
                 options?.source === OrderSource.TELEGRAM
                   ? "Telegram order accepted for preparation"
                   : "Online order accepted for preparation",
+              source:
+                options?.source === OrderSource.TELEGRAM
+                  ? "TELEGRAM"
+                  : "CUSTOMER_WEB",
+              correlationId,
+              idempotencyKey: dto.idempotencyKey,
+              reasonCode: "ONLINE_ORDER_ACCEPTED",
             },
           );
 

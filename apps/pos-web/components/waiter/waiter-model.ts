@@ -44,6 +44,8 @@ export type TableOrder = {
   displayOrderNumber?: string | null;
   status: OrderStatus;
   isSupplemental?: boolean;
+  parentOrderId?: string | null;
+  supplementNumber?: number | null;
   total: string;
   guestCount?: number | null;
   notes?: string | null;

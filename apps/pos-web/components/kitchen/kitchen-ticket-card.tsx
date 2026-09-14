@@ -66,7 +66,7 @@ export function KitchenTicketCard({
     ticket.status === "NEW" ? "KITCHEN_ACCEPT" : "KITCHEN_STATUS_UPDATE",
   );
   const action = canAct ? kitchenPrimaryAction(ticket.status) : null;
-  const shownItems = ticket.order.items;
+  const shownItems = ticket.items?.length ? ticket.items : ticket.order.items;
   const canCancel =
     hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
     ["NEW", "ACCEPTED", "COOKING"].includes(ticket.status);
@@ -124,8 +124,11 @@ export function KitchenTicketCard({
         )}
       </div>
       <div className={styles.ticketMeta}>
-        {ticket.order.isSupplemental && (
-          <span className={styles.ticketPriority}>Qo&apos;shimcha</span>
+        {(ticket.isSupplement || ticket.order.isSupplemental) && (
+          <span className={styles.ticketPriority}>
+            Qo&apos;shimcha #
+            {ticket.revisionNumber ?? ticket.order.supplementNumber ?? 1}
+          </span>
         )}
         <span className={styles.badge}>
           {ticket.order.type === "DELIVERY" ? (

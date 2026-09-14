@@ -9,9 +9,15 @@ import {
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
+import { IdempotencyKey } from "../../common/decorators/idempotency-key.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { CreateOrderDto } from "./dto/create-order.dto";
+import {
+  AcceptOrderActionDto,
+  CancelOrderActionDto,
+} from "./dto/order-action.dto";
 import { ListOrdersDto } from "./dto/list-orders.dto";
 import { AddOrderItemDto, UpdateOrderItemDto } from "./dto/order-item.dto";
 import {
@@ -19,18 +25,23 @@ import {
   UpdateOrderStatusDto,
 } from "./dto/order-status.dto";
 import { OrdersService } from "./orders.service";
+import { OrderActionService } from "./order-action.service";
 
 @Controller("orders")
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly orderActions: OrderActionService,
+  ) {}
 
   @Post()
   @Permissions(PERMISSIONS.ORDER_CREATE)
   createOrder(
     @Body() dto: CreateOrderDto,
     @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.ordersService.createOrder(dto, user);
+    return this.ordersService.createOrder(dto, user, correlationId);
   }
 
   @Get()
@@ -47,8 +58,54 @@ export class OrdersController {
   bulkUpdateStatus(
     @Body() dto: BulkUpdateOrderStatusDto,
     @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.ordersService.bulkUpdateStatus(dto, user);
+    return this.ordersService.bulkUpdateStatus(dto, user, correlationId);
+  }
+
+  @Get(":id/timeline")
+  @Permissions(PERMISSIONS.ORDER_VIEW)
+  getTimeline(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orderActions.timeline(id, user);
+  }
+
+  @Get(":id/allowed-actions")
+  @Permissions(PERMISSIONS.ORDER_VIEW)
+  getAllowedActions(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orderActions.allowedActions(id, user);
+  }
+
+  @Post(":id/actions/accept")
+  @Permissions(PERMISSIONS.ORDER_SEND_KITCHEN)
+  acceptOrder(
+    @Param("id") id: string,
+    @Body() dto: AcceptOrderActionDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
+    @IdempotencyKey() idempotencyKey: string,
+  ) {
+    return this.orderActions.accept(id, dto, user, {
+      correlationId,
+      idempotencyKey,
+    });
+  }
+
+  @Post(":id/actions/cancel")
+  @Permissions(PERMISSIONS.ORDER_UPDATE)
+  cancelOrder(
+    @Param("id") id: string,
+    @Body() dto: CancelOrderActionDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
+    @IdempotencyKey() idempotencyKey: string,
+  ) {
+    return this.orderActions.cancel(id, dto, user, {
+      correlationId,
+      idempotencyKey,
+    });
   }
 
   @Get(":id")
@@ -84,7 +141,11 @@ export class OrdersController {
     @Param("id") id: string,
     @Body() dto: UpdateOrderStatusDto,
     @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.ordersService.updateStatus(id, dto, user);
+    return this.ordersService.updateStatus(id, dto, user, {
+      correlationId,
+      source: "API",
+    });
   }
 }

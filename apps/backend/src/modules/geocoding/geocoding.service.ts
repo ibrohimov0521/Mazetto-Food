@@ -49,6 +49,8 @@ export type ReverseResult = {
   /** Bo'sh satr = geokoder javob bermadi (fail-open). */
   label: string;
   inCity: boolean;
+  /** Nominatim binoni aniq tanisa qaytadi; taxminiy raqam yasalmaydi. */
+  houseNumber?: string;
 };
 
 export type SearchResult = {
@@ -61,6 +63,7 @@ type NominatimAddress = {
   country_code?: string;
   state?: string;
   county?: string;
+  house_number?: string;
 };
 
 @Injectable()
@@ -117,6 +120,9 @@ export class GeocodingService {
     const result: ReverseResult = {
       label: payload.display_name?.trim() ?? "",
       inCity,
+      ...(address.house_number?.trim()
+        ? { houseNumber: address.house_number.trim() }
+        : {}),
     };
 
     await this.cache.setJson(key, result, REVERSE_TTL_MS);
@@ -151,9 +157,10 @@ export class GeocodingService {
     url.searchParams.set("bounded", "1");
     url.searchParams.set("limit", "5");
 
-    const payload = await this.request<
-      Array<{ display_name?: string; lat?: string; lon?: string }>
-    >(url);
+    const payload =
+      await this.request<
+        Array<{ display_name?: string; lat?: string; lon?: string }>
+      >(url);
 
     // Fail-open: qidiruv ishlamasa bo'sh ro'yxat — foydalanuvchi xaritadan
     // qo'lda tanlay oladi. Keshlanmaydi.
@@ -173,8 +180,7 @@ export class GeocodingService {
        * tanlanganda server baribir rad etadi — uni ko'rsatmagan ma'qul.
        */
       .filter(
-        (item) =>
-          item.label && isWithinTashkent(item.latitude, item.longitude),
+        (item) => item.label && isWithinTashkent(item.latitude, item.longitude),
       );
 
     await this.cache.setJson(key, results, SEARCH_TTL_MS);
@@ -208,7 +214,9 @@ export class GeocodingService {
       return (await response.json()) as T;
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
-      this.logger.warn(`Geocoder ${url.pathname} so'rovi muvaffaqiyatsiz: ${message}`);
+      this.logger.warn(
+        `Geocoder ${url.pathname} so'rovi muvaffaqiyatsiz: ${message}`,
+      );
       return null;
     }
   }

@@ -174,6 +174,7 @@ test("buyurtmasiz stol qo'lda Band holatiga o'tkazilmaydi", async () => {
 
 function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
   let createdData: Record<string, unknown> | undefined;
+  const writes: string[] = [];
   const tx = {
     $queryRawUnsafe: async () => [{ id: "table-1" }],
     $executeRaw: async () => 1,
@@ -192,7 +193,7 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
       findMany: async () => existingOrders,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         createdData = data;
-        return { id: "new-order" };
+        return { id: "new-order", version: 1, type: data.type, isSupplemental: data.isSupplemental };
       },
       findUnique: async () => ({
         id: "new-order",
@@ -202,12 +203,19 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
       }),
     },
     orderStatusHistory: { create: async () => undefined },
+    orderEvent: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        writes.push(`event:${data.eventType}:${data.aggregateVersion}`);
+        return { id: "event-1", createdAt: new Date() };
+      },
+    },
+    outboxEvent: { create: async () => { writes.push("outbox"); } },
   };
   const prisma = {
     $transaction: async (callback: (client: typeof tx) => unknown) =>
       callback(tx),
   };
-  return { service: createService(prisma), getCreatedData: () => createdData };
+  return { service: createService(prisma), getCreatedData: () => createdData, writes };
 }
 
 test("tasdiqlangan order ortidan alohida qo'shimcha order ochiladi", async () => {
@@ -220,6 +228,7 @@ test("tasdiqlangan order ortidan alohida qo'shimcha order ochiladi", async () =>
 
   assert.equal(fixture.getCreatedData()?.isSupplemental, true);
   assert.equal(created?.id, "new-order");
+  assert.deepEqual(fixture.writes, ["event:OrderPlaced:1", "outbox"]);
 });
 
 test("stolda yangi draft turganda ikkinchi qo'shimcha order ochilmaydi", async () => {

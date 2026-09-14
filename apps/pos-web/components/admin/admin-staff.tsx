@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  FormEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
@@ -76,6 +70,8 @@ type Staff = {
     branchId: string;
     employeeCode: string;
     status: string;
+    hiredAt?: string | null;
+    terminatedAt?: string | null;
     branch?: Branch | null;
   } | null;
   roles: Role[];
@@ -189,7 +185,9 @@ export function AdminStaffPage() {
         item.phone,
         // Kod VA o'zbekcha lavozim bo'yicha qidiriladi: admin "kassir" deb
         // yozganda ham topilishi kerak, faqat "CASHIER" emas.
-        item.roles.map((role) => `${role.code} ${roleCodeLabel(role.code)}`).join(" "),
+        item.roles
+          .map((role) => `${role.code} ${roleCodeLabel(role.code)}`)
+          .join(" "),
         item.employee?.employeeCode,
         item.employee?.branch?.name,
       ]
@@ -346,10 +344,7 @@ export function AdminStaffPage() {
                 bir bosishda joyida. Profil route'i qo'shilganda bu tugma
                 shu modalni emas, o'sha ekranni ochishi kerak.
               */}
-              <Button
-                onClick={() => setIsPasswordOpen(true)}
-                variant="ghost"
-              >
+              <Button onClick={() => setIsPasswordOpen(true)} variant="ghost">
                 <Icon className="h-4 w-4" name="shield" />
                 Parolimni o&apos;zgartirish
               </Button>
@@ -476,6 +471,14 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
   const [isResetting, setIsResetting] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isTerminateOpen, setIsTerminateOpen] = useState(false);
+  const [isTerminating, setIsTerminating] = useState(false);
+  const [terminationReason, setTerminationReason] = useState("");
+  const [terminationError, setTerminationError] = useState("");
+  const [isRehireOpen, setIsRehireOpen] = useState(false);
+  const [isRehiring, setIsRehiring] = useState(false);
+  const [rehireReason, setRehireReason] = useState("");
+  const [rehireError, setRehireError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [baseline, setBaseline] = useState("");
   const [isDiscardOpen, setIsDiscardOpen] = useState(false);
@@ -654,7 +657,9 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
     }
 
     const currentBranchId = staff.employee?.branchId ?? "";
-    const nextBranchId = needsBranch(form.roleCodes, roles) ? form.branchId : "";
+    const nextBranchId = needsBranch(form.roleCodes, roles)
+      ? form.branchId
+      : "";
 
     if (currentBranchId !== nextBranchId) {
       consequences.push(
@@ -702,7 +707,9 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             phone: form.phone.trim() || undefined,
             password: form.password,
             roleCodes: form.roleCodes,
-            branchId: needsBranch(form.roleCodes, roles) ? form.branchId : undefined,
+            branchId: needsBranch(form.roleCodes, roles)
+              ? form.branchId
+              : undefined,
             isActive: form.isActive,
           }),
         });
@@ -837,13 +844,86 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
     setIsDeleting(true);
     try {
       await apiFetch(`/staff/${staffId}`, { method: "DELETE" });
-      showToast("Xodim accounti o'chirildi. Tarixiy kassa va buyurtma yozuvlari saqlandi.", "success");
+      showToast(
+        "Xodim accounti o'chirildi. Tarixiy kassa va buyurtma yozuvlari saqlandi.",
+        "success",
+      );
       router.push("/admin/staff");
     } catch (caught) {
       setIsDeleteOpen(false);
-      showToast(caught instanceof Error ? caught.message : "Account o'chirilmadi.", "danger");
+      showToast(
+        caught instanceof Error ? caught.message : "Account o'chirilmadi.",
+        "danger",
+      );
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function terminateStaff() {
+    if (!staffId || !staff || terminationReason.trim().length < 3) {
+      setTerminationError(
+        "Ishdan bo'shatish sababini yozing (kamida 3 belgi).",
+      );
+      return;
+    }
+    setIsTerminating(true);
+    setTerminationError("");
+    try {
+      const next = await apiFetch<Staff>(`/staff/${staffId}/terminate`, {
+        method: "POST",
+        body: JSON.stringify({ reason: terminationReason.trim() }),
+      });
+      setStaff(next);
+      setForm((current) => ({ ...current, isActive: false }));
+      setBaseline(snapshotStaffForm({ ...form, isActive: false }));
+      setIsTerminateOpen(false);
+      setTerminationReason("");
+      showToast(
+        "Xodim ishdan bo'shatildi, login yopildi va tarix saqlandi.",
+        "success",
+      );
+    } catch (caught) {
+      setTerminationError(
+        caught instanceof Error
+          ? caught.message
+          : "Xodim ishdan bo'shatilmadi.",
+      );
+    } finally {
+      setIsTerminating(false);
+    }
+  }
+
+  async function rehireStaff() {
+    if (!staffId || !staff || rehireReason.trim().length < 3) {
+      setRehireError("Qayta ishga olish sababini yozing (kamida 3 belgi).");
+      return;
+    }
+    setIsRehiring(true);
+    setRehireError("");
+    try {
+      const next = await apiFetch<Staff>(`/staff/${staffId}/rehire`, {
+        method: "POST",
+        body: JSON.stringify({ reason: rehireReason.trim() }),
+      });
+      const nextForm = { ...form, isActive: true };
+      setStaff(next);
+      setForm(nextForm);
+      setBaseline(snapshotStaffForm(nextForm));
+      setIsRehireOpen(false);
+      setRehireReason("");
+      showToast(
+        "Xodim qayta ishga olindi. Login faol, audit tarixi saqlandi.",
+        "success",
+      );
+    } catch (caught) {
+      setRehireError(
+        caught instanceof Error
+          ? caught.message
+          : "Xodim qayta ishga olinmadi.",
+      );
+    } finally {
+      setIsRehiring(false);
     }
   }
 
@@ -851,22 +931,27 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
    * RBAC staff_security_contract — UI qatlami.
    * Haqiqiy cheklov backend'da; bu yerda foydalanuvchi sababni oldindan ko'radi.
    */
-  const roleChangeBlock = staff
-    ? resolveStaffActionBlock({
-        actor: user,
-        target: staff,
-        action: "role",
-        allStaff,
-      })
-    : null;
-  const statusChangeBlock = staff
-    ? resolveStaffActionBlock({
-        actor: user,
-        target: staff,
-        action: "status",
-        allStaff,
-      })
-    : null;
+  const isTerminated = staff?.employee?.status === "TERMINATED";
+  const roleChangeBlock = isTerminated
+    ? "Ishdan ketgan xodim rolini o'zgartirishdan oldin uni qayta ishga oling."
+    : staff
+      ? resolveStaffActionBlock({
+          actor: user,
+          target: staff,
+          action: "role",
+          allStaff,
+        })
+      : null;
+  const statusChangeBlock = isTerminated
+    ? "Ishdan ketgan xodim faqat alohida qayta ishga olish amali bilan faollashtiriladi."
+    : staff
+      ? resolveStaffActionBlock({
+          actor: user,
+          target: staff,
+          action: "status",
+          allStaff,
+        })
+      : null;
   const passwordResetBlock = staff
     ? resolveStaffActionBlock({
         actor: user,
@@ -882,11 +967,12 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
       ? "O'zingizning accountingizni o'chira olmaysiz."
       : staff &&
           isSuperAdminStaff(staff) &&
-          allStaff.filter(
-            (item) => item.isActive && isSuperAdminStaff(item),
-          ).length <= 1
+          allStaff.filter((item) => item.isActive && isSuperAdminStaff(item))
+            .length <= 1
         ? "Oxirgi faol SUPER_ADMIN accountini o'chirib bo'lmaydi."
-        : null;
+        : staff?.employee && staff.employee.status !== "TERMINATED"
+          ? "Tarixli xodim loginini o'chirishdan oldin uni ishdan bo'shating."
+          : null;
 
   if (isLoading) {
     return <SkeletonRows rows={8} />;
@@ -904,8 +990,8 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
         />
       ) : null}
       <form className="space-y-5" onSubmit={handleSubmit} ref={formRef}>
-        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-          <section className="grid gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
+        <div className="grid items-start gap-5 lg:grid-cols-[1fr_320px]">
+          <section className="grid content-start gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
             <FormField
               label="Ism familiya"
               required
@@ -969,66 +1055,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                 )}
               </FormField>
             ) : null}
-            <div className="grid gap-4 md:grid-cols-2">
-              {/*
-              `<fieldset>` + `<legend>`.
-
-              Ilgari bu guruh `<label>` (mahalliy `Field`) ichida edi va
-              ichida yana `<label>` lar turardi: yaroqsiz HTML, va tashqi
-              yorliqni bosish birinchi checkbox'ni almashtirib yuborardi.
-            */}
-              <CheckboxGroup
-                legend="Rollar"
-                {...(errors.roleCodes ? { error: errors.roleCodes } : {})}
-                {...(roleChangeBlock
-                  ? { hint: roleChangeBlock }
-                  : !isNew
-                    ? {
-                        hint: "Rol o'zgarsa, xodimning barcha sessiyalari bekor qilinadi.",
-                      }
-                    : {})}
-              >
-                <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2">
-                  {roles.map((role) => (
-                    <Checkbox
-                      checked={form.roleCodes.includes(role.code)}
-                      /*
-                       * Lavozim nomi, xom kod emas. Doira (filial/global)
-                       * tavsifda: aynan shu narsa filial maydonining
-                       * majburiyligini belgilaydi.
-                       */
-                      description={
-                        branchScopedRoles.has(role.code)
-                          ? "Filial doirasida — filial biriktirilishi shart"
-                          : "Global doira — barcha filiallar"
-                      }
-                      disabled={Boolean(roleChangeBlock)}
-                      key={role.id}
-                      label={roleCodeLabel(role.code)}
-                      onChange={(checked) => {
-                        const isLastActiveSuperAdmin =
-                          role.code === "SUPER_ADMIN" &&
-                          !checked &&
-                          Boolean(staff?.isActive) &&
-                          allStaff.filter(
-                            (item) =>
-                              item.isActive && isSuperAdminStaff(item),
-                          ).length <= 1;
-                        if (isLastActiveSuperAdmin) {
-                          showToast(
-                            "Tizimda kamida bitta faol SUPER_ADMIN qolishi kerak.",
-                            "danger",
-                          );
-                          return;
-                        }
-                        setForm((current) =>
-                          toggleRole(current, role.code, checked),
-                        );
-                      }}
-                    />
-                  ))}
-                </div>
-              </CheckboxGroup>
+            <div className="grid items-end gap-4 md:grid-cols-2">
               <FormField
                 label="Filial"
                 {...(errors.branchId ? { error: errors.branchId } : {})}
@@ -1051,22 +1078,86 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                   </Select>
                 )}
               </FormField>
+              <Checkbox
+                boxed
+                checked={form.isActive}
+                disabled={Boolean(statusChangeBlock)}
+                label={
+                  isTerminated
+                    ? "Ishdan ketgan"
+                    : form.isActive
+                      ? "Faol account"
+                      : "Bloklangan account"
+                }
+                onChange={(checked) => setForm({ ...form, isActive: checked })}
+                {...(statusChangeBlock
+                  ? { description: statusChangeBlock }
+                  : !isNew
+                    ? {
+                        description:
+                          "Bloklansa, xodimning barcha sessiyalari bekor qilinadi.",
+                      }
+                    : {})}
+              />
             </div>
-            <Checkbox
-              boxed
-              checked={form.isActive}
-              disabled={Boolean(statusChangeBlock)}
-              label={form.isActive ? "Faol account" : "Bloklangan account"}
-              onChange={(checked) => setForm({ ...form, isActive: checked })}
-              {...(statusChangeBlock
-                ? { description: statusChangeBlock }
+            {/*
+              `<fieldset>` + `<legend>`.
+
+              Ilgari bu guruh `<label>` (mahalliy `Field`) ichida edi va
+              ichida yana `<label>` lar turardi: yaroqsiz HTML, va tashqi
+              yorliqni bosish birinchi checkbox'ni almashtirib yuborardi.
+            */}
+            <CheckboxGroup
+              legend="Rollar"
+              {...(errors.roleCodes ? { error: errors.roleCodes } : {})}
+              {...(roleChangeBlock
+                ? { hint: roleChangeBlock }
                 : !isNew
                   ? {
-                      description:
-                        "Bloklansa, xodimning barcha sessiyalari bekor qilinadi.",
+                      hint: "Rol o'zgarsa, xodimning barcha sessiyalari bekor qilinadi.",
                     }
                   : {})}
-            />
+            >
+              <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2 xl:grid-cols-4">
+                {roles.map((role) => (
+                  <Checkbox
+                    checked={form.roleCodes.includes(role.code)}
+                    /*
+                     * Lavozim nomi, xom kod emas. Doira (filial/global)
+                     * tavsifda: aynan shu narsa filial maydonining
+                     * majburiyligini belgilaydi.
+                     */
+                    description={
+                      branchScopedRoles.has(role.code)
+                        ? "Filial doirasida — filial biriktirilishi shart"
+                        : "Global doira — barcha filiallar"
+                    }
+                    disabled={Boolean(roleChangeBlock)}
+                    key={role.id}
+                    label={roleCodeLabel(role.code)}
+                    onChange={(checked) => {
+                      const isLastActiveSuperAdmin =
+                        role.code === "SUPER_ADMIN" &&
+                        !checked &&
+                        Boolean(staff?.isActive) &&
+                        allStaff.filter(
+                          (item) => item.isActive && isSuperAdminStaff(item),
+                        ).length <= 1;
+                      if (isLastActiveSuperAdmin) {
+                        showToast(
+                          "Tizimda kamida bitta faol SUPER_ADMIN qolishi kerak.",
+                          "danger",
+                        );
+                        return;
+                      }
+                      setForm((current) =>
+                        toggleRole(current, role.code, checked),
+                      );
+                    }}
+                  />
+                ))}
+              </div>
+            </CheckboxGroup>
           </section>
 
           <aside className="grid content-start gap-4">
@@ -1088,14 +1179,41 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
               <section className="grid gap-3 rounded-mz-card border border-mz-danger/30 bg-mz-surface p-5">
                 <p className="text-sm font-black text-mz-danger">Xavfli amal</p>
                 <p className="text-[13px] leading-5 text-mz-text-muted">
-                  Account o&apos;chiriladi, lekin uning buyurtma, kassa va audit tarixi saqlanib qoladi.
+                  Avval xodimni ishdan bo&apos;shating. Ochiq smena yoki
+                  kutilayotgan pul topshiruvi bo&apos;lsa amal bajarilmaydi.
                 </p>
+                {staff.employee?.status !== "TERMINATED" ? (
+                  <GuardedButton
+                    blockedReason={
+                      staff.id === user?.id
+                        ? "O'zingizni ishdan bo'shata olmaysiz."
+                        : null
+                    }
+                    onClick={() => {
+                      setTerminationError("");
+                      setIsTerminateOpen(true);
+                    }}
+                    variant="danger"
+                  >
+                    Ishdan bo&apos;shatish
+                  </GuardedButton>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setRehireError("");
+                      setIsRehireOpen(true);
+                    }}
+                    variant="secondary"
+                  >
+                    Qayta ishga olish
+                  </Button>
+                )}
                 <GuardedButton
                   blockedReason={deleteBlock}
                   onClick={() => setIsDeleteOpen(true)}
                   variant="danger"
                 >
-                  Accountni o&apos;chirish
+                  Loginni o&apos;chirish
                 </GuardedButton>
               </section>
             ) : null}
@@ -1268,15 +1386,87 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             <Button onClick={() => setIsDeleteOpen(false)} variant="ghost">
               Bekor qilish
             </Button>
-            <Button isLoading={isDeleting} onClick={() => void deleteStaff()} variant="danger">
+            <Button
+              isLoading={isDeleting}
+              onClick={() => void deleteStaff()}
+              variant="danger"
+            >
               O&apos;chirishni tasdiqlash
             </Button>
           </>
         }
         isOpen={isDeleteOpen}
         onClose={() => setIsDeleteOpen(false)}
-        title="Accountni o&apos;chirasizmi?"
+        title="Accountni o'chirasizmi?"
       />
+
+      <Modal
+        description="Login yopiladi, sessiyalar bekor qilinadi. Buyurtma, smena, pul va audit tarixi saqlanadi."
+        footer={
+          <>
+            <Button onClick={() => setIsTerminateOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              isLoading={isTerminating}
+              onClick={() => void terminateStaff()}
+              variant="danger"
+            >
+              Ishdan bo&apos;shatishni tasdiqlash
+            </Button>
+          </>
+        }
+        isOpen={isTerminateOpen}
+        onClose={() => setIsTerminateOpen(false)}
+        title="Xodimni ishdan bo'shatasizmi?"
+      >
+        <FormField error={terminationError} label="Sabab" required>
+          {(props) => (
+            <TextInput
+              {...props}
+              autoFocus
+              maxLength={500}
+              onChange={(event) => setTerminationReason(event.target.value)}
+              placeholder="Masalan: mehnat shartnomasi yakunlandi"
+              value={terminationReason}
+            />
+          )}
+        </FormField>
+      </Modal>
+
+      <Modal
+        description="Xodimning eski buyurtma, smena va pul tarixi o'zgarmaydi. Login qayta faollashadi va yangi ishga kirish sanasi yoziladi."
+        footer={
+          <>
+            <Button onClick={() => setIsRehireOpen(false)} variant="ghost">
+              Bekor qilish
+            </Button>
+            <Button
+              isLoading={isRehiring}
+              onClick={() => void rehireStaff()}
+              variant="secondary"
+            >
+              Qayta ishga olishni tasdiqlash
+            </Button>
+          </>
+        }
+        isOpen={isRehireOpen}
+        onClose={() => setIsRehireOpen(false)}
+        title="Xodimni qayta ishga olasizmi?"
+      >
+        <FormField error={rehireError} label="Sabab" required>
+          {(props) => (
+            <TextInput
+              {...props}
+              autoFocus
+              maxLength={500}
+              onChange={(event) => setRehireReason(event.target.value)}
+              placeholder="Masalan: qayta mehnat shartnomasi tuzildi"
+              value={rehireReason}
+            />
+          )}
+        </FormField>
+      </Modal>
 
       <Modal
         description="Kiritilgan o'zgarishlar saqlanmaydi."

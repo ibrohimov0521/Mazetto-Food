@@ -6,7 +6,12 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { EmployeeStatus, Prisma } from "@prisma/client";
+import {
+  CashTransferStatus,
+  EmployeeStatus,
+  Prisma,
+  ShiftStatus,
+} from "@prisma/client";
 import { compare, hash } from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -18,14 +23,13 @@ import type {
   ChangeOwnPasswordDto,
   CreateStaffDto,
   ResetStaffPasswordDto,
+  RehireStaffDto,
   UpdateStaffDto,
   UpdateStaffRoleDto,
   UpdateStaffStatusDto,
+  TerminateStaffDto,
 } from "./dto/staff.dto";
-import {
-  branchScopedStaffRoles,
-  type StaffRoleCode,
-} from "./staff-role-codes";
+import { branchScopedStaffRoles, type StaffRoleCode } from "./staff-role-codes";
 
 type StaffRecord = Prisma.UserGetPayload<{
   select: typeof staffSelect;
@@ -63,6 +67,8 @@ const staffSelect = {
       firstName: true,
       lastName: true,
       status: true,
+      hiredAt: true,
+      terminatedAt: true,
       branch: {
         select: {
           id: true,
@@ -127,7 +133,11 @@ export class StaffService {
     const roleCodes = this.resolveRequestedRoleCodes(dto);
     await this.assertCanAssignRoles(actor, roleCodes);
 
-    const branchId = await this.resolveBranchForRoles(actor, roleCodes, dto.branchId);
+    const branchId = await this.resolveBranchForRoles(
+      actor,
+      roleCodes,
+      dto.branchId,
+    );
     const passwordHash = await hash(dto.password, 12);
 
     const user = await this.prisma.$transaction(async (tx) => {
@@ -171,19 +181,29 @@ export class StaffService {
     this.assertCanManageStaffRecord(actor, existing);
 
     const normalized = this.normalizeLogin(dto.email, dto.phone);
-    const nextEmail = dto.email !== undefined ? normalized.email : existing.email;
-    const nextPhone = dto.phone !== undefined ? normalized.phone : existing.phone;
+    const nextEmail =
+      dto.email !== undefined ? normalized.email : existing.email;
+    const nextPhone =
+      dto.phone !== undefined ? normalized.phone : existing.phone;
 
     this.assertHasLogin({ email: nextEmail, phone: nextPhone });
 
     const currentRoleCodes = this.roleCodesFromStaff(existing);
     const nextBranchId =
       dto.branchId === undefined
-        ? existing.employee?.branchId ?? null
-        : await this.resolveBranchForRoles(actor, currentRoleCodes, dto.branchId);
+        ? (existing.employee?.branchId ?? null)
+        : await this.resolveBranchForRoles(
+            actor,
+            currentRoleCodes,
+            dto.branchId,
+          );
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      await this.assertUniqueLogin(tx, { email: nextEmail, phone: nextPhone }, id);
+      await this.assertUniqueLogin(
+        tx,
+        { email: nextEmail, phone: nextPhone },
+        id,
+      );
 
       await tx.user.update({
         where: { id },
@@ -217,7 +237,6 @@ export class StaffService {
       });
     });
 
-
     /*
      * Ruxsat keshini darhol bekor qilamiz (PHASE 6 H8).
      *
@@ -229,12 +248,20 @@ export class StaffService {
     return this.toStaffDto(updated);
   }
 
-  async updateRole(id: string, dto: UpdateStaffRoleDto, actor: AuthenticatedUser) {
+  async updateRole(
+    id: string,
+    dto: UpdateStaffRoleDto,
+    actor: AuthenticatedUser,
+  ) {
     const existing = await this.findStaffOrThrow(id);
     this.assertCanManageStaffRecord(actor, existing);
+    this.assertNotTerminated(existing, "rolini o'zgartirish");
     const roleCodes = this.resolveRequestedRoleCodes(dto);
     await this.assertCanAssignRoles(actor, roleCodes);
-    await this.assertCanRemoveCurrentSuperAdmin(existing, !roleCodes.includes("SUPER_ADMIN"));
+    await this.assertCanRemoveCurrentSuperAdmin(
+      existing,
+      !roleCodes.includes("SUPER_ADMIN"),
+    );
 
     const branchId = await this.resolveBranchForRoles(
       actor,
@@ -272,16 +299,20 @@ export class StaffService {
       });
     });
 
-
     // Rol va holat o'zgarishi eng muhim ikki holat: bloklangan yoki roli
     // tushirilgan xodim kesh eskirguncha ishlashda davom etardi.
     await this.userAuthCache.invalidate(id);
     return this.toStaffDto(updated);
   }
 
-  async updateStatus(id: string, dto: UpdateStaffStatusDto, actor: AuthenticatedUser) {
+  async updateStatus(
+    id: string,
+    dto: UpdateStaffStatusDto,
+    actor: AuthenticatedUser,
+  ) {
     const existing = await this.findStaffOrThrow(id);
     this.assertCanManageStaffRecord(actor, existing);
+    this.assertNotTerminated(existing, "holatini o'zgartirish");
 
     if (!dto.isActive) {
       await this.assertCanRemoveCurrentSuperAdmin(existing, true);
@@ -297,8 +328,10 @@ export class StaffService {
         await tx.employee.update({
           where: { id: existing.employee.id },
           data: {
-            status: dto.isActive ? EmployeeStatus.ACTIVE : EmployeeStatus.SUSPENDED,
-            terminatedAt: dto.isActive ? null : new Date(),
+            status: dto.isActive
+              ? EmployeeStatus.ACTIVE
+              : EmployeeStatus.SUSPENDED,
+            terminatedAt: null,
           },
         });
       }
@@ -307,16 +340,21 @@ export class StaffService {
         await this.revokeUserSessions(tx, id);
       }
 
-      await this.createAuditLog(tx, actor.id, dto.isActive ? "STAFF_ACTIVATED" : "STAFF_BLOCKED", id, {
-        isActive: dto.isActive,
-      });
+      await this.createAuditLog(
+        tx,
+        actor.id,
+        dto.isActive ? "STAFF_ACTIVATED" : "STAFF_BLOCKED",
+        id,
+        {
+          isActive: dto.isActive,
+        },
+      );
 
       return tx.user.findUniqueOrThrow({
         where: { id },
         select: this.staffSelect(),
       });
     });
-
 
     // Rol va holat o'zgarishi eng muhim ikki holat: bloklangan yoki roli
     // tushirilgan xodim kesh eskirguncha ishlashda davom etardi.
@@ -328,9 +366,20 @@ export class StaffService {
     const existing = await this.findStaffOrThrow(id);
     this.assertCanManageStaffRecord(actor, existing);
     if (id === actor.id) {
-      throw new BadRequestException("O'zingizning accountingizni o'chira olmaysiz");
+      throw new BadRequestException(
+        "O'zingizning accountingizni o'chira olmaysiz",
+      );
     }
     await this.assertCanRemoveCurrentSuperAdmin(existing, true);
+    await this.assertNoOpenFinancialDuties(existing.employee?.id);
+    if (
+      existing.employee &&
+      existing.employee.status !== EmployeeStatus.TERMINATED
+    ) {
+      throw new BadRequestException(
+        "Tarixli xodim loginini o'chirishdan oldin uni ishdan bo'shating",
+      );
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await this.createAuditLog(tx, actor.id, "STAFF_DELETED", id, {
@@ -343,12 +392,106 @@ export class StaffService {
     return { deleted: true, id };
   }
 
-  async resetPassword(id: string, dto: ResetStaffPasswordDto, actor: AuthenticatedUser) {
+  async terminateStaff(
+    id: string,
+    dto: TerminateStaffDto,
+    actor: AuthenticatedUser,
+  ) {
+    const existing = await this.findStaffOrThrow(id);
+    this.assertCanManageStaffRecord(actor, existing);
+    if (id === actor.id) {
+      throw new BadRequestException("O'zingizni ishdan bo'shata olmaysiz");
+    }
+    if (!existing.employee) {
+      throw new BadRequestException(
+        "Bu account xodim yozuviga biriktirilmagan",
+      );
+    }
+    await this.assertCanRemoveCurrentSuperAdmin(existing, true);
+    await this.assertNoOpenFinancialDuties(existing.employee.id);
+
+    const terminatedAt = dto.terminatedAt
+      ? new Date(dto.terminatedAt)
+      : new Date();
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { isActive: false } });
+      await tx.employee.update({
+        where: { id: existing.employee!.id },
+        data: { status: EmployeeStatus.TERMINATED, terminatedAt },
+      });
+      await this.revokeUserSessions(tx, id);
+      await this.createAuditLog(tx, actor.id, "STAFF_TERMINATED", id, {
+        employeeId: existing.employee!.id,
+        terminatedAt: terminatedAt.toISOString(),
+        reason: dto.reason.trim(),
+      });
+      return tx.user.findUniqueOrThrow({
+        where: { id },
+        select: this.staffSelect(),
+      });
+    });
+    await this.userAuthCache.invalidate(id);
+    return this.toStaffDto(updated);
+  }
+
+  async rehireStaff(id: string, dto: RehireStaffDto, actor: AuthenticatedUser) {
+    const existing = await this.findStaffOrThrow(id);
+    this.assertCanManageStaffRecord(actor, existing);
+    if (!existing.employee) {
+      throw new BadRequestException(
+        "Bu account xodim yozuviga biriktirilmagan",
+      );
+    }
+    if (existing.employee.status !== EmployeeStatus.TERMINATED) {
+      throw new BadRequestException("Faqat ishdan ketgan xodim qayta olinadi");
+    }
+    if (!existing.employee.branchId) {
+      throw new BadRequestException(
+        "Qayta ishga olishdan oldin xodimga filial biriktiring",
+      );
+    }
+
+    const hiredAt = dto.hiredAt ? new Date(dto.hiredAt) : new Date();
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { isActive: true } });
+      await tx.employee.update({
+        where: { id: existing.employee!.id },
+        data: {
+          status: EmployeeStatus.ACTIVE,
+          hiredAt,
+          terminatedAt: null,
+        },
+      });
+      await this.revokeUserSessions(tx, id);
+      await this.createAuditLog(tx, actor.id, "STAFF_REHIRED", id, {
+        employeeId: existing.employee!.id,
+        hiredAt: hiredAt.toISOString(),
+        reason: dto.reason.trim(),
+      });
+      return tx.user.findUniqueOrThrow({
+        where: { id },
+        select: this.staffSelect(),
+      });
+    });
+    await this.userAuthCache.invalidate(id);
+    return this.toStaffDto(updated);
+  }
+
+  async resetPassword(
+    id: string,
+    dto: ResetStaffPasswordDto,
+    actor: AuthenticatedUser,
+  ) {
     const existing = await this.findStaffOrThrow(id);
     this.assertCanManageStaffRecord(actor, existing);
 
-    if (this.hasRole(existing, "SUPER_ADMIN") && !actor.roles.includes("SUPER_ADMIN")) {
-      throw new ForbiddenException("Only SUPER_ADMIN can reset a SUPER_ADMIN password");
+    if (
+      this.hasRole(existing, "SUPER_ADMIN") &&
+      !actor.roles.includes("SUPER_ADMIN")
+    ) {
+      throw new ForbiddenException(
+        "Only SUPER_ADMIN can reset a SUPER_ADMIN password",
+      );
     }
 
     const passwordHash = await hash(dto.newPassword, 12);
@@ -361,7 +504,6 @@ export class StaffService {
       await this.revokeUserSessions(tx, id);
       await this.createAuditLog(tx, actor.id, "STAFF_PASSWORD_RESET", id, {});
     });
-
 
     /*
      * Ruxsat keshini darhol bekor qilamiz (PHASE 6 H8).
@@ -388,7 +530,10 @@ export class StaffService {
       throw new UnauthorizedException("User is not active");
     }
 
-    const currentMatches = await compare(dto.currentPassword, existing.passwordHash);
+    const currentMatches = await compare(
+      dto.currentPassword,
+      existing.passwordHash,
+    );
 
     if (!currentMatches) {
       throw new UnauthorizedException("Current password is invalid");
@@ -400,9 +545,14 @@ export class StaffService {
         data: { passwordHash: await hash(dto.newPassword, 12) },
       });
       await this.revokeUserSessions(tx, user.id);
-      await this.createAuditLog(tx, user.id, "STAFF_OWN_PASSWORD_CHANGED", user.id, {});
+      await this.createAuditLog(
+        tx,
+        user.id,
+        "STAFF_OWN_PASSWORD_CHANGED",
+        user.id,
+        {},
+      );
     });
-
 
     /*
      * Ruxsat keshini darhol bekor qilamiz (PHASE 6 H8).
@@ -458,10 +608,16 @@ export class StaffService {
           input.activate ? true : existing.isActive,
         );
         await this.revokeUserSessions(tx, existing.id);
-        await this.createAuditLog(tx, existing.id, "STAFF_BOOTSTRAP_SUPER_ADMIN_RESET", existing.id, {
-          branchId,
-          activated: input.activate,
-        });
+        await this.createAuditLog(
+          tx,
+          existing.id,
+          "STAFF_BOOTSTRAP_SUPER_ADMIN_RESET",
+          existing.id,
+          {
+            branchId,
+            activated: input.activate,
+          },
+        );
 
         return tx.user.findUniqueOrThrow({
           where: { id: existing.id },
@@ -486,9 +642,15 @@ export class StaffService {
         },
       });
       await this.syncEmployee(tx, created.id, branchId, input.name, true);
-      await this.createAuditLog(tx, created.id, "STAFF_BOOTSTRAP_SUPER_ADMIN_CREATED", created.id, {
-        branchId,
-      });
+      await this.createAuditLog(
+        tx,
+        created.id,
+        "STAFF_BOOTSTRAP_SUPER_ADMIN_CREATED",
+        created.id,
+        {
+          branchId,
+        },
+      );
 
       return tx.user.findUniqueOrThrow({
         where: { id: created.id },
@@ -532,9 +694,14 @@ export class StaffService {
     return staff;
   }
 
-  private normalizeLogin(email?: string | null, phone?: string | null): NormalizedStaffLogin {
-    const normalizedEmail = email === undefined ? null : this.normalizeEmail(email);
-    const normalizedPhone = phone === undefined ? null : this.normalizePhone(phone);
+  private normalizeLogin(
+    email?: string | null,
+    phone?: string | null,
+  ): NormalizedStaffLogin {
+    const normalizedEmail =
+      email === undefined ? null : this.normalizeEmail(email);
+    const normalizedPhone =
+      phone === undefined ? null : this.normalizePhone(phone);
 
     return {
       email: normalizedEmail,
@@ -578,7 +745,9 @@ export class StaffService {
     });
 
     if (duplicate) {
-      throw new ConflictException("Email or phone is already used by another staff account");
+      throw new ConflictException(
+        "Email or phone is already used by another staff account",
+      );
     }
   }
 
@@ -589,7 +758,10 @@ export class StaffService {
     ];
   }
 
-  private async findActiveRole(tx: Prisma.TransactionClient, code: StaffRoleCode) {
+  private async findActiveRole(
+    tx: Prisma.TransactionClient,
+    code: StaffRoleCode,
+  ) {
     const roles = await this.findActiveRoles(tx, [code]);
     const role = roles[0];
 
@@ -610,7 +782,9 @@ export class StaffService {
     const missing = codes.filter((code) => !found.has(code));
 
     if (missing.length) {
-      throw new NotFoundException(`Role ${missing.join(", ")} is not available`);
+      throw new NotFoundException(
+        `Role ${missing.join(", ")} is not available`,
+      );
     }
 
     return codes.map((code) => roles.find((role) => role.code === code)!);
@@ -620,7 +794,10 @@ export class StaffService {
     actor: AuthenticatedUser,
     roleCodes: string[],
   ): Promise<void> {
-    if (roleCodes.includes("SUPER_ADMIN") && !actor.roles.includes("SUPER_ADMIN")) {
+    if (
+      roleCodes.includes("SUPER_ADMIN") &&
+      !actor.roles.includes("SUPER_ADMIN")
+    ) {
       throw new ForbiddenException("Only SUPER_ADMIN can assign SUPER_ADMIN");
     }
 
@@ -628,7 +805,9 @@ export class StaffService {
     const hasCustomRole = roles.some((role) => !role.isSystem);
 
     if (!actor.roles.includes("SUPER_ADMIN") && hasCustomRole) {
-      throw new ForbiddenException("Only SUPER_ADMIN can assign custom staff roles");
+      throw new ForbiddenException(
+        "Only SUPER_ADMIN can assign custom staff roles",
+      );
     }
 
     const hasGlobalRole = roles.some(
@@ -638,7 +817,9 @@ export class StaffService {
     );
 
     if (!actor.roles.includes("SUPER_ADMIN") && hasGlobalRole) {
-      throw new ForbiddenException("Only SUPER_ADMIN can assign global staff roles");
+      throw new ForbiddenException(
+        "Only SUPER_ADMIN can assign global staff roles",
+      );
     }
   }
 
@@ -660,7 +841,9 @@ export class StaffService {
       const resolvedBranchId = resolveBranchScope(actor, branchId ?? undefined);
 
       if (!resolvedBranchId) {
-        throw new BadRequestException("Branch-scoped staff roles require an assigned branch");
+        throw new BadRequestException(
+          "Branch-scoped staff roles require an assigned branch",
+        );
       }
 
       await this.assertBranchExists(resolvedBranchId);
@@ -676,10 +859,16 @@ export class StaffService {
     return branchId;
   }
 
-  private async resolveBootstrapBranch(tx: Prisma.TransactionClient, branchCodeOrId: string): Promise<string> {
+  private async resolveBootstrapBranch(
+    tx: Prisma.TransactionClient,
+    branchCodeOrId: string,
+  ): Promise<string> {
     const branch = await tx.branch.findFirst({
       where: {
-        OR: [{ id: branchCodeOrId }, { code: branchCodeOrId.trim().toUpperCase() }],
+        OR: [
+          { id: branchCodeOrId },
+          { code: branchCodeOrId.trim().toUpperCase() },
+        ],
       },
       select: { id: true },
     });
@@ -702,17 +891,24 @@ export class StaffService {
     }
   }
 
-  private assertCanManageStaffRecord(actor: AuthenticatedUser, staff: StaffRecord): void {
+  private assertCanManageStaffRecord(
+    actor: AuthenticatedUser,
+    staff: StaffRecord,
+  ): void {
     if (actor.roles.includes("SUPER_ADMIN")) {
       return;
     }
 
     if (this.hasRole(staff, "SUPER_ADMIN")) {
-      throw new ForbiddenException("Only SUPER_ADMIN can manage SUPER_ADMIN accounts");
+      throw new ForbiddenException(
+        "Only SUPER_ADMIN can manage SUPER_ADMIN accounts",
+      );
     }
 
     if (!staff.employee?.branchId) {
-      throw new ForbiddenException("Cannot manage global staff from a branch-scoped account");
+      throw new ForbiddenException(
+        "Cannot manage global staff from a branch-scoped account",
+      );
     }
 
     resolveBranchScope(actor, staff.employee.branchId);
@@ -722,7 +918,11 @@ export class StaffService {
     staff: StaffRecord,
     wouldRemoveActiveSuperAdmin: boolean,
   ): Promise<void> {
-    if (!wouldRemoveActiveSuperAdmin || !staff.isActive || !this.hasRole(staff, "SUPER_ADMIN")) {
+    if (
+      !wouldRemoveActiveSuperAdmin ||
+      !staff.isActive ||
+      !this.hasRole(staff, "SUPER_ADMIN")
+    ) {
       return;
     }
 
@@ -741,7 +941,9 @@ export class StaffService {
     });
 
     if (activeSuperAdmins <= 1) {
-      throw new BadRequestException("At least one active SUPER_ADMIN account must remain");
+      throw new BadRequestException(
+        "At least one active SUPER_ADMIN account must remain",
+      );
     }
   }
 
@@ -749,11 +951,44 @@ export class StaffService {
     return staff.roles.some((userRole) => userRole.role.code === roleCode);
   }
 
+  private async assertNoOpenFinancialDuties(
+    employeeId?: string,
+  ): Promise<void> {
+    if (!employeeId) return;
+
+    const [openShift, pendingTransfer] = await Promise.all([
+      this.prisma.shift.findFirst({
+        where: { employeeId, status: ShiftStatus.OPEN },
+        select: { id: true, shiftNumber: true },
+      }),
+      this.prisma.cashTransfer.findFirst({
+        where: {
+          status: CashTransferStatus.PENDING,
+          OR: [{ fromShift: { employeeId } }, { toShift: { employeeId } }],
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (openShift) {
+      throw new BadRequestException(
+        `Xodimning #${openShift.shiftNumber} ochiq smenasi bor. Avval pulni topshirib smenani yoping.`,
+      );
+    }
+    if (pendingTransfer) {
+      throw new BadRequestException(
+        "Xodimda tasdiqlanmagan pul topshiruvi bor. Avval uni qabul qiling yoki rad eting.",
+      );
+    }
+  }
+
   private primaryRoleCode(staff: StaffRecord): string {
     const roleCode = this.roleCodesFromStaff(staff)[0];
 
     if (!roleCode) {
-      throw new BadRequestException("Staff user does not have a manageable role");
+      throw new BadRequestException(
+        "Staff user does not have a manageable role",
+      );
     }
 
     return roleCode;
@@ -763,8 +998,15 @@ export class StaffService {
     return staff.roles.map((userRole) => userRole.role.code);
   }
 
-  private resolveRequestedRoleCodes(dto: { roleCode?: string; roleCodes?: string[] }): string[] {
-    const requested = dto.roleCodes?.length ? dto.roleCodes : dto.roleCode ? [dto.roleCode] : [];
+  private resolveRequestedRoleCodes(dto: {
+    roleCode?: string;
+    roleCodes?: string[];
+  }): string[] {
+    const requested = dto.roleCodes?.length
+      ? dto.roleCodes
+      : dto.roleCode
+        ? [dto.roleCode]
+        : [];
     const unique = [...new Set(requested)];
 
     if (!unique.length) {
@@ -798,7 +1040,7 @@ export class StaffService {
   ): Promise<void> {
     const existing = await tx.employee.findUnique({
       where: { userId },
-      select: { id: true, employeeCode: true },
+      select: { id: true, employeeCode: true, status: true },
     });
 
     if (!branchId) {
@@ -808,7 +1050,7 @@ export class StaffService {
           data: {
             userId: null,
             status: EmployeeStatus.INACTIVE,
-            terminatedAt: new Date(),
+            terminatedAt: null,
           },
         });
       }
@@ -825,8 +1067,14 @@ export class StaffService {
           branchId,
           firstName: name.firstName,
           lastName: name.lastName,
-          status: isActive ? EmployeeStatus.ACTIVE : EmployeeStatus.SUSPENDED,
-          terminatedAt: isActive ? null : new Date(),
+          ...(existing.status === EmployeeStatus.TERMINATED
+            ? {}
+            : {
+                status: isActive
+                  ? EmployeeStatus.ACTIVE
+                  : EmployeeStatus.SUSPENDED,
+                terminatedAt: null,
+              }),
         },
       });
       return;
@@ -841,7 +1089,7 @@ export class StaffService {
         lastName: name.lastName,
         status: isActive ? EmployeeStatus.ACTIVE : EmployeeStatus.SUSPENDED,
         hiredAt: new Date(),
-        terminatedAt: isActive ? null : new Date(),
+        terminatedAt: null,
       },
     });
   }
@@ -852,6 +1100,14 @@ export class StaffService {
       firstName: parts[0] ?? "Staff",
       lastName: parts.slice(1).join(" ") || null,
     };
+  }
+
+  private assertNotTerminated(staff: StaffRecord, action: string): void {
+    if (staff.employee?.status === EmployeeStatus.TERMINATED) {
+      throw new BadRequestException(
+        `Ishdan ketgan xodim ${action} mumkin emas. Avval qayta ishga olish amalini bajaring.`,
+      );
+    }
   }
 
   private createEmployeeCode(): string {

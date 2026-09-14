@@ -271,6 +271,7 @@ const permissionNames: Record<string, string> = {
   [PERMISSIONS.ONLINE_ORDER_VIEW]: "View online orders",
   [PERMISSIONS.COURIER_DELIVERY_VIEW]: "View courier delivery orders",
   [PERMISSIONS.COURIER_DELIVERY_UPDATE]: "Update courier delivery orders",
+  [PERMISSIONS.COURIER_MANAGE]: "Manage courier assignments",
   [PERMISSIONS.REPORT_SALES_VIEW]: "View sales reports",
   [PERMISSIONS.REPORT_PRODUCTS_VIEW]: "View product reports",
   [PERMISSIONS.REPORT_EMPLOYEES_VIEW]: "View employee reports",
@@ -278,6 +279,8 @@ const permissionNames: Record<string, string> = {
   [PERMISSIONS.EXPENSE_CREATE]: "Record branch expenses",
   [PERMISSIONS.AUDIT_VIEW]: "View security audit log",
   [PERMISSIONS.SYSTEM_HEALTH_VIEW]: "View production health and backup evidence",
+  [PERMISSIONS.NOTIFICATION_MANAGE]: "Manage operational notifications",
+  [PERMISSIONS.SETTING_MANAGE]: "Manage business settings",
 };
 
 const paymentMethodDefinitions = [
@@ -291,7 +294,7 @@ const paymentMethodDefinitions = [
 ] as const;
 
 async function main(): Promise<void> {
-  const permissionCodes = [...new Set(Object.keys(permissionNames))];
+  const permissionCodes = [...new Set(Object.values(PERMISSIONS))];
 
   for (const code of permissionCodes) {
     await prisma.permission.upsert({

@@ -42,6 +42,7 @@ const emptyDetails = {
   landmark: "",
 };
 type Details = typeof emptyDetails;
+type InvalidField = "point" | "address" | "house" | "label" | null;
 
 export function DeliveryAddressPicker({
   value,
@@ -73,12 +74,18 @@ export function DeliveryAddressPicker({
   const [save, setSave] = useState(true);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [invalidField, setInvalidField] = useState<InvalidField>(null);
   /*
    * Ko'cha nomi geokoderdan avtomatik to'ldirilganini eslab qolamiz.
    * Foydalanuvchi maydonni O'ZI tahrirlagan bo'lsa, keyingi nuqta tanlash
    * uning yozganini ALMASHTIRMASLIGI kerak — bu eng bezovta qiladigan xato.
    */
   const autoFilledAddress = useRef<string | null>(null);
+  const autoFilledHouse = useRef<string | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const houseInputRef = useRef<HTMLInputElement>(null);
+  const labelInputRef = useRef<HTMLInputElement>(null);
   const [locatingAddress, setLocatingAddress] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const request = useRef(0);
@@ -133,10 +140,6 @@ export function DeliveryAddressPicker({
   useEffect(() => {
     if (!editing || !point) return;
 
-    // Foydalanuvchi maydonni o'zi tahrirlagan bo'lsa — tegmaymiz.
-    const current = details.address.trim();
-    if (current && current !== autoFilledAddress.current) return;
-
     let cancelled = false;
     // Sur-sur qilganda har bir oraliq nuqta uchun so'rov ketmasligi uchun.
     const timer = setTimeout(() => {
@@ -146,27 +149,59 @@ export function DeliveryAddressPicker({
         lng: String(point.longitude),
         lang: "uz",
       });
-      apiFetch<{ label: string; inCity: boolean }>(
+      apiFetch<{ label: string; inCity: boolean; houseNumber?: string }>(
         "/geocoding/reverse?" + query.toString(),
       )
         .then((result) => {
           if (cancelled) return;
-          const label = result?.label?.trim();
-          if (!label) return;
+          const geocodedLabel = result?.label?.trim() ?? "";
+          const houseNumber = result?.houseNumber?.trim() ?? "";
+          if (!geocodedLabel && !houseNumber) return;
           /*
            * Nominatim to'liq zanjir qaytaradi ("uy, ko'cha, tuman, shahar,
            * viloyat, mamlakat, indeks"). Maydon uzunligi 200 ta belgi va
            * foydalanuvchiga ko'cha darajasi yetarli — boshidagi uch bo'lak
            * olinadi.
            */
-          const short = label.split(",").slice(0, 3).join(",").trim();
-          autoFilledAddress.current = short;
-          setDetails((previous) =>
-            previous.address.trim() &&
-            previous.address.trim() !== autoFilledAddress.current
+          const labelParts = geocodedLabel
+            .split(",")
+            .map((part) => part.trim())
+            .filter(Boolean);
+          if (houseNumber && labelParts[0] === houseNumber) {
+            labelParts.shift();
+          }
+          const short = labelParts.slice(0, 3).join(", ");
+          const previousAutoAddress = autoFilledAddress.current;
+          const previousAutoHouse = autoFilledHouse.current;
+
+          setDetails((previous) => {
+            const addressWasEdited =
+              Boolean(previous.address.trim()) &&
+              previous.address.trim() !== previousAutoAddress;
+            const houseWasEdited =
+              Boolean(previous.house.trim()) &&
+              previous.house.trim() !== previousAutoHouse;
+            const nextAddress =
+              short && !addressWasEdited ? short : previous.address;
+            const nextHouse =
+              houseNumber && !houseWasEdited ? houseNumber : previous.house;
+
+            return nextAddress === previous.address &&
+              nextHouse === previous.house
               ? previous
-              : { ...previous, address: short },
-          );
+              : { ...previous, address: nextAddress, house: nextHouse };
+          });
+
+          if (short) autoFilledAddress.current = short;
+          if (houseNumber) {
+            autoFilledHouse.current = houseNumber;
+            setInvalidField((current) =>
+              current === "house" ? null : current,
+            );
+            setFormError((current) =>
+              current === "Uy yoki bino raqamini kiriting." ? null : current,
+            );
+          }
         })
         .catch(() => {
           /* Fail-open: qo'lda kiritish har doim ochiq. */
@@ -270,6 +305,9 @@ export function DeliveryAddressPicker({
 
   function edit(entry?: SavedAddress) {
     setFormError(null);
+    setInvalidField(null);
+    autoFilledAddress.current = null;
+    autoFilledHouse.current = null;
     const id = entry?.id === "current-address" ? null : (entry?.id ?? null);
     setEditingId(id);
     draftId.current = id;
@@ -293,23 +331,46 @@ export function DeliveryAddressPicker({
 
   async function confirm() {
     if (operation.current || disabled) return;
-    if (
-      !point ||
-      details.address.trim().length < 3 ||
-      !details.house.trim() ||
-      (save && !label.trim())
-    ) {
-      setFormError(
-        !point
-          ? "Xaritada yetkazish nuqtasini belgilang."
-          : !details.address.trim() || details.address.trim().length < 3
-            ? "Ko'cha yoki mahalla nomini kiriting."
-            : !details.house.trim()
-              ? "Uy yoki bino raqamini kiriting."
-              : "Manzil nomini kiriting.",
-      );
+    const issue: {
+      field: Exclude<InvalidField, null>;
+      message: string;
+    } | null = !point
+      ? { field: "point", message: "Xaritada yetkazish nuqtasini belgilang." }
+      : details.address.trim().length < 3
+        ? {
+            field: "address",
+            message: "Ko'cha yoki mahalla nomini kiriting.",
+          }
+        : !details.house.trim()
+          ? {
+              field: "house",
+              message: "Uy yoki bino raqamini kiriting.",
+            }
+          : save && !label.trim()
+            ? { field: "label", message: "Manzil nomini kiriting." }
+            : null;
+
+    if (issue) {
+      setInvalidField(issue.field);
+      setFormError(issue.message);
+      requestAnimationFrame(() => {
+        const target =
+          issue.field === "address"
+            ? addressInputRef.current
+            : issue.field === "house"
+              ? houseInputRef.current
+              : issue.field === "label"
+                ? labelInputRef.current
+                : null;
+        target?.focus({ preventScroll: true });
+        (target ?? editorRef.current)?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
       return;
     }
+    if (!point) return;
     const next: DeliveryLocation = {
       ...point,
       ...(Object.fromEntries(
@@ -319,6 +380,7 @@ export function DeliveryAddressPicker({
     operation.current = true;
     setBusy(true);
     setFormError(null);
+    setInvalidField(null);
     try {
       if (save && customerId) {
         const id = editingId ?? draftId.current ?? crypto.randomUUID();
@@ -520,15 +582,21 @@ export function DeliveryAddressPicker({
         </div>
       ) : null}
       {editing ? (
-        <div className="mf-address-editor">
+        <div className="mf-address-editor" ref={editorRef}>
           <DeliveryMap
             point={point}
             center={center}
             onChange={(next) => {
               setPoint(next);
               setFormError(null);
+              setInvalidField(null);
             }}
           />
+          {invalidField === "point" ? (
+            <p className="mf-field-error mf-map-field-error" role="alert">
+              {formError}
+            </p>
+          ) : null}
           {locatingAddress ? (
             <p className="mf-location-notice" role="status">
               Manzil aniqlanmoqda...
@@ -538,28 +606,68 @@ export function DeliveryAddressPicker({
             <label className="mf-checkout-field mf-field-wide">
               Ko'cha yoki mahalla
               <input
+                ref={addressInputRef}
                 className="mf-input"
+                aria-invalid={invalidField === "address"}
+                aria-describedby={
+                  invalidField === "address"
+                    ? "delivery-address-error"
+                    : undefined
+                }
                 autoComplete="address-line1"
                 placeholder="Masalan, Amir Temur ko'chasi"
                 maxLength={200}
                 value={details.address}
-                onChange={(event) =>
-                  setDetails({ ...details, address: event.target.value })
-                }
+                onChange={(event) => {
+                  autoFilledAddress.current = null;
+                  setDetails({ ...details, address: event.target.value });
+                  if (invalidField === "address") {
+                    setInvalidField(null);
+                    setFormError(null);
+                  }
+                }}
               />
+              {invalidField === "address" ? (
+                <span
+                  id="delivery-address-error"
+                  className="mf-field-error"
+                  role="alert"
+                >
+                  {formError}
+                </span>
+              ) : null}
             </label>
             <label className="mf-checkout-field">
               Uy / bino
               <input
+                ref={houseInputRef}
                 className="mf-input"
+                aria-invalid={invalidField === "house"}
+                aria-describedby={
+                  invalidField === "house" ? "delivery-house-error" : undefined
+                }
                 autoComplete="address-line2"
                 placeholder="12A"
                 maxLength={40}
                 value={details.house}
-                onChange={(event) =>
-                  setDetails({ ...details, house: event.target.value })
-                }
+                onChange={(event) => {
+                  autoFilledHouse.current = null;
+                  setDetails({ ...details, house: event.target.value });
+                  if (invalidField === "house") {
+                    setInvalidField(null);
+                    setFormError(null);
+                  }
+                }}
               />
+              {invalidField === "house" ? (
+                <span
+                  id="delivery-house-error"
+                  className="mf-field-error"
+                  role="alert"
+                >
+                  {formError}
+                </span>
+              ) : null}
             </label>
             <label className="mf-checkout-field">
               Xonadon
@@ -640,15 +748,47 @@ export function DeliveryAddressPicker({
                   {name}
                 </button>
               ))}
-              <input
-                className="mf-input"
-                aria-label="Manzil nomi"
-                maxLength={40}
-                value={label}
-                onChange={(event) => setLabel(event.target.value)}
-                placeholder="Manzil nomi"
-              />
+              <div className="mf-address-custom-label">
+                <input
+                  ref={labelInputRef}
+                  className="mf-input"
+                  aria-label="Manzil nomi"
+                  aria-invalid={invalidField === "label"}
+                  aria-describedby={
+                    invalidField === "label"
+                      ? "delivery-label-error"
+                      : undefined
+                  }
+                  maxLength={40}
+                  value={label}
+                  onChange={(event) => {
+                    setLabel(event.target.value);
+                    if (invalidField === "label") {
+                      setInvalidField(null);
+                      setFormError(null);
+                    }
+                  }}
+                  placeholder="Manzil nomi"
+                />
+                {invalidField === "label" ? (
+                  <span
+                    id="delivery-label-error"
+                    className="mf-field-error"
+                    role="alert"
+                  >
+                    {formError}
+                  </span>
+                ) : null}
+              </div>
             </div>
+          ) : null}
+          {formError && invalidField === null ? (
+            <p
+              className="mf-checkout-error mf-address-action-error"
+              role="alert"
+            >
+              {formError}
+            </p>
           ) : null}
           <div className="mf-address-bottom">
             <button
@@ -674,9 +814,9 @@ export function DeliveryAddressPicker({
           </div>
         </div>
       ) : null}
-      {formError || error ? (
+      {(!editing && formError) || error ? (
         <p className="mf-checkout-error" role="alert">
-          {formError ?? error}
+          {(!editing && formError) || error}
         </p>
       ) : null}
     </fieldset>

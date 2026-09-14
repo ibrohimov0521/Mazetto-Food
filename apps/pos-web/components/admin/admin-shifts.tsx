@@ -28,6 +28,7 @@ import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
 import { moneyCell, numberCell } from "./admin-report-views";
+import { CashTransferDetailButton } from "../staff/cash-transfer-detail";
 
 /*
  * Xodimlarning umumiy kassasi va smena solishtiruvi.
@@ -290,16 +291,21 @@ export function AdminShiftsPage() {
     setClosingBalance("");
   }, []);
 
-  const openHandoverDialog = useCallback((shift: Shift) => {
-    const receiver = shifts.find(
-      (candidate) => candidate.status === "OPEN" && candidate.id !== shift.id,
-    );
-    setHandover(shift);
-    setHandoverReceiverId(receiver?.id ?? "");
-    setHandoverAmount(shift.currentCash ? String(Number(shift.currentCash)) : "");
-    setHandoverReason("");
-    setHandoverError("");
-  }, [shifts]);
+  const openHandoverDialog = useCallback(
+    (shift: Shift) => {
+      const receiver = shifts.find(
+        (candidate) => candidate.status === "OPEN" && candidate.id !== shift.id,
+      );
+      setHandover(shift);
+      setHandoverReceiverId(receiver?.id ?? "");
+      setHandoverAmount(
+        shift.currentCash ? String(Number(shift.currentCash)) : "",
+      );
+      setHandoverReason("");
+      setHandoverError("");
+    },
+    [shifts],
+  );
 
   async function submitHandover(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -308,8 +314,14 @@ export function AdminShiftsPage() {
       return;
     }
     const amount = Number(handoverAmount);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > Number(handover.currentCash ?? 0)) {
-      setHandoverError("Summa joriy naqd qoldiqdan oshmasligi va 0 dan katta bo'lishi kerak.");
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > Number(handover.currentCash ?? 0)
+    ) {
+      setHandoverError(
+        "Summa joriy naqd qoldiqdan oshmasligi va 0 dan katta bo'lishi kerak.",
+      );
       return;
     }
     setIsHandingOver(true);
@@ -327,7 +339,9 @@ export function AdminShiftsPage() {
       setHandover(null);
       load();
     } catch (caught) {
-      setHandoverError(caught instanceof Error ? caught.message : "Naqd topshirilmadi.");
+      setHandoverError(
+        caught instanceof Error ? caught.message : "Naqd topshirilmadi.",
+      );
     } finally {
       setIsHandingOver(false);
     }
@@ -342,16 +356,18 @@ export function AdminShiftsPage() {
 
     const amount = Number(closingBalance);
 
-    if (closingBalance.trim() === "" || !Number.isFinite(amount) || amount < 0) {
+    if (
+      closingBalance.trim() === "" ||
+      !Number.isFinite(amount) ||
+      amount < 0
+    ) {
       setCloseError("Sanab olingan naqd summani kiriting (0 yoki katta son).");
       /*
        * Inline xato + birinchi noto'g'ri maydonga fokus. Ilgari butun panel
        * bo'ylab validatsiya 5 soniyalik toast'ga ketardi va qaysi maydon
        * aybdor ekani aytilmasdi.
        */
-      requestAnimationFrame(() =>
-        focusFirstInvalidField(closeFormRef.current),
-      );
+      requestAnimationFrame(() => focusFirstInvalidField(closeFormRef.current));
       return;
     }
 
@@ -445,9 +461,7 @@ export function AdminShiftsPage() {
       hideOnMobile: true,
       render: (shift) => (
         <span className={numberCell}>
-          {shift.status === "OPEN"
-            ? formatMoney(shift.currentCash)
-            : "—"}
+          {shift.status === "OPEN" ? formatMoney(shift.currentCash) : "—"}
         </span>
       ),
     },
@@ -639,7 +653,9 @@ export function AdminShiftsPage() {
                   onClick={() => openCloseDialog(shift)}
                 />
               ) : null}
-              {canForceHandover && shift.status === "OPEN" && Number(shift.currentCash ?? 0) > 0 ? (
+              {canForceHandover &&
+              shift.status === "OPEN" &&
+              Number(shift.currentCash ?? 0) > 0 ? (
                 <RowAction
                   icon="send"
                   label={`#${shift.shiftNumber} naqdini majburiy topshirish`}
@@ -691,23 +707,50 @@ export function AdminShiftsPage() {
         }
         isOpen={handover !== null}
         onClose={() => setHandover(null)}
-        title={handover ? `#${handover.shiftNumber} naqdini topshirish` : "Naqd topshirish"}
+        title={
+          handover
+            ? `#${handover.shiftNumber} naqdini topshirish`
+            : "Naqd topshirish"
+        }
       >
         {handover ? (
-          <form className="grid gap-4" id="cash-force-handover-form" onSubmit={submitHandover}>
+          <form
+            className="grid gap-4"
+            id="cash-force-handover-form"
+            onSubmit={submitHandover}
+          >
             <dl className="grid gap-2 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3 text-sm">
               <Row label="Xodim" value={employeeName(handover.employee)} />
-              <Row label="Joriy qoldiq" numeric value={formatMoney(handover.currentCash)} />
+              <Row
+                label="Joriy qoldiq"
+                numeric
+                value={formatMoney(handover.currentCash)}
+              />
             </dl>
-            <FormField error={handoverError} label="Qabul qiluvchi kassir smenasi" required>
+            <FormField
+              error={handoverError}
+              label="Qabul qiluvchi kassir smenasi"
+              required
+            >
               {(props) => (
-                <Select {...props} value={handoverReceiverId} onChange={(event) => setHandoverReceiverId(event.target.value)}>
+                <Select
+                  {...props}
+                  value={handoverReceiverId}
+                  onChange={(event) =>
+                    setHandoverReceiverId(event.target.value)
+                  }
+                >
                   <option value="">Smenani tanlang</option>
                   {shifts
-                    .filter((candidate) => candidate.status === "OPEN" && candidate.id !== handover.id)
+                    .filter(
+                      (candidate) =>
+                        candidate.status === "OPEN" &&
+                        candidate.id !== handover.id,
+                    )
                     .map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
-                        #{candidate.shiftNumber} · {employeeName(candidate.employee)}
+                        #{candidate.shiftNumber} ·{" "}
+                        {employeeName(candidate.employee)}
                       </option>
                     ))}
                 </Select>
@@ -715,11 +758,25 @@ export function AdminShiftsPage() {
             </FormField>
             <FormField label="Topshiriladigan summa" required>
               {(props) => (
-                <TextInput {...props} inputMode="decimal" min={0.01} step="0.01" type="number" value={handoverAmount} onChange={(event) => setHandoverAmount(event.target.value)} />
+                <TextInput
+                  {...props}
+                  inputMode="decimal"
+                  min={0.01}
+                  step="0.01"
+                  type="number"
+                  value={handoverAmount}
+                  onChange={(event) => setHandoverAmount(event.target.value)}
+                />
               )}
             </FormField>
             <FormField label="Izoh">
-              {(props) => <TextInput {...props} value={handoverReason} onChange={(event) => setHandoverReason(event.target.value)} />}
+              {(props) => (
+                <TextInput
+                  {...props}
+                  value={handoverReason}
+                  onChange={(event) => setHandoverReason(event.target.value)}
+                />
+              )}
             </FormField>
           </form>
         ) : null}
@@ -746,9 +803,7 @@ export function AdminShiftsPage() {
         isOpen={closing !== null}
         onClose={() => setClosing(null)}
         title={
-          closing
-            ? `#${closing.shiftNumber} smenani yopish`
-            : "Smenani yopish"
+          closing ? `#${closing.shiftNumber} smenani yopish` : "Smenani yopish"
         }
       >
         {closing ? (
@@ -890,9 +945,14 @@ function ShiftDetailModal({
       header: "Sabab",
       hideOnMobile: true,
       render: (row) => (
-        <span className="text-[13px] text-mz-text-muted">
-          {row.reason ?? row.order?.orderNumber ?? "—"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] text-mz-text-muted">
+            {row.reason ?? row.order?.orderNumber ?? "—"}
+          </span>
+          {row.cashTransferId ? (
+            <CashTransferDetailButton transferId={row.cashTransferId} />
+          ) : null}
+        </div>
       ),
     },
     {
@@ -941,8 +1001,13 @@ function ShiftDetailModal({
               Smenani yopish
             </GuardedButton>
           ) : null}
-          {canForceHandover && shift?.status === "OPEN" && Number(shift.currentCash ?? 0) > 0 ? (
-            <GuardedButton onClick={() => onRequestHandover(shift)} variant="danger">
+          {canForceHandover &&
+          shift?.status === "OPEN" &&
+          Number(shift.currentCash ?? 0) > 0 ? (
+            <GuardedButton
+              onClick={() => onRequestHandover(shift)}
+              variant="danger"
+            >
               Majburiy topshiruv
             </GuardedButton>
           ) : null}
@@ -1061,9 +1126,9 @@ function ShiftDetailModal({
 
           {rows.some((row) => row.cashTransferId) ? (
             <p className="rounded-mz-control border border-mz-border border-l-4 border-l-mz-info bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
-              Topshirish yozuvlari ko&apos;rinadi, lekin KIMDAN KIMGA
-              topshirilgani bu yerda yo&apos;q: topshiruvlar ro&apos;yxatini
-              beradigan admin endpoint&apos;i hali qurilmagan.
+              Topshirish yozuvidagi <strong>Tarkib</strong> tugmasi pul kimdan
+              kimga o&apos;tgani va summani tashkil qilgan buyurtmalarni
+              ko&apos;rsatadi.
             </p>
           ) : null}
         </div>

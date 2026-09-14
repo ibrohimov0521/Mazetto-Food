@@ -65,6 +65,12 @@ enum CustomerOrderAttemptStatus {
   COMPLETED
 }
 
+enum IdempotencyRequestStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
 enum BranchDayOfWeek {
   MONDAY
   TUESDAY
@@ -87,6 +93,15 @@ enum OrderStatus {
   PREPARING
   READY
   SERVED
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderState {
+  DRAFT
+  PLACED
+  ACCEPTED
+  REJECTED
   COMPLETED
   CANCELLED
 }
@@ -422,15 +437,15 @@ model User {
 }
 
 model Role {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  name        String
-  description String?
-  isSystem    Boolean  @default(false)
-  isBranchScoped Boolean @default(false)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  description    String?
+  isSystem       Boolean  @default(false)
+  isBranchScoped Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   permissions RolePermission[]
   users       UserRole[]
@@ -482,23 +497,51 @@ model UserRole {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  entity    String
-  entityId  String?
-  metadata  Json?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  userId        String?
+  action        String
+  entity        String
+  entityId      String?
+  metadata      Json?
+  reasonCode    String?
+  correlationId String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([entity, entityId])
   @@index([action])
+  @@index([correlationId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model IdempotencyRequest {
+  id             String                   @id @default(cuid())
+  scope          String
+  key            String
+  requestHash    String
+  status         IdempotencyRequestStatus @default(IN_PROGRESS)
+  correlationId  String
+  actorId        String?
+  resourceType   String?
+  resourceId     String?
+  responseStatus Int?
+  responseBody   Json?
+  failureCode    String?
+  expiresAt      DateTime
+  completedAt    DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@unique([scope, key])
+  @@index([status, expiresAt])
+  @@index([correlationId])
+  @@index([resourceType, resourceId])
+  @@map("idempotency_requests")
 }
 
 model Session {
@@ -897,7 +940,10 @@ model Order {
   source                 OrderSource
   type                   OrderType
   isSupplemental         Boolean       @default(false)
+  parentOrderId          String?
+  supplementNumber       Int?
   status                 OrderStatus   @default(NEW)
+  orderState             OrderState    @default(PLACED)
   paymentStatus          PaymentStatus @default(PENDING)
   customerName           String?
   customerPhone          String?
@@ -919,31 +965,38 @@ model Order {
   acceptedAt             DateTime?
   closedAt               DateTime?
   cancelledAt            DateTime?
+  version                Int           @default(1)
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
 
-  acceptedBy        Employee?            @relation("OrderAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
-  branch            Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  cancelledBy       Employee?            @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
-  closedBy          Employee?            @relation("OrderClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
-  createdBy         Employee?            @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  servedBy          Employee?            @relation("OrderServedBy", fields: [servedById], references: [id], onDelete: SetNull)
-  shift             Shift?               @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  table             RestaurantTable?     @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  waiter            Employee?            @relation("OrderWaiter", fields: [waiterId], references: [id], onDelete: SetNull)
-  cashTransactions  CashTransaction[]
-  items             OrderItem[]
-  kitchenTickets    KitchenTicket[]
-  payments          Payment[]
-  paymentOperations PaymentOperation[]
-  receipts          Receipt[]
-  customerOrder     CustomerOrder?
-  revenueRecords    RevenueRecord[]
-  statusHistory     OrderStatusHistory[]
+  acceptedBy              Employee?                @relation("OrderAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+  branch                  Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  cancelledBy             Employee?                @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  closedBy                Employee?                @relation("OrderClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  createdBy               Employee?                @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  servedBy                Employee?                @relation("OrderServedBy", fields: [servedById], references: [id], onDelete: SetNull)
+  shift                   Shift?                   @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  table                   RestaurantTable?         @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  waiter                  Employee?                @relation("OrderWaiter", fields: [waiterId], references: [id], onDelete: SetNull)
+  cashTransactions        CashTransaction[]
+  cashTransferAllocations CashTransferAllocation[]
+  items                   OrderItem[]
+  kitchenTickets          KitchenTicket[]
+  payments                Payment[]
+  paymentOperations       PaymentOperation[]
+  receipts                Receipt[]
+  customerOrder           CustomerOrder?
+  revenueRecords          RevenueRecord[]
+  statusHistory           OrderStatusHistory[]
+  events                  OrderEvent[]
+  parentOrder             Order?                   @relation("OrderSupplements", fields: [parentOrderId], references: [id], onDelete: SetNull)
+  supplements             Order[]                  @relation("OrderSupplements")
 
   @@unique([source, displayOrderDate, displayOrderSequence])
+  @@unique([parentOrderId, supplementNumber])
   @@index([branchId, createdAt])
   @@index([branchId, status])
+  @@index([branchId, orderState, createdAt])
   @@index([shiftId])
   @@index([source])
   @@index([displayOrderDate, source])
@@ -953,23 +1006,31 @@ model Order {
   @@index([createdById])
   @@index([waiterId])
   @@index([servedById])
+  @@index([parentOrderId])
   @@index([closedAt])
   @@map("orders")
 }
 
 model KitchenTicket {
-  id           String              @id @default(cuid())
-  orderId      String
-  ticketNumber String              @unique
-  status       KitchenTicketStatus @default(NEW)
-  priority     Int                 @default(0)
-  createdAt    DateTime            @default(now())
-  acceptedAt   DateTime?
-  completedAt  DateTime?
-  updatedAt    DateTime            @updatedAt
+  id                 String              @id @default(cuid())
+  orderId            String
+  ticketNumber       String              @unique
+  status             KitchenTicketStatus @default(NEW)
+  priority           Int                 @default(0)
+  version            Int                 @default(1)
+  revisionNumber     Int                 @default(1)
+  isSupplement       Boolean             @default(false)
+  sourceOrderVersion Int                 @default(1)
+  createdAt          DateTime            @default(now())
+  acceptedAt         DateTime?
+  completedAt        DateTime?
+  updatedAt          DateTime            @updatedAt
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order  Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items  KitchenTicketItem[]
+  events KitchenTicketEvent[]
 
+  @@unique([orderId, revisionNumber])
   @@index([orderId])
   @@index([status, priority, createdAt])
   @@map("kitchen_tickets")
@@ -996,11 +1057,12 @@ model OrderItem {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
-  cancelledBy Employee?       @relation("OrderItemCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
-  createdBy   Employee?       @relation("OrderItemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product     Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
-  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  cancelledBy        Employee?           @relation("OrderItemCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  createdBy          Employee?           @relation("OrderItemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  order              Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product            Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant            ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  kitchenTicketItems KitchenTicketItem[]
 
   @@index([orderId])
   @@index([productId])
@@ -1009,6 +1071,46 @@ model OrderItem {
   @@index([createdAt])
   @@index([stockDeductedAt])
   @@map("order_items")
+}
+
+model KitchenTicketItem {
+  id               String          @id @default(cuid())
+  ticketId         String
+  orderItemId      String?
+  productName      String
+  variantName      String?
+  quantity         Decimal         @db.Decimal(10, 3)
+  notes            String?
+  modifierSnapshot Json?
+  status           OrderItemStatus @default(ACTIVE)
+  createdAt        DateTime        @default(now())
+
+  ticket    KitchenTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  orderItem OrderItem?    @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, orderItemId])
+  @@index([ticketId])
+  @@index([orderItemId])
+  @@map("kitchen_ticket_items")
+}
+
+model KitchenTicketEvent {
+  id             String               @id @default(cuid())
+  ticketId       String
+  eventType      String
+  previousStatus KitchenTicketStatus?
+  newStatus      KitchenTicketStatus?
+  actorId        String?
+  reason         String?
+  version        Int
+  createdAt      DateTime             @default(now())
+
+  ticket KitchenTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, version])
+  @@index([ticketId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("kitchen_ticket_events")
 }
 
 model OrderStatusHistory {
@@ -1030,6 +1132,59 @@ model OrderStatusHistory {
   @@index([changedByUserId])
   @@index([changedByEmployeeId])
   @@map("order_status_history")
+}
+
+model OrderEvent {
+  id               String      @id @default(cuid())
+  orderId          String
+  branchId         String
+  eventType        String
+  actorType        String
+  actorId          String?
+  source           String
+  previousState    OrderState?
+  newState         OrderState?
+  payload          Json?
+  reasonCode       String?
+  correlationId    String
+  causationId      String?
+  idempotencyKey   String?
+  aggregateVersion Int
+  createdAt        DateTime    @default(now())
+
+  order  Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  outbox OutboxEvent?
+
+  @@unique([orderId, aggregateVersion])
+  @@index([branchId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([correlationId])
+  @@index([idempotencyKey])
+  @@map("order_events")
+}
+
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  sourceEventId String?   @unique
+  branchId      String?
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  correlationId String
+  causationId   String?
+  availableAt   DateTime  @default(now())
+  processedAt   DateTime?
+  attemptCount  Int       @default(0)
+  lastError     String?
+  createdAt     DateTime  @default(now())
+
+  sourceEvent OrderEvent? @relation(fields: [sourceEventId], references: [id], onDelete: Restrict)
+
+  @@index([processedAt, availableAt, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@index([branchId, createdAt])
+  @@map("outbox_events")
 }
 
 model Supplier {
@@ -1197,13 +1352,14 @@ model Payment {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
-  acceptedBy       Employee?         @relation(fields: [acceptedById], references: [id], onDelete: SetNull)
-  createdBy        User?             @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  method           PaymentMethod     @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
-  order            Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  paymentOperation PaymentOperation? @relation(fields: [paymentOperationId], references: [id], onDelete: Restrict)
-  cashTransactions CashTransaction[]
-  revenueRecords   RevenueRecord[]
+  acceptedBy              Employee?                @relation(fields: [acceptedById], references: [id], onDelete: SetNull)
+  createdBy               User?                    @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  method                  PaymentMethod            @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  order                   Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  paymentOperation        PaymentOperation?        @relation(fields: [paymentOperationId], references: [id], onDelete: Restrict)
+  cashTransactions        CashTransaction[]
+  cashTransferAllocations CashTransferAllocation[]
+  revenueRecords          RevenueRecord[]
 
   @@unique([paymentOperationId, operationTenderIndex])
   @@index([orderId])
@@ -1381,13 +1537,14 @@ model CashTransaction {
   occurredAt     DateTime            @default(now())
   createdAt      DateTime            @default(now())
 
-  branch       Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  createdBy    User?         @relation("CashTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  employee     Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  order        Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  payment      Payment?      @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  cashTransfer CashTransfer? @relation(fields: [cashTransferId], references: [id], onDelete: SetNull)
-  shift        Shift         @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  branch              Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy           User?                    @relation("CashTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  employee            Employee                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  order               Order?                   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payment             Payment?                 @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  cashTransfer        CashTransfer?            @relation(fields: [cashTransferId], references: [id], onDelete: SetNull)
+  transferAllocations CashTransferAllocation[] @relation("CashTransferAllocationSource")
+  shift               Shift                    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
 
   @@index([branchId, occurredAt])
   @@index([shiftId, occurredAt])
@@ -1414,15 +1571,42 @@ model CashTransfer {
   acceptedAt   DateTime?
   rejectedAt   DateTime?
 
-  branch       Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  fromShift    Shift             @relation("CashTransferFromShift", fields: [fromShiftId], references: [id], onDelete: Restrict)
-  toShift      Shift?            @relation("CashTransferToShift", fields: [toShiftId], references: [id], onDelete: Restrict)
+  branch       Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  fromShift    Shift                    @relation("CashTransferFromShift", fields: [fromShiftId], references: [id], onDelete: Restrict)
+  toShift      Shift?                   @relation("CashTransferToShift", fields: [toShiftId], references: [id], onDelete: Restrict)
   transactions CashTransaction[]
+  allocations  CashTransferAllocation[]
 
   @@index([branchId, status, createdAt])
   @@index([fromShiftId, createdAt])
   @@index([toShiftId, createdAt])
   @@map("cash_transfers")
+}
+
+/// A cash handover is explainable down to the ledger entries that funded it.
+/// Rows are immutable snapshots: later order/payment edits must not rewrite a
+/// transfer that was already presented to or accepted by a cashier.
+model CashTransferAllocation {
+  id                  String   @id @default(cuid())
+  cashTransferId      String
+  sourceTransactionId String?
+  orderId             String?
+  paymentId           String?
+  sourceType          String
+  sourceLabel         String?
+  amount              Decimal  @db.Decimal(12, 2)
+  createdAt           DateTime @default(now())
+
+  cashTransfer      CashTransfer     @relation(fields: [cashTransferId], references: [id], onDelete: Restrict)
+  sourceTransaction CashTransaction? @relation("CashTransferAllocationSource", fields: [sourceTransactionId], references: [id], onDelete: SetNull)
+  order             Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payment           Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([cashTransferId])
+  @@index([sourceTransactionId])
+  @@index([orderId])
+  @@index([paymentId])
+  @@map("cash_transfer_allocations")
 }
 
 model Expense {

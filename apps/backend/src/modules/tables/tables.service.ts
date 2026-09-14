@@ -7,12 +7,13 @@ import {
 } from "@nestjs/common";
 import {
   OrderSource,
+  OrderState,
   OrderStatus,
   OrderType,
   Prisma,
   TableStatus,
 } from "@prisma/client";
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   resolveBranchScope,
   resolveRequiredBranchScope,
@@ -21,6 +22,7 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
+import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { activeTableOrderStatuses } from "./table-order-state";
 import type {
   CreateHallDto,
@@ -328,7 +330,15 @@ export class TablesService {
           tableId: id,
           status: { in: activeTableOrderStatuses },
         },
-        select: { id: true, status: true },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          status: true,
+          isSupplemental: true,
+          parentOrderId: true,
+          supplementNumber: true,
+          createdAt: true,
+        },
       });
 
       if (!dto.isSupplemental && existingOrders.length) {
@@ -357,6 +367,28 @@ export class TablesService {
         }
       }
 
+      const parentOrder = dto.isSupplemental
+        ? existingOrders.find((candidate) => !candidate.isSupplemental)
+        : undefined;
+      if (dto.isSupplemental && !parentOrder) {
+        throw new BadRequestException(
+          "Qo'shimcha buyurtmaning asosiy buyurtmasi topilmadi",
+        );
+      }
+      const supplementNumber = parentOrder
+        ? Math.max(
+            0,
+            ...existingOrders
+              .filter(
+                (candidate) =>
+                  candidate.isSupplemental &&
+                  (!candidate.parentOrderId ||
+                    candidate.parentOrderId === parentOrder.id),
+              )
+              .map((candidate) => candidate.supplementNumber ?? 0),
+          ) + 1
+        : null;
+
       const displayOrder = await allocateDisplayOrderNumber(
         tx,
         OrderSource.POS,
@@ -372,6 +404,8 @@ export class TablesService {
           source: OrderSource.POS,
           type: dto.type ?? OrderType.DINE_IN,
           isSupplemental: dto.isSupplemental ?? false,
+          parentOrderId: parentOrder?.id ?? null,
+          supplementNumber,
           status: OrderStatus.NEW,
           guestCount: dto.guestCount ?? null,
           notes: dto.notes ?? null,
@@ -393,6 +427,28 @@ export class TablesService {
             ? "Waiter opened supplemental table order"
             : "Waiter opened table order",
         },
+      });
+
+      await recordOrderEvent(tx, {
+        orderId: order.id,
+        branchId: table.branchId,
+        aggregateVersion: order.version,
+        eventType: ORDER_EVENTS.PLACED,
+        actorType: "STAFF",
+        actorId: user.id,
+        source: "POS",
+        newState: OrderState.PLACED,
+        payload: {
+          legacyStatus: OrderStatus.NEW,
+          type: order.type,
+          isSupplemental: order.isSupplemental,
+          parentOrderId: order.parentOrderId,
+          supplementNumber: order.supplementNumber,
+        },
+        reasonCode: dto.isSupplemental
+          ? "SUPPLEMENTAL_TABLE_ORDER_CREATED"
+          : "TABLE_ORDER_CREATED",
+        correlationId: randomUUID(),
       });
 
       return tx.order.findUnique({
