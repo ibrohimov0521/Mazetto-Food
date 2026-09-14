@@ -43,6 +43,7 @@ import { GeocodingModule } from "./modules/geocoding/geocoding.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { UploadsModule } from "./modules/uploads/uploads.module";
 import { UsersModule } from "./modules/users/users.module";
+import { IdempotencyModule } from "./common/idempotency/idempotency.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RedisModule } from "./redis/redis.module";
 import { RedisService } from "./redis/redis.service";
@@ -78,6 +79,7 @@ import { RedisService } from "./redis/redis.service";
       }),
     }),
     PrismaModule,
+    IdempotencyModule,
     AuthModule,
     AuditModule,
     UsersModule,

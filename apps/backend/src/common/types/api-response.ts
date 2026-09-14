@@ -5,6 +5,7 @@ export type ApiErrorResponse = {
     code: string;
     message: string | string[];
     path: string;
+    requestId: string;
     timestamp: string;
   };
 };

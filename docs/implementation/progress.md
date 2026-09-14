@@ -1,0 +1,33 @@
+# Order-management implementation progress
+
+## Research checkpoint
+
+- **STATUS:** COMPLETE
+- **FILES CHANGED:** `docs/measoft-research/`
+- **MIGRATIONS:** None
+- **TESTS:** 236/236 official wiki pages read; documentation integrity checks passed
+- **KNOWN ISSUES:** 78 unresolved official internal-link targets are inventoried
+- **NEXT STEP:** Phase 0 foundation
+
+## Phase 0 - Safety and foundation
+
+- **STATUS:** COMPLETE
+- **FILES CHANGED:** common correlation/idempotency/authorization infrastructure, API error envelope, Prisma schema, tests, baseline and ADRs
+- **MIGRATIONS:** `20260914090000_order_foundation` (additive: order version, audit correlation/reason, idempotency requests)
+- **TESTS:** Prisma schema valid; workspace compile/lint/build 15/15; backend 181/181; validators 27/27
+- **KNOWN ISSUES:** A running local `pos-web` dev server can keep the Turbo wrapper alive after its 15/15 summary because both use `.next`; package builds and validators themselves pass. No local DB credential was available for applying the migration.
+- **NEXT STEP:** Phase 1 - order aggregate, immutable events, action service, outbox and timeline API
+
+## Later phases
+
+| Phase                                | Status      |
+| ------------------------------------ | ----------- |
+| 1 - Order aggregate and audit events | NOT STARTED |
+| 2 - State machines and actions       | NOT STARTED |
+| 3 - Kitchen lifecycle                | NOT STARTED |
+| 4 - Reliable printing                | NOT STARTED |
+| 5 - Delivery / courier               | NOT STARTED |
+| 6 - Payment reconciliation           | NOT STARTED |
+| 7 - Notifications + automation       | NOT STARTED |
+| 8 - Reports + monitoring             | NOT STARTED |
+| 9 - Multi-tenant hardening           | NOT STARTED |

@@ -65,6 +65,12 @@ enum CustomerOrderAttemptStatus {
   COMPLETED
 }
 
+enum IdempotencyRequestStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
 enum BranchDayOfWeek {
   MONDAY
   TUESDAY
@@ -482,23 +488,51 @@ model UserRole {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  entity    String
-  entityId  String?
-  metadata  Json?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  userId        String?
+  action        String
+  entity        String
+  entityId      String?
+  metadata      Json?
+  reasonCode    String?
+  correlationId String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([entity, entityId])
   @@index([action])
+  @@index([correlationId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model IdempotencyRequest {
+  id             String                   @id @default(cuid())
+  scope          String
+  key            String
+  requestHash    String
+  status         IdempotencyRequestStatus @default(IN_PROGRESS)
+  correlationId  String
+  actorId        String?
+  resourceType   String?
+  resourceId     String?
+  responseStatus Int?
+  responseBody   Json?
+  failureCode    String?
+  expiresAt      DateTime
+  completedAt    DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@unique([scope, key])
+  @@index([status, expiresAt])
+  @@index([correlationId])
+  @@index([resourceType, resourceId])
+  @@map("idempotency_requests")
 }
 
 model Session {
@@ -919,6 +953,7 @@ model Order {
   acceptedAt             DateTime?
   closedAt               DateTime?
   cancelledAt            DateTime?
+  version                Int           @default(1)
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
 

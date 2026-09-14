@@ -5,6 +5,7 @@ import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { ApiResponseInterceptor } from "./common/interceptors/api-response.interceptor";
+import { correlationIdMiddleware } from "./common/request/correlation-id.middleware";
 import { resolveAllowedOrigins } from "./config/cors.config";
 import { loadEnvironmentFile, validateEnvironment } from "./config/env";
 
@@ -22,6 +23,8 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const port = env.BACKEND_PORT;
   const host = env.BACKEND_HOST;
+
+  app.use(correlationIdMiddleware);
 
   /*
    * Xavfsizlik header'lari. Backend faqat JSON API qaytaradi va brauzerda
