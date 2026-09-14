@@ -86,6 +86,13 @@ const adminWorkspacePermissions = customAdminRedirects.map(
 export function getApiBaseUrl(): string {
   if (
     typeof window !== "undefined" &&
+    window.navigator.userAgent.includes("MAZETTO-Desktop/")
+  ) {
+    return "http://127.0.0.1:7359/api/v1";
+  }
+
+  if (
+    typeof window !== "undefined" &&
     (window.location.hostname === "pos.mazettofood.uz" ||
       window.location.hostname.endsWith(".mazettofood.uz"))
   ) {
@@ -200,12 +207,14 @@ export function getAccessiblePanels(user: AuthUser | null): WorkspacePanel[] {
   const seen = new Set<string>();
 
   return workspacePanels.filter((panel) => {
-    const allowed = panel.permissions.every((permission) =>
-      hasPermission(user, permission),
-    ) && (
-      !panel.anyPermissions ||
-      panel.anyPermissions.some((permission) => hasPermission(user, permission))
-    );
+    const allowed =
+      panel.permissions.every((permission) =>
+        hasPermission(user, permission),
+      ) &&
+      (!panel.anyPermissions ||
+        panel.anyPermissions.some((permission) =>
+          hasPermission(user, permission),
+        ));
 
     if (!allowed || seen.has(panel.href)) {
       return false;

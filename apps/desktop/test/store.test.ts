@@ -1,0 +1,81 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { DesktopStore } from "../src/store.js";
+
+test("desktop store persists scoped API snapshots without storing bearer tokens", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const authorization = "Bearer secret-value";
+  const authScope = DesktopStore.authScope(authorization);
+  const requestUrl = "https://api.example.test/api/v1/branches";
+  const cacheKey = DesktopStore.cacheKey(requestUrl, authScope);
+  const store = new DesktopStore(path);
+
+  try {
+    store.putCachedResponse({
+      cacheKey,
+      requestUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: '{"success":true,"data":[]}',
+      cachedAt: "2026-09-15T00:00:00.000Z",
+    });
+
+    assert.deepEqual(store.getCachedResponse(cacheKey), {
+      cacheKey,
+      requestUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: '{"success":true,"data":[]}',
+      cachedAt: "2026-09-15T00:00:00.000Z",
+    });
+    assert.equal(store.summary().cachedResponses, 1);
+    assert.notEqual(authScope, authorization);
+    assert.equal(authScope.includes("secret-value"), false);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rotated JWTs for the same user and branch share one cache scope", () => {
+  const payload = Buffer.from(
+    JSON.stringify({
+      id: "user-1",
+      branchId: "branch-1",
+      isGlobalScope: false,
+    }),
+  ).toString("base64url");
+  const first = DesktopStore.authScope(
+    `Bearer header.${payload}.signature-one`,
+  );
+  const rotated = DesktopStore.authScope(
+    `Bearer header.${payload}.signature-two`,
+  );
+
+  assert.equal(first, rotated);
+});
+
+test("desktop store creates one stable device identity", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const first = new DesktopStore(path);
+
+  try {
+    const deviceId = first.deviceId();
+    assert.match(deviceId, /^[0-9a-f-]{36}$/i);
+    assert.equal(first.deviceId(), deviceId);
+    first.close();
+
+    const reopened = new DesktopStore(path);
+    assert.equal(reopened.deviceId(), deviceId);
+    reopened.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

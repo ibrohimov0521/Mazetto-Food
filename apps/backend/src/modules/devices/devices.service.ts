@@ -129,6 +129,45 @@ export class DevicesService {
     });
   }
 
+  async heartbeat(
+    deviceId: string,
+    softwareVersion: string | undefined,
+    user: AuthenticatedUser,
+  ) {
+    const device = await this.prisma.device.findUnique({
+      where: { id: deviceId.trim() },
+      select: { id: true, branchId: true, isActive: true },
+    });
+
+    if (!device) {
+      throw new NotFoundException("Device not found");
+    }
+
+    resolveBranchScope(user, device.branchId);
+
+    if (!device.isActive) {
+      throw new BadRequestException("Device is disabled");
+    }
+
+    const lastSeenAt = new Date();
+    await this.prisma.device.update({
+      where: { id: device.id },
+      data: {
+        lastSeenAt,
+        ...(user.employeeId ? { lastEmployeeId: user.employeeId } : {}),
+        ...(softwareVersion?.trim()
+          ? { softwareVersion: softwareVersion.trim().slice(0, 80) }
+          : {}),
+      },
+    });
+
+    return {
+      deviceId: device.id,
+      branchId: device.branchId,
+      lastSeenAt: lastSeenAt.toISOString(),
+    };
+  }
+
   private async assertDevice(
     id: string,
     user: AuthenticatedUser,

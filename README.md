@@ -10,6 +10,7 @@ This stage intentionally contains only the project foundation. Restaurant busine
 apps/
   customer-web/   Next.js customer web application
   pos-web/        Next.js POS web application
+  desktop/        Electron offline-first branch runtime
   backend/        NestJS backend API
   telegram-bot/   Minimal TypeScript service entry point
   print-agent/    Minimal TypeScript service entry point
@@ -50,6 +51,7 @@ Applications can also be started individually:
 ```bash
 pnpm --filter customer-web dev
 pnpm --filter pos-web dev
+pnpm --filter mazetto-desktop dev
 pnpm --filter backend dev
 pnpm --filter telegram-bot dev
 pnpm --filter print-agent dev
@@ -63,6 +65,12 @@ http://localhost:3000
 
 POS:
 http://localhost:3001
+
+Desktop Gateway:
+http://127.0.0.1:7359/desktop/status
+
+Desktop update feed (optional):
+MAZETTO_DESKTOP_UPDATE_URL=https://updates.example.com/mazetto-desktop/
 
 Backend:
 http://localhost:4000/api/v1
