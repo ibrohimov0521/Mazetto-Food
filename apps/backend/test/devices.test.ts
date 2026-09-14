@@ -105,3 +105,49 @@ test("boshqa filial qurilmasi tahrirlanmaydi", async () => {
     /Boshqa filialga/,
   );
 });
+
+test("faol qurilma heartbeatda oxirgi xodim va vaqtni yangilaydi", async () => {
+  let updateData: Record<string, unknown> | undefined;
+  const service = new DevicesService({
+    device: {
+      findUnique: async () => ({
+        id: "device-1",
+        branchId: "branch-1",
+        isActive: true,
+      }),
+      update: async (args: { data: Record<string, unknown> }) => {
+        updateData = args.data;
+        return args;
+      },
+    },
+  } as never);
+
+  const result = await service.heartbeat(
+    " device-1 ",
+    " 0.1.0 ",
+    { ...branchManager, employeeId: "employee-1" },
+  );
+
+  assert.equal(result.deviceId, "device-1");
+  assert.equal(result.branchId, "branch-1");
+  assert.equal(updateData?.lastEmployeeId, "employee-1");
+  assert.equal(updateData?.softwareVersion, "0.1.0");
+  assert.ok(updateData?.lastSeenAt instanceof Date);
+});
+
+test("o'chirilgan qurilma heartbeat qabul qilinmaydi", async () => {
+  const service = new DevicesService({
+    device: {
+      findUnique: async () => ({
+        id: "device-1",
+        branchId: "branch-1",
+        isActive: false,
+      }),
+    },
+  } as never);
+
+  await assert.rejects(
+    () => service.heartbeat("device-1", undefined, branchManager),
+    /Device is disabled/,
+  );
+});

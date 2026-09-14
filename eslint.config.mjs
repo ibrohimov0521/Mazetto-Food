@@ -9,6 +9,8 @@ export default [
       "**/.next/**",
       "**/dist/**",
       "**/.turbo/**",
+      "**/runtime/**",
+      "**/release/**",
       "**/next-env.d.ts",
     ],
   },
@@ -26,6 +28,16 @@ export default [
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
+    },
+  },
+  {
+    files: ["**/*.{js,mjs,cjs}"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        fetch: "readonly",
+        process: "readonly",
+      },
     },
   },
 ];

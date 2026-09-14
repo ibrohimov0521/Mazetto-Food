@@ -29,24 +29,33 @@
 
 ## Phase 2 - kitchen supplements and operational controls
 
-- **STATUS:** RELEASE READY (production-backup rehearsal passed; deploy pending)
+- **STATUS:** COMPLETE (production deployed and verified)
 - **FILES CHANGED:** kitchen ticket/routing snapshots and immutable events, idempotent versioned kitchen actions, parent-linked supplemental orders, item cancellation actions, cash transfer allocations/detail UI, staff termination guards, compact profile layout, and customer delivery-address validation/autofill UX
-- **MIGRATIONS:** `20260914130000_cash_transfer_allocations`, `20260914133000_kitchen_ticket_revisions` (deployed); `20260914150000_kitchen_action_hardening` (additive, rehearsal passed, deploy pending)
-- **TESTS:** backend 208/208; backend/POS typecheck, lint and production builds; validators 27/27; a fresh PostgreSQL 18 database applied 32/32 migrations; the 2026-09-14 production backup restored with 90 orders and 227 kitchen items, then applied the hardening migration without count drift or orphans; clone API canary proved one-event replay, stale-version 409 and item cancellation propagation
-- **KNOWN ISSUES:** production deploy and post-deploy canary are pending; real grill/fryer/drinks ownership still needs business mapping; historical transfers without stored composition remain explicitly unknown and are never estimated; pg 8.23 emitted a non-blocking nested-query deprecation warning during clone shutdown and must be removed before a future pg 9 upgrade
-- **NEXT STEP:** commit/push and deploy Phase 2 at the release boundary, run the production canary, then implement Phase 3 durable print jobs; the production print engine belongs inside MAZETTO Desktop, while the current Node agent remains a compatibility canary
+- **MIGRATIONS:** `20260914130000_cash_transfer_allocations`, `20260914133000_kitchen_ticket_revisions`, `20260914150000_kitchen_action_hardening` (all deployed)
+- **TESTS:** backend 208/208; backend/POS typecheck, lint and production builds; validators 27/27; production-backup rehearsal passed without count drift or orphans; production migration applied; post-deploy smoke 22/22; protected item-cancel route registered
+- **KNOWN ISSUES:** real grill/fryer/drinks ownership still needs business mapping; historical transfers without stored composition remain explicitly unknown and are never estimated; pg 8.23 emitted a non-blocking nested-query deprecation warning during clone shutdown and must be removed before a future pg 9 upgrade
+- **NEXT STEP:** Phase 3 MAZETTO Desktop and durable print jobs
+
+## Phase 3 - MAZETTO Desktop and reliable printing
+
+- **STATUS:** D0 COMPLETE; D1 foundation IN PROGRESS
+- **FILES CHANGED:** desktop master plan, Electron shell, loopback API gateway, SQLite projection/outbox/print schema, safe Electron updater/preload bridge, POS desktop API routing/status/update badges, device heartbeat API and coverage
+- **MIGRATIONS:** no production migration in D0/D1 foundation; the local SQLite schema and stable device identity are created atomically on first run
+- **TESTS:** desktop cache, JWT scope and stable device identity tests; gateway snapshot and device-header tests; backend device heartbeat tests; backend 210/210; six-workspace typecheck/lint; native Electron process; bundled UI without port 3001; packaged unpacked Windows runtime; updater IPC/typecheck; loopback status and production API snapshot verified locally
+- **KNOWN ISSUES:** update feed provisioning/signing, admin enrollment code, OS-protected credential storage, session lock/staff switch, authenticated WebSocket proxy, typed mutation replay and durable server-side print jobs are intentionally scheduled after the D1 foundation
+- **NEXT STEP:** D1 admin enrollment and revocable device credential
 
 ## Later phases
 
-| Phase                                         | Status        |
-| --------------------------------------------- | ------------- |
-| 0 - Foundation and safety rails               | COMPLETE      |
-| 1 - Order aggregate and immutable history     | COMPLETE      |
-| 2 - Kitchen lifecycle and supplements         | RELEASE READY |
-| 3 - Reliable printing                         | NOT STARTED   |
-| 4 - Delivery / courier                        | NOT STARTED   |
-| 5 - Payment and courier reconciliation        | PARTIAL       |
-| 6 - Notifications and exception automation    | NOT STARTED   |
-| 7 - Reporting and observability               | NOT STARTED   |
-| 8 - Multi-tenant hardening                    | NOT STARTED   |
-| 9 - Deprecation, scale and disaster hardening | NOT STARTED   |
+| Phase                                         | Status      |
+| --------------------------------------------- | ----------- |
+| 0 - Foundation and safety rails               | COMPLETE    |
+| 1 - Order aggregate and immutable history     | COMPLETE    |
+| 2 - Kitchen lifecycle and supplements         | COMPLETE    |
+| 3 - MAZETTO Desktop and reliable printing     | IN PROGRESS |
+| 4 - Delivery / courier                        | NOT STARTED |
+| 5 - Payment and courier reconciliation        | PARTIAL     |
+| 6 - Notifications and exception automation    | NOT STARTED |
+| 7 - Reporting and observability               | NOT STARTED |
+| 8 - Multi-tenant hardening                    | NOT STARTED |
+| 9 - Deprecation, scale and disaster hardening | NOT STARTED |

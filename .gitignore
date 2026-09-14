@@ -33,3 +33,5 @@ Dockerfile.local
 
 media-source/
 .backups/
+apps/desktop/runtime/
+apps/desktop/release*/

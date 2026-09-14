@@ -8,6 +8,8 @@ import type { AuthUser, MazettoRole } from "../../lib/auth";
 import { Icon } from "../admin-ui/icon";
 import { PanelSwitcher } from "./panel-switcher";
 import { BranchScopeBadge } from "../admin-shell/branch-scope-badge";
+import { DesktopStatusBadge } from "./desktop-status";
+import { DesktopUpdateBadge } from "./desktop-update";
 
 /*
  * Admin header — to'q teal, sticky.
@@ -196,6 +198,8 @@ export function PanelNavbar({
       <div className="min-w-0 flex-1 xl:hidden" />
 
       {actions && <div className="mz-panel-actions">{actions}</div>}
+      <DesktopStatusBadge />
+      <DesktopUpdateBadge />
       <BranchScopeBadge user={user} />
 
       <div className="relative shrink-0" ref={menuRef}>

@@ -12,7 +12,7 @@
     "media:smoke": "node apps/media/scripts/smoke-media-container.mjs",
     "media:validate": "node apps/media/scripts/validate-media-assets.mjs",
     "format": "prettier --write .",
-    "test": "pnpm --filter backend test",
+    "test": "turbo run test",
     "ci": "DATABASE_URL=${DATABASE_URL:-postgresql://ci:ci@localhost:5432/ci} pnpm --filter backend prisma:generate && pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm validate",
     "load:test": "node scripts/load-test.mjs",
     "verify": "turbo run typecheck lint build && node scripts/ops-validate.mjs",
@@ -21,7 +21,10 @@
     "ops:health": "node scripts/ops-health.mjs",
     "release:gate": "node scripts/release-gate.mjs",
     "release:smoke": "node scripts/smoke-production.mjs",
-    "qa:customer": "node scripts/qa-customer-contrast.mjs"
+    "qa:customer": "node scripts/qa-customer-contrast.mjs",
+    "desktop:dev": "pnpm --filter mazetto-desktop dev",
+    "desktop:package:dir": "pnpm --filter mazetto-desktop package:dir",
+    "desktop:package:win": "pnpm --filter mazetto-desktop package:win"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
