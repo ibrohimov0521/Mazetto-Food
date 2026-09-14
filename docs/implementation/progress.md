@@ -23,8 +23,8 @@
 - **STATUS:** COMPLETE (local code gate; staging database rollout remains pending)
 - **FILES CHANGED:** order event/action services, legacy writer integrations across orders/kitchen/courier/customer/payments/tables, admin order detail, tests and rollout notes
 - **MIGRATIONS:** `20260914103000_order_events` (additive `OrderState`, `OrderEvent`, `OutboxEvent`; historical `OrderImported` backfill)
-- **TESTS:** Prisma schema valid and client generated; backend typecheck/lint/build; admin typecheck/lint/build; backend 192/192; validators 27/27; `git diff --check` clean
-- **KNOWN ISSUES:** Local DB credentials are unavailable, so migration execution and real PostgreSQL transaction/rollback tests require staging before release. Outbox publisher is intentionally absent. Legacy PATCH transition tightening and kitchen supplement delta tickets are Phase 2. No push/deploy performed.
+- **TESTS:** Prisma schema valid and client generated; backend typecheck/lint/build; admin typecheck/lint/build; backend 192/192; validators 27/27; isolated PostgreSQL 18 preview applied 29/29 migrations and passed API/browser smoke; `git diff --check` clean
+- **KNOWN ISSUES:** Existing-data backfill and real transaction/rollback rehearsal still require staging before release. Outbox publisher is intentionally absent. Legacy PATCH transition tightening and kitchen supplement delta tickets are Phase 2. No push/deploy performed.
 - **NEXT STEP:** Phase 2 - kitchen state machine, ticket/item revision and supplement delivery
 
 ## Later phases

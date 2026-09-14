@@ -46,6 +46,6 @@ WHERE e."eventType" <> 'OrderImported' AND b.id IS NULL;
 ## Verification and limits
 
 - Prisma validation/generation, typecheck, lint, backend tests and workspace validators/build are required at this gate.
-- Local PostgreSQL credentials are not available here: migration execution, DB transaction rollback and production-like integration tests must run in staging before rollout. Mock tests verify call order and compatibility; they do not substitute for a live DB test.
+- An isolated local PostgreSQL 18 preview database accepted all 29 migrations; `prisma migrate status` reported up to date. Seed loaded 91 products after fixing its missing `COURIER_MANAGE` permission. A local API/browser smoke created one draft order, added an item, verified version 2, `OrderPlaced` + `OrderItemAdded`, allowed actions, desktop/mobile render and the confirmation modal. Production-like migration/backfill with existing rows and transaction rollback rehearsal still require staging before rollout.
 - Phase 2 owns kitchen ticket versioning, delta tickets for supplements and separate kitchen actions. Phase 3 owns durable printing; Phase 4 owns reported versus finalized courier delivery. Do not interpret `COMPLETED` from the legacy courier endpoint as verified handover yet.
 - The legacy `PATCH /orders/:id/status` still accepts some non-forward transitions from already accepted orders. The Phase 2 transition policy must remove these paths after clients move to action endpoints; Phase 1 does not silently tighten older clients.
