@@ -97,6 +97,15 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum OrderState {
+  DRAFT
+  PLACED
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
 enum OrderItemStatus {
   ACTIVE
   CANCELLED
@@ -932,6 +941,7 @@ model Order {
   type                   OrderType
   isSupplemental         Boolean       @default(false)
   status                 OrderStatus   @default(NEW)
+  orderState             OrderState    @default(PLACED)
   paymentStatus          PaymentStatus @default(PENDING)
   customerName           String?
   customerPhone          String?
@@ -975,10 +985,12 @@ model Order {
   customerOrder     CustomerOrder?
   revenueRecords    RevenueRecord[]
   statusHistory     OrderStatusHistory[]
+  events            OrderEvent[]
 
   @@unique([source, displayOrderDate, displayOrderSequence])
   @@index([branchId, createdAt])
   @@index([branchId, status])
+  @@index([branchId, orderState, createdAt])
   @@index([shiftId])
   @@index([source])
   @@index([displayOrderDate, source])
@@ -1065,6 +1077,59 @@ model OrderStatusHistory {
   @@index([changedByUserId])
   @@index([changedByEmployeeId])
   @@map("order_status_history")
+}
+
+model OrderEvent {
+  id               String      @id @default(cuid())
+  orderId          String
+  branchId         String
+  eventType        String
+  actorType        String
+  actorId          String?
+  source           String
+  previousState    OrderState?
+  newState         OrderState?
+  payload          Json?
+  reasonCode       String?
+  correlationId    String
+  causationId      String?
+  idempotencyKey   String?
+  aggregateVersion Int
+  createdAt        DateTime    @default(now())
+
+  order  Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  outbox OutboxEvent?
+
+  @@unique([orderId, aggregateVersion])
+  @@index([branchId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([correlationId])
+  @@index([idempotencyKey])
+  @@map("order_events")
+}
+
+model OutboxEvent {
+  id             String   @id @default(cuid())
+  sourceEventId  String?  @unique
+  branchId       String?
+  aggregateType  String
+  aggregateId    String
+  eventType      String
+  payload        Json
+  correlationId  String
+  causationId    String?
+  availableAt    DateTime @default(now())
+  processedAt    DateTime?
+  attemptCount   Int      @default(0)
+  lastError      String?
+  createdAt      DateTime @default(now())
+
+  sourceEvent OrderEvent? @relation(fields: [sourceEventId], references: [id], onDelete: Restrict)
+
+  @@index([processedAt, availableAt, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@index([branchId, createdAt])
+  @@map("outbox_events")
 }
 
 model Supplier {

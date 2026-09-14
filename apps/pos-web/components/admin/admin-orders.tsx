@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
@@ -46,7 +46,7 @@ import { useToast } from "../admin-ui/toast";
  *
  * Ekran O'QIYDI va IKKI xil yozadi:
  *   - ro'yxatda ommaviy holat o'zgartirish (`PATCH /orders/bulk/status`),
- *   - detalda bitta buyurtma holati (`PATCH /orders/:id/status`).
+ *   - detalda accept/cancel amallari va qolgan legacy holatlar.
  * Ikkalasi ham `ORDER_SEND_KITCHEN` talab qiladi va serverda qo'shimcha
  * shart bor: chaqiruvchi shu FILIALNING faol xodimi bo'lishi kerak.
  *
@@ -95,6 +95,24 @@ type OrderStatusHistory = {
   } | null;
 };
 
+type OrderEventEntry = {
+  id: string;
+  eventType: string;
+  aggregateVersion: number;
+  actorType: string;
+  source: string;
+  reasonCode?: string | null;
+  correlationId: string;
+  createdAt: string;
+};
+
+type AllowedOrderActions = {
+  orderId: string;
+  version: number;
+  orderState: "DRAFT" | "PLACED" | "ACCEPTED" | "REJECTED" | "COMPLETED" | "CANCELLED";
+  actions: Array<"accept" | "cancel">;
+};
+
 /*
  * Chek ishoratlari. `orderInclude()` (backend) `receipts` ni MAZMUNSIZ
  * qaytaradi — faqat id, raqam va chop etilgani. Shuning uchun bu yerda
@@ -123,6 +141,8 @@ export type AdminOrder = {
   source: OrderSource;
   type: OrderType;
   status: OrderStatus;
+  orderState: AllowedOrderActions["orderState"];
+  version: number;
   paymentStatus: PaymentStatus;
   customerName?: string | null;
   customerPhone?: string | null;
@@ -897,19 +917,31 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const [order, setOrder] = useState<AdminOrder | null>(null);
+  const [events, setEvents] = useState<OrderEventEntry[]>([]);
+  const [domainActions, setDomainActions] = useState<AllowedOrderActions | null>(
+    null,
+  );
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [statusReason, setStatusReason] = useState("");
   const [statusReasonError, setStatusReasonError] = useState("");
   const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null);
   const [isChanging, setIsChanging] = useState(false);
+  const pendingActionKey = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
     try {
-      setOrder(await apiFetch<AdminOrder>(`/orders/${orderId}`));
+      const [nextOrder, nextEvents, nextActions] = await Promise.all([
+        apiFetch<AdminOrder>(`/orders/${orderId}`),
+        apiFetch<OrderEventEntry[]>(`/orders/${orderId}/timeline`),
+        apiFetch<AllowedOrderActions>(`/orders/${orderId}/allowed-actions`),
+      ]);
+      setOrder(nextOrder);
+      setEvents(nextEvents);
+      setDomainActions(nextActions);
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
@@ -935,6 +967,13 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     }
 
     const reason = statusReason.trim();
+    const actionVersion = domainActions?.version ?? order?.version;
+
+    if ((pendingStatus === "CONFIRMED" || pendingStatus === "CANCELLED") && actionVersion === undefined) {
+      showToast("Buyurtma versiyasi topilmadi. Qayta yuklang.", "danger");
+      await load();
+      return;
+    }
 
     if (statusNeedsReason(pendingStatus) && !reason) {
       setStatusReasonError("Bekor qilish sababini yozing.");
@@ -945,15 +984,40 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     setIsChanging(true);
 
     try {
-      await apiFetch(`/orders/${orderId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: pendingStatus,
-          ...(reason ? { reason } : {}),
-        }),
-      });
+      const action =
+        pendingStatus === "CONFIRMED"
+          ? "accept"
+          : pendingStatus === "CANCELLED"
+            ? "cancel"
+            : null;
+      const fingerprint = JSON.stringify({ orderId, action, actionVersion, reason });
+      if (action && pendingActionKey.current?.fingerprint !== fingerprint) {
+        pendingActionKey.current = { fingerprint, key: crypto.randomUUID() };
+      }
+
+      await apiFetch(
+        action ? `/orders/${orderId}/actions/${action}` : `/orders/${orderId}/status`,
+        action
+          ? {
+              method: "POST",
+              headers: { "Idempotency-Key": pendingActionKey.current!.key },
+              body: JSON.stringify({
+                expectedVersion: actionVersion,
+                ...(reason ? { reason } : {}),
+                ...(action === "cancel" ? { reasonCode: "ADMIN_CANCELLED" } : {}),
+              }),
+            }
+          : {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: pendingStatus,
+                ...(reason ? { reason } : {}),
+              }),
+            },
+      );
 
       showToast("Buyurtma holati yangilandi.", "success");
+      pendingActionKey.current = null;
       setPendingStatus(null);
       setStatusReason("");
       await load();
@@ -987,7 +1051,11 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   }
 
   const statusBlockReason = statusChangeBlockReason(user, order);
-  const allowedStatuses = nextOrderStatuses(order.status);
+  const allowedStatuses = nextOrderStatuses(order.status).filter((status) => {
+    if (status === "CONFIRMED") return domainActions?.actions.includes("accept");
+    if (status === "CANCELLED") return domainActions?.actions.includes("cancel");
+    return true;
+  });
   /*
    * Chek FAQAT to'langan buyurtmada yaratiladi (`receipts` bo'sh bo'lsa
    * chek ham yo'q). `GET /receipts/:id` `RECEIPT_VIEW` talab qiladi,
@@ -1064,6 +1132,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             {order.branch ? (
               <Badge tone="neutral">{order.branch.name}</Badge>
             ) : null}
+            <Badge tone="neutral">v{order.version}</Badge>
           </CardBody>
           {/*
            * CHEK HAVOLASI.
@@ -1145,6 +1214,39 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             rows={order.items ?? []}
           />
         </Card>
+
+        {events.length > 0 ? (
+          <Card>
+            <CardHeader
+              description="O'zgarmas business eventlar va aggregate versiyalari"
+              title="Amallar tarixi"
+            />
+            <CardBody>
+              <ol className="grid gap-2">
+                {events.map((entry) => (
+                  <li
+                    className="grid gap-1 border-b border-mz-border py-2 last:border-0"
+                    key={entry.id}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="neutral">v{entry.aggregateVersion}</Badge>
+                      <span className="text-sm font-semibold text-mz-text">
+                        {entry.eventType}
+                      </span>
+                      <span className="text-xs text-mz-text-muted">
+                        {formatDateTime(entry.createdAt)}
+                      </span>
+                    </div>
+                    <p className="break-all text-xs text-mz-text-faint">
+                      {entry.actorType} · {entry.source}
+                      {entry.reasonCode ? ` · ${entry.reasonCode}` : ""} · {entry.correlationId}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </CardBody>
+          </Card>
+        ) : null}
 
         {order.statusHistory && order.statusHistory.length > 0 ? (
           <Card>

@@ -18,6 +18,7 @@ import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ensureOrderReceipt } from "../receipts/receipt-writer";
+import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { ListPaymentsDto } from "./dto/list-payments.dto";
 import type {
@@ -329,19 +330,38 @@ export class PaymentsService {
               order.source === OrderSource.POS &&
               order.status !== OrderStatus.COMPLETED;
 
-            await tx.order.update({
+            const updatedOrder = await tx.order.update({
               where: { id: order.id },
               data: {
                 paymentStatus,
                 ...(shouldCompleteOrder
                   ? {
                       status: OrderStatus.COMPLETED,
+                      orderState: "COMPLETED",
+                      version: { increment: 1 },
                       closedAt: now,
                       closedById: employeeId,
                     }
                   : {}),
               },
             });
+
+            if (shouldCompleteOrder) {
+              await recordOrderEvent(tx, {
+                orderId: order.id,
+                branchId: order.branchId,
+                aggregateVersion: updatedOrder.version,
+                eventType: ORDER_EVENTS.COMPLETED,
+                actorType: "STAFF",
+                actorId: user.id,
+                source: "API",
+                previousState: order.orderState,
+                newState: updatedOrder.orderState,
+                payload: { fromStatus: order.status, toStatus: OrderStatus.COMPLETED, paymentOperationId: operation.id },
+                reasonCode: "POS_PAYMENT_COMPLETED",
+                idempotencyKey: dto.idempotencyKey,
+              });
+            }
 
             if (paymentStatus === PaymentStatus.PAID) {
               if (shouldCompleteOrder && order.tableId) {

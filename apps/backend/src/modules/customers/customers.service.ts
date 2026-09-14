@@ -40,6 +40,7 @@ import {
 } from "./customer-shared";
 import type { CancelCustomerOrderDto } from "./dto/cancel-customer-order.dto";
 import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
+import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 
 /*
  * Tasdiqlash kodi cheklovlari SOZLAMA REESTRIDA (7-bosqich Q1).
@@ -264,7 +265,7 @@ export class CustomersService {
       await tx.$executeRaw`SELECT id FROM "orders" WHERE id = ${customerOrder.orderId} FOR UPDATE`;
       const order = await tx.order.findUnique({
         where: { id: customerOrder.orderId },
-        select: { id: true, status: true, paymentStatus: true, tableId: true },
+        select: { id: true, branchId: true, version: true, orderState: true, status: true, paymentStatus: true, tableId: true },
       });
 
       if (!order) {
@@ -279,15 +280,31 @@ export class CustomersService {
 
       const reason = dto.reason?.trim();
 
-      await tx.order.update({
+      const updated = await tx.order.update({
         where: { id: order.id },
         data: {
           status: OrderStatus.CANCELLED,
+          orderState: "CANCELLED",
+          version: { increment: 1 },
           cancelledAt: new Date(),
           cancellationReason: reason
             ? `Mijoz bekor qildi: ${reason}`
             : "Mijoz bekor qildi",
         },
+      });
+
+      await recordOrderEvent(tx, {
+        orderId: order.id,
+        branchId: order.branchId,
+        aggregateVersion: updated.version,
+        eventType: ORDER_EVENTS.CANCELLED,
+        actorType: "CUSTOMER",
+        actorId: customerId,
+        source: "CUSTOMER_WEB",
+        previousState: order.orderState,
+        newState: updated.orderState,
+        payload: { fromStatus: order.status, toStatus: OrderStatus.CANCELLED },
+        reasonCode: "CUSTOMER_CANCELLED",
       });
 
       await syncKitchenTickets(tx, order.id, OrderStatus.CANCELLED);

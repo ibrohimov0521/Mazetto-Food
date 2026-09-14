@@ -7,12 +7,13 @@ import {
 } from "@nestjs/common";
 import {
   OrderSource,
+  OrderState,
   OrderStatus,
   OrderType,
   Prisma,
   TableStatus,
 } from "@prisma/client";
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   resolveBranchScope,
   resolveRequiredBranchScope,
@@ -21,6 +22,7 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
+import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { activeTableOrderStatuses } from "./table-order-state";
 import type {
   CreateHallDto,
@@ -393,6 +395,26 @@ export class TablesService {
             ? "Waiter opened supplemental table order"
             : "Waiter opened table order",
         },
+      });
+
+      await recordOrderEvent(tx, {
+        orderId: order.id,
+        branchId: table.branchId,
+        aggregateVersion: order.version,
+        eventType: ORDER_EVENTS.PLACED,
+        actorType: "STAFF",
+        actorId: user.id,
+        source: "POS",
+        newState: OrderState.PLACED,
+        payload: {
+          legacyStatus: OrderStatus.NEW,
+          type: order.type,
+          isSupplemental: order.isSupplemental,
+        },
+        reasonCode: dto.isSupplemental
+          ? "SUPPLEMENTAL_TABLE_ORDER_CREATED"
+          : "TABLE_ORDER_CREATED",
+        correlationId: randomUUID(),
       });
 
       return tx.order.findUnique({

@@ -50,22 +50,27 @@ export class IdempotencyService {
         "Idempotency key was already used with a different request",
       );
     }
-    if (existing.status !== IdempotencyRequestStatus.IN_PROGRESS) {
+    if (existing.status === IdempotencyRequestStatus.COMPLETED) {
       return { kind: "REPLAY", record: existing };
     }
 
     const now = new Date();
-    if (existing.expiresAt <= now) {
+    if (existing.status === IdempotencyRequestStatus.FAILED || existing.expiresAt <= now) {
       const reclaimed = await db.idempotencyRequest.updateMany({
         where: {
           id: existing.id,
-          status: IdempotencyRequestStatus.IN_PROGRESS,
-          expiresAt: { lte: now },
+          OR: [
+            { status: IdempotencyRequestStatus.FAILED },
+            { status: IdempotencyRequestStatus.IN_PROGRESS, expiresAt: { lte: now } },
+          ],
         },
         data: {
+          status: IdempotencyRequestStatus.IN_PROGRESS,
           correlationId: input.correlationId,
           ...(input.actorId ? { actorId: input.actorId } : {}),
           expiresAt: input.expiresAt,
+          failureCode: null,
+          completedAt: null,
         },
       });
 

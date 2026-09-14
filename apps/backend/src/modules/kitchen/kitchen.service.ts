@@ -8,6 +8,7 @@ import {
   CashTransactionType,
   KitchenTicketStatus,
   OrderItemStatus,
+  OrderState,
   OrderStatus,
   OrderType,
   PaymentStatus,
@@ -17,6 +18,7 @@ import { randomInt } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { eventForLegacyStatus, orderStateForLegacyStatus, recordOrderEvent } from "../orders/order-events";
 import {
   kitchenEvents,
   kitchenOrderStatusChangedEvent,
@@ -46,6 +48,8 @@ type KitchenTransitionOrder = {
   branchId: string;
   type: OrderType;
   status: OrderStatus;
+  orderState: OrderState;
+  version: number;
   acceptedAt: Date | null;
   acceptedById: string | null;
   cancelledAt: Date | null;
@@ -306,6 +310,8 @@ export class KitchenService {
 
       if (order.status !== transition.orderStatus) {
         orderData.status = transition.orderStatus;
+        orderData.orderState = orderStateForLegacyStatus(transition.orderStatus);
+        orderData.version = { increment: 1 };
       }
 
       if (
@@ -330,7 +336,22 @@ export class KitchenService {
       }
 
       if (Object.keys(orderData).length > 0) {
-        await tx.order.update({ where: { id: orderId }, data: orderData });
+        const updated = await tx.order.update({ where: { id: orderId }, data: orderData });
+        if (order.status !== transition.orderStatus) {
+          await recordOrderEvent(tx, {
+            orderId,
+            branchId: order.branchId,
+            aggregateVersion: updated.version,
+            eventType: eventForLegacyStatus(transition.orderStatus),
+            actorType: user ? "STAFF" : "SYSTEM",
+            actorId: user?.id,
+            source: user ? "API" : "SYSTEM",
+            previousState: order.orderState,
+            newState: updated.orderState,
+            payload: { fromStatus: order.status, toStatus: transition.orderStatus, kitchenAction: action },
+            reasonCode: `KITCHEN_${action.toUpperCase()}`,
+          });
+        }
       }
 
       if (order.status !== transition.orderStatus) {
@@ -672,6 +693,8 @@ export class KitchenService {
         branchId: true,
         type: true,
         status: true,
+        orderState: true,
+        version: true,
         paymentStatus: true,
         total: true,
         customerOrder: { select: { paymentMethod: true } },

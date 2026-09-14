@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
@@ -21,7 +22,8 @@ export class PosController {
   createOrder(
     @Body() dto: CreatePosCheckoutDto,
     @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.ordersService.createPosCheckout(dto, user);
+    return this.ordersService.createPosCheckout(dto, user, correlationId);
   }
 }

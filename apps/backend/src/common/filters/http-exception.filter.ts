@@ -17,6 +17,7 @@ type ExceptionResponse = {
   error?: string;
   message?: string | string[];
   statusCode?: number;
+  details?: unknown;
 };
 
 @Catch()
@@ -55,6 +56,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         statusCode,
         code,
         message,
+        ...(normalizedResponse?.details !== undefined
+          ? { details: normalizedResponse.details }
+          : {}),
         path: request.url,
         requestId: requireCorrelationId(request),
         timestamp: new Date().toISOString(),

@@ -168,3 +168,29 @@ test("same idempotency key with different content is rejected", async () => {
 
   await assert.rejects(call, /different request/);
 });
+
+test("failed idempotency request can be reclaimed without waiting for expiry", async () => {
+  const conflict = new Prisma.PrismaClientKnownRequestError("unique", {
+    code: "P2002", clientVersion: "7.2.0",
+  });
+  const service = new IdempotencyService({} as never);
+  const result = await service.start({
+    scope: "orders:accept:order-1",
+    key: "retry:0001",
+    requestHash: "hash-1",
+    correlationId: "new-correlation",
+    expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+  }, {
+    idempotencyRequest: {
+      create: async () => Promise.reject(conflict),
+      findUnique: async () => ({ id: "idem-1", requestHash: "hash-1", status: IdempotencyRequestStatus.FAILED }),
+      updateMany: async ({ where, data }: { where: object; data: object }) => {
+        assert.deepEqual((where as { OR: object[] }).OR.length, 2);
+        assert.equal((data as { status: string }).status, IdempotencyRequestStatus.IN_PROGRESS);
+        return { count: 1 };
+      },
+      findUniqueOrThrow: async () => ({ id: "idem-1", status: IdempotencyRequestStatus.IN_PROGRESS }),
+    },
+  } as never);
+  assert.equal(result.kind, "CLAIMED");
+});

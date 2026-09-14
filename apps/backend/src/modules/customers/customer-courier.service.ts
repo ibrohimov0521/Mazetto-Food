@@ -14,6 +14,7 @@ import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentsService } from "../payments/payments.service";
+import { eventForLegacyStatus, orderStateForLegacyStatus, recordOrderEvent } from "../orders/order-events";
 import {
   kitchenEvents,
   kitchenOrderStatusChangedEvent,
@@ -338,10 +339,12 @@ export class CustomerCourierService {
           }
         }
 
-        await tx.order.update({
+        const updated = await tx.order.update({
           where: { id: existing.orderId },
           data: {
             status: nextStatus,
+            orderState: orderStateForLegacyStatus(nextStatus),
+            version: { increment: 1 },
             ...(nextStatus === OrderStatus.SERVED ||
             nextStatus === OrderStatus.COMPLETED
               ? { servedBy: { connect: { id: employeeId } } }
@@ -360,6 +363,20 @@ export class CustomerCourierService {
                 }
               : {}),
           },
+        });
+
+        await recordOrderEvent(tx, {
+          orderId: existing.orderId,
+          branchId: existing.branchId,
+          aggregateVersion: updated.version,
+          eventType: eventForLegacyStatus(nextStatus),
+          actorType: "STAFF",
+          actorId: user.id,
+          source: "API",
+          previousState: existing.order.orderState,
+          newState: updated.orderState,
+          payload: { fromStatus: existing.order.status, toStatus: nextStatus },
+          reasonCode: `COURIER_${nextStatus}`,
         });
 
         await syncKitchenTickets(tx, existing.orderId, nextStatus);
