@@ -3,14 +3,32 @@ import { AuthProvider } from "../components/auth/auth-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Mazetto Food boshqaruv paneli", template: "%s | Mazetto Food" },
-  description: "Mazetto Food xodimlari uchun kassa, oshxona, kuryer va admin boshqaruv paneli.",
+  title: {
+    default: "Mazetto Food boshqaruv paneli",
+    template: "%s | Mazetto Food",
+  },
+  description:
+    "Mazetto Food xodimlari uchun kassa, oshxona, kuryer va admin boshqaruv paneli.",
   applicationName: "Mazetto Food",
   icons: {
     icon: [
-      { url: "/brand/mazetto-icon-32.png", type: "image/png", sizes: "32x32" },
-      { url: "/brand/mazetto-icon-192.png", type: "image/png", sizes: "192x192" },
-      { url: "/brand/mazetto-icon-512.png", type: "image/png", sizes: "512x512" },
+      {
+        url: "/brand/mazetto-m-icon-192-v2.png",
+        type: "image/png",
+        sizes: "192x192",
+      },
+      {
+        url: "/brand/mazetto-icon-512.png",
+        type: "image/png",
+        sizes: "512x512",
+      },
+    ],
+    shortcut: [
+      {
+        url: "/brand/mazetto-m-icon-192-v2.png",
+        type: "image/png",
+        sizes: "192x192",
+      },
     ],
     apple: [{ url: "/brand/apple-touch-icon.png", sizes: "180x180" }],
   },

@@ -40,11 +40,9 @@ import { statusChangeBlockReason } from "./admin-orders";
  *   COOKING → tayyor        PATCH /kitchen/orders/:id/ready
  *   READY → yakunlash       PATCH /kitchen/orders/:id/complete
  *
- * BEKOR QILISH ataylab `/kitchen/orders/:id/cancel` orqali EMAS:
- * u sabab qabul qilmaydi va tarixga qat'iy inglizcha matn yozadi.
- * Buning o'rniga `PATCH /orders/:orderId/status` ishlatiladi — u
- * sababni yozib qoldiradi va oshxona chiptasini `syncKitchenTickets`
- * orqali o'zi yopadi.
+ * Buyurtmani bekor qilish order action endpointi orqali ketadi. Sabab,
+ * reason code, aggregate versiya va idempotency key auditda saqlanadi;
+ * kitchen ticket server tranzaksiyasida o'zi yopiladi.
  *
  * Mijoz telefoni va manzili bu ekranda KO'RSATILMAYDI (PII minimal).
  */
@@ -56,9 +54,11 @@ type KitchenTicket = {
   ticketNumber: string;
   status: KitchenTicketStatus;
   priority: number;
+  version: number;
   createdAt: string;
   order?: {
     id: string;
+    version: number;
     orderNumber: string;
     displayOrderNumber?: string | null;
     type: OrderType;
@@ -170,6 +170,7 @@ export function AdminKitchenMonitor() {
    * ko'rinmay qolardi.)
    */
   const request = useRef(0);
+  const actionKeys = useRef(new Map<string, string>());
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     const version = ++request.current;
@@ -190,7 +191,10 @@ export function AdminKitchenMonitor() {
       setLastUpdatedAt(Date.now());
       setNowMs(Date.now());
     } catch (caught) {
-      if (caught instanceof SessionExpiredError || version !== request.current) {
+      if (
+        caught instanceof SessionExpiredError ||
+        version !== request.current
+      ) {
         return;
       }
 
@@ -243,12 +247,22 @@ export function AdminKitchenMonitor() {
     step: { path: string; label: string },
   ): Promise<void> {
     setBusyTicketId(ticket.id);
+    const fingerprint = `${ticket.id}:${ticket.version}:${step.path}`;
+    const idempotencyKey =
+      actionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    actionKeys.current.set(fingerprint, idempotencyKey);
 
     try {
       await apiFetch(`/kitchen/orders/${ticket.id}/${step.path}`, {
         method: "PATCH",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ expectedVersion: ticket.version }),
       });
-      showToast(`${ticket.ticketNumber}: ${step.label.toLowerCase()}.`, "success");
+      actionKeys.current.delete(fingerprint);
+      showToast(
+        `${ticket.ticketNumber}: ${step.label.toLowerCase()}.`,
+        "success",
+      );
       await load({ silent: true });
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
@@ -268,9 +282,10 @@ export function AdminKitchenMonitor() {
 
   async function cancelOrder(): Promise<void> {
     const orderId = cancelTarget?.order?.id;
+    const orderVersion = cancelTarget?.order?.version;
     const reason = cancelReason.trim();
 
-    if (!orderId) {
+    if (!orderId || orderVersion === undefined) {
       return;
     }
 
@@ -280,12 +295,22 @@ export function AdminKitchenMonitor() {
     }
 
     setIsCancelling(true);
+    const fingerprint = `${orderId}:${orderVersion}:cancel`;
+    const idempotencyKey =
+      actionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    actionKeys.current.set(fingerprint, idempotencyKey);
 
     try {
-      await apiFetch(`/orders/${orderId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "CANCELLED", reason }),
+      await apiFetch(`/orders/${orderId}/actions/cancel`, {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({
+          expectedVersion: orderVersion,
+          reasonCode: "MANAGER_KITCHEN_CANCELLED",
+          reason,
+        }),
       });
+      actionKeys.current.delete(fingerprint);
       showToast("Buyurtma bekor qilindi.", "success");
       setCancelTarget(null);
       setCancelReason("");
@@ -384,12 +409,11 @@ export function AdminKitchenMonitor() {
     const canStep = step ? hasPermission(user, step.permission) : false;
     const order = ticket.order;
     /*
-     * Bekor qilish `PATCH /orders/:id/status` orqali ketadi, ya'ni
-     * uning sharti buyurtmalar ekrani bilan BIR XIL: chaqiruvchi shu
-     * filialning faol xodimi bo'lishi kerak.
+     * Bekor qilish order action orqali ketadi; shu sabab ORDER_UPDATE
+     * huquqi va serverdagi filial scope bir xil qo'llanadi.
      */
     const canCancel = order
-      ? hasPermission(user, "ORDER_SEND_KITCHEN") &&
+      ? hasPermission(user, "ORDER_UPDATE") &&
         !statusChangeBlockReason(user, {
           status: order.status,
           branch: order.branch ?? null,

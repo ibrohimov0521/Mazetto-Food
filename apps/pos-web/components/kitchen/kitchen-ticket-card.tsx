@@ -66,7 +66,7 @@ export function KitchenTicketCard({
     ticket.status === "NEW" ? "KITCHEN_ACCEPT" : "KITCHEN_STATUS_UPDATE",
   );
   const action = canAct ? kitchenPrimaryAction(ticket.status) : null;
-  const shownItems = ticket.items?.length ? ticket.items : ticket.order.items;
+  const shownItems = ticket.items;
   const canCancel =
     hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
     ["NEW", "ACCEPTED", "COOKING"].includes(ticket.status);

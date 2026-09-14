@@ -29,23 +29,24 @@
 
 ## Phase 2 - kitchen supplements and operational controls
 
-- **STATUS:** IN PROGRESS (local operational core complete)
-- **FILES CHANGED:** kitchen ticket snapshots/events, parent-linked supplemental orders, cash transfer allocations/detail UI, staff termination guards, compact profile layout, and customer delivery-address validation/autofill UX
-- **MIGRATIONS:** `20260914130000_cash_transfer_allocations`, `20260914133000_kitchen_ticket_revisions` (both additive and applied only to isolated `mazetto_preview`)
-- **TESTS:** backend 199/199; backend/customer/POS typecheck, lint and production builds; real API and browser smoke for supplement tickets, transition regression, two-hop cash provenance and staff termination guard; 390x844 browser regression for visible/focused house-number validation
-- **KNOWN ISSUES:** production-like staging rehearsal is pending; kitchen station routing, item-level void events and explicit endpoint idempotency/two-device race coverage remain; old transfers have no historical composition and are never estimated
-- **NEXT STEP:** close the remaining Phase 2 gates, then start Phase 3 reliable printing
+- **STATUS:** RELEASE READY (production-backup rehearsal passed; deploy pending)
+- **FILES CHANGED:** kitchen ticket/routing snapshots and immutable events, idempotent versioned kitchen actions, parent-linked supplemental orders, item cancellation actions, cash transfer allocations/detail UI, staff termination guards, compact profile layout, and customer delivery-address validation/autofill UX
+- **MIGRATIONS:** `20260914130000_cash_transfer_allocations`, `20260914133000_kitchen_ticket_revisions` (deployed); `20260914150000_kitchen_action_hardening` (additive, rehearsal passed, deploy pending)
+- **TESTS:** backend 208/208; backend/POS typecheck, lint and production builds; validators 27/27; a fresh PostgreSQL 18 database applied 32/32 migrations; the 2026-09-14 production backup restored with 90 orders and 227 kitchen items, then applied the hardening migration without count drift or orphans; clone API canary proved one-event replay, stale-version 409 and item cancellation propagation
+- **KNOWN ISSUES:** production deploy and post-deploy canary are pending; real grill/fryer/drinks ownership still needs business mapping; historical transfers without stored composition remain explicitly unknown and are never estimated; pg 8.23 emitted a non-blocking nested-query deprecation warning during clone shutdown and must be removed before a future pg 9 upgrade
+- **NEXT STEP:** commit/push and deploy Phase 2 at the release boundary, run the production canary, then implement Phase 3 durable print jobs; the production print engine belongs inside MAZETTO Desktop, while the current Node agent remains a compatibility canary
 
 ## Later phases
 
-| Phase                                | Status              |
-| ------------------------------------ | ------------------- |
-| 1 - Order aggregate and audit events | COMPLETE (LOCAL)    |
-| 2 - State machines and actions       | IN PROGRESS (LOCAL) |
-| 3 - Kitchen lifecycle                | NOT STARTED         |
-| 4 - Reliable printing                | NOT STARTED         |
-| 5 - Delivery / courier               | NOT STARTED         |
-| 6 - Payment reconciliation           | NOT STARTED         |
-| 7 - Notifications + automation       | NOT STARTED         |
-| 8 - Reports + monitoring             | NOT STARTED         |
-| 9 - Multi-tenant hardening           | NOT STARTED         |
+| Phase                                         | Status        |
+| --------------------------------------------- | ------------- |
+| 0 - Foundation and safety rails               | COMPLETE      |
+| 1 - Order aggregate and immutable history     | COMPLETE      |
+| 2 - Kitchen lifecycle and supplements         | RELEASE READY |
+| 3 - Reliable printing                         | NOT STARTED   |
+| 4 - Delivery / courier                        | NOT STARTED   |
+| 5 - Payment and courier reconciliation        | PARTIAL       |
+| 6 - Notifications and exception automation    | NOT STARTED   |
+| 7 - Reporting and observability               | NOT STARTED   |
+| 8 - Multi-tenant hardening                    | NOT STARTED   |
+| 9 - Deprecation, scale and disaster hardening | NOT STARTED   |

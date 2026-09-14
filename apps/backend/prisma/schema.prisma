@@ -1074,16 +1074,20 @@ model OrderItem {
 }
 
 model KitchenTicketItem {
-  id               String          @id @default(cuid())
-  ticketId         String
-  orderItemId      String?
-  productName      String
-  variantName      String?
-  quantity         Decimal         @db.Decimal(10, 3)
-  notes            String?
-  modifierSnapshot Json?
-  status           OrderItemStatus @default(ACTIVE)
-  createdAt        DateTime        @default(now())
+  id                  String                @id @default(cuid())
+  ticketId            String
+  orderItemId         String?
+  productName         String
+  variantName         String?
+  quantity            Decimal               @db.Decimal(10, 3)
+  notes               String?
+  modifierSnapshot    Json?
+  stationRouting      ProductPrinterRouting @default(NONE)
+  printerIdSnapshot   String?
+  printerNameSnapshot String?
+  printerTypeSnapshot PrinterType?
+  status              OrderItemStatus       @default(ACTIVE)
+  createdAt           DateTime              @default(now())
 
   ticket    KitchenTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   orderItem OrderItem?    @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
@@ -1100,15 +1104,21 @@ model KitchenTicketEvent {
   eventType      String
   previousStatus KitchenTicketStatus?
   newStatus      KitchenTicketStatus?
+  orderItemId    String?
   actorId        String?
   reason         String?
+  correlationId  String?
+  idempotencyKey String?
+  payload        Json?
   version        Int
   createdAt      DateTime             @default(now())
 
   ticket KitchenTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, version])
+  @@unique([ticketId, idempotencyKey])
   @@index([ticketId, createdAt])
+  @@index([orderItemId, createdAt])
   @@index([eventType, createdAt])
   @@map("kitchen_ticket_events")
 }

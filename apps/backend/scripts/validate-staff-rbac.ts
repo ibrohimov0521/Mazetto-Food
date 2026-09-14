@@ -147,10 +147,8 @@ for (const href of [
 ]) {
   assert.match(staffPanelNavigation, new RegExp(escapeRegExp(`"${href}"`)));
 }
-assert.match(
-  kitchenTicketCard,
-  /const shownItems = ticket\.items\?\.length \? ticket\.items : ticket\.order\.items/,
-);
+assert.match(kitchenTicketCard, /const shownItems = ticket\.items;/);
+assert.doesNotMatch(kitchenTicketCard, /ticket\.items\?\.length/);
 assert.match(kitchenTicketCard, /data-compact=\{isCompact\}/);
 assert.match(kitchenTicketCard, /ticketCompactSummary/);
 assert.doesNotMatch(kitchenTicketCard, /const \[expanded\b/);

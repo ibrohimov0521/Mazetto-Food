@@ -63,6 +63,7 @@ function KitchenDisplay() {
   const [mobileStatus, setMobileStatus] = useState<string>("NEW");
   const [query, setQuery] = useState("");
   const [cancelTicket, setCancelTicket] = useState<KitchenTicket | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyTickets, setHistoryTickets] = useState<KitchenTicket[]>([]);
   const [historyStatus, setHistoryStatus] = useState("");
@@ -72,6 +73,7 @@ function KitchenDisplay() {
   const loadVersion = useRef(0);
   const loadRequest = useRef<AbortController | null>(null);
   const pendingActions = useRef(0);
+  const actionKeys = useRef(new Map<string, string>());
 
   const loadTickets = useCallback(async (force = false) => {
     if ((loadRequest.current || pendingActions.current > 0) && !force) return;
@@ -230,7 +232,7 @@ function KitchenDisplay() {
                 ticket.order.displayOrderNumber,
                 ticket.order.orderNumber,
                 ticket.order.table?.name,
-                ...ticket.order.items.map((item) => item.productName),
+                ...ticket.items.map((item) => item.productName),
               ].some((value) => value?.toLowerCase().includes(term))),
         ),
       ),
@@ -239,6 +241,18 @@ function KitchenDisplay() {
 
   async function runAction(ticket: KitchenTicket, action: KitchenAction) {
     if (busyTicketIds.has(ticket.id)) return;
+    const reason = cancelReason.trim();
+    if (action === "cancel" && !reason) {
+      setActionErrors((current) => ({
+        ...current,
+        [ticket.id]: "Bekor qilish sababini yozing.",
+      }));
+      return;
+    }
+    const fingerprint = `${ticket.id}:${ticket.version}:${action}`;
+    const idempotencyKey =
+      actionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    actionKeys.current.set(fingerprint, idempotencyKey);
     pendingActions.current += 1;
     loadVersion.current++;
     loadRequest.current?.abort();
@@ -252,8 +266,19 @@ function KitchenDisplay() {
     try {
       const updated = await apiFetch<KitchenTicket>(
         `/kitchen/orders/${ticket.id}/${action}`,
-        { method: "PATCH", signal: AbortSignal.timeout(12000) },
+        {
+          method: "PATCH",
+          headers: { "Idempotency-Key": idempotencyKey },
+          signal: AbortSignal.timeout(12000),
+          body: JSON.stringify({
+            expectedVersion: ticket.version,
+            ...(action === "cancel"
+              ? { reason, reasonCode: "KITCHEN_OPERATOR_CANCELLED" }
+              : {}),
+          }),
+        },
       );
+      actionKeys.current.delete(fingerprint);
       setTickets((current) =>
         current.flatMap((entry) =>
           entry.id !== ticket.id
@@ -266,6 +291,7 @@ function KitchenDisplay() {
       setCancelTicket((current) =>
         current?.id === ticket.id ? null : current,
       );
+      if (action === "cancel") setCancelReason("");
     } catch (caught) {
       setActionErrors((current) => ({
         ...current,
@@ -461,8 +487,10 @@ function KitchenDisplay() {
                       isCompact={compactTicketIds.has(ticket.id)}
                       onToggleCompact={() => toggleCompactTicket(ticket.id)}
                       onAction={(action) => {
-                        if (action === "cancel") setCancelTicket(ticket);
-                        else void runAction(ticket, action);
+                        if (action === "cancel") {
+                          setCancelReason("");
+                          setCancelTicket(ticket);
+                        } else void runAction(ticket, action);
                       }}
                     />
                   ))
@@ -571,6 +599,17 @@ function KitchenDisplay() {
             </strong>{" "}
             buyurtmasi bekor qilinadi.
           </p>
+          <label>
+            <span className={styles.fieldLabel}>Sabab</span>
+            <textarea
+              className={styles.input}
+              maxLength={500}
+              onChange={(event) => setCancelReason(event.target.value)}
+              placeholder="Masalan: mahsulot qolmagan"
+              rows={3}
+              value={cancelReason}
+            />
+          </label>
           {actionErrors[cancelTicket.id] && (
             <p className={styles.error} role="alert">
               {actionErrors[cancelTicket.id]}

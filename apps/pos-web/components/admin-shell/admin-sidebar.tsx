@@ -84,20 +84,31 @@ export function AdminSidebar({
       }}
     >
       <div
-        className="flex shrink-0 items-center gap-2 border-b border-mz-shell-border px-3"
+        className="flex shrink-0 items-center border-b border-mz-shell-border px-3"
         style={{ height: "var(--mz-header-h)" }}
       >
-        <span
-          aria-hidden="true"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-mz-control bg-mz-primary text-xs font-black text-mz-primary-fg"
+        <Link
+          aria-label="Mazetto Food boshqaruv paneli"
+          className={`flex min-w-0 items-center ${isCollapsed ? "justify-center" : "justify-start"}`}
+          href="/admin/dashboard"
+          onClick={onNavigate}
         >
-          M
-        </span>
-        {!isCollapsed ? (
-          <span className="truncate text-xs font-black tracking-[0.1em]">
-            MAZETTO ADMIN
-          </span>
-        ) : null}
+          <img
+            alt="Mazetto Food"
+            className={
+              isCollapsed
+                ? "h-8 w-8 rounded-mz-control object-cover"
+                : "h-[38px] w-[154px] object-contain"
+            }
+            height={isCollapsed ? 32 : 38}
+            src={
+              isCollapsed
+                ? "/brand/mazetto-m-icon-192-v2.png"
+                : "/brand/header-logo.webp"
+            }
+            width={isCollapsed ? 32 : 154}
+          />
+        </Link>
       </div>
 
       <nav className="flex-1 px-2 py-3">

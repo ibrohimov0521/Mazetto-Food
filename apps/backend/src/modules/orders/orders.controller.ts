@@ -19,7 +19,11 @@ import {
   CancelOrderActionDto,
 } from "./dto/order-action.dto";
 import { ListOrdersDto } from "./dto/list-orders.dto";
-import { AddOrderItemDto, UpdateOrderItemDto } from "./dto/order-item.dto";
+import {
+  AddOrderItemDto,
+  CancelOrderItemActionDto,
+  UpdateOrderItemDto,
+} from "./dto/order-item.dto";
 import {
   BulkUpdateOrderStatusDto,
   UpdateOrderStatusDto,
@@ -122,6 +126,22 @@ export class OrdersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.ordersService.addItem(id, dto, user);
+  }
+
+  @Post(":id/items/:itemId/actions/cancel")
+  @Permissions(PERMISSIONS.ORDER_UPDATE)
+  cancelItem(
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Body() dto: CancelOrderItemActionDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
+    @IdempotencyKey() idempotencyKey: string,
+  ) {
+    return this.orderActions.cancelItem(id, itemId, dto, user, {
+      correlationId,
+      idempotencyKey,
+    });
   }
 
   @Patch(":id/items/:itemId")

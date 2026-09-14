@@ -40,6 +40,7 @@ export type OrderLine = {
 
 export type TableOrder = {
   id: string;
+  version: number;
   orderNumber: string;
   displayOrderNumber?: string | null;
   status: OrderStatus;

@@ -175,9 +175,13 @@ export function PanelNavbar({
             width={154}
             height={38}
           />
-          <span className="mz-panel-brand" role="img" aria-label="Mazetto Food">
-            M
-          </span>
+          <img
+            className="mz-panel-brand"
+            src="/brand/mazetto-m-icon-192-v2.png"
+            alt="Mazetto Food"
+            width={28}
+            height={28}
+          />
           <h1>{title}</h1>
         </div>
       )}
