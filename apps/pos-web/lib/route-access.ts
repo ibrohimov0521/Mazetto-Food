@@ -183,6 +183,11 @@ export const routeAccessRules: RouteAccessRule[] = [
     permission: "DEVICE_VIEW",
   },
   {
+    pattern: "/admin/devices",
+    roles: [SUPER, ADMIN, MANAGER],
+    permission: "DEVICE_VIEW",
+  },
+  {
     pattern: "/admin/branches/:branchId/halls/:hallId/tables/:tableId",
     roles: [SUPER, MANAGER],
     permission: "TABLE_VIEW",
