@@ -29,7 +29,8 @@
     "productName": "MAZETTO Desktop",
     "artifactName": "MAZETTO-Desktop-${version}-${arch}.${ext}",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources"
     },
     "files": [
       "dist/**/*",
@@ -42,11 +43,15 @@
       }
     ],
     "win": {
+      "icon": "resources/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "nsis": {
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeader": "resources/installer-header.bmp",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
