@@ -7,6 +7,20 @@ import {
   MaxLength,
 } from "class-validator";
 
+export class EnrollDeviceDto {
+  @IsString()
+  deviceId!: string;
+
+  @IsString()
+  @MaxLength(32)
+  enrollmentCode!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  softwareVersion?: string;
+}
+
 export class CreateDeviceDto {
   @IsString()
   branchId!: string;

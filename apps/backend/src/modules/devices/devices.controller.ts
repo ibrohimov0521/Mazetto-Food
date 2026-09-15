@@ -11,9 +11,10 @@ import {
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Public } from "../../common/decorators/public.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
-import { CreateDeviceDto, UpdateDeviceDto } from "./dto/device.dto";
+import { CreateDeviceDto, EnrollDeviceDto, UpdateDeviceDto } from "./dto/device.dto";
 import { DevicesService } from "./devices.service";
 
 @Controller("devices")
@@ -51,6 +52,12 @@ export class DevicesController {
     return this.devicesService.heartbeat(deviceId, body?.softwareVersion, user);
   }
 
+  @Public()
+  @Post("enroll")
+  enroll(@Body() dto: EnrollDeviceDto) {
+    return this.devicesService.enroll(dto);
+  }
+
   @Patch(":id")
   @Permissions(PERMISSIONS.DEVICE_MANAGE)
   updateDevice(
@@ -59,5 +66,14 @@ export class DevicesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.devicesService.updateDevice(id, dto, user);
+  }
+
+  @Post(":id/enrollment-code")
+  @Permissions(PERMISSIONS.DEVICE_MANAGE)
+  rotateEnrollmentCode(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.devicesService.rotateEnrollmentCode(id, user);
   }
 }

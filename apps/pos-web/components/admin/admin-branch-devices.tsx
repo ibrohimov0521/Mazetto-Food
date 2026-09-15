@@ -95,6 +95,11 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
   const { showToast } = useToast();
   const canManage = hasPermission(user, "DEVICE_MANAGE");
   const [editor, setEditor] = useState<DeviceDraft | null>(null);
+  const [enrollmentInfo, setEnrollmentInfo] = useState<{
+    deviceId: string;
+    code: string;
+    expiresAt: string;
+  } | null>(null);
   const [nameError, setNameError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -131,7 +136,13 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
         softwareVersion: editor.softwareVersion.trim(),
         ...(editor.id ? { isActive: editor.isActive } : { branchId }),
       };
-      await apiFetch(editor.id ? `/devices/${editor.id}` : "/devices", {
+      const result = await apiFetch<{
+    id?: string;
+    deviceId?: string;
+    enrollmentCode?: string;
+    enrollmentExpiresAt?: string;
+    expiresAt?: string;
+      }>(editor.id ? `/devices/${editor.id}` : "/devices", {
         method: editor.id ? "PATCH" : "POST",
         body: JSON.stringify(body),
       });
@@ -140,6 +151,13 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
         "success",
       );
       setEditor(null);
+      if (result.enrollmentCode && result.id && result.enrollmentExpiresAt) {
+        setEnrollmentInfo({
+          deviceId: result.id,
+          code: result.enrollmentCode,
+          expiresAt: result.enrollmentExpiresAt,
+        });
+      }
       resource.reload();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) return;
@@ -379,6 +397,37 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
                 }
               />
             ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        footer={
+          <Button onClick={() => setEnrollmentInfo(null)} size="lg">
+            Tayyor
+          </Button>
+        }
+        isOpen={enrollmentInfo !== null}
+        onClose={() => setEnrollmentInfo(null)}
+        title="Qurilmani ulash kodi"
+      >
+        {enrollmentInfo ? (
+          <div className="grid gap-3">
+            <p className="text-sm text-mz-text-muted">
+              Bu kodni qurilmadagi ulash oynasiga 15 daqiqa ichida kiriting.
+              Kod bir marta ishlatiladi.
+            </p>
+            <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-4 text-center">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-mz-text-muted">
+                Ulanish kodi
+              </p>
+              <p className="mt-2 font-mono text-2xl font-bold tracking-[0.2em] text-mz-info">
+                {enrollmentInfo.code}
+              </p>
+            </div>
+            <p className="text-[12px] text-mz-text-muted">
+              Qurilma ID: {enrollmentInfo.deviceId}
+            </p>
           </div>
         ) : null}
       </Modal>
