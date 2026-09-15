@@ -257,6 +257,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
         matchPrefix: "/admin/branches",
       },
+      {
+        label: "Qurilmalar",
+        icon: "monitor",
+        href: "/admin/devices",
+        permission: "DEVICE_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+      },
     ],
   },
   {
