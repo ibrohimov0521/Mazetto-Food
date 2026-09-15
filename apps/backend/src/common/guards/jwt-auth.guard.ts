@@ -46,7 +46,10 @@ export class JwtAuthGuard implements CanActivate {
       request.user = await this.resolveCurrentUser(payload.id);
       await this.assertDesktopDeviceEnrollment(request);
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
       throw new UnauthorizedException("Invalid or expired access token");
     }
   }
