@@ -51,6 +51,20 @@ export function AdminDevices() {
     }
   }
 
+  async function deleteDevice(device: Device): Promise<void> {
+    if (!window.confirm(`${device.name} qurilmasini o'chirishni tasdiqlaysizmi?`)) {
+      return;
+    }
+
+    try {
+      await apiFetch(`/devices/${device.id}`, { method: "DELETE" });
+      showToast("Qurilma o'chirildi.", "success");
+      resource.reload();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Qurilmani o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   const columns: DataTableColumn<Device>[] = [
     { key: "name", header: "Qurilma", primary: true, render: (device) => <div><p className="font-semibold text-mz-text">{device.name}</p><p className="text-[12px] text-mz-text-muted">{device.branch.name}</p></div> },
     { key: "type", header: "Turi", render: (device) => typeLabels[device.type] ?? device.type },
@@ -69,6 +83,7 @@ export function AdminDevices() {
       <DataTable caption="Barcha qurilmalar" columns={columns} emptyDescription="Avval filial ichidan yangi qurilma yarating." emptyIcon="monitor" emptyTitle="Qurilmalar yo'q" getRowKey={(device) => device.id} rowActions={(device) => <>
         <RowAction icon="shield" label={`${device.name} uchun yangi ulash kodi`} onClick={() => void rotateCode(device)} />
         <RowAction icon="pencil" label={`${device.name} tahrirlash`} href={`/admin/branches/${device.branch.id}/devices`} />
+        <RowAction icon="trash" label={`${device.name} qurilmasini o'chirish`} onClick={() => void deleteDevice(device)} />
       </>} rows={resource.data ?? []} />
     </Card>
     <Modal footer={<Button onClick={() => setEnrollmentInfo(null)} size="lg">Tayyor</Button>} isOpen={enrollmentInfo !== null} onClose={() => setEnrollmentInfo(null)} title="Qurilmani ulash kodi">
