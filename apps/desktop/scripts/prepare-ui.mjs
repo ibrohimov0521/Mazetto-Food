@@ -64,6 +64,10 @@ await materializeTree(
   join(standaloneApp, "public"),
 );
 
+// A packaged Electron binary cannot reliably act as a child Node runtime on
+// Windows. Ship the Node executable used during packaging for the bundled UI.
+await copyFile(process.execPath, join(outputDirectory, "node.exe"));
+
 await flattenStandaloneDependencies(
   join(standaloneDirectory, "node_modules", ".pnpm"),
   join(standaloneApp, "node_modules"),

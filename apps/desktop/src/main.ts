@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -60,7 +61,9 @@ if (!hasLock) {
     }
   });
 
-  void app.whenReady().then(startDesktop);
+  void app.whenReady().then(startDesktop).catch((error) => {
+    console.error("[desktop] startup failed", error);
+  });
 }
 
 app.on("window-all-closed", () => {
@@ -294,21 +297,36 @@ async function resolveUiUrl(): Promise<string> {
     return "http://127.0.0.1:3001";
   }
 
-  const uiDirectory = app.isPackaged
-    ? join(process.resourcesPath, "ui")
-    : join(app.getAppPath(), "runtime", "pos-web");
+  const packagedUiDirectory = join(process.resourcesPath, "ui");
+  const developmentUiDirectory = join(app.getAppPath(), "runtime", "pos-web");
+  const uiDirectory = existsSync(packagedUiDirectory)
+    ? packagedUiDirectory
+    : developmentUiDirectory;
   const serverEntry = join(uiDirectory, "apps", "pos-web", "server.js");
-  uiProcess = spawn(process.execPath, [serverEntry], {
+  const nodeExecutable = existsSync(join(uiDirectory, "node.exe"))
+    ? join(uiDirectory, "node.exe")
+    : process.execPath;
+  console.error("[desktop] starting bundled UI", {
+    nodeExecutable,
+    serverEntry,
+    uiDirectory,
+  });
+  uiProcess = spawn(nodeExecutable, [serverEntry], {
     cwd: join(uiDirectory, "apps", "pos-web"),
     env: {
       ...process.env,
-      ELECTRON_RUN_AS_NODE: "1",
       HOSTNAME: "127.0.0.1",
       PORT: "7360",
     },
     stdio: app.isPackaged ? "ignore" : "inherit",
     windowsHide: true,
   });
+  uiProcess.once("error", (error) =>
+    console.error("[desktop] bundled UI process error", error),
+  );
+  uiProcess.once("exit", (code, signal) =>
+    console.error("[desktop] bundled UI process exited", { code, signal }),
+  );
 
   const localUrl = "http://127.0.0.1:7360";
   await waitForUi(`${localUrl}/api/health`, 30_000);
