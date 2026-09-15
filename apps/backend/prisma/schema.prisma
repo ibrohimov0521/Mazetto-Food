@@ -648,18 +648,21 @@ model RestaurantTable {
 }
 
 model Device {
-  id              String     @id @default(cuid())
-  branchId        String
-  lastEmployeeId  String?
-  name            String
-  type            DeviceType
-  os              String?
-  ipAddress       String?
-  softwareVersion String?
-  isActive        Boolean    @default(true)
-  lastSeenAt      DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id                  String     @id @default(cuid())
+  branchId            String
+  lastEmployeeId      String?
+  enrollmentCodeHash  String?
+  enrollmentExpiresAt DateTime?
+  enrolledAt          DateTime?
+  name                String
+  type                DeviceType
+  os                  String?
+  ipAddress           String?
+  softwareVersion     String?
+  isActive            Boolean    @default(true)
+  lastSeenAt          DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   branch       Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
   lastEmployee Employee? @relation("DeviceLastEmployee", fields: [lastEmployeeId], references: [id], onDelete: SetNull)
@@ -668,6 +671,7 @@ model Device {
   @@index([branchId, type])
   @@index([isActive])
   @@index([lastSeenAt])
+  @@index([enrollmentExpiresAt])
   @@map("devices")
 }
 

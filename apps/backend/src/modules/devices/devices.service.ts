@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { createHash, randomBytes } from "node:crypto";
 import {
   resolveBranchScope,
   resolveRequiredBranchScope,
@@ -10,7 +11,11 @@ import {
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { writeAuditLog } from "../audit/audit-write";
-import type { CreateDeviceDto, UpdateDeviceDto } from "./dto/device.dto";
+import type {
+  CreateDeviceDto,
+  EnrollDeviceDto,
+  UpdateDeviceDto,
+} from "./dto/device.dto";
 
 @Injectable()
 export class DevicesService {
@@ -49,6 +54,7 @@ export class DevicesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const enrollmentCode = createEnrollmentCode();
       const created = await tx.device.create({
         data: {
           branchId,
@@ -57,6 +63,8 @@ export class DevicesService {
           os: dto.os?.trim() || null,
           ipAddress: dto.ipAddress?.trim() || null,
           softwareVersion: dto.softwareVersion?.trim() || null,
+          enrollmentCodeHash: hashEnrollmentCode(enrollmentCode),
+          enrollmentExpiresAt: enrollmentExpiry(),
         },
         include: { branch: true },
       });
@@ -67,8 +75,54 @@ export class DevicesService {
         entityId: created.id,
         metadata: { branchId, name, type: dto.type },
       });
-      return created;
+      return { ...created, enrollmentCode };
     });
+  }
+
+  async rotateEnrollmentCode(id: string, user: AuthenticatedUser) {
+    const device = await this.assertDevice(id, user);
+    const enrollmentCode = createEnrollmentCode();
+    const expiresAt = enrollmentExpiry();
+    await this.prisma.device.update({
+      where: { id: device.id },
+      data: {
+        enrollmentCodeHash: hashEnrollmentCode(enrollmentCode),
+        enrollmentExpiresAt: expiresAt,
+        enrolledAt: null,
+      },
+    });
+    return { deviceId: device.id, enrollmentCode, expiresAt: expiresAt.toISOString() };
+  }
+
+  async enroll(dto: EnrollDeviceDto) {
+    const deviceId = dto.deviceId.trim();
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || !device.isActive) {
+      throw new NotFoundException("Device not found or disabled");
+    }
+    if (
+      !device.enrollmentCodeHash ||
+      !device.enrollmentExpiresAt ||
+      device.enrollmentExpiresAt.getTime() < Date.now() ||
+      device.enrollmentCodeHash !== hashEnrollmentCode(dto.enrollmentCode)
+    ) {
+      throw new BadRequestException("Enrollment code is invalid or expired");
+    }
+    const enrolledAt = new Date();
+    const updated = await this.prisma.device.update({
+      where: { id: device.id },
+      data: {
+        enrolledAt,
+        enrollmentCodeHash: null,
+        enrollmentExpiresAt: null,
+        lastSeenAt: enrolledAt,
+        ...(dto.softwareVersion?.trim()
+          ? { softwareVersion: dto.softwareVersion.trim().slice(0, 80) }
+          : {}),
+      },
+      select: { id: true, branchId: true, name: true, type: true, enrolledAt: true },
+    });
+    return updated;
   }
 
   async updateDevice(
@@ -200,4 +254,16 @@ export class DevicesService {
 
     return name;
   }
+}
+
+function createEnrollmentCode(): string {
+  return randomBytes(6).toString("hex").toUpperCase();
+}
+
+function hashEnrollmentCode(code: string): string {
+  return createHash("sha256").update(code.trim().toUpperCase()).digest("hex");
+}
+
+function enrollmentExpiry(): Date {
+  return new Date(Date.now() + 15 * 60 * 1000);
 }

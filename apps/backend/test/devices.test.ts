@@ -151,3 +151,65 @@ test("o'chirilgan qurilma heartbeat qabul qilinmaydi", async () => {
     /Device is disabled/,
   );
 });
+
+test("enrollment kodi muddati va hash tekshiruvidan o'tadi", async () => {
+  const service = new DevicesService({
+    device: {
+      findUnique: async () => ({
+        id: "device-1",
+        branchId: "branch-1",
+        name: "Kassa 1",
+        type: "POS_TERMINAL",
+        isActive: true,
+        enrollmentCodeHash:
+          "not-the-code",
+        enrollmentExpiresAt: new Date(Date.now() + 60_000),
+      }),
+    },
+  } as never);
+
+  await assert.rejects(
+    () => service.enroll({ deviceId: "device-1", enrollmentCode: "wrong" }),
+    /invalid or expired/,
+  );
+});
+
+test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async () => {
+  let updateData: Record<string, unknown> | undefined;
+  const crypto = await import("node:crypto");
+  const code = "ABC123DEF456";
+  const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+  const service = new DevicesService({
+    device: {
+      findUnique: async () => ({
+        id: "device-1",
+        branchId: "branch-1",
+        name: "Kassa 1",
+        type: "POS_TERMINAL",
+        isActive: true,
+        enrollmentCodeHash: codeHash,
+        enrollmentExpiresAt: new Date(Date.now() + 60_000),
+      }),
+      update: async (args: { data: Record<string, unknown> }) => {
+        updateData = args.data;
+        return {
+          id: "device-1",
+          branchId: "branch-1",
+          name: "Kassa 1",
+          type: "POS_TERMINAL",
+          enrolledAt: new Date(),
+        };
+      },
+    },
+  } as never);
+
+  await service.enroll({
+    deviceId: "device-1",
+    enrollmentCode: code,
+    softwareVersion: "0.1.5",
+  });
+
+  assert.equal(updateData?.enrollmentCodeHash, null);
+  assert.equal(updateData?.enrollmentExpiresAt, null);
+  assert.ok(updateData?.enrolledAt instanceof Date);
+});
