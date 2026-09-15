@@ -227,19 +227,23 @@ export function KitchenTicketCard({
 function Modifiers({ value }: { value: unknown }) {
   if (!Array.isArray(value)) return null;
 
+  const modifiers = value
+    .filter(
+      (item): item is { name?: string; quantity?: string } =>
+        !!item && typeof item === "object",
+    )
+    .map((item) => {
+      const quantity = Number(item.quantity);
+      return `${item.name ?? "Qo'shimcha"}${quantity > 1 ? ` x${quantity}` : ""}`;
+    });
+
+  if (!modifiers.length) {
+    return null;
+  }
+
   return (
-    <>
-      {value
-        .filter(
-          (item): item is { name?: string; quantity?: string } =>
-            !!item && typeof item === "object",
-        )
-        .map((item, index) => (
-          <small key={index}>
-            + {item.name ?? "Qo'shimcha"}
-            {Number(item.quantity) > 1 ? ` x${item.quantity}` : ""}
-          </small>
-        ))}
-    </>
+    <small className={styles.modifierSummary} title={modifiers.join(", ")}>
+      + {modifiers.join(", + ")}
+    </small>
   );
 }

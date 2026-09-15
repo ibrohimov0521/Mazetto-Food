@@ -36,6 +36,24 @@ export class SessionExpiredError extends Error {
   }
 }
 
+export type OfflineQueuedResult = {
+  offlineQueued?: boolean;
+  queued?: boolean;
+  commandId?: string;
+  message?: string;
+};
+
+export function isOfflineQueuedResult(
+  value: unknown,
+): value is OfflineQueuedResult {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      ((value as OfflineQueuedResult).offlineQueued === true ||
+        (value as OfflineQueuedResult).queued === true),
+  );
+}
+
 /*
  * Backend `/auth/refresh` refresh tokenni AYLANTIRADI — eski token darhol
  * yaroqsiz bo'ladi. Shuning uchun bir vaqtda faqat bitta yangilash bo'lishi shart:
