@@ -1,0 +1,61 @@
+name: Desktop Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "apps/pos-web/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/desktop-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish Windows app
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        shell: pwsh
+        run: corepack enable
+
+      - name: Install
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer
+        shell: pwsh
+        run: pnpm --filter mazetto-desktop package:win
+
+      - name: Publish release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
+          $tag = "desktop-v$version"
+          $assets = @(
+            "apps/desktop/release/MAZETTO-Desktop-$version-x64.exe",
+            "apps/desktop/release/MAZETTO-Desktop-$version-x64.exe.blockmap",
+            "apps/desktop/release/latest.yml"
+          )
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+          } else {
+            gh release create $tag $assets --title "MAZETTO Desktop $version" --notes "Windows desktop release $version" --latest
+          }
