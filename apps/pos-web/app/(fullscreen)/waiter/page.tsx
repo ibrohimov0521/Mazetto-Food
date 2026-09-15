@@ -45,7 +45,11 @@ import {
   type TableOrder,
   type WaiterTable,
 } from "../../../components/waiter/waiter-model";
-import { apiFetch, SessionExpiredError } from "../../../lib/api";
+import {
+  apiFetch,
+  isOfflineQueuedResult,
+  SessionExpiredError,
+} from "../../../lib/api";
 import { getApiBaseUrl } from "../../../lib/auth";
 import { formatMoney } from "../../../lib/order-display";
 import { readSession } from "../../../lib/session";
@@ -353,7 +357,13 @@ function WaiterFloor() {
       setActionError(null);
       setDialogError(null);
       try {
-        await request();
+        const result = await request();
+        if (isOfflineQueuedResult(result)) {
+          setActionError(
+            result.message ?? "Amal navbatga olindi. Internet qaytganda yuboriladi.",
+          );
+          return true;
+        }
         await refreshAfterAction();
         return true;
       } catch (caught) {
@@ -396,6 +406,7 @@ function WaiterFloor() {
 
     const note = openNote.trim();
     let createdOrderId: string | null = null;
+    let queuedOpen = false;
     const created = await runAction(
       isSupplemental ? "additional" : "open",
       async () => {
@@ -413,7 +424,8 @@ function WaiterFloor() {
             }),
           },
         );
-        createdOrderId = createdOrder.id;
+        queuedOpen = isOfflineQueuedResult(createdOrder);
+        createdOrderId = queuedOpen ? null : createdOrder.id;
         return createdOrder;
       },
       isSupplemental
@@ -423,8 +435,10 @@ function WaiterFloor() {
 
     if (created) {
       setOpenNote("");
-      setSelectedOrderId(createdOrderId);
-      setPane("menu");
+      if (!queuedOpen) {
+        setSelectedOrderId(createdOrderId);
+        setPane("menu");
+      }
     }
   }
 

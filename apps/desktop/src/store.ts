@@ -15,7 +15,43 @@ export type DesktopStoreSummary = {
   deviceId: string;
   cachedResponses: number;
   pendingCommands: number;
+  sendingCommands: number;
+  conflictCommands: number;
+  deadLetterCommands: number;
   pendingPrintJobs: number;
+};
+
+export type OutboxCommandInput = {
+  id?: string;
+  idempotencyKey: string;
+  commandType: string;
+  aggregateType: string;
+  aggregateId?: string | null;
+  baseVersion?: number | null;
+  actorId: string;
+  branchId: string;
+  authScope: string;
+  payload: unknown;
+};
+
+export type PendingOutboxCommand = {
+  id: string;
+  idempotencyKey: string;
+  commandType: string;
+  aggregateType: string;
+  aggregateId: string | null;
+  baseVersion: number | null;
+  actorId: string;
+  branchId: string;
+  authScope: string;
+  payloadJson: string;
+  attempts: number;
+};
+
+export type JwtContext = {
+  actorId: string;
+  branchId: string;
+  isGlobalScope: boolean;
 };
 
 export class DesktopStore {
@@ -26,6 +62,7 @@ export class DesktopStore {
     this.database.exec("PRAGMA journal_mode = WAL");
     this.database.exec("PRAGMA foreign_keys = ON");
     this.migrate();
+    this.recoverInterruptedMutations();
   }
 
   static authScope(authorization: string | undefined): string {
@@ -91,9 +128,147 @@ export class DesktopStore {
     return row ? { ...row } : null;
   }
 
+  enqueueMutation(input: OutboxCommandInput): PendingOutboxCommand {
+    const id = input.id ?? randomUUID();
+    const now = new Date().toISOString();
+    const payloadJson = JSON.stringify(input.payload);
+
+    this.database
+      .prepare(
+        `
+      INSERT INTO mutation_outbox (
+        id, idempotency_key, command_type, aggregate_type, aggregate_id,
+        base_version, actor_id, branch_id, auth_scope, payload_json, state,
+        attempts, next_attempt_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+      ON CONFLICT(idempotency_key) DO UPDATE SET
+        payload_json = excluded.payload_json,
+        last_error = NULL
+    `,
+      )
+      .run(
+        id,
+        input.idempotencyKey,
+        input.commandType,
+        input.aggregateType,
+        input.aggregateId ?? null,
+        input.baseVersion ?? null,
+        input.actorId,
+        input.branchId,
+        input.authScope,
+        payloadJson,
+        now,
+        now,
+      );
+
+    return this.getOutboxCommandByIdempotencyKey(input.idempotencyKey) ?? {
+      id,
+      idempotencyKey: input.idempotencyKey,
+      commandType: input.commandType,
+      aggregateType: input.aggregateType,
+      aggregateId: input.aggregateId ?? null,
+      baseVersion: input.baseVersion ?? null,
+      actorId: input.actorId,
+      branchId: input.branchId,
+      authScope: input.authScope,
+      payloadJson,
+      attempts: 0,
+    };
+  }
+
+  dueMutations(authScope: string, limit = 25): PendingOutboxCommand[] {
+    const rows = this.database
+      .prepare(
+        `
+      SELECT
+        id,
+        idempotency_key AS idempotencyKey,
+        command_type AS commandType,
+        aggregate_type AS aggregateType,
+        aggregate_id AS aggregateId,
+        base_version AS baseVersion,
+        actor_id AS actorId,
+        branch_id AS branchId,
+        auth_scope AS authScope,
+        payload_json AS payloadJson,
+        attempts
+      FROM mutation_outbox
+      WHERE auth_scope = ?
+        AND state = 'pending'
+        AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+      ORDER BY created_at ASC
+      LIMIT ?
+    `,
+      )
+      .all(authScope, new Date().toISOString(), limit) as PendingOutboxCommand[];
+
+    return rows.map((row) => ({ ...row }));
+  }
+
+  markMutationSending(id: string): void {
+    this.database
+      .prepare(
+        `
+      UPDATE mutation_outbox
+      SET state = 'sending', attempts = attempts + 1, last_error = NULL
+      WHERE id = ? AND state = 'pending'
+    `,
+      )
+      .run(id);
+  }
+
+  markMutationAcknowledged(id: string): void {
+    this.database
+      .prepare(
+        `
+      UPDATE mutation_outbox
+      SET state = 'acknowledged', acknowledged_at = ?, last_error = NULL
+      WHERE id = ?
+    `,
+      )
+      .run(new Date().toISOString(), id);
+  }
+
+  markMutationPending(id: string, error: string): void {
+    const row = this.database
+      .prepare("SELECT attempts FROM mutation_outbox WHERE id = ?")
+      .get(id) as { attempts: number | bigint } | undefined;
+    const attempts = Number(row?.attempts ?? 1);
+    const delayMs = Math.min(60_000, 2_000 * 2 ** Math.max(0, attempts - 1));
+    const nextAttemptAt = new Date(Date.now() + delayMs).toISOString();
+
+    this.database
+      .prepare(
+        `
+      UPDATE mutation_outbox
+      SET state = 'pending', next_attempt_at = ?, last_error = ?
+      WHERE id = ?
+    `,
+      )
+      .run(nextAttemptAt, error, id);
+  }
+
+  markMutationConflict(id: string, error: string): void {
+    this.database
+      .prepare(
+        `
+      UPDATE mutation_outbox
+      SET state = 'conflict', last_error = ?
+      WHERE id = ?
+    `,
+      )
+      .run(error, id);
+  }
+
   summary(): DesktopStoreSummary {
     const cachedResponses = this.count("api_cache");
     const pendingCommands = this.count("mutation_outbox", "state = 'pending'");
+    const sendingCommands = this.count("mutation_outbox", "state = 'sending'");
+    const conflictCommands = this.count("mutation_outbox", "state = 'conflict'");
+    const deadLetterCommands = this.count(
+      "mutation_outbox",
+      "state = 'dead_letter'",
+    );
     const pendingPrintJobs = this.count(
       "print_jobs",
       "state IN ('pending', 'leased', 'retry')",
@@ -103,6 +278,9 @@ export class DesktopStore {
       deviceId: this.deviceId(),
       cachedResponses,
       pendingCommands,
+      sendingCommands,
+      conflictCommands,
+      deadLetterCommands,
       pendingPrintJobs,
     };
   }
@@ -146,6 +324,33 @@ export class DesktopStore {
     return row?.value ?? null;
   }
 
+  private getOutboxCommandByIdempotencyKey(
+    idempotencyKey: string,
+  ): PendingOutboxCommand | null {
+    const row = this.database
+      .prepare(
+        `
+      SELECT
+        id,
+        idempotency_key AS idempotencyKey,
+        command_type AS commandType,
+        aggregate_type AS aggregateType,
+        aggregate_id AS aggregateId,
+        base_version AS baseVersion,
+        actor_id AS actorId,
+        branch_id AS branchId,
+        auth_scope AS authScope,
+        payload_json AS payloadJson,
+        attempts
+      FROM mutation_outbox
+      WHERE idempotency_key = ?
+    `,
+      )
+      .get(idempotencyKey) as PendingOutboxCommand | undefined;
+
+    return row ? { ...row } : null;
+  }
+
   private migrate(): void {
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS desktop_meta (
@@ -181,6 +386,7 @@ export class DesktopStore {
         base_version INTEGER,
         actor_id TEXT NOT NULL,
         branch_id TEXT NOT NULL,
+        auth_scope TEXT NOT NULL DEFAULT 'anonymous',
         payload_json TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'pending'
           CHECK (state IN ('pending', 'sending', 'acknowledged', 'conflict', 'dead_letter')),
@@ -192,6 +398,8 @@ export class DesktopStore {
       );
       CREATE INDEX IF NOT EXISTS mutation_outbox_state_idx
         ON mutation_outbox(state, next_attempt_at, created_at);
+      CREATE INDEX IF NOT EXISTS mutation_outbox_scope_state_idx
+        ON mutation_outbox(auth_scope, state, next_attempt_at, created_at);
 
       CREATE TABLE IF NOT EXISTS print_jobs (
         id TEXT PRIMARY KEY,
@@ -227,10 +435,41 @@ export class DesktopStore {
         UNIQUE(print_job_id, attempt_number)
       );
     `);
+
+    this.ensureColumn(
+      "mutation_outbox",
+      "auth_scope",
+      "TEXT NOT NULL DEFAULT 'anonymous'",
+    );
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const rows = this.database
+      .prepare(`PRAGMA table_info(${table})`)
+      .all() as { name: string }[];
+    if (rows.some((row) => row.name === column)) {
+      return;
+    }
+
+    this.database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+
+  private recoverInterruptedMutations(): void {
+    this.database
+      .prepare(
+        `
+      UPDATE mutation_outbox
+      SET state = 'pending',
+          next_attempt_at = ?,
+          last_error = COALESCE(last_error, 'Desktop stopped while syncing')
+      WHERE state = 'sending'
+    `,
+      )
+      .run(new Date().toISOString());
   }
 }
 
-function readJwtIdentity(authorization: string): string | null {
+export function readJwtContext(authorization: string): JwtContext | null {
   const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
   const payload = token?.split(".")[1];
   if (!payload) {
@@ -258,8 +497,21 @@ function readJwtIdentity(authorization: string): string | null {
 
     const branchId =
       typeof parsed.branchId === "string" ? parsed.branchId : "global";
-    return `user:${userId}:branch:${branchId}:global:${parsed.isGlobalScope === true}`;
+    return {
+      actorId: userId,
+      branchId,
+      isGlobalScope: parsed.isGlobalScope === true,
+    };
   } catch {
     return null;
   }
+}
+
+function readJwtIdentity(authorization: string): string | null {
+  const context = readJwtContext(authorization);
+  if (!context) {
+    return null;
+  }
+
+  return `user:${context.actorId}:branch:${context.branchId}:global:${context.isGlobalScope}`;
 }

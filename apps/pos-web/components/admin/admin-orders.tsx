@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
@@ -168,6 +169,46 @@ export type AdminOrder = {
 };
 
 const pageSize = 25;
+const openOrderStatuses = ["NEW", "CONFIRMED", "PREPARING", "READY"] as const;
+const paidOrderStatuses = ["CONFIRMED", "PREPARING", "READY", "SERVED", "COMPLETED"] as const;
+type StatusGroup = "" | "open" | "paid";
+
+function queryOrderStatus(value: string | null): OrderStatus | "" {
+  return value && value in orderStatusLabels ? (value as OrderStatus) : "";
+}
+
+function queryOrderType(value: string | null): OrderType | "" {
+  return value && value in orderTypeLabels ? (value as OrderType) : "";
+}
+
+function queryPaymentStatus(value: string | null): PaymentStatus | "" {
+  return value && value in paymentStatusLabels ? (value as PaymentStatus) : "";
+}
+
+function queryStatusGroup(value: string | null): StatusGroup {
+  return value === "open" || value === "paid" ? value : "";
+}
+
+function queryDate(value: string | null): string {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
+
+function queryOffset(value: string | null): number {
+  const offset = Number(value ?? 0);
+  return Number.isInteger(offset) && offset > 0 ? offset : 0;
+}
+
+function statusGroupStatuses(group: StatusGroup): OrderStatus[] | null {
+  if (group === "open") {
+    return [...openOrderStatuses];
+  }
+
+  if (group === "paid") {
+    return [...paidOrderStatuses];
+  }
+
+  return null;
+}
 
 /*
  * HOLAT O'TISHLARI — serverdagi qoidaning aynan o'zi.
@@ -206,12 +247,21 @@ function statusNeedsReason(status: OrderStatus | null): boolean {
 export function AdminOrdersPage() {
   const { user } = useAuth();
   const showBranchFilter = canSwitchBranch(user);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
 
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [status, setStatus] = useState("");
-  const [type, setType] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState("");
-  const [branchId, setBranchId] = useState("");
+  const [status, setStatus] = useState(() => queryOrderStatus(searchParams.get("status")));
+  const [statusGroup, setStatusGroup] = useState<StatusGroup>(() =>
+    queryStatusGroup(searchParams.get("statusGroup")),
+  );
+  const [type, setType] = useState(() => queryOrderType(searchParams.get("type")));
+  const [paymentStatus, setPaymentStatus] = useState(() =>
+    queryPaymentStatus(searchParams.get("paymentStatus")),
+  );
+  const [branchId, setBranchId] = useState(() => searchParams.get("branchId") ?? "");
   /*
    * QIDIRUV va SANA ORALIG'I.
    *
@@ -223,11 +273,13 @@ export function AdminOrdersPage() {
    * `search` kiritilayotganda, `appliedSearch` esa so'rovda ishlatiladi:
    * har harf uchun so'rov yubormaslik uchun 400 ms kechiktiriladi.
    */
-  const [search, setSearch] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  const [appliedSearch, setAppliedSearch] = useState(() =>
+    (searchParams.get("search") ?? "").trim(),
+  );
+  const [from, setFrom] = useState(() => queryDate(searchParams.get("from")));
+  const [to, setTo] = useState(() => queryDate(searchParams.get("to")));
+  const [offset, setOffset] = useState(() => queryOffset(searchParams.get("offset")));
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
     new Set(),
   );
@@ -260,6 +312,44 @@ export function AdminOrdersPage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
+  useEffect(() => {
+    const nextStatusGroup = queryStatusGroup(searchParams.get("statusGroup"));
+    setStatus(nextStatusGroup ? "" : queryOrderStatus(searchParams.get("status")));
+    setStatusGroup(nextStatusGroup);
+    setType(queryOrderType(searchParams.get("type")));
+    setPaymentStatus(queryPaymentStatus(searchParams.get("paymentStatus")));
+    setBranchId(searchParams.get("branchId") ?? "");
+    setSearch(searchParams.get("search") ?? "");
+    setAppliedSearch((searchParams.get("search") ?? "").trim());
+    setFrom(queryDate(searchParams.get("from")));
+    setTo(queryDate(searchParams.get("to")));
+    setOffset(queryOffset(searchParams.get("offset")));
+  }, [searchParams, searchParamsKey]);
+
+  const filterQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (statusGroup) params.set("statusGroup", statusGroup);
+    else if (status) params.set("status", status);
+    if (type) params.set("type", type);
+    if (paymentStatus) params.set("paymentStatus", paymentStatus);
+    if (branchId) params.set("branchId", branchId);
+    if (appliedSearch) params.set("search", appliedSearch);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    if (offset > 0) params.set("offset", String(offset));
+    return params.toString();
+  }, [appliedSearch, branchId, from, offset, paymentStatus, status, statusGroup, to, type]);
+
+  useEffect(() => {
+    if (filterQuery === searchParamsKey) {
+      return;
+    }
+
+    router.replace(filterQuery ? `${pathname}?${filterQuery}` : pathname, {
+      scroll: false,
+    });
+  }, [filterQuery, pathname, router, searchParamsKey]);
+
   const {
     data,
     isLoading,
@@ -267,10 +357,7 @@ export function AdminOrdersPage() {
     reload: load,
   } = useApiResource(
     () => {
-      const params = new URLSearchParams({
-        limit: String(pageSize),
-        offset: String(offset),
-      });
+      const params = new URLSearchParams();
       if (status) params.set("status", status);
       if (type) params.set("type", type);
       if (paymentStatus) params.set("paymentStatus", paymentStatus);
@@ -283,9 +370,34 @@ export function AdminOrdersPage() {
        */
       if (from) params.set("from", `${from}T00:00:00.000Z`);
       if (to) params.set("to", `${to}T23:59:59.999Z`);
+
+      const groupedStatuses = statusGroupStatuses(statusGroup);
+      if (groupedStatuses) {
+        const requests = groupedStatuses.map((groupedStatus) => {
+          const groupedParams = new URLSearchParams(params);
+          groupedParams.set("status", groupedStatus);
+          groupedParams.set("limit", String(pageSize + offset));
+          groupedParams.set("offset", "0");
+          return apiFetch<AdminOrder[]>(`/orders?${groupedParams.toString()}`);
+        });
+
+        return Promise.all(requests).then((groups) =>
+          groups
+            .flat()
+            .sort(
+              (left, right) =>
+                new Date(right.createdAt).getTime() -
+                new Date(left.createdAt).getTime(),
+            )
+            .slice(offset, offset + pageSize),
+        );
+      }
+
+      params.set("limit", String(pageSize));
+      params.set("offset", String(offset));
       return apiFetch<AdminOrder[]>(`/orders?${params.toString()}`);
     },
-    [appliedSearch, branchId, from, offset, paymentStatus, status, to, type],
+    [appliedSearch, branchId, from, offset, paymentStatus, status, statusGroup, to, type],
     "Buyurtmalarni yuklab bo'lmadi.",
   );
   // `data` hali kelmagan yoki xato bo'lgan paytda yangi `[]` yaratish
@@ -421,6 +533,8 @@ export function AdminOrdersPage() {
     apply();
     setOffset(0);
   }
+
+  const statusFilterValue = statusGroup ? `group:${statusGroup}` : status;
 
   const columns: DataTableColumn<AdminOrder>[] = [
     {
@@ -581,11 +695,23 @@ export function AdminOrdersPage() {
                 <Select
                   {...props}
                   onChange={(event) =>
-                    changeFilter(() => setStatus(event.target.value))
+                    changeFilter(() => {
+                      const value = event.target.value;
+                      if (value === "group:open" || value === "group:paid") {
+                        setStatusGroup(value.replace("group:", "") as StatusGroup);
+                        setStatus("");
+                        return;
+                      }
+
+                      setStatusGroup("");
+                      setStatus(queryOrderStatus(value));
+                    })
                   }
-                  value={status}
+                  value={statusFilterValue}
                 >
                   <option value="">Barcha holatlar</option>
+                  <option value="group:open">Ochiq buyurtmalar</option>
+                  <option value="group:paid">Tushumga kirgan buyurtmalar</option>
                   {Object.entries(orderStatusLabels).map(([value, label]) => (
                     <option key={value} value={value}>
                       {label}
@@ -602,7 +728,7 @@ export function AdminOrdersPage() {
                 <Select
                   {...props}
                   onChange={(event) =>
-                    changeFilter(() => setType(event.target.value))
+                    changeFilter(() => setType(queryOrderType(event.target.value)))
                   }
                   value={type}
                 >
@@ -623,7 +749,9 @@ export function AdminOrdersPage() {
                 <Select
                   {...props}
                   onChange={(event) =>
-                    changeFilter(() => setPaymentStatus(event.target.value))
+                    changeFilter(() =>
+                      setPaymentStatus(queryPaymentStatus(event.target.value)),
+                    )
                   }
                   value={paymentStatus}
                 >

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Icon, type IconName } from "./icon";
 
 /*
@@ -41,15 +42,22 @@ export function StatBox({
   hint,
   icon,
   tone = "neutral",
+  href,
 }: {
   label: string;
   value: string;
   hint?: string;
   icon?: IconName;
   tone?: StatTone;
+  href?: string;
 }) {
-  return (
-    <div className={`rounded-mz-card p-4 shadow-mz-card ${statTones[tone]}`}>
+  const className = `rounded-mz-card p-4 shadow-mz-card ${statTones[tone]} ${
+    href
+      ? "block transition hover:-translate-y-0.5 hover:shadow-mz-overlay focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mz-accent"
+      : ""
+  }`;
+  const content = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <p className="text-[13px] font-semibold uppercase tracking-wide opacity-80">
           {label}
@@ -67,7 +75,19 @@ export function StatBox({
         {value}
       </p>
       {hint ? <p className="mt-2 text-[13px] opacity-75">{hint}</p> : null}
-    </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link aria-label={`${label}: ${value}`} className={className} href={href}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={className}>{content}</div>
   );
 }
 

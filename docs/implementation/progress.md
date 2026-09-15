@@ -38,12 +38,12 @@
 
 ## Phase 3 - MAZETTO Desktop and reliable printing
 
-- **STATUS:** D0 COMPLETE; D1 foundation IN PROGRESS
-- **FILES CHANGED:** desktop master plan, Electron shell, loopback API gateway, SQLite projection/outbox/print schema, safe Electron updater/preload bridge, POS desktop API routing/status/update badges, device heartbeat API and coverage
+- **STATUS:** D0 COMPLETE; D1 foundation IN PROGRESS; first D3 offline outbox slice COMPLETE
+- **FILES CHANGED:** desktop master plan, Electron shell, loopback API gateway, SQLite projection/outbox/print schema, offline mutation queue/replay, reconnect auto-flush, interrupted-send recovery, safe Electron updater/preload bridge, POS desktop API routing/status/update badges, device heartbeat API and coverage
 - **MIGRATIONS:** no production migration in D0/D1 foundation; the local SQLite schema and stable device identity are created atomically on first run
-- **TESTS:** desktop cache, JWT scope and stable device identity tests; gateway snapshot and device-header tests; backend device heartbeat tests; backend 210/210; six-workspace typecheck/lint; native Electron process; bundled UI without port 3001; packaged unpacked Windows runtime; updater IPC/typecheck; loopback status and production API snapshot verified locally
-- **KNOWN ISSUES:** update feed provisioning/signing, admin enrollment code, OS-protected credential storage, session lock/staff switch, authenticated WebSocket proxy, typed mutation replay and durable server-side print jobs are intentionally scheduled after the D1 foundation
-- **NEXT STEP:** D1 admin enrollment and revocable device credential
+- **TESTS:** desktop cache, JWT scope, stable device identity, interrupted-send recovery, gateway snapshot, offline POS queue/replay, reconnect probe flush and device-header tests; backend device heartbeat tests; backend 210/210; six-workspace typecheck/lint; native Electron process; bundled UI without port 3001; packaged unpacked Windows runtime; updater IPC/typecheck; loopback status and production API snapshot verified locally
+- **KNOWN ISSUES:** update feed provisioning/signing, admin enrollment code, OS-protected credential storage, session lock/staff switch, authenticated WebSocket proxy, local-ID dependency mapping, conflict inbox UI, full optimistic projections and durable server-side print jobs are intentionally scheduled after the D1/D3 foundation slices
+- **NEXT STEP:** D1 admin enrollment and revocable device credential, then D3 typed command registry and D5 print job contract
 
 ## Later phases
 

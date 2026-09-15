@@ -9,6 +9,9 @@ type DesktopStatus = {
   lastOnlineAt: string | null;
   cachedResponses: number;
   pendingCommands: number;
+  sendingCommands?: number;
+  conflictCommands?: number;
+  deadLetterCommands?: number;
   pendingPrintJobs: number;
 };
 
@@ -74,10 +77,13 @@ export function DesktopStatusBadge() {
   const mode = status?.mode ?? "starting";
   const label =
     mode === "online" ? "Jonli" : mode === "offline" ? "Oflayn" : "Ulanmoqda";
+  const pending = status?.pendingCommands ?? 0;
+  const sending = status?.sendingCommands ?? 0;
+  const blocked = (status?.conflictCommands ?? 0) + (status?.deadLetterCommands ?? 0);
   const Icon =
     mode === "online" ? Cloud : mode === "offline" ? CloudOff : RefreshCw;
   const title = status
-    ? `${label}. Cache: ${status.cachedResponses}; navbat: ${status.pendingCommands}; chek: ${status.pendingPrintJobs}`
+    ? `${label}. Cache: ${status.cachedResponses}; navbat: ${pending}; yuborilmoqda: ${sending}; bloklangan: ${blocked}; chek: ${status.pendingPrintJobs}`
     : "Desktop runtime holati tekshirilmoqda";
 
   return (
@@ -99,6 +105,11 @@ export function DesktopStatusBadge() {
         size={13}
       />
       <span className="hidden sm:inline">{label}</span>
+      {pending + sending + blocked > 0 ? (
+        <span className="rounded-mz-pill bg-white/15 px-1.5 py-0.5 text-[9px]">
+          {pending + sending + blocked}
+        </span>
+      ) : null}
     </span>
   );
 }
