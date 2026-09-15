@@ -1058,6 +1058,14 @@
   color: #41625a;
   font-size: var(--kds-small);
 }
+.board .modifierSummary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #41625a;
+  line-height: 1.2;
+}
 .note {
   margin: 10px 0;
   padding: 9px 10px;
