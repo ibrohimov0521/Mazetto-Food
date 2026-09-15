@@ -13,6 +13,9 @@ const { autoUpdater } =
 const GATEWAY_PORT = 7359;
 const UPSTREAM_API_URL =
   process.env.MAZETTO_API_URL?.trim() || "https://api.mazettofood.uz/api/v1";
+const DESKTOP_UPDATE_URL =
+  process.env.MAZETTO_DESKTOP_UPDATE_URL?.trim() ||
+  "https://github.com/ibrohimov0521/Mazetto-Food/releases/latest/download/";
 
 let mainWindow: BrowserWindow | null = null;
 let gateway: DesktopGateway | null = null;
@@ -167,7 +170,7 @@ async function createWindow(uiUrl?: string): Promise<void> {
 }
 
 function setupAutoUpdater(): void {
-  const feedUrl = process.env.MAZETTO_DESKTOP_UPDATE_URL?.trim();
+  const feedUrl = DESKTOP_UPDATE_URL;
 
   ipcMain.removeHandler("desktop:updates:status");
   ipcMain.removeHandler("desktop:updates:check");

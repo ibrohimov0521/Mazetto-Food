@@ -1,6 +1,6 @@
 {
   "name": "mazetto-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MAZETTO FOOD offline-first branch operations desktop",
   "author": "MAZETTO FOOD",
   "private": true,
@@ -60,7 +60,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://updates.mazettofood.uz/desktop/"
+        "url": "https://github.com/ibrohimov0521/Mazetto-Food/releases/latest/download/"
       }
     ]
   },
