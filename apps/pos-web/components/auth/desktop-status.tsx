@@ -1,8 +1,11 @@
 "use client";
 
-import { Cloud, CloudOff, RefreshCw } from "lucide-react";
+import { AlertTriangle, Cloud, CloudOff, RefreshCw, X } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { useEffect, useState } from "react";
+import { Badge } from "../admin-ui/badge";
+import { Button } from "../admin-ui/button";
+import { Modal } from "../admin-ui/modal";
 
 type DesktopStatus = {
   mode: "online" | "offline" | "starting";
@@ -15,9 +18,36 @@ type DesktopStatus = {
   pendingPrintJobs: number;
 };
 
+type OutboxCommand = {
+  id: string;
+  idempotencyKey: string;
+  commandType: string;
+  aggregateType: string;
+  aggregateId: string | null;
+  state: "pending" | "sending" | "acknowledged" | "conflict" | "dead_letter";
+  attempts: number;
+  createdAt: string;
+  nextAttemptAt: string | null;
+  lastError: string | null;
+  payload: {
+    method?: string;
+    pathname?: string;
+    queuedAt?: string;
+  };
+};
+
+type OutboxPayload = {
+  summary: DesktopStatus;
+  commands: OutboxCommand[];
+};
+
 export function DesktopStatusBadge() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
+  const [outboxOpen, setOutboxOpen] = useState(false);
+  const [outbox, setOutbox] = useState<OutboxPayload | null>(null);
+  const [outboxError, setOutboxError] = useState("");
+  const [busyCommandId, setBusyCommandId] = useState<string | null>(null);
 
   useEffect(() => {
     const desktop = window.navigator.userAgent.includes("MAZETTO-Desktop/");
@@ -86,30 +116,215 @@ export function DesktopStatusBadge() {
     ? `${label}. Cache: ${status.cachedResponses}; navbat: ${pending}; yuborilmoqda: ${sending}; bloklangan: ${blocked}; chek: ${status.pendingPrintJobs}`
     : "Desktop runtime holati tekshirilmoqda";
 
+  async function loadOutbox(): Promise<void> {
+    setOutboxError("");
+    try {
+      const payload = await desktopFetch<OutboxPayload>("/desktop/outbox");
+      setOutbox(payload);
+      setStatus(payload.summary);
+    } catch (caught) {
+      setOutboxError(
+        caught instanceof Error ? caught.message : "Navbatni o'qib bo'lmadi.",
+      );
+    }
+  }
+
+  async function mutateCommand(
+    commandId: string,
+    action: "retry" | "cancel",
+  ): Promise<void> {
+    setBusyCommandId(commandId);
+    setOutboxError("");
+    try {
+      const payload = await desktopFetch<OutboxPayload>(
+        `/desktop/outbox/${encodeURIComponent(commandId)}/${action}`,
+        { method: "POST" },
+      );
+      setOutbox(payload);
+      setStatus(payload.summary);
+    } catch (caught) {
+      setOutboxError(
+        caught instanceof Error ? caught.message : "Amal bajarilmadi.",
+      );
+    } finally {
+      setBusyCommandId(null);
+    }
+  }
+
   return (
-    <span
-      aria-live="polite"
-      className={`flex h-7 shrink-0 items-center gap-1 rounded-mz-pill border px-2 text-[10px] font-bold ${
+    <>
+      <button
+        aria-live="polite"
+        className={`flex h-7 shrink-0 items-center gap-1 rounded-mz-pill border px-2 text-[10px] font-bold ${
         mode === "online"
           ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
           : mode === "offline"
             ? "border-amber-300/50 bg-amber-300/10 text-amber-100"
             : "border-white/20 bg-white/5 text-mz-shell-fg-muted"
-      }`}
-      role="status"
-      title={title}
-    >
-      <Icon
-        aria-hidden="true"
-        className={mode === "starting" ? "animate-spin" : ""}
-        size={13}
-      />
-      <span className="hidden sm:inline">{label}</span>
-      {pending + sending + blocked > 0 ? (
-        <span className="rounded-mz-pill bg-white/15 px-1.5 py-0.5 text-[9px]">
-          {pending + sending + blocked}
-        </span>
-      ) : null}
-    </span>
+        }`}
+        onClick={() => {
+          setOutboxOpen(true);
+          void loadOutbox();
+        }}
+        title={title}
+        type="button"
+      >
+        <Icon
+          aria-hidden="true"
+          className={mode === "starting" ? "animate-spin" : ""}
+          size={13}
+        />
+        <span className="hidden sm:inline">{label}</span>
+        {pending + sending + blocked > 0 ? (
+          <span className="rounded-mz-pill bg-white/15 px-1.5 py-0.5 text-[9px]">
+            {pending + sending + blocked}
+          </span>
+        ) : null}
+      </button>
+
+      <Modal
+        description="Internet uzilganda saqlangan amallar. Ulanish qaytsa navbat avtomatik yuboriladi."
+        footer={
+          <>
+            <Button onClick={() => void loadOutbox()} size="sm" variant="ghost">
+              Yangilash
+            </Button>
+            <Button onClick={() => setOutboxOpen(false)} size="sm">
+              Yopish
+            </Button>
+          </>
+        }
+        isOpen={outboxOpen}
+        onClose={() => setOutboxOpen(false)}
+        title="Desktop navbati"
+      >
+        <div className="grid gap-3">
+          {outboxError ? (
+            <div className="flex gap-2 rounded-mz-card border border-mz-danger-accent bg-mz-danger-bg p-3 text-[13px] text-mz-danger">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{outboxError}</span>
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-4 gap-2">
+            <QueueStat label="Kutmoqda" value={status?.pendingCommands ?? 0} />
+            <QueueStat label="Yuborilyapti" value={status?.sendingCommands ?? 0} />
+            <QueueStat label="Bloklangan" value={blocked} />
+            <QueueStat label="Cheklar" value={status?.pendingPrintJobs ?? 0} />
+          </div>
+
+          {outbox?.commands.length ? (
+            <div className="grid max-h-80 gap-2 overflow-y-auto pr-1">
+              {outbox.commands.map((command) => (
+                <div
+                  className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-3"
+                  key={command.id}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-mz-text">
+                          {command.commandType}
+                        </p>
+                        <Badge tone={commandStateTone(command.state)} withDot>
+                          {commandStateLabel(command.state)}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 truncate text-[12px] text-mz-text-muted">
+                        {command.payload.pathname ?? command.aggregateType}
+                        {command.aggregateId ? ` · ${command.aggregateId}` : ""}
+                      </p>
+                      {command.lastError ? (
+                        <p className="mt-2 line-clamp-2 text-[12px] text-mz-danger">
+                          {command.lastError}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        disabled={command.state === "sending"}
+                        isLoading={busyCommandId === command.id}
+                        onClick={() => void mutateCommand(command.id, "retry")}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        Qayta
+                      </Button>
+                      <Button
+                        disabled={command.state === "sending"}
+                        isLoading={busyCommandId === command.id}
+                        onClick={() => void mutateCommand(command.id, "cancel")}
+                        size="sm"
+                        variant="danger"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-mz-card border border-dashed border-mz-border bg-mz-surface-sunken p-5 text-center text-sm text-mz-text-muted">
+              Navbat bo'sh.
+            </div>
+          )}
+        </div>
+      </Modal>
+    </>
   );
+}
+
+function QueueStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-2">
+      <p className="text-[11px] text-mz-text-muted">{label}</p>
+      <p className="text-lg font-bold text-mz-text">{value}</p>
+    </div>
+  );
+}
+
+function commandStateLabel(commandState: OutboxCommand["state"]): string {
+  switch (commandState) {
+    case "pending":
+      return "Kutmoqda";
+    case "sending":
+      return "Yuborilyapti";
+    case "conflict":
+      return "Tekshirish kerak";
+    case "dead_letter":
+      return "To'xtagan";
+    default:
+      return "Yakunlangan";
+  }
+}
+
+function commandStateTone(commandState: OutboxCommand["state"]) {
+  if (commandState === "pending") return "warning";
+  if (commandState === "sending") return "info";
+  if (commandState === "conflict" || commandState === "dead_letter") {
+    return "danger";
+  }
+  return "success";
+}
+
+async function desktopFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(`http://127.0.0.1:7359${path}`, {
+    cache: "no-store",
+    ...init,
+  });
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    data?: T;
+    error?: { message?: string };
+  };
+
+  if (!response.ok || payload.ok === false || !payload.data) {
+    throw new Error(payload.error?.message ?? "Desktop gateway javob bermadi.");
+  }
+
+  return payload.data;
 }

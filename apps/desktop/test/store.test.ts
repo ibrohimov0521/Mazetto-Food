@@ -108,3 +108,41 @@ test("desktop store recovers interrupted sending mutations on reopen", async () 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("desktop store lists, retries and cancels queued mutations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const store = new DesktopStore(path);
+
+  try {
+    const command = store.enqueueMutation({
+      idempotencyKey: "manual-key",
+      commandType: "POST /api/v1/pos/orders",
+      aggregateType: "pos",
+      aggregateId: "order-1",
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "scope-1",
+      payload: {
+        method: "POST",
+        pathname: "/api/v1/pos/orders",
+        targetUrl: "https://api.test/api/v1/pos/orders",
+        queuedAt: "2026-09-15T00:00:00.000Z",
+      },
+    });
+
+    assert.equal(store.listOutbox().length, 1);
+    assert.equal(store.listOutbox()[0]?.payload.pathname, "/api/v1/pos/orders");
+
+    store.markMutationConflict(command.id, "stale version");
+    assert.equal(store.summary().conflictCommands, 1);
+    assert.equal(store.retryMutation(command.id), true);
+    assert.equal(store.summary().pendingCommands, 1);
+
+    assert.equal(store.cancelMutation(command.id), true);
+    assert.equal(store.listOutbox().length, 0);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

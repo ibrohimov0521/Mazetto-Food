@@ -29,6 +29,9 @@ export type DesktopGatewayStatus = {
   upstreamApiUrl: string;
   cachedResponses: number;
   pendingCommands: number;
+  sendingCommands: number;
+  conflictCommands: number;
+  deadLetterCommands: number;
   pendingPrintJobs: number;
 };
 
@@ -132,6 +135,11 @@ export class DesktopGateway {
     const url = new URL(request.url ?? "/", `http://${this.host}:${this.port}`);
     if (url.pathname === "/health" || url.pathname === "/desktop/status") {
       this.sendJson(response, 200, { ok: true, data: this.status() });
+      return;
+    }
+
+    if (url.pathname.startsWith("/desktop/outbox")) {
+      await this.handleDesktopOutbox(request, response, url);
       return;
     }
 
@@ -381,6 +389,68 @@ export class DesktopGateway {
       );
       this.markOffline(error);
     }
+  }
+
+  private async handleDesktopOutbox(
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+  ): Promise<void> {
+    const method = (request.method ?? "GET").toUpperCase();
+    if (url.pathname === "/desktop/outbox" && method === "GET") {
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      this.sendJson(response, 200, {
+        ok: true,
+        data: {
+          summary: this.status(),
+          commands: this.store.listOutbox(limit),
+        },
+      });
+      return;
+    }
+
+    const match = url.pathname.match(/^\/desktop\/outbox\/([^/]+)\/(retry|cancel)$/);
+    if (!match || method !== "POST") {
+      this.sendJson(response, 404, {
+        ok: false,
+        error: { message: "Desktop outbox route not found" },
+      });
+      return;
+    }
+
+    const id = decodeURIComponent(match[1] ?? "");
+    const action = match[2];
+    const changed =
+      action === "retry"
+        ? this.store.retryMutation(id)
+        : this.store.cancelMutation(id);
+
+    if (!changed) {
+      this.sendJson(response, 409, {
+        ok: false,
+        error: {
+          message:
+            action === "retry"
+              ? "Bu amalni qayta yuborib bo'lmaydi."
+              : "Bu amalni navbatdan olib tashlab bo'lmaydi.",
+        },
+      });
+      return;
+    }
+
+    if (action === "retry") {
+      for (const [authScope, authorization] of this.activeAuthorizations) {
+        void this.flushPendingMutations(authorization, authScope);
+      }
+    }
+
+    this.sendJson(response, 200, {
+      ok: true,
+      data: {
+        summary: this.status(),
+        commands: this.store.listOutbox(),
+      },
+    });
   }
 
   private markOffline(error: unknown): void {

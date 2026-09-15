@@ -173,9 +173,13 @@ when connectivity returns. If the app stops while a command is being sent, the
 next launch moves it back to pending so it can retry instead of becoming stuck.
 The reconnect health probe also starts a flush for the last active in-memory
 session, so the cashier does not need to press refresh after internet returns.
+The POS top bar can now open the local outbox, show blocked commands and let an
+operator retry or remove a command from the queue. Removing a command is an
+explicit local operator decision; it prevents that queued HTTP mutation from
+being replayed and does not pretend the server accepted it.
 
 This is still a D3 slice, not the full D3 finish line. The remaining work is
 the typed command registry, dependency mapping between locally-created IDs and
-server IDs, optimistic projections for every panel, conflict inbox UI and
-server-side compensation rules. The shell also contains the safe update
+server IDs, optimistic projections for every panel, full conflict comparison
+and server-side compensation rules. The shell also contains the safe update
 lifecycle, but it remains inactive until an HTTPS feed is provisioned.
