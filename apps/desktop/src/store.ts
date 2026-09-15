@@ -48,6 +48,20 @@ export type PendingOutboxCommand = {
   attempts: number;
 };
 
+export type OutboxQueueItem = PendingOutboxCommand & {
+  state: "pending" | "sending" | "acknowledged" | "conflict" | "dead_letter";
+  createdAt: string;
+  nextAttemptAt: string | null;
+  acknowledgedAt: string | null;
+  lastError: string | null;
+  payload: {
+    method?: string;
+    pathname?: string;
+    targetUrl?: string;
+    queuedAt?: string;
+  };
+};
+
 export type JwtContext = {
   actorId: string;
   branchId: string;
@@ -260,6 +274,81 @@ export class DesktopStore {
       .run(error, id);
   }
 
+  listOutbox(limit = 50): OutboxQueueItem[] {
+    const rows = this.database
+      .prepare(
+        `
+      SELECT
+        id,
+        idempotency_key AS idempotencyKey,
+        command_type AS commandType,
+        aggregate_type AS aggregateType,
+        aggregate_id AS aggregateId,
+        base_version AS baseVersion,
+        actor_id AS actorId,
+        branch_id AS branchId,
+        auth_scope AS authScope,
+        payload_json AS payloadJson,
+        state,
+        attempts,
+        next_attempt_at AS nextAttemptAt,
+        created_at AS createdAt,
+        acknowledged_at AS acknowledgedAt,
+        last_error AS lastError
+      FROM mutation_outbox
+      WHERE state IN ('pending', 'sending', 'conflict', 'dead_letter')
+      ORDER BY
+        CASE state
+          WHEN 'conflict' THEN 0
+          WHEN 'dead_letter' THEN 1
+          WHEN 'sending' THEN 2
+          ELSE 3
+        END,
+        created_at ASC
+      LIMIT ?
+    `,
+      )
+      .all(Math.max(1, Math.min(200, limit))) as Array<
+      Omit<OutboxQueueItem, "payload"> & { payloadJson: string }
+    >;
+
+    return rows.map((row) => ({
+      ...row,
+      payload: summarizeOutboxPayload(row.payloadJson),
+    }));
+  }
+
+  retryMutation(id: string): boolean {
+    const result = this.database
+      .prepare(
+        `
+      UPDATE mutation_outbox
+      SET state = 'pending',
+          next_attempt_at = ?,
+          last_error = NULL
+      WHERE id = ?
+        AND state IN ('pending', 'conflict', 'dead_letter')
+    `,
+      )
+      .run(new Date().toISOString(), id);
+
+    return Number(result.changes) > 0;
+  }
+
+  cancelMutation(id: string): boolean {
+    const result = this.database
+      .prepare(
+        `
+      DELETE FROM mutation_outbox
+      WHERE id = ?
+        AND state IN ('pending', 'conflict', 'dead_letter')
+    `,
+      )
+      .run(id);
+
+    return Number(result.changes) > 0;
+  }
+
   summary(): DesktopStoreSummary {
     const cachedResponses = this.count("api_cache");
     const pendingCommands = this.count("mutation_outbox", "state = 'pending'");
@@ -466,6 +555,27 @@ export class DesktopStore {
     `,
       )
       .run(new Date().toISOString());
+  }
+}
+
+function summarizeOutboxPayload(source: string): OutboxQueueItem["payload"] {
+  try {
+    const parsed = JSON.parse(source) as {
+      method?: unknown;
+      pathname?: unknown;
+      targetUrl?: unknown;
+      queuedAt?: unknown;
+    };
+    const payload: OutboxQueueItem["payload"] = {};
+
+    if (typeof parsed.method === "string") payload.method = parsed.method;
+    if (typeof parsed.pathname === "string") payload.pathname = parsed.pathname;
+    if (typeof parsed.targetUrl === "string") payload.targetUrl = parsed.targetUrl;
+    if (typeof parsed.queuedAt === "string") payload.queuedAt = parsed.queuedAt;
+
+    return payload;
+  } catch {
+    return {};
   }
 }
 

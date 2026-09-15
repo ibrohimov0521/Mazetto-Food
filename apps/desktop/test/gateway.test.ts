@@ -192,6 +192,104 @@ test("gateway flushes queued mutations from the reconnect health probe", async (
   }
 });
 
+test("gateway exposes and manages the desktop outbox", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-3", "branch-1");
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      throw new Error("offline");
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const sale = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idempotencyKey: "sale-key-outbox",
+          payments: [{ paymentMethodCode: "CASH", amount: 11_000 }],
+        }),
+      },
+    );
+    assert.equal(sale.status, 202);
+
+    const outbox = await fetch(`http://127.0.0.1:${gatewayPort}/desktop/outbox`);
+    assert.equal(outbox.status, 200);
+    const outboxPayload = (await outbox.json()) as {
+      data: { commands: Array<{ id: string; payload: { pathname?: string } }> };
+    };
+    assert.equal(outboxPayload.data.commands.length, 1);
+    assert.equal(
+      outboxPayload.data.commands[0]?.payload.pathname,
+      "/api/v1/pos/orders",
+    );
+
+    const commandId = outboxPayload.data.commands[0]!.id;
+    const cancel = await fetch(
+      `http://127.0.0.1:${gatewayPort}/desktop/outbox/${commandId}/cancel`,
+      { method: "POST" },
+    );
+    assert.equal(cancel.status, 200);
+    assert.equal(store.summary().pendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway can retry a blocked outbox command", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const command = store.enqueueMutation({
+    idempotencyKey: "blocked-key",
+    commandType: "POST /api/v1/pos/orders",
+    aggregateType: "pos",
+    actorId: "cashier-4",
+    branchId: "branch-1",
+    authScope: "scope-1",
+    payload: {
+      method: "POST",
+      pathname: "/api/v1/pos/orders",
+      targetUrl: "https://api.example.test/api/v1/pos/orders",
+    },
+  });
+  store.markMutationConflict(command.id, "validation failed");
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => jsonResponse({ success: true, data: { ok: true } }),
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const retry = await fetch(
+      `http://127.0.0.1:${gatewayPort}/desktop/outbox/${command.id}/retry`,
+      { method: "POST" },
+    );
+    assert.equal(retry.status, 200);
+    assert.equal(store.summary().conflictCommands, 0);
+    assert.equal(store.summary().pendingCommands, 1);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function desktopJwt(userId: string, branchId: string): string {
   const payload = Buffer.from(
     JSON.stringify({ id: userId, branchId, isGlobalScope: false }),
