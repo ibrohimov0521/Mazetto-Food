@@ -487,9 +487,6 @@ export class DesktopStore {
       );
       CREATE INDEX IF NOT EXISTS mutation_outbox_state_idx
         ON mutation_outbox(state, next_attempt_at, created_at);
-      CREATE INDEX IF NOT EXISTS mutation_outbox_scope_state_idx
-        ON mutation_outbox(auth_scope, state, next_attempt_at, created_at);
-
       CREATE TABLE IF NOT EXISTS print_jobs (
         id TEXT PRIMARY KEY,
         logical_key TEXT NOT NULL UNIQUE,
@@ -530,6 +527,10 @@ export class DesktopStore {
       "auth_scope",
       "TEXT NOT NULL DEFAULT 'anonymous'",
     );
+    this.database.exec(`
+      CREATE INDEX IF NOT EXISTS mutation_outbox_scope_state_idx
+        ON mutation_outbox(auth_scope, state, next_attempt_at, created_at);
+    `);
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
