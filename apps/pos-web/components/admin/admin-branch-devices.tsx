@@ -151,12 +151,17 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
         "success",
       );
       setEditor(null);
-      if (result.enrollmentCode && result.id && result.enrollmentExpiresAt) {
+      if (result.enrollmentCode && result.id) {
         setEnrollmentInfo({
           deviceId: result.id,
           code: result.enrollmentCode,
-          expiresAt: result.enrollmentExpiresAt,
+          expiresAt:
+            result.enrollmentExpiresAt ??
+            result.expiresAt ??
+          new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         });
+      } else if (!editor.id) {
+        showToast("Qurilma yaratildi, lekin ulash kodi olinmadi. Qayta urinib ko'ring.", "danger");
       }
       resource.reload();
     } catch (caught) {
