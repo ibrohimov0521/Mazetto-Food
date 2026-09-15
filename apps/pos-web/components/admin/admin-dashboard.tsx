@@ -230,6 +230,22 @@ export function AdminDashboard({
     );
   }, [branches, effectiveBranchId]);
 
+  const orderLinks = useMemo(
+    () => ({
+      all: ordersHref({ preset, branchId: effectiveBranchId }),
+      paid: ordersHref({
+        preset,
+        branchId: effectiveBranchId,
+        statusGroup: "paid",
+      }),
+      open: ordersHref({
+        branchId: effectiveBranchId,
+        statusGroup: "open",
+      }),
+    }),
+    [effectiveBranchId, preset],
+  );
+
   const openShifts = useMemo(
     () =>
       (report?.shiftBreakdown ?? []).filter((shift) => shift.status === "OPEN"),
@@ -336,6 +352,7 @@ export function AdminDashboard({
       ) : null}
 
       <KpiRow
+        links={orderLinks}
         openOrders={openOrders}
         presetLabel={presetLabel}
         report={report}
@@ -386,11 +403,13 @@ function KpiRow({
   report,
   openOrders,
   presetLabel,
+  links,
 }: {
   summary: DashboardSummary | null;
   report: SalesReport | null;
   openOrders: DashboardContext["openOrders"];
   presetLabel: string;
+  links: { all: string; paid: string; open: string };
 }) {
   if (!summary && !report) {
     return null;
@@ -409,6 +428,7 @@ function KpiRow({
   return (
     <StatGrid>
       <StatBox
+        href={links.paid}
         hint={periodNote}
         icon="wallet"
         label="Tushum"
@@ -416,6 +436,7 @@ function KpiRow({
         value={formatMoney(revenue)}
       />
       <StatBox
+        href={links.all}
         hint={
           report
             ? `${report.cancelledOrders} ta bekor qilingan`
@@ -426,6 +447,7 @@ function KpiRow({
         value={`${orders ?? 0} ta`}
       />
       <StatBox
+        href={links.paid}
         hint={periodNote}
         icon="chart"
         label="O'rtacha chek"
@@ -433,6 +455,7 @@ function KpiRow({
       />
       {openOrders ? (
         <StatBox
+          href={links.open}
           hint="Yangi, tayyorlanmoqda va tayyor"
           icon="clock"
           label="Ochiq buyurtmalar"
@@ -450,6 +473,79 @@ function KpiRow({
       )}
     </StatGrid>
   );
+}
+
+function ordersHref({
+  preset,
+  branchId,
+  statusGroup,
+}: {
+  preset?: string;
+  branchId?: string;
+  statusGroup?: "open" | "paid";
+}): string {
+  const params = new URLSearchParams();
+  const range = preset ? dashboardPresetRange(preset) : null;
+
+  if (range) {
+    params.set("from", range.from);
+    params.set("to", range.to);
+  }
+
+  if (branchId) {
+    params.set("branchId", branchId);
+  }
+
+  if (statusGroup) {
+    params.set("statusGroup", statusGroup);
+  }
+
+  const query = params.toString();
+  return query ? `/admin/orders?${query}` : "/admin/orders";
+}
+
+function dashboardPresetRange(preset: string): { from: string; to: string } | null {
+  const today = tashkentDateParts(new Date());
+  let from = today;
+  let to = today;
+
+  if (preset === "yesterday") {
+    from = addLocalDays(today, -1);
+    to = from;
+  } else if (preset === "last7days") {
+    from = addLocalDays(today, -6);
+  } else if (preset === "thisMonth") {
+    from = { ...today, day: 1 };
+  } else if (preset !== "today") {
+    return null;
+  }
+
+  return { from: formatLocalDate(from), to: formatLocalDate(to) };
+}
+
+function tashkentDateParts(date: Date): { year: number; month: number; day: number } {
+  const shifted = new Date(date.getTime() + 5 * 60 * 60 * 1000);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
+}
+
+function addLocalDays(
+  parts: { year: number; month: number; day: number },
+  days: number,
+): { year: number; month: number; day: number } {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function formatLocalDate(parts: { year: number; month: number; day: number }): string {
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 /**

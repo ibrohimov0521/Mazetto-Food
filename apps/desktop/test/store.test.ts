@@ -79,3 +79,32 @@ test("desktop store creates one stable device identity", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("desktop store recovers interrupted sending mutations on reopen", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const first = new DesktopStore(path);
+
+  try {
+    const command = first.enqueueMutation({
+      idempotencyKey: "recover-key",
+      commandType: "POST /api/v1/pos/orders",
+      aggregateType: "pos",
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "scope-1",
+      payload: { method: "POST", targetUrl: "https://api.test/pos/orders" },
+    });
+    first.markMutationSending(command.id);
+    assert.equal(first.summary().sendingCommands, 1);
+    first.close();
+
+    const reopened = new DesktopStore(path);
+    assert.equal(reopened.summary().sendingCommands, 0);
+    assert.equal(reopened.summary().pendingCommands, 1);
+    assert.equal(reopened.dueMutations("scope-1").length, 1);
+    reopened.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
