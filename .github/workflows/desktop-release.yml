@@ -37,9 +37,17 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
+      - name: Build desktop shell
+        shell: pwsh
+        run: pnpm --filter mazetto-desktop build
+
+      - name: Build bundled POS UI
+        shell: pwsh
+        run: pnpm --filter mazetto-desktop build:ui
+
       - name: Build installer
         shell: pwsh
-        run: pnpm --filter mazetto-desktop package:win
+        run: pnpm --filter mazetto-desktop exec electron-builder --win nsis --publish never
 
       - name: Publish release assets
         shell: pwsh
