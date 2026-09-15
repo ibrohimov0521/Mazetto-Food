@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  readlink,
   readdir,
   realpath,
   rm,
@@ -100,7 +101,15 @@ async function materializeTree(
   let resolvedSource = source;
   let sourceStats = await lstat(source);
   if (sourceStats.isSymbolicLink()) {
-    resolvedSource = await realpath(source);
+    try {
+      resolvedSource = await realpath(source);
+    } catch (error) {
+      if (error?.code !== "EPERM") {
+        throw error;
+      }
+      const linkTarget = await readlink(source);
+      resolvedSource = resolve(dirname(source), linkTarget);
+    }
     sourceStats = await lstat(resolvedSource);
   }
 
