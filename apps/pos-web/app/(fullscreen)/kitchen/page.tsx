@@ -476,24 +476,32 @@ function KitchenDisplay() {
                     aria-label="Buyurtmalar yuklanmoqda"
                   />
                 ) : column.tickets.length ? (
-                  column.tickets.map((ticket) => (
-                    <KitchenTicketCard
-                      key={ticket.id}
-                      ticket={ticket}
-                      now={now}
-                      busy={busyTicketIds.has(ticket.id)}
-                      error={actionErrors[ticket.id]}
-                      showBranch={showBranch}
-                      isCompact={compactTicketIds.has(ticket.id)}
-                      onToggleCompact={() => toggleCompactTicket(ticket.id)}
-                      onAction={(action) => {
-                        if (action === "cancel") {
-                          setCancelReason("");
-                          setCancelTicket(ticket);
-                        } else void runAction(ticket, action);
-                      }}
-                    />
-                  ))
+                  <div className={styles.ticketLanes}>
+                    {splitTicketLanes(column.tickets).map((lane, laneIndex) => (
+                      <div className={styles.ticketLane} key={laneIndex}>
+                        {lane.map((ticket) => (
+                          <KitchenTicketCard
+                            key={ticket.id}
+                            ticket={ticket}
+                            now={now}
+                            busy={busyTicketIds.has(ticket.id)}
+                            error={actionErrors[ticket.id]}
+                            showBranch={showBranch}
+                            isCompact={compactTicketIds.has(ticket.id)}
+                            onToggleCompact={() =>
+                              toggleCompactTicket(ticket.id)
+                            }
+                            onAction={(action) => {
+                              if (action === "cancel") {
+                                setCancelReason("");
+                                setCancelTicket(ticket);
+                              } else void runAction(ticket, action);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <StaffEmpty title="Navbat bo'sh" />
                 )}
@@ -640,4 +648,19 @@ function KitchenDisplay() {
       )}
     </StaffShell>
   );
+}
+
+function splitTicketLanes(tickets: KitchenTicket[]): KitchenTicket[][] {
+  const left: KitchenTicket[] = [];
+  const right: KitchenTicket[] = [];
+
+  tickets.forEach((ticket, index) => {
+    if (index % 2 === 0) {
+      left.push(ticket);
+    } else {
+      right.push(ticket);
+    }
+  });
+
+  return [left, right];
 }
