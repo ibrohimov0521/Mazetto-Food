@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -43,9 +44,44 @@ export class JwtAuthGuard implements CanActivate {
         secret: getJwtAccessSecret(),
       });
       request.user = await this.resolveCurrentUser(payload.id);
+      await this.assertDesktopDeviceEnrollment(request);
       return true;
     } catch {
       throw new UnauthorizedException("Invalid or expired access token");
+    }
+  }
+
+  private async assertDesktopDeviceEnrollment(
+    request: AuthenticatedRequest,
+  ): Promise<void> {
+    const rawDeviceId = request.headers["x-mazetto-device-id"];
+    const deviceId = Array.isArray(rawDeviceId) ? rawDeviceId[0] : rawDeviceId;
+
+    if (!deviceId?.trim()) {
+      return;
+    }
+
+    // Login, session refresh and the public enrollment request must remain
+    // reachable so an unregistered desktop can receive its first code.
+    const pathname = request.path.replace(/^\/api\/v1/, "");
+    if (
+      pathname === "/auth/login" ||
+      pathname === "/auth/refresh" ||
+      pathname === "/auth/me" ||
+      pathname === "/devices/enroll"
+    ) {
+      return;
+    }
+
+    const device = await this.prisma.device.findUnique({
+      where: { id: deviceId.trim() },
+      select: { isActive: true, enrolledAt: true },
+    });
+
+    if (!device?.isActive || !device.enrolledAt) {
+      throw new ForbiddenException(
+        "Bu desktop qurilma hali kod bilan tasdiqlanmagan.",
+      );
     }
   }
 
