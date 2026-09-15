@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -66,6 +67,15 @@ export class DevicesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.devicesService.updateDevice(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Permissions(PERMISSIONS.DEVICE_MANAGE)
+  deleteDevice(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.devicesService.deleteDevice(id, user);
   }
 
   @Post(":id/enrollment-code")

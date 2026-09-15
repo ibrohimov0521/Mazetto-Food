@@ -183,6 +183,27 @@ export class DevicesService {
     });
   }
 
+  async deleteDevice(id: string, user: AuthenticatedUser) {
+    const device = await this.assertDevice(id, user);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.device.delete({ where: { id: device.id } });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "DEVICE_DELETED",
+        entity: "Device",
+        entityId: device.id,
+        metadata: {
+          branchId: device.branchId,
+          name: device.name,
+          type: device.type,
+        },
+      });
+    });
+
+    return { id: device.id };
+  }
+
   async heartbeat(
     deviceId: string,
     softwareVersion: string | undefined,
