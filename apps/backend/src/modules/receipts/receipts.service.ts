@@ -5,6 +5,7 @@ import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListReceiptsDto } from "./dto/list-receipts.dto";
+import type { ListPrintJobsDto } from "./dto/print-job.dto";
 
 @Injectable()
 export class ReceiptsService {
@@ -59,6 +60,28 @@ export class ReceiptsService {
     });
   }
 
+  async listPrintJobs(query: ListPrintJobsDto, user: AuthenticatedUser) {
+    const branchId = resolveBranchScope(user, query.branchId);
+    return this.prisma.printJob.findMany({
+      where: { ...(branchId ? { branchId } : {}), ...(query.status ? { status: query.status } : {}) },
+      orderBy: [{ status: "asc" }, { nextAttemptAt: "asc" }, { createdAt: "asc" }],
+      take: query.limit,
+      select: {
+        id: true,
+        status: true,
+        attemptCount: true,
+        maxAttempts: true,
+        nextAttemptAt: true,
+        leaseExpiresAt: true,
+        lastError: true,
+        printedAt: true,
+        createdAt: true,
+        branch: { select: { id: true, name: true, code: true } },
+        receipt: { select: { id: true, receiptNumber: true, total: true, order: { select: { orderNumber: true, displayOrderNumber: true } } } },
+        attempts: { orderBy: { startedAt: "desc" }, take: 1, select: { agentId: true, outcome: true, startedAt: true, completedAt: true } },
+      },
+    });
+  }
   async getReceipt(id: string, user: AuthenticatedUser) {
     const receipt = await this.prisma.receipt.findUnique({
       where: { id },
