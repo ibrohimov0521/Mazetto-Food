@@ -56,8 +56,12 @@ jobs:
         run: |
           $version = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
           $tag = "desktop-v$version"
+          $versionedInstaller = "apps/desktop/release/MAZETTO-Desktop-$version-x64.exe"
+          $latestInstaller = "apps/desktop/release/MAZETTO-Desktop-latest-x64.exe"
+          Copy-Item $versionedInstaller $latestInstaller -Force
           $assets = @(
-            "apps/desktop/release/MAZETTO-Desktop-$version-x64.exe",
+            $versionedInstaller,
+            $latestInstaller,
             "apps/desktop/release/MAZETTO-Desktop-$version-x64.exe.blockmap",
             "apps/desktop/release/latest.yml"
           )
