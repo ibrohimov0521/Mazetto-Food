@@ -224,7 +224,7 @@ model Branch {
   paymentMethods           PaymentMethod[]
   priceHistory             PriceHistory[]
   printers                 Printer[]
-  receipts                 Receipt[]
+  receipts                 Receipt[]`n  printJobs                PrintJob[]
   products                 Product[]
   productAvailabilities    ProductBranchAvailability[]
   revenueRecords           RevenueRecord[]
