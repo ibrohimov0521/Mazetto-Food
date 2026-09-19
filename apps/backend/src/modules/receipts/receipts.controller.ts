@@ -4,7 +4,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { ListReceiptsDto } from "./dto/list-receipts.dto";
-import { ClaimPrintJobDto, CompletePrintJobDto, FailPrintJobDto } from "./dto/print-job.dto";
+import { ClaimPrintJobDto, CompletePrintJobDto, FailPrintJobDto, ListPrintJobsDto } from "./dto/print-job.dto";
 import { ReceiptsService } from "./receipts.service";
 
 @Controller("receipts")
@@ -29,6 +29,11 @@ export class ReceiptsController {
     return this.receiptsService.getReceiptByOrder(orderId, user);
   }
 
+  @Get("print-jobs")
+  @Permissions(PERMISSIONS.RECEIPT_VIEW)
+  listPrintJobs(@Query() query: ListPrintJobsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.listPrintJobs(query, user);
+  }
   @Post("print-jobs/claim")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
   claimPrintJob(@Query("branchId") branchId: string | undefined, @Body() body: ClaimPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
