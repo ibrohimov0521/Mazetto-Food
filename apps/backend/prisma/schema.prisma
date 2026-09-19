@@ -224,7 +224,8 @@ model Branch {
   paymentMethods           PaymentMethod[]
   priceHistory             PriceHistory[]
   printers                 Printer[]
-  receipts                 Receipt[]`n  printJobs                PrintJob[]
+  receipts                 Receipt[]
+  printJobs                PrintJob[]
   products                 Product[]
   productAvailabilities    ProductBranchAvailability[]
   revenueRecords           RevenueRecord[]
@@ -697,6 +698,7 @@ model Printer {
 
   branch   Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
   products Product[]
+  printJobs PrintJob[]
 
   @@index([branchId, type])
   @@index([isActive])
@@ -1435,6 +1437,7 @@ model Receipt {
 
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
   order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  printJobs PrintJob[]
 
   @@unique([orderId])
   @@index([branchId, createdAt])
