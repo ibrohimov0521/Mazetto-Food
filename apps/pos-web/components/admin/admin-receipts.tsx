@@ -384,7 +384,7 @@ export function AdminReceiptsPage() {
       </Card>
       <Card>
         <CardHeader
-          description="Belgilash holatni yozadi, printerga yubormaydi"
+          description="Cheklar, brauzer chop etishi va ishonchli printer navbati"
           title="Cheklar"
         />
 
