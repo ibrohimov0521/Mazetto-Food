@@ -1,12 +1,21 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "../../components/auth/auth-provider";
+import { getPrimaryRedirect } from "../../lib/auth";
+import { useRouter } from "next/navigation";
 import { PhoneInput } from "../../components/phone-input";
 import { Mail, Phone } from "lucide-react";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { isReady, login, session } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isReady && session) {
+      router.replace(getPrimaryRedirect(session.user));
+    }
+  }, [isReady, router, session]);
   const [identifier, setIdentifier] = useState("");
   const [phone, setPhone] = useState("");
   const [mode, setMode] = useState<"phone" | "email">("phone");

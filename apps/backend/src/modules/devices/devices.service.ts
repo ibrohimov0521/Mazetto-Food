@@ -96,22 +96,41 @@ export class DevicesService {
 
   async enroll(dto: EnrollDeviceDto) {
     const deviceId = dto.deviceId.trim();
-    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
-    if (!device || !device.isActive) {
-      throw new NotFoundException("Device not found or disabled");
+    if (!deviceId) {
+      throw new BadRequestException("Device identity is required");
     }
-    if (
-      !device.enrollmentCodeHash ||
-      !device.enrollmentExpiresAt ||
-      device.enrollmentExpiresAt.getTime() < Date.now() ||
-      device.enrollmentCodeHash !== hashEnrollmentCode(dto.enrollmentCode)
-    ) {
+
+    // The desktop creates its own stable hardware ID. The one-time code chooses
+    // the admin-created slot and then binds that slot to this actual computer.
+    const device = await this.prisma.device.findFirst({
+      where: {
+        isActive: true,
+        enrollmentCodeHash: hashEnrollmentCode(dto.enrollmentCode),
+        enrollmentExpiresAt: { gte: new Date() },
+      },
+    });
+
+    if (!device) {
       throw new BadRequestException("Enrollment code is invalid or expired");
     }
+
+    if (device.id !== deviceId) {
+      const alreadyLinked = await this.prisma.device.findUnique({
+        where: { id: deviceId },
+        select: { id: true },
+      });
+      if (alreadyLinked) {
+        throw new BadRequestException(
+          "This computer is already linked to another device",
+        );
+      }
+    }
+
     const enrolledAt = new Date();
     const updated = await this.prisma.device.update({
       where: { id: device.id },
       data: {
+        id: deviceId,
         enrolledAt,
         enrollmentCodeHash: null,
         enrollmentExpiresAt: null,
@@ -124,7 +143,6 @@ export class DevicesService {
     });
     return updated;
   }
-
   async updateDevice(
     id: string,
     dto: UpdateDeviceDto,

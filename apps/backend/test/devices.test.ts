@@ -155,16 +155,7 @@ test("o'chirilgan qurilma heartbeat qabul qilinmaydi", async () => {
 test("enrollment kodi muddati va hash tekshiruvidan o'tadi", async () => {
   const service = new DevicesService({
     device: {
-      findUnique: async () => ({
-        id: "device-1",
-        branchId: "branch-1",
-        name: "Kassa 1",
-        type: "POS_TERMINAL",
-        isActive: true,
-        enrollmentCodeHash:
-          "not-the-code",
-        enrollmentExpiresAt: new Date(Date.now() + 60_000),
-      }),
+      findFirst: async () => null,
     },
   } as never);
 
@@ -181,7 +172,7 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
   const codeHash = crypto.createHash("sha256").update(code).digest("hex");
   const service = new DevicesService({
     device: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "device-1",
         branchId: "branch-1",
         name: "Kassa 1",
@@ -190,6 +181,7 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
         enrollmentCodeHash: codeHash,
         enrollmentExpiresAt: new Date(Date.now() + 60_000),
       }),
+      findUnique: async () => null,
       update: async (args: { data: Record<string, unknown> }) => {
         updateData = args.data;
         return {
@@ -204,11 +196,12 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
   } as never);
 
   await service.enroll({
-    deviceId: "device-1",
+    deviceId: "desktop-uuid-1",
     enrollmentCode: code,
     softwareVersion: "0.1.5",
   });
 
+  assert.equal(updateData?.id, "desktop-uuid-1");
   assert.equal(updateData?.enrollmentCodeHash, null);
   assert.equal(updateData?.enrollmentExpiresAt, null);
   assert.ok(updateData?.enrolledAt instanceof Date);
