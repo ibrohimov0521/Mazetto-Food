@@ -49,10 +49,15 @@ export function DesktopEnrollmentBadge() {
     setIsSaving(true);
     setMessage("");
     try {
-      await apiFetch("/devices/enroll", {
-        method: "POST",
-        body: JSON.stringify({ deviceId, enrollmentCode: code.trim() }),
-      });
+      const desktopBridge = window.mazettoDesktop?.device;
+      if (desktopBridge) {
+        await desktopBridge.enroll({ deviceId, enrollmentCode: code.trim() });
+      } else {
+        await apiFetch("/devices/enroll", {
+          method: "POST",
+          body: JSON.stringify({ deviceId, enrollmentCode: code.trim() }),
+        });
+      }
       await apiFetch("/devices/heartbeat", {
         method: "POST",
         headers: { "x-mazetto-device-id": deviceId },
@@ -62,7 +67,12 @@ export function DesktopEnrollmentBadge() {
       setCode("");
       setIsEnrolled(true);
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "Qurilmani ulab bo'lmadi.");
+      const reason = caught instanceof Error ? caught.message : "Noma'lum xato";
+      setMessage(
+        reason === "Failed to fetch"
+          ? "Desktop serveriga ulanib bo'lmadi. Ilovani qayta ishga tushiring."
+          : reason,
+      );
     } finally {
       setIsSaving(false);
     }

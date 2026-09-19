@@ -17,6 +17,15 @@ type DesktopUpdateStatus = {
 type DesktopPrinterStatus = { configured: boolean; host: string | null; port: number };
 
 type DesktopBridge = {
+  device?: {
+    enroll: (input: { deviceId: string; enrollmentCode: string }) => Promise<{
+      id: string;
+      branchId: string;
+      name: string;
+      type: string;
+      enrolledAt: string;
+    }>;
+  };
   printer?: {
     status: () => Promise<DesktopPrinterStatus>;
     save: (input: { host: string; port: number }) => Promise<DesktopPrinterStatus>;

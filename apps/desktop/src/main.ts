@@ -108,6 +108,7 @@ async function startDesktop(): Promise<void> {
     store,
   });
   setupPrinterControls();
+  setupDeviceEnrollment();
   await gateway.start();
   printTimer = setInterval(() => void printWorker?.tick(), 3_000);
   printTimer.unref();
@@ -371,6 +372,28 @@ function offlineShellUrl(uiUrl: string): string {
   const statusUrl = `http://127.0.0.1:${GATEWAY_PORT}/desktop/status`;
   const html = `<!doctype html><html lang="uz"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MAZETTO Desktop</title><style>body{margin:0;background:#f3f8f6;color:#062f31;font:16px system-ui,sans-serif}main{max-width:680px;margin:12vh auto;padding:32px}img{width:64px;height:64px;border-radius:12px}h1{font-size:28px;margin:18px 0 8px}p{line-height:1.55;color:#46615f}button{border:1px solid #00605d;background:#00605d;color:#fff;padding:10px 16px;border-radius:6px;font-weight:700;cursor:pointer}code{display:block;margin-top:20px;padding:12px;background:#fff;border:1px solid #cfddda;border-radius:6px}</style><main><img src="file://${join(app.getAppPath(), "..", "pos-web", "public", "brand", "mazetto-m-icon-192-v2.png").replace(/\\/g, "/")}" alt=""><h1>Mahalliy panel ishga tushmadi</h1><p>Desktop runtime va lokal baza ishlayapti, lekin POS interfeysi topilmadi. Ilovani qayta ishga tushiring yoki diagnostika manzilini tekshiring.</p><button onclick="location.href='${uiUrl}'">Qayta urinish</button><code>${statusUrl}</code></main></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+function setupDeviceEnrollment(): void {
+  ipcMain.removeHandler("desktop:device:enroll");
+  ipcMain.handle(
+    "desktop:device:enroll",
+    async (_event, input: { deviceId?: unknown; enrollmentCode?: unknown }) => {
+      const deviceId = typeof input?.deviceId === "string" ? input.deviceId.trim() : "";
+      const enrollmentCode = typeof input?.enrollmentCode === "string" ? input.enrollmentCode.trim().toUpperCase() : "";
+      if (!deviceId || !enrollmentCode) throw new Error("Qurilma ID va ulanish kodini kiriting");
+      const response = await fetch(UPSTREAM_API_URL + "/devices/enroll", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId, enrollmentCode, softwareVersion: app.getVersion() }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const payload = (await response.json().catch(() => null)) as { data?: unknown; error?: { message?: string | string[] } } | null;
+      const message = payload?.error?.message;
+      if (!response.ok) throw new Error(Array.isArray(message) ? message.join(", ") : message || "Qurilmani ulashda server xatosi (" + response.status + ")");
+      return payload?.data ?? payload;
+    },
+  );
 }
 
 function setupPrinterControls(): void {
