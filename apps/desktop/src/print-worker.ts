@@ -14,8 +14,8 @@ export type DesktopPrintWorkerOptions = {
 /** Desktop owns a single outbound printer worker; it never exposes the printer to the internet. */
 export class DesktopPrintWorker {
   private readonly apiUrl: string;
-  private readonly printerHost: string | null;
-  private readonly printerPort: number;
+  private printerHost: string | null;
+  private printerPort: number;
   private readonly agentId: string;
   private readonly fetchImpl: typeof fetch;
   private authorization: string | null = null;
@@ -27,6 +27,15 @@ export class DesktopPrintWorker {
     this.printerPort = options.printerPort ?? 9100;
     this.agentId = options.agentId;
     this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  configure(printerHost: string | null, printerPort: number): void {
+    this.printerHost = printerHost;
+    this.printerPort = printerPort;
+  }
+
+  status(): { configured: boolean; host: string | null; port: number } {
+    return { configured: Boolean(this.printerHost), host: this.printerHost, port: this.printerPort };
   }
 
   setAuthorization(value: string | undefined): void {
@@ -49,6 +58,15 @@ export class DesktopPrintWorker {
     } finally { this.running = false; }
   }
 
+  async testConnection(): Promise<void> {
+    if (!this.printerHost) throw new Error("Printer manzili kiritilmagan");
+    await new Promise<void>((resolve, reject) => {
+      const socket = new Socket();
+      const timer = setTimeout(() => { socket.destroy(); reject(new Error("Printer ulanishi 5 soniyada javob bermadi")); }, 5_000);
+      socket.once("error", (error) => { clearTimeout(timer); reject(error); });
+      socket.connect(this.printerPort, this.printerHost!, () => { clearTimeout(timer); socket.end(resolve); });
+    });
+  }
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await this.fetchImpl(`${this.apiUrl}${path}`, { ...init, headers: { Accept: "application/json", Authorization: this.authorization ?? "", "Content-Type": "application/json", ...init.headers } });
     if (!response.ok) throw new Error(`Printer API ${response.status}`);

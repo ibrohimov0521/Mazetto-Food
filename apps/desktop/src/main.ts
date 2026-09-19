@@ -100,13 +100,14 @@ async function startDesktop(): Promise<void> {
   const dataDirectory = join(app.getPath("userData"), "runtime");
   await mkdir(dataDirectory, { recursive: true });
   store = new DesktopStore(join(dataDirectory, "mazetto-desktop.sqlite"));
-  printWorker = new DesktopPrintWorker({ apiUrl: UPSTREAM_API_URL, printerHost: process.env.MAZETTO_PRINTER_HOST?.trim() || null, agentId: `desktop-${store.deviceId()}` });
+  printWorker = new DesktopPrintWorker({ apiUrl: UPSTREAM_API_URL, printerHost: store.getSetting("printer_host") || process.env.MAZETTO_PRINTER_HOST?.trim() || null, printerPort: Number(store.getSetting("printer_port") || process.env.MAZETTO_PRINTER_PORT || 9100), agentId: `desktop-${store.deviceId()}` });
   gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: GATEWAY_PORT,
     upstreamApiUrl: UPSTREAM_API_URL,
     store,
   });
+  setupPrinterControls();
   await gateway.start();
   printTimer = setInterval(() => void printWorker?.tick(), 3_000);
   printTimer.unref();
@@ -370,4 +371,22 @@ function offlineShellUrl(uiUrl: string): string {
   const statusUrl = `http://127.0.0.1:${GATEWAY_PORT}/desktop/status`;
   const html = `<!doctype html><html lang="uz"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MAZETTO Desktop</title><style>body{margin:0;background:#f3f8f6;color:#062f31;font:16px system-ui,sans-serif}main{max-width:680px;margin:12vh auto;padding:32px}img{width:64px;height:64px;border-radius:12px}h1{font-size:28px;margin:18px 0 8px}p{line-height:1.55;color:#46615f}button{border:1px solid #00605d;background:#00605d;color:#fff;padding:10px 16px;border-radius:6px;font-weight:700;cursor:pointer}code{display:block;margin-top:20px;padding:12px;background:#fff;border:1px solid #cfddda;border-radius:6px}</style><main><img src="file://${join(app.getAppPath(), "..", "pos-web", "public", "brand", "mazetto-m-icon-192-v2.png").replace(/\\/g, "/")}" alt=""><h1>Mahalliy panel ishga tushmadi</h1><p>Desktop runtime va lokal baza ishlayapti, lekin POS interfeysi topilmadi. Ilovani qayta ishga tushiring yoki diagnostika manzilini tekshiring.</p><button onclick="location.href='${uiUrl}'">Qayta urinish</button><code>${statusUrl}</code></main></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+function setupPrinterControls(): void {
+  ipcMain.removeHandler("desktop:printer:status");
+  ipcMain.removeHandler("desktop:printer:save");
+  ipcMain.removeHandler("desktop:printer:test");
+  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100 });
+  ipcMain.handle("desktop:printer:save", async (_event, input: { host?: unknown; port?: unknown }) => {
+    const host = typeof input?.host === "string" ? input.host.trim() : "";
+    const port = Number(input?.port);
+    if (!host || host.length > 253 || !/^[a-zA-Z0-9.-]+$/.test(host)) throw new Error("Printer manzilini to‘g‘ri kiriting");
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Printer porti 1–65535 oralig‘ida bo‘lishi kerak");
+    store?.setSetting("printer_host", host);
+    store?.setSetting("printer_port", String(port));
+    printWorker?.configure(host, port);
+    return printWorker?.status();
+  });
+  ipcMain.handle("desktop:printer:test", () => printWorker?.testConnection());
 }

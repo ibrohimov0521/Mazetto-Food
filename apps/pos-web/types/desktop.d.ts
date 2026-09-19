@@ -14,7 +14,14 @@ type DesktopUpdateStatus = {
   checkedAt: string | null;
 };
 
+type DesktopPrinterStatus = { configured: boolean; host: string | null; port: number };
+
 type DesktopBridge = {
+  printer?: {
+    status: () => Promise<DesktopPrinterStatus>;
+    save: (input: { host: string; port: number }) => Promise<DesktopPrinterStatus>;
+    test: () => Promise<void>;
+  };
   updates?: {
     getStatus: () => Promise<DesktopUpdateStatus>;
     check: () => Promise<DesktopUpdateStatus>;
