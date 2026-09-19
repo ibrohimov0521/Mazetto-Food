@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { DesktopGateway } from "./gateway.js";
 import { DesktopStore } from "./store.js";
+import { DesktopPrintWorker } from "./print-worker.js";
 
 const require = createRequire(import.meta.url);
 const { autoUpdater } =
@@ -22,6 +23,8 @@ let mainWindow: BrowserWindow | null = null;
 let gateway: DesktopGateway | null = null;
 let store: DesktopStore | null = null;
 let uiProcess: ChildProcess | null = null;
+let printWorker: DesktopPrintWorker | null = null;
+let printTimer: NodeJS.Timeout | null = null;
 
 type UpdateStatus = {
   state:
@@ -79,6 +82,8 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  if (printTimer) { clearInterval(printTimer); printTimer = null; }
+  printWorker = null;
   if (updateTimer) {
     clearInterval(updateTimer);
     updateTimer = null;
@@ -95,6 +100,7 @@ async function startDesktop(): Promise<void> {
   const dataDirectory = join(app.getPath("userData"), "runtime");
   await mkdir(dataDirectory, { recursive: true });
   store = new DesktopStore(join(dataDirectory, "mazetto-desktop.sqlite"));
+  printWorker = new DesktopPrintWorker({ apiUrl: UPSTREAM_API_URL, printerHost: process.env.MAZETTO_PRINTER_HOST?.trim() || null, agentId: `desktop-${store.deviceId()}` });
   gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: GATEWAY_PORT,
@@ -102,6 +108,8 @@ async function startDesktop(): Promise<void> {
     store,
   });
   await gateway.start();
+  printTimer = setInterval(() => void printWorker?.tick(), 3_000);
+  printTimer.unref();
   setupAutoUpdater();
   const uiUrl = await resolveUiUrl();
   await createWindow(uiUrl);
