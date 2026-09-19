@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Modal } from "../admin-ui/modal";
+import { DesktopUpdateControls } from "./desktop-update-controls";
 
 type DesktopStatus = {
   mode: "online" | "offline" | "starting";
@@ -230,6 +231,8 @@ export function DesktopStatusBadge() {
             <div className="grid gap-2 sm:grid-cols-[1fr_100px_auto_auto]"><input aria-label="Printer IP manzili" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" value={printerHost} /><input aria-label="Printer porti" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" inputMode="numeric" onChange={(event) => setPrinterPort(event.target.value)} value={printerPort} /><Button isLoading={printerBusy} onClick={() => void savePrinter()} size="sm" variant="ghost">Saqlash</Button><Button disabled={!printerHost} isLoading={printerBusy} onClick={() => void savePrinter(true)} size="sm">Sinash</Button></div>
             {printerMessage ? <p className="mt-2 text-[12px] text-mz-text-muted">{printerMessage}</p> : null}
           </div>
+          <DesktopUpdateControls />
+
           <div className="grid grid-cols-4 gap-2">
             <QueueStat label="Kutmoqda" value={status?.pendingCommands ?? 0} />
             <QueueStat label="Yuborilyapti" value={status?.sendingCommands ?? 0} />
