@@ -181,18 +181,23 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
         enrollmentCodeHash: codeHash,
         enrollmentExpiresAt: new Date(Date.now() + 60_000),
       }),
-      findUnique: async () => null,
-      update: async (args: { data: Record<string, unknown> }) => {
-        updateData = args.data;
-        return {
-          id: "device-1",
-          branchId: "branch-1",
-          name: "Kassa 1",
-          type: "POS_TERMINAL",
-          enrolledAt: new Date(),
-        };
-      },
     },
+    $transaction: async (callback: (client: { device: { updateMany: () => Promise<{ count: number }>; update: (args: { data: Record<string, unknown> }) => Promise<unknown> } }) => Promise<unknown>) =>
+      callback({
+        device: {
+          updateMany: async () => ({ count: 0 }),
+          update: async (args) => {
+            updateData = args.data;
+            return {
+              id: "device-1",
+              branchId: "branch-1",
+              name: "Kassa 1",
+              type: "POS_TERMINAL",
+              enrolledAt: new Date(),
+            };
+          },
+        },
+      }),
   } as never);
 
   await service.enroll({
@@ -201,7 +206,7 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
     softwareVersion: "0.1.5",
   });
 
-  assert.equal(updateData?.id, "desktop-uuid-1");
+  assert.equal(updateData?.hardwareId, "desktop-uuid-1");
   assert.equal(updateData?.enrollmentCodeHash, null);
   assert.equal(updateData?.enrollmentExpiresAt, null);
   assert.ok(updateData?.enrolledAt instanceof Date);
