@@ -33,7 +33,9 @@ type AgentConfig = {
   timeoutMs: number;
   retries: number;
   healthPort: number;
-  healthHost: string;`n  protocol: "receipts" | "jobs";`n  agentId: string;
+  healthHost: string;
+  protocol: "receipts" | "jobs";
+  agentId: string;
 };
 
 type AgentState = {
@@ -84,6 +86,8 @@ async function main(agentConfig: AgentConfig, agentState: AgentState): Promise<v
     mode: agentConfig.mode,
     health: `http://${agentConfig.healthHost}:${agentConfig.healthPort}`,
     tokenConfigured: Boolean(agentConfig.token),
+    protocol: agentConfig.protocol,
+    agentId: agentConfig.agentId,
   });
 
   if (!agentConfig.token) {
@@ -98,7 +102,11 @@ async function main(agentConfig: AgentConfig, agentState: AgentState): Promise<v
   }
 
   do {
-    await pollOnce(agentConfig, agentState);
+    if (agentConfig.protocol === "jobs") {
+      await pollJobOnce(agentConfig, agentState);
+    } else {
+      await pollOnce(agentConfig, agentState);
+    }
 
     if (!agentConfig.once) {
       await delay(agentConfig.pollMs);
@@ -378,7 +386,9 @@ function readConfig(): AgentConfig {
     timeoutMs: readPositiveInt(process.env.MAZETTO_PRINT_TIMEOUT_MS, 10000),
     retries: readNonNegativeInt(process.env.MAZETTO_PRINT_RETRIES, 2),
     healthPort: readPositiveInt(process.env.MAZETTO_PRINT_HEALTH_PORT, 7357),
-    healthHost: process.env.MAZETTO_PRINT_HEALTH_HOST?.trim() || "0.0.0.0",`n    protocol: process.env.MAZETTO_PRINT_PROTOCOL === "jobs" ? "jobs" : "receipts",`n    agentId: process.env.MAZETTO_PRINT_AGENT_ID?.trim() || `agent-${process.env.HOSTNAME || "local"}`,
+    healthHost: process.env.MAZETTO_PRINT_HEALTH_HOST?.trim() || "0.0.0.0",
+    protocol: process.env.MAZETTO_PRINT_PROTOCOL === "jobs" ? "jobs" : "receipts",
+    agentId: process.env.MAZETTO_PRINT_AGENT_ID?.trim() || `agent-${process.env.HOSTNAME || "local"}`,
   };
 }
 
