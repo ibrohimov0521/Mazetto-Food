@@ -227,6 +227,22 @@ export function DesktopStatusBadge() {
           ) : null}
 
           <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-mz-text">Ulanish holati</p>
+              <Badge
+                tone={mode === "online" ? "success" : mode === "offline" ? "warning" : "neutral"}
+                withDot
+              >
+                {label}
+              </Badge>
+            </div>
+            <div className="mt-2 grid gap-1 text-[12px] text-mz-text-muted sm:grid-cols-2">
+              <span>Oxirgi jonli ulanish: {formatDesktopTime(status?.lastOnlineAt)}</span>
+              <span>Kesh: {status?.cachedResponses ?? 0} ta endpoint</span>
+            </div>
+          </div>
+
+          <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-3">
             <div className="mb-2 flex items-center justify-between"><p className="text-sm font-semibold text-mz-text">Chek printeri</p><Badge tone={printerHost ? "success" : "neutral"} withDot>{printerHost ? "Sozlangan" : "Sozlanmagan"}</Badge></div>
             <div className="grid gap-2 sm:grid-cols-[1fr_100px_auto_auto]"><input aria-label="Printer IP manzili" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" value={printerHost} /><input aria-label="Printer porti" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" inputMode="numeric" onChange={(event) => setPrinterPort(event.target.value)} value={printerPort} /><Button isLoading={printerBusy} onClick={() => void savePrinter()} size="sm" variant="ghost">Saqlash</Button><Button disabled={!printerHost} isLoading={printerBusy} onClick={() => void savePrinter(true)} size="sm">Sinash</Button></div>
             {printerMessage ? <p className="mt-2 text-[12px] text-mz-text-muted">{printerMessage}</p> : null}
@@ -335,6 +351,23 @@ function commandStateTone(commandState: OutboxCommand["state"]) {
   return "success";
 }
 
+function formatDesktopTime(value: string | null | undefined): string {
+  if (!value) {
+    return "Hali ulanmagan";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Noma'lum";
+  }
+
+  return date.toLocaleString("uz-UZ", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+  });
+}
 async function desktopFetch<T>(
   path: string,
   init?: RequestInit,
