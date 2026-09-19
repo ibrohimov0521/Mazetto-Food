@@ -375,7 +375,7 @@ export function AdminReceiptsPage() {
 
       <Card>
         <CardHeader
-          action={<Button onClick={() => void reloadPrintJobs()} size="sm" variant="secondary">Yangilash</Button>}
+          actions={<Button onClick={() => void reloadPrintJobs()} size="sm" variant="secondary">Yangilash</Button>}
           description="Yangi printer agentining navbati va oxirgi urinishlari"
           title="Chop navbati"
         />
