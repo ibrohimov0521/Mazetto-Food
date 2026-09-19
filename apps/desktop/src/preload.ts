@@ -17,6 +17,11 @@ type UpdateStatus = {
 };
 
 contextBridge.exposeInMainWorld("mazettoDesktop", {
+  printer: {
+    status: () => ipcRenderer.invoke("desktop:printer:status"),
+    save: (input: { host: string; port: number }) => ipcRenderer.invoke("desktop:printer:save", input),
+    test: () => ipcRenderer.invoke("desktop:printer:test"),
+  },
   updates: {
     getStatus: (): Promise<UpdateStatus> =>
       ipcRenderer.invoke("desktop:updates:status"),
