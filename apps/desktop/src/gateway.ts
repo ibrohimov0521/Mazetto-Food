@@ -498,7 +498,7 @@ export class DesktopGateway {
     }
     response.setHeader(
       "Access-Control-Allow-Headers",
-      "Authorization, Content-Type, Idempotency-Key",
+      "Authorization, Content-Type, Idempotency-Key, X-Mazetto-Device-Id",
     );
     response.setHeader(
       "Access-Control-Allow-Methods",
