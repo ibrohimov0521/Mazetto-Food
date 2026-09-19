@@ -4,6 +4,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { ListReceiptsDto } from "./dto/list-receipts.dto";
+import { ClaimPrintJobDto, CompletePrintJobDto, FailPrintJobDto } from "./dto/print-job.dto";
 import { ReceiptsService } from "./receipts.service";
 
 @Controller("receipts")
@@ -30,19 +31,19 @@ export class ReceiptsController {
 
   @Post("print-jobs/claim")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
-  claimPrintJob(@Query("branchId") branchId: string | undefined, @Body("agentId") agentId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.receiptsService.claimPrintJob(branchId, agentId, user);
+  claimPrintJob(@Query("branchId") branchId: string | undefined, @Body() body: ClaimPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.claimPrintJob(branchId, body.agentId, user);
   }
 
   @Post("print-jobs/:id/complete")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
-  completePrintJob(@Param("id") id: string, @Body("leaseToken") leaseToken: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.receiptsService.completePrintJob(id, leaseToken, user);
+  completePrintJob(@Param("id") id: string, @Body() body: CompletePrintJobDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.completePrintJob(id, body.leaseToken, user);
   }
 
   @Post("print-jobs/:id/fail")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
-  failPrintJob(@Param("id") id: string, @Body() body: { leaseToken: string; error: string }, @CurrentUser() user: AuthenticatedUser) {
+  failPrintJob(@Param("id") id: string, @Body() body: FailPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
     return this.receiptsService.failPrintJob(id, body.leaseToken, body.error || "Unknown printer failure", user);
   }
   @Get(":id")
