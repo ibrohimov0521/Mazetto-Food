@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import { Type } from "class-transformer";
 
 export class ClaimPrintJobDto {
   @IsString()
@@ -19,4 +20,22 @@ export class FailPrintJobDto extends CompletePrintJobDto {
   @IsString()
   @MaxLength(1000)
   error?: string;
+}
+const printJobStatuses = ["PENDING", "PROCESSING", "PRINTED", "DEAD_LETTER", "CANCELLED"] as const;
+
+export class ListPrintJobsDto {
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @IsOptional()
+  @IsIn(printJobStatuses)
+  status?: (typeof printJobStatuses)[number];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 25;
 }
