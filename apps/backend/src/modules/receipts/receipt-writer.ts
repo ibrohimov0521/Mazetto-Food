@@ -103,6 +103,10 @@ export async function writeReceiptRow(
       },
     },
   });
+
+  await tx.printJob.create({
+    data: { receiptId: receipt.id, branchId: order.branchId, payload: receipt.content ?? {} },
+  });
 }
 
 /*
