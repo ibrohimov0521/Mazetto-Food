@@ -29,6 +29,15 @@ export class DesktopPrintWorker {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
+  configure(printerHost: string | null, printerPort: number): void {
+    this.printerHost = printerHost;
+    this.printerPort = printerPort;
+  }
+
+  status(): { configured: boolean; host: string | null; port: number } {
+    return { configured: Boolean(this.printerHost), host: this.printerHost, port: this.printerPort };
+  }
+
   setAuthorization(value: string | undefined): void {
     this.authorization = value?.startsWith("Bearer ") ? value : null;
   }
