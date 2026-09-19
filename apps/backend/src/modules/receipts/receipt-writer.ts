@@ -78,7 +78,7 @@ export async function writeReceiptRow(
 ): Promise<void> {
   const receiptNumber = await allocateReceiptNumber(tx);
 
-  await tx.receipt.create({
+  const receipt = await tx.receipt.create({
     data: {
       orderId: order.id,
       branchId: order.branchId,
