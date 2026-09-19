@@ -24,44 +24,40 @@ export function DesktopUpdateBadge() {
       return;
     }
 
-    void bridge
-      .getStatus()
-      .then(setStatus)
-      .catch(() => undefined);
+    void bridge.getStatus().then(setStatus).catch(() => undefined);
     return bridge.onStatus(setStatus);
   }, []);
 
-  if (
-    !isDesktop ||
-    !status ||
-    !["available", "downloading", "downloaded", "error"].includes(status.state)
-  ) {
+  if (!isDesktop || !status) {
     return null;
   }
 
   const isReady = status.state === "downloaded";
   const isDownloading = status.state === "downloading";
+  const isChecking = status.state === "checking";
   const currentState = status.state;
   const label = isReady
-    ? "Qayta ishga tushirish"
+    ? "O'rnatish"
     : isDownloading
       ? `%${status.percent ?? 0}`
-      : status.state === "error"
-        ? "Yangilash"
-        : "Yangi versiya";
+      : isChecking
+        ? "Tekshirilmoqda"
+        : currentState === "available"
+          ? "Yuklash"
+          : "Yangilanish";
   const Icon = isReady ? RotateCw : isDownloading ? Download : RefreshCw;
 
   async function handleClick(): Promise<void> {
     const bridge = window.mazettoDesktop?.updates;
-    if (!bridge || busy) return;
+    if (!bridge || busy || isDownloading || isChecking) return;
     setBusy(true);
     try {
       if (isReady) {
         setStatus(await bridge.install());
-      } else if (currentState === "error") {
-        setStatus(await bridge.check());
-      } else {
+      } else if (currentState === "available") {
         setStatus(await bridge.download());
+      } else {
+        setStatus(await bridge.check());
       }
     } finally {
       setBusy(false);
@@ -70,27 +66,23 @@ export function DesktopUpdateBadge() {
 
   return (
     <button
-      aria-label={
-        isReady ? "Yangilanishni o'rnatish" : "Yangilanishni boshqarish"
-      }
+      aria-label={isReady ? "Yangilanishni o'rnatish" : "Yangilanishlarni tekshirish"}
       className={`flex h-7 shrink-0 items-center gap-1 rounded-mz-pill border px-2 text-[10px] font-bold transition hover:bg-white/10 disabled:opacity-60 ${
         isReady
           ? "border-emerald-300/60 bg-emerald-300/15 text-emerald-100"
-          : "border-sky-300/50 bg-sky-300/10 text-sky-100"
+          : currentState === "error"
+            ? "border-rose-300/60 bg-rose-300/10 text-rose-100"
+            : "border-sky-300/50 bg-sky-300/10 text-sky-100"
       }`}
-      disabled={busy || isDownloading}
+      disabled={busy || isDownloading || isChecking}
       onClick={() => void handleClick()}
       title={
         status.message ??
-        (status.version ? `Versiya ${status.version}` : "Yangilanish")
+        (status.version ? `Versiya ${status.version}` : "Yangilanishlarni tekshirish")
       }
       type="button"
     >
-      <Icon
-        aria-hidden="true"
-        className={busy ? "animate-spin" : ""}
-        size={13}
-      />
+      <Icon aria-hidden="true" className={busy || isChecking ? "animate-spin" : ""} size={13} />
       <span className="hidden sm:inline">{label}</span>
     </button>
   );
