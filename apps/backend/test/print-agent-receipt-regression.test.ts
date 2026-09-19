@@ -5,6 +5,7 @@ import { test } from "node:test";
 const receiptDto = readFileSync("src/modules/receipts/dto/list-receipts.dto.ts", "utf8");
 const receiptService = readFileSync("src/modules/receipts/receipts.service.ts", "utf8");
 const printAgent = readFileSync("../print-agent/src/main.ts", "utf8");
+const receiptWriter = readFileSync("src/modules/receipts/receipt-writer.ts", "utf8");
 
 test("receipt polling can ask the backend for unprinted receipts only", () => {
   assert.match(receiptDto, /printed\?: boolean/);
@@ -18,4 +19,14 @@ test("print agent marks a receipt printed only after an adapter succeeds", () =>
   assert.match(printAgent, /agentConfig\.mode === "file"/);
   assert.match(printAgent, /agentConfig\.mode === "tcp"/);
   assert.match(printAgent, /catch \(error\) \{[\s\S]*?console\.error\(`Print failed for/);
+});
+
+test("durable queue is explicitly enabled and the agent completes only its leased job", () => {
+  assert.match(receiptWriter, /MAZETTO_DURABLE_PRINT_JOBS === "true"/);
+  assert.match(receiptWriter, /tx\.printJob\.create/);
+  assert.match(printAgent, /MAZETTO_PRINT_PROTOCOL === "jobs" \? "jobs" : "receipts"/);
+  assert.match(printAgent, /\/receipts\/print-jobs\/claim/);
+  assert.match(printAgent, /\/complete/);
+  assert.match(printAgent, /leaseToken: job\.leaseToken/);
+  assert.match(printAgent, /Durable print queue is not claimed in dry-run mode/);
 });

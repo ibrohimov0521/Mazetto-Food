@@ -100,6 +100,33 @@ type ReceiptDetail = Receipt & {
   } | null;
 };
 
+
+type PrintJob = {
+  id: string;
+  status: "PENDING" | "PROCESSING" | "PRINTED" | "DEAD_LETTER" | "CANCELLED";
+  attemptCount: number;
+  maxAttempts: number;
+  nextAttemptAt: string;
+  leaseExpiresAt?: string | null;
+  lastError?: string | null;
+  printedAt?: string | null;
+  createdAt: string;
+  branch: { id: string; name: string; code: string };
+  receipt: { id: string; receiptNumber: string; total: string; order?: { orderNumber: string; displayOrderNumber?: string | null } | null };
+  attempts: Array<{ agentId: string; outcome: string; startedAt: string; completedAt?: string | null }>;
+};
+
+const printJobStatusLabels: Record<PrintJob["status"], string> = {
+  PENDING: "Navbatda", PROCESSING: "Printerda", PRINTED: "Chop etildi", DEAD_LETTER: "Xato bilan to'xtadi", CANCELLED: "Bekor qilingan",
+};
+
+function printJobTone(status: PrintJob["status"]): "success" | "warning" | "danger" | "info" | "neutral" {
+  if (status === "PRINTED") return "success";
+  if (status === "DEAD_LETTER") return "danger";
+  if (status === "PROCESSING") return "info";
+  if (status === "PENDING") return "warning";
+  return "neutral";
+}
 const pageSize = 25;
 
 export function AdminReceiptsPage() {
@@ -118,6 +145,7 @@ export function AdminReceiptsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [offset, setOffset] = useState(0);
+  const [printJobStatus, setPrintJobStatus] = useState("");
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -187,6 +215,25 @@ export function AdminReceiptsPage() {
     "Cheklarni yuklab bo'lmadi.",
   );
   const receipts = data ?? [];
+  const { data: printJobData, isLoading: isPrintJobsLoading, error: printJobsError, reload: reloadPrintJobs } = useApiResource(
+    () => {
+      const params = new URLSearchParams({ limit: "25" });
+      if (branchId) params.set("branchId", branchId);
+      if (printJobStatus) params.set("status", printJobStatus);
+      return apiFetch<PrintJob[]>(`/receipts/print-jobs?${params.toString()}`);
+    },
+    [branchId, printJobStatus],
+    "Chop navbatini yuklab bo'lmadi.",
+  );
+  const printJobs = printJobData ?? [];
+  const printJobColumns: DataTableColumn<PrintJob>[] = [
+    { key: "receipt", header: "Chek", primary: true, render: (job) => <div className="min-w-0"><p className="font-semibold text-mz-text">{job.receipt.receiptNumber}</p><p className="truncate text-[13px] text-mz-text-muted">{job.receipt.order?.displayOrderNumber ?? job.receipt.order?.orderNumber ?? "Buyurtma"} · {job.branch.name}</p></div> },
+    { key: "status", header: "Holat", render: (job) => <Badge tone={printJobTone(job.status)} withDot>{printJobStatusLabels[job.status]}</Badge> },
+    { key: "attempts", header: "Urinish", hideOnMobile: true, render: (job) => `${job.attemptCount}/${job.maxAttempts}` },
+    { key: "agent", header: "Agent", hideOnMobile: true, render: (job) => job.attempts[0]?.agentId ?? "—" },
+    { key: "next", header: "Keyingi amal", hideOnMobile: true, render: (job) => job.status === "PRINTED" && job.printedAt ? formatDateTime(job.printedAt) : formatDateTime(job.nextAttemptAt) },
+  ];
+
 
   async function markPrinted(): Promise<void> {
     if (!detail) {
@@ -328,7 +375,16 @@ export function AdminReceiptsPage() {
 
       <Card>
         <CardHeader
-          description="Belgilash holatni yozadi, printerga yubormaydi"
+          actions={<Button onClick={() => void reloadPrintJobs()} size="sm" variant="secondary">Yangilash</Button>}
+          description="Yangi printer agentining navbati va oxirgi urinishlari"
+          title="Chop navbati"
+        />
+        <FilterBar><div className="w-56"><FormField label="Navbat holati">{(props) => <Select {...props} value={printJobStatus} onChange={(event) => setPrintJobStatus(event.target.value)}><option value="">Barcha holatlar</option><option value="PENDING">Navbatda</option><option value="PROCESSING">Printerda</option><option value="PRINTED">Chop etildi</option><option value="DEAD_LETTER">Xato bilan to'xtadi</option></Select>}</FormField></div></FilterBar>
+        {printJobsError ? <ErrorState message={printJobsError} onRetry={() => void reloadPrintJobs()} /> : <DataTable caption="Chop etish ishlari" columns={printJobColumns} emptyDescription="Yangi chek yaratilganda u shu yerda ko‘rinadi." emptyTitle="Chop navbati bo‘sh" getRowKey={(job) => job.id} isLoading={isPrintJobsLoading} rows={printJobs} />}
+      </Card>
+      <Card>
+        <CardHeader
+          description="Cheklar, brauzer chop etishi va ishonchli printer navbati"
           title="Cheklar"
         />
 

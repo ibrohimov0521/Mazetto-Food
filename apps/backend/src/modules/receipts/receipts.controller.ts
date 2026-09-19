@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Patch, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { ListReceiptsDto } from "./dto/list-receipts.dto";
+import { ClaimPrintJobDto, CompletePrintJobDto, FailPrintJobDto, ListPrintJobsDto } from "./dto/print-job.dto";
 import { ReceiptsService } from "./receipts.service";
 
 @Controller("receipts")
@@ -28,6 +29,28 @@ export class ReceiptsController {
     return this.receiptsService.getReceiptByOrder(orderId, user);
   }
 
+  @Get("print-jobs")
+  @Permissions(PERMISSIONS.RECEIPT_VIEW)
+  listPrintJobs(@Query() query: ListPrintJobsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.listPrintJobs(query, user);
+  }
+  @Post("print-jobs/claim")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  claimPrintJob(@Query("branchId") branchId: string | undefined, @Body() body: ClaimPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.claimPrintJob(branchId, body.agentId, user);
+  }
+
+  @Post("print-jobs/:id/complete")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  completePrintJob(@Param("id") id: string, @Body() body: CompletePrintJobDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.completePrintJob(id, body.leaseToken, user);
+  }
+
+  @Post("print-jobs/:id/fail")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  failPrintJob(@Param("id") id: string, @Body() body: FailPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.failPrintJob(id, body.leaseToken, body.error || "Unknown printer failure", user);
+  }
   @Get(":id")
   @Permissions(PERMISSIONS.RECEIPT_VIEW)
   getReceipt(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {

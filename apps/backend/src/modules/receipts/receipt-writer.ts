@@ -78,7 +78,7 @@ export async function writeReceiptRow(
 ): Promise<void> {
   const receiptNumber = await allocateReceiptNumber(tx);
 
-  await tx.receipt.create({
+  const receipt = await tx.receipt.create({
     data: {
       orderId: order.id,
       branchId: order.branchId,
@@ -103,6 +103,13 @@ export async function writeReceiptRow(
       },
     },
   });
+
+  // Cutover stays explicit: the legacy receipt poller and durable agent must never print one sale twice.
+  if (process.env.MAZETTO_DURABLE_PRINT_JOBS === "true") {
+    await tx.printJob.create({
+      data: { receiptId: receipt.id, branchId: order.branchId, payload: receipt.content ?? {} },
+    });
+  }
 }
 
 /*

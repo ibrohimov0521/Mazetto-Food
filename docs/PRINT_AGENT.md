@@ -38,3 +38,15 @@ Agar printer xato qaytarsa yoki ulanish uzilsa, chek `printed` bo‘lib belgilan
 ## Lokal status
 
 Agent ishlaganda status oynasi `http://127.0.0.1:7357/` da chiqadi. JSON holat: `/status`, health: `/health`.
+## Ishonchli navbat rejimi
+
+`MAZETTO_PRINT_PROTOCOL=jobs` agentni ishonchli chop etish navbatiga o‘tkazadi. Har bir chek uchun alohida ish yaratiladi, agent uni vaqtinchalik band qiladi, printer muvaffaqiyatli tugatgandan keyingina ish va chek chop etilgan deb belgilanadi. Ulanish uzilsa, ish kutish ro‘yxatiga qaytadi; takroriy xatolar esa `DEAD_LETTER` holatida saqlanadi.
+
+Muhim: eski `receipts` usuli va `jobs` usuli bir vaqtda ishlamasin. Production o‘tish tartibi:
+
+1. Backendni yangi versiyaga chiqaring, lekin `MAZETTO_DURABLE_PRINT_JOBS` o‘chiq qolsin.
+2. Eski receipt-poller agentni to‘xtating.
+3. Yangi agentni `MAZETTO_PRINT_PROTOCOL=jobs` va `MAZETTO_PRINT_DRY_RUN=false` bilan ishga tushiring. Uning `/health` sahifasi tayyor holat qaytarganini tekshiring.
+4. Backendda `MAZETTO_DURABLE_PRINT_JOBS=true` ni yoqing va backendni qayta yuklang.
+
+Shundan oldingi cheklar navbatga qo‘shilmaydi, yangi sotuv esa aynan bir marta navbatga tushadi. Dry-run rejimida agent ishni band qilmaydi va hech narsani chop etilgan deb belgilamaydi.

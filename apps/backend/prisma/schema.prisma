@@ -36,6 +36,14 @@ enum PrinterStatus {
   ERROR
 }
 
+enum PrintJobStatus {
+  PENDING
+  PROCESSING
+  PRINTED
+  DEAD_LETTER
+  CANCELLED
+}
+
 enum ProductPrinterRouting {
   KITCHEN
   BAR
@@ -217,6 +225,7 @@ model Branch {
   priceHistory             PriceHistory[]
   printers                 Printer[]
   receipts                 Receipt[]
+  printJobs                PrintJob[]
   products                 Product[]
   productAvailabilities    ProductBranchAvailability[]
   revenueRecords           RevenueRecord[]
@@ -689,6 +698,7 @@ model Printer {
 
   branch   Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
   products Product[]
+  printJobs PrintJob[]
 
   @@index([branchId, type])
   @@index([isActive])
@@ -1427,6 +1437,7 @@ model Receipt {
 
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
   order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  printJobs PrintJob[]
 
   @@unique([orderId])
   @@index([branchId, createdAt])
@@ -1434,6 +1445,49 @@ model Receipt {
   @@map("receipts")
 }
 
+model PrintJob {
+  id             String         @id @default(cuid())
+  receiptId      String
+  branchId       String
+  printerId      String?
+  status         PrintJobStatus @default(PENDING)
+  payload        Json
+  attemptCount   Int            @default(0)
+  maxAttempts    Int            @default(5)
+  nextAttemptAt  DateTime       @default(now())
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  lastError      String?
+  printedAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  receipt  Receipt       @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  printer  Printer?      @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  attempts PrintAttempt[]
+
+  @@index([branchId, status, nextAttemptAt])
+  @@index([status, leaseExpiresAt])
+  @@map("print_jobs")
+}
+
+model PrintAttempt {
+  id          String   @id @default(cuid())
+  jobId       String
+  agentId     String
+  leaseToken  String
+  outcome     String   @default("CLAIMED")
+  error       String?
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+
+  job PrintJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, leaseToken])
+  @@index([agentId, startedAt])
+  @@map("print_attempts")
+}
 model CustomerOrder {
   id               String            @id @default(cuid())
   customerId       String
