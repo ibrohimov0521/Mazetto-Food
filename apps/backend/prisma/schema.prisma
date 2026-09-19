@@ -651,6 +651,7 @@ model Device {
   id                  String     @id @default(cuid())
   branchId            String
   lastEmployeeId      String?
+  hardwareId          String?    @unique
   enrollmentCodeHash  String?
   enrollmentExpiresAt DateTime?
   enrolledAt          DateTime?

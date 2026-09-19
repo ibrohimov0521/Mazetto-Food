@@ -77,7 +77,7 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const device = await this.prisma.device.findUnique({
-      where: { id: deviceId.trim() },
+      where: { hardwareId: deviceId.trim() },
       select: { isActive: true, enrolledAt: true },
     });
 

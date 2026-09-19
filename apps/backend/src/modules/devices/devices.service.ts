@@ -89,6 +89,7 @@ export class DevicesService {
         enrollmentCodeHash: hashEnrollmentCode(enrollmentCode),
         enrollmentExpiresAt: expiresAt,
         enrolledAt: null,
+        hardwareId: null,
       },
     });
     return { deviceId: device.id, enrollmentCode, expiresAt: expiresAt.toISOString() };
@@ -114,32 +115,28 @@ export class DevicesService {
       throw new BadRequestException("Enrollment code is invalid or expired");
     }
 
-    if (device.id !== deviceId) {
-      const alreadyLinked = await this.prisma.device.findUnique({
-        where: { id: deviceId },
-        select: { id: true },
-      });
-      if (alreadyLinked) {
-        throw new BadRequestException(
-          "This computer is already linked to another device",
-        );
-      }
-    }
-
     const enrolledAt = new Date();
-    const updated = await this.prisma.device.update({
-      where: { id: device.id },
-      data: {
-        id: deviceId,
-        enrolledAt,
-        enrollmentCodeHash: null,
-        enrollmentExpiresAt: null,
-        lastSeenAt: enrolledAt,
-        ...(dto.softwareVersion?.trim()
-          ? { softwareVersion: dto.softwareVersion.trim().slice(0, 80) }
-          : {}),
-      },
-      select: { id: true, branchId: true, name: true, type: true, enrolledAt: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // A one-time code explicitly authorizes moving this physical computer
+      // to the selected admin device slot; historical records remain intact.
+      await tx.device.updateMany({
+        where: { hardwareId: deviceId, id: { not: device.id } },
+        data: { hardwareId: null },
+      });
+      return tx.device.update({
+        where: { id: device.id },
+        data: {
+          hardwareId: deviceId,
+          enrolledAt,
+          enrollmentCodeHash: null,
+          enrollmentExpiresAt: null,
+          lastSeenAt: enrolledAt,
+          ...(dto.softwareVersion?.trim()
+            ? { softwareVersion: dto.softwareVersion.trim().slice(0, 80) }
+            : {}),
+        },
+        select: { id: true, branchId: true, name: true, type: true, enrolledAt: true },
+      });
     });
     return updated;
   }
@@ -228,7 +225,7 @@ export class DevicesService {
     user: AuthenticatedUser,
   ) {
     const device = await this.prisma.device.findUnique({
-      where: { id: deviceId.trim() },
+      where: { hardwareId: deviceId.trim() },
       select: { id: true, branchId: true, isActive: true },
     });
 
