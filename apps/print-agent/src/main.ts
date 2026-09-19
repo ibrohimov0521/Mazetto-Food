@@ -33,7 +33,7 @@ type AgentConfig = {
   timeoutMs: number;
   retries: number;
   healthPort: number;
-  healthHost: string;
+  healthHost: string;`n  protocol: "receipts" | "jobs";`n  agentId: string;
 };
 
 type AgentState = {
@@ -136,6 +136,40 @@ async function pollOnce(agentConfig: AgentConfig, agentState: AgentState): Promi
   }
 }
 
+async function pollJobOnce(agentConfig: AgentConfig, agentState: AgentState): Promise<void> {
+  agentState.mode = "polling";
+  agentState.lastPollAt = new Date().toISOString();
+  const query = agentConfig.branchId ? `?branchId=${encodeURIComponent(agentConfig.branchId)}` : "";
+  const job = await request<PrintJob | null>(agentConfig, `/receipts/print-jobs/claim${query}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agentId: agentConfig.agentId }),
+  });
+  agentState.pendingCount = job ? 1 : 0;
+  if (!job) { agentState.mode = "ready"; return; }
+  try {
+    const receipt = await request<ReceiptDetail>(agentConfig, `/receipts/${encodeURIComponent(job.receiptId)}`);
+    await sendToPrinter(agentConfig, receipt);
+    await request(agentConfig, `/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leaseToken: job.leaseToken }),
+    });
+    agentState.printedCount += 1;
+    agentState.lastPrintedAt = new Date().toISOString();
+    agentState.lastReceipt = receipt.receiptNumber;
+    agentState.lastError = null;
+    agentState.mode = "ready";
+  } catch (error) {
+    const message = errorMessage(error);
+    await request(agentConfig, `/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leaseToken: job.leaseToken, error: message }),
+    }).catch(() => undefined);
+    agentState.failedCount += 1;
+    agentState.lastError = message;
+    agentState.mode = "degraded";
+  }
+}
+
+type PrintJob = { id: string; receiptId: string; leaseToken: string };
 async function printReceipt(agentConfig: AgentConfig, agentState: AgentState, receiptId: string): Promise<void> {
   const receipt = await request<ReceiptDetail>(agentConfig, `/receipts/${encodeURIComponent(receiptId)}`);
   const label = `${receipt.receiptNumber} / ${receipt.order?.displayOrderNumber ?? receipt.order?.orderNumber ?? "order"}`;
@@ -344,7 +378,7 @@ function readConfig(): AgentConfig {
     timeoutMs: readPositiveInt(process.env.MAZETTO_PRINT_TIMEOUT_MS, 10000),
     retries: readNonNegativeInt(process.env.MAZETTO_PRINT_RETRIES, 2),
     healthPort: readPositiveInt(process.env.MAZETTO_PRINT_HEALTH_PORT, 7357),
-    healthHost: process.env.MAZETTO_PRINT_HEALTH_HOST?.trim() || "0.0.0.0",
+    healthHost: process.env.MAZETTO_PRINT_HEALTH_HOST?.trim() || "0.0.0.0",`n    protocol: process.env.MAZETTO_PRINT_PROTOCOL === "jobs" ? "jobs" : "receipts",`n    agentId: process.env.MAZETTO_PRINT_AGENT_ID?.trim() || `agent-${process.env.HOSTNAME || "local"}`,
   };
 }
 
