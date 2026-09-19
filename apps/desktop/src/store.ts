@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
+const CACHE_RETENTION_DAYS = 30;
+const MAX_CACHED_RESPONSES_PER_SCOPE = 5000;
+
 export type CachedResponse = {
   cacheKey: string;
   requestUrl: string;
@@ -119,6 +122,8 @@ export class DesktopStore {
         entry.body,
         entry.cachedAt,
       );
+
+    this.compactCache(entry.authScope);
   }
 
   getCachedResponse(cacheKey: string): CachedResponse | null {
@@ -401,6 +406,33 @@ export class DesktopStore {
   }
   close(): void {
     this.database.close();
+  }
+
+  private compactCache(authScope: string): void {
+    const cutoff = new Date(
+      Date.now() - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    this.database
+      .prepare(
+        `DELETE FROM api_cache WHERE auth_scope = ? AND cached_at < ?`,
+      )
+      .run(authScope, cutoff);
+
+    this.database
+      .prepare(
+        `
+        DELETE FROM api_cache
+        WHERE cache_key IN (
+          SELECT cache_key
+          FROM api_cache
+          WHERE auth_scope = ?
+          ORDER BY cached_at DESC
+          LIMIT -1 OFFSET ?
+        )
+      `,
+      )
+      .run(authScope, MAX_CACHED_RESPONSES_PER_SCOPE);
   }
 
   private count(table: string, where?: string): number {

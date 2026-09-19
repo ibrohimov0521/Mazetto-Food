@@ -43,6 +43,50 @@ test("desktop store persists scoped API snapshots without storing bearer tokens"
   }
 });
 
+test("desktop store removes expired cache entries without touching another scope", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const store = new DesktopStore(path);
+  const oldScope = DesktopStore.authScope("Bearer old-scope");
+  const currentScope = DesktopStore.authScope("Bearer current-scope");
+
+  try {
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey("https://api.example.test/old", oldScope),
+      requestUrl: "https://api.example.test/old",
+      authScope: oldScope,
+      status: 200,
+      contentType: "application/json",
+      body: "{}",
+      cachedAt: "2020-01-01T00:00:00.000Z",
+    });
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey("https://api.example.test/current", currentScope),
+      requestUrl: "https://api.example.test/current",
+      authScope: currentScope,
+      status: 200,
+      contentType: "application/json",
+      body: "{}",
+      cachedAt: new Date().toISOString(),
+    });
+
+    assert.equal(
+      store.getCachedResponse(
+        DesktopStore.cacheKey("https://api.example.test/old", oldScope),
+      ),
+      null,
+    );
+    assert.ok(
+      store.getCachedResponse(
+        DesktopStore.cacheKey("https://api.example.test/current", currentScope),
+      ),
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("rotated JWTs for the same user and branch share one cache scope", () => {
   const payload = Buffer.from(
     JSON.stringify({
