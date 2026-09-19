@@ -37,6 +37,11 @@ export function AdminSidebar({
   onNavigate: () => void;
 }) {
   const pathname = usePathname();
+  const [isDesktopRuntime, setIsDesktopRuntime] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setIsDesktopRuntime(window.navigator.userAgent.includes("MAZETTO-Desktop/"));
+  }, []);
   const groups = useMemo(() => resolveAdminNav(user), [user]);
   const activeGroupId = useMemo(
     () => findAdminNavGroup(pathname)?.id ?? null,
@@ -201,21 +206,23 @@ export function AdminSidebar({
         })}
       </nav>
 
-      <div className="mt-auto shrink-0 border-t border-mz-shell-border p-2">
-        <a
-          aria-label="MAZETTO Desktop ilovasini yuklab olish"
-          className={`flex min-h-10 items-center gap-2.5 rounded-mz-control px-2.5 py-2 text-[13px] font-medium text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg ${isCollapsed ? "justify-center" : ""}`}
-          href={desktopDownloadUrl}
-          rel="noreferrer"
-          target="_blank"
-          title="Desktop ilovasini yuklab olish"
-        >
-          <Icon className="h-[18px] w-[18px] shrink-0" name="download" />
-          <span className={isCollapsed ? "sr-only" : "truncate"}>
-            Desktop ilovasini yuklab olish
-          </span>
-        </a>
-      </div>
+      {isDesktopRuntime === false ? (
+        <div className="mt-auto shrink-0 border-t border-mz-shell-border p-2">
+          <a
+            aria-label="MAZETTO Desktop ilovasini yuklab olish"
+            className={`flex min-h-10 items-center gap-2.5 rounded-mz-control px-2.5 py-2 text-[13px] font-medium text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg ${isCollapsed ? "justify-center" : ""}`}
+            href={desktopDownloadUrl}
+            rel="noreferrer"
+            target="_blank"
+            title="Desktop ilovasini yuklab olish"
+          >
+            <Icon className="h-[18px] w-[18px] shrink-0" name="download" />
+            <span className={isCollapsed ? "sr-only" : "truncate"}>
+              Desktop ilovasini yuklab olish
+            </span>
+          </a>
+        </div>
+      ) : null}
     </aside>
   );
 }
