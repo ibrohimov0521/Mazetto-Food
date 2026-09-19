@@ -137,9 +137,27 @@ async function deployAndWait(app, applicationId, sha, subject) {
    * Yangi deploy yozuvi eskilaridan ID bo'yicha ajratiladi, vaqt bo'yicha
    * EMAS: runner va Dokploy server soatlari bir-biridan farq qilishi mumkin.
    */
-  const before = new Set(
-    (await deploymentsOf(applicationId)).map((item) => item.deploymentId),
-  );
+  const existing = await deploymentsOf(applicationId);
+  const commitTime = Date.parse(git("show", "-s", "--format=%cI", sha));
+  const alreadyDeployed = existing.some((item) => {
+    const deploymentTime = Date.parse(item.createdAt);
+
+    return (
+      item.status === "done" &&
+      item.title === subject &&
+      Number.isFinite(deploymentTime) &&
+      deploymentTime >= commitTime - 5 * 60 * 1000
+    );
+  });
+
+  // Dokploy GitHub webhook'i shu commitni oldinroq chiqarib bo'lgan bo'lishi
+  // mumkin. Uni ikkinchi marta yuborish Dokploy'da yolg'on `error` holatini
+  // qoldiradi, shuning uchun mavjud muvaffaqiyatli deployni qabul qilamiz.
+  if (alreadyDeployed) {
+    return "already-deployed";
+  }
+
+  const before = new Set(existing.map((item) => item.deploymentId));
 
   await dokploy("POST", "application.deploy", {
     applicationId,
