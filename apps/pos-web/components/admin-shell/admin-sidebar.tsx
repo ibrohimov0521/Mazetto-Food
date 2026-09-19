@@ -207,7 +207,7 @@ export function AdminSidebar({
       </nav>
 
       {isDesktopRuntime === false ? (
-        <div className="mt-auto shrink-0 border-t border-mz-shell-border p-2">
+        <div className="mt-auto hidden shrink-0 border-t border-mz-shell-border p-2 lg:block">
           <a
             aria-label="MAZETTO Desktop ilovasini yuklab olish"
             className={`flex min-h-10 items-center gap-2.5 rounded-mz-control px-2.5 py-2 text-[13px] font-medium text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg ${isCollapsed ? "justify-center" : ""}`}
