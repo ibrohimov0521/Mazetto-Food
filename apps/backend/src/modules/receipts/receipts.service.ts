@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -117,6 +118,53 @@ export class ReceiptsService {
     return this.getReceipt(id, user);
   }
 
+  async claimPrintJob(branchId: string | undefined, agentId: string, user: AuthenticatedUser) {
+    const scopedBranchId = resolveBranchScope(user, branchId);
+    if (!scopedBranchId) throw new BadRequestException("Branch is required");
+    const now = new Date();
+    const job = await this.prisma.printJob.findFirst({
+      where: { branchId: scopedBranchId, OR: [{ status: "PENDING", nextAttemptAt: { lte: now } }, { status: "PROCESSING", leaseExpiresAt: { lte: now } }] },
+      orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
+    });
+    if (!job) return null;
+    const leaseToken = randomUUID();
+    const claimed = await this.prisma.printJob.updateMany({
+      where: { id: job.id, status: job.status, ...(job.status === "PENDING" ? { nextAttemptAt: { lte: now } } : { leaseExpiresAt: { lte: now } }) },
+      data: { status: "PROCESSING", leaseToken, leaseExpiresAt: new Date(now.getTime() + 120_000), attemptCount: { increment: 1 }, lastError: null },
+    });
+    if (claimed.count !== 1) return null;
+    await this.prisma.printAttempt.create({ data: { jobId: job.id, agentId, leaseToken } });
+    return this.prisma.printJob.findUnique({ where: { id: job.id }, include: { receipt: true, printer: true } });
+  }
+
+  async completePrintJob(id: string, leaseToken: string, user: AuthenticatedUser) {
+    const job = await this.prisma.printJob.findUnique({ where: { id } });
+    if (!job) throw new NotFoundException("Print job not found");
+    resolveBranchScope(user, job.branchId);
+    if (job.status !== "PROCESSING" || job.leaseToken !== leaseToken) throw new BadRequestException("Print lease is no longer valid");
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.printAttempt.update({ where: { jobId_leaseToken: { jobId: id, leaseToken } }, data: { outcome: "PRINTED", completedAt: now } }),
+      this.prisma.printJob.update({ where: { id }, data: { status: "PRINTED", printedAt: now, leaseToken: null, leaseExpiresAt: null } }),
+      this.prisma.receipt.update({ where: { id: job.receiptId }, data: { printed: true, printedAt: now } }),
+    ]);
+    return this.prisma.printJob.findUnique({ where: { id } });
+  }
+
+  async failPrintJob(id: string, leaseToken: string, error: string, user: AuthenticatedUser) {
+    const job = await this.prisma.printJob.findUnique({ where: { id } });
+    if (!job) throw new NotFoundException("Print job not found");
+    resolveBranchScope(user, job.branchId);
+    if (job.status !== "PROCESSING" || job.leaseToken !== leaseToken) throw new BadRequestException("Print lease is no longer valid");
+    const dead = job.attemptCount >= job.maxAttempts;
+    const now = new Date();
+    const nextAttemptAt = new Date(now.getTime() + Math.min(300_000, 15_000 * 2 ** Math.max(0, job.attemptCount - 1)));
+    await this.prisma.$transaction([
+      this.prisma.printAttempt.update({ where: { jobId_leaseToken: { jobId: id, leaseToken } }, data: { outcome: dead ? "DEAD_LETTER" : "FAILED", error: error.slice(0, 1000), completedAt: now } }),
+      this.prisma.printJob.update({ where: { id }, data: { status: dead ? "DEAD_LETTER" : "PENDING", lastError: error.slice(0, 1000), nextAttemptAt, leaseToken: null, leaseExpiresAt: null } }),
+    ]);
+    return this.prisma.printJob.findUnique({ where: { id } });
+  }
   private buildEscPos(
     receipt: Prisma.ReceiptGetPayload<{
       include: {
