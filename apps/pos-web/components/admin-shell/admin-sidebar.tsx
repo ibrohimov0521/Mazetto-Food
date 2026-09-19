@@ -23,6 +23,8 @@ import type { AuthUser } from "../../lib/auth";
  * har bir route o'zining PermissionGuard'iga ega.
  */
 
+const desktopDownloadUrl = "https://github.com/ibrohimov0521/Mazetto-Food/releases/latest/download/MAZETTO-Desktop-latest-x64.exe";
+
 export function AdminSidebar({
   user,
   isMobileOpen,
@@ -198,6 +200,22 @@ export function AdminSidebar({
           );
         })}
       </nav>
+
+      <div className="mt-auto shrink-0 border-t border-mz-shell-border p-2">
+        <a
+          aria-label="MAZETTO Desktop ilovasini yuklab olish"
+          className={`flex min-h-10 items-center gap-2.5 rounded-mz-control px-2.5 py-2 text-[13px] font-medium text-mz-shell-fg-muted transition hover:bg-mz-shell-raised hover:text-mz-shell-fg ${isCollapsed ? "justify-center" : ""}`}
+          href={desktopDownloadUrl}
+          rel="noreferrer"
+          target="_blank"
+          title="Desktop ilovasini yuklab olish"
+        >
+          <Icon className="h-[18px] w-[18px] shrink-0" name="download" />
+          <span className={isCollapsed ? "sr-only" : "truncate"}>
+            Desktop ilovasini yuklab olish
+          </span>
+        </a>
+      </div>
     </aside>
   );
 }
