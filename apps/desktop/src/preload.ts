@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
     save: (input: { host: string; port: number }) => ipcRenderer.invoke("desktop:printer:save", input),
     test: () => ipcRenderer.invoke("desktop:printer:test"),
   },
+  device: {
+    enroll: (input: { deviceId: string; enrollmentCode: string }) =>
+      ipcRenderer.invoke("desktop:device:enroll", input),
+  },
   updates: {
     getStatus: (): Promise<UpdateStatus> =>
       ipcRenderer.invoke("desktop:updates:status"),
