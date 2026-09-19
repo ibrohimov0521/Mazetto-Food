@@ -19,6 +19,7 @@ export type DesktopGatewayOptions = {
   store: DesktopStore;
   fetchImpl?: typeof fetch;
   probeIntervalMs?: number;
+  onAuthorization?: (authorization: string) => void;
 };
 
 export type DesktopGatewayStatus = {
@@ -42,6 +43,7 @@ export class DesktopGateway {
   private readonly store: DesktopStore;
   private readonly fetchImpl: typeof fetch;
   private readonly probeIntervalMs: number;
+  private readonly onAuthorization: ((authorization: string) => void) | undefined;
   private server: Server | null = null;
   private probeTimer: NodeJS.Timeout | null = null;
   private startedAt = new Date().toISOString();
@@ -58,6 +60,7 @@ export class DesktopGateway {
     this.store = options.store;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.probeIntervalMs = options.probeIntervalMs ?? 15_000;
+    this.onAuthorization = options.onAuthorization;
   }
 
   async start(): Promise<number> {
