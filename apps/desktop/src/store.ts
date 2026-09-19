@@ -392,6 +392,13 @@ export class DesktopStore {
     return created;
   }
 
+  getSetting(key: string): string | null {
+    return this.getMeta(`setting:${key}`);
+  }
+
+  setSetting(key: string, value: string): void {
+    this.database.prepare(`INSERT INTO desktop_meta (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(`setting:${key}`, value, new Date().toISOString());
+  }
   close(): void {
     this.database.close();
   }
