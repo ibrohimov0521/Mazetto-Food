@@ -3,8 +3,15 @@
 import { useEffect, useState } from "react";
 import { Button } from "../admin-ui/button";
 
+type UpdateStatus = {
+  state: "disabled" | "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error";
+  version: string | null;
+  percent: number | null;
+  message: string | null;
+  checkedAt: string | null;
+};
 export function DesktopUpdateControls() {
-  const [status, setStatus] = useState<DesktopUpdateStatus | null>(null);
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
