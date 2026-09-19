@@ -147,7 +147,12 @@ async function pollOnce(agentConfig: AgentConfig, agentState: AgentState): Promi
 async function pollJobOnce(agentConfig: AgentConfig, agentState: AgentState): Promise<void> {
   agentState.mode = "polling";
   agentState.lastPollAt = new Date().toISOString();
-  const query = agentConfig.branchId ? `?branchId=${encodeURIComponent(agentConfig.branchId)}` : "";
+  if (agentConfig.dryRun) {
+    agentState.pendingCount = 0;
+    agentState.mode = "ready";
+    console.log("Durable print queue is not claimed in dry-run mode");
+    return;
+  }  const query = agentConfig.branchId ? `?branchId=${encodeURIComponent(agentConfig.branchId)}` : "";
   const job = await request<PrintJob | null>(agentConfig, `/receipts/print-jobs/claim${query}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
