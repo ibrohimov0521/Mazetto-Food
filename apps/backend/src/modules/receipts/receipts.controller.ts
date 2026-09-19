@@ -31,7 +31,7 @@ export class ReceiptsController {
   @Post("print-jobs/claim")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
   claimPrintJob(@Query("branchId") branchId: string | undefined, @Body("agentId") agentId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.receiptsService.claimPrintJob(branchId, agentId, agentId ? user : user);
+    return this.receiptsService.claimPrintJob(branchId, agentId, user);
   }
 
   @Post("print-jobs/:id/complete")
