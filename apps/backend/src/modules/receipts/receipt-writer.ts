@@ -104,9 +104,12 @@ export async function writeReceiptRow(
     },
   });
 
-  await tx.printJob.create({
-    data: { receiptId: receipt.id, branchId: order.branchId, payload: receipt.content ?? {} },
-  });
+  // Cutover stays explicit: the legacy receipt poller and durable agent must never print one sale twice.
+  if (process.env.MAZETTO_DURABLE_PRINT_JOBS === "true") {
+    await tx.printJob.create({
+      data: { receiptId: receipt.id, branchId: order.branchId, payload: receipt.content ?? {} },
+    });
+  }
 }
 
 /*
