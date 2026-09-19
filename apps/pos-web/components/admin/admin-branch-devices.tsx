@@ -118,6 +118,26 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
   const branch = resource.data?.[0] ?? null;
   const devices = resource.data?.[1] ?? [];
 
+  async function rotateCode(device: Device): Promise<void> {
+    try {
+      const result = await apiFetch<{ deviceId: string; enrollmentCode: string; expiresAt: string }>(`/devices/${device.id}/enrollment-code`, { method: "POST" });
+      setEnrollmentInfo({ deviceId: result.deviceId, code: result.enrollmentCode, expiresAt: result.expiresAt });
+      resource.reload();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Ulash kodi olinmadi.", "danger");
+    }
+  }
+
+  async function deleteDevice(device: Device): Promise<void> {
+    if (!window.confirm(`${device.name} qurilmasini o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch(`/devices/${device.id}`, { method: "DELETE" });
+      showToast("Qurilma o'chirildi.", "success");
+      resource.reload();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Qurilmani o'chirib bo'lmadi.", "danger");
+    }
+  }
   async function save(): Promise<void> {
     if (!editor) return;
     const name = editor.name.trim();
@@ -278,14 +298,11 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
           {...(canManage
             ? {
                 rowActions: (device: Device) => (
-                  <RowAction
-                    icon="pencil"
-                    label={`${device.name} - tahrirlash`}
-                    onClick={() => {
-                      setNameError("");
-                      setEditor(draftFrom(device));
-                    }}
-                  />
+                  <>
+                    <RowAction icon="pencil" label={`${device.name} - tahrirlash`} onClick={() => { setNameError(""); setEditor(draftFrom(device)); }} />
+                    <RowAction icon="shield" label={`${device.name} uchun yangi ulash kodi`} onClick={() => void rotateCode(device)} />
+                    <RowAction icon="trash" label={`${device.name} qurilmasini o'chirish`} onClick={() => void deleteDevice(device)} />
+                  </>
                 ),
               }
             : {})}
