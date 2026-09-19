@@ -48,6 +48,10 @@ export function DesktopStatusBadge() {
   const [outbox, setOutbox] = useState<OutboxPayload | null>(null);
   const [outboxError, setOutboxError] = useState("");
   const [busyCommandId, setBusyCommandId] = useState<string | null>(null);
+  const [printerHost, setPrinterHost] = useState("");
+  const [printerPort, setPrinterPort] = useState("9100");
+  const [printerMessage, setPrinterMessage] = useState("");
+  const [printerBusy, setPrinterBusy] = useState(false);
 
   useEffect(() => {
     const desktop = window.navigator.userAgent.includes("MAZETTO-Desktop/");
@@ -86,6 +90,10 @@ export function DesktopStatusBadge() {
   }, []);
 
   useEffect(() => {
+    if (!isDesktop || !window.mazettoDesktop?.printer) return;
+    void window.mazettoDesktop.printer.status().then((settings) => { setPrinterHost(settings.host ?? ""); setPrinterPort(String(settings.port)); }).catch(() => undefined);
+  }, [isDesktop]);
+  useEffect(() => {
     const sendHeartbeat = () => {
       const version =
         window.navigator.userAgent.match(/MAZETTO-Desktop\/([^\s]+)/)?.[1];
@@ -100,6 +108,17 @@ export function DesktopStatusBadge() {
     return () => window.clearInterval(timer);
   }, []);
 
+  async function savePrinter(test = false): Promise<void> {
+    if (!window.mazettoDesktop?.printer) return;
+    setPrinterBusy(true); setPrinterMessage("");
+    try {
+      const settings = await window.mazettoDesktop.printer.save({ host: printerHost, port: Number(printerPort) });
+      setPrinterHost(settings.host ?? ""); setPrinterPort(String(settings.port));
+      if (test) await window.mazettoDesktop.printer.test();
+      setPrinterMessage(test ? "Printer bilan ulanish tasdiqlandi." : "Printer sozlamasi saqlandi.");
+    } catch (error) { setPrinterMessage(error instanceof Error ? error.message : "Printer sozlanmadi."); }
+    finally { setPrinterBusy(false); }
+  }
   if (!isDesktop) {
     return null;
   }
@@ -206,6 +225,11 @@ export function DesktopStatusBadge() {
             </div>
           ) : null}
 
+          <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-3">
+            <div className="mb-2 flex items-center justify-between"><p className="text-sm font-semibold text-mz-text">Chek printeri</p><Badge tone={printerHost ? "success" : "neutral"} withDot>{printerHost ? "Sozlangan" : "Sozlanmagan"}</Badge></div>
+            <div className="grid gap-2 sm:grid-cols-[1fr_100px_auto_auto]"><input aria-label="Printer IP manzili" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" value={printerHost} /><input aria-label="Printer porti" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" inputMode="numeric" onChange={(event) => setPrinterPort(event.target.value)} value={printerPort} /><Button isLoading={printerBusy} onClick={() => void savePrinter()} size="sm" variant="ghost">Saqlash</Button><Button disabled={!printerHost} isLoading={printerBusy} onClick={() => void savePrinter(true)} size="sm">Sinash</Button></div>
+            {printerMessage ? <p className="mt-2 text-[12px] text-mz-text-muted">{printerMessage}</p> : null}
+          </div>
           <div className="grid grid-cols-4 gap-2">
             <QueueStat label="Kutmoqda" value={status?.pendingCommands ?? 0} />
             <QueueStat label="Yuborilyapti" value={status?.sendingCommands ?? 0} />
