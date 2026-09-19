@@ -14,8 +14,8 @@ export type DesktopPrintWorkerOptions = {
 /** Desktop owns a single outbound printer worker; it never exposes the printer to the internet. */
 export class DesktopPrintWorker {
   private readonly apiUrl: string;
-  private readonly printerHost: string | null;
-  private readonly printerPort: number;
+  private printerHost: string | null;
+  private printerPort: number;
   private readonly agentId: string;
   private readonly fetchImpl: typeof fetch;
   private authorization: string | null = null;
