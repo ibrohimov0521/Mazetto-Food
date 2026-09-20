@@ -11,6 +11,13 @@ export function hasPermission(
   );
 }
 
+export function hasAnyPermission(
+  user: AuthenticatedUser | undefined,
+  permissions: readonly string[],
+): boolean {
+  return permissions.some((permission) => hasPermission(user, permission));
+}
+
 export function hasAllPermissions(
   user: AuthenticatedUser | undefined,
   permissions: readonly string[],
