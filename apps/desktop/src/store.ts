@@ -680,7 +680,8 @@ function summarizeOutboxPayload(source: string): OutboxQueueItem["payload"] {
     if (typeof parsed.method === "string") payload.method = parsed.method;
     if (typeof parsed.pathname === "string") payload.pathname = parsed.pathname;
     if (typeof parsed.targetUrl === "string") payload.targetUrl = parsed.targetUrl;
-    if (typeof parsed.queuedAt === "string") payload.queuedAt = parsed.queuedAt;    if (typeof parsed.localAggregateId === "string") {
+    if (typeof parsed.queuedAt === "string") payload.queuedAt = parsed.queuedAt;
+    if (typeof parsed.localAggregateId === "string") {
       payload.localAggregateId = parsed.localAggregateId;
     }
     if (Array.isArray(parsed.unresolvedDependencies)) {
