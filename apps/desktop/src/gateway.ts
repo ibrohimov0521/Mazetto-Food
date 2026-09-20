@@ -795,7 +795,7 @@ function applyOptimisticProjection(
       command.commandType === "pos.order.create" ||
       command.commandType === "table.order.create"
     ) {
-      const order = optimisticOrder(command, commandBody);
+      const order = optimisticOrder(command, commandBody ?? {});
       const orderId = command.aggregateId ?? command.id;
       const orderPath = `/api/v1/orders/${orderId}`;
       if (pathname === "/api/v1/orders") {
