@@ -205,22 +205,42 @@ export class DesktopGateway {
         });
       }
 
+      const optimistic =
+        method === "GET" && upstream.ok && contentType.includes("application/json")
+          ? applyOptimisticProjection(
+              responseBody,
+              targetUrl,
+              this.store.listActiveMutations(authScope),
+            )
+          : null;
       response.writeHead(upstream.status, {
         "Content-Type": contentType,
-        "X-Mazetto-Desktop": "online",
+        "X-Mazetto-Desktop": optimistic ? "online-optimistic" : "online",
+        ...(optimistic
+          ? { "X-Mazetto-Optimistic-Commands": optimistic.commandIds.join(",") }
+          : {}),
       });
-      response.end(responseBody);
+      response.end(optimistic?.body ?? responseBody);
     } catch (error) {
       this.markOffline(error);
       const cached =
         method === "GET" ? this.store.getCachedResponse(cacheKey) : null;
       if (cached) {
+        const optimistic =
+          applyOptimisticProjection(
+            cached.body,
+            targetUrl,
+            this.store.listActiveMutations(authScope),
+          );
         response.writeHead(cached.status, {
           "Content-Type": cached.contentType,
-          "X-Mazetto-Desktop": "offline-cache",
+          "X-Mazetto-Desktop": optimistic ? "offline-optimistic" : "offline-cache",
           "X-Mazetto-Cached-At": cached.cachedAt,
+          ...(optimistic
+            ? { "X-Mazetto-Optimistic-Commands": optimistic.commandIds.join(",") }
+            : {}),
         });
-        response.end(cached.body);
+        response.end(optimistic?.body ?? cached.body);
         return;
       }
 
@@ -749,6 +769,144 @@ function findServerId(value: unknown): string | null {
     if (found) return found;
   }
   return null;
+}
+function applyOptimisticProjection(
+  source: string,
+  targetUrl: string,
+  commands: PendingOutboxCommand[],
+): { body: string; commandIds: string[] } | null {
+  if (!commands.length) return null;
+
+  let projected: unknown;
+  try {
+    projected = JSON.parse(source);
+  } catch {
+    return null;
+  }
+
+  const pathname = new URL(targetUrl).pathname;
+  const applied: string[] = [];
+  for (const command of commands) {
+    const payload = parseJsonObject(command.payloadJson);
+    const commandPath = stringField(payload, "pathname") ?? "";
+    const commandBody = parseJsonObject(stringField(payload, "body") ?? "");
+
+    if (
+      command.commandType === "pos.order.create" ||
+      command.commandType === "table.order.create"
+    ) {
+      const order = optimisticOrder(command, commandBody);
+      const orderId = command.aggregateId ?? command.id;
+      const orderPath = `/api/v1/orders/${orderId}`;
+      if (pathname === "/api/v1/orders") {
+        if (prependProjection(projected, order)) applied.push(command.id);
+      } else if (pathname === orderPath) {
+        projected = order;
+        applied.push(command.id);
+      } else {
+        const tableId = commandPath.match(/^\/api\/v1\/tables\/([^/]+)\/orders$/)?.[1];
+        if (tableId && pathname === "/api/v1/tables" && patchTableProjection(projected, tableId, order)) {
+          applied.push(command.id);
+        }
+      }
+      continue;
+    }
+
+    const statusMatch = commandPath.match(/^\/api\/v1\/orders\/([^/]+)\/status$/);
+    const nextStatus = stringField(commandBody, "status");
+    if (statusMatch?.[1] && nextStatus && pathname === "/api/v1/orders" && patchOrderProjection(projected, statusMatch[1], { status: nextStatus, pendingSync: true })) {
+      applied.push(command.id);
+    }
+  }
+
+  return applied.length ? { body: JSON.stringify(projected), commandIds: applied } : null;
+}
+
+function optimisticOrder(
+  command: PendingOutboxCommand,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const id = command.aggregateId ?? command.id;
+  const total = paymentTotal(body);
+  const tableId = stringField(body, "tableId") ?? undefined;
+  return {
+    id,
+    orderNumber: `OFF-${command.id.slice(0, 8).toUpperCase()}`,
+    displayOrderNumber: `OFF-${command.id.slice(0, 8).toUpperCase()}`,
+    status: "NEW",
+    orderState: "PLACED",
+    paymentStatus: "PENDING",
+    total: String(total),
+    source: command.commandType === "table.order.create" ? "WAITER" : "POS",
+    ...(tableId ? { tableId } : {}),
+    createdAt: new Date().toISOString(),
+    pendingSync: true,
+    offlineQueued: true,
+    commandId: command.id,
+  };
+}
+
+function prependProjection(projected: unknown, item: Record<string, unknown>): boolean {
+  if (Array.isArray(projected)) {
+    if (projected.some((value) => isRecord(value) && value.id === item.id)) return false;
+    projected.unshift(item);
+    return true;
+  }
+  if (!isRecord(projected)) return false;
+  for (const key of ["data", "orders", "items"]) {
+    const collection = projected[key];
+    if (Array.isArray(collection)) {
+      if (collection.some((value) => isRecord(value) && value.id === item.id)) return false;
+      collection.unshift(item);
+      return true;
+    }
+  }
+  return false;
+}
+
+function patchOrderProjection(
+  projected: unknown,
+  orderId: string,
+  patch: Record<string, unknown>,
+): boolean {
+  const order = findRecordById(projected, orderId);
+  if (!order) return false;
+  Object.assign(order, patch);
+  return true;
+}
+
+function patchTableProjection(projected: unknown, tableId: string, order: Record<string, unknown>): boolean {
+  const table = findRecordById(projected, tableId);
+  if (!table) return false;
+  const orders = Array.isArray(table.orders) ? table.orders : [];
+  if (!orders.some((value) => isRecord(value) && value.id === order.id)) {
+    orders.unshift(order);
+  }
+  table.orders = orders;
+  table.status = "OCCUPIED";
+  table.pendingSync = true;
+  return true;
+}
+
+function findRecordById(value: unknown, id: string): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const found = findRecordById(child, id);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  if (value.id === id) return value;
+  for (const child of Object.values(value)) {
+    const found = findRecordById(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function conflictResourcePath(pathname: string): string | null {
   const patterns = [
