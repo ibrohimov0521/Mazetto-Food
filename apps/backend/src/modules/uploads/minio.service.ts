@@ -128,6 +128,8 @@ export class MinioService implements OnModuleInit {
     objectName: string,
   ): Promise<void> {
     let lastProblem = "media servisi topilmadi";
+    const payload = new Uint8Array(file.size);
+    payload.set(file.buffer);
 
     for (const baseUrl of this.mediaUploadUrls) {
       try {
@@ -137,7 +139,7 @@ export class MinioService implements OnModuleInit {
             "Content-Type": file.mimetype,
             "Content-Length": String(file.size),
           },
-          body: file.buffer,
+          body: payload,
           signal: AbortSignal.timeout(15_000),
         });
 
