@@ -35,7 +35,6 @@ try {
   containerId = run("docker", [
     "run",
     "-d",
-    "--rm",
     "-p",
     "18080:80",
     "-v",
@@ -44,6 +43,18 @@ try {
   ]).trim();
 
   await new Promise((resolve) => setTimeout(resolve, 2000));
+  const running = run("docker", [
+    "inspect",
+    "--format",
+    "{{.State.Running}}",
+    containerId,
+  ]).trim();
+
+  if (running !== "true") {
+    const logs = run("docker", ["logs", containerId]);
+    throw new Error("Media container ishga tushmadi:
+" + logs);
+  }
 
   const uploadUrl =
     "http://127.0.0.1:18080/__upload/products/" + uploadName;
@@ -94,7 +105,7 @@ try {
   console.log("Mazetto media upload smoke passed");
 } finally {
   if (containerId) {
-    spawnSync("docker", ["stop", containerId], {
+    spawnSync("docker", ["rm", "-f", containerId], {
       cwd: repoRoot,
       stdio: "ignore",
     });
