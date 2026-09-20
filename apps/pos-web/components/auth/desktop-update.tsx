@@ -7,21 +7,18 @@ type UpdateStatus = NonNullable<Window["mazettoDesktop"]>["updates"] extends inf
   ? T extends { getStatus: () => Promise<infer S> } ? S : never : never;
 
 export function DesktopUpdateBadge() {
-  const [isDesktop, setIsDesktop] = useState(false);
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const bridge = window.mazettoDesktop?.updates;
-    const desktop = window.navigator.userAgent.includes("MAZETTO-Desktop/");
-    setIsDesktop(desktop);
-    if (!desktop || !bridge) return;
+    if (!bridge) return;
     void bridge.getStatus().then(setStatus).catch(() => undefined);
     return bridge.onStatus(setStatus);
   }, []);
 
   const bridge = typeof window !== "undefined" ? window.mazettoDesktop?.updates : undefined;
-  if (!isDesktop || !bridge) return null;
+  if (!bridge) return null;
   const updateBridge = bridge;
 
   const currentState = status?.state ?? "idle";
