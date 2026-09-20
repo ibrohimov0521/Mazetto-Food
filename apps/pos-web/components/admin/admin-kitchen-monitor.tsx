@@ -10,6 +10,7 @@ import {
   type OrderType,
 } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
+import { useStaffRealtime } from "../../lib/use-staff-realtime";
 import type { BadgeTone } from "../admin-ui/badge";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
@@ -140,7 +141,7 @@ const clockFormatter = new Intl.DateTimeFormat("uz-UZ", {
 });
 
 export function AdminKitchenMonitor() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { showToast } = useToast();
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [error, setError] = useState("");
@@ -210,6 +211,11 @@ export function AdminKitchenMonitor() {
       }
     }
   }, []);
+
+  useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    onEvent: () => void load({ silent: true }),
+  });
 
   useEffect(() => {
     void load();

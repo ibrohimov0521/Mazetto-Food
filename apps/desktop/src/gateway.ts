@@ -161,6 +161,7 @@ export class DesktopGateway {
 
     const method = (request.method ?? "GET").toUpperCase();
     const targetUrl = `${this.upstreamApiUrl}${url.pathname.slice("/api/v1".length)}${url.search}`;
+    const isRealtimeCatchUp = url.pathname === "/api/v1/realtime/events";
     const authorization = headerValue(request.headers.authorization);
     const authScope = DesktopStore.authScope(authorization);
     if (authorization) {
@@ -191,6 +192,7 @@ export class DesktopGateway {
 
       if (
         method === "GET" &&
+        !isRealtimeCatchUp &&
         upstream.ok &&
         contentType.includes("application/json")
       ) {
@@ -224,7 +226,9 @@ export class DesktopGateway {
     } catch (error) {
       this.markOffline(error);
       const cached =
-        method === "GET" ? this.store.getCachedResponse(cacheKey) : null;
+        method === "GET" && !isRealtimeCatchUp
+          ? this.store.getCachedResponse(cacheKey)
+          : null;
       if (cached) {
         const optimistic =
           applyOptimisticProjection(
