@@ -248,7 +248,7 @@ export function CourierOrdersPage() {
     }
   }, []);
 
-  useStaffRealtime({
+  const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,
     cursorScope: `${user?.id ?? "staff"}:courier`,
     onEvent: () => void load(),
@@ -470,6 +470,7 @@ export function CourierOrdersPage() {
           </button>
           <StaffSync
             updatedAt={updatedAt}
+            connectionState={realtimeState}
             error={!!error}
             refreshing={refreshing || !!busyOrderId}
             onRefresh={() => void load()}
