@@ -452,6 +452,84 @@ test("gateway can retry a blocked outbox command", async () => {
   }
 });
 
+test("gateway compares a conflicted command with the current server resource", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-compare", "branch-1");
+  const authScope = DesktopStore.authScope(authorization);
+  const command = store.enqueueMutation({
+    idempotencyKey: "compare-key",
+    commandType: "kitchen.action",
+    aggregateType: "kitchen",
+    aggregateId: "ticket-1",
+    baseVersion: 2,
+    actorId: "cashier-compare",
+    branchId: "branch-1",
+    authScope,
+    payload: {
+      commandType: "kitchen.action",
+      method: "POST",
+      pathname: "/api/v1/kitchen/orders/ticket-1/ready",
+      targetUrl: "https://api.example.test/api/v1/kitchen/orders/ticket-1/ready",
+      headers: { "idempotency-key": "compare-key" },
+      body: JSON.stringify({ expectedVersion: 2, status: "READY" }),
+    },
+  });
+  store.markMutationConflict(command.id, "CONFLICT: server version 3");
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      assert.equal(init?.method, "GET");
+      assert.equal(url, "https://api.example.test/api/v1/kitchen/orders/ticket-1");
+      return jsonResponse({
+        success: true,
+        data: { id: "ticket-1", version: 3, status: "COOKING" },
+      });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const response = await fetch(
+      `http://127.0.0.1:${gatewayPort}/desktop/outbox/${command.id}/compare`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as {
+      data: {
+        command: { payload: { body: unknown } };
+        comparison: {
+          resourcePath: string;
+          expectedVersion: number | null;
+          server: { status: number; body: unknown };
+        };
+      };
+    };
+    assert.equal(payload.data.comparison.resourcePath, "/api/v1/kitchen/orders/ticket-1");
+    assert.equal(payload.data.comparison.expectedVersion, 2);
+    assert.equal(payload.data.comparison.server.status, 200);
+    assert.deepEqual(payload.data.command.payload.body, {
+      expectedVersion: 2,
+      status: "READY",
+    });
+    assert.deepEqual(payload.data.comparison.server.body, {
+      success: true,
+      data: { id: "ticket-1", version: 3, status: "COOKING" },
+    });
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function desktopJwt(userId: string, branchId: string): string {
   const payload = Buffer.from(
     JSON.stringify({ id: userId, branchId, isGlobalScope: false }),
