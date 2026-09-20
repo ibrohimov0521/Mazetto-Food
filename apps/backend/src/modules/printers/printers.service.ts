@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -31,7 +32,7 @@ export class PrintersService {
         name: dto.name,
         type: dto.type,
         status: dto.status ?? "ONLINE",
-        metadata: { protocol: "ESC_POS", ...metadata, printRoles },
+        metadata: { protocol: "ESC_POS", ...metadata, printRoles } as Prisma.InputJsonObject,
       },
       include: { branch: true },
     });
