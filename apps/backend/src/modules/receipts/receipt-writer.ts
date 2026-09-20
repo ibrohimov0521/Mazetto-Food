@@ -14,7 +14,7 @@ export type OrderForReceipt = Prisma.OrderGetPayload<{
 
 export type ReceiptPrintRoute = "RECEIPT" | "CANCELLATION";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
-const durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
+// Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.\nconst durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
 
 function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -118,7 +118,7 @@ export async function ensureOrderReceipt(tx: TransactionClient, orderId: string)
     where: { id: orderId },
     include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
   });
-  if (!order || order.receipts.length > 0) return;
+  if (!order || (order.receipts ?? []).length > 0) return;
   await writeReceiptRow(tx, order);
 }
 
@@ -132,7 +132,7 @@ export async function ensureCancellationReceipt(
     include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
   });
   if (!order) return;
-  const alreadyCreated = order.receipts.some((receipt) => receiptPrintRoute(receipt.content) === "CANCELLATION");
+  const alreadyCreated = (order.receipts ?? []).some((receipt) => receiptPrintRoute(receipt.content) === "CANCELLATION");
   if (alreadyCreated) return;
   await writeReceiptRow(tx, order, {
     documentType: "CANCELLATION",
