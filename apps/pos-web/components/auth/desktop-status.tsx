@@ -66,7 +66,9 @@ export function DesktopStatusBadge() {
   const [outboxOpen, setOutboxOpen] = useState(false);
   const [outbox, setOutbox] = useState<OutboxPayload | null>(null);
   const [outboxError, setOutboxError] = useState("");
-  const [busyCommandId, setBusyCommandId] = useState<string | null>(null);\n  const [comparison, setComparison] = useState<{ commandId: string; data: ConflictComparison } | null>(null);\n  const [comparisonBusyId, setComparisonBusyId] = useState<string | null>(null);
+  const [busyCommandId, setBusyCommandId] = useState<string | null>(null);
+  const [comparison, setComparison] = useState<{ commandId: string; data: ConflictComparison } | null>(null);
+  const [comparisonBusyId, setComparisonBusyId] = useState<string | null>(null);
   const [printerHost, setPrinterHost] = useState("");
   const [printerPort, setPrinterPort] = useState("9100");
   const [printerMessage, setPrinterMessage] = useState("");
