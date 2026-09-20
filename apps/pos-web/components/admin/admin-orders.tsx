@@ -1064,7 +1064,7 @@ function SelectRowCheckbox({
 }
 
 export function AdminOrderDetail({ orderId }: { orderId: string }) {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { showToast } = useToast();
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [events, setEvents] = useState<OrderEventEntry[]>([]);
@@ -1073,6 +1073,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   );
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [realtimeUpdatedAt, setRealtimeUpdatedAt] = useState<Date | null>(null);
   const [statusReason, setStatusReason] = useState("");
   const [statusReasonError, setStatusReasonError] = useState("");
   const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null);
@@ -1106,6 +1107,16 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
       setIsLoading(false);
     }
   }, [orderId]);
+
+  const realtimeState = useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    branchId: order?.branch?.id,
+    cursorScope: (user?.id ?? "staff") + ":order-detail:" + orderId,
+    onEvent: () => {
+      setRealtimeUpdatedAt(new Date());
+      void load();
+    },
+  });
 
   useEffect(() => {
     void load();
@@ -1259,7 +1270,15 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
-      <div className="grid gap-5">
+      <div className="flex justify-end">
+        <StaffSync
+          updatedAt={realtimeUpdatedAt}
+          connectionState={realtimeState}
+          error={Boolean(error)}
+          refreshing={isLoading}
+          onRefresh={() => void load()}
+        />
+      </div>      <div className="grid gap-5">
         <Card>
           <CardHeader
             description={`${orderSourceLabels[order.source]} · ${orderTypeLabels[order.type]}`}
