@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
-import { useApiResource } from "../../lib/use-api-resource";\nimport { useStaffRealtime } from "../../lib/use-staff-realtime";
+import { useApiResource } from "../../lib/use-api-resource";
+import { useStaffRealtime } from "../../lib/use-staff-realtime";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission } from "../../lib/auth";
 import {
