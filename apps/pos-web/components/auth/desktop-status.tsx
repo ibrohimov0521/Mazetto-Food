@@ -102,23 +102,7 @@ export function DesktopStatusBadge() {
 
     void refresh();
     const timer = window.setInterval(() => void refresh(), 5_000);
-    async function compareCommand(command: OutboxCommand): Promise<void> {
-    setComparisonBusyId(command.id);
-    setOutboxError("");
-    try {
-      const data = await desktopFetch<ConflictComparison>(
-        `/desktop/outbox/${encodeURIComponent(command.id)}/compare`,
-      );
-      setComparison({ commandId: command.id, data });
-    } catch (caught) {
-      setOutboxError(
-        caught instanceof Error ? caught.message : "Taqqoslashni olib bo'lmadi.",
-      );
-    } finally {
-      setComparisonBusyId(null);
-    }
-  }
-
+  
   return () => {
       active = false;
       window.clearInterval(timer);
@@ -141,23 +125,7 @@ export function DesktopStatusBadge() {
 
     sendHeartbeat();
     const timer = window.setInterval(sendHeartbeat, 30_000);
-    async function compareCommand(command: OutboxCommand): Promise<void> {
-    setComparisonBusyId(command.id);
-    setOutboxError("");
-    try {
-      const data = await desktopFetch<ConflictComparison>(
-        `/desktop/outbox/${encodeURIComponent(command.id)}/compare`,
-      );
-      setComparison({ commandId: command.id, data });
-    } catch (caught) {
-      setOutboxError(
-        caught instanceof Error ? caught.message : "Taqqoslashni olib bo'lmadi.",
-      );
-    } finally {
-      setComparisonBusyId(null);
-    }
-  }
-
+  
   return () => window.clearInterval(timer);
   }, []);
 
@@ -223,6 +191,7 @@ export function DesktopStatusBadge() {
     }
   }
 
+
   async function compareCommand(command: OutboxCommand): Promise<void> {
     setComparisonBusyId(command.id);
     setOutboxError("");
@@ -239,7 +208,6 @@ export function DesktopStatusBadge() {
       setComparisonBusyId(null);
     }
   }
-
   return (
     <>
       <button
@@ -459,22 +427,6 @@ export function DesktopStatusBadge() {
 }
 
 function QueueStat({ label, value }: { label: string; value: number }) {
-  async function compareCommand(command: OutboxCommand): Promise<void> {
-    setComparisonBusyId(command.id);
-    setOutboxError("");
-    try {
-      const data = await desktopFetch<ConflictComparison>(
-        `/desktop/outbox/${encodeURIComponent(command.id)}/compare`,
-      );
-      setComparison({ commandId: command.id, data });
-    } catch (caught) {
-      setOutboxError(
-        caught instanceof Error ? caught.message : "Taqqoslashni olib bo'lmadi.",
-      );
-    } finally {
-      setComparisonBusyId(null);
-    }
-  }
 
   return (
     <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-2">
