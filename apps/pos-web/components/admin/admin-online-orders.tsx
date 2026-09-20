@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
-import { useApiResource } from "../../lib/use-api-resource";
+import { useApiResource } from "../../lib/use-api-resource";\nimport { useStaffRealtime } from "../../lib/use-staff-realtime";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission } from "../../lib/auth";
 import {
@@ -108,7 +108,7 @@ function courierName(courier: Courier): string {
 }
 
 export function AdminOnlineOrdersPage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { showToast } = useToast();
   const showBranchFilter = canSwitchBranch(user);
   const canChangeStatus = hasPermission(user, "ORDER_SEND_KITCHEN");
@@ -160,6 +160,13 @@ export function AdminOnlineOrdersPage() {
     "Online buyurtmalarni yuklab bo'lmadi.",
   );
   const orders = data ?? [];
+
+  useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    branchId: branchId || undefined,
+    cursorScope: `${user?.id ?? "staff"}:online:${branchId || "all"}`,
+    onEvent: () => load(),
+  });
 
   /*
    * Kuryerlar ro'yxati ALOHIDA o'qiladi, buyurtmalar bilan birga emas:
