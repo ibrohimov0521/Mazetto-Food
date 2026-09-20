@@ -22,6 +22,7 @@ export function DesktopUpdateBadge() {
 
   const bridge = typeof window !== "undefined" ? window.mazettoDesktop?.updates : undefined;
   if (!isDesktop || !bridge) return null;
+  const updateBridge = bridge;
 
   const currentState = status?.state ?? "idle";
   const isReady = currentState === "downloaded";
@@ -34,9 +35,9 @@ export function DesktopUpdateBadge() {
     if (busy || isDownloading || isChecking) return;
     setBusy(true);
     try {
-      if (isReady) setStatus(await bridge.install());
-      else if (currentState === "available") setStatus(await bridge.download());
-      else setStatus(await bridge.check());
+      if (isReady) setStatus(await updateBridge.install());
+      else if (currentState === "available") setStatus(await updateBridge.download());
+      else setStatus(await updateBridge.check());
     } finally { setBusy(false); }
   }
 
