@@ -23,6 +23,7 @@ import {
   type PaymentStatus,
 } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
+import { StaffSync } from "../staff/staff-shell";
 import { Badge } from "../admin-ui/badge";
 import { Button, ButtonLink } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
@@ -405,11 +406,15 @@ export function AdminOrdersPage() {
   // pastdagi selection-effect'ni har renderda qayta ishga tushirardi.
   const orders = useMemo(() => data ?? [], [data]);
 
-  useStaffRealtime({
+  const [realtimeUpdatedAt, setRealtimeUpdatedAt] = useState<Date | null>(null);
+  const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,
     branchId: branchId || undefined,
     cursorScope: `${user?.id ?? "staff"}:${branchId || "all"}`,
-    onEvent: () => load(),
+    onEvent: () => {
+      setRealtimeUpdatedAt(new Date());
+      void load();
+    },
   });
   /*
    * Yuklash xatosi va AMAL xatosi alohida: ommaviy amal yiqilganda
@@ -639,6 +644,15 @@ export function AdminOrdersPage() {
 
   return (
     <div className="grid gap-5">
+      <div className="flex justify-end">
+        <StaffSync
+          updatedAt={realtimeUpdatedAt}
+          connectionState={realtimeState}
+          error={Boolean(loadError)}
+          refreshing={isLoading}
+          onRefresh={() => void load()}
+        />
+      </div>
       {error ? (
         <ErrorState message={error} onRetry={() => void load()} />
       ) : null}
