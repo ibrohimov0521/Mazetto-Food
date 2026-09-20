@@ -460,7 +460,9 @@ export class DesktopStore {
       return serverId;
     });
     return { value, unresolved: [...unresolved] };
-  }  close(): void {
+  }
+
+  close(): void {
     this.database.close();
   }
 
