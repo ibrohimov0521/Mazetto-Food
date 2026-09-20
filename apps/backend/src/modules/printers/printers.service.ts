@@ -47,10 +47,10 @@ export class PrintersService {
         ...data,
         ...(metadata
           ? {
-              metadata: {
+              metadata: ({tadata: {
                 ...(typeof existing.metadata === "object" && existing.metadata && !Array.isArray(existing.metadata) ? existing.metadata : {}),
                 ...metadata,
-              },
+              } as Prisma.InputJsonObject),
             }
           : {}),
       },
