@@ -51,8 +51,21 @@ try {
   ]).trim();
 
   if (running !== "true") {
-    const logs = run("docker", ["logs", containerId]);
-    throw new Error("Media container ishga tushmadi: " + logs);
+    const logResult = spawnSync("docker", ["logs", containerId], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    const state = run("docker", [
+      "inspect",
+      "--format",
+      "{{json .State}}",
+      containerId,
+    ]);
+    const logs =
+      String(logResult.stdout ?? "") + String(logResult.stderr ?? "");
+    throw new Error(
+      "Media container ishga tushmadi. State: " + state + " Logs: " + logs,
+    );
   }
 
   const uploadUrl =
