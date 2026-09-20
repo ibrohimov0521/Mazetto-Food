@@ -360,7 +360,13 @@ export class DesktopGateway {
       const definition = payload.commandType
         ? resolveOfflineCommandType(payload.commandType)
         : resolveOfflineCommand(payload.method, payload.pathname ?? "");
-      if (!definition || definition.commandType !== command.commandType) {
+      const legacyCommand =
+        !payload.commandType &&
+        command.commandType === `${payload.method} ${payload.pathname ?? ""}`;
+      if (
+        !definition ||
+        (!legacyCommand && definition.commandType !== command.commandType)
+      ) {
         this.store.markMutationConflict(
           command.id,
           "OFFLINE_COMMAND_INVALID: queued command registry mismatch",
