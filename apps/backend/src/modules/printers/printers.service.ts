@@ -18,7 +18,7 @@ export class PrintersService {
     });
   }
 
-  createPrinter(dto: CreatePrinterDto, user: AuthenticatedUser) {
+  async createPrinter(dto: CreatePrinterDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
 
     return this.prisma.printer.create({
@@ -46,7 +46,7 @@ export class PrintersService {
     });
   }
 
-  private async assertPrinter(id: string, user: AuthenticatedUser): Promise<void> {
+  private async assertPrinter(id: string, user: AuthenticatedUser): Promise<{ metadata: unknown }> {
     const printer = await this.prisma.printer.findUnique({ where: { id }, select: { id: true, branchId: true } });
 
     if (!printer) {
