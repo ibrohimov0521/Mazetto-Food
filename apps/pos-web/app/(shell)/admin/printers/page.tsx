@@ -610,6 +610,26 @@ function PrintersConsole() {
               )}
             </FormField>
 
+            <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+              <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
+                {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
+              </FormField>
+              <FormField error={errors.port} hint="Odatda 9100" label="Port" required>
+                {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
+              </FormField>
+            </div>
+            <div className="rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
+              <p className="text-sm font-semibold text-mz-text">Chop yo&apos;nalishlari</p>
+              <p className="mt-1 text-[12px] text-mz-text-muted">Bir printerga bir nechta turdagi hujjatni tanlash mumkin.</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {printRoles.map((role) => (
+                  <label className="flex items-center gap-2 text-sm text-mz-text" key={role}>
+                    <input checked={editor.printRoles.includes(role)} onChange={(event) => setEditor({ ...editor, printRoles: event.target.checked ? [...editor.printRoles, role] : editor.printRoles.filter((item) => item !== role) })} type="checkbox" />
+                    {printRoleLabels[role]}
+                  </label>
+                ))}
+              </div>
+            </div>
             {editor.id ? (
               /*
                * Filialni KO'CHIRISH mumkin emas: `UpdatePrinterDto` da
@@ -722,6 +742,26 @@ function PrintersConsole() {
               )}
             </FormField>
 
+            <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+              <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
+                {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
+              </FormField>
+              <FormField error={errors.port} hint="Odatda 9100" label="Port" required>
+                {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
+              </FormField>
+            </div>
+            <div className="rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
+              <p className="text-sm font-semibold text-mz-text">Chop yo&apos;nalishlari</p>
+              <p className="mt-1 text-[12px] text-mz-text-muted">Bir printerga bir nechta turdagi hujjatni tanlash mumkin.</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {printRoles.map((role) => (
+                  <label className="flex items-center gap-2 text-sm text-mz-text" key={role}>
+                    <input checked={editor.printRoles.includes(role)} onChange={(event) => setEditor({ ...editor, printRoles: event.target.checked ? [...editor.printRoles, role] : editor.printRoles.filter((item) => item !== role) })} type="checkbox" />
+                    {printRoleLabels[role]}
+                  </label>
+                ))}
+              </div>
+            </div>
             {editor.id ? (
               <Toggle
                 checked={editor.isActive}
