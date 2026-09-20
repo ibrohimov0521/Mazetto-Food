@@ -614,7 +614,7 @@ function PrintersConsole() {
               <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
                 {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
               </FormField>
-              <FormField error={errors.port} hint="Odatda 9100" label="Port" required>
+              <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>
                 {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
               </FormField>
             </div>
@@ -746,7 +746,7 @@ function PrintersConsole() {
               <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
                 {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
               </FormField>
-              <FormField error={errors.port} hint="Odatda 9100" label="Port" required>
+              <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>
                 {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
               </FormField>
             </div>
