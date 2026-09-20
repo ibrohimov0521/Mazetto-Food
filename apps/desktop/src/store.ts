@@ -351,6 +351,33 @@ export class DesktopStore {
     return row ? { ...row } : null;
   }
 
+  listActiveMutations(authScope: string): PendingOutboxCommand[] {
+    const rows = this.database
+      .prepare(
+        `
+      SELECT
+        id,
+        idempotency_key AS idempotencyKey,
+        command_type AS commandType,
+        aggregate_type AS aggregateType,
+        aggregate_id AS aggregateId,
+        base_version AS baseVersion,
+        actor_id AS actorId,
+        branch_id AS branchId,
+        auth_scope AS authScope,
+        payload_json AS payloadJson,
+        attempts
+      FROM mutation_outbox
+      WHERE auth_scope = ?
+        AND state IN ('pending', 'sending')
+      ORDER BY created_at ASC
+    `,
+      )
+      .all(authScope) as PendingOutboxCommand[];
+
+    return rows.map((row) => ({ ...row }));
+  }
+
   retryMutation(id: string): boolean {
     const result = this.database
       .prepare(

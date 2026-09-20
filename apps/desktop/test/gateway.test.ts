@@ -530,6 +530,78 @@ test("gateway compares a conflicted command with the current server resource", a
   }
 });
 
+test("gateway projects pending POS orders into cached order reads and compensates after acknowledgement", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-projection", "branch-1");
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input, init) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if ((init?.method ?? "GET") === "GET" && url.endsWith("/orders")) {
+        return jsonResponse([]);
+      }
+      return jsonResponse({ success: true, data: { ok: true } });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const initial = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/orders`, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(initial.status, 200);
+    assert.deepEqual(await initial.json(), []);
+
+    online = false;
+    const sale = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`, {
+      method: "POST",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        idempotencyKey: "projection-sale",
+        items: [{ productId: "product-1", quantity: 1 }],
+        payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+      }),
+    });
+    assert.equal(sale.status, 202);
+    const salePayload = (await sale.json()) as { data: { commandId: string } };
+
+    const projected = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/orders`, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(projected.status, 200);
+    assert.equal(projected.headers.get("x-mazetto-desktop"), "offline-optimistic");
+    const projectedOrders = (await projected.json()) as Array<Record<string, unknown>>;
+    assert.equal(projectedOrders.length, 1);
+    assert.equal(projectedOrders[0]?.pendingSync, true);
+    assert.equal(projectedOrders[0]?.commandId, salePayload.data.commandId);
+
+    store.markMutationAcknowledged(salePayload.data.commandId);
+    const compensated = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/orders`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(compensated.status, 200);
+    assert.equal(compensated.headers.get("x-mazetto-desktop"), "offline-cache");
+    assert.deepEqual(await compensated.json(), []);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function desktopJwt(userId: string, branchId: string): string {
   const payload = Buffer.from(
     JSON.stringify({ id: userId, branchId, isGlobalScope: false }),
