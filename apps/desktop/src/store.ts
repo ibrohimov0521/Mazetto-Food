@@ -63,6 +63,8 @@ export type OutboxQueueItem = PendingOutboxCommand & {
     pathname?: string;
     targetUrl?: string;
     queuedAt?: string;
+    localAggregateId?: string;
+    unresolvedDependencies?: string[];
   };
 };
 
