@@ -14,7 +14,8 @@ export type OrderForReceipt = Prisma.OrderGetPayload<{
 
 export type ReceiptPrintRoute = "RECEIPT" | "CANCELLATION";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
-// Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.\nconst durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
+// Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
+const durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
 
 function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
