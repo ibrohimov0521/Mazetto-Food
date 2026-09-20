@@ -1,6 +1,6 @@
 {
   "name": "mazetto-desktop",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "MAZETTO FOOD offline-first branch operations desktop",
   "author": "MAZETTO FOOD",
   "private": true,
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm build && electron .",
     "dev:bundled": "pnpm build && pnpm build:ui && electron . --bundled-ui",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/build-preload.mjs",
     "build:ui": "node scripts/prepare-ui.mjs",
     "package:dir": "pnpm build && pnpm build:ui && electron-builder --dir",
     "package:win": "pnpm build && pnpm build:ui && electron-builder --win nsis",
