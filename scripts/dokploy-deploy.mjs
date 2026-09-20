@@ -132,6 +132,18 @@ async function deploymentsOf(applicationId) {
   return list;
 }
 
+async function deploymentDetails(deploymentId) {
+  if (!deploymentId) return null;
+
+  try {
+    return await dokploy(
+      "GET",
+      `deployment.get?deploymentId=${encodeURIComponent(deploymentId)}`,
+    );
+  } catch {
+    return null;
+  }
+}
 async function deployAndWait(app, applicationId, sha, subject) {
   /*
    * Yangi deploy yozuvi eskilaridan ID bo'yicha ajratiladi, vaqt bo'yicha
@@ -184,9 +196,15 @@ async function deployAndWait(app, applicationId, sha, subject) {
       return;
     }
 
+    const detail = await deploymentDetails(latest.deploymentId);
+    const detailText = detail
+      ? ` — ${JSON.stringify(detail).slice(0, 1200)}`
+      : latest.errorMessage
+        ? ` — ${latest.errorMessage}`
+        : " — Dokploy tafsilot qaytarmadi";
+
     throw new DeployFailed(
-      `${app}: Dokploy deploy "${latest.status}" bilan tugadi` +
-        (latest.errorMessage ? ` — ${latest.errorMessage}` : ""),
+      `${app}: Dokploy deploy "${latest.status}" bilan tugadi${detailText}`,
     );
   }
 
