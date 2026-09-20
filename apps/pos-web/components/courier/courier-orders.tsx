@@ -16,7 +16,7 @@ import {
   Truck,
   X,
 } from "lucide-react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { apiFetch, SessionExpiredError } from "../../lib/api";\nimport { useStaffRealtime } from "../../lib/use-staff-realtime";
 import { hasPermission } from "../../lib/auth";
 import {
   formatMoney,
@@ -135,7 +135,7 @@ const readyForDelivery = (order: CourierOrder) =>
 const courierHistoryStatuses = ["SERVED", "COMPLETED", "CANCELLED"] as const;
 
 export function CourierOrdersPage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [orders, setOrders] = useState<CourierOrder[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -246,6 +246,12 @@ export function CourierOrdersPage() {
       }
     }
   }, []);
+
+  useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    cursorScope: `${user?.id ?? "staff"}:courier`,
+    onEvent: () => void load(),
+  });
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
