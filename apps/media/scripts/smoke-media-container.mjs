@@ -114,5 +114,9 @@ try {
     ],
     { cwd: repoRoot, stdio: "ignore" },
   );
-  rmSync(tempRoot, { recursive: true, force: true });
+  try {
+    rmSync(tempRoot, { recursive: true, force: true });
+  } catch {
+    // GitHub runner vaqtinchalik katalogni job tugagach o'zi tozalaydi.
+  }
 }
