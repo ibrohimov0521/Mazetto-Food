@@ -25,7 +25,7 @@ export function DesktopUpdateBadge() {
   const isReady = currentState === "downloaded";
   const isDownloading = currentState === "downloading";
   const isChecking = currentState === "checking";
-  const label = isReady ? "O'rnatish" : isDownloading ? `%${status?.percent ?? 0}` : isChecking ? "Tekshirilmoqda" : currentState === "available" ? "Yuklash" : "Yangilanish";
+  const label = isReady ? "O'rnatish" : isDownloading ? `%${status?.percent ?? 0}` : isChecking ? "Tekshirilmoqda" : currentState === "available" ? "Yuklash" : "Yangilanishni tekshirish";
   const Icon = isReady ? RotateCw : isDownloading ? Download : RefreshCw;
 
   async function handleClick(): Promise<void> {
