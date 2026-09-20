@@ -5,8 +5,8 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { hasAllPermissions } from "../auth/authorization";
-import { PERMISSIONS_KEY } from "../decorators/permissions.decorator";
+import { hasAllPermissions, hasAnyPermission } from "../auth/authorization";
+import {\n  ANY_PERMISSIONS_KEY,\n  PERMISSIONS_KEY,\n} from "../decorators/permissions.decorator";
 import type { AuthenticatedRequest } from "../types/authenticated-user";
 
 @Injectable()
@@ -24,7 +24,7 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const canAccess = hasAllPermissions(request.user, requiredPermissions);
+    const canAccess =\n      hasAllPermissions(request.user, requiredPermissions) &&\n      (anyPermissions.length === 0 || hasAnyPermission(request.user, anyPermissions));
 
     if (!canAccess) {
       throw new ForbiddenException("Missing required permission");
