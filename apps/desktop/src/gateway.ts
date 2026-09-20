@@ -905,7 +905,7 @@ function findRecordById(value: unknown, id: string): Record<string, unknown> | n
   return null;
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function conflictResourcePath(pathname: string): string | null {
