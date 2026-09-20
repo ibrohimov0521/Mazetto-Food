@@ -145,7 +145,7 @@ async function createWindow(uiUrl?: string): Promise<void> {
       nodeIntegration: false,
       sandbox: true,
       devTools: !app.isPackaged,
-      preload: join(app.getAppPath(), "dist", "preload.js"),
+      preload: join(app.getAppPath(), "dist", "preload.cjs"),
     },
   });
 
