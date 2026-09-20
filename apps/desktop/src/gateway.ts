@@ -285,8 +285,7 @@ export class DesktopGateway {
 
     const command = this.store.enqueueMutation({
       idempotencyKey,
-      commandType: `${input.method} ${input.pathname}`,
-      aggregateType: aggregate.type,
+      commandType: input.definition.commandType,`n      aggregateType: input.definition.aggregateType,
       aggregateId: aggregate.id,
       baseVersion,
       actorId: context?.actorId ?? "unknown",
@@ -392,7 +391,7 @@ export class DesktopGateway {
         signal: AbortSignal.timeout(10_000),
       });
 
-      if (response.ok || response.status === 409) {
+      if (response.ok) {
         this.store.markMutationAcknowledged(command.id);
         this.mode = "online";
         this.lastOnlineAt = new Date().toISOString();
