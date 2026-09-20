@@ -285,7 +285,8 @@ export class DesktopGateway {
 
     const command = this.store.enqueueMutation({
       idempotencyKey,
-      commandType: input.definition.commandType,`n      aggregateType: input.definition.aggregateType,
+      commandType: input.definition.commandType,
+      aggregateType: input.definition.aggregateType,
       aggregateId: aggregate.id,
       baseVersion,
       actorId: context?.actorId ?? "unknown",
