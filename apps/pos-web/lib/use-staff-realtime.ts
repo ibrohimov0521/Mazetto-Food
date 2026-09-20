@@ -34,9 +34,9 @@ export function useStaffRealtime(options: {
   accessToken: string | undefined;
   onEvent: (event?: StaffRealtimeEvent) => void;
   /** Cursorni boshqa xodim yoki filial sessiyasidan ajratib turadi. */
-  cursorScope?: string;
+  cursorScope?: string | undefined;
   /** Global admin tanlagan filial. Xodim uchun backend o'zi scope qiladi. */
-  branchId?: string;
+  branchId?: string | undefined;
 }): StaffRealtimeConnectionState {
   const [connectionState, setConnectionState] =
     useState<StaffRealtimeConnectionState>("offline");
