@@ -63,6 +63,7 @@ export class ReceiptsService {
 
   async listPrintJobs(query: ListPrintJobsDto, user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user, query.branchId);
+    await this.restoreMissingPrintJobs(branchId);
     return this.prisma.printJob.findMany({
       where: { ...(branchId ? { branchId } : {}), ...(query.status ? { status: query.status } : {}) },
       orderBy: [{ status: "asc" }, { nextAttemptAt: "asc" }, { createdAt: "asc" }],
@@ -84,6 +85,30 @@ export class ReceiptsService {
       },
     });
   }
+
+  private async restoreMissingPrintJobs(branchId?: string) {
+    const receipts = await this.prisma.receipt.findMany({
+      where: {
+        printed: false,
+        ...(branchId ? { branchId } : {}),
+        printJobs: { none: {} },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 100,
+      select: { id: true, branchId: true, content: true },
+    });
+
+    for (const receipt of receipts) {
+      await this.prisma.$transaction(async (tx) => {
+        const existingJob = await tx.printJob.findFirst({
+          where: { receiptId: receipt.id },
+          select: { id: true },
+        });
+        if (!existingJob) await queuePrintJobsForReceipt(tx, receipt);
+      });
+    }
+  }
+
   async getReceipt(id: string, user: AuthenticatedUser) {
     const receipt = await this.prisma.receipt.findUnique({
       where: { id },
@@ -157,6 +182,7 @@ export class ReceiptsService {
   async claimPrintJob(branchId: string | undefined, agentId: string, user: AuthenticatedUser, printerIds?: string[]) {
     const scopedBranchId = resolveBranchScope(user, branchId);
     if (!scopedBranchId) throw new BadRequestException("Branch is required");
+    await this.restoreMissingPrintJobs(scopedBranchId);
     const now = new Date();
     const job = await this.prisma.printJob.findFirst({
       where: { branchId: scopedBranchId, ...(printerIds?.length ? { printerId: { in: printerIds } } : {}), OR: [{ status: "PENDING", nextAttemptAt: { lte: now } }, { status: "PROCESSING", leaseExpiresAt: { lte: now } }] },

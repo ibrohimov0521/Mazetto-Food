@@ -6,6 +6,7 @@ const receiptDto = readFileSync("src/modules/receipts/dto/list-receipts.dto.ts",
 const receiptService = readFileSync("src/modules/receipts/receipts.service.ts", "utf8");
 const printAgent = readFileSync("../print-agent/src/main.ts", "utf8");
 const receiptWriter = readFileSync("src/modules/receipts/receipt-writer.ts", "utf8");
+const backendDockerfile = readFileSync("Dockerfile", "utf8");
 
 test("receipt polling can ask the backend for unprinted receipts only", () => {
   assert.match(receiptDto, /printed\?: boolean/);
@@ -22,11 +23,19 @@ test("print agent marks a receipt printed only after an adapter succeeds", () =>
 });
 
 test("durable queue is explicitly enabled and the agent completes only its leased job", () => {
-  assert.match(receiptWriter, /MAZETTO_DURABLE_PRINT_JOBS === "true"/);
+  assert.match(receiptWriter, /MAZETTO_DURABLE_PRINT_JOBS !== "false"/);
   assert.match(receiptWriter, /tx\.printJob\.create/);
   assert.match(printAgent, /MAZETTO_PRINT_PROTOCOL === "jobs" \? "jobs" : "receipts"/);
   assert.match(printAgent, /\/receipts\/print-jobs\/claim/);
   assert.match(printAgent, /\/complete/);
   assert.match(printAgent, /leaseToken: job\.leaseToken/);
   assert.match(printAgent, /Durable print queue is not claimed in dry-run mode/);
+});
+
+test("production startup migrates the print queue and restores old unprinted receipts", () => {
+  assert.match(backendDockerfile, /prisma:migrate:deploy/);
+  assert.match(receiptService, /await this\.restoreMissingPrintJobs\(branchId\)/);
+  assert.match(receiptService, /await this\.restoreMissingPrintJobs\(scopedBranchId\)/);
+  assert.match(receiptService, /printed: false,[\s\S]*?printJobs: \{ none: \{\} \}/);
+  assert.match(receiptService, /if \(!existingJob\) await queuePrintJobsForReceipt\(tx, receipt\)/);
 });
