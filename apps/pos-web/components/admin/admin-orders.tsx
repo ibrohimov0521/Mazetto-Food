@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
-import { useApiResource } from "../../lib/use-api-resource";\nimport { useStaffRealtime } from "../../lib/use-staff-realtime";
+import { useApiResource } from "../../lib/use-api-resource";
+import { useStaffRealtime } from "../../lib/use-staff-realtime";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission, type AuthUser } from "../../lib/auth";
 import {
