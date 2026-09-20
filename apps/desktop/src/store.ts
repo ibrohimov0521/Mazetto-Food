@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const CACHE_RETENTION_DAYS = 30;
 const MAX_CACHED_RESPONSES_PER_SCOPE = 5000;
+const LOCAL_ID_PATTERN = /\blocal-[0-9a-f-]{36}\b/g;
 
 export type CachedResponse = {
   cacheKey: string;
@@ -62,6 +63,8 @@ export type OutboxQueueItem = PendingOutboxCommand & {
     pathname?: string;
     targetUrl?: string;
     queuedAt?: string;
+    localAggregateId?: string;
+    unresolvedDependencies?: string[];
   };
 };
 
@@ -404,6 +407,63 @@ export class DesktopStore {
   setSetting(key: string, value: string): void {
     this.database.prepare(`INSERT INTO desktop_meta (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(`setting:${key}`, value, new Date().toISOString());
   }
+
+  saveLocalIdMapping(input: {
+    localId: string;
+    serverId: string;
+    aggregateType: string;
+    commandId: string;
+    authScope: string;
+  }): void {
+    this.database
+      .prepare(
+        `
+      INSERT INTO local_id_map (
+        local_id, server_id, aggregate_type, command_id, auth_scope, mapped_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(local_id) DO UPDATE SET
+        server_id = excluded.server_id,
+        aggregate_type = excluded.aggregate_type,
+        command_id = excluded.command_id,
+        auth_scope = excluded.auth_scope,
+        mapped_at = excluded.mapped_at
+    `,
+      )
+      .run(
+        input.localId,
+        input.serverId,
+        input.aggregateType,
+        input.commandId,
+        input.authScope,
+        new Date().toISOString(),
+      );
+  }
+
+  resolveLocalId(localId: string, authScope: string): string | null {
+    const row = this.database
+      .prepare(
+        `SELECT server_id AS serverId FROM local_id_map WHERE local_id = ? AND auth_scope = ?`,
+      )
+      .get(localId, authScope) as { serverId: string } | undefined;
+    return row?.serverId ?? null;
+  }
+
+  resolveLocalReferences(
+    source: string,
+    authScope: string,
+  ): { value: string; unresolved: string[] } {
+    const unresolved = new Set<string>();
+    const value = source.replace(LOCAL_ID_PATTERN, (localId) => {
+      const serverId = this.resolveLocalId(localId, authScope);
+      if (!serverId) {
+        unresolved.add(localId);
+        return localId;
+      }
+      return serverId;
+    });
+    return { value, unresolved: [...unresolved] };
+  }
+
   close(): void {
     this.database.close();
   }
@@ -526,7 +586,16 @@ export class DesktopStore {
       );
       CREATE INDEX IF NOT EXISTS mutation_outbox_state_idx
         ON mutation_outbox(state, next_attempt_at, created_at);
-      CREATE TABLE IF NOT EXISTS print_jobs (
+      CREATE TABLE IF NOT EXISTS local_id_map (
+        local_id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        aggregate_type TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        auth_scope TEXT NOT NULL,
+        mapped_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS local_id_map_scope_idx
+        ON local_id_map(auth_scope, mapped_at);      CREATE TABLE IF NOT EXISTS print_jobs (
         id TEXT PRIMARY KEY,
         logical_key TEXT NOT NULL UNIQUE,
         server_job_id TEXT UNIQUE,
@@ -605,6 +674,8 @@ function summarizeOutboxPayload(source: string): OutboxQueueItem["payload"] {
       pathname?: unknown;
       targetUrl?: unknown;
       queuedAt?: unknown;
+      localAggregateId?: unknown;
+      unresolvedDependencies?: unknown;
     };
     const payload: OutboxQueueItem["payload"] = {};
 
@@ -612,6 +683,14 @@ function summarizeOutboxPayload(source: string): OutboxQueueItem["payload"] {
     if (typeof parsed.pathname === "string") payload.pathname = parsed.pathname;
     if (typeof parsed.targetUrl === "string") payload.targetUrl = parsed.targetUrl;
     if (typeof parsed.queuedAt === "string") payload.queuedAt = parsed.queuedAt;
+    if (typeof parsed.localAggregateId === "string") {
+      payload.localAggregateId = parsed.localAggregateId;
+    }
+    if (Array.isArray(parsed.unresolvedDependencies)) {
+      payload.unresolvedDependencies = parsed.unresolvedDependencies.filter(
+        (value): value is string => typeof value === "string",
+      );
+    }
 
     return payload;
   } catch {

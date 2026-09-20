@@ -342,6 +342,75 @@ test("gateway sends server version conflicts to the conflict inbox", async () =>
     await rm(directory, { recursive: true, force: true });
   }
 });
+test("gateway resolves local aggregate IDs before replaying dependents", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-dependency", "branch-1");
+  const sent: string[] = [];
+  let online = false;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input, init) => {
+      if (!online) {
+        throw new Error("offline");
+      }
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (init?.method === "POST" && url.endsWith("/pos/orders")) {
+        sent.push(`${init.method} ${url}`);
+        return jsonResponse({ success: true, data: { order: { id: "server-order-1" } } });
+      }
+      if (init?.method === "POST" && url.endsWith("/orders/server-order-1/status")) {
+        sent.push(`${init.method} ${url}`);
+        return jsonResponse({ success: true, data: { order: { id: "server-order-1" } } });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const sale = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotencyKey: "dependency-sale", payments: [] }),
+    });
+    assert.equal(sale.status, 202);
+    const salePayload = (await sale.json()) as { data: { order: { id: string } } };
+    assert.match(salePayload.data.order.id, /^local-/);
+
+    const dependent = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/orders/${salePayload.data.order.id}/status`,
+      {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ACCEPTED", expectedVersion: 0 }),
+      },
+    );
+    assert.equal(dependent.status, 202);
+    assert.equal(store.summary().pendingCommands, 2);
+
+    online = true;
+    const refresh = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/branches`, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(refresh.status, 200);
+    await waitFor(() => store.summary().pendingCommands === 0);
+    assert.deepEqual(sent, [
+      "POST https://api.example.test/api/v1/pos/orders",
+      "POST https://api.example.test/api/v1/orders/server-order-1/status",
+    ]);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("gateway can retry a blocked outbox command", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
