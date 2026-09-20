@@ -45,9 +45,10 @@ COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/node_modules ./apps/
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/dist ./apps/backend/dist
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
+COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/scripts ./apps/backend/scripts
 
 USER nestjs
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "pnpm --filter backend prisma:migrate:deploy && exec node apps/backend/dist/main.js"]
+CMD ["sh", "-c", "node apps/backend/scripts/ensure-print-queue.mjs && exec node apps/backend/dist/main.js"]

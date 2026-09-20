@@ -7,6 +7,7 @@ const receiptService = readFileSync("src/modules/receipts/receipts.service.ts", 
 const printAgent = readFileSync("../print-agent/src/main.ts", "utf8");
 const receiptWriter = readFileSync("src/modules/receipts/receipt-writer.ts", "utf8");
 const backendDockerfile = readFileSync("Dockerfile", "utf8");
+const printQueueBootstrap = readFileSync("scripts/ensure-print-queue.mjs", "utf8");
 
 test("receipt polling can ask the backend for unprinted receipts only", () => {
   assert.match(receiptDto, /printed\?: boolean/);
@@ -33,7 +34,10 @@ test("durable queue is explicitly enabled and the agent completes only its lease
 });
 
 test("production startup migrates the print queue and restores old unprinted receipts", () => {
-  assert.match(backendDockerfile, /prisma:migrate:deploy/);
+  assert.match(backendDockerfile, /ensure-print-queue\.mjs/);
+  assert.doesNotMatch(backendDockerfile, /prisma:migrate:deploy/);
+  assert.match(printQueueBootstrap, /CREATE TABLE IF NOT EXISTS "print_jobs"/);
+  assert.match(printQueueBootstrap, /CREATE TABLE IF NOT EXISTS "print_attempts"/);
   assert.match(receiptService, /await this\.restoreMissingPrintJobs\(branchId\)/);
   assert.match(receiptService, /await this\.restoreMissingPrintJobs\(scopedBranchId\)/);
   assert.match(receiptService, /printed: false,[\s\S]*?printJobs: \{ none: \{\} \}/);
