@@ -99,5 +99,20 @@ try {
       stdio: "ignore",
     });
   }
+  spawnSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "-v",
+      tempRoot + ":/media",
+      "--entrypoint",
+      "sh",
+      imageTag,
+      "-c",
+      "chown -R 0:0 /media && chmod -R u+rwX /media",
+    ],
+    { cwd: repoRoot, stdio: "ignore" },
+  );
   rmSync(tempRoot, { recursive: true, force: true });
 }
