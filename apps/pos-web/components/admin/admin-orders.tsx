@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
+import { useStaffRealtime } from "../../lib/use-staff-realtime";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission, type AuthUser } from "../../lib/auth";
 import {
@@ -245,7 +246,7 @@ function statusNeedsReason(status: OrderStatus | null): boolean {
 }
 
 export function AdminOrdersPage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const showBranchFilter = canSwitchBranch(user);
   const router = useRouter();
   const pathname = usePathname();
@@ -403,6 +404,13 @@ export function AdminOrdersPage() {
   // `data` hali kelmagan yoki xato bo'lgan paytda yangi `[]` yaratish
   // pastdagi selection-effect'ni har renderda qayta ishga tushirardi.
   const orders = useMemo(() => data ?? [], [data]);
+
+  useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    branchId: branchId || undefined,
+    cursorScope: `${user?.id ?? "staff"}:${branchId || "all"}`,
+    onEvent: () => load(),
+  });
   /*
    * Yuklash xatosi va AMAL xatosi alohida: ommaviy amal yiqilganda
    * ro'yxat baribir ko'rinib turishi kerak, va keyingi qayta yuklash

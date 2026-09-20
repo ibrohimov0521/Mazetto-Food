@@ -214,6 +214,8 @@ export function AdminKitchenMonitor() {
 
   useStaffRealtime({
     accessToken: session?.tokens.accessToken,
+    cursorScope: `${user?.id ?? "staff"}:kitchen`,
+    branchId: user?.branchId,
     onEvent: () => void load({ silent: true }),
   });
 

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { getApiBaseUrl } from "./auth";
 import { apiFetch } from "./api";
 
-type StaffRealtimeEvent = {
+export type StaffRealtimeEvent = {
   id: string;
   branchId?: string | null;
   aggregateType: string;
@@ -21,6 +21,8 @@ type CatchUpResponse = {
   hasMore: boolean;
 };
 
+export type StaffRealtimeConnectionState = "connecting" | "online" | "offline";
+
 const realtimeEventNames = [
   "order.created",
   "order.confirmed",
@@ -31,83 +33,155 @@ const realtimeEventNames = [
 export function useStaffRealtime(options: {
   accessToken: string | undefined;
   onEvent: (event?: StaffRealtimeEvent) => void;
-}): void {
+  /** Cursorni boshqa xodim yoki filial sessiyasidan ajratib turadi. */
+  cursorScope?: string | undefined;
+  /** Global admin tanlagan filial. Xodim uchun backend o'zi scope qiladi. */
+  branchId?: string | undefined;
+}): StaffRealtimeConnectionState {
+  const [connectionState, setConnectionState] =
+    useState<StaffRealtimeConnectionState>("offline");
   const onEventRef = useRef(options.onEvent);
   onEventRef.current = options.onEvent;
 
   useEffect(() => {
     const token = options.accessToken;
-    if (!token) return;
+    if (!token) {
+      setConnectionState("offline");
+      return;
+    }
 
     const isDesktop = window.navigator.userAgent.includes("MAZETTO-Desktop/");
+    const cursorKey = `mazetto.staff.realtime.cursor.${encodeURIComponent(
+      options.cursorScope ?? "default",
+    )}`;
     let stopped = false;
-    let cursor = readCursor();
+    let running = false;
+    let cursor = readCursor(cursorKey);
+
+    const setState = (state: StaffRealtimeConnectionState) => {
+      if (!stopped) setConnectionState(state);
+    };
+
+    const catchUp = async (notify = true): Promise<void> => {
+      if (stopped || running) return;
+      running = true;
+      try {
+        let hasMore = true;
+        let lastEvent: StaffRealtimeEvent | undefined;
+
+        while (!stopped && hasMore) {
+          const query = new URLSearchParams({ limit: "100" });
+          if (cursor) query.set("cursor", cursor);
+          if (options.branchId) query.set("branchId", options.branchId);
+
+          const next = await apiFetch<CatchUpResponse>(
+            `/realtime/events?${query.toString()}`,
+            { cache: "no-store", signal: AbortSignal.timeout(12000) },
+          );
+
+          cursor = next.cursor;
+          writeCursor(cursorKey, cursor);
+          lastEvent = next.events.at(-1) ?? lastEvent;
+          hasMore = next.hasMore;
+
+          if (next.events.length === 0 && !next.cursor) {
+            hasMore = false;
+          }
+        }
+
+        setState("online");
+        if (notify && lastEvent) onEventRef.current(lastEvent);
+      } catch {
+        setState("offline");
+      } finally {
+        running = false;
+      }
+    };
 
     if (isDesktop) {
-      const poll = async (): Promise<void> => {
-        if (stopped) return;
-        try {
-          let hasMore = true;
-          while (!stopped && hasMore) {
-            const query = new URLSearchParams({ limit: "100" });
-            if (cursor) query.set("cursor", cursor);
-            const next = await apiFetch<CatchUpResponse>(
-              `/realtime/events?${query.toString()}`,
-            );
-            for (const event of next.events) {
-              cursor = next.cursor;
-              writeCursor(cursor);
-              onEventRef.current(event);
-            }
-            if (next.events.length === 0 && next.cursor) {
-              cursor = next.cursor;
-              writeCursor(cursor);
-            }
-            hasMore = next.hasMore;
-          }
-        } catch {
-          // The normal API polling and Desktop status indicator surface outages.
-        }
+      setState("connecting");
+      void catchUp();
+      const timer = window.setInterval(() => void catchUp(), 5_000);
+      const handleOnline = () => {
+        setState("connecting");
+        void catchUp();
       };
+      const handleOffline = () => setState("offline");
+      window.addEventListener("online", handleOnline);
+      window.addEventListener("offline", handleOffline);
 
-      void poll();
-      const timer = window.setInterval(() => void poll(), 5_000);
       return () => {
         stopped = true;
         window.clearInterval(timer);
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
       };
     }
 
+    setState("connecting");
     const socket = io(getApiBaseUrl().replace(/\/api\/v1\/?$/, ""), {
       auth: { token, tokenType: "staff" },
       transports: ["websocket"],
       reconnection: true,
     });
-    const refresh = () => onEventRef.current();
-    socket.on("connect", refresh);
+
+    const handleConnect = () => {
+      setState("online");
+      void catchUp();
+      onEventRef.current();
+    };
+    const handleDisconnect = () => setState("offline");
+    const handleConnectError = () => setState("offline");
+    const handleReconnectAttempt = () => setState("connecting");
+    const handleVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      setState("connecting");
+      void catchUp();
+    };
+    const handleOnline = () => {
+      setState("connecting");
+      socket.connect();
+    };
+    const handleOffline = () => setState("offline");
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
+    socket.io.on("reconnect_attempt", handleReconnectAttempt);
     for (const eventName of realtimeEventNames) {
-      socket.on(eventName, refresh);
+      socket.on(eventName, () => {
+        setState("online");
+        onEventRef.current();
+      });
     }
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     return () => {
       stopped = true;
       socket.disconnect();
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
-  }, [options.accessToken]);
+  }, [options.accessToken, options.branchId, options.cursorScope]);
+
+  return connectionState;
 }
 
-function readCursor(): string | null {
+function readCursor(key: string): string | null {
   try {
-    return window.localStorage.getItem("mazetto.staff.realtime.cursor");
+    return window.localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-function writeCursor(cursor: string | null): void {
+function writeCursor(key: string, cursor: string | null): void {
   if (!cursor) return;
   try {
-    window.localStorage.setItem("mazetto.staff.realtime.cursor", cursor);
+    window.localStorage.setItem(key, cursor);
   } catch {
     // Local storage can be disabled by a browser policy.
   }
