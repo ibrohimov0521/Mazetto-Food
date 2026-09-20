@@ -1,5 +1,5 @@
 import { PrinterStatus, PrinterType } from "@prisma/client";
-import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsBoolean, IsEnum, IsObject, IsOptional, IsString, MaxLength } from "class-validator";
 
 export class CreatePrinterDto {
   @IsString()
@@ -15,6 +15,10 @@ export class CreatePrinterDto {
   @IsOptional()
   @IsEnum(PrinterStatus)
   status?: PrinterStatus;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
 
 export class UpdatePrinterDto {
@@ -34,4 +38,8 @@ export class UpdatePrinterDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
