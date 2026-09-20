@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { Leaf, RefreshCw, X } from "lucide-react";
 import { useAuth } from "../auth/auth-provider";
+import type { StaffRealtimeConnectionState } from "../../lib/use-staff-realtime";
 import { PanelNavbar } from "../auth/panel-navbar";
 import styles from "./staff.module.css";
 import {
@@ -153,25 +154,35 @@ export function StaffSync({
   updatedAt,
   refreshing,
   onRefresh,
+  connectionState,
 }: {
   error?: boolean;
   updatedAt: Date | null;
   refreshing?: boolean;
   onRefresh: () => void;
+  connectionState?: StaffRealtimeConnectionState;
 }) {
+  const hasRealtimeState = connectionState !== undefined;
+  const isOffline = Boolean(error) || connectionState === "offline";
+  const isConnecting =
+    !isOffline &&
+    (connectionState === "connecting" || (!hasRealtimeState && !updatedAt));
+  const statusLabel = isOffline
+    ? "Aloqa uzildi"
+    : isConnecting
+      ? "Ulanmoqda"
+      : "Ulangan";
+
   return (
-    <div
-      className={styles.sync}
-      title={error ? "Aloqa uzildi" : updatedAt ? "Ulangan" : "Ulanmoqda"}
-    >
+    <div className={styles.sync} title={statusLabel}>
       <span
-        className={`${styles.connection} ${error ? styles.connectionError : ""}`}
+        className={
+          styles.connection + (isOffline ? " " + styles.connectionError : "")
+        }
       />
-      <span className={styles.syncStatus}>
-        {error ? "Aloqa uzildi" : updatedAt ? "Ulangan" : "Ulanmoqda"}
-      </span>
+      <span className={styles.syncStatus}>{statusLabel}</span>
       {updatedAt && (
-        <time className={styles.syncTime}>
+        <time className={styles.syncTime} title="Oxirgi yangilanish">
           {updatedAt.toLocaleTimeString("uz-UZ", {
             hour: "2-digit",
             minute: "2-digit",
