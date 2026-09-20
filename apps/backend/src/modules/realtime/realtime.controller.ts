@@ -10,7 +10,14 @@ export class RealtimeController {
   constructor(private readonly realtimeService: RealtimeService) {}
 
   @Get("events")
-  @PermissionsAny(\n    PERMISSIONS.ORDER_VIEW,\n    PERMISSIONS.KITCHEN_VIEW,\n    PERMISSIONS.ONLINE_ORDER_VIEW,\n    PERMISSIONS.COURIER_DELIVERY_VIEW,\n    PERMISSIONS.TABLE_VIEW,\n    PERMISSIONS.POS_USE,\n  )
+  @PermissionsAny(
+    PERMISSIONS.ORDER_VIEW,
+    PERMISSIONS.KITCHEN_VIEW,
+    PERMISSIONS.ONLINE_ORDER_VIEW,
+    PERMISSIONS.COURIER_DELIVERY_VIEW,
+    PERMISSIONS.TABLE_VIEW,
+    PERMISSIONS.POS_USE,
+  )
   catchUp(
     @Query("cursor") cursor: string | undefined,
     @Query("branchId") branchId: string | undefined,
