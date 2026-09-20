@@ -16,7 +16,8 @@ import {
   Truck,
   X,
 } from "lucide-react";
-import { apiFetch, SessionExpiredError } from "../../lib/api";\nimport { useStaffRealtime } from "../../lib/use-staff-realtime";
+import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { useStaffRealtime } from "../../lib/use-staff-realtime";
 import { hasPermission } from "../../lib/auth";
 import {
   formatMoney,
