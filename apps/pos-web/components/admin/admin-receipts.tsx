@@ -112,7 +112,8 @@ type PrintJob = {
   printedAt?: string | null;
   createdAt: string;
   branch: { id: string; name: string; code: string };
-  receipt: { id: string; receiptNumber: string; total: string; order?: { orderNumber: string; displayOrderNumber?: string | null } | null };
+  receipt: { id: string; receiptNumber: string; total: string; content?: unknown; order?: { orderNumber: string; displayOrderNumber?: string | null } | null };
+  printer?: { id: string; name: string; type: string; metadata?: unknown } | null;
   attempts: Array<{ agentId: string; outcome: string; startedAt: string; completedAt?: string | null }>;
 };
 
@@ -230,35 +231,22 @@ export function AdminReceiptsPage() {
     { key: "receipt", header: "Chek", primary: true, render: (job) => <div className="min-w-0"><p className="font-semibold text-mz-text">{job.receipt.receiptNumber}</p><p className="truncate text-[13px] text-mz-text-muted">{job.receipt.order?.displayOrderNumber ?? job.receipt.order?.orderNumber ?? "Buyurtma"} · {job.branch.name}</p></div> },
     { key: "status", header: "Holat", render: (job) => <Badge tone={printJobTone(job.status)} withDot>{printJobStatusLabels[job.status]}</Badge> },
     { key: "attempts", header: "Urinish", hideOnMobile: true, render: (job) => `${job.attemptCount}/${job.maxAttempts}` },
+    { key: "printer", header: "Printer", hideOnMobile: true, render: (job) => job.printer?.name ?? "Zaxira printer" },
     { key: "agent", header: "Agent", hideOnMobile: true, render: (job) => job.attempts[0]?.agentId ?? "—" },
     { key: "next", header: "Keyingi amal", hideOnMobile: true, render: (job) => job.status === "PRINTED" && job.printedAt ? formatDateTime(job.printedAt) : formatDateTime(job.nextAttemptAt) },
   ];
 
 
-  async function markPrinted(): Promise<void> {
-    if (!detail) {
-      return;
-    }
-
+  async function reprintReceipt(): Promise<void> {
+    if (!detail) return;
     setIsMarking(true);
-
     try {
-      setDetail(
-        await apiFetch<ReceiptDetail>(`/receipts/${detail.id}/print`, {
-          method: "PATCH",
-        }),
-      );
-      showToast("Chek chop etilgan deb belgilandi.", "success");
-      await load();
+      setDetail(await apiFetch<ReceiptDetail>(`/receipts/${detail.id}/reprint`, { method: "POST" }));
+      showToast("Chek chop navbatiga qayta yuborildi.", "success");
+      await Promise.all([load(), reloadPrintJobs()]);
     } catch (caught) {
-      if (caught instanceof SessionExpiredError) {
-        return;
-      }
-
-      showToast(
-        caught instanceof Error ? caught.message : "Belgilab bo'lmadi.",
-        "danger",
-      );
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Qayta chop etib bo'lmadi.", "danger");
     } finally {
       setIsMarking(false);
     }
@@ -523,13 +511,9 @@ export function AdminReceiptsPage() {
                 Brauzerda chop etish
               </ButtonLink>
             ) : null}
-            {canMarkPrinted && detail && !detail.printed ? (
-              <Button
-                isLoading={isMarking}
-                onClick={() => void markPrinted()}
-                size="lg"
-              >
-                Chop etilgan deb belgilash
+            {canMarkPrinted && detail ? (
+              <Button isLoading={isMarking} onClick={() => void reprintReceipt()} size="lg">
+                Qayta chop etish
               </Button>
             ) : null}
           </>
@@ -627,9 +611,7 @@ export function AdminReceiptsPage() {
             </div>
 
             <p className="rounded-mz-control border border-mz-border border-l-4 border-l-mz-info bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
-              &quot;Chop etilgan deb belgilash&quot; chekni printerga
-              YUBORMAYDI — u faqat holatni yozadi. Fizik printer agenti hali
-              qurilmagan; brauzerda chop etish kassa chek ekranida bajariladi.
+              Qayta chop etish chekning yangi printer navbatini yaratadi. Desktop agent navbatni olib, tanlangan printerga yuboradi; bekor qilish cheki ham shu oqimda ishlaydi.
             </p>
           </div>
         )}
