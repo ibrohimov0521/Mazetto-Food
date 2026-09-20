@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Patch, Post, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -36,8 +36,20 @@ export class ReceiptsController {
   }
   @Post("print-jobs/claim")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
-  claimPrintJob(@Query("branchId") branchId: string | undefined, @Body() body: ClaimPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.receiptsService.claimPrintJob(branchId, body.agentId, user, body.printerIds);
+  claimPrintJob(
+    @Query("branchId") branchId: string | undefined,
+    @Body() body: ClaimPrintJobDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers("x-mazetto-device-id") deviceId: string | undefined,
+  ) {
+    return this.receiptsService.claimPrintJob(
+      branchId,
+      body.agentId,
+      user,
+      body.printerIds,
+      body.acceptUnassigned,
+      deviceId,
+    );
   }
 
   @Post("print-jobs/:id/complete")

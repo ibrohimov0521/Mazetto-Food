@@ -25,6 +25,7 @@ export type DesktopGatewayOptions = {
   fetchImpl?: typeof fetch;
   probeIntervalMs?: number;
   onAuthorization?: (authorization: string) => void;
+  getDeviceToken?: () => string | null;
 };
 
 export type DesktopGatewayStatus = {
@@ -49,6 +50,7 @@ export class DesktopGateway {
   private readonly fetchImpl: typeof fetch;
   private readonly probeIntervalMs: number;
   private readonly onAuthorization: ((authorization: string) => void) | undefined;
+  private readonly getDeviceToken: () => string | null;
   private server: Server | null = null;
   private probeTimer: NodeJS.Timeout | null = null;
   private startedAt = new Date().toISOString();
@@ -66,6 +68,7 @@ export class DesktopGateway {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.probeIntervalMs = options.probeIntervalMs ?? 15_000;
     this.onAuthorization = options.onAuthorization;
+    this.getDeviceToken = options.getDeviceToken ?? (() => null);
   }
 
   async start(): Promise<number> {
@@ -174,7 +177,11 @@ export class DesktopGateway {
     try {
       const upstream = await this.fetchImpl(targetUrl, {
         method,
-        headers: proxyHeaders(request, this.store.deviceId()),
+        headers: proxyHeaders(
+          request,
+          this.store.deviceId(),
+          this.getDeviceToken(),
+        ),
         ...(body ? { body } : {}),
         signal: AbortSignal.timeout(10_000),
       });
@@ -408,6 +415,8 @@ export class DesktopGateway {
         Authorization: authorization,
         "x-mazetto-device-id": this.store.deviceId(),
       });
+      const deviceToken = this.getDeviceToken();
+      if (deviceToken) headers.set("x-mazetto-device-token", deviceToken);
       for (const [name, value] of Object.entries(payload.headers ?? {})) {
         if (value) {
           headers.set(name, value);
@@ -622,6 +631,9 @@ export class DesktopGateway {
           Accept: "application/json",
           Authorization: authorization,
           "x-mazetto-device-id": this.store.deviceId(),
+          ...(this.getDeviceToken()
+            ? { "x-mazetto-device-token": this.getDeviceToken()! }
+            : {}),
         },
         signal: AbortSignal.timeout(10_000),
       });
@@ -1109,7 +1121,11 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function proxyHeaders(request: IncomingMessage, deviceId: string): Headers {
+function proxyHeaders(
+  request: IncomingMessage,
+  deviceId: string,
+  deviceToken: string | null,
+): Headers {
   const headers = new Headers({ Accept: "application/json" });
   for (const name of [
     "authorization",
@@ -1123,6 +1139,7 @@ function proxyHeaders(request: IncomingMessage, deviceId: string): Headers {
     }
   }
   headers.set("x-mazetto-device-id", deviceId);
+  if (deviceToken) headers.set("x-mazetto-device-token", deviceToken);
   return headers;
 }
 

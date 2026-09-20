@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -44,5 +45,14 @@ export class PrintersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.printersService.updatePrinter(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  deactivatePrinter(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.printersService.deactivatePrinter(id, user);
   }
 }

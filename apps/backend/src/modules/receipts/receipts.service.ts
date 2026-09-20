@@ -40,6 +40,7 @@ export class ReceiptsService {
       take: query.limit,
       select: {
         id: true,
+        documentType: true,
         receiptNumber: true,
         total: true,
         printed: true,
@@ -141,6 +142,7 @@ export class ReceiptsService {
     const receipt = await this.prisma.receipt.findFirst({
       where: {
         orderId,
+        documentType: "RECEIPT",
         ...(branchId ? { branchId } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -176,16 +178,56 @@ export class ReceiptsService {
     });
     if (!receipt) throw new NotFoundException("Receipt not found");
     resolveBranchScope(user, receipt.branchId);
-    await this.prisma.$transaction((tx) => queuePrintJobsForReceipt(tx, receipt));
+    await this.prisma.$transaction(async (tx) => {
+      await queuePrintJobsForReceipt(tx, receipt);
+      await tx.receipt.update({
+        where: { id: receipt.id },
+        data: { printed: false, printedAt: null },
+      });
+    });
     return this.getReceipt(id, user);
   }
-  async claimPrintJob(branchId: string | undefined, agentId: string, user: AuthenticatedUser, printerIds?: string[]) {
-    const scopedBranchId = resolveBranchScope(user, branchId);
+  async claimPrintJob(
+    branchId: string | undefined,
+    agentId: string,
+    user: AuthenticatedUser,
+    printerIds: string[] = [],
+    acceptUnassigned = false,
+    deviceId?: string,
+  ) {
+    const device = deviceId?.trim()
+      ? await this.prisma.device.findUnique({
+          where: { hardwareId: deviceId.trim() },
+          select: { branchId: true, isActive: true, enrolledAt: true },
+        })
+      : null;
+    if (deviceId?.trim() && (!device?.isActive || !device.enrolledAt)) {
+      throw new BadRequestException("Enrolled print device is required");
+    }
+    if (device && branchId && branchId !== device.branchId) {
+      throw new BadRequestException("Print device belongs to another branch");
+    }
+    const scopedBranchId = resolveBranchScope(user, device?.branchId ?? branchId);
     if (!scopedBranchId) throw new BadRequestException("Branch is required");
     await this.restoreMissingPrintJobs(scopedBranchId);
+    const targetFilters: Prisma.PrintJobWhereInput[] = [];
+    if (printerIds.length > 0) targetFilters.push({ printerId: { in: printerIds } });
+    if (acceptUnassigned) targetFilters.push({ printerId: null });
+    if (targetFilters.length === 0) return null;
     const now = new Date();
     const job = await this.prisma.printJob.findFirst({
-      where: { branchId: scopedBranchId, ...(printerIds?.length ? { printerId: { in: printerIds } } : {}), OR: [{ status: "PENDING", nextAttemptAt: { lte: now } }, { status: "PROCESSING", leaseExpiresAt: { lte: now } }] },
+      where: {
+        branchId: scopedBranchId,
+        AND: [
+          { OR: targetFilters },
+          {
+            OR: [
+              { status: "PENDING", nextAttemptAt: { lte: now } },
+              { status: "PROCESSING", leaseExpiresAt: { lte: now } },
+            ],
+          },
+        ],
+      },
       orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
     });
     if (!job) return null;
@@ -216,7 +258,19 @@ export class ReceiptsService {
         where: { jobId_leaseToken: { jobId: id, leaseToken } },
         data: { outcome: "PRINTED", completedAt: now },
       });
-      await tx.receipt.update({ where: { id: job.receiptId }, data: { printed: true, printedAt: now } });
+      const remaining = await tx.printJob.count({
+        where: {
+          receiptId: job.receiptId,
+          id: { not: id },
+          status: { notIn: ["PRINTED", "CANCELLED"] },
+        },
+      });
+      if (remaining === 0) {
+        await tx.receipt.update({
+          where: { id: job.receiptId },
+          data: { printed: true, printedAt: now },
+        });
+      }
     });
     return this.prisma.printJob.findUnique({ where: { id } });
   }
@@ -259,8 +313,40 @@ export class ReceiptsService {
     const content = receipt.content && typeof receipt.content === "object" && !Array.isArray(receipt.content)
       ? (receipt.content as Record<string, unknown>)
       : {};
-    const isCancellation = content.documentType === "CANCELLATION";
-    const cancellationReason = typeof content.cancellationReason === "string" ? content.cancellationReason : null;    return {
+    const isCancellation = receipt.documentType === "CANCELLATION" || content.documentType === "CANCELLATION";
+    const cancellationReason = typeof content.cancellationReason === "string" ? content.cancellationReason : null;
+    const branchName = textValue(content.branchName) ?? receipt.branch.name;
+    const orderNumber = textValue(content.orderNumber) ?? receipt.order.orderNumber;
+    const dateTime = textValue(content.dateTime) ?? receipt.createdAt.toISOString();
+    const total = textValue(content.total) ?? receipt.total.toFixed(2);
+    const snapshotItems = objectArray(content.items);
+    const snapshotPayments = objectArray(content.payments);
+    const itemCommands = snapshotItems.length > 0
+      ? snapshotItems.map((item) => ({
+          type: "item",
+          name: [textValue(item.name), textValue(item.variant)].filter(Boolean).join(" "),
+          quantity: textValue(item.quantity) ?? "",
+          total: textValue(item.total) ?? "",
+        }))
+      : receipt.order.items.map((item) => ({
+          type: "item",
+          name: `${item.productName}${item.variantName ? ` ${item.variantName}` : ""}`,
+          quantity: item.quantity.toFixed(3),
+          total: item.totalPrice.toFixed(2),
+        }));
+    const paymentCommands = snapshotPayments.length > 0
+      ? snapshotPayments.map((payment) => ({
+          type: "payment",
+          method: textValue(payment.method) ?? "To'lov",
+          amount: textValue(payment.amount) ?? "",
+        }))
+      : receipt.order.payments.map((payment) => ({
+          type: "payment",
+          method: payment.method.code,
+          amount: payment.amount.toFixed(2),
+        }));
+
+    return {
       encoding: "UTF-8",
       commands: [
         { type: "align", value: "center" },
@@ -268,28 +354,33 @@ export class ReceiptsService {
         { type: "text", value: "MAZETTO FOOD" },
         ...(isCancellation ? [{ type: "text", value: "*** BUYURTMA BEKOR QILINDI ***" }, ...(cancellationReason ? [{ type: "text", value: `Sabab: ${cancellationReason}` }] : [])] : []),
         { type: "bold", value: false },
-        { type: "text", value: receipt.branch.name },
+        { type: "text", value: branchName },
         { type: "line" },
         { type: "align", value: "left" },
         { type: "text", value: `Receipt: ${receipt.receiptNumber}` },
-        { type: "text", value: `Order: ${receipt.order.orderNumber}` },
+        { type: "text", value: `Order: ${orderNumber}` },
         { type: "line" },
-        ...receipt.order.items.map((item) => ({
-          type: "item",
-          name: `${item.productName}${item.variantName ? ` ${item.variantName}` : ""}`,
-          quantity: item.quantity.toFixed(3),
-          total: item.totalPrice.toFixed(2),
-        })),
+        ...itemCommands,
         { type: "line" },
-        ...receipt.order.payments.map((payment) => ({
-          type: "payment",
-          method: payment.method.code,
-          amount: payment.amount.toFixed(2),
-        })),
-        { type: "total", value: receipt.total.toFixed(2) },
-        { type: "text", value: `Date: ${receipt.createdAt.toISOString()}` },
+        ...paymentCommands,
+        { type: "total", value: total },
+        { type: "text", value: `Date: ${dateTime}` },
         { type: "cut" },
       ],
     };
   }
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function objectArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item),
+  );
 }

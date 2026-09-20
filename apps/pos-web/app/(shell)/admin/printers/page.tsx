@@ -58,8 +58,8 @@ import { useApiResource } from "../../../../lib/use-api-resource";
  *     haqiqatan ishlayotganini isbotlamaydi.
  *   - Ekranda buni ochiq aytadigan izoh bor.
  *
- * O'CHIRISH tugmasi yo'q: backendda `DELETE /printers/:id` YO'Q. Printer
- * ishdan chiqqanda "Faol" o'chiriladi (`PATCH` `isActive`).
+ * "Ishdan chiqarish" tarixni saqlaydigan soft-delete: backend printerni
+ * nofaol va OFFLINE qiladi, eski chop ishlaridagi bog'lanish buzilmaydi.
  *
  * ADMIN roli ataylab yo'q: RBAC spetsifikatsiyasida unga hech qanday
  * `RECEIPT_*` permission berilmagan va printer boshqaruvi uning vazifalari
@@ -357,8 +357,7 @@ function PrintersConsole() {
 
     try {
       await apiFetch(`/printers/${pendingDeactivate.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ isActive: false }),
+        method: "DELETE",
       });
       showToast(`${pendingDeactivate.name} ishdan chiqarildi.`, "success");
       setPendingDeactivate(null);

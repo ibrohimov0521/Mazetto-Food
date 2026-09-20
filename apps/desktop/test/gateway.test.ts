@@ -10,9 +10,14 @@ import { DesktopStore } from "../src/store.js";
 test("gateway serves the last successful JSON snapshot when upstream is offline", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
+  store.setSetting("device_auth_token", "device-secret");
   let receivedDeviceId: string | undefined;
+  let receivedDeviceToken: string | undefined;
   const upstream = createServer((_request, response) => {
     receivedDeviceId = _request.headers["x-mazetto-device-id"] as
+      | string
+      | undefined;
+    receivedDeviceToken = _request.headers["x-mazetto-device-token"] as
       | string
       | undefined;
     response.writeHead(200, { "Content-Type": "application/json" });
@@ -28,6 +33,7 @@ test("gateway serves the last successful JSON snapshot when upstream is offline"
     port: 0,
     upstreamApiUrl: `http://127.0.0.1:${address.port}/api/v1`,
     store,
+    getDeviceToken: () => "device-secret",
   });
 
   try {
@@ -39,6 +45,7 @@ test("gateway serves the last successful JSON snapshot when upstream is offline"
     assert.equal(first.status, 200);
     assert.equal(first.headers.get("x-mazetto-desktop"), "online");
     assert.equal(receivedDeviceId, store.deviceId());
+    assert.equal(receivedDeviceToken, "device-secret");
     assert.equal(store.summary().cachedResponses, 1);
 
     upstream.close();

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -24,6 +24,7 @@ let gateway: DesktopGateway | null = null;
 let store: DesktopStore | null = null;
 let uiProcess: ChildProcess | null = null;
 let printWorker: DesktopPrintWorker | null = null;
+let deviceAuthToken: string | null = null;
 let printTimer: NodeJS.Timeout | null = null;
 
 type UpdateStatus = {
@@ -100,12 +101,14 @@ async function startDesktop(): Promise<void> {
   const dataDirectory = join(app.getPath("userData"), "runtime");
   await mkdir(dataDirectory, { recursive: true });
   store = new DesktopStore(join(dataDirectory, "mazetto-desktop.sqlite"));
-  printWorker = new DesktopPrintWorker({ apiUrl: UPSTREAM_API_URL, printerHost: store.getSetting("printer_host") || process.env.MAZETTO_PRINTER_HOST?.trim() || null, printerPort: Number(store.getSetting("printer_port") || process.env.MAZETTO_PRINTER_PORT || 9100), agentId: `desktop-${store.deviceId()}` });
+  deviceAuthToken = readProtectedDeviceToken();
+  printWorker = new DesktopPrintWorker({ apiUrl: UPSTREAM_API_URL, printerHost: store.getSetting("printer_host") || process.env.MAZETTO_PRINTER_HOST?.trim() || null, printerPort: Number(store.getSetting("printer_port") || process.env.MAZETTO_PRINTER_PORT || 9100), agentId: `desktop-${store.deviceId()}`, deviceId: store.deviceId(), deviceToken: deviceAuthToken });
   gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: GATEWAY_PORT,
     upstreamApiUrl: UPSTREAM_API_URL,
     store,
+    getDeviceToken: () => deviceAuthToken,
   });
   setupPrinterControls();
   setupDeviceEnrollment();
@@ -391,7 +394,16 @@ function setupDeviceEnrollment(): void {
       const payload = (await response.json().catch(() => null)) as { data?: unknown; error?: { message?: string | string[] } } | null;
       const message = payload?.error?.message;
       if (!response.ok) throw new Error(Array.isArray(message) ? message.join(", ") : message || "Qurilmani ulashda server xatosi (" + response.status + ")");
-      return payload?.data ?? payload;
+      const result = (payload?.data ?? payload) as Record<string, unknown> | null;
+      if (!result) throw new Error("Server qurilma ma'lumotini qaytarmadi");
+      const deviceToken = typeof result?.deviceToken === "string" ? result.deviceToken : "";
+      if (!deviceToken) throw new Error("Server qurilma maxfiy kalitini qaytarmadi");
+      saveProtectedDeviceToken(deviceToken);
+      deviceAuthToken = deviceToken;
+      printWorker?.setDeviceToken(deviceToken);
+      const safeResult = { ...result };
+      delete safeResult.deviceToken;
+      return safeResult;
     },
   );
 }
@@ -400,7 +412,7 @@ function setupPrinterControls(): void {
   ipcMain.removeHandler("desktop:printer:status");
   ipcMain.removeHandler("desktop:printer:save");
   ipcMain.removeHandler("desktop:printer:test");
-  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100 });
+  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100, managedPrinters: 0 });
   ipcMain.handle("desktop:printer:save", async (_event, input: { host?: unknown; port?: unknown }) => {
     const host = typeof input?.host === "string" ? input.host.trim() : "";
     const port = Number(input?.port);
@@ -412,4 +424,22 @@ function setupPrinterControls(): void {
     return printWorker?.status();
   });
   ipcMain.handle("desktop:printer:test", () => printWorker?.testConnection());
+}
+
+function readProtectedDeviceToken(): string | null {
+  const encrypted = store?.getSetting("device_auth_token_encrypted");
+  if (!encrypted || !safeStorage.isEncryptionAvailable()) return null;
+  try {
+    return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
+  } catch {
+    return null;
+  }
+}
+
+function saveProtectedDeviceToken(token: string): void {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Windows xavfsiz saqlash xizmati mavjud emas");
+  }
+  const encrypted = safeStorage.encryptString(token).toString("base64");
+  store?.setSetting("device_auth_token_encrypted", encrypted);
 }

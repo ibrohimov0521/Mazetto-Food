@@ -116,6 +116,7 @@ export class DevicesService {
     }
 
     const enrolledAt = new Date();
+    const deviceToken = randomBytes(32).toString("base64url");
     const updated = await this.prisma.$transaction(async (tx) => {
       // A one-time code explicitly authorizes moving this physical computer
       // to the selected admin device slot; historical records remain intact.
@@ -127,6 +128,7 @@ export class DevicesService {
         where: { id: device.id },
         data: {
           hardwareId: deviceId,
+          deviceAuthTokenHash: hashDeviceToken(deviceToken),
           enrolledAt,
           enrollmentCodeHash: null,
           enrollmentExpiresAt: null,
@@ -138,7 +140,7 @@ export class DevicesService {
         select: { id: true, branchId: true, name: true, type: true, enrolledAt: true },
       });
     });
-    return updated;
+    return { ...updated, deviceToken };
   }
   async updateDevice(
     id: string,
@@ -302,4 +304,8 @@ function hashEnrollmentCode(code: string): string {
 
 function enrollmentExpiry(): Date {
   return new Date(Date.now() + 15 * 60 * 1000);
+}
+
+export function hashDeviceToken(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }

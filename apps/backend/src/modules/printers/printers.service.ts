@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { writeAuditLog } from "../audit/audit-write";
 import type { CreatePrinterDto, UpdatePrinterDto } from "./dto/printer.dto";
 
 @Injectable()
@@ -58,10 +59,32 @@ export class PrintersService {
     });
   }
 
-  private async assertPrinter(id: string, user: AuthenticatedUser): Promise<{ metadata: unknown }> {
+  async deactivatePrinter(id: string, user: AuthenticatedUser) {
+    const existing = await this.assertPrinter(id, user);
+    return this.prisma.$transaction(async (tx) => {
+      const printer = await tx.printer.update({
+        where: { id },
+        data: { isActive: false, status: "OFFLINE" },
+        include: { branch: true },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "PRINTER_DEACTIVATED",
+        entity: "Printer",
+        entityId: id,
+        metadata: { branchId: existing.branchId, name: existing.name },
+      });
+      return printer;
+    });
+  }
+
+  private async assertPrinter(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<{ branchId: string; name: string; metadata: unknown }> {
     const printer = await this.prisma.printer.findUnique({
       where: { id },
-      select: { id: true, branchId: true, metadata: true },
+      select: { id: true, branchId: true, name: true, metadata: true },
     });
     if (!printer) throw new NotFoundException("Printer not found");
     resolveBranchScope(user, printer.branchId);

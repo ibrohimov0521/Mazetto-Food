@@ -78,14 +78,14 @@ const items: NavItem[] = adminNavGroups.flatMap((group) => group.items);
 
 assert.equal(
   items.length,
-  27,
+  28,
   `nav elementlari soni kutilganidan farq qiladi: ${items.length}`,
 );
 
-// Stol va printerlar umumiy yon panelda emas, filialning ichki ish maydonida.
-// Ular ro'yxatda qolsa foydalanuvchi filial kontekstini yo'qotadi.
+// Stollar filialning ichki ish maydonida. Printer navbati esa kunlik kassa
+// amali bo'lgani uchun Cheklar yonidan bevosita ochiladi.
 assert.ok(!items.some((item) => item.href === "/admin/tables"));
-assert.ok(!items.some((item) => item.href === "/admin/printers"));
+assert.ok(items.some((item) => item.href === "/admin/printers"));
 
 /*
  * Ruxsat matritsasi (`lib/route-access.ts`) — endi guardlarning yagona manbai.

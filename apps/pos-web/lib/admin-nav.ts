@@ -157,6 +157,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
+        label: "Printerlar",
+        icon: "printer",
+        href: "/admin/printers",
+        permission: "RECEIPT_PRINT",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+      },
+      {
         label: "Xarajatlar",
         icon: "arrowDown",
         href: "/admin/expenses",

@@ -11,12 +11,14 @@ const registry: OfflineCommandDefinition[] = [
   { commandType: "shift.open", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/shift\/open$/ },
   { commandType: "shift.close", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/shift\/[^/]+\/close$/ },
   { commandType: "courier-shift.open", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/courier-shift\/open$/ },
-  { commandType: "cash.transfer.create", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/transfers(?:\/[^/]+)?$/ },
+  { commandType: "cash.transfer.create", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/ },
+  { commandType: "cash.transfer.action", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/transfers\/[^/]+\/(?:accept|reject)$/ },
   { commandType: "order.status.update", aggregateType: "orders", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/orders\/[^/]+\/status$/ },
   { commandType: "order.action", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/orders\/[^/]+\/actions\/[^/]+$/ },
   { commandType: "order.items.update", aggregateType: "orders", methods: ["POST", "PATCH", "DELETE"], pattern: /^\/api\/v1\/orders\/[^/]+\/items(?:\/[^/]+)?$/ },
+  { commandType: "order.item.cancel", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/orders\/[^/]+\/items\/[^/]+\/actions\/cancel$/ },
   { commandType: "table.order.create", aggregateType: "tables", methods: ["POST"], pattern: /^\/api\/v1\/tables\/[^/]+\/orders$/ },
-  { commandType: "kitchen.action", aggregateType: "kitchen", methods: ["POST"], pattern: /^\/api\/v1\/kitchen\/orders\/[^/]+\/[^/]+$/ },
+  { commandType: "kitchen.action", aggregateType: "kitchen", methods: ["PATCH"], pattern: /^\/api\/v1\/kitchen\/orders\/[^/]+\/(?:accept|start|ready|complete|cancel)$/ },
   { commandType: "courier.status.update", aggregateType: "courier", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/courier\/orders\/[^/]+\/status$/ },
 ];
 

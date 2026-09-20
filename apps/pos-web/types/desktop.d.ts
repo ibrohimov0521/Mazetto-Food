@@ -14,7 +14,12 @@ type DesktopUpdateStatus = {
   checkedAt: string | null;
 };
 
-type DesktopPrinterStatus = { configured: boolean; host: string | null; port: number };
+type DesktopPrinterStatus = {
+  configured: boolean;
+  host: string | null;
+  port: number;
+  managedPrinters: number;
+};
 
 type DesktopBridge = {
   device?: {

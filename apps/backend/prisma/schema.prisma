@@ -661,6 +661,7 @@ model Device {
   branchId            String
   lastEmployeeId      String?
   hardwareId          String?    @unique
+  deviceAuthTokenHash String?
   enrollmentCodeHash  String?
   enrollmentExpiresAt DateTime?
   enrolledAt          DateTime?
@@ -1427,6 +1428,7 @@ model Receipt {
   id            String    @id @default(cuid())
   orderId       String
   branchId      String
+  documentType  String    @default("RECEIPT")
   receiptNumber String    @unique
   total         Decimal   @db.Decimal(12, 2)
   printed       Boolean   @default(false)
@@ -1439,8 +1441,9 @@ model Receipt {
   order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   printJobs PrintJob[]
 
-  @@unique([orderId])
+  @@unique([orderId, documentType])
   @@index([branchId, createdAt])
+  @@index([documentType, createdAt])
   @@index([printed])
   @@map("receipts")
 }

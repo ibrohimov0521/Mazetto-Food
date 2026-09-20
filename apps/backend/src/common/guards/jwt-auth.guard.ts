@@ -7,11 +7,13 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
+import { timingSafeEqual } from "node:crypto";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import type { AuthenticatedRequest, AuthenticatedUser } from "../types/authenticated-user";
 import { getJwtAccessSecret } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { UserAuthCacheService } from "../auth/user-auth-cache.service";
+import { hashDeviceToken } from "../../modules/devices/devices.service";
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -59,6 +61,10 @@ export class JwtAuthGuard implements CanActivate {
   ): Promise<void> {
     const rawDeviceId = request.headers["x-mazetto-device-id"];
     const deviceId = Array.isArray(rawDeviceId) ? rawDeviceId[0] : rawDeviceId;
+    const rawDeviceToken = request.headers["x-mazetto-device-token"];
+    const deviceToken = Array.isArray(rawDeviceToken)
+      ? rawDeviceToken[0]
+      : rawDeviceToken;
 
     if (!deviceId?.trim()) {
       return;
@@ -78,10 +84,16 @@ export class JwtAuthGuard implements CanActivate {
 
     const device = await this.prisma.device.findUnique({
       where: { hardwareId: deviceId.trim() },
-      select: { isActive: true, enrolledAt: true },
+      select: { isActive: true, enrolledAt: true, deviceAuthTokenHash: true },
     });
 
-    if (!device?.isActive || !device.enrolledAt) {
+    if (
+      !device?.isActive ||
+      !device.enrolledAt ||
+      !device.deviceAuthTokenHash ||
+      !deviceToken ||
+      !secureTokenMatches(device.deviceAuthTokenHash, deviceToken)
+    ) {
       throw new ForbiddenException(
         "Bu desktop qurilma hali kod bilan tasdiqlanmagan.",
       );
@@ -191,4 +203,10 @@ export class JwtAuthGuard implements CanActivate {
 
     return resolved;
   }
+}
+
+function secureTokenMatches(expectedHash: string, token: string): boolean {
+  const actual = Buffer.from(hashDeviceToken(token));
+  const expected = Buffer.from(expectedHash);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }

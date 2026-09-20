@@ -90,6 +90,7 @@ export async function writeReceiptRow(
     data: {
       orderId: order.id,
       branchId: order.branchId,
+      documentType,
       receiptNumber,
       total: order.total,
       content: {
@@ -119,7 +120,12 @@ export async function ensureOrderReceipt(tx: TransactionClient, orderId: string)
     where: { id: orderId },
     include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
   });
-  if (!order || (order.receipts ?? []).length > 0) return;
+  if (
+    !order ||
+    (order.receipts ?? []).some(
+      (receipt) => receipt.documentType === "RECEIPT",
+    )
+  ) return;
   await writeReceiptRow(tx, order);
 }
 
@@ -133,7 +139,9 @@ export async function ensureCancellationReceipt(
     include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
   });
   if (!order || !order.branch || !Array.isArray(order.items) || !Array.isArray(order.payments)) return;
-  const alreadyCreated = (order.receipts ?? []).some((receipt) => receiptPrintRoute(receipt.content) === "CANCELLATION");
+  const alreadyCreated = (order.receipts ?? []).some(
+    (receipt) => receipt.documentType === "CANCELLATION",
+  );
   if (alreadyCreated) return;
   await writeReceiptRow(tx, order, {
     documentType: "CANCELLATION",

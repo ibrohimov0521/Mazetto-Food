@@ -1,6 +1,12 @@
 import { Socket } from "node:net";
 
 type PrinterMetadata = { host?: unknown; port?: unknown };
+type PrinterConfig = {
+  id: string;
+  isActive?: boolean;
+  status?: string;
+  metadata?: PrinterMetadata | null;
+};
 type PrintJob = {
   id: string;
   receiptId: string;
@@ -14,6 +20,8 @@ export type DesktopPrintWorkerOptions = {
   printerHost: string | null;
   printerPort?: number;
   agentId: string;
+  deviceId: string;
+  deviceToken?: string | null;
   fetchImpl?: typeof fetch;
 };
 
@@ -23,15 +31,20 @@ export class DesktopPrintWorker {
   private printerHost: string | null;
   private printerPort: number;
   private readonly agentId: string;
+  private readonly deviceId: string;
+  private deviceToken: string | null;
   private readonly fetchImpl: typeof fetch;
   private authorization: string | null = null;
   private running = false;
+  private managedPrinters = 0;
 
   constructor(options: DesktopPrintWorkerOptions) {
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
     this.printerHost = options.printerHost;
     this.printerPort = options.printerPort ?? 9100;
     this.agentId = options.agentId;
+    this.deviceId = options.deviceId;
+    this.deviceToken = options.deviceToken ?? null;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -40,21 +53,46 @@ export class DesktopPrintWorker {
     this.printerPort = printerPort;
   }
 
-  status(): { configured: boolean; host: string | null; port: number } {
-    return { configured: Boolean(this.printerHost), host: this.printerHost, port: this.printerPort };
+  status(): { configured: boolean; host: string | null; port: number; managedPrinters: number } {
+    return {
+      configured: Boolean(this.printerHost) || this.managedPrinters > 0,
+      host: this.printerHost,
+      port: this.printerPort,
+      managedPrinters: this.managedPrinters,
+    };
   }
 
   setAuthorization(value: string | undefined): void {
     this.authorization = value?.startsWith("Bearer ") ? value : null;
   }
 
+  setDeviceToken(value: string | null): void {
+    this.deviceToken = value;
+  }
+
   async tick(): Promise<void> {
     if (this.running || !this.authorization) return;
     this.running = true;
     try {
+      const printers = await this.request<PrinterConfig[]>("/printers");
+      const readyPrinters = printers.filter((printer) => {
+        const host = printer.metadata?.host;
+        return (
+          printer.isActive !== false &&
+          printer.status === "ONLINE" &&
+          typeof host === "string" &&
+          Boolean(host.trim())
+        );
+      });
+      this.managedPrinters = readyPrinters.length;
+      if (readyPrinters.length === 0 && !this.printerHost) return;
       const job = await this.request<PrintJob | null>("/receipts/print-jobs/claim", {
         method: "POST",
-        body: JSON.stringify({ agentId: this.agentId }),
+        body: JSON.stringify({
+          agentId: this.agentId,
+          printerIds: readyPrinters.map((printer) => printer.id),
+          acceptUnassigned: Boolean(this.printerHost),
+        }),
       });
       if (!job) return;
       try {
@@ -87,7 +125,16 @@ export class DesktopPrintWorker {
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await this.fetchImpl(`${this.apiUrl}${path}`, {
       ...init,
-      headers: { Accept: "application/json", Authorization: this.authorization ?? "", "Content-Type": "application/json", ...init.headers },
+      headers: {
+        Accept: "application/json",
+        Authorization: this.authorization ?? "",
+        "Content-Type": "application/json",
+        "x-mazetto-device-id": this.deviceId,
+        ...(this.deviceToken
+          ? { "x-mazetto-device-token": this.deviceToken }
+          : {}),
+        ...init.headers,
+      },
     });
     if (!response.ok) throw new Error(`Printer API ${response.status}`);
     const body = await response.json() as T | { data: T };
