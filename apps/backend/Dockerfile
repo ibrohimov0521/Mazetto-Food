@@ -50,4 +50,4 @@ USER nestjs
 
 EXPOSE 4000
 
-CMD ["node", "apps/backend/dist/main.js"]
+CMD ["sh", "-c", "pnpm --filter backend prisma:migrate:deploy && exec node apps/backend/dist/main.js"]
