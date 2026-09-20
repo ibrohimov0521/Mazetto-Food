@@ -9,6 +9,7 @@ const gateway = readSource("apps/backend/src/modules/kitchen/kitchen.gateway.ts"
 const customerOrdersPage = readSource("apps/customer-web/app/orders/page.tsx");
 const customerOrderUpdates = readSource("apps/customer-web/lib/use-order-updates.ts");
 const waiterPage = readSource("apps/pos-web/app/(fullscreen)/waiter/page.tsx");
+const staffRealtimeHook = readSource("apps/pos-web/lib/use-staff-realtime.ts");
 const adminKitchenMonitor = readSource("apps/pos-web/components/admin/admin-kitchen-monitor.tsx");
 const realtimePayloadBlock = sourceBetween(
   gateway,
@@ -60,8 +61,10 @@ assert.match(customerOrdersPage, /useOrderUpdates\(customer\?\.accessToken, load
 assert.match(customerOrderUpdates, /auth: \{ token, tokenType: "customer" \}/);
 assert.match(customerOrderUpdates, /if \(!token\) return;/);
 assert.match(customerOrderUpdates, /transports: \["websocket"\]/);
-assert.match(waiterPage, /auth: \{ token: session\.tokens\.accessToken, tokenType: "staff" \}/);
-assert.match(waiterPage, /transports: \["websocket"\]/);
+assert.match(waiterPage, /useStaffRealtime\(/);
+assert.doesNotMatch(waiterPage, /from "socket\.io-client"/);
+assert.match(staffRealtimeHook, /auth: \{ token, tokenType: "staff" \}/);
+assert.match(staffRealtimeHook, /transports: \["websocket"\]/);
 assert.doesNotMatch(adminKitchenMonitor, /autentifikatsiyasiz\s+global broadcast/i);
 
 console.info("Realtime auth and room scoping validation passed");
