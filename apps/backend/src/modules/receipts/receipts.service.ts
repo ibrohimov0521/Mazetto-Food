@@ -230,7 +230,11 @@ export class ReceiptsService {
       };
     }>,
   ) {
-    return {
+    const content = receipt.content && typeof receipt.content === "object" && !Array.isArray(receipt.content)
+      ? (receipt.content as Record<string, unknown>)
+      : {};
+    const isCancellation = content.documentType === "CANCELLATION";
+    const cancellationReason = typeof content.cancellationReason === "string" ? content.cancellationReason : null;    return {
       encoding: "UTF-8",
       commands: [
         { type: "align", value: "center" },
