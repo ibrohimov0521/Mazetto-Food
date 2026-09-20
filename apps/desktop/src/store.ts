@@ -326,6 +326,31 @@ export class DesktopStore {
     }));
   }
 
+  getOutboxCommand(id: string): PendingOutboxCommand | null {
+    const row = this.database
+      .prepare(
+        `
+      SELECT
+        id,
+        idempotency_key AS idempotencyKey,
+        command_type AS commandType,
+        aggregate_type AS aggregateType,
+        aggregate_id AS aggregateId,
+        base_version AS baseVersion,
+        actor_id AS actorId,
+        branch_id AS branchId,
+        auth_scope AS authScope,
+        payload_json AS payloadJson,
+        attempts
+      FROM mutation_outbox
+      WHERE id = ?
+    `,
+      )
+      .get(id) as PendingOutboxCommand | undefined;
+
+    return row ? { ...row } : null;
+  }
+
   retryMutation(id: string): boolean {
     const result = this.database
       .prepare(

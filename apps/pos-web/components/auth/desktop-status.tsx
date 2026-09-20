@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Cloud, CloudOff, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, RefreshCw, X } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { useEffect, useState } from "react";
 import { Badge } from "../admin-ui/badge";
@@ -42,6 +42,24 @@ type OutboxPayload = {
   commands: OutboxCommand[];
 };
 
+type ConflictComparison = {
+  command: {
+    id: string;
+    commandType: string;
+    aggregateType: string;
+    aggregateId: string | null;
+    idempotencyKey: string;
+    baseVersion: number | null;
+    payload: { method?: string; pathname?: string; body: unknown };
+    lastError: string | null;
+  };
+  comparison: {
+    resourcePath: string;
+    expectedVersion: number | null;
+    server: { status: number; contentType: string; body: unknown };
+  };
+};
+
 export function DesktopStatusBadge() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
@@ -49,6 +67,8 @@ export function DesktopStatusBadge() {
   const [outbox, setOutbox] = useState<OutboxPayload | null>(null);
   const [outboxError, setOutboxError] = useState("");
   const [busyCommandId, setBusyCommandId] = useState<string | null>(null);
+  const [comparison, setComparison] = useState<{ commandId: string; data: ConflictComparison } | null>(null);
+  const [comparisonBusyId, setComparisonBusyId] = useState<string | null>(null);
   const [printerHost, setPrinterHost] = useState("");
   const [printerPort, setPrinterPort] = useState("9100");
   const [printerMessage, setPrinterMessage] = useState("");
@@ -84,7 +104,8 @@ export function DesktopStatusBadge() {
 
     void refresh();
     const timer = window.setInterval(() => void refresh(), 5_000);
-    return () => {
+  
+  return () => {
       active = false;
       window.clearInterval(timer);
     };
@@ -106,7 +127,8 @@ export function DesktopStatusBadge() {
 
     sendHeartbeat();
     const timer = window.setInterval(sendHeartbeat, 30_000);
-    return () => window.clearInterval(timer);
+  
+  return () => window.clearInterval(timer);
   }, []);
 
   async function savePrinter(test = false): Promise<void> {
@@ -171,6 +193,23 @@ export function DesktopStatusBadge() {
     }
   }
 
+
+  async function compareCommand(command: OutboxCommand): Promise<void> {
+    setComparisonBusyId(command.id);
+    setOutboxError("");
+    try {
+      const data = await desktopFetch<ConflictComparison>(
+        `/desktop/outbox/${encodeURIComponent(command.id)}/compare`,
+      );
+      setComparison({ commandId: command.id, data });
+    } catch (caught) {
+      setOutboxError(
+        caught instanceof Error ? caught.message : "Taqqoslashni olib bo'lmadi.",
+      );
+    } finally {
+      setComparisonBusyId(null);
+    }
+  }
   return (
     <>
       <button
@@ -284,6 +323,19 @@ export function DesktopStatusBadge() {
                       ) : null}
                     </div>
                     <div className="flex shrink-0 gap-1">
+                      {command.state === "conflict" || command.state === "dead_letter" ? (
+                        <Button
+                          aria-label="Server holati bilan taqqoslash"
+                          disabled={comparisonBusyId === command.id}
+                          isLoading={comparisonBusyId === command.id}
+                          onClick={() => void compareCommand(command)}
+                          size="sm"
+                          title="Server holati bilan taqqoslash"
+                          variant="ghost"
+                        >
+                          <GitCompareArrows className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : null}
                       <Button
                         disabled={command.state === "sending"}
                         isLoading={busyCommandId === command.id}
@@ -312,6 +364,64 @@ export function DesktopStatusBadge() {
               Navbat bo'sh.
             </div>
           )}
+
+          {comparison ? (
+            <div className="rounded-mz-card border border-mz-warning-accent bg-mz-warning-bg p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-mz-text">Konflikt taqqoslanishi</p>
+                  <p className="mt-1 text-[12px] text-mz-text-muted">
+                    Lokal amal va serverdagi hozirgi holat yonma-yon tekshirildi.
+                  </p>
+                </div>
+                <Button
+                  aria-label="Taqqoslashni yopish"
+                  onClick={() => setComparison(null)}
+                  size="sm"
+                  title="Taqqoslashni yopish"
+                  variant="ghost"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="mt-3 grid gap-2 text-[12px] text-mz-text-muted sm:grid-cols-2">
+                <span>Amal: {comparison.data.command.commandType}</span>
+                <span>Kutilgan versiya: {comparison.data.comparison.expectedVersion ?? "ko'rsatilmagan"}</span>
+                <span>Server javobi: {comparison.data.comparison.server.status}</span>
+                <span>Resurs: {comparison.data.comparison.resourcePath}</span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mz-text-muted">Lokal yuborilgan qiymat</p>
+                  <pre className="max-h-40 overflow-auto rounded-mz-control bg-mz-surface p-2 text-[11px] text-mz-text">{JSON.stringify(comparison.data.command.payload.body, null, 2)}</pre>
+                </div>
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mz-text-muted">Serverdagi hozirgi qiymat</p>
+                  <pre className="max-h-40 overflow-auto rounded-mz-control bg-mz-surface p-2 text-[11px] text-mz-text">{JSON.stringify(comparison.data.comparison.server.body, null, 2)}</pre>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <Button
+                  disabled={busyCommandId === comparison.commandId}
+                  isLoading={busyCommandId === comparison.commandId}
+                  onClick={() => void mutateCommand(comparison.commandId, "retry")}
+                  size="sm"
+                  variant="ghost"
+                >
+                  Qayta yuborish
+                </Button>
+                <Button
+                  disabled={busyCommandId === comparison.commandId}
+                  isLoading={busyCommandId === comparison.commandId}
+                  onClick={() => void mutateCommand(comparison.commandId, "cancel")}
+                  size="sm"
+                  variant="danger"
+                >
+                  Bekor qilish
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </Modal>
     </>
@@ -319,6 +429,7 @@ export function DesktopStatusBadge() {
 }
 
 function QueueStat({ label, value }: { label: string; value: number }) {
+
   return (
     <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-2">
       <p className="text-[11px] text-mz-text-muted">{label}</p>
