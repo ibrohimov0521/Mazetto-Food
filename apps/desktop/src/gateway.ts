@@ -7,6 +7,11 @@ import {
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import {
+  resolveOfflineCommand,
+  resolveOfflineCommandType,
+  type OfflineCommandDefinition,
+} from "./commands.js";
+import {
   DesktopStore,
   readJwtContext,
   type PendingOutboxCommand,
@@ -219,7 +224,8 @@ export class DesktopGateway {
         return;
       }
 
-      if (authorization && body && isQueueableMutation(method, url.pathname)) {
+      const commandDefinition = resolveOfflineCommand(method, url.pathname);
+      if (authorization && body && commandDefinition) {
         const queued = this.queueMutation({
           authorization,
           authScope,
@@ -228,6 +234,7 @@ export class DesktopGateway {
           pathname: url.pathname,
           targetUrl,
           request,
+          definition: commandDefinition,
         });
         response.writeHead(202, {
           "Content-Type": "application/json; charset=utf-8",
@@ -264,6 +271,7 @@ export class DesktopGateway {
     pathname: string;
     request: IncomingMessage;
     targetUrl: string;
+    definition: OfflineCommandDefinition;
   }): { command: PendingOutboxCommand } {
     const bodyText = Buffer.from(input.body).toString("utf8");
     const parsedBody = parseJsonObject(bodyText);
@@ -277,14 +285,15 @@ export class DesktopGateway {
 
     const command = this.store.enqueueMutation({
       idempotencyKey,
-      commandType: `${input.method} ${input.pathname}`,
-      aggregateType: aggregate.type,
+      commandType: input.definition.commandType,
+      aggregateType: input.definition.aggregateType,
       aggregateId: aggregate.id,
       baseVersion,
       actorId: context?.actorId ?? "unknown",
       branchId: context?.branchId ?? "global",
       authScope: input.authScope,
       payload: {
+        commandType: input.definition.commandType,
         method: input.method,
         targetUrl: input.targetUrl,
         pathname: input.pathname,
@@ -338,12 +347,31 @@ export class DesktopGateway {
     try {
       const payload = JSON.parse(command.payloadJson) as {
         body?: string;
+        commandType?: string;
         headers?: Record<string, string>;
         method?: string;
+        pathname?: string;
         targetUrl?: string;
       };
       if (!payload.method || !payload.targetUrl) {
         throw new Error("Queued command payload is incomplete");
+      }
+
+      const definition = payload.commandType
+        ? resolveOfflineCommandType(payload.commandType)
+        : resolveOfflineCommand(payload.method, payload.pathname ?? "");
+      const legacyCommand =
+        !payload.commandType &&
+        command.commandType === `${payload.method} ${payload.pathname ?? ""}`;
+      if (
+        !definition ||
+        (!legacyCommand && definition.commandType !== command.commandType)
+      ) {
+        this.store.markMutationConflict(
+          command.id,
+          "OFFLINE_COMMAND_INVALID: queued command registry mismatch",
+        );
+        return;
       }
 
       const headers = new Headers({
@@ -364,7 +392,7 @@ export class DesktopGateway {
         signal: AbortSignal.timeout(10_000),
       });
 
-      if (response.ok || response.status === 409) {
+      if (response.ok) {
         this.store.markMutationAcknowledged(command.id);
         this.mode = "online";
         this.lastOnlineAt = new Date().toISOString();
@@ -373,6 +401,13 @@ export class DesktopGateway {
       }
 
       const errorText = await response.text();
+      if (response.status === 409) {
+        this.store.markMutationConflict(
+          command.id,
+          `CONFLICT: ${errorText || "Server version conflict"}`,
+        );
+        return;
+      }
       if (response.status >= 400 && response.status < 500) {
         this.store.markMutationConflict(
           command.id,
@@ -520,27 +555,6 @@ export class DesktopGateway {
     });
     response.end(JSON.stringify(body));
   }
-}
-
-function isQueueableMutation(method: string, pathname: string): boolean {
-  if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    return false;
-  }
-
-  return [
-    /^\/api\/v1\/pos\/orders$/,
-    /^\/api\/v1\/payments\/process$/,
-    /^\/api\/v1\/cash-register\/shift\/open$/,
-    /^\/api\/v1\/cash-register\/shift\/[^/]+\/close$/,
-    /^\/api\/v1\/cash-register\/courier-shift\/open$/,
-    /^\/api\/v1\/cash-register\/transfers/,
-    /^\/api\/v1\/orders\/[^/]+\/status$/,
-    /^\/api\/v1\/orders\/[^/]+\/actions\//,
-    /^\/api\/v1\/orders\/[^/]+\/items/,
-    /^\/api\/v1\/tables\/[^/]+\/orders$/,
-    /^\/api\/v1\/kitchen\/orders\/[^/]+\//,
-    /^\/api\/v1\/courier\/orders\/[^/]+\/status$/,
-  ].some((pattern) => pattern.test(pathname));
 }
 
 function queuedResponseData(

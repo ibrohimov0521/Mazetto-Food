@@ -249,6 +249,99 @@ test("gateway exposes and manages the desktop outbox", async () => {
   }
 });
 
+test("gateway rejects unregistered offline mutations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      throw new Error("offline");
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const response = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/admin/users`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: desktopJwt("admin-1", "branch-1"),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "should-not-replay" }),
+      },
+    );
+    assert.equal(response.status, 503);
+    assert.equal(store.summary().pendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway sends server version conflicts to the conflict inbox", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-conflict", "branch-1");
+  const authScope = DesktopStore.authScope(authorization);
+  store.enqueueMutation({
+    idempotencyKey: "conflict-key",
+    commandType: "kitchen.action",
+    aggregateType: "kitchen",
+    aggregateId: "ticket-1",
+    actorId: "cashier-conflict",
+    branchId: "branch-1",
+    authScope,
+    payload: {
+      commandType: "kitchen.action",
+      method: "POST",
+      pathname: "/api/v1/kitchen/orders/ticket-1/ready",
+      targetUrl: "https://api.example.test/api/v1/kitchen/orders/ticket-1/ready",
+      headers: { "idempotency-key": "conflict-key" },
+      body: JSON.stringify({ expectedVersion: 2 }),
+    },
+  });
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (init?.method === "POST") {
+        return new Response('{"code":"KITCHEN_VERSION_CONFLICT"}', {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const refresh = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/branches`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(refresh.status, 200);
+    await waitFor(() => store.summary().conflictCommands === 1);
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.match(store.listOutbox()[0]?.lastError ?? "", /CONFLICT/);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("gateway can retry a blocked outbox command", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
