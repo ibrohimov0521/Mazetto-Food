@@ -23,9 +23,11 @@ import {
   StaffDialog,
   StaffEmpty,
   StaffShell,
+  StaffSync,
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
+import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 import { handleProductImageError, productImage } from "../../../lib/media";
 import {
   orderStatusLabels,
@@ -169,10 +171,11 @@ export default function PosPage() {
 
 function PosTerminal() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { user, logout, session } = useAuth();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [currentShift, setCurrentShift] = useState<CurrentShift | null>(null);
   const [isCheckingShift, setIsCheckingShift] = useState(true);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [categoryId, setCategoryId] = useState("ALL");
   const [query, setQuery] = useState("");
@@ -228,7 +231,10 @@ function PosTerminal() {
       }
       setCurrentShift(shift);
       const data = await apiFetch<Catalog>("/pos/catalog", { signal });
-      if (!controller.signal.aborted) setCatalog(data);
+      if (!controller.signal.aborted) {
+        setCatalog(data);
+        setLastUpdatedAt(new Date());
+      }
     } catch (caught) {
       if (controller.signal.aborted) return;
       if (
@@ -248,6 +254,12 @@ function PosTerminal() {
     void loadTerminal();
     return () => loadRequest.current?.abort();
   }, [loadTerminal]);
+
+  const realtimeState = useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    cursorScope: (user?.id ?? "staff") + ":pos",
+    onEvent: () => undefined,
+  });
 
   function historyActor(entry: StatusHistoryEntry): string {
     const employee = entry.changedByEmployee;
@@ -625,6 +637,13 @@ function PosTerminal() {
                 : "Smena"}
             </span>
           </button>
+          <StaffSync
+            updatedAt={lastUpdatedAt}
+            connectionState={realtimeState}
+            error={Boolean(error)}
+            refreshing={isCheckingShift || isSubmitting}
+            onRefresh={() => void loadTerminal()}
+          />
         </>
       }
     >

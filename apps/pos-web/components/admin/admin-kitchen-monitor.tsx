@@ -10,6 +10,7 @@ import {
   type OrderType,
 } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
+import { StaffSync } from "../staff/staff-shell";
 import { useStaffRealtime } from "../../lib/use-staff-realtime";
 import type { BadgeTone } from "../admin-ui/badge";
 import { Badge } from "../admin-ui/badge";
@@ -148,6 +149,7 @@ export function AdminKitchenMonitor() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [realtimeUpdatedAt, setRealtimeUpdatedAt] = useState<Date | null>(null);
   /*
    * KUTISH VAQTI uchun soat.
    *
@@ -212,11 +214,14 @@ export function AdminKitchenMonitor() {
     }
   }, []);
 
-  useStaffRealtime({
+  const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,
     cursorScope: `${user?.id ?? "staff"}:kitchen`,
     branchId: user?.branchId,
-    onEvent: () => void load({ silent: true }),
+    onEvent: () => {
+      setRealtimeUpdatedAt(new Date());
+      void load({ silent: true });
+    },
   });
 
   useEffect(() => {
@@ -468,6 +473,15 @@ export function AdminKitchenMonitor() {
 
   return (
     <div className="grid gap-5">
+      <div className="flex justify-end">
+        <StaffSync
+          updatedAt={realtimeUpdatedAt}
+          connectionState={realtimeState}
+          error={Boolean(error)}
+          refreshing={isLoading || isRefreshing}
+          onRefresh={() => void load()}
+        />
+      </div>
       {error ? (
         <ErrorState message={error} onRetry={() => void load()} />
       ) : null}

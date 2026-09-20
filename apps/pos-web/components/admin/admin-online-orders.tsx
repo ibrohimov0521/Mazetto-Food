@@ -15,6 +15,7 @@ import {
   type OrderStatus,
 } from "../../lib/order-display";
 import { useAuth } from "../auth/auth-provider";
+import { StaffSync } from "../staff/staff-shell";
 import { Badge } from "../admin-ui/badge";
 import { Button, ButtonLink } from "../admin-ui/button";
 import { Card, CardHeader } from "../admin-ui/card";
@@ -162,11 +163,15 @@ export function AdminOnlineOrdersPage() {
   );
   const orders = data ?? [];
 
-  useStaffRealtime({
+  const [realtimeUpdatedAt, setRealtimeUpdatedAt] = useState<Date | null>(null);
+  const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,
     branchId: branchId || undefined,
     cursorScope: `${user?.id ?? "staff"}:online:${branchId || "all"}`,
-    onEvent: () => load(),
+    onEvent: () => {
+      setRealtimeUpdatedAt(new Date());
+      void load();
+    },
   });
 
   /*
@@ -507,6 +512,15 @@ export function AdminOnlineOrdersPage() {
 
   return (
     <div className="grid gap-5">
+      <div className="flex justify-end">
+        <StaffSync
+          updatedAt={realtimeUpdatedAt}
+          connectionState={realtimeState}
+          error={Boolean(error)}
+          refreshing={isLoading}
+          onRefresh={() => void load()}
+        />
+      </div>
       {error ? (
         <ErrorState message={error} onRetry={() => load()} />
       ) : null}

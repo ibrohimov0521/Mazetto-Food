@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { io } from "socket.io-client";
 import {
   ArrowLeft,
   ChefHat,
@@ -17,6 +16,7 @@ import {
   StaffShell,
   StaffSync,
 } from "../../../components/staff/staff-shell";
+import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 import styles from "../../../components/staff/staff.module.css";
 import { ItemDialog } from "../../../components/waiter/item-dialog";
 import { MenuPicker } from "../../../components/waiter/menu-picker";
@@ -50,9 +50,7 @@ import {
   isOfflineQueuedResult,
   SessionExpiredError,
 } from "../../../lib/api";
-import { getApiBaseUrl } from "../../../lib/auth";
 import { formatMoney } from "../../../lib/order-display";
-import { readSession } from "../../../lib/session";
 
 type Confirmation =
   | { kind: "kitchen" }
@@ -72,7 +70,7 @@ export default function WaiterPage() {
 }
 
 function WaiterFloor() {
-  const { user, logout } = useAuth();
+  const { user, logout, session } = useAuth();
   const [tables, setTables] = useState<WaiterTable[]>([]);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [products, setProducts] = useState<MenuProduct[]>([]);
@@ -247,38 +245,17 @@ function WaiterFloor() {
     };
   }, [loadTableDetail, selectedTableId]);
 
-  useEffect(() => {
-    const session = readSession();
-
-    if (!session) {
-      return;
-    }
-
-    const socket = io(getSocketBaseUrl(), {
-      auth: { token: session.tokens.accessToken, tokenType: "staff" },
-      transports: ["websocket"],
-    });
-    const refresh = () => {
-      if (actionLock.current) {
-        return;
-      }
-
+  const realtimeState = useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    branchId: user?.branchId,
+    cursorScope: (user?.id ?? "staff") + ":waiter:" + (user?.branchId ?? "all"),
+    onEvent: () => {
+      if (actionLock.current) return;
       void loadFloor();
-
       const tableId = selectedTableRef.current;
-
-      if (tableId) {
-        void loadTableDetail(tableId);
-      }
-    };
-
-    socket.on("order.sent_to_kitchen", refresh);
-    socket.on("order.status_changed", refresh);
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [loadFloor, loadTableDetail]);
+      if (tableId) void loadTableDetail(tableId);
+    },
+  });
 
   const selectedTable = useMemo(
     () => tables.find((table) => table.id === selectedTableId) ?? null,
@@ -631,6 +608,7 @@ function WaiterFloor() {
         <h1 className={styles.pageHeading}>Zal va buyurtmalar</h1>
         <StaffSync
           error={Boolean(loadError)}
+          connectionState={realtimeState}
           updatedAt={lastUpdatedAt}
           refreshing={isRefreshing}
           onRefresh={() => void loadFloor()}
@@ -994,6 +972,3 @@ function WaiterFloor() {
   );
 }
 
-function getSocketBaseUrl(): string {
-  return getApiBaseUrl().replace(/\/api\/v1\/?$/, "");
-}
