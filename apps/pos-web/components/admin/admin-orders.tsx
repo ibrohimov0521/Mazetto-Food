@@ -1050,7 +1050,7 @@ function SelectRowCheckbox({
 }
 
 export function AdminOrderDetail({ orderId }: { orderId: string }) {
-  const { user, session } = useAuth();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [events, setEvents] = useState<OrderEventEntry[]>([]);
