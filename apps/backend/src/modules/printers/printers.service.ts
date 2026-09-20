@@ -10,7 +10,6 @@ export class PrintersService {
 
   listPrinters(branchId: string | undefined, user: AuthenticatedUser) {
     const scopedBranchId = resolveBranchScope(user, branchId);
-
     return this.prisma.printer.findMany({
       where: scopedBranchId ? { branchId: scopedBranchId } : {},
       include: { branch: true },
@@ -20,39 +19,51 @@ export class PrintersService {
 
   async createPrinter(dto: CreatePrinterDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
-
+    const metadata = dto.metadata ?? {};
+    const printRoles = Array.isArray(metadata.printRoles)
+      ? metadata.printRoles
+      : dto.type === "THERMAL" || dto.type === "RECEIPT"
+        ? ["RECEIPT", "CANCELLATION"]
+        : [];
     return this.prisma.printer.create({
       data: {
         branchId,
         name: dto.name,
         type: dto.type,
         status: dto.status ?? "ONLINE",
-        metadata: {
-          protocol: "ESC_POS",
-          ready: dto.type === "THERMAL" || dto.type === "RECEIPT",
-        },
+        metadata: { protocol: "ESC_POS", ...metadata, printRoles },
       },
       include: { branch: true },
     });
   }
 
   async updatePrinter(id: string, dto: UpdatePrinterDto, user: AuthenticatedUser) {
-    await this.assertPrinter(id, user);
-
+    const existing = await this.assertPrinter(id, user);
+    const { metadata, ...data } = dto;
     return this.prisma.printer.update({
       where: { id },
-      data: dto,
+      data: {
+        ...data,
+        ...(metadata
+          ? {
+              metadata: {
+                ...(typeof existing.metadata === "object" && existing.metadata && !Array.isArray(existing.metadata) ? existing.metadata : {}),
+                ...metadata,
+              },
+            }
+          : {}),
+      },
       include: { branch: true },
     });
   }
 
   private async assertPrinter(id: string, user: AuthenticatedUser): Promise<{ metadata: unknown }> {
-    const printer = await this.prisma.printer.findUnique({ where: { id }, select: { id: true, branchId: true } });
-
-    if (!printer) {
-      throw new NotFoundException("Printer not found");
-    }
-
+    const printer = await this.prisma.printer.findUnique({
+      where: { id },
+      select: { id: true, branchId: true, metadata: true },
+    });
+    if (!printer) throw new NotFoundException("Printer not found");
     resolveBranchScope(user, printer.branchId);
+    return printer;
   }
 }
