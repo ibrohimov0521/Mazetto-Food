@@ -76,6 +76,7 @@ type Printer = {
   type: PrinterType;
   status: PrinterStatus;
   isActive: boolean;
+  metadata?: { host?: string; port?: number; printRoles?: string[] } | null;
   branch?: { id: string; name: string } | null;
 };
 
@@ -96,6 +97,8 @@ const printerTypes: PrinterType[] = [
 ];
 
 const printerStatuses: PrinterStatus[] = ["ONLINE", "OFFLINE", "ERROR"];
+const printRoles = ["RECEIPT", "CANCELLATION", "KITCHEN", "BAR"] as const;
+const printRoleLabels: Record<(typeof printRoles)[number], string> = { RECEIPT: "Sotuv cheki", CANCELLATION: "Bekor qilish cheki", KITCHEN: "Oshxona", BAR: "Bar" };
 
 /** Qizil FAQAT nosozlik uchun (DESIGN_RULES). */
 function statusTone(status: PrinterStatus): BadgeTone {
@@ -140,6 +143,9 @@ type EditorState = {
   type: PrinterType;
   status: PrinterStatus;
   isActive: boolean;
+  host: string;
+  port: string;
+  printRoles: string[];
 };
 
 function emptyEditor(branchId: string): EditorState {
@@ -148,8 +154,11 @@ function emptyEditor(branchId: string): EditorState {
     branchId,
     name: "",
     type: "THERMAL",
-    status: "OFFLINE",
+    status: "ONLINE",
     isActive: true,
+    host: "",
+    port: "9100",
+    printRoles: ["RECEIPT", "CANCELLATION"],
   };
 }
 
@@ -223,6 +232,9 @@ function PrintersConsole() {
       type: printer.type,
       status: printer.status,
       isActive: printer.isActive,
+      host: printer.metadata?.host ?? "",
+      port: String(printer.metadata?.port ?? 9100),
+      printRoles: printer.metadata?.printRoles ?? [],
     });
   }
 
@@ -233,6 +245,10 @@ function PrintersConsole() {
       next.name = "Printer nomi kiritilishi shart.";
     } else if (state.name.trim().length > 120) {
       next.name = "Nom 120 belgidan oshmasligi kerak.";
+    }
+    const port = Number(state.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      next.port = "Port 1 dan 65535 gacha bo'lishi kerak.";
     }
 
     // Filial faqat YARATISHDA kerak: `UpdatePrinterDto` da `branchId` yo'q.
@@ -270,6 +286,7 @@ function PrintersConsole() {
             type: editor.type,
             status: editor.status,
             isActive: editor.isActive,
+            metadata: { protocol: "ESC_POS", host: editor.host.trim() || undefined, port: Number(editor.port), printRoles: editor.printRoles },
           }),
         });
         showToast("Printer ma'lumotlari saqlandi.", "success");
@@ -281,6 +298,7 @@ function PrintersConsole() {
             name: editor.name.trim(),
             type: editor.type,
             status: editor.status,
+            metadata: { protocol: "ESC_POS", host: editor.host.trim() || undefined, port: Number(editor.port), printRoles: editor.printRoles },
           }),
         });
         showToast("Printer qo'shildi.", "success");
@@ -377,6 +395,14 @@ function PrintersConsole() {
       key: "branch",
       header: "Filial",
       render: (printer) => branchName(printer),
+    },
+    {
+      key: "routing",
+      header: "Yo'nalish",
+      render: (printer) => {
+        const roles = printer.metadata?.printRoles ?? [];
+        return roles.length ? <div className="flex flex-wrap gap-1">{roles.map((role) => <Badge key={role} tone="neutral">{printRoleLabels[role as keyof typeof printRoleLabels] ?? role}</Badge>)}</div> : "Belgilanmagan";
+      },
     },
     {
       key: "active",
@@ -584,6 +610,26 @@ function PrintersConsole() {
               )}
             </FormField>
 
+            <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+              <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
+                {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
+              </FormField>
+              <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>
+                {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
+              </FormField>
+            </div>
+            <div className="rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
+              <p className="text-sm font-semibold text-mz-text">Chop yo&apos;nalishlari</p>
+              <p className="mt-1 text-[12px] text-mz-text-muted">Bir printerga bir nechta turdagi hujjatni tanlash mumkin.</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {printRoles.map((role) => (
+                  <label className="flex items-center gap-2 text-sm text-mz-text" key={role}>
+                    <input checked={editor.printRoles.includes(role)} onChange={(event) => setEditor({ ...editor, printRoles: event.target.checked ? [...editor.printRoles, role] : editor.printRoles.filter((item) => item !== role) })} type="checkbox" />
+                    {printRoleLabels[role]}
+                  </label>
+                ))}
+              </div>
+            </div>
             {editor.id ? (
               /*
                * Filialni KO'CHIRISH mumkin emas: `UpdatePrinterDto` da
@@ -696,6 +742,26 @@ function PrintersConsole() {
               )}
             </FormField>
 
+            <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+              <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
+                {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
+              </FormField>
+              <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>
+                {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
+              </FormField>
+            </div>
+            <div className="rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
+              <p className="text-sm font-semibold text-mz-text">Chop yo&apos;nalishlari</p>
+              <p className="mt-1 text-[12px] text-mz-text-muted">Bir printerga bir nechta turdagi hujjatni tanlash mumkin.</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {printRoles.map((role) => (
+                  <label className="flex items-center gap-2 text-sm text-mz-text" key={role}>
+                    <input checked={editor.printRoles.includes(role)} onChange={(event) => setEditor({ ...editor, printRoles: event.target.checked ? [...editor.printRoles, role] : editor.printRoles.filter((item) => item !== role) })} type="checkbox" />
+                    {printRoleLabels[role]}
+                  </label>
+                ))}
+              </div>
+            </div>
             {editor.id ? (
               <Toggle
                 checked={editor.isActive}

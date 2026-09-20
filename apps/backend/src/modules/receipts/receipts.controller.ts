@@ -37,7 +37,7 @@ export class ReceiptsController {
   @Post("print-jobs/claim")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
   claimPrintJob(@Query("branchId") branchId: string | undefined, @Body() body: ClaimPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.receiptsService.claimPrintJob(branchId, body.agentId, user);
+    return this.receiptsService.claimPrintJob(branchId, body.agentId, user, body.printerIds);
   }
 
   @Post("print-jobs/:id/complete")
@@ -51,6 +51,12 @@ export class ReceiptsController {
   failPrintJob(@Param("id") id: string, @Body() body: FailPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
     return this.receiptsService.failPrintJob(id, body.leaseToken, body.error || "Unknown printer failure", user);
   }
+  @Post(":id/reprint")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  reprint(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.reprintReceipt(id, user);
+  }
+
   @Get(":id")
   @Permissions(PERMISSIONS.RECEIPT_VIEW)
   getReceipt(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {

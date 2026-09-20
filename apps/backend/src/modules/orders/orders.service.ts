@@ -40,7 +40,7 @@ import type {
   UpdateOrderStatusDto,
 } from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
-import { ensureOrderReceipt } from "../receipts/receipt-writer";
+import { ensureCancellationReceipt, ensureOrderReceipt } from "../receipts/receipt-writer";
 import { allocateDisplayOrderNumber } from "./order-display-number";
 import {
   assertOrderCanChange,
@@ -1149,6 +1149,10 @@ export class OrdersService {
         correlationId: context?.correlationId,
         idempotencyKey: context?.idempotencyKey,
       });
+
+      if (nextStatus === OrderStatus.CANCELLED) {
+        await ensureCancellationReceipt(tx, orderId, dto.reason);
+      }
 
       return {
         kitchenTicket: null,

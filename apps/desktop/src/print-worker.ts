@@ -1,6 +1,12 @@
 import { Socket } from "node:net";
 
-type PrintJob = { id: string; receiptId: string; leaseToken: string };
+type PrinterMetadata = { host?: unknown; port?: unknown };
+type PrintJob = {
+  id: string;
+  receiptId: string;
+  leaseToken: string;
+  printer?: { id: string; name: string; metadata?: PrinterMetadata | null } | null;
+};
 type Receipt = { receiptNumber: string; escpos?: { commands: Array<Record<string, unknown>> } };
 
 export type DesktopPrintWorkerOptions = {
@@ -11,7 +17,7 @@ export type DesktopPrintWorkerOptions = {
   fetchImpl?: typeof fetch;
 };
 
-/** Desktop owns a single outbound printer worker; it never exposes the printer to the internet. */
+/** Desktop owns outbound printer connections; printer endpoints are never exposed by the API. */
 export class DesktopPrintWorker {
   private readonly apiUrl: string;
   private printerHost: string | null;
@@ -43,43 +49,81 @@ export class DesktopPrintWorker {
   }
 
   async tick(): Promise<void> {
-    if (this.running || !this.authorization || !this.printerHost) return;
+    if (this.running || !this.authorization) return;
     this.running = true;
     try {
-      const job = await this.request<PrintJob | null>("/receipts/print-jobs/claim", { method: "POST", body: JSON.stringify({ agentId: this.agentId }) });
+      const job = await this.request<PrintJob | null>("/receipts/print-jobs/claim", {
+        method: "POST",
+        body: JSON.stringify({ agentId: this.agentId }),
+      });
       if (!job) return;
       try {
         const receipt = await this.request<Receipt>(`/receipts/${encodeURIComponent(job.receiptId)}`);
-        await this.send(receipt.escpos?.commands ?? []);
-        await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`, { method: "POST", body: JSON.stringify({ leaseToken: job.leaseToken }) });
+        const metadata = job.printer?.metadata ?? {};
+        const host = typeof metadata.host === "string" && metadata.host.trim() ? metadata.host.trim() : this.printerHost;
+        const port = typeof metadata.port === "number" && Number.isInteger(metadata.port) ? metadata.port : this.printerPort;
+        if (!host) throw new Error("Printer manzili sozlanmagan");
+        await this.send(receipt.escpos?.commands ?? [], host, port);
+        await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`, {
+          method: "POST",
+          body: JSON.stringify({ leaseToken: job.leaseToken }),
+        });
       } catch (error) {
-        await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, { method: "POST", body: JSON.stringify({ leaseToken: job.leaseToken, error: message(error) }) }).catch(() => undefined);
+        await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, {
+          method: "POST",
+          body: JSON.stringify({ leaseToken: job.leaseToken, error: message(error) }),
+        }).catch(() => undefined);
       }
-    } finally { this.running = false; }
+    } finally {
+      this.running = false;
+    }
   }
 
   async testConnection(): Promise<void> {
     if (!this.printerHost) throw new Error("Printer manzili kiritilmagan");
-    await new Promise<void>((resolve, reject) => {
-      const socket = new Socket();
-      const timer = setTimeout(() => { socket.destroy(); reject(new Error("Printer ulanishi 5 soniyada javob bermadi")); }, 5_000);
-      socket.once("error", (error) => { clearTimeout(timer); reject(error); });
-      socket.connect(this.printerPort, this.printerHost!, () => { clearTimeout(timer); socket.end(resolve); });
-    });
+    await this.openSocket(this.printerHost, this.printerPort, undefined);
   }
+
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await this.fetchImpl(`${this.apiUrl}${path}`, { ...init, headers: { Accept: "application/json", Authorization: this.authorization ?? "", "Content-Type": "application/json", ...init.headers } });
+    const response = await this.fetchImpl(`${this.apiUrl}${path}`, {
+      ...init,
+      headers: { Accept: "application/json", Authorization: this.authorization ?? "", "Content-Type": "application/json", ...init.headers },
+    });
     if (!response.ok) throw new Error(`Printer API ${response.status}`);
     const body = await response.json() as T | { data: T };
     return body && typeof body === "object" && "data" in body ? body.data : body as T;
   }
 
-  private async send(commands: Array<Record<string, unknown>>): Promise<void> {
-    const payload = Buffer.from(commands.map((command) => command.type === "text" ? String(command.value ?? "") + "\n" : command.type === "line" ? "------------------------------\n" : command.type === "cut" ? "\x1dV\x00" : "").join(""), "utf8");
+  private async send(commands: Array<Record<string, unknown>>, host: string, port: number): Promise<void> {
+    const payload = Buffer.concat([Buffer.from("\x1b@", "binary"), ...commands.map((command) => this.encodeCommand(command))]);
+    await this.openSocket(host, port, payload);
+  }
+
+  private encodeCommand(command: Record<string, unknown>): Buffer {
+    const type = String(command.type ?? "");
+    if (type === "align") {
+      const value = command.value === "center" ? 1 : command.value === "right" ? 2 : 0;
+      return Buffer.from([0x1b, 0x61, value]);
+    }
+    if (type === "bold") return Buffer.from([0x1b, 0x45, command.value ? 1 : 0]);
+    if (type === "line") return Buffer.from("------------------------------\n", "utf8");
+    if (type === "cut") return Buffer.from([0x1d, 0x56, 0x00]);
+    if (type === "item") return Buffer.from(`${String(command.quantity ?? "")}x ${String(command.name ?? "")}  ${String(command.total ?? "")}\n`, "utf8");
+    if (type === "payment") return Buffer.from(`${String(command.method ?? "To'lov")}: ${String(command.amount ?? "")}\n`, "utf8");
+    if (type === "total") return Buffer.from(`JAMI: ${String(command.value ?? "")}\n`, "utf8");
+    return Buffer.from(`${String(command.value ?? "")}\n`, "utf8");
+  }
+
+  private async openSocket(host: string, port: number, payload: Buffer | undefined): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const socket = new Socket();
-      socket.once("error", reject);
-      socket.connect(this.printerPort, this.printerHost!, () => socket.end(payload, resolve));
+      const timer = setTimeout(() => { socket.destroy(); reject(new Error("Printer 5 soniyada javob bermadi")); }, 5_000);
+      socket.once("error", (error) => { clearTimeout(timer); reject(error); });
+      socket.connect(port, host, () => {
+        clearTimeout(timer);
+        if (payload) socket.end(payload, resolve);
+        else socket.end(resolve);
+      });
     });
   }
 }

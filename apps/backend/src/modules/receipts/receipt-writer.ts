@@ -1,21 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
-/*
- * CHEK YOZUVCHISI.
- *
- * NIMA UCHUN AJRATILDI. Chek yozish mantiqi `PaymentsService` ichida
- * `private` bo'lib turgan edi, shuning uchun KASSA checkout'i (u boshqa
- * servisda, o'z tranzaksiyasida to'lovni o'zi yozadi) undan foydalana
- * olmasdi — natijada POS naqd sotuvi uchun chek yozuvi UMUMAN
- * yaratilmasdi va admin panelidagi cheklar ro'yxatida kassa sotuvlari
- * ko'rinmasdi.
- *
- * Bu yerda faqat `tx` bilan ishlaydigan funksiyalar: DI ham, `this` ham
- * yo'q, shuning uchun modul bog'lamlarini o'zgartirmasdan ikki servisdan
- * ham chaqirish mumkin va aylanma bog'liqlik paydo bo'lmaydi.
- */
-
 type TransactionClient = Prisma.TransactionClient;
 
 export type OrderForReceipt = Prisma.OrderGetPayload<{
@@ -27,57 +12,80 @@ export type OrderForReceipt = Prisma.OrderGetPayload<{
   };
 }>;
 
+export type ReceiptPrintRoute = "RECEIPT" | "CANCELLATION";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
+// Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
+const durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
 
-/*
- * Chek raqami tasodifiy sondan yasaladi va uning fazosi KUNIGA atigi
- * 900 000 (soniyada emas). Tug'ilgan kun paradoksi bo'yicha kuniga 500 ta
- * chekda to'qnashuv ehtimoli ~13%, 1000 tada ~43%.
- */
+function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export function receiptPrintRoute(content: Prisma.JsonValue | null | undefined): ReceiptPrintRoute {
+  return jsonObject(content).documentType === "CANCELLATION" ? "CANCELLATION" : "RECEIPT";
+}
+
 export function createReceiptNumber(): string {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10).replaceAll("-", "");
+  const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
   return `RCPT-${date}-${Math.floor(Math.random() * 900000 + 100000)}`;
 }
 
-/**
- * Band bo'lmagan chek raqamini qaytaradi.
- *
- * Nomzod avval `findUnique` bilan tekshiriladi, keyin yoziladi. Bu poygani
- * BUTUNLAY yopmaydi — ikki tranzaksiya bir xil nomzodni bir vaqtda tekshirib
- * o'tishi mumkin — lekin to'qnashuv ehtimolini urinishlar soniga qarab
- * eksponensial kamaytiradi. Uni butunlay yopish uchun kunlik ketma-ket
- * hisoblagich va `pg_advisory_xact_lock` kerak (buyurtmaning ko'rinadigan
- * raqamida shunday qilingan); u chek formatini o'zgartiradi, ya'ni alohida
- * qaror.
- *
- * To'qnashuv shunchaki chekni emas, BUTUN to'lov tranzaksiyasini bekor
- * qilardi, shuning uchun chegaralangan qayta urinish saqlanadi.
- */
-export async function allocateReceiptNumber(
-  tx: TransactionClient,
-): Promise<string> {
+export async function allocateReceiptNumber(tx: TransactionClient): Promise<string> {
   for (let attempt = 0; attempt < RECEIPT_NUMBER_ATTEMPTS; attempt += 1) {
     const candidate = createReceiptNumber();
-    const existing = await tx.receipt.findUnique({
-      where: { receiptNumber: candidate },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      return candidate;
-    }
+    const existing = await tx.receipt.findUnique({ where: { receiptNumber: candidate }, select: { id: true } });
+    if (!existing) return candidate;
   }
-
   throw new BadRequestException("Unable to allocate a receipt number");
+}
+
+function routeMatches(
+  printer: { type: string; metadata: Prisma.JsonValue | null },
+  route: ReceiptPrintRoute,
+): boolean {
+  const metadata = jsonObject(printer.metadata);
+  const roles = Array.isArray(metadata.printRoles)
+    ? metadata.printRoles.filter((role): role is string => typeof role === "string")
+    : [];
+  if (roles.length > 0) return roles.includes(route);
+  return route === "RECEIPT" && (printer.type === "THERMAL" || printer.type === "RECEIPT");
+}
+
+/** Creates one durable job per active printer configured for this document route. */
+export async function queuePrintJobsForReceipt(
+  tx: TransactionClient,
+  receipt: { id: string; branchId: string; content: Prisma.JsonValue | null },
+): Promise<void> {
+  if (!durablePrintJobsEnabled()) return;
+  const route = receiptPrintRoute(receipt.content);
+  const printers = await tx.printer.findMany({
+    where: { branchId: receipt.branchId, isActive: true, status: "ONLINE" },
+    select: { id: true, type: true, metadata: true },
+  });
+  const targets = printers.filter((printer) => routeMatches(printer, route));
+  if (targets.length === 0) {
+    await tx.printJob.create({ data: { receiptId: receipt.id, branchId: receipt.branchId, payload: receipt.content ?? {}, printerId: null } });
+    return;
+  }
+  await tx.printJob.createMany({
+    data: targets.map((printer) => ({
+      receiptId: receipt.id,
+      branchId: receipt.branchId,
+      printerId: printer.id,
+      payload: receipt.content ?? {},
+    })),
+  });
 }
 
 export async function writeReceiptRow(
   tx: TransactionClient,
   order: OrderForReceipt,
+  options: { documentType?: ReceiptPrintRoute; cancellationReason?: string | null } = {},
 ): Promise<void> {
+  const documentType = options.documentType ?? "RECEIPT";
   const receiptNumber = await allocateReceiptNumber(tx);
-
   const receipt = await tx.receipt.create({
     data: {
       orderId: order.id,
@@ -86,6 +94,9 @@ export async function writeReceiptRow(
       total: order.total,
       content: {
         title: "MAZETTO FOOD",
+        documentType,
+        statusLabel: documentType === "CANCELLATION" ? "BUYURTMA BEKOR QILINDI" : "SOTUV CHEKI",
+        cancellationReason: options.cancellationReason ?? null,
         branchName: order.branch.name,
         orderNumber: order.orderNumber,
         items: order.items.map((item) => ({
@@ -94,48 +105,38 @@ export async function writeReceiptRow(
           quantity: item.quantity.toFixed(3),
           total: item.totalPrice.toFixed(2),
         })),
-        payments: order.payments.map((payment) => ({
-          method: payment.method.code,
-          amount: payment.amount.toFixed(2),
-        })),
+        payments: order.payments.map((payment) => ({ method: payment.method.code, amount: payment.amount.toFixed(2) })),
         total: order.total.toFixed(2),
         dateTime: new Date().toISOString(),
       },
     },
   });
-
-  // Cutover stays explicit: the legacy receipt poller and durable agent must never print one sale twice.
-  if (process.env.MAZETTO_DURABLE_PRINT_JOBS === "true") {
-    await tx.printJob.create({
-      data: { receiptId: receipt.id, branchId: order.branchId, payload: receipt.content ?? {} },
-    });
-  }
+  await queuePrintJobsForReceipt(tx, receipt);
 }
 
-/*
- * Buyurtmaga chek bo'lishini kafolatlaydi.
- *
- * IDEMPOTENT: cheki bor buyurtmaga ikkinchi chek yozilmaydi. To'lov
- * bo'laklab kelganda (avval karta, keyin naqd) bu funksiya bir necha
- * marta chaqirilishi mumkin, lekin chek bittaligi qoladi.
- */
-export async function ensureOrderReceipt(
+export async function ensureOrderReceipt(tx: TransactionClient, orderId: string): Promise<void> {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
+  });
+  if (!order || (order.receipts ?? []).length > 0) return;
+  await writeReceiptRow(tx, order);
+}
+
+export async function ensureCancellationReceipt(
   tx: TransactionClient,
   orderId: string,
+  reason?: string | null,
 ): Promise<void> {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    include: {
-      branch: true,
-      items: true,
-      payments: { include: { method: true } },
-      receipts: true,
-    },
+    include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
   });
-
-  if (!order || order.receipts.length > 0) {
-    return;
-  }
-
-  await writeReceiptRow(tx, order);
+  if (!order || !order.branch || !Array.isArray(order.items) || !Array.isArray(order.payments)) return;
+  const alreadyCreated = (order.receipts ?? []).some((receipt) => receiptPrintRoute(receipt.content) === "CANCELLATION");
+  if (alreadyCreated) return;
+  await writeReceiptRow(tx, order, {
+    documentType: "CANCELLATION",
+    cancellationReason: reason || "Buyurtma bekor qilindi",
+  });
 }
