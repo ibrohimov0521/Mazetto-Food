@@ -281,13 +281,16 @@ export class DesktopGateway {
       stringField(parsedBody, "idempotencyKey") ??
       `desktop-${randomUUID()}`;
     const aggregate = aggregateFromPath(input.pathname);
+    const localAggregateId = createsLocalAggregate(input.definition.commandType)
+      ? `local-${randomUUID()}`
+      : null;
     const baseVersion = numberField(parsedBody, "expectedVersion");
 
     const command = this.store.enqueueMutation({
       idempotencyKey,
       commandType: input.definition.commandType,
       aggregateType: input.definition.aggregateType,
-      aggregateId: aggregate.id,
+      aggregateId: localAggregateId ?? aggregate.id,
       baseVersion,
       actorId: context?.actorId ?? "unknown",
       branchId: context?.branchId ?? "global",
@@ -297,6 +300,7 @@ export class DesktopGateway {
         method: input.method,
         targetUrl: input.targetUrl,
         pathname: input.pathname,
+        ...(localAggregateId ? { localAggregateId } : {}),
         headers: {
           "content-type":
             headerValue(input.request.headers["content-type"]) ??
@@ -352,6 +356,7 @@ export class DesktopGateway {
         method?: string;
         pathname?: string;
         targetUrl?: string;
+        localAggregateId?: string;
       };
       if (!payload.method || !payload.targetUrl) {
         throw new Error("Queued command payload is incomplete");
@@ -385,14 +390,43 @@ export class DesktopGateway {
         }
       }
 
-      const response = await this.fetchImpl(payload.targetUrl, {
+      const resolvedTarget = this.store.resolveLocalReferences(
+        payload.targetUrl,
+        command.authScope,
+      );
+      const resolvedBody = payload.body
+        ? this.store.resolveLocalReferences(payload.body, command.authScope)
+        : { value: payload.body, unresolved: [] as string[] };
+      const unresolved = [
+        ...new Set([...resolvedTarget.unresolved, ...resolvedBody.unresolved]),
+      ];
+      if (unresolved.length) {
+        this.store.markMutationPending(
+          command.id,
+          `DEPENDENCY_WAIT: ${unresolved.join(", ")}`,
+        );
+        return;
+      }
+
+      const response = await this.fetchImpl(resolvedTarget.value, {
         method: payload.method,
         headers,
-        ...(payload.body ? { body: payload.body } : {}),
+        ...(resolvedBody.value ? { body: resolvedBody.value } : {}),
         signal: AbortSignal.timeout(10_000),
       });
+      const responseText = await response.text();
 
       if (response.ok) {
+        const serverId = extractServerId(responseText);
+        if (payload.localAggregateId && serverId) {
+          this.store.saveLocalIdMapping({
+            localId: payload.localAggregateId,
+            serverId,
+            aggregateType: command.aggregateType,
+            commandId: command.id,
+            authScope: command.authScope,
+          });
+        }
         this.store.markMutationAcknowledged(command.id);
         this.mode = "online";
         this.lastOnlineAt = new Date().toISOString();
@@ -400,7 +434,7 @@ export class DesktopGateway {
         return;
       }
 
-      const errorText = await response.text();
+      const errorText = responseText;
       if (response.status === 409) {
         this.store.markMutationConflict(
           command.id,
@@ -557,6 +591,41 @@ export class DesktopGateway {
   }
 }
 
+function createsLocalAggregate(commandType: string): boolean {
+  return commandType === "pos.order.create" || commandType === "table.order.create";
+}
+
+function extractServerId(source: string): string | null {
+  try {
+    return findServerId(JSON.parse(source));
+  } catch {
+    return null;
+  }
+}
+
+function findServerId(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findServerId(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.id === "string" &&
+    record.id.length > 0 &&
+    !record.id.startsWith("local-")
+  ) {
+    return record.id;
+  }
+  for (const child of Object.values(record)) {
+    const found = findServerId(child);
+    if (found) return found;
+  }
+  return null;
+}
 function queuedResponseData(
   pathname: string,
   command: PendingOutboxCommand,
