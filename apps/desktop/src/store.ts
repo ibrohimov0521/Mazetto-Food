@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const CACHE_RETENTION_DAYS = 30;
 const MAX_CACHED_RESPONSES_PER_SCOPE = 5000;
-const LOCAL_ID_PATTERN = /\\blocal-[0-9a-f-]{36}\\b/g;
+const LOCAL_ID_PATTERN = /\blocal-[0-9a-f-]{36}\b/g;
 
 export type CachedResponse = {
   cacheKey: string;
