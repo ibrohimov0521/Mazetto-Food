@@ -52,8 +52,7 @@ try {
 
   if (running !== "true") {
     const logs = run("docker", ["logs", containerId]);
-    throw new Error("Media container ishga tushmadi:
-" + logs);
+    throw new Error("Media container ishga tushmadi: " + logs);
   }
 
   const uploadUrl =
