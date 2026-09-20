@@ -481,6 +481,16 @@ export class DesktopGateway {
       return;
     }
 
+    const compareMatch = url.pathname.match(/^\/desktop\/outbox\/([^/]+)\/compare$/);
+    if (compareMatch && method === "GET") {
+      await this.handleOutboxComparison(
+        request,
+        response,
+        decodeURIComponent(compareMatch[1] ?? ""),
+      );
+      return;
+    }
+
     const match = url.pathname.match(/^\/desktop\/outbox\/([^/]+)\/(retry|cancel)$/);
     if (!match || method !== "POST") {
       this.sendJson(response, 404, {
@@ -523,6 +533,120 @@ export class DesktopGateway {
         commands: this.store.listOutbox(),
       },
     });
+  }
+
+  private async handleOutboxComparison(
+    request: IncomingMessage,
+    response: ServerResponse,
+    id: string,
+  ): Promise<void> {
+    const command = this.store.getOutboxCommand(id);
+    if (!command) {
+      this.sendJson(response, 404, {
+        ok: false,
+        error: { message: "Desktop outbox amali topilmadi." },
+      });
+      return;
+    }
+
+    const authorization =
+      headerValue(request.headers.authorization) ??
+      this.activeAuthorizations.get(command.authScope);
+    if (!authorization) {
+      this.sendJson(response, 401, {
+        ok: false,
+        error: { message: "Taqqoslash uchun faol sessiya kerak." },
+      });
+      return;
+    }
+
+    const payload = parseJsonObject(command.payloadJson);
+    const pathname = stringField(payload, "pathname");
+    const targetUrl = stringField(payload, "targetUrl");
+    const resourcePath = pathname ? conflictResourcePath(pathname) : null;
+    if (!targetUrl || !resourcePath) {
+      this.sendJson(response, 422, {
+        ok: false,
+        error: { message: "Bu amal uchun server holatini taqqoslab bo'lmaydi." },
+      });
+      return;
+    }
+
+    const resolvedTarget = this.store.resolveLocalReferences(
+      targetUrl,
+      command.authScope,
+    );
+    if (resolvedTarget.unresolved.length) {
+      this.sendJson(response, 409, {
+        ok: false,
+        error: {
+          message: `Taqqoslash uchun bog'liqliklar hali tayyor emas: ${resolvedTarget.unresolved.join(", ")}`,
+        },
+      });
+      return;
+    }
+
+    const serverUrl = new URL(resolvedTarget.value);
+    serverUrl.pathname = resourcePath;
+    serverUrl.search = "";
+    const localBody = stringField(payload, "body");
+
+    try {
+      const upstream = await this.fetchImpl(serverUrl.toString(), {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: authorization,
+          "x-mazetto-device-id": this.store.deviceId(),
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const responseText = await upstream.text();
+      const outboxItem = this.store
+        .listOutbox(200)
+        .find((item) => item.id === command.id);
+      this.sendJson(response, 200, {
+        ok: true,
+        data: {
+          command: {
+            id: command.id,
+            commandType: command.commandType,
+            aggregateType: command.aggregateType,
+            aggregateId: command.aggregateId,
+            idempotencyKey: command.idempotencyKey,
+            baseVersion: command.baseVersion,
+            payload: {
+              method: stringField(payload, "method"),
+              pathname,
+              body: parseJsonValue(localBody),
+            },
+            lastError: outboxItem?.lastError ?? null,
+          },
+          comparison: {
+            resourcePath,
+            expectedVersion:
+              numberField(parseJsonObject(localBody ?? ""), "expectedVersion") ??
+              command.baseVersion,
+            server: {
+              status: upstream.status,
+              contentType:
+                upstream.headers.get("content-type") ??
+                "application/json; charset=utf-8",
+              body: parseJsonValue(responseText),
+            },
+          },
+        },
+      });
+    } catch (error) {
+      this.markOffline(error);
+      this.sendJson(response, 503, {
+        ok: false,
+        error: {
+          code: "CONFLICT_COMPARE_OFFLINE",
+          message: "Server holatini hozir olib bo'lmadi. Internetni tekshirib qayta urinib ko'ring.",
+        },
+      });
+    }
   }
 
   private markOffline(error: unknown): void {
@@ -626,6 +750,32 @@ function findServerId(value: unknown): string | null {
   }
   return null;
 }
+function conflictResourcePath(pathname: string): string | null {
+  const patterns = [
+    /^\/api\/v1\/(pos\/orders)$/,
+    /^\/api\/v1\/(orders\/[^/]+)(?:\/.*)?$/,
+    /^\/api\/v1\/(kitchen\/orders\/[^/]+)(?:\/.*)?$/,
+    /^\/api\/v1\/(courier\/orders\/[^/]+)(?:\/.*)?$/,
+    /^\/api\/v1\/(tables\/[^/]+)(?:\/.*)?$/,
+  ];
+  for (const pattern of patterns) {
+    const match = pathname.match(pattern);
+    if (match?.[1]) {
+      return `/api/v1/${match[1]}`;
+    }
+  }
+  return null;
+}
+
+function parseJsonValue(source: string | null | undefined): unknown {
+  if (!source) return null;
+  try {
+    return JSON.parse(source);
+  } catch {
+    return source;
+  }
+}
+
 function queuedResponseData(
   pathname: string,
   command: PendingOutboxCommand,
