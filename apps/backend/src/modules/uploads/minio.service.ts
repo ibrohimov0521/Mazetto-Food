@@ -31,11 +31,11 @@ export class MinioService implements OnModuleInit {
       process.env.MEDIA_PUBLIC_URL?.trim() ||
       process.env.MINIO_PUBLIC_URL?.trim() ||
       "https://media.mazettofood.uz"
-    ).replace(//+$/, "");
+    ).replace(/[/]+$/, "");
 
     const configuredUploadUrl = process.env.MEDIA_UPLOAD_URL?.trim();
     this.mediaUploadUrls = configuredUploadUrl
-      ? [configuredUploadUrl.replace(//+$/, "")]
+      ? [configuredUploadUrl.replace(/[/]+$/, "")]
       : DEFAULT_MEDIA_UPLOAD_URLS;
 
     const endPoint = process.env.MINIO_ENDPOINT?.trim();
