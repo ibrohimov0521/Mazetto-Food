@@ -132,7 +132,7 @@ export async function ensureCancellationReceipt(
     where: { id: orderId },
     include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
   });
-  if (!order) return;
+  if (!order || !order.branch || !Array.isArray(order.items) || !Array.isArray(order.payments)) return;
   const alreadyCreated = (order.receipts ?? []).some((receipt) => receiptPrintRoute(receipt.content) === "CANCELLATION");
   if (alreadyCreated) return;
   await writeReceiptRow(tx, order, {
