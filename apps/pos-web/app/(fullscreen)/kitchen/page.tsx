@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
+import { useAuth } from "../../../components/auth/auth-provider";
 import { KitchenTicketCard } from "../../../components/kitchen/kitchen-ticket-card";
 import {
   readKitchenDensity,
@@ -34,6 +35,7 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
+import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 
 export default function KitchenPage() {
   return (
@@ -44,6 +46,7 @@ export default function KitchenPage() {
 }
 
 function KitchenDisplay() {
+  const { user, session } = useAuth();
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
@@ -109,6 +112,16 @@ function KitchenDisplay() {
       }
     }
   }, []);
+
+  const realtimeState = useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    branchId: user?.branchId,
+    cursorScope:
+      (user?.id ?? "staff") +
+      ":kitchen-display:" +
+      (user?.branchId ?? "all"),
+    onEvent: () => void loadTickets(),
+  });
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -357,6 +370,7 @@ function KitchenDisplay() {
           </h2>
           <StaffSync
             updatedAt={lastUpdatedAt}
+            connectionState={realtimeState}
             error={!!error}
             refreshing={refreshing || busyTicketIds.size > 0}
             onRefresh={() => void loadTickets()}
