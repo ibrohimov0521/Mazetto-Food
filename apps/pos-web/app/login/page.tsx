@@ -6,6 +6,7 @@ import { getPrimaryRedirect } from "../../lib/auth";
 import { useRouter } from "next/navigation";
 import { PhoneInput } from "../../components/phone-input";
 import { Mail, Phone } from "lucide-react";
+import { DesktopEnrollmentBadge } from "../../components/auth/desktop-enrollment";
 
 export default function LoginPage() {
   const { isReady, login, session } = useAuth();
@@ -152,6 +153,9 @@ export default function LoginPage() {
           >
             {isSubmitting ? "Kirilmoqda..." : "Kirish"}
           </button>
+          <div className="flex justify-center">
+            <DesktopEnrollmentBadge />
+          </div>
         </form>
       </section>
     </main>
