@@ -93,6 +93,31 @@ export class MinioService implements OnModuleInit {
     return this.client !== null || this.mediaUploadUrls.length > 0;
   }
 
+  async readiness(): Promise<"ready" | "degraded" | "unconfigured"> {
+    if (this.client) {
+      try {
+        return (await this.client.bucketExists(this.bucket))
+          ? "ready"
+          : "degraded";
+      } catch {
+        return "degraded";
+      }
+    }
+    if (this.mediaUploadUrls.length === 0) return "unconfigured";
+    for (const url of this.mediaUploadUrls) {
+      try {
+        const response = await fetch(url, {
+          method: "OPTIONS",
+          signal: AbortSignal.timeout(3_000),
+        });
+        if (response.status < 500) return "ready";
+      } catch {
+        // Try the next configured media endpoint.
+      }
+    }
+    return "degraded";
+  }
+
   async uploadImage(
     file: { buffer: Buffer; mimetype: string; size: number },
     folder: string,

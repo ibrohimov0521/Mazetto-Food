@@ -10,7 +10,7 @@ assert(['localhost', '127.0.0.1', '[::1]'].includes(base.hostname), 'Local previ
 const output = fileURLToPath(new URL('../.qa-screenshots/', import.meta.url));
 await mkdir(output, { recursive: true });
 const result = { checks: [], pageErrors: [], blockedMutations: [] };
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   for (const width of [390, 430, 768, 1440]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });

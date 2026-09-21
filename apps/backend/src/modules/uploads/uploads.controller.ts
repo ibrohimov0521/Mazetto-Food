@@ -1,6 +1,7 @@
 import {
   Controller,
   FileTypeValidator,
+  ForbiddenException,
   MaxFileSizeValidator,
   ParseFilePipe,
   Post,
@@ -10,7 +11,10 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { PERMISSIONS } from "../../common/auth/permissions";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+import { hasPermission } from "../../common/auth/authorization";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { PermissionsAny } from "../../common/decorators/permissions.decorator";
+import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
   ACCEPTED_IMAGE_MIME_TYPES,
   MAX_IMAGE_BYTES,
@@ -20,15 +24,15 @@ import {
 /*
  * Rasm yuklash (7-bosqich Q4).
  *
- * `MENU_EDIT` ostida: rasm yuklash katalogni tahrirlashning bir qismi va
- * uni alohida huquqqa ajratish rol matritsasiga qiymat qo'shmasdi.
+ * Papka maqsadi ruxsatni belgilaydi: homepage boshqaruvchisi katalogni
+ * tahrirlash huquqisiz ham reklama rasmini yuklay oladi.
  */
 @Controller("uploads")
 export class UploadsController {
   constructor(private readonly minio: MinioService) {}
 
   @Post("image")
-  @Permissions(PERMISSIONS.MENU_EDIT)
+  @PermissionsAny(PERMISSIONS.MENU_EDIT, PERMISSIONS.HOMEPAGE_MANAGE)
   // Xotirada saqlaymiz: fayl 5 MB dan kichik va darhol MinIO'ga uzatiladi,
   // ya'ni diskda vaqtinchalik nusxa qoldirishning ma'nosi yo'q.
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_IMAGE_BYTES } }))
@@ -44,11 +48,19 @@ export class UploadsController {
     )
     file: Express.Multer.File,
     @Query("folder") folder?: string,
+    @CurrentUser() user?: AuthenticatedUser,
   ) {
-    // Papka nomi mijozdan keladi, shuning uchun oq ro'yxat: aks holda
-    // `../` bilan bucket ichida boshqa joyga yozish mumkin bo'lardi.
-    const target = folder === "categories" || folder === "homepage" ? folder : "products";
+    const target = folder || "products";
+    if (!(["products", "categories", "homepage"] as const).includes(target as never)) {
+      throw new ForbiddenException("Upload folder is not allowed");
+    }
+    const requiredPermission = target === "homepage"
+      ? PERMISSIONS.HOMEPAGE_MANAGE
+      : PERMISSIONS.MENU_EDIT;
+    if (!hasPermission(user, requiredPermission)) {
+      throw new ForbiddenException("Missing upload permission for this folder");
+    }
 
-    return this.minio.uploadImage(file, target);
+    return this.minio.uploadImage(file, target as "products" | "categories" | "homepage");
   }
 }

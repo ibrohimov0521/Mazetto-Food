@@ -16,6 +16,7 @@ import { formatDateTime, formatMoney } from "../../../../../lib/order-display";
 
 type Receipt = {
   id: string;
+  documentType: string;
   receiptNumber: string;
   total: string;
   printed: boolean;
@@ -31,6 +32,8 @@ type Receipt = {
       variantName?: string | null;
       quantity: string;
       totalPrice: string;
+      notes?: string | null;
+      modifierSnapshot?: unknown;
     }[];
     payments: {
       id: string;
@@ -124,6 +127,17 @@ function ReceiptPreview({ id }: { id: string }) {
     }
   }
 
+  const isKitchen = receipt?.documentType === "KITCHEN";
+  const isCancellation = receipt?.documentType === "CANCELLATION";
+  const isRefund = receipt?.documentType.startsWith("REFUND") ?? false;
+  const documentTitle = isKitchen
+    ? "OSHXONA BUYURTMASI"
+    : isCancellation
+      ? "BUYURTMA BEKOR QILINDI"
+      : isRefund
+        ? "TO'LOV QAYTARILDI"
+        : "MIJOZ CHEKI";
+
   return (
     <StaffShell
       title="Chek"
@@ -162,6 +176,7 @@ function ReceiptPreview({ id }: { id: string }) {
             <article className={styles.receiptPaper} aria-label="Chek">
               <div className={styles.receiptBrand}>
                 <strong>MAZETTO FOOD</strong>
+                <b>{documentTitle}</b>
                 <span>{receipt.branch.name}</span>
                 {receipt.branch.address ? (
                   <span>{receipt.branch.address}</span>
@@ -172,10 +187,10 @@ function ReceiptPreview({ id }: { id: string }) {
               </div>
               <div className={styles.receiptDivider} />
               <div className={styles.receiptMeta}>
-                <div className={styles.receiptRow}>
+                {!isKitchen ? <div className={styles.receiptRow}>
                   <span>Chek</span>
                   <b>{receipt.receiptNumber}</b>
-                </div>
+                </div> : null}
                 <div className={styles.receiptRow}>
                   <span>Buyurtma</span>
                   <b>
@@ -196,13 +211,15 @@ function ReceiptPreview({ id }: { id: string }) {
                     <span>
                       {formatQuantity(item.quantity)} × {item.productName}
                       {item.variantName ? ` (${item.variantName})` : ""}
+                      {item.notes ? <small className="block">Izoh: {item.notes}</small> : null}
+                      {modifierNames(item.modifierSnapshot).map((modifier) => <small className="block" key={modifier}>+ {modifier}</small>)}
                     </span>
-                    <b>{formatMoney(item.totalPrice)}</b>
+                    {!isKitchen ? <b>{formatMoney(item.totalPrice)}</b> : null}
                   </li>
                 ))}
               </ul>
               <div className={styles.receiptDivider} />
-              <div className={styles.receiptMeta}>
+              {!isKitchen ? <div className={styles.receiptMeta}>
                 {receipt.order.payments.map((payment) => (
                   <div className={styles.receiptRow} key={payment.id}>
                     <span>
@@ -214,12 +231,12 @@ function ReceiptPreview({ id }: { id: string }) {
                     <b>{formatMoney(payment.amount)}</b>
                   </div>
                 ))}
-              </div>
-              <div className={styles.receiptTotal}>
+              </div> : null}
+              {!isKitchen ? <div className={styles.receiptTotal}>
                 <span>Jami</span>
                 <strong>{formatMoney(receipt.total)}</strong>
-              </div>
-              <p className={styles.receiptFooter}>Xaridingiz uchun rahmat!</p>
+              </div> : null}
+              <p className={styles.receiptFooter}>{isKitchen ? "Tayyorlash uchun" : "Xaridingiz uchun rahmat!"}</p>
             </article>
 
             <aside className={styles.receiptSide} aria-label="Chek amallari">
@@ -251,8 +268,8 @@ function ReceiptPreview({ id }: { id: string }) {
                 </Link>
               </div>
               <p className={styles.note}>
-                Chek brauzer orqali chop etiladi. Kassa printeriga to'g'ridan
-                to'g'ri ulanish keyingi bosqichda qo'shiladi.
+                Desktop ilovada tanlangan printerlar buyurtma turiga qarab
+                avtomatik chop etadi. Bu tugma qo'lda qayta chop etish uchun.
               </p>
             </aside>
           </div>
@@ -265,4 +282,15 @@ function ReceiptPreview({ id }: { id: string }) {
 function formatQuantity(value: string): string {
   const parsed = Number(value);
   return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(2);
+}
+
+function modifierNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string") return [item];
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const name = record.name ?? record.modifierName;
+    return typeof name === "string" && name.trim() ? [name] : [];
+  });
 }

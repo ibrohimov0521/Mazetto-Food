@@ -1,12 +1,16 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { DesktopGateway } from "./gateway.js";
 import { DesktopStore } from "./store.js";
-import { DesktopPrintWorker } from "./print-worker.js";
+import {
+  DesktopPrintWorker,
+  type PrintableReceipt,
+  type SystemPrinterTarget,
+} from "./print-worker.js";
 
 const require = createRequire(import.meta.url);
 const { autoUpdater } =
@@ -24,6 +28,7 @@ let gateway: DesktopGateway | null = null;
 let store: DesktopStore | null = null;
 let uiProcess: ChildProcess | null = null;
 let printWorker: DesktopPrintWorker | null = null;
+let deviceAuthToken: string | null = null;
 let printTimer: NodeJS.Timeout | null = null;
 
 type UpdateStatus = {
@@ -100,15 +105,37 @@ async function startDesktop(): Promise<void> {
   const dataDirectory = join(app.getPath("userData"), "runtime");
   await mkdir(dataDirectory, { recursive: true });
   store = new DesktopStore(join(dataDirectory, "mazetto-desktop.sqlite"));
-  printWorker = new DesktopPrintWorker({ apiUrl: UPSTREAM_API_URL, printerHost: store.getSetting("printer_host") || process.env.MAZETTO_PRINTER_HOST?.trim() || null, printerPort: Number(store.getSetting("printer_port") || process.env.MAZETTO_PRINTER_PORT || 9100), agentId: `desktop-${store.deviceId()}` });
+  deviceAuthToken = readProtectedDeviceToken();
+  printWorker = new DesktopPrintWorker({
+    apiUrl: UPSTREAM_API_URL,
+    printerHost: store.getSetting("printer_host") || process.env.MAZETTO_PRINTER_HOST?.trim() || null,
+    printerPort: Number(store.getSetting("printer_port") || process.env.MAZETTO_PRINTER_PORT || 9100),
+    agentId: `desktop-${store.deviceId()}`,
+    deviceId: store.deviceId(),
+    deviceToken: deviceAuthToken,
+    systemPrinters: readSystemPrinterTargets(),
+    printSystem: silentPrintReceipt,
+    localQueue: {
+      claim: (documentTypes) => store?.claimLocalPrintJob(documentTypes) ?? null,
+      complete: (id) => store?.completeLocalPrintJob(id),
+      fail: (id, error) => store?.failLocalPrintJob(id, error),
+      wasPrinted: (orderId, documentType) =>
+        store?.wasLocalDocumentPrinted(orderId, documentType) ?? false,
+    },
+  });
   gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: GATEWAY_PORT,
     upstreamApiUrl: UPSTREAM_API_URL,
     store,
+    onAuthorization: (authorization) =>
+      printWorker?.setAuthorization(authorization),
+    getDeviceToken: () => deviceAuthToken,
   });
   setupPrinterControls();
   setupDeviceEnrollment();
+  setupSessionControls();
+  setupSupportControls();
   await gateway.start();
   printTimer = setInterval(() => void printWorker?.tick(), 3_000);
   printTimer.unref();
@@ -391,7 +418,16 @@ function setupDeviceEnrollment(): void {
       const payload = (await response.json().catch(() => null)) as { data?: unknown; error?: { message?: string | string[] } } | null;
       const message = payload?.error?.message;
       if (!response.ok) throw new Error(Array.isArray(message) ? message.join(", ") : message || "Qurilmani ulashda server xatosi (" + response.status + ")");
-      return payload?.data ?? payload;
+      const result = (payload?.data ?? payload) as Record<string, unknown> | null;
+      if (!result) throw new Error("Server qurilma ma'lumotini qaytarmadi");
+      const deviceToken = typeof result?.deviceToken === "string" ? result.deviceToken : "";
+      if (!deviceToken) throw new Error("Server qurilma maxfiy kalitini qaytarmadi");
+      saveProtectedDeviceToken(deviceToken);
+      deviceAuthToken = deviceToken;
+      printWorker?.setDeviceToken(deviceToken);
+      const safeResult = { ...result };
+      delete safeResult.deviceToken;
+      return safeResult;
     },
   );
 }
@@ -400,7 +436,10 @@ function setupPrinterControls(): void {
   ipcMain.removeHandler("desktop:printer:status");
   ipcMain.removeHandler("desktop:printer:save");
   ipcMain.removeHandler("desktop:printer:test");
-  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100 });
+  ipcMain.removeHandler("desktop:printer:list-system");
+  ipcMain.removeHandler("desktop:printer:save-system");
+  ipcMain.removeHandler("desktop:printer:test-system");
+  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100, managedPrinters: 0, managedPrinterDetails: [] });
   ipcMain.handle("desktop:printer:save", async (_event, input: { host?: unknown; port?: unknown }) => {
     const host = typeof input?.host === "string" ? input.host.trim() : "";
     const port = Number(input?.port);
@@ -412,4 +451,231 @@ function setupPrinterControls(): void {
     return printWorker?.status();
   });
   ipcMain.handle("desktop:printer:test", () => printWorker?.testConnection());
+  ipcMain.removeHandler("desktop:printer:test-managed");
+  ipcMain.handle("desktop:printer:test-managed", () => printWorker?.testManagedConnections());
+  ipcMain.handle("desktop:printer:list-system", async () => {
+    if (!mainWindow) return [];
+    const printers = await mainWindow.webContents.getPrintersAsync();
+    return printers.map((printer) => {
+      const extended = printer as typeof printer & { status?: number; isDefault?: boolean };
+      return ({
+      name: printer.name,
+      displayName: printer.displayName || printer.name,
+      description: printer.description || null,
+      status: extended.status ?? 0,
+      isDefault: extended.isDefault ?? false,
+    });
+    });
+  });
+  ipcMain.handle(
+    "desktop:printer:save-system",
+    async (_event, input: { printers?: unknown }) => {
+      const printers = normalizeSystemPrinterTargets(input?.printers);
+      store?.setSetting("system_printers", JSON.stringify(printers));
+      printWorker?.configureSystemPrinters(printers);
+      return printWorker?.status();
+    },
+  );
+  ipcMain.handle(
+    "desktop:printer:test-system",
+    async (_event, input: { name?: unknown; role?: unknown }) => {
+      const name = typeof input?.name === "string" ? input.name.trim() : "";
+      if (!name) throw new Error("Windows printerini tanlang");
+      const role = typeof input?.role === "string" ? input.role : "RECEIPT";
+      await silentPrintReceipt(name, {
+        receiptNumber: "TEST",
+        documentType: role,
+        content: {
+          documentType: role,
+          statusLabel: role === "KITCHEN" ? "OSHXONA TEST CHEKI" : "PRINTER TEST CHEKI",
+          branchName: "MAZETTO FOOD",
+          orderNumber: "TEST-001",
+          displayOrderNumber: "TEST-001",
+          items: [{ productName: "Test mahsulot", quantity: "1", totalPrice: "1000" }],
+          payments: [{ method: "CASH", amount: "1000" }],
+          total: "1000",
+          dateTime: new Date().toISOString(),
+        },
+      });
+      return { ok: true };
+    },
+  );
+}
+
+function readSystemPrinterTargets(): SystemPrinterTarget[] {
+  const source = store?.getSetting("system_printers");
+  if (!source) return [];
+  try {
+    return normalizeSystemPrinterTargets(JSON.parse(source));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeSystemPrinterTargets(value: unknown): SystemPrinterTarget[] {
+  if (!Array.isArray(value)) return [];
+  const validRoles = new Set(["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND", "BAR"]);
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    if (!name || name.length > 260) return [];
+    const displayName = typeof record.displayName === "string" && record.displayName.trim()
+      ? record.displayName.trim()
+      : name;
+    const roles = Array.isArray(record.roles)
+      ? [...new Set(record.roles.filter((role): role is string => typeof role === "string" && validRoles.has(role)))]
+      : [];
+    return roles.length > 0 ? [{ name, displayName, roles }] : [];
+  });
+}
+
+async function silentPrintReceipt(
+  deviceName: string,
+  receipt: PrintableReceipt,
+): Promise<void> {
+  const window = new BrowserWindow({
+    show: false,
+    width: 420,
+    height: 800,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  try {
+    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt))}`);
+    await new Promise<void>((resolve, reject) => {
+      window.webContents.print(
+        {
+          silent: true,
+          deviceName,
+          printBackground: true,
+          margins: { marginType: "none" },
+        },
+        (success, failureReason) =>
+          success ? resolve() : reject(new Error(failureReason || "Printer chop etishni rad etdi")),
+      );
+    });
+  } finally {
+    window.destroy();
+  }
+}
+
+function printableReceiptHtml(receipt: PrintableReceipt): string {
+  const content = receipt.content ?? {};
+  const documentType = String(content.documentType ?? receipt.documentType ?? "RECEIPT");
+  const kitchen = documentType === "KITCHEN";
+  const cancelled = documentType === "CANCELLATION";
+  const refunded = documentType.startsWith("REFUND");
+  const items = Array.isArray(content.items) ? content.items : [];
+  const payments = Array.isArray(content.payments) ? content.payments : [];
+  const itemRows = items.map((value) => {
+    const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    const name = escapeHtml(String(item.name ?? item.productName ?? "Mahsulot"));
+    const variant = item.variant ?? item.variantName;
+    const notes = item.notes ? `<small>Izoh: ${escapeHtml(String(item.notes))}</small>` : "";
+    const rawModifiers = item.modifiers ?? item.modifierSnapshot;
+    const modifiers = Array.isArray(rawModifiers)
+      ? rawModifiers.map((modifier: unknown) => {
+          const record = modifier && typeof modifier === "object" ? modifier as Record<string, unknown> : {};
+          return `<small>+ ${escapeHtml(String(record.name ?? record.modifierName ?? modifier))}</small>`;
+        }).join("")
+      : "";
+    return `<li><div><b>${escapeHtml(String(item.quantity ?? 1))}x ${name}${variant ? ` (${escapeHtml(String(variant))})` : ""}</b>${modifiers}${notes}</div>${kitchen ? "" : `<strong>${escapeHtml(String(item.total ?? item.totalPrice ?? ""))}</strong>`}</li>`;
+  }).join("");
+  const paymentRows = payments.map((value) => {
+    const payment = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    return `<li><span>${escapeHtml(String(payment.method ?? "To'lov"))}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
+  }).join("");
+  const heading = cancelled ? "BUYURTMA BEKOR QILINDI" : refunded ? "TO'LOV QAYTARILDI" : kitchen ? "OSHXONA BUYURTMASI" : "MIJOZ CHEKI";
+  return `<!doctype html><html><head><meta charset="utf-8"><style>@page{margin:2mm}*{box-sizing:border-box}body{width:76mm;margin:0 auto;font-family:Arial,sans-serif;color:#000;font-size:12px}header{text-align:center;border-bottom:2px dashed #000;padding:4mm 0 3mm}h1{font-size:${kitchen ? "24px" : "18px"};margin:0 0 2mm}h2{font-size:${kitchen ? "28px" : "15px"};margin:0}ul{list-style:none;padding:0;margin:2mm 0;border-bottom:1px dashed #000}li{display:flex;justify-content:space-between;gap:3mm;padding:2mm 0;border-top:1px dotted #777}small{display:block;font-weight:400;margin:1mm 0 0 4mm}.total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-top:3mm}.meta{display:flex;justify-content:space-between;margin-top:2mm}.alert{font-weight:800;font-size:17px;margin-top:2mm}.footer{text-align:center;margin-top:4mm}</style></head><body><header><h1>MAZETTO FOOD</h1><div>${escapeHtml(String(content.branchName ?? ""))}</div><div class="${cancelled || refunded ? "alert" : ""}">${heading}</div><h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2></header><div class="meta"><span>${escapeHtml(String(content.orderType ?? ""))}</span><span>${escapeHtml(String(content.dateTime ?? ""))}</span></div>${cancelled && content.cancellationReason ? `<p class="alert">Sabab: ${escapeHtml(String(content.cancellationReason))}</p>` : ""}<ul>${itemRows}</ul>${kitchen ? "" : `<ul>${paymentRows}</ul><div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total ?? ""))}</span></div>`}${content.orderNotes ? `<p><b>Izoh:</b> ${escapeHtml(String(content.orderNotes))}</p>` : ""}<p class="footer">${kitchen ? "Tayyorlash uchun" : "Xaridingiz uchun rahmat!"}</p></body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+  })[character] ?? character);
+}
+
+function setupSupportControls(): void {
+  ipcMain.removeHandler("desktop:support:export");
+  ipcMain.handle("desktop:support:export", async () => {
+    if (!store) throw new Error("Desktop ma'lumotlar bazasi tayyor emas");
+    const generatedAt = new Date();
+    const defaultName = `mazetto-support-${generatedAt.toISOString().replace(/[:.]/g, "-")}.json`;
+    const dialogOptions = {
+      title: "Diagnostika faylini saqlash",
+      defaultPath: join(app.getPath("downloads"), defaultName),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    };
+    const selected = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, dialogOptions)
+      : await dialog.showSaveDialog(dialogOptions);
+    if (selected.canceled || !selected.filePath) return null;
+
+    const bundle = {
+      schemaVersion: 1,
+      generatedAt: generatedAt.toISOString(),
+      application: {
+        name: app.getName(),
+        version: app.getVersion(),
+        packaged: app.isPackaged,
+        platform: process.platform,
+        architecture: process.arch,
+      },
+      device: {
+        id: store.deviceId(),
+        enrolledCredentialPresent: Boolean(deviceAuthToken),
+      },
+      connectivity: gateway?.status() ?? null,
+      printers: printWorker?.status() ?? null,
+      updates: updateStatus,
+      upstreamOrigin: new URL(UPSTREAM_API_URL).origin,
+    };
+    await writeFile(selected.filePath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+    shell.showItemInFolder(selected.filePath);
+    return { path: selected.filePath };
+  });
+}
+
+function setupSessionControls(): void {
+  ipcMain.removeHandler("desktop:session:load");
+  ipcMain.removeHandler("desktop:session:save");
+  ipcMain.removeHandler("desktop:session:clear");
+  ipcMain.handle("desktop:session:load", () =>
+    readProtectedSetting("staff_auth_session_encrypted"),
+  );
+  ipcMain.handle("desktop:session:save", (_event, serialized: unknown) => {
+    if (typeof serialized !== "string" || serialized.length > 100_000) {
+      throw new Error("Sessiya ma'lumoti noto'g'ri");
+    }
+    saveProtectedSetting("staff_auth_session_encrypted", serialized);
+  });
+  ipcMain.handle("desktop:session:clear", () => {
+    store?.setSetting("staff_auth_session_encrypted", "");
+  });
+}
+
+function readProtectedDeviceToken(): string | null {
+  return readProtectedSetting("device_auth_token_encrypted");
+}
+
+function readProtectedSetting(key: string): string | null {
+  const encrypted = store?.getSetting(key);
+  if (!encrypted || !safeStorage.isEncryptionAvailable()) return null;
+  try {
+    return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
+  } catch {
+    return null;
+  }
+}
+
+function saveProtectedDeviceToken(token: string): void {
+  saveProtectedSetting("device_auth_token_encrypted", token);
+}
+
+function saveProtectedSetting(key: string, value: string): void {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Windows xavfsiz saqlash xizmati mavjud emas");
+  }
+  const encrypted = safeStorage.encryptString(value).toString("base64");
+  store?.setSetting(key, encrypted);
 }

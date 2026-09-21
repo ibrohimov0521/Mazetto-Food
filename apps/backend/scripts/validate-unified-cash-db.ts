@@ -115,13 +115,17 @@ async function main() {
     assert.equal((await shifts.getCurrentCourierShift(worker))!.currentCash.toNumber(), 15250);
 
     const card = await online("TAKEAWAY", 10000);
-    await payments.processOrderPayment({ orderId: card.order.id, idempotencyKey: "qa-card-" + id, shiftId: sourceShift.id, payments: [{ paymentMethodCode: "CARD", amount: 10000 }] }, worker);
+    await assert.rejects(
+      () => payments.processOrderPayment({ orderId: card.order.id, idempotencyKey: "qa-card-" + id, shiftId: sourceShift.id, payments: [{ paymentMethodCode: "CARD", amount: 10000 }] }, worker),
+      /provider is not enabled/,
+    );
+    assert.equal(await prisma.payment.count({ where: { orderId: card.order.id } }), 0);
     assert.equal(await balance(), 15250, "card revenue is not physical cash");
     const closed = await shifts.closeShift(sourceShift.id, { closingBalance: 15250 }, worker);
     assert.equal(closed.cashDifference?.toNumber(), 0);
     assert.equal(closed.cashTotal.toNumber(), 60000);
-    assert.equal(closed.terminalTotal.toNumber(), 10000);
-    assert.equal(closed.salesTotal.toNumber(), 70000);
+    assert.equal(closed.terminalTotal.toNumber(), 0);
+    assert.equal(closed.salesTotal.toNumber(), 60000);
     assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: pos.order.id } })).shiftId, sourceShift.id);
 
     const roleCodes = ["KITCHEN", "COURIER"];
@@ -132,7 +136,7 @@ async function main() {
     await prisma.$executeRawUnsafe(sql);
     await prisma.$executeRawUnsafe(sql);
     assert.equal(await prisma.rolePermission.count({ where: { role: { code: { in: roleCodes } }, permission: { code: { in: permissionCodes } } } }), 8);
-    console.info("PASS: unified POS/pickup/delivery cash, ownership, rollback, duplicate/race protection, transfers, card separation, full ledger balance, closing and idempotent permission migration");
+    console.info("PASS: unified POS/pickup/delivery cash, ownership, rollback, duplicate/race protection, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
   } finally { await prisma.onModuleDestroy(); }
 }
 void main();

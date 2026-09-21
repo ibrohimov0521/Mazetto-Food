@@ -273,7 +273,7 @@ test("buyurtma raqami o'ziga xos va formatli", () => {
     Array.from({ length: 50 }, () => createOrderNumber()),
   );
   for (const value of numbers) {
-    assert.match(value, /^POS-\d{8}-\d{6}-\d{4}$/);
+    assert.match(value, /^POS-\d{8}-\d{6}-[A-F0-9]{8}$/);
   }
   // Bir soniyada yasalgan raqamlar ham asosan farq qilishi kerak.
   assert.ok(numbers.size > 40, `juda ko'p takror: ${numbers.size}/50`);

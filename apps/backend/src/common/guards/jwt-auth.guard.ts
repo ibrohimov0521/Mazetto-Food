@@ -7,11 +7,20 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
+import { timingSafeEqual } from "node:crypto";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import type { AuthenticatedRequest, AuthenticatedUser } from "../types/authenticated-user";
 import { getJwtAccessSecret } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { UserAuthCacheService } from "../auth/user-auth-cache.service";
+import { hashDeviceToken } from "../../modules/devices/devices.service";
+
+const DESKTOP_REQUIRED_ROLES = new Set([
+  "CASHIER",
+  "WAITER",
+  "KITCHEN",
+  "COURIER",
+]);
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -59,10 +68,10 @@ export class JwtAuthGuard implements CanActivate {
   ): Promise<void> {
     const rawDeviceId = request.headers["x-mazetto-device-id"];
     const deviceId = Array.isArray(rawDeviceId) ? rawDeviceId[0] : rawDeviceId;
-
-    if (!deviceId?.trim()) {
-      return;
-    }
+    const rawDeviceToken = request.headers["x-mazetto-device-token"];
+    const deviceToken = Array.isArray(rawDeviceToken)
+      ? rawDeviceToken[0]
+      : rawDeviceToken;
 
     // Login, session refresh and the public enrollment request must remain
     // reachable so an unregistered desktop can receive its first code.
@@ -76,12 +85,32 @@ export class JwtAuthGuard implements CanActivate {
       return;
     }
 
+    if (!deviceId?.trim()) {
+      if (
+        request.user?.roles.some((role) => DESKTOP_REQUIRED_ROLES.has(role))
+      ) {
+        throw new ForbiddenException(
+          "Bu ish joyi tasdiqlangan desktop qurilma orqali ochilishi kerak.",
+        );
+      }
+
+      // Admin va hisobot rollari oddiy brauzerda ishlashi mumkin. Rasmiy
+      // Desktop har doim device ID yuboradi va quyidagi tekshiruvdan o'tadi.
+      return;
+    }
+
     const device = await this.prisma.device.findUnique({
       where: { hardwareId: deviceId.trim() },
-      select: { isActive: true, enrolledAt: true },
+      select: { isActive: true, enrolledAt: true, deviceAuthTokenHash: true },
     });
 
-    if (!device?.isActive || !device.enrolledAt) {
+    if (
+      !device?.isActive ||
+      !device.enrolledAt ||
+      !device.deviceAuthTokenHash ||
+      !deviceToken ||
+      !secureTokenMatches(device.deviceAuthTokenHash, deviceToken)
+    ) {
       throw new ForbiddenException(
         "Bu desktop qurilma hali kod bilan tasdiqlanmagan.",
       );
@@ -191,4 +220,10 @@ export class JwtAuthGuard implements CanActivate {
 
     return resolved;
   }
+}
+
+function secureTokenMatches(expectedHash: string, token: string): boolean {
+  const actual = Buffer.from(hashDeviceToken(token));
+  const expected = Buffer.from(expectedHash);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }

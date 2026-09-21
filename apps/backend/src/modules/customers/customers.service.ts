@@ -41,6 +41,7 @@ import {
 import type { CancelCustomerOrderDto } from "./dto/cancel-customer-order.dto";
 import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
+import { ensureCancellationReceipt } from "../receipts/receipt-writer";
 
 /*
  * Tasdiqlash kodi cheklovlari SOZLAMA REESTRIDA (7-bosqich Q1).
@@ -308,6 +309,11 @@ export class CustomersService {
       });
 
       await syncKitchenTickets(tx, order.id, OrderStatus.CANCELLED);
+      await ensureCancellationReceipt(
+        tx,
+        order.id,
+        reason ? `Mijoz bekor qildi: ${reason}` : "Mijoz bekor qildi",
+      );
 
       /*
        * `OrderStatusHistory` da mijoz uchun alohida maydon yo'q

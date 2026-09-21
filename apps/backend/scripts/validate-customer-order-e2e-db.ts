@@ -16,6 +16,7 @@ import {
 import { InventoryService } from "../src/modules/inventory/inventory.service";
 import { KitchenService } from "../src/modules/kitchen/kitchen.service";
 import { OrdersService } from "../src/modules/orders/orders.service";
+import { PaymentsService } from "../src/modules/payments/payments.service";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
@@ -67,17 +68,25 @@ async function main(): Promise<void> {
       branchId: fixture.branch.id,
       source: OrderSource.WEB,
       expectedDeliveryFee: new Prisma.Decimal(0),
+      expectedSubtotal: fixture.expectedConfigurableTotal,
       expectedTotal: fixture.expectedConfigurableTotal,
       expectedModifierName: fixture.modifier.name,
     });
+    await proveOrderCashStockPrint(
+      prisma,
+      services.paymentsService,
+      fixture,
+      webOrder.customerOrder.id,
+    );
 
     const deliveryOrder = await createDeliveryWebOrder(services.orderEngine, fixture);
     await proveOrderGraph(prisma, deliveryOrder.customerOrder.id, {
       customerId: fixture.webCustomer.id,
       branchId: fixture.branch.id,
       source: OrderSource.WEB,
-      expectedDeliveryFee: new Prisma.Decimal(0),
-      expectedTotal: fixture.expectedConfigurableTotal,
+      expectedDeliveryFee: deliveryOrder.serverDeliveryFee,
+      expectedSubtotal: fixture.expectedConfigurableTotal,
+      expectedTotal: deliveryOrder.serverTotal,
       expectedModifierName: fixture.modifier.name,
     });
     await proveUnsupportedCustomerPayments(services.orderEngine, prisma, fixture);
@@ -120,6 +129,7 @@ async function main(): Promise<void> {
       branchId: fixture.branch.id,
       source: OrderSource.TELEGRAM,
       expectedDeliveryFee: new Prisma.Decimal(0),
+      expectedSubtotal: fixture.expectedConfigurableTotal,
       expectedTotal: fixture.expectedConfigurableTotal,
       expectedModifierName: fixture.modifier.name,
     });
@@ -261,7 +271,9 @@ function createServices(prisma: PrismaService) {
     createSettingsStub(),
   );
 
-  return { customersService, orderEngine, telegramOrdering };
+  const paymentsService = new PaymentsService(prisma);
+
+  return { customersService, orderEngine, paymentsService, telegramOrdering };
 }
 
 async function createFixture(prisma: PrismaService) {
@@ -280,7 +292,7 @@ async function createFixture(prisma: PrismaService) {
       sortOrder: -Number(runId.slice(-8)),
     },
   });
-  await prisma.warehouse.create({
+  const warehouse = await prisma.warehouse.create({
     data: {
       branchId: branch.id,
       name: "STEP 8 Isolated Warehouse",
@@ -308,6 +320,104 @@ async function createFixture(prisma: PrismaService) {
   const variant = configurable.variants[0]!;
   const modifier = configurable.modifiers[0]!.modifier;
   const expectedConfigurableTotal = variant.sellingPrice.add(modifier.price);
+  let recipe = await prisma.recipe.findUnique({
+    where: { variantId: variant.id },
+    include: { items: true },
+  });
+  if (!recipe || recipe.items.length === 0) {
+    const ingredient = await prisma.ingredient.create({
+      data: {
+        name: "STEP 8 test ingredient",
+        unit: "GRAM",
+      },
+    });
+    if (recipe) {
+      await prisma.recipeItem.create({
+        data: {
+          recipeId: recipe.id,
+          ingredientId: ingredient.id,
+          quantity: 1,
+          unit: "GRAM",
+        },
+      });
+      recipe = await prisma.recipe.findUniqueOrThrow({
+        where: { id: recipe.id },
+        include: { items: true },
+      });
+    } else {
+      recipe = await prisma.recipe.create({
+        data: {
+          variantId: variant.id,
+          items: {
+            create: { ingredientId: ingredient.id, quantity: 1, unit: "GRAM" },
+          },
+        },
+        include: { items: true },
+      });
+    }
+  }
+  assert.ok(recipe);
+  for (const item of recipe.items) {
+    await prisma.stock.upsert({
+      where: {
+        warehouseId_ingredientId: {
+          warehouseId: warehouse.id,
+          ingredientId: item.ingredientId,
+        },
+      },
+      create: {
+        warehouseId: warehouse.id,
+        ingredientId: item.ingredientId,
+        quantity: 100000,
+      },
+      update: { quantity: 100000 },
+    });
+  }
+  const staffUser = await prisma.user.create({
+    data: {
+      email: `step8-${runId}@qa.local`,
+      displayName: "STEP 8 cashier",
+      isActive: true,
+    },
+  });
+  const employee = await prisma.employee.create({
+    data: {
+      userId: staffUser.id,
+      branchId: branch.id,
+      employeeCode: `STEP8-${runId}`,
+      firstName: "STEP 8",
+      lastName: "Cashier",
+      status: "ACTIVE",
+    },
+  });
+  const device = await prisma.device.create({
+    data: {
+      branchId: branch.id,
+      name: "STEP 8 desktop",
+      type: "POS_TERMINAL",
+      isActive: true,
+    },
+  });
+  const shift = await prisma.shift.create({
+    data: {
+      branchId: branch.id,
+      employeeId: employee.id,
+      deviceId: device.id,
+      shiftNumber: 1,
+      status: "OPEN",
+      type: "CASHIER",
+      openingBalance: 0,
+    },
+  });
+  const printer = await prisma.printer.create({
+    data: {
+      branchId: branch.id,
+      name: "STEP 8 virtual receipt printer",
+      type: "RECEIPT",
+      status: "ONLINE",
+      metadata: { printRoles: ["RECEIPT", "CANCELLATION", "REFUND"] },
+    },
+  });
   const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH");
   const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER");
   const simple = await findCatalogProduct(prisma, "KETCHUP");
@@ -343,10 +453,14 @@ async function createFixture(prisma: PrismaService) {
     expectedConfigurableTotal,
     lavash,
     modifier,
+    employee,
+    printer,
     otherCustomer,
     runId,
     set,
     simple,
+    shift,
+    staffUser,
     telegramCartId: "",
     telegramChatId,
     telegramCustomer,
@@ -373,6 +487,86 @@ async function findCatalogProduct(prisma: PrismaService, code: string) {
       bundleItems: true,
     },
   });
+}
+
+async function proveOrderCashStockPrint(
+  prisma: PrismaService,
+  paymentsService: PaymentsService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  customerOrderId: string,
+): Promise<void> {
+  const customerOrder = await prisma.customerOrder.findUniqueOrThrow({
+    where: { id: customerOrderId },
+    include: { order: true },
+  });
+  const actor = {
+    id: fixture.staffUser.id,
+    employeeId: fixture.employee.id,
+    branchId: fixture.branch.id,
+    roles: ["CASHIER"],
+    permissions: ["PAYMENT_CREATE", "RECEIPT_PRINT"],
+  };
+  const result = await paymentsService.processOrderPayment(
+    {
+      orderId: customerOrder.orderId,
+      shiftId: fixture.shift.id,
+      idempotencyKey: `step8-cash-payment-${fixture.runId}`,
+      payments: [
+        {
+          paymentMethodCode: "CASH",
+          amount: customerOrder.order.total.toNumber(),
+        },
+      ],
+    },
+    actor,
+  );
+  assert.equal(result.operation?.status, "COMPLETED");
+  assert.equal(result.payments.length, 1);
+  assert.equal(result.order?.paymentStatus, "PAID");
+  assert.equal(
+    await prisma.revenueRecord.count({
+      where: { orderId: customerOrder.orderId, shiftId: fixture.shift.id },
+    }),
+    1,
+    "cash payment must create one revenue record",
+  );
+  assert.equal(
+    await prisma.cashTransaction.count({
+      where: {
+        orderId: customerOrder.orderId,
+        shiftId: fixture.shift.id,
+        type: "SALE",
+      },
+    }),
+    1,
+    "cash payment must enter the drawer once",
+  );
+  const receipt = await prisma.receipt.findFirstOrThrow({
+    where: { orderId: customerOrder.orderId, documentType: "RECEIPT" },
+  });
+  assert.equal(
+    await prisma.printJob.count({
+      where: { receiptId: receipt.id, printerId: fixture.printer.id },
+    }),
+    1,
+    "paid order must queue one job for the configured receipt printer",
+  );
+  assert.equal(
+    await prisma.auditLog.count({
+      where: {
+        action: "PAYMENT_OPERATION_COMPLETED",
+        entityId: result.operation?.id,
+      },
+    }),
+    1,
+    "payment operation must be auditable",
+  );
+  assert.ok(
+    (await prisma.stockMovement.count({
+      where: { sourceType: "ORDER_ITEM_RECIPE", sourceId: customerOrder.orderId },
+    })) > 0,
+    "confirmed customer order must deduct recipe stock",
+  );
 }
 
 async function createWebOrder(
@@ -426,12 +620,14 @@ async function createDeliveryWebOrder(
 
   const quote = await orderEngine.quoteCheckout(fixture.webCustomer.id, dto);
   assert.equal(quote.subtotal, fixture.expectedConfigurableTotal.toFixed(2));
-  assert.equal(quote.deliveryFee, "0.00");
-  assert.equal(quote.total, fixture.expectedConfigurableTotal.toFixed(2));
+  const serverDeliveryFee = new Prisma.Decimal(quote.deliveryFee);
+  const serverTotal = fixture.expectedConfigurableTotal.add(serverDeliveryFee);
+  assert.notEqual(quote.deliveryFee, String(dto.deliveryFee));
+  assert.equal(quote.total, serverTotal.toFixed(2));
   assert.deepEqual(quote.paymentMethods.map((method) => method.code), ["CASH"]);
 
   const result = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
-  return { ...result, dto };
+  return { ...result, dto, serverDeliveryFee, serverTotal };
 }
 
 async function provePendingAttemptWithExistingOrderRecovery(
@@ -633,7 +829,11 @@ async function proveTelegramFlattenedCatalogFlow(
     sentTelegramPayloads.some((payload) =>
       payload.reply_markup?.inline_keyboard
         ?.flat()
-        .some((button) => button.callback_data === `cust:prod:${fixture.lavash.id}`),
+        .some(
+          (button) =>
+            button.callback_data === `cust:prod:${fixture.lavash.id}` ||
+            button.callback_data.startsWith(`cust:qprod:${fixture.lavash.id}:`),
+        ),
     ),
     "Lavash category must expose real products directly without old meat family callbacks",
   );
@@ -654,7 +854,11 @@ async function proveTelegramFlattenedCatalogFlow(
     sentTelegramPayloads.some((payload) =>
       payload.reply_markup?.inline_keyboard
         ?.flat()
-        .some((button) => button.callback_data === `cust:prod:${fixture.burger.id}`),
+        .some(
+          (button) =>
+            button.callback_data === `cust:prod:${fixture.burger.id}` ||
+            button.callback_data.startsWith(`cust:qprod:${fixture.burger.id}:`),
+        ),
     ),
     "Burger category must expose real products directly without old meat family callbacks",
   );
@@ -905,6 +1109,7 @@ async function proveOrderGraph(
     branchId: string;
     source: OrderSource;
     expectedDeliveryFee: Prisma.Decimal;
+    expectedSubtotal: Prisma.Decimal;
     expectedTotal: Prisma.Decimal;
     expectedModifierName: string;
   },
@@ -938,7 +1143,7 @@ async function proveOrderGraph(
   assert.equal(customerOrder.order.total.toFixed(2), expected.expectedTotal.toFixed(2));
 
   const item = customerOrder.order.items[0]!;
-  assert.equal(item.totalPrice.toFixed(2), expected.expectedTotal.toFixed(2));
+  assert.equal(item.totalPrice.toFixed(2), expected.expectedSubtotal.toFixed(2));
   const modifiers = item.modifierSnapshot;
   assert.ok(Array.isArray(modifiers));
   assert.equal((modifiers[0] as { name?: string }).name, expected.expectedModifierName);

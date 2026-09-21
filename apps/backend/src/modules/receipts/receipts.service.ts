@@ -7,6 +7,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import type { ListReceiptsDto } from "./dto/list-receipts.dto";
 import type { ListPrintJobsDto } from "./dto/print-job.dto";
 import { queuePrintJobsForReceipt } from "./receipt-writer";
+import { writeAuditLog } from "../audit/audit-write";
 
 @Injectable()
 export class ReceiptsService {
@@ -40,6 +41,7 @@ export class ReceiptsService {
       take: query.limit,
       select: {
         id: true,
+        documentType: true,
         receiptNumber: true,
         total: true,
         printed: true,
@@ -141,6 +143,7 @@ export class ReceiptsService {
     const receipt = await this.prisma.receipt.findFirst({
       where: {
         orderId,
+        documentType: "RECEIPT",
         ...(branchId ? { branchId } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -176,16 +179,56 @@ export class ReceiptsService {
     });
     if (!receipt) throw new NotFoundException("Receipt not found");
     resolveBranchScope(user, receipt.branchId);
-    await this.prisma.$transaction((tx) => queuePrintJobsForReceipt(tx, receipt));
+    await this.prisma.$transaction(async (tx) => {
+      await queuePrintJobsForReceipt(tx, receipt);
+      await tx.receipt.update({
+        where: { id: receipt.id },
+        data: { printed: false, printedAt: null },
+      });
+    });
     return this.getReceipt(id, user);
   }
-  async claimPrintJob(branchId: string | undefined, agentId: string, user: AuthenticatedUser, printerIds?: string[]) {
-    const scopedBranchId = resolveBranchScope(user, branchId);
+  async claimPrintJob(
+    branchId: string | undefined,
+    agentId: string,
+    user: AuthenticatedUser,
+    printerIds: string[] = [],
+    acceptUnassigned = false,
+    deviceId?: string,
+  ) {
+    const device = deviceId?.trim()
+      ? await this.prisma.device.findUnique({
+          where: { hardwareId: deviceId.trim() },
+          select: { branchId: true, isActive: true, enrolledAt: true },
+        })
+      : null;
+    if (deviceId?.trim() && (!device?.isActive || !device.enrolledAt)) {
+      throw new BadRequestException("Enrolled print device is required");
+    }
+    if (device && branchId && branchId !== device.branchId) {
+      throw new BadRequestException("Print device belongs to another branch");
+    }
+    const scopedBranchId = resolveBranchScope(user, device?.branchId ?? branchId);
     if (!scopedBranchId) throw new BadRequestException("Branch is required");
     await this.restoreMissingPrintJobs(scopedBranchId);
+    const targetFilters: Prisma.PrintJobWhereInput[] = [];
+    if (printerIds.length > 0) targetFilters.push({ printerId: { in: printerIds } });
+    if (acceptUnassigned) targetFilters.push({ printerId: null });
+    if (targetFilters.length === 0) return null;
     const now = new Date();
     const job = await this.prisma.printJob.findFirst({
-      where: { branchId: scopedBranchId, ...(printerIds?.length ? { printerId: { in: printerIds } } : {}), OR: [{ status: "PENDING", nextAttemptAt: { lte: now } }, { status: "PROCESSING", leaseExpiresAt: { lte: now } }] },
+      where: {
+        branchId: scopedBranchId,
+        AND: [
+          { OR: targetFilters },
+          {
+            OR: [
+              { status: "PENDING", nextAttemptAt: { lte: now } },
+              { status: "PROCESSING", leaseExpiresAt: { lte: now } },
+            ],
+          },
+        ],
+      },
       orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
     });
     if (!job) return null;
@@ -216,7 +259,19 @@ export class ReceiptsService {
         where: { jobId_leaseToken: { jobId: id, leaseToken } },
         data: { outcome: "PRINTED", completedAt: now },
       });
-      await tx.receipt.update({ where: { id: job.receiptId }, data: { printed: true, printedAt: now } });
+      const remaining = await tx.printJob.count({
+        where: {
+          receiptId: job.receiptId,
+          id: { not: id },
+          status: { notIn: ["PRINTED", "CANCELLED"] },
+        },
+      });
+      if (remaining === 0) {
+        await tx.receipt.update({
+          where: { id: job.receiptId },
+          data: { printed: true, printedAt: now },
+        });
+      }
     });
     return this.prisma.printJob.findUnique({ where: { id } });
   }
@@ -248,6 +303,67 @@ export class ReceiptsService {
     });
     return this.prisma.printJob.findUnique({ where: { id } });
   }
+
+  async retryPrintJob(id: string, user: AuthenticatedUser) {
+    const job = await this.prisma.printJob.findUnique({ where: { id } });
+    if (!job) throw new NotFoundException("Print job not found");
+    resolveBranchScope(user, job.branchId);
+
+    if (job.status === "PRINTED" || job.status === "CANCELLED") {
+      throw new BadRequestException("Completed print job cannot be retried");
+    }
+    const now = new Date();
+    if (
+      job.status === "PROCESSING" &&
+      job.leaseExpiresAt &&
+      job.leaseExpiresAt > now
+    ) {
+      throw new BadRequestException("Printer is still processing this job");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const retried = await tx.printJob.updateMany({
+        where: {
+          id,
+          branchId: job.branchId,
+          status: job.status,
+          ...(job.status === "PROCESSING"
+            ? { leaseExpiresAt: { lte: now } }
+            : {}),
+        },
+        data: {
+          status: "PENDING",
+          attemptCount: 0,
+          nextAttemptAt: now,
+          leaseToken: null,
+          leaseExpiresAt: null,
+          lastError: null,
+          printedAt: null,
+        },
+      });
+      if (retried.count !== 1) {
+        throw new BadRequestException("Print job state changed; refresh and retry");
+      }
+      await tx.receipt.update({
+        where: { id: job.receiptId },
+        data: { printed: false, printedAt: null },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "PRINT_JOB_RETRIED",
+        entity: "PrintJob",
+        entityId: id,
+        metadata: {
+          branchId: job.branchId,
+          receiptId: job.receiptId,
+          previousStatus: job.status,
+          previousAttemptCount: job.attemptCount,
+        },
+      });
+    });
+    return this.prisma.printJob.findUnique({ where: { id } });
+  }
+
   private buildEscPos(
     receipt: Prisma.ReceiptGetPayload<{
       include: {
@@ -259,37 +375,83 @@ export class ReceiptsService {
     const content = receipt.content && typeof receipt.content === "object" && !Array.isArray(receipt.content)
       ? (receipt.content as Record<string, unknown>)
       : {};
-    const isCancellation = content.documentType === "CANCELLATION";
-    const cancellationReason = typeof content.cancellationReason === "string" ? content.cancellationReason : null;    return {
+    const isCancellation = receipt.documentType === "CANCELLATION" || content.documentType === "CANCELLATION";
+    const isRefund = content.documentType === "REFUND";
+    const isKitchen = receipt.documentType === "KITCHEN" || content.documentType === "KITCHEN";
+    const cancellationReason = typeof content.cancellationReason === "string" ? content.cancellationReason : null;
+    const branchName = textValue(content.branchName) ?? receipt.branch.name;
+    const orderNumber = textValue(content.orderNumber) ?? receipt.order.orderNumber;
+    const displayOrderNumber = textValue(content.displayOrderNumber) ?? receipt.order.displayOrderNumber ?? orderNumber;
+    const dateTime = textValue(content.dateTime) ?? receipt.createdAt.toISOString();
+    const total = textValue(content.total) ?? receipt.total.toFixed(2);
+    const snapshotItems = objectArray(content.items);
+    const snapshotPayments = objectArray(content.payments);
+    const itemCommands = snapshotItems.length > 0
+      ? snapshotItems.map((item) => ({
+          type: "item",
+          name: [textValue(item.name), textValue(item.variant)].filter(Boolean).join(" "),
+          quantity: textValue(item.quantity) ?? "",
+          total: textValue(item.total) ?? "",
+          notes: textValue(item.notes),
+          modifiers: item.modifiers,
+        }))
+      : receipt.order.items.map((item) => ({
+          type: "item",
+          name: `${item.productName}${item.variantName ? ` ${item.variantName}` : ""}`,
+          quantity: item.quantity.toFixed(3),
+          total: item.totalPrice.toFixed(2),
+        }));
+    const paymentCommands = snapshotPayments.length > 0
+      ? snapshotPayments.map((payment) => ({
+          type: "payment",
+          method: textValue(payment.method) ?? "To'lov",
+          amount: textValue(payment.amount) ?? "",
+        }))
+      : receipt.order.payments.map((payment) => ({
+          type: "payment",
+          method: payment.method.code,
+          amount: payment.amount.toFixed(2),
+        }));
+
+    return {
       encoding: "UTF-8",
       commands: [
         { type: "align", value: "center" },
         { type: "bold", value: true },
         { type: "text", value: "MAZETTO FOOD" },
+        ...(isKitchen ? [{ type: "text", value: "*** OSHXONA BUYURTMASI ***" }, { type: "text", value: `#${displayOrderNumber}` }] : []),
         ...(isCancellation ? [{ type: "text", value: "*** BUYURTMA BEKOR QILINDI ***" }, ...(cancellationReason ? [{ type: "text", value: `Sabab: ${cancellationReason}` }] : [])] : []),
+        ...(isRefund ? [{ type: "text", value: "*** TO'LOV QAYTARILDI ***" }, ...(textValue(content.refundReason) ? [{ type: "text", value: `Sabab: ${textValue(content.refundReason)}` }] : [])] : []),
         { type: "bold", value: false },
-        { type: "text", value: receipt.branch.name },
+        { type: "text", value: branchName },
         { type: "line" },
         { type: "align", value: "left" },
-        { type: "text", value: `Receipt: ${receipt.receiptNumber}` },
-        { type: "text", value: `Order: ${receipt.order.orderNumber}` },
+        ...(!isKitchen ? [{ type: "text", value: `Chek: ${receipt.receiptNumber}` }] : []),
+        { type: "text", value: `Buyurtma: ${displayOrderNumber}` },
+        ...(isKitchen && textValue(content.orderType) ? [{ type: "text", value: `Turi: ${textValue(content.orderType)}` }] : []),
         { type: "line" },
-        ...receipt.order.items.map((item) => ({
-          type: "item",
-          name: `${item.productName}${item.variantName ? ` ${item.variantName}` : ""}`,
-          quantity: item.quantity.toFixed(3),
-          total: item.totalPrice.toFixed(2),
-        })),
+        ...itemCommands,
         { type: "line" },
-        ...receipt.order.payments.map((payment) => ({
-          type: "payment",
-          method: payment.method.code,
-          amount: payment.amount.toFixed(2),
-        })),
-        { type: "total", value: receipt.total.toFixed(2) },
-        { type: "text", value: `Date: ${receipt.createdAt.toISOString()}` },
+        ...(!isKitchen ? paymentCommands : []),
+        ...(!isKitchen ? [{ type: "total", value: total }] : []),
+        ...(isKitchen && textValue(content.orderNotes) ? [{ type: "text", value: `Izoh: ${textValue(content.orderNotes)}` }] : []),
+        { type: "text", value: `Vaqt: ${dateTime}` },
         { type: "cut" },
       ],
     };
   }
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function objectArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item),
+  );
 }

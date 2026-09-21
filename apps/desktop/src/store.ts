@@ -74,6 +74,15 @@ export type JwtContext = {
   isGlobalScope: boolean;
 };
 
+export type LocalPrintJob = {
+  id: string;
+  logicalKey: string;
+  branchId: string;
+  documentType: string;
+  payloadJson: string;
+  attempts: number;
+};
+
 export class DesktopStore {
   private readonly database: DatabaseSync;
 
@@ -148,6 +157,114 @@ export class DesktopStore {
       .get(cacheKey) as CachedResponse | undefined;
 
     return row ? { ...row } : null;
+  }
+
+  getLatestCachedResponse(authScope: string, pathname: string): CachedResponse | null {
+    const row = this.database
+      .prepare(
+        `SELECT cache_key AS cacheKey, request_url AS requestUrl,
+                auth_scope AS authScope, status, content_type AS contentType,
+                body, cached_at AS cachedAt
+         FROM api_cache
+         WHERE auth_scope = ? AND request_url LIKE ?
+         ORDER BY cached_at DESC
+         LIMIT 1`,
+      )
+      .get(authScope, `%${pathname}%`) as CachedResponse | undefined;
+    return row ? { ...row } : null;
+  }
+
+  enqueueLocalPrintJob(input: {
+    logicalKey: string;
+    branchId: string;
+    documentType: string;
+    payload: unknown;
+  }): void {
+    const now = new Date().toISOString();
+    const payloadJson = JSON.stringify(input.payload);
+    const payloadHash = createHash("sha256").update(payloadJson).digest("hex");
+    this.database.prepare(
+      `INSERT INTO print_jobs (
+         id, logical_key, branch_id, printer_id, document_type,
+         payload_json, payload_hash, state, created_at
+       ) VALUES (?, ?, ?, 'system:auto', ?, ?, ?, 'pending', ?)
+       ON CONFLICT(logical_key) DO NOTHING`,
+    ).run(
+      randomUUID(),
+      input.logicalKey,
+      input.branchId,
+      input.documentType,
+      payloadJson,
+      payloadHash,
+      now,
+    );
+  }
+
+  claimLocalPrintJob(documentTypes: string[]): LocalPrintJob | null {
+    if (documentTypes.length === 0) return null;
+    const now = new Date().toISOString();
+    this.database.prepare(
+      `UPDATE print_jobs
+       SET state = 'retry', lease_token = NULL, lease_expires_at = NULL
+       WHERE state IN ('leased', 'printing')
+         AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
+    ).run(now);
+    const placeholders = documentTypes.map(() => "?").join(", ");
+    const row = this.database.prepare(
+      `SELECT id, logical_key AS logicalKey, branch_id AS branchId,
+              document_type AS documentType, payload_json AS payloadJson,
+              attempts
+       FROM print_jobs
+       WHERE state IN ('pending', 'retry')
+         AND document_type IN (${placeholders})
+       ORDER BY created_at ASC
+       LIMIT 1`,
+    ).get(...documentTypes) as LocalPrintJob | undefined;
+    if (!row) return null;
+    const leaseToken = randomUUID();
+    const leaseExpiresAt = new Date(Date.now() + 60_000).toISOString();
+    const result = this.database.prepare(
+      `UPDATE print_jobs
+       SET state = 'leased', lease_token = ?, lease_expires_at = ?,
+           attempts = attempts + 1
+       WHERE id = ? AND state IN ('pending', 'retry')`,
+    ).run(leaseToken, leaseExpiresAt, row.id);
+    return Number(result.changes) > 0 ? { ...row, attempts: row.attempts + 1 } : null;
+  }
+
+  completeLocalPrintJob(id: string): void {
+    this.database.prepare(
+      `UPDATE print_jobs
+       SET state = 'printed', printed_at = ?, lease_token = NULL,
+           lease_expires_at = NULL, last_error = NULL
+       WHERE id = ?`,
+    ).run(new Date().toISOString(), id);
+  }
+
+  failLocalPrintJob(id: string, error: string): void {
+    const row = this.database.prepare(
+      `SELECT attempts FROM print_jobs WHERE id = ?`,
+    ).get(id) as { attempts: number | bigint } | undefined;
+    const attempts = Number(row?.attempts ?? 1);
+    this.database.prepare(
+      `UPDATE print_jobs
+       SET state = ?, lease_token = NULL, lease_expires_at = NULL,
+           last_error = ?
+       WHERE id = ?`,
+    ).run(attempts >= 5 ? "dead_letter" : "retry", error, id);
+  }
+
+  wasLocalDocumentPrinted(serverOrderId: string, documentType: string): boolean {
+    const row = this.database.prepare(
+      `SELECT 1
+       FROM print_jobs job
+       LEFT JOIN local_id_map map
+         ON job.logical_key = map.local_id || ':' || ?
+       WHERE job.state = 'printed'
+         AND (map.server_id = ? OR job.logical_key = ?)
+       LIMIT 1`,
+    ).get(documentType, serverOrderId, `${serverOrderId}:${documentType}`);
+    return Boolean(row);
   }
 
   enqueueMutation(input: OutboxCommandInput): PendingOutboxCommand {

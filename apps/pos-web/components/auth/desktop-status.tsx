@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, Printer, RefreshCw, X } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { useEffect, useState } from "react";
 import { Badge } from "../admin-ui/badge";
@@ -60,6 +60,41 @@ type ConflictComparison = {
   };
 };
 
+type PrinterStatus = {
+  configured: boolean;
+  host: string | null;
+  port: number;
+  managedPrinters: number;
+  managedPrinterDetails: Array<{
+    id: string;
+    name: string;
+    host: string;
+    port: number;
+  }>;
+  systemPrinters?: SelectedSystemPrinter[];
+};
+
+type SystemPrinter = {
+  name: string;
+  displayName: string;
+  description: string | null;
+  status: number;
+  isDefault: boolean;
+};
+
+type SelectedSystemPrinter = {
+  name: string;
+  displayName: string;
+  roles: string[];
+};
+
+const printRoleOptions = [
+  { value: "RECEIPT", label: "Mijoz cheki" },
+  { value: "KITCHEN", label: "Oshxona" },
+  { value: "CANCELLATION", label: "Bekor qilish" },
+  { value: "REFUND", label: "Pul qaytarish" },
+] as const;
+
 export function DesktopStatusBadge() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
@@ -73,6 +108,10 @@ export function DesktopStatusBadge() {
   const [printerPort, setPrinterPort] = useState("9100");
   const [printerMessage, setPrinterMessage] = useState("");
   const [printerBusy, setPrinterBusy] = useState(false);
+  const [printerStatus, setPrinterStatus] = useState<PrinterStatus | null>(null);
+  const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
+  const [selectedSystemPrinters, setSelectedSystemPrinters] = useState<SelectedSystemPrinter[]>([]);
+  const [supportBusy, setSupportBusy] = useState(false);
 
   useEffect(() => {
     const desktop = window.navigator.userAgent.includes("MAZETTO-Desktop/");
@@ -113,8 +152,31 @@ export function DesktopStatusBadge() {
 
   useEffect(() => {
     if (!isDesktop || !window.mazettoDesktop?.printer) return;
-    void window.mazettoDesktop.printer.status().then((settings) => { setPrinterHost(settings.host ?? ""); setPrinterPort(String(settings.port)); }).catch(() => undefined);
+    let active = true;
+    const refreshPrinterStatus = async () => {
+      try {
+        const settings = await window.mazettoDesktop?.printer?.status();
+        if (!active || !settings) return;
+        setPrinterStatus(settings);
+        setPrinterHost(settings.host ?? "");
+        setPrinterPort(String(settings.port));
+        setSelectedSystemPrinters(settings.systemPrinters ?? []);
+      } catch {
+        // Desktop status polling retries automatically.
+      }
+    };
+    void refreshPrinterStatus();
+    const timer = window.setInterval(() => void refreshPrinterStatus(), 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [isDesktop]);
+
+  useEffect(() => {
+    if (!outboxOpen || !isDesktop) return;
+    void loadSystemPrinters();
+  }, [isDesktop, outboxOpen]);
   useEffect(() => {
     const sendHeartbeat = () => {
       const version =
@@ -136,11 +198,102 @@ export function DesktopStatusBadge() {
     setPrinterBusy(true); setPrinterMessage("");
     try {
       const settings = await window.mazettoDesktop.printer.save({ host: printerHost, port: Number(printerPort) });
-      setPrinterHost(settings.host ?? ""); setPrinterPort(String(settings.port));
+      setPrinterStatus(settings); setPrinterHost(settings.host ?? ""); setPrinterPort(String(settings.port));
       if (test) await window.mazettoDesktop.printer.test();
       setPrinterMessage(test ? "Printer bilan ulanish tasdiqlandi." : "Printer sozlamasi saqlandi.");
     } catch (error) { setPrinterMessage(error instanceof Error ? error.message : "Printer sozlanmadi."); }
     finally { setPrinterBusy(false); }
+  }
+
+  async function testManagedPrinters(): Promise<void> {
+    if (!window.mazettoDesktop?.printer) return;
+    setPrinterBusy(true);
+    setPrinterMessage("");
+    try {
+      const results = await window.mazettoDesktop.printer.testManaged();
+      const failed = results.filter((result) => !result.ok);
+      setPrinterMessage(
+        failed.length === 0
+          ? `${results.length} ta printer bilan ulanish tasdiqlandi.`
+          : `${results.length - failed.length} ta printer ishladi, ${failed.length} tasi javob bermadi: ${failed.map((result) => result.name).join(", ")}.`,
+      );
+      setPrinterStatus(await window.mazettoDesktop.printer.status());
+    } catch (error) {
+      setPrinterMessage(error instanceof Error ? error.message : "Printerlar sinalmadi.");
+    } finally {
+      setPrinterBusy(false);
+    }
+  }
+
+  async function loadSystemPrinters(): Promise<void> {
+    if (!window.mazettoDesktop?.printer) return;
+    setPrinterBusy(true);
+    setPrinterMessage("");
+    try {
+      setSystemPrinters(await window.mazettoDesktop.printer.listSystem());
+    } catch (error) {
+      setPrinterMessage(error instanceof Error ? error.message : "Windows printerlari olinmadi.");
+    } finally {
+      setPrinterBusy(false);
+    }
+  }
+
+  function toggleSystemPrinter(printer: SystemPrinter): void {
+    setSelectedSystemPrinters((current) => {
+      const exists = current.some((entry) => entry.name === printer.name);
+      return exists
+        ? current.filter((entry) => entry.name !== printer.name)
+        : [...current, { name: printer.name, displayName: printer.displayName, roles: ["RECEIPT"] }];
+    });
+  }
+
+  function togglePrinterRole(printerName: string, role: string): void {
+    setSelectedSystemPrinters((current) => current.map((entry) => {
+      if (entry.name !== printerName) return entry;
+      const roles = entry.roles.includes(role)
+        ? entry.roles.filter((value) => value !== role)
+        : [...entry.roles, role];
+      return { ...entry, roles };
+    }).filter((entry) => entry.roles.length > 0));
+  }
+
+  async function saveSystemPrinters(test = false): Promise<void> {
+    if (!window.mazettoDesktop?.printer) return;
+    setPrinterBusy(true);
+    setPrinterMessage("");
+    try {
+      const settings = await window.mazettoDesktop.printer.saveSystem({ printers: selectedSystemPrinters });
+      setPrinterStatus(settings);
+      if (test) {
+        for (const printer of selectedSystemPrinters) {
+          await window.mazettoDesktop.printer.testSystem({
+            name: printer.name,
+            role: printer.roles[0] ?? "RECEIPT",
+          });
+        }
+      }
+      setPrinterMessage(test ? "Tanlangan printerlarda test cheki chiqarildi." : "Windows printer sozlamalari saqlandi.");
+    } catch (error) {
+      setPrinterMessage(error instanceof Error ? error.message : "Printer sozlamalari saqlanmadi.");
+    } finally {
+      setPrinterBusy(false);
+    }
+  }
+
+  async function exportSupportBundle(): Promise<void> {
+    if (!window.mazettoDesktop?.support) return;
+    setSupportBusy(true);
+    setOutboxError("");
+    try {
+      const result = await window.mazettoDesktop.support.export();
+      if (result) {
+        setPrinterMessage("Diagnostika fayli saqlandi.");
+      }
+    } catch (error) {
+      setOutboxError(error instanceof Error ? error.message : "Diagnostika fayli yaratilmadi.");
+    } finally {
+      setSupportBusy(false);
+    }
   }
   if (!isDesktop) {
     return null;
@@ -282,11 +435,61 @@ export function DesktopStatusBadge() {
           </div>
 
           <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-3">
-            <div className="mb-2 flex items-center justify-between"><p className="text-sm font-semibold text-mz-text">Chek printeri</p><Badge tone={printerHost ? "success" : "neutral"} withDot>{printerHost ? "Sozlangan" : "Sozlanmagan"}</Badge></div>
-            <div className="grid gap-2 sm:grid-cols-[1fr_100px_auto_auto]"><input aria-label="Printer IP manzili" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" value={printerHost} /><input aria-label="Printer porti" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" inputMode="numeric" onChange={(event) => setPrinterPort(event.target.value)} value={printerPort} /><Button isLoading={printerBusy} onClick={() => void savePrinter()} size="sm" variant="ghost">Saqlash</Button><Button disabled={!printerHost} isLoading={printerBusy} onClick={() => void savePrinter(true)} size="sm">Sinash</Button></div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Printer className="text-mz-primary" size={17} />
+                <p className="text-sm font-semibold text-mz-text">Printerlar</p>
+              </div>
+              <Badge tone={selectedSystemPrinters.length ? "success" : "neutral"} withDot>
+                {selectedSystemPrinters.length ? `${selectedSystemPrinters.length} ta tanlangan` : "Tanlanmagan"}
+              </Badge>
+            </div>
+            <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
+              {systemPrinters.length ? systemPrinters.map((printer) => {
+                const selected = selectedSystemPrinters.find((entry) => entry.name === printer.name);
+                return (
+                  <div className="rounded-mz-control border border-mz-border bg-mz-surface p-3" key={printer.name}>
+                    <label className="flex cursor-pointer items-start gap-2">
+                      <input checked={Boolean(selected)} className="mt-0.5 h-4 w-4 accent-mz-primary" onChange={() => toggleSystemPrinter(printer)} type="checkbox" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-semibold text-mz-text">{printer.displayName}</span>
+                        <span className="block truncate text-[11px] text-mz-text-muted">{printer.isDefault ? "Windows asosiy printeri" : printer.description || printer.name}</span>
+                      </span>
+                    </label>
+                    {selected ? (
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-2 border-t border-mz-border pt-2">
+                        {printRoleOptions.map((role) => (
+                          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-mz-text" key={role.value}>
+                            <input checked={selected.roles.includes(role.value)} className="h-3.5 w-3.5 accent-mz-primary" onChange={() => togglePrinterRole(printer.name, role.value)} type="checkbox" />
+                            {role.label}
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              }) : (
+                <p className="rounded-mz-control border border-dashed border-mz-border p-3 text-center text-[12px] text-mz-text-muted">Windows printer topilmadi.</p>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <Button isLoading={printerBusy} onClick={() => void loadSystemPrinters()} size="sm" variant="ghost">Qayta qidirish</Button>
+              <Button disabled={!selectedSystemPrinters.length} isLoading={printerBusy} onClick={() => void saveSystemPrinters(true)} size="sm" variant="ghost">Test cheki</Button>
+              <Button disabled={!selectedSystemPrinters.length} isLoading={printerBusy} onClick={() => void saveSystemPrinters()} size="sm">Saqlash</Button>
+            </div>
+            <details className="mt-3 border-t border-mz-border pt-2 text-[12px]">
+              <summary className="cursor-pointer font-semibold text-mz-text-muted">Tarmoq printeri (ixtiyoriy)</summary>
+              <p className="my-2 text-mz-text-muted">Faqat Windows drayverisiz ESC/POS printer uchun IP manzil ishlatiladi.</p>
+              <div className="grid gap-2 sm:grid-cols-[1fr_90px_auto_auto]"><input aria-label="Zaxira printer IP manzili" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" value={printerHost} /><input aria-label="Zaxira printer porti" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" inputMode="numeric" onChange={(event) => setPrinterPort(event.target.value)} value={printerPort} /><Button isLoading={printerBusy} onClick={() => void savePrinter()} size="sm" variant="ghost">Saqlash</Button><Button disabled={!printerHost && !printerStatus?.managedPrinters} isLoading={printerBusy} onClick={() => void (printerStatus?.managedPrinters ? testManagedPrinters() : savePrinter(true))} size="sm">Sinash</Button></div>
+            </details>
             {printerMessage ? <p className="mt-2 text-[12px] text-mz-text-muted">{printerMessage}</p> : null}
           </div>
           <DesktopUpdateControls />
+          <div className="flex justify-end">
+            <Button isLoading={supportBusy} onClick={() => void exportSupportBundle()} size="sm" variant="ghost">
+              Diagnostika fayli
+            </Button>
+          </div>
 
           <div className="grid grid-cols-4 gap-2">
             <QueueStat label="Kutmoqda" value={status?.pendingCommands ?? 0} />

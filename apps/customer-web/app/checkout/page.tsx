@@ -163,6 +163,7 @@ function CheckoutFlow() {
   const [loadingBranches, setLoadingBranches] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [branchError, setBranchError] = useState<string | null>(null);
+  const [online, setOnline] = useState(true);
   /*
    * Buyurtma yuborilgani. `clearCart()` va `router.push()` orasida React
    * qayta chizadi, va o'sha lahzada "savat bo'sh" guardi ishga tushib,
@@ -175,9 +176,23 @@ function CheckoutFlow() {
   const placed = useRef(false);
   const branchRequest = useRef(0);
   const quoteRequest = useRef(0);
+  const offlineMessage = online
+    ? null
+    : "Internet aloqasi yo'q. Buyurtma yuborish uchun internetga ulaning.";
   const deliveryFee = quote ? Number(quote.deliveryFee) : 0;
   const total = quote ? Number(quote.total) : subtotal;
   const selectedBranch = branches.find((branch) => branch.id === branchId);
+
+  useEffect(() => {
+    const updateOnlineState = () => setOnline(window.navigator.onLine);
+    updateOnlineState();
+    window.addEventListener("online", updateOnlineState);
+    window.addEventListener("offline", updateOnlineState);
+    return () => {
+      window.removeEventListener("online", updateOnlineState);
+      window.removeEventListener("offline", updateOnlineState);
+    };
+  }, []);
   /*
    * Usullar YASHIRILMAYDI — hammasi ko'rsatiladi, hali ishga tushmaganiga
    * "Tez kunda" belgisi qo'yiladi.
@@ -420,6 +435,12 @@ function CheckoutFlow() {
   }
 
   async function submitOrder() {
+    if (!window.navigator.onLine) {
+      setOnline(false);
+      setSubmitError("Internet aloqasi yo'q. Buyurtma yuborilmadi.");
+      showToast("Internet aloqasi yo'q. Buyurtma yuborilmadi.");
+      return;
+    }
     if (
       submitLock.current ||
       submitting ||
@@ -554,6 +575,7 @@ function CheckoutFlow() {
     loadingBranches ||
     loadingQuote ||
     Boolean(branchError) ||
+    !online ||
     !quote;
 
   return (
@@ -842,6 +864,11 @@ function CheckoutFlow() {
               {submitError}
             </p>
           ) : null}
+          {offlineMessage && !submitError ? (
+            <p role="alert" className="mf-checkout-error">
+              {offlineMessage}
+            </p>
+          ) : null}
           {quoteError ? (
             <div role="alert" className="mf-checkout-error">
               <p>{quoteError}</p>
@@ -870,7 +897,7 @@ function CheckoutFlow() {
         label={submitting ? "Yuborilmoqda..." : "Tasdiqlash"}
         disabled={locked}
         busy={submitting || loadingQuote}
-        notice={submitError ?? quoteError}
+        notice={offlineMessage ?? submitError ?? quoteError}
         onConfirm={() => void submitOrder()}
       />
     </div>

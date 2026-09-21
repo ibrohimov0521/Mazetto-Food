@@ -200,13 +200,19 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
       }),
   } as never);
 
-  await service.enroll({
+  const result = await service.enroll({
     deviceId: "desktop-uuid-1",
     enrollmentCode: code,
     softwareVersion: "0.1.5",
   });
 
   assert.equal(updateData?.hardwareId, "desktop-uuid-1");
+  assert.equal(typeof result.deviceToken, "string");
+  assert.ok(result.deviceToken.length >= 40);
+  assert.equal(
+    updateData?.deviceAuthTokenHash,
+    crypto.createHash("sha256").update(result.deviceToken).digest("hex"),
+  );
   assert.equal(updateData?.enrollmentCodeHash, null);
   assert.equal(updateData?.enrollmentExpiresAt, null);
   assert.ok(updateData?.enrolledAt instanceof Date);

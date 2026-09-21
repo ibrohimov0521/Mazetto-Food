@@ -16,7 +16,7 @@ import {
   type AuthUser,
 } from "../../lib/auth";
 import {
-  readSession,
+  hydrateSession,
   subscribeToSession,
   writeSession,
 } from "../../lib/session";
@@ -46,8 +46,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    setSession(readSession());
-    setIsReady(true);
+    let active = true;
+    void hydrateSession().then((storedSession) => {
+      if (!active) return;
+      setSession(storedSession);
+      setIsReady(true);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   /*
@@ -70,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier, password }),
+        credentials: "include",
       });
       const payload = (await response.json()) as {
         success: boolean;
@@ -90,17 +98,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     const refreshToken = session?.tokens.refreshToken;
 
-    if (refreshToken) {
+    if (session) {
       await fetch(`${getApiBaseUrl()}/auth/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
+        body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+        credentials: "include",
       }).catch(() => undefined);
     }
 
     // Sessiyani tozalash login'ga yo'naltirishni ham ishga tushiradi (yuqoridagi subscribe).
     writeSession(null);
-  }, [session?.tokens.refreshToken]);
+  }, [session]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

@@ -14,7 +14,7 @@ import {
   OrderType,
   Prisma,
 } from "@prisma/client";
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
@@ -658,9 +658,15 @@ export class CustomerOrderEngineService {
     branchId: string,
     items: OnlineOrderItemDto[],
   ) {
-    const snapshots = await Promise.all(
-      items.map((item) => this.createItemSnapshot(tx, branchId, item)),
-    );
+    const snapshots: Awaited<
+      ReturnType<typeof this.createItemSnapshot>
+    >[] = [];
+    // Interactive transactions use one PostgreSQL connection. Serial reads
+    // avoid overlapping `pg` queries on that connection and keep pricing
+    // deterministic when several cart lines reference the same stock rows.
+    for (const item of items) {
+      snapshots.push(await this.createItemSnapshot(tx, branchId, item));
+    }
     const subtotal = snapshots.reduce(
       (total, item) => total.add(item.totalPrice),
       new Prisma.Decimal(0),
@@ -821,6 +827,6 @@ export class CustomerOrderEngineService {
     const date = now.toISOString().slice(0, 10).replaceAll("-", "");
     const time = now.toISOString().slice(11, 19).replaceAll(":", "");
 
-    return `${prefix}-${date}-${time}-${randomInt(1000, 10000)}`;
+    return `${prefix}-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
   }
 }

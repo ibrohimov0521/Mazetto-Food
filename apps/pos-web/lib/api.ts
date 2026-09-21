@@ -107,6 +107,7 @@ async function requestWithSession(
         : {}),
       ...init?.headers,
     },
+    credentials: "include",
   });
 }
 
@@ -135,7 +136,10 @@ async function performRefresh(session: AuthSession): Promise<AuthSession | null>
     response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: session.tokens.refreshToken }),
+      body: JSON.stringify(session.tokens.refreshToken
+        ? { refreshToken: session.tokens.refreshToken }
+        : {}),
+      credentials: "include",
     });
   } catch {
     // Tarmoq uzilishi — sessiyani o'chirmaymiz, keyingi urinishda tiklanishi mumkin.

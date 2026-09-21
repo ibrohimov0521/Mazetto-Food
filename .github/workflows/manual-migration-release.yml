@@ -8,18 +8,21 @@ on:
         required: true
         type: string
       phase:
-        description: Deploy backend first; run prisma migrate deploy; then deploy POS
+        description: Deploy backend first; migrate production; then deploy each changed service
         required: true
         type: choice
         options:
           - backend
+          - customer-web
           - pos-web
+          - telegram-bot
+          - media
       verified_backup_path:
         description: Path of the independently verified production PostgreSQL dump
         required: true
         type: string
       migrations_applied:
-        description: Confirm production prisma migrate deploy completed (required for POS)
+        description: Confirm production prisma migrate deploy completed (required after backend)
         required: true
         type: boolean
         default: false
@@ -73,8 +76,8 @@ jobs:
           [[ -n "$SINCE" && -n "$MIGRATIONS" ]] || { echo 'This workflow is only for migration releases'; exit 1; }
           [[ " $(git ls-remote origin refs/heads/main | cut -f1) " == " $SHA " ]] || { echo 'main moved; release stopped'; exit 1; }
           [[ " $APPS " == *" $PHASE "* ]] || { echo "No $PHASE change in release gate"; exit 1; }
-          if [[ "$PHASE" == pos-web && "$MIGRATIONS_APPLIED" != true ]]; then
-            echo 'Apply production migrations before deploying POS'; exit 1
+          if [[ "$PHASE" != backend && "$MIGRATIONS_APPLIED" != true ]]; then
+            echo 'Apply production migrations before deploying dependent services'; exit 1
           fi
           printf '### Manual release %s\n\n- Phase: %s\n- Backup supplied by operator: %s\n- Migrations: %s\n' "$SHA" "$PHASE" "$BACKUP_PATH" "$MIGRATIONS" >> "$GITHUB_STEP_SUMMARY"
           echo 'The workflow records the backup path but cannot independently verify the remote archive.'
@@ -84,7 +87,10 @@ jobs:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
           DOKPLOY_APP_BACKEND: ${{ vars.DOKPLOY_APP_BACKEND }}
+          DOKPLOY_APP_CUSTOMER_WEB: ${{ vars.DOKPLOY_APP_CUSTOMER_WEB }}
           DOKPLOY_APP_POS_WEB: ${{ vars.DOKPLOY_APP_POS_WEB }}
+          DOKPLOY_APP_TELEGRAM_BOT: ${{ vars.DOKPLOY_APP_TELEGRAM_BOT }}
+          DOKPLOY_APP_MEDIA: ${{ vars.DOKPLOY_APP_MEDIA }}
         run: node scripts/dokploy-deploy.mjs --sha "$SHA" "$PHASE"
 
       - name: Production smoke after POS

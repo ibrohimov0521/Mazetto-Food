@@ -8,7 +8,11 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  Res,
+  UnauthorizedException,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   ListCustomerOrdersDto,
@@ -38,6 +42,9 @@ import { CustomerCourierService } from "./customer-courier.service";
 import { CustomersService } from "./customers.service";
 import { CustomerAddressesService } from "./customer-addresses.service";
 import { SaveCustomerAddressDto } from "./dto/delivery-location.dto";
+import { clearRefreshCookie, CUSTOMER_REFRESH_COOKIE, readRefreshToken, setRefreshCookie } from "../../common/auth/refresh-cookie";
+
+const CUSTOMER_COOKIE_PATH = "/api/v1/customer/auth";
 
 @Controller("customer")
 export class CustomerPublicController {
@@ -80,20 +87,28 @@ export class CustomerPublicController {
 
   @Public()
   @Post("auth/verify-code")
-  verifyCode(@Body() dto: CustomerVerifyCodeDto) {
-    return this.customerAuth.verifyCode(dto);
+  async verifyCode(@Body() dto: CustomerVerifyCodeDto, @Res({ passthrough: true }) response: Response) {
+    const result = await this.customerAuth.verifyCode(dto);
+    setRefreshCookie(response, CUSTOMER_REFRESH_COOKIE, result.tokens.refreshToken, CUSTOMER_COOKIE_PATH, Number(process.env.CUSTOMER_JWT_REFRESH_EXPIRES_IN_SECONDS ?? 604800));
+    return result;
   }
 
   @Public()
   @Post("auth/refresh")
-  refresh(@Body() dto: CustomerRefreshDto) {
-    return this.customerAuth.refresh(dto);
+  async refresh(@Body() dto: CustomerRefreshDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const refreshToken = readRefreshToken(request, dto.refreshToken, CUSTOMER_REFRESH_COOKIE);
+    if (!refreshToken) throw new UnauthorizedException("Refresh token is required");
+    const result = await this.customerAuth.refresh({ refreshToken });
+    setRefreshCookie(response, CUSTOMER_REFRESH_COOKIE, result.tokens.refreshToken, CUSTOMER_COOKIE_PATH, Number(process.env.CUSTOMER_JWT_REFRESH_EXPIRES_IN_SECONDS ?? 604800));
+    return result;
   }
 
   @Public()
   @Post("auth/logout")
-  logout(@Body() dto: CustomerLogoutDto) {
-    return this.customerAuth.logout(dto);
+  logout(@Body() dto: CustomerLogoutDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const refreshToken = readRefreshToken(request, dto.refreshToken, CUSTOMER_REFRESH_COOKIE);
+    clearRefreshCookie(response, CUSTOMER_REFRESH_COOKIE, CUSTOMER_COOKIE_PATH);
+    return refreshToken ? this.customerAuth.logout({ refreshToken }) : { revoked: false };
   }
 
   @CustomerAuth()

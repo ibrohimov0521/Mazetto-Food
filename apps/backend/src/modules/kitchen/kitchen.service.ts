@@ -15,7 +15,7 @@ import {
   PaymentStatus,
   Prisma,
 } from "@prisma/client";
-import { randomInt } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -1051,7 +1051,7 @@ export class KitchenService {
   private createTicketNumber(): string {
     const now = new Date();
     const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-    return `KDS-${date}-${randomInt(1000, 10000)}`;
+    return `KDS-${date}-${randomUUID().slice(0, 8).toUpperCase()}`;
   }
 
   private isUniqueTicketError(error: unknown): boolean {

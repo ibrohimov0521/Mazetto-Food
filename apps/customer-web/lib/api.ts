@@ -69,6 +69,7 @@ async function requestApi<T>(path: string, init?: ApiFetchInit): Promise<T> {
       ...requestInit,
       cache: requestInit.cache ?? "no-store",
       headers: requestHeaders,
+      credentials: "include",
       signal,
     });
     payload = await parseEnvelope<T>(response);

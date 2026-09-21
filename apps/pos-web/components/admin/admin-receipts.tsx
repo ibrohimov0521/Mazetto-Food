@@ -147,6 +147,7 @@ export function AdminReceiptsPage() {
   const [to, setTo] = useState("");
   const [offset, setOffset] = useState(0);
   const [printJobStatus, setPrintJobStatus] = useState("");
+  const [busyPrintJobId, setBusyPrintJobId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -228,13 +229,27 @@ export function AdminReceiptsPage() {
   );
   const printJobs = printJobData ?? [];
   const printJobColumns: DataTableColumn<PrintJob>[] = [
-    { key: "receipt", header: "Chek", primary: true, render: (job) => <div className="min-w-0"><p className="font-semibold text-mz-text">{job.receipt.receiptNumber}</p><p className="truncate text-[13px] text-mz-text-muted">{job.receipt.order?.displayOrderNumber ?? job.receipt.order?.orderNumber ?? "Buyurtma"} · {job.branch.name}</p></div> },
+    { key: "receipt", header: "Chek", primary: true, render: (job) => <div className="min-w-0"><p className="font-semibold text-mz-text">{job.receipt.receiptNumber}</p><p className="truncate text-[13px] text-mz-text-muted">{job.receipt.order?.displayOrderNumber ?? job.receipt.order?.orderNumber ?? "Buyurtma"} · {job.branch.name}</p>{job.lastError ? <p className="mt-1 max-w-80 truncate text-[12px] text-mz-danger" title={job.lastError}>{job.lastError}</p> : null}</div> },
     { key: "status", header: "Holat", render: (job) => <Badge tone={printJobTone(job.status)} withDot>{printJobStatusLabels[job.status]}</Badge> },
     { key: "attempts", header: "Urinish", hideOnMobile: true, render: (job) => `${job.attemptCount}/${job.maxAttempts}` },
     { key: "printer", header: "Printer", hideOnMobile: true, render: (job) => job.printer?.name ?? "Zaxira printer" },
     { key: "agent", header: "Agent", hideOnMobile: true, render: (job) => job.attempts[0]?.agentId ?? "—" },
     { key: "next", header: "Keyingi amal", hideOnMobile: true, render: (job) => job.status === "PRINTED" && job.printedAt ? formatDateTime(job.printedAt) : formatDateTime(job.nextAttemptAt) },
   ];
+
+  async function retryPrintJob(job: PrintJob): Promise<void> {
+    setBusyPrintJobId(job.id);
+    try {
+      await apiFetch(`/receipts/print-jobs/${job.id}/retry`, { method: "POST" });
+      showToast("Chop ishi qayta navbatga qo'yildi.", "success");
+      await reloadPrintJobs();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Chop ishini qayta yuborib bo'lmadi.", "danger");
+    } finally {
+      setBusyPrintJobId(null);
+    }
+  }
 
 
   async function reprintReceipt(): Promise<void> {
@@ -368,7 +383,7 @@ export function AdminReceiptsPage() {
           title="Chop navbati"
         />
         <FilterBar><div className="w-56"><FormField label="Navbat holati">{(props) => <Select {...props} value={printJobStatus} onChange={(event) => setPrintJobStatus(event.target.value)}><option value="">Barcha holatlar</option><option value="PENDING">Navbatda</option><option value="PROCESSING">Printerda</option><option value="PRINTED">Chop etildi</option><option value="DEAD_LETTER">Xato bilan to'xtadi</option></Select>}</FormField></div></FilterBar>
-        {printJobsError ? <ErrorState message={printJobsError} onRetry={() => void reloadPrintJobs()} /> : <DataTable caption="Chop etish ishlari" columns={printJobColumns} emptyDescription="Yangi chek yaratilganda u shu yerda ko‘rinadi." emptyTitle="Chop navbati bo‘sh" getRowKey={(job) => job.id} isLoading={isPrintJobsLoading} rows={printJobs} />}
+        {printJobsError ? <ErrorState message={printJobsError} onRetry={() => void reloadPrintJobs()} /> : <DataTable caption="Chop etish ishlari" columns={printJobColumns} emptyDescription="Yangi chek yaratilganda u shu yerda ko‘rinadi." emptyTitle="Chop navbati bo‘sh" getRowKey={(job) => job.id} isLoading={isPrintJobsLoading} rowActions={(job) => job.status === "DEAD_LETTER" || job.status === "PENDING" || (job.status === "PROCESSING" && Boolean(job.leaseExpiresAt) && new Date(job.leaseExpiresAt!).getTime() <= Date.now()) ? <RowAction icon="send" label={busyPrintJobId === job.id ? "Qayta yuborilmoqda" : `${job.receipt.receiptNumber} — qayta navbatga yuborish`} onClick={() => void retryPrintJob(job)} /> : null} rows={printJobs} />}
       </Card>
       <Card>
         <CardHeader

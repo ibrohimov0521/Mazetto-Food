@@ -1,4 +1,4 @@
-import { ArrayUnique, IsArray, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import { ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 import { Type } from "class-transformer";
 
 export class ClaimPrintJobDto {
@@ -12,6 +12,10 @@ export class ClaimPrintJobDto {
   @ArrayUnique()
   @IsString({ each: true })
   printerIds?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  acceptUnassigned?: boolean;
 }
 
 export class CompletePrintJobDto {

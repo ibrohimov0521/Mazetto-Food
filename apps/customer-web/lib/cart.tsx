@@ -30,7 +30,7 @@ export type CustomerSession = {
   email?: string | null;
   bonusBalance?: string;
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   tokenType: "Bearer";
 };
 export type CartModifier = {
@@ -91,6 +91,12 @@ const storageKey = "mazetto.customer.cart";
 const customerKey = "mazetto.customer.session";
 const favoritesKey = "mazetto.customer.favorites";
 const CartContext = createContext<CartContextValue | null>(null);
+
+function withoutCustomerRefreshToken(customer: CustomerSession): CustomerSession {
+  const safeCustomer = { ...customer };
+  delete safeCustomer.refreshToken;
+  return safeCustomer;
+}
 const sourceMenuMediaPaths = new Set([
   "/categories/burger.webp",
   "/categories/chicken-burger.webp",
@@ -247,9 +253,33 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setItems(readStoredValue<CartItem[]>(storageKey, []));
-    setCustomerState(
-      readStoredValue<CustomerSession | null>(customerKey, null),
-    );
+    const legacyCustomer = readStoredValue<CustomerSession | null>(customerKey, null);
+    const browserCustomer = legacyCustomer
+      ? withoutCustomerRefreshToken(legacyCustomer)
+      : null;
+    setCustomerState(legacyCustomer ?? browserCustomer);
+    if (browserCustomer) {
+      window.localStorage.setItem(customerKey, JSON.stringify(browserCustomer));
+    }
+    if (legacyCustomer?.refreshToken) {
+      void fetch(`${getCustomerApiBaseUrl()}/customer/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: legacyCustomer.refreshToken }),
+        credentials: "include",
+      })
+        .then(async (response) => {
+          if (!response.ok) return;
+          const payload = (await response.json()) as {
+            data?: { customer: Omit<CustomerSession, "accessToken" | "refreshToken" | "tokenType">; tokens: Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType"> };
+          };
+          if (!payload.data) return;
+          const migrated = withoutCustomerRefreshToken({ ...payload.data.customer, ...payload.data.tokens });
+          setCustomerState(migrated);
+          window.localStorage.setItem(customerKey, JSON.stringify(migrated));
+        })
+        .catch(() => undefined);
+    }
     setFavoriteIds(readStoredValue<string[]>(favoritesKey, []));
     setHydrated(true);
   }, []);
@@ -276,17 +306,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const setCustomer = useCallback(function setCustomer(
     customer: CustomerSession | null,
   ) {
-    setCustomerState(customer);
+    const browserCustomer = customer
+      ? withoutCustomerRefreshToken(customer)
+      : null;
+    setCustomerState(browserCustomer);
 
-    if (customer) {
-      window.localStorage.setItem(customerKey, JSON.stringify(customer));
+    if (browserCustomer) {
+      window.localStorage.setItem(customerKey, JSON.stringify(browserCustomer));
     } else {
       window.localStorage.removeItem(customerKey);
+      void fetch(`${getCustomerApiBaseUrl()}/customer/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        credentials: "include",
+      }).catch(() => undefined);
     }
   }, []);
 
   const refreshCustomer = useCallback(async () => {
-    if (!customer?.refreshToken) {
+    if (!customer) {
       return null;
     }
 
@@ -294,10 +333,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch(
         `${getCustomerApiBaseUrl()}/customer/auth/refresh`,
         {
-          body: JSON.stringify({ refreshToken: customer.refreshToken }),
+          body: JSON.stringify(customer.refreshToken ? { refreshToken: customer.refreshToken } : {}),
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
           method: "POST",
+          credentials: "include",
           signal: AbortSignal.timeout(15_000),
         },
       );
@@ -329,7 +369,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setCustomer(null);
       return null;
     }
-  }, [customer?.refreshToken, setCustomer]);
+  }, [customer, setCustomer]);
 
   const subtotal = useMemo(
     () =>

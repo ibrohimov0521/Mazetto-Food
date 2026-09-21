@@ -1,5 +1,11 @@
 # Mazetto Food – Customer Web UX/UI Audit
 
+> **Tarixiy audit (joriy release holati emas).** Ushbu hujjat dastlabki
+> statik tekshiruv natijasini saqlaydi. Bandlarning bir qismi keyingi
+> remediationlarda tuzatilgan. Joriy holat va ochiq release gate'lari uchun
+> `docs/audit/IMPLEMENTATION_PROGRESS.md` hamda
+> `docs/audit/REMEDIATION_PLAN_2026-09-21.md` asosiy manbadir.
+
 Scope: `D:/projects/Java here/Mazetto-Food/apps/customer-web` (all listed pages, components, `app/globals.css`, `app/checkout/checkout.css`, module CSS) plus `docs/DESIGN_RULES.md`, `docs/design/MAZETTO_DESIGN_LOCK.md`, `docs/CUSTOMER_WEB_SPEC.md`. All paths below are relative to that `apps/customer-web` directory (prefix it to get the absolute path). Contrast ratios are computed from the literal hex/rgba values in CSS using WCAG relative luminance; alpha colours are composited on the surface they sit on. No files were modified.
 
 ---

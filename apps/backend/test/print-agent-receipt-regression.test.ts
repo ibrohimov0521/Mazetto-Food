@@ -33,6 +33,14 @@ test("durable queue is explicitly enabled and the agent completes only its lease
   assert.match(printAgent, /Durable print queue is not claimed in dry-run mode/);
 });
 
+test("customer and kitchen documents use separate durable print routes", () => {
+  assert.match(receiptWriter, /"RECEIPT" \| "KITCHEN" \| "CANCELLATION" \| "REFUND"/);
+  assert.match(receiptWriter, /documentType === "KITCHEN"/);
+  assert.match(receiptService, /isKitchen/);
+  assert.match(receiptService, /OSHXONA BUYURTMASI/);
+  assert.match(receiptService, /!isKitchen \? paymentCommands/);
+});
+
 test("production startup migrates the print queue and restores old unprinted receipts", () => {
   assert.match(backendDockerfile, /ensure-print-queue\.mjs/);
   assert.doesNotMatch(backendDockerfile, /prisma:migrate:deploy/);

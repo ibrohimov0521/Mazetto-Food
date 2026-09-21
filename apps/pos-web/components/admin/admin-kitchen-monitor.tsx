@@ -58,6 +58,7 @@ type KitchenTicket = {
   priority: number;
   version: number;
   createdAt: string;
+  pendingSync?: boolean;
   order?: {
     id: string;
     version: number;
@@ -418,6 +419,13 @@ export function AdminKitchenMonitor() {
   ];
 
   function rowActions(ticket: KitchenTicket): React.ReactNode {
+    if (ticket.pendingSync) {
+      return (
+        <Badge tone="warning" withDot>
+          Internet qaytganda faollashadi
+        </Badge>
+      );
+    }
     const step = ticketNextStep[ticket.status];
     const canStep = step ? hasPermission(user, step.permission) : false;
     const order = ticket.order;

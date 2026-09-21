@@ -46,13 +46,15 @@ export class CustomerVerifyCodeDto {
 }
 
 export class CustomerRefreshDto {
+  @IsOptional()
   @IsString()
-  refreshToken!: string;
+  refreshToken?: string;
 }
 
 export class CustomerLogoutDto {
+  @IsOptional()
   @IsString()
-  refreshToken!: string;
+  refreshToken?: string;
 }
 
 export class OnlineOrderModifierDto {

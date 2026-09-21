@@ -64,11 +64,12 @@ export function KitchenTicketCard({
   const canAct = hasPermission(
     user,
     ticket.status === "NEW" ? "KITCHEN_ACCEPT" : "KITCHEN_STATUS_UPDATE",
-  );
+  ) && !ticket.pendingSync;
   const action = canAct ? kitchenPrimaryAction(ticket.status) : null;
   const shownItems = ticket.items;
   const canCancel =
     hasPermission(user, "KITCHEN_STATUS_UPDATE") &&
+    !ticket.pendingSync &&
     ["NEW", "ACCEPTED", "COOKING"].includes(ticket.status);
   const number = ticket.order.displayOrderNumber ?? ticket.order.orderNumber;
   const place = ticket.order.table

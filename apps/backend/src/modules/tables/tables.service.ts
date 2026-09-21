@@ -13,7 +13,7 @@ import {
   Prisma,
   TableStatus,
 } from "@prisma/client";
-import { randomInt, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   resolveBranchScope,
   resolveRequiredBranchScope,
@@ -553,6 +553,6 @@ export class TablesService {
     const date = now.toISOString().slice(0, 10).replaceAll("-", "");
     const time = now.toISOString().slice(11, 19).replaceAll(":", "");
 
-    return `WTR-${date}-${time}-${randomInt(1000, 10000)}`;
+    return `WTR-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
   }
 }

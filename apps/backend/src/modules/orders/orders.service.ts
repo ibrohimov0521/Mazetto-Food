@@ -40,7 +40,11 @@ import type {
   UpdateOrderStatusDto,
 } from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
-import { ensureCancellationReceipt, ensureOrderReceipt } from "../receipts/receipt-writer";
+import {
+  ensureCancellationReceipt,
+  ensureKitchenReceipt,
+  ensureOrderReceipt,
+} from "../receipts/receipt-writer";
 import { allocateDisplayOrderNumber } from "./order-display-number";
 import {
   assertOrderCanChange,
@@ -1304,6 +1308,7 @@ export class OrdersService {
       tx,
       options.orderId,
     );
+    await ensureKitchenReceipt(tx, options.orderId);
 
     return { kitchenTicket };
   }
@@ -1442,6 +1447,13 @@ export class OrdersService {
       return;
     }
 
+    const recipeTrackedItems = items.filter(
+      (item) => (item.variant?.recipe?.items.length ?? 0) > 0,
+    );
+    if (recipeTrackedItems.length === 0) {
+      return;
+    }
+
     const warehouse = await tx.warehouse.findFirst({
       where: { branchId, isActive: true },
       orderBy: { createdAt: "asc" },
@@ -1454,7 +1466,7 @@ export class OrdersService {
       );
     }
 
-    for (const item of items) {
+    for (const item of recipeTrackedItems) {
       const recipeItems = item.variant?.recipe?.items ?? [];
 
       for (const recipeItem of recipeItems) {

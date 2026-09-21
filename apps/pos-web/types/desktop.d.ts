@@ -14,7 +14,37 @@ type DesktopUpdateStatus = {
   checkedAt: string | null;
 };
 
-type DesktopPrinterStatus = { configured: boolean; host: string | null; port: number };
+type DesktopPrinterStatus = {
+  configured: boolean;
+  host: string | null;
+  port: number;
+  managedPrinters: number;
+  managedPrinterDetails: Array<{
+    id: string;
+    name: string;
+    host: string;
+    port: number;
+  }>;
+  systemPrinters: Array<{
+    name: string;
+    displayName: string;
+    roles: string[];
+  }>;
+};
+
+type DesktopSystemPrinter = {
+  name: string;
+  displayName: string;
+  description: string | null;
+  status: number;
+  isDefault: boolean;
+};
+
+type DesktopPrinterConnectionResult =
+  DesktopPrinterStatus["managedPrinterDetails"][number] & {
+    ok: boolean;
+    message: string | null;
+  };
 
 type DesktopBridge = {
   device?: {
@@ -30,6 +60,10 @@ type DesktopBridge = {
     status: () => Promise<DesktopPrinterStatus>;
     save: (input: { host: string; port: number }) => Promise<DesktopPrinterStatus>;
     test: () => Promise<void>;
+    testManaged: () => Promise<DesktopPrinterConnectionResult[]>;
+    listSystem: () => Promise<DesktopSystemPrinter[]>;
+    saveSystem: (input: { printers: Array<{ name: string; displayName: string; roles: string[] }> }) => Promise<DesktopPrinterStatus>;
+    testSystem: (input: { name: string; role: string }) => Promise<{ ok: boolean }>;
   };
   updates?: {
     getStatus: () => Promise<DesktopUpdateStatus>;
@@ -37,6 +71,14 @@ type DesktopBridge = {
     download: () => Promise<DesktopUpdateStatus>;
     install: () => Promise<DesktopUpdateStatus>;
     onStatus: (listener: (status: DesktopUpdateStatus) => void) => () => void;
+  };
+  support?: {
+    export: () => Promise<{ path: string } | null>;
+  };
+  session?: {
+    load: () => Promise<string | null>;
+    save: (serialized: string) => Promise<void>;
+    clear: () => Promise<void>;
   };
 };
 

@@ -24,15 +24,28 @@ export function useOrderUpdates(token: string | undefined, reload: (silent?: boo
       auth: { token, tokenType: "customer" },
       transports: ["websocket"],
     });
-    for (const event of ["connect", "order.created", "order.confirmed", "order.sent_to_kitchen", "order.status_changed"]) {
+    for (const event of ["order.created", "order.confirmed", "order.sent_to_kitchen", "order.status_changed"]) {
       socket.on(event, refresh);
     }
-    const interval = window.setInterval(() => void refresh(), 15000);
+    let pollTimer: number | undefined;
+    const schedulePoll = () => {
+      window.clearTimeout(pollTimer);
+      pollTimer = window.setTimeout(() => {
+        void refresh();
+        schedulePoll();
+      }, socket.connected ? 120_000 : 15_000);
+    };
+    socket.on("connect", () => {
+      void refresh();
+      schedulePoll();
+    });
+    socket.on("disconnect", schedulePoll);
+    schedulePoll();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       stopped = true;
-      clearInterval(interval);
+      window.clearTimeout(pollTimer);
       socket.disconnect();
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);

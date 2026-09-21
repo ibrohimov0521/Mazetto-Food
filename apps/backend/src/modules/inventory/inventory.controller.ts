@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -8,6 +8,8 @@ import {
   CreateStockMovementDto,
   CreateWarehouseDto,
   InventoryQueryDto,
+  UpdateIngredientDto,
+  UpdateWarehouseDto,
 } from "./dto/inventory.dto";
 import { InventoryService } from "./inventory.service";
 
@@ -70,6 +72,53 @@ export class InventoryController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.inventoryService.createWarehouse(dto, user);
+  }
+
+  @Patch("ingredients/:id")
+  @Permissions(PERMISSIONS.INVENTORY_EDIT)
+  updateIngredient(
+    @Param("id") id: string,
+    @Body() dto: UpdateIngredientDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.updateIngredient(id, dto, user);
+  }
+
+  @Delete("ingredients/:id")
+  @Permissions(PERMISSIONS.INVENTORY_EDIT)
+  archiveIngredient(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.archiveIngredient(id, user);
+  }
+
+  @Patch("warehouses/:id")
+  @Permissions(PERMISSIONS.INVENTORY_EDIT)
+  updateWarehouse(
+    @Param("id") id: string,
+    @Body() dto: UpdateWarehouseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.updateWarehouse(id, dto, user);
+  }
+
+  @Delete("warehouses/:id")
+  @Permissions(PERMISSIONS.INVENTORY_EDIT)
+  archiveWarehouse(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.archiveWarehouse(id, user);
+  }
+
+  @Get("readiness")
+  @Permissions(PERMISSIONS.INVENTORY_VIEW)
+  readiness(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("branchId") branchId?: string,
+  ) {
+    return this.inventoryService.getReadiness(user, branchId);
   }
 
   @Post("movements")

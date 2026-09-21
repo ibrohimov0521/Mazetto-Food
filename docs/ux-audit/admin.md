@@ -1,5 +1,10 @@
 # Admin / Manager Panel UX-UI Audit — Mazetto Food (`apps/pos-web`)
 
+> **Tarixiy audit (joriy release holati emas).** Ushbu hujjat dastlabki
+> statik tekshiruv natijasini saqlaydi. Keyingi o'zgarishlar sabab ayrim
+> topilmalar endi amal qilmaydi. Joriy bajarilgan ishlar va ochiq release
+> gate'lari `docs/audit/IMPLEMENTATION_PROGRESS.md` da yuritiladi.
+
 Scope read in full: `app/(shell)/layout.tsx`, all of `components/admin-shell/*`, all of `components/admin-ui/*`, `components/erp/erp-ui.tsx`, `app/admin-theme.css`, `app/globals.css`, `lib/admin-nav.ts`, `lib/order-display.ts`, all 24 `components/admin/*.tsx` screens, the `manager/dashboard`, `accounting`, `tables`, `printers`, `recipes` pages and the `page.tsx` wrappers. Contrast ratios below were computed from the hex tokens in `admin-theme.css` (WCAG relative-luminance formula). All paths are relative to `apps/pos-web/`.
 
 ---

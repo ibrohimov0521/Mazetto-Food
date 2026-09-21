@@ -15,7 +15,10 @@ import type {
   CreateStockMovementDto,
   CreateWarehouseDto,
   InventoryQueryDto,
+  UpdateIngredientDto,
+  UpdateWarehouseDto,
 } from "./dto/inventory.dto";
+import { writeAuditLog } from "../audit/audit-write";
 
 @Injectable()
 export class InventoryService {
@@ -82,13 +85,152 @@ export class InventoryService {
     });
   }
 
+  async updateIngredient(
+    id: string,
+    dto: UpdateIngredientDto,
+    user: AuthenticatedUser,
+  ) {
+    const ingredient = await this.prisma.ingredient.findUnique({ where: { id } });
+    if (!ingredient?.isActive) throw new NotFoundException("Active ingredient not found");
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ingredient.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+          ...(dto.minimumStock !== undefined
+            ? { minimumStock: new Prisma.Decimal(dto.minimumStock) }
+            : {}),
+          ...(dto.costPerUnit !== undefined
+            ? { costPerUnit: new Prisma.Decimal(dto.costPerUnit) }
+            : {}),
+        },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "INGREDIENT_UPDATED",
+        entity: "Ingredient",
+        entityId: id,
+      });
+      return updated;
+    });
+  }
+
+  async archiveIngredient(id: string, user: AuthenticatedUser) {
+    const ingredient = await this.prisma.ingredient.findUnique({
+      where: { id },
+      include: { _count: { select: { recipeItems: true } } },
+    });
+    if (!ingredient?.isActive) throw new NotFoundException("Active ingredient not found");
+    if (ingredient._count.recipeItems > 0) {
+      throw new BadRequestException("Ingredient is used by recipes; remove it from recipes first");
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const archived = await tx.ingredient.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "INGREDIENT_ARCHIVED",
+        entity: "Ingredient",
+        entityId: id,
+      });
+      return archived;
+    });
+  }
+
+  async updateWarehouse(
+    id: string,
+    dto: UpdateWarehouseDto,
+    user: AuthenticatedUser,
+  ) {
+    const warehouse = await this.requireActiveWarehouse(id, user);
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.warehouse.update({
+        where: { id },
+        data: { name: dto.name.trim() },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "WAREHOUSE_UPDATED",
+        entity: "Warehouse",
+        entityId: id,
+        metadata: { branchId: warehouse.branchId },
+      });
+      return updated;
+    });
+  }
+
+  async archiveWarehouse(id: string, user: AuthenticatedUser) {
+    const warehouse = await this.requireActiveWarehouse(id, user);
+    const nonZeroStock = await this.prisma.stock.count({
+      where: { warehouseId: id, quantity: { not: 0 } },
+    });
+    if (nonZeroStock > 0) {
+      throw new BadRequestException("Warehouse has stock; transfer or zero it before archive");
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const archived = await tx.warehouse.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "WAREHOUSE_ARCHIVED",
+        entity: "Warehouse",
+        entityId: id,
+        metadata: { branchId: warehouse.branchId },
+      });
+      return archived;
+    });
+  }
+
+  async getReadiness(user: AuthenticatedUser, requestedBranchId?: string) {
+    const branchId = resolveRequiredBranchScope(user, requestedBranchId);
+    const [activeWarehouses, recipeVariants, inactiveIngredientReferences] =
+      await Promise.all([
+        this.prisma.warehouse.count({ where: { branchId, isActive: true } }),
+        this.prisma.recipe.count({
+          where: {
+            items: { some: {} },
+            variant: { product: { OR: [{ branchId }, { branchId: null }] } },
+          },
+        }),
+        this.prisma.recipeItem.count({
+          where: {
+            ingredient: { isActive: false },
+            recipe: {
+              variant: { product: { OR: [{ branchId }, { branchId: null }] } },
+            },
+          },
+        }),
+      ]);
+    const requiresWarehouse = recipeVariants > 0;
+    const issues = [
+      ...(requiresWarehouse && activeWarehouses === 0
+        ? ["ACTIVE_WAREHOUSE_REQUIRED"]
+        : []),
+      ...(inactiveIngredientReferences > 0
+        ? ["INACTIVE_RECIPE_INGREDIENT"]
+        : []),
+    ];
+    return {
+      branchId,
+      ready: issues.length === 0,
+      activeWarehouses,
+      recipeVariants,
+      inactiveIngredientReferences,
+      issues,
+    };
+  }
+
   async createMovement(dto: CreateStockMovementDto, user: AuthenticatedUser) {
     return this.prisma.$transaction(async (tx) => {
-      const ingredient = await tx.ingredient.findUnique({
-        where: { id: dto.ingredientId },
+      const ingredient = await tx.ingredient.findFirst({
+        where: { id: dto.ingredientId, isActive: true },
       });
-      const warehouse = await tx.warehouse.findUnique({
-        where: { id: dto.warehouseId },
+      const warehouse = await tx.warehouse.findFirst({
+        where: { id: dto.warehouseId, isActive: true },
       });
 
       if (!ingredient) {
@@ -355,5 +497,15 @@ export class InventoryService {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     );
+  }
+
+  private async requireActiveWarehouse(id: string, user: AuthenticatedUser) {
+    const warehouse = await this.prisma.warehouse.findFirst({
+      where: { id, isActive: true },
+      select: { id: true, branchId: true },
+    });
+    if (!warehouse) throw new NotFoundException("Active warehouse not found");
+    resolveBranchScope(user, warehouse.branchId);
+    return warehouse;
   }
 }

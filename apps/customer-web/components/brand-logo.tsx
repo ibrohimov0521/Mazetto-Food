@@ -20,7 +20,7 @@ export function BrandLogo({
     return (
       <span
         aria-label="MAZETTO FOOD"
-        className={`inline-flex items-center font-black uppercase leading-none text-[#F5CF00] drop-shadow-[0_8px_18px_rgba(0,0,0,0.32)] ${className}`}
+        className={`inline-flex items-center font-black uppercase leading-none text-[#FFE86B] drop-shadow-[0_8px_18px_rgba(0,0,0,0.32)] ${className}`}
       >
         MAZETTO FOOD
       </span>
