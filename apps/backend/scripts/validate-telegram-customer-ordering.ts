@@ -728,15 +728,15 @@ async function testSimpleSauceAndDrinkQuickAdd(): Promise<void> {
   const { service, callbackBase } = createService(prisma);
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${sauceCategory.id}` });
-  assert.match(lastText(), /Mahsulot tanlang/);
-  assert.ok(lastKeyboardText().includes("➕ Ketchup"));
+  assert.match(lastText(), /Mahsulotni tanlang/);
+  assert.ok(lastKeyboardText().includes("Ketchup"));
   assert.ok(lastKeyboardText().includes("🛒 Savat"));
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${sauceProduct.id}:${sauceCategory.id}:1` });
   assert.equal(prisma.cartRecord?.items.length, 1);
   assert.equal(prisma.cartRecord?.items[0]?.productId, sauceProduct.id);
   assert.equal(prisma.cartRecord?.items[0]?.variantId, `${sauceProduct.id}_standard`);
-  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.match(lastText(), /Mahsulotni tanlang/);
   assert.ok(lastKeyboardText().includes("🛒 Savat (1)"));
   assert.ok(
     sentTelegramPayloads.some(
@@ -749,7 +749,7 @@ async function testSimpleSauceAndDrinkQuickAdd(): Promise<void> {
   assert.equal(prisma.cartRecord?.items[0]?.quantity.toNumber(), 2);
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${drinksCategory.id}` });
-  assert.ok(lastKeyboardText().includes("➕ Kampot"));
+  assert.ok(lastKeyboardText().includes("Kampot"));
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${drinkProduct.id}:${drinksCategory.id}:1` });
   assert.equal(prisma.cartRecord?.items.length, 2);
   assert.equal(prisma.cartRecord?.items[1]?.productId, drinkProduct.id);
@@ -762,12 +762,12 @@ async function testAllCategoriesSinglePage(): Promise<void> {
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${hotDogCategory.id}` });
   assert.equal(lastMethod(), "editMessageText");
-  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.match(lastText(), /Mahsulotni tanlang/);
   const productButtons = lastProductButtonTexts();
-  assert.ok(productButtons.some((text) => text.includes("Hot Dog 1 ·")));
-  assert.ok(productButtons.some((text) => text.includes("Hot Dog 8 ·")));
-  assert.ok(productButtons.some((text) => text.includes("Hot Dog 9 ·")));
-  assert.ok(productButtons.some((text) => text.includes("Hot Dog 13 ·")));
+  assert.ok(productButtons.some((text) => text.includes("Hot Dog 1")));
+  assert.ok(productButtons.some((text) => text.includes("Hot Dog 8")));
+  assert.ok(productButtons.some((text) => text.includes("Hot Dog 9")));
+  assert.ok(productButtons.some((text) => text.includes("Hot Dog 13")));
   assert.equal(productButtons.length, 13);
   assert.equal(new Set(productButtons).size, productButtons.length);
   assertNoPaginationControls();
@@ -797,20 +797,20 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
   assert.ok(!lastKeyboardText().includes("Mol go'shtli lavash"));
   assert.ok(!lastText().includes("Go'sht turini tanlang"));
   assert.deepEqual(normalizedLastProductButtonTexts(), [
-    "Lavash · 32 000 so'm",
-    "Kurinniy Lavash · 28 000 so'm",
-    "Big Lavash · 36 000 so'm",
-    "Kurinniy Big · 32 000 so'm",
-    "Pishloqli · 35 000 so'm",
-    "Kurinniy Pishloqli · 31 000 so'm",
-    "Big Pishloqli · 39 000 so'm",
-    "Kurinniy Big Pishloqli · 35 000 so'm",
-    "Achchiq Lavash · 34 000 so'm",
-    "Achchiq Kurinniy · 31 000 so'm",
-    "Achchiq Big · 39 000 so'm",
-    "Achchiq Kurinniy Big · 35 000 so'm",
-    "Tandir Lavash · 43 000 so'm",
-    "Tandir Pishloqli · 45 000 so'm",
+    "Oddiy",
+    "Kurinniy",
+    "Big",
+    "Kurinniy Big",
+    "Pishloqli",
+    "Kurinniy Pishloqli",
+    "Big Pishloqli",
+    "Kurinniy Big Pishloqli",
+    "Achchiq",
+    "Achchiq Kurinniy",
+    "Achchiq Big",
+    "Achchiq Kurinniy Big",
+    "Tandir",
+    "Tandir Pishloqli",
   ]);
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${burgerCategory.id}` });
@@ -819,14 +819,14 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
   assert.ok(!lastKeyboardText().includes("Keyingi"));
   assert.ok(!lastText().includes("Go'sht turini tanlang"));
   assert.deepEqual(normalizedLastProductButtonTexts(), [
-    "Burger · 29 000 so'm",
-    "Chicken Burger · 26 000 so'm",
-    "Chizburger · 32 000 so'm",
-    "Chicken Chizburger · 29 000 so'm",
-    "Double Burger · 42 000 so'm",
-    "Double Chicken · 37 000 so'm",
-    "Double Chizburger · 46 000 so'm",
-    "Double Chicken Chizburger · 41 000 so'm",
+    "Oddiy",
+    "Chicken",
+    "Chizburger",
+    "Chicken Chizburger",
+    "Double",
+    "Double Chicken",
+    "Double Chizburger",
+    "Double Chicken Chizburger",
   ]);
 }
 
@@ -836,7 +836,7 @@ async function testDirectProductQuickAdd(): Promise<void> {
   const { service, callbackBase } = createService(prisma);
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${burgerCategory.id}` });
-  assert.ok(normalizedLastKeyboardText().includes("Chicken Burger · 26 000 so'm"));
+  assert.ok(normalizedLastKeyboardText().includes("Chicken"));
   assert.ok(!lastKeyboardText().includes("Standart"));
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:qprod:${chickenBurgerProduct.id}:${burgerCategory.id}:1` });
@@ -1118,7 +1118,7 @@ async function seedCart(
   assert.match(lastText(), /Menyu bo'limini tanlang/);
 
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:cat:category_sets" });
-  assert.match(lastText(), /Mahsulot tanlang/);
+  assert.match(lastText(), /Mahsulotni tanlang/);
 
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:prod:product_lavash" });
   assert.match(lastText(), /Big Lavash/);

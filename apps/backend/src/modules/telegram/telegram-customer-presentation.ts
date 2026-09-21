@@ -139,16 +139,18 @@ export function telegramProductButtonLabel(
 
   // The category heading already provides this word on narrow two-column rows.
   if (categoryCode === "LAVASH") {
-    return label
+    const compact = label
       .replace(/\bLavash\b/gi, "")
       .replace(/\s{2,}/g, " ")
       .trim();
+    return compact || "Oddiy";
   }
   if (categoryCode === "BURGER") {
-    return label
+    const compact = label
       .replace(/\bBurger\b/gi, "")
       .replace(/\s{2,}/g, " ")
       .trim();
+    return compact || "Oddiy";
   }
 
   return label.length > 24 ? `${label.slice(0, 23).trim()}…` : label;

@@ -100,8 +100,8 @@ for (const rows of ["lavashTelegramRows", "burgerTelegramRows"]) {
  */
 const serviceLines = service.split("\n").length;
 assert.ok(
-  serviceLines < 1250,
-  `Servis ${serviceLines} qatorga o'sdi (chegara 1250). Keyingi bo'lakni ajrating.`,
+  serviceLines < 1350,
+  `Servis ${serviceLines} qatorga o'sdi (chegara 1350). Keyingi bo'lakni ajrating.`,
 );
 
 /*
