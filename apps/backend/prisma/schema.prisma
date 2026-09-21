@@ -1330,7 +1330,7 @@ model StockMovement {
   ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
   warehouse  Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
 
-  @@unique([sourceType, sourceItemId, ingredientId, warehouseId])
+  @@unique([sourceType, sourceItemId, ingredientId, warehouseId], map: "stock_movements_sourceType_sourceItemId_ingredientId_warehouseI")
   @@index([ingredientId, createdAt])
   @@index([warehouseId, createdAt])
   @@index([type])

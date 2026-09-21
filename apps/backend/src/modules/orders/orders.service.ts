@@ -40,7 +40,11 @@ import type {
   UpdateOrderStatusDto,
 } from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
-import { ensureCancellationReceipt, ensureOrderReceipt } from "../receipts/receipt-writer";
+import {
+  ensureCancellationReceipt,
+  ensureKitchenReceipt,
+  ensureOrderReceipt,
+} from "../receipts/receipt-writer";
 import { allocateDisplayOrderNumber } from "./order-display-number";
 import {
   assertOrderCanChange,
@@ -1304,6 +1308,7 @@ export class OrdersService {
       tx,
       options.orderId,
     );
+    await ensureKitchenReceipt(tx, options.orderId);
 
     return { kitchenTicket };
   }

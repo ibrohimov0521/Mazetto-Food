@@ -169,6 +169,7 @@ export class DesktopGateway {
     const authScope = DesktopStore.authScope(authorization);
     if (authorization) {
       this.activeAuthorizations.set(authScope, authorization);
+      this.onAuthorization?.(authorization);
     }
     const cacheKey = DesktopStore.cacheKey(targetUrl, authScope);
     const body =
@@ -316,6 +317,14 @@ export class DesktopGateway {
       ? `local-${randomUUID()}`
       : null;
     const baseVersion = numberField(parsedBody, "expectedVersion");
+    const offlineOrderSnapshot =
+      input.definition.commandType === "pos.order.create" && localAggregateId
+        ? buildOfflineOrderSnapshot(
+            parsedBody ?? {},
+            cachedCatalog(this.store, input.authScope),
+            localAggregateId,
+          )
+        : null;
 
     const command = this.store.enqueueMutation({
       idempotencyKey,
@@ -332,6 +341,7 @@ export class DesktopGateway {
         targetUrl: input.targetUrl,
         pathname: input.pathname,
         ...(localAggregateId ? { localAggregateId } : {}),
+        ...(offlineOrderSnapshot ? { offlineOrderSnapshot } : {}),
         headers: {
           "content-type":
             headerValue(input.request.headers["content-type"]) ??
@@ -342,6 +352,37 @@ export class DesktopGateway {
         queuedAt: new Date().toISOString(),
       },
     });
+
+    if (offlineOrderSnapshot && localAggregateId) {
+      for (const documentType of ["RECEIPT", "KITCHEN"] as const) {
+        this.store.enqueueLocalPrintJob({
+          logicalKey: `${localAggregateId}:${documentType}`,
+          branchId: context?.branchId ?? "global",
+          documentType,
+          payload: buildOfflinePrintDocument(
+            offlineOrderSnapshot,
+            parsedBody ?? {},
+            documentType,
+          ),
+        });
+      }
+    }
+    const cancellation = buildOfflineCancellationDocument(
+      this.store,
+      input.authScope,
+      input.definition.commandType,
+      input.pathname,
+      parsedBody ?? {},
+      aggregate.id,
+    );
+    if (cancellation) {
+      this.store.enqueueLocalPrintJob({
+        logicalKey: `${cancellation.orderId}:CANCELLATION`,
+        branchId: context?.branchId ?? "global",
+        documentType: "CANCELLATION",
+        payload: cancellation,
+      });
+    }
 
     return { command };
   }
@@ -806,12 +847,21 @@ function applyOptimisticProjection(
     const payload = parseJsonObject(command.payloadJson);
     const commandPath = stringField(payload, "pathname") ?? "";
     const commandBody = parseJsonObject(stringField(payload, "body") ?? "");
+    const snapshot = recordField(payload, "offlineOrderSnapshot");
 
     if (
       command.commandType === "pos.order.create" ||
       command.commandType === "table.order.create"
     ) {
-      const order = optimisticOrder(command, commandBody ?? {});
+      const order = snapshot
+        ? {
+            ...snapshot,
+            commandId: command.id,
+            idempotencyKey: command.idempotencyKey,
+            pendingSync: true,
+            offlineQueued: true,
+          }
+        : optimisticOrder(command, commandBody ?? {});
       const orderId = command.aggregateId ?? command.id;
       const orderPath = `/api/v1/orders/${orderId}`;
       if (pathname === "/api/v1/orders") {
@@ -824,6 +874,10 @@ function applyOptimisticProjection(
         if (tableId && pathname === "/api/v1/tables" && patchTableProjection(projected, tableId, order)) {
           applied.push(command.id);
         }
+      }
+      if (pathname === "/api/v1/kitchen/orders") {
+        const ticket = optimisticKitchenTicket(command, order);
+        if (prependProjection(projected, ticket)) applied.push(command.id);
       }
       continue;
     }
@@ -1141,6 +1195,200 @@ function proxyHeaders(
   headers.set("x-mazetto-device-id", deviceId);
   if (deviceToken) headers.set("x-mazetto-device-token", deviceToken);
   return headers;
+}
+
+function cachedCatalog(
+  store: DesktopStore,
+  authScope: string,
+): Record<string, unknown> | null {
+  const cached = store.getLatestCachedResponse(authScope, "/api/v1/pos/catalog");
+  if (!cached) return null;
+  const parsed = parseJsonObject(cached.body);
+  return recordField(parsed, "data") ?? parsed;
+}
+
+function buildOfflineOrderSnapshot(
+  body: Record<string, unknown>,
+  catalog: Record<string, unknown> | null,
+  localOrderId: string,
+): Record<string, unknown> {
+  const products = Array.isArray(catalog?.products) ? catalog.products : [];
+  const tables = Array.isArray(catalog?.tables) ? catalog.tables : [];
+  const sourceItems = Array.isArray(body.items) ? body.items : [];
+  const items = sourceItems.map((value, index) => {
+    const item = isRecord(value) ? value : {};
+    const productId = stringField(item, "productId") ?? "";
+    const variantId = stringField(item, "variantId");
+    const product = products.find(
+      (candidate) => isRecord(candidate) && candidate.id === productId,
+    );
+    const productRecord = isRecord(product) ? product : {};
+    const variants = Array.isArray(productRecord.variants)
+      ? productRecord.variants
+      : [];
+    const variant = variants.find(
+      (candidate) => isRecord(candidate) && candidate.id === variantId,
+    );
+    const modifierLinks = Array.isArray(productRecord.modifiers)
+      ? productRecord.modifiers
+      : [];
+    const requestedModifiers = Array.isArray(item.modifiers)
+      ? item.modifiers
+      : [];
+    const modifiers = requestedModifiers.map((requested) => {
+      const requestedRecord = isRecord(requested) ? requested : {};
+      const modifierId = stringField(requestedRecord, "modifierId") ?? "";
+      const link = modifierLinks.find((candidate) => {
+        if (!isRecord(candidate)) return false;
+        const modifier = recordField(candidate, "modifier");
+        return modifier?.id === modifierId;
+      });
+      const modifier = isRecord(link) ? recordField(link, "modifier") : null;
+      return {
+        id: modifierId,
+        name: stringField(modifier, "name") ?? "Qo'shimcha",
+        quantity: numberField(requestedRecord, "quantity") ?? 1,
+      };
+    });
+    return {
+      id: `${localOrderId}-item-${index + 1}`,
+      productId,
+      productName: stringField(productRecord, "name") ?? "Mahsulot",
+      variantName: stringField(isRecord(variant) ? variant : null, "name"),
+      quantity: String(numberField(item, "quantity") ?? 1),
+      notes: stringField(item, "notes"),
+      modifierSnapshot: modifiers,
+    };
+  });
+  const tableId = stringField(body, "tableId");
+  const table = tables.find(
+    (candidate) => isRecord(candidate) && candidate.id === tableId,
+  );
+  const offlineNumber = `OFF-${localOrderId.slice(-8).toUpperCase()}`;
+  return {
+    id: localOrderId,
+    orderNumber: offlineNumber,
+    displayOrderNumber: offlineNumber,
+    status: "NEW",
+    orderState: "PLACED",
+    paymentStatus: "PENDING_SYNC",
+    total: String(paymentTotal(body)),
+    source: "POS",
+    type: stringField(body, "type") ?? "TAKEAWAY",
+    notes: stringField(body, "notes"),
+    createdAt: new Date().toISOString(),
+    branch: { name: "MAZETTO FOOD" },
+    ...(isRecord(table) ? { table } : {}),
+    items,
+    pendingSync: true,
+    offlineQueued: true,
+  };
+}
+
+function optimisticKitchenTicket(
+  command: PendingOutboxCommand,
+  order: Record<string, unknown>,
+): Record<string, unknown> {
+  const items = Array.isArray(order.items) ? order.items : [];
+  return {
+    id: `offline-ticket-${command.id}`,
+    ticketNumber: `OFF-${command.id.slice(0, 8).toUpperCase()}`,
+    status: "NEW",
+    priority: 0,
+    version: 1,
+    revisionNumber: 1,
+    isSupplement: false,
+    createdAt: stringField(order, "createdAt") ?? new Date().toISOString(),
+    items,
+    order,
+    pendingSync: true,
+  };
+}
+
+function buildOfflinePrintDocument(
+  order: Record<string, unknown>,
+  body: Record<string, unknown>,
+  documentType: "RECEIPT" | "KITCHEN",
+): Record<string, unknown> {
+  const payments = Array.isArray(body.payments)
+    ? body.payments.map((value) => {
+        const payment = isRecord(value) ? value : {};
+        return {
+          method: stringField(payment, "paymentMethodCode") ?? "CASH",
+          amount: String(numberField(payment, "amount") ?? 0),
+        };
+      })
+    : [];
+  return {
+    title: "MAZETTO FOOD",
+    documentType,
+    statusLabel:
+      documentType === "KITCHEN" ? "OSHXONA BUYURTMASI" : "SOTUV CHEKI",
+    branchName: "MAZETTO FOOD",
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    displayOrderNumber: order.displayOrderNumber,
+    orderType: order.type,
+    orderSource: "POS",
+    orderNotes: order.notes,
+    items: order.items,
+    payments,
+    total: order.total,
+    dateTime: order.createdAt,
+    offline: true,
+  };
+}
+
+function buildOfflineCancellationDocument(
+  store: DesktopStore,
+  authScope: string,
+  commandType: string,
+  pathname: string,
+  body: Record<string, unknown>,
+  aggregateId: string | null,
+): Record<string, unknown> | null {
+  const isOrderCancellation =
+    (commandType === "order.status.update" && stringField(body, "status") === "CANCELLED") ||
+    (commandType === "order.action" && pathname.endsWith("/actions/cancel"));
+  const isKitchenCancellation = commandType === "kitchen.action" && pathname.endsWith("/cancel");
+  if (!isOrderCancellation && !isKitchenCancellation) return null;
+
+  const cached = store.getLatestCachedResponse(
+    authScope,
+    isKitchenCancellation ? "/api/v1/kitchen/orders" : "/api/v1/orders",
+  );
+  const parsed = cached ? parseJsonValue(cached.body) : null;
+  const data = isRecord(parsed) && "data" in parsed ? parsed.data : parsed;
+  const entity = aggregateId ? findRecordById(data, aggregateId) : null;
+  const order = isKitchenCancellation && entity
+    ? recordField(entity, "order")
+    : entity;
+  if (!order || typeof order.id !== "string") return null;
+
+  return {
+    title: "MAZETTO FOOD",
+    documentType: "CANCELLATION",
+    statusLabel: "BUYURTMA BEKOR QILINDI",
+    cancellationReason:
+      stringField(body, "reason") ?? "Buyurtma offline holatda bekor qilindi",
+    branchName: stringField(recordField(order, "branch"), "name") ?? "MAZETTO FOOD",
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    displayOrderNumber: order.displayOrderNumber,
+    orderType: order.type,
+    items: Array.isArray(order.items) ? order.items : [],
+    total: order.total,
+    dateTime: new Date().toISOString(),
+    offline: true,
+  };
+}
+
+function recordField(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+): Record<string, unknown> | null {
+  const candidate = value?.[key];
+  return isRecord(candidate) ? candidate : null;
 }
 
 async function readBody(

@@ -1,2 +1,2 @@
 ALTER TABLE "devices"
-ADD COLUMN "deviceAuthTokenHash" TEXT;
+ADD COLUMN IF NOT EXISTS "deviceAuthTokenHash" TEXT;

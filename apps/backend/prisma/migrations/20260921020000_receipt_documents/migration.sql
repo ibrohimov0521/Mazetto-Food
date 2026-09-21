@@ -1,5 +1,5 @@
 ALTER TABLE "receipts"
-ADD COLUMN "documentType" TEXT NOT NULL DEFAULT 'RECEIPT';
+ADD COLUMN IF NOT EXISTS "documentType" TEXT NOT NULL DEFAULT 'RECEIPT';
 
 UPDATE "receipts"
 SET "documentType" = CASE
@@ -8,7 +8,8 @@ SET "documentType" = CASE
 END;
 
 DROP INDEX IF EXISTS "receipts_orderId_key";
+DROP INDEX IF EXISTS "receipts_orderId_idx";
 CREATE UNIQUE INDEX "receipts_orderId_documentType_key"
 ON "receipts"("orderId", "documentType");
-CREATE INDEX "receipts_documentType_createdAt_idx"
+CREATE INDEX IF NOT EXISTS "receipts_documentType_createdAt_idx"
 ON "receipts"("documentType", "createdAt");

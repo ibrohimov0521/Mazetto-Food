@@ -377,9 +377,11 @@ export class ReceiptsService {
       : {};
     const isCancellation = receipt.documentType === "CANCELLATION" || content.documentType === "CANCELLATION";
     const isRefund = content.documentType === "REFUND";
+    const isKitchen = receipt.documentType === "KITCHEN" || content.documentType === "KITCHEN";
     const cancellationReason = typeof content.cancellationReason === "string" ? content.cancellationReason : null;
     const branchName = textValue(content.branchName) ?? receipt.branch.name;
     const orderNumber = textValue(content.orderNumber) ?? receipt.order.orderNumber;
+    const displayOrderNumber = textValue(content.displayOrderNumber) ?? receipt.order.displayOrderNumber ?? orderNumber;
     const dateTime = textValue(content.dateTime) ?? receipt.createdAt.toISOString();
     const total = textValue(content.total) ?? receipt.total.toFixed(2);
     const snapshotItems = objectArray(content.items);
@@ -390,6 +392,8 @@ export class ReceiptsService {
           name: [textValue(item.name), textValue(item.variant)].filter(Boolean).join(" "),
           quantity: textValue(item.quantity) ?? "",
           total: textValue(item.total) ?? "",
+          notes: textValue(item.notes),
+          modifiers: item.modifiers,
         }))
       : receipt.order.items.map((item) => ({
           type: "item",
@@ -415,20 +419,23 @@ export class ReceiptsService {
         { type: "align", value: "center" },
         { type: "bold", value: true },
         { type: "text", value: "MAZETTO FOOD" },
+        ...(isKitchen ? [{ type: "text", value: "*** OSHXONA BUYURTMASI ***" }, { type: "text", value: `#${displayOrderNumber}` }] : []),
         ...(isCancellation ? [{ type: "text", value: "*** BUYURTMA BEKOR QILINDI ***" }, ...(cancellationReason ? [{ type: "text", value: `Sabab: ${cancellationReason}` }] : [])] : []),
         ...(isRefund ? [{ type: "text", value: "*** TO'LOV QAYTARILDI ***" }, ...(textValue(content.refundReason) ? [{ type: "text", value: `Sabab: ${textValue(content.refundReason)}` }] : [])] : []),
         { type: "bold", value: false },
         { type: "text", value: branchName },
         { type: "line" },
         { type: "align", value: "left" },
-        { type: "text", value: `Receipt: ${receipt.receiptNumber}` },
-        { type: "text", value: `Order: ${orderNumber}` },
+        ...(!isKitchen ? [{ type: "text", value: `Chek: ${receipt.receiptNumber}` }] : []),
+        { type: "text", value: `Buyurtma: ${displayOrderNumber}` },
+        ...(isKitchen && textValue(content.orderType) ? [{ type: "text", value: `Turi: ${textValue(content.orderType)}` }] : []),
         { type: "line" },
         ...itemCommands,
         { type: "line" },
-        ...paymentCommands,
-        { type: "total", value: total },
-        { type: "text", value: `Date: ${dateTime}` },
+        ...(!isKitchen ? paymentCommands : []),
+        ...(!isKitchen ? [{ type: "total", value: total }] : []),
+        ...(isKitchen && textValue(content.orderNotes) ? [{ type: "text", value: `Izoh: ${textValue(content.orderNotes)}` }] : []),
+        { type: "text", value: `Vaqt: ${dateTime}` },
         { type: "cut" },
       ],
     };

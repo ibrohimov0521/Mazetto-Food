@@ -34,6 +34,7 @@ export type KitchenTicket = {
   isSupplement?: boolean;
   createdAt: string;
   acceptedAt?: string | null;
+  pendingSync?: boolean;
   items: {
     id: string;
     productName: string;

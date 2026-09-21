@@ -357,6 +357,7 @@ export function orderInclude() {
     receipts: {
       select: {
         id: true,
+        documentType: true,
         receiptNumber: true,
         printed: true,
         printedAt: true,

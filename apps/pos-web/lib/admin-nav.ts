@@ -150,18 +150,11 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
       },
       {
-        label: "Cheklar",
+        label: "Cheklar va chop navbati",
         icon: "scroll",
         href: "/admin/receipts",
         permission: "RECEIPT_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
-      },
-      {
-        label: "Printerlar",
-        icon: "printer",
-        href: "/admin/printers",
-        permission: "RECEIPT_PRINT",
-        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
       {
         label: "Xarajatlar",
@@ -264,12 +257,25 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
         matchPrefix: "/admin/branches",
       },
+    ],
+  },
+  {
+    id: "equipment",
+    label: "Uskunalar",
+    items: [
       {
-        label: "Qurilmalar",
+        label: "Desktop qurilmalar",
         icon: "monitor",
         href: "/admin/devices",
         permission: "DEVICE_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+      },
+      {
+        label: "Printerlar",
+        icon: "printer",
+        href: "/admin/printers",
+        permission: "RECEIPT_PRINT",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
     ],
   },

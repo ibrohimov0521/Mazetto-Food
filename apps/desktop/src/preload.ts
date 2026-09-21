@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
     save: (input: { host: string; port: number }) => ipcRenderer.invoke("desktop:printer:save", input),
     test: () => ipcRenderer.invoke("desktop:printer:test"),
     testManaged: () => ipcRenderer.invoke("desktop:printer:test-managed"),
+    listSystem: () => ipcRenderer.invoke("desktop:printer:list-system"),
+    saveSystem: (input: { printers: Array<{ name: string; displayName: string; roles: string[] }> }) =>
+      ipcRenderer.invoke("desktop:printer:save-system", input),
+    testSystem: (input: { name: string; role: string }) =>
+      ipcRenderer.invoke("desktop:printer:test-system", input),
   },
   device: {
     enroll: (input: { deviceId: string; enrollmentCode: string }) =>

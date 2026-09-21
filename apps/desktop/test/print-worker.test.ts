@@ -3,6 +3,79 @@ import { createServer } from "node:net";
 import test from "node:test";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 
+test("offline receipt and kitchen documents print through selected Windows drivers", async () => {
+  const printed: Array<{ name: string; type: string }> = [];
+  const completed: string[] = [];
+  const jobs = [
+    { id: "local-1", logicalKey: "order-1:RECEIPT", branchId: "branch-1", documentType: "RECEIPT", payloadJson: JSON.stringify({ documentType: "RECEIPT", orderId: "order-1" }), attempts: 0 },
+    { id: "local-2", logicalKey: "order-1:KITCHEN", branchId: "branch-1", documentType: "KITCHEN", payloadJson: JSON.stringify({ documentType: "KITCHEN", orderId: "order-1" }), attempts: 0 },
+  ];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] },
+      { name: "Windows Kitchen", displayName: "Windows Kitchen", roles: ["KITCHEN"] },
+    ],
+    printSystem: async (name, receipt) => {
+      printed.push({ name, type: receipt.documentType ?? "" });
+    },
+    localQueue: {
+      claim: (types) => {
+        const index = jobs.findIndex((job) => types.includes(job.documentType));
+        return index >= 0 ? jobs.splice(index, 1)[0]! : null;
+      },
+      complete: (id) => completed.push(id),
+      fail: () => undefined,
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+  await worker.tick();
+
+  assert.deepEqual(printed, [
+    { name: "Windows POS", type: "RECEIPT" },
+    { name: "Windows Kitchen", type: "KITCHEN" },
+  ]);
+  assert.deepEqual(completed, ["local-1", "local-2"]);
+});
+
+test("server replay is completed without duplicate paper when local document already printed", async () => {
+  let completed = 0;
+  let physicalPrints = 0;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [{ name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] }],
+    printSystem: async () => { physicalPrints += 1; },
+    localQueue: {
+      claim: () => null,
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: (orderId, type) => orderId === "server-order-1" && type === "RECEIPT",
+    },
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([]);
+      if (url.endsWith("/print-jobs/claim")) return jsonResponse({ id: "job-1", receiptId: "receipt-1", leaseToken: "lease-1", printer: null });
+      if (url.endsWith("/receipts/receipt-1")) return jsonResponse({ orderId: "server-order-1", documentType: "RECEIPT", content: { documentType: "RECEIPT" } });
+      if (url.endsWith("/complete")) { completed += 1; return jsonResponse({}); }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(physicalPrints, 0);
+  assert.equal(completed, 1);
+});
+
 test("print worker does not claim a job when no printer is ready", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const worker = createWorker(async (input, init) => {

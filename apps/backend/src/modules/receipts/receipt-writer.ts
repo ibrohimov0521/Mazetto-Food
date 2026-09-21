@@ -13,7 +13,7 @@ export type OrderForReceipt = Prisma.OrderGetPayload<{
   };
 }>;
 
-export type ReceiptPrintRoute = "RECEIPT" | "CANCELLATION" | "REFUND";
+export type ReceiptPrintRoute = "RECEIPT" | "KITCHEN" | "CANCELLATION" | "REFUND";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
 // Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
 const durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
@@ -26,7 +26,9 @@ function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, 
 
 export function receiptPrintRoute(content: Prisma.JsonValue | null | undefined): ReceiptPrintRoute {
   const type = jsonObject(content).documentType;
-  return type === "CANCELLATION" || type === "REFUND" ? type : "RECEIPT";
+  return type === "KITCHEN" || type === "CANCELLATION" || type === "REFUND"
+    ? type
+    : "RECEIPT";
 }
 
 export function createReceiptNumber(): string {
@@ -98,15 +100,26 @@ export async function writeReceiptRow(
       content: {
         title: "MAZETTO FOOD",
         documentType,
-        statusLabel: documentType === "CANCELLATION" ? "BUYURTMA BEKOR QILINDI" : "SOTUV CHEKI",
+        statusLabel:
+          documentType === "CANCELLATION"
+            ? "BUYURTMA BEKOR QILINDI"
+            : documentType === "KITCHEN"
+              ? "OSHXONA BUYURTMASI"
+              : "SOTUV CHEKI",
         cancellationReason: options.cancellationReason ?? null,
         branchName: order.branch.name,
         orderNumber: order.orderNumber,
+        displayOrderNumber: order.displayOrderNumber,
+        orderType: order.type,
+        orderSource: order.source,
+        orderNotes: order.kitchenComment ?? order.notes,
         items: order.items.map((item) => ({
           name: item.productName,
           variant: item.variantName,
           quantity: item.quantity.toFixed(3),
           total: item.totalPrice.toFixed(2),
+          notes: item.notes,
+          modifiers: item.modifierSnapshot,
         })),
         payments: order.payments.map((payment) => ({ method: payment.method.code, amount: payment.amount.toFixed(2) })),
         total: order.total.toFixed(2),
@@ -149,6 +162,30 @@ export async function ensureCancellationReceipt(
     documentType: "CANCELLATION",
     cancellationReason: reason || "Buyurtma bekor qilindi",
   });
+}
+
+export async function ensureKitchenReceipt(
+  tx: TransactionClient,
+  orderId: string,
+): Promise<void> {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    include: {
+      branch: true,
+      items: true,
+      payments: { include: { method: true } },
+      receipts: true,
+    },
+  });
+  if (
+    !order ||
+    (order.receipts ?? []).some(
+      (receipt) => receipt.documentType === "KITCHEN",
+    )
+  ) {
+    return;
+  }
+  await writeReceiptRow(tx, order, { documentType: "KITCHEN" });
 }
 
 export async function ensureRefundReceipt(

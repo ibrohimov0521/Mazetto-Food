@@ -120,6 +120,7 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     assert.equal(sale.status, 202);
     assert.equal(sale.headers.get("x-mazetto-desktop"), "offline-queued");
     assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.summary().pendingPrintJobs, 2);
     assert.match((await sale.json()).data.order.orderNumber, /^OFF-/);
 
     online = true;

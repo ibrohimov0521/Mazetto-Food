@@ -470,27 +470,23 @@ function PrintersConsole() {
         />
       ) : null}
 
-      {/*
-        HALOLLIK IZOHI. Bu ekran printerni tekshirmaydi va shuni aytadi.
-      */}
       <Card>
         <CardBody>
           <div className="flex flex-wrap items-start gap-3">
             <span
               aria-hidden="true"
-              className="mt-0.5 shrink-0 text-mz-warning"
+              className="mt-0.5 shrink-0 text-mz-primary"
             >
-              <Icon className="h-5 w-5" name="alert" />
+              <Icon className="h-5 w-5" name="printer" />
             </span>
             <p className="min-w-0 flex-1 text-[13px] text-mz-text-muted">
               <span className="font-semibold text-mz-text">
-                Tizim printerga ulanmaydi.
+                Avtomatik chop Desktop orqali ishlaydi.
               </span>{" "}
-              Bu ro&apos;yxat — qurilmalarning qaydnomasi, holat esa{" "}
-              <span className="font-semibold text-mz-text">qo&apos;lda</span>{" "}
-              belgilanadi: u qurilma haqiqatan ishlayotganini isbotlamaydi va bu
-              yerdan chek yuborilmaydi. Haqiqiy chop etish integratsiyasi (chek
-              agenti va qurilma so&apos;rovi) hali ulanmagan.
+              Bu yerda filial va hujjat yo&apos;nalishlari belgilanadi. Printer
+              kompyuterga Windows drayveri bilan o&apos;rnatilgan bo&apos;lsa, Desktop
+              holati oynasidan bir marta tanlanadi; IP manzil faqat to&apos;g&apos;ridan
+              to&apos;g&apos;ri ESC/POS tarmoq printeri uchun kerak.
             </p>
           </div>
         </CardBody>
@@ -610,7 +606,7 @@ function PrintersConsole() {
             </FormField>
 
             <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
-              <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
+              <FormField hint="Windows drayveri ishlatilsa bo'sh qoldiring" label="IP manzil (ixtiyoriy)">
                 {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
               </FormField>
               <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>
@@ -742,7 +738,7 @@ function PrintersConsole() {
             </FormField>
 
             <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
-              <FormField hint="Masalan: 192.168.1.20 yoki printer.local" label="Printer manzili">
+              <FormField hint="Windows drayveri ishlatilsa bo'sh qoldiring" label="IP manzil (ixtiyoriy)">
                 {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
               </FormField>
               <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>

@@ -99,7 +99,7 @@ type PosOrderResult = {
     orderNumber: string;
     displayOrderNumber?: string | null;
     total: string;
-    receipts?: { id: string; receiptNumber: string }[];
+    receipts?: { id: string; receiptNumber: string; documentType?: string }[];
   };
   payment: {
     cashReceived: string;
@@ -1072,11 +1072,11 @@ function PosTerminal() {
             <strong>{money(success.order.total)}</strong>
           </div>
           <div className={styles.dialogActions}>
-            {success.order.receipts?.[0]?.id ? (
+            {success.order.receipts?.find((receipt) => receipt.documentType === "RECEIPT" || !receipt.documentType)?.id ? (
               <button
                 className={styles.button}
                 onClick={() =>
-                  router.push(`/pos/receipt/${success.order.receipts![0]!.id}`)
+                  router.push(`/pos/receipt/${success.order.receipts!.find((receipt) => receipt.documentType === "RECEIPT" || !receipt.documentType)!.id}`)
                 }
                 type="button"
               >
