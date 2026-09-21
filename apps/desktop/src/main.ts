@@ -135,6 +135,7 @@ async function startDesktop(): Promise<void> {
   setupPrinterControls();
   setupDeviceEnrollment();
   setupAuthControls();
+  setupApiControls();
   setupSessionControls();
   setupSupportControls();
   await gateway.start();
@@ -555,6 +556,49 @@ function setupAuthControls(): void {
       }
 
       return payload.data;
+    },
+  );
+}
+
+function setupApiControls(): void {
+  ipcMain.removeHandler("desktop:api:request");
+  ipcMain.handle(
+    "desktop:api:request",
+    async (_event, input: {
+      path?: unknown;
+      method?: unknown;
+      body?: unknown;
+      headers?: unknown;
+    }) => {
+      const path = typeof input?.path === "string" ? input.path : "";
+      const method = typeof input?.method === "string" ? input.method.toUpperCase() : "GET";
+      const body = typeof input?.body === "string" ? input.body : undefined;
+      if (!path.startsWith("/") || path.startsWith("//") || !/^[A-Z]+$/.test(method)) {
+        throw new Error("Desktop API so'rovi noto'g'ri");
+      }
+
+      const requestHeaders = new Headers({ Accept: "application/json" });
+      if (input?.headers && typeof input.headers === "object") {
+        for (const [name, value] of Object.entries(input.headers as Record<string, unknown>)) {
+          if (typeof value === "string" && /^(authorization|content-type|idempotency-key)$/i.test(name)) {
+            requestHeaders.set(name, value);
+          }
+        }
+      }
+      requestHeaders.set("x-mazetto-device-id", store?.deviceId() ?? "");
+      if (deviceAuthToken) requestHeaders.set("x-mazetto-device-token", deviceAuthToken);
+
+      const response = await fetch(`${UPSTREAM_API_URL}${path}`, {
+        method,
+        headers: requestHeaders,
+        ...(body ? { body } : {}),
+        signal: AbortSignal.timeout(15_000),
+      });
+      return {
+        body: await response.text(),
+        contentType: response.headers.get("content-type") ?? "application/json; charset=utf-8",
+        status: response.status,
+      };
     },
   );
 }
