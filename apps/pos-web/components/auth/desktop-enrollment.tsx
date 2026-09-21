@@ -100,12 +100,13 @@ export function DesktopEnrollmentBadge({
     <>
       <button
         aria-label="Qurilmani ulash"
-        className={`grid h-7 w-7 shrink-0 place-items-center rounded-mz-control border transition ${isEnrolled ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-100" : "border-white/20 text-mz-shell-fg-muted hover:bg-white/10 hover:text-white"}`}
+        className={`flex h-8 shrink-0 items-center gap-1 rounded-mz-control border px-2 text-[11px] font-bold transition ${isEnrolled ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-100" : "border-mz-info/50 bg-mz-surface-sunken text-mz-info hover:bg-white hover:text-mz-info"}`}
         onClick={() => setOpen(true)}
         title={isEnrolled ? "Qurilma ulangan" : "Qurilmani filialga ulash"}
         type="button"
       >
         <Icon name="monitor" />
+        <span className="hidden sm:inline">Qurilma</span>
       </button>
       <Modal
         footer={isEnrolled ? (

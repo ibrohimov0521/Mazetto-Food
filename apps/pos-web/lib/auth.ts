@@ -84,6 +84,17 @@ const adminWorkspacePermissions = customAdminRedirects.map(
 );
 
 export function getApiBaseUrl(): string {
+  // A desktop build may be configured to show the hosted POS UI. In that
+  // mode the hosted proxy is reachable even when the old local gateway is
+  // missing or has a stale CORS allow-list. Bundled UI keeps using the
+  // gateway so offline behavior is preserved.
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname === "pos.mazettofood.uz"
+  ) {
+    return "/api/v1";
+  }
+
   if (
     typeof window !== "undefined" &&
     window.navigator.userAgent.includes("MAZETTO-Desktop/")
