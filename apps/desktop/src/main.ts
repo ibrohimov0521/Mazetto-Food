@@ -134,6 +134,7 @@ async function startDesktop(): Promise<void> {
   });
   setupPrinterControls();
   setupDeviceEnrollment();
+  setupAuthControls();
   setupSessionControls();
   setupSupportControls();
   await gateway.start();
@@ -503,6 +504,57 @@ function setupPrinterControls(): void {
         },
       });
       return { ok: true };
+    },
+  );
+}
+
+function setupAuthControls(): void {
+  ipcMain.removeHandler("desktop:auth:login");
+  ipcMain.handle(
+    "desktop:auth:login",
+    async (_event, input: { identifier?: unknown; password?: unknown }) => {
+      const identifier = typeof input?.identifier === "string" ? input.identifier.trim() : "";
+      const password = typeof input?.password === "string" ? input.password : "";
+      if (!identifier || !password) throw new Error("Login va parolni kiriting");
+
+      const response = await fetch(`${UPSTREAM_API_URL}/auth/login`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "x-mazetto-device-id": store?.deviceId() ?? "",
+          ...(deviceAuthToken ? { "x-mazetto-device-token": deviceAuthToken } : {}),
+        },
+        body: JSON.stringify({ identifier, password }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        success?: boolean;
+        data?: { tokens?: { accessToken?: string; tokenType?: string } };
+        error?: { message?: string | string[] };
+      } | null;
+      const message = payload?.error?.message;
+      if (!response.ok || !payload?.success || !payload.data?.tokens?.accessToken) {
+        throw new Error(Array.isArray(message) ? message.join(", ") : message || "Login amalga oshmadi");
+      }
+
+      const heartbeat = await fetch(`${UPSTREAM_API_URL}/devices/heartbeat`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `${payload.data.tokens.tokenType ?? "Bearer"} ${payload.data.tokens.accessToken}`,
+          "x-mazetto-device-id": store?.deviceId() ?? "",
+          ...(deviceAuthToken ? { "x-mazetto-device-token": deviceAuthToken } : {}),
+        },
+        body: JSON.stringify({ softwareVersion: app.getVersion() }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!heartbeat.ok) {
+        throw new Error("Qurilma tasdiqlanmagan yoki ushbu foydalanuvchiga ruxsat berilmagan");
+      }
+
+      return payload.data;
     },
   );
 }
