@@ -760,7 +760,8 @@ export class DesktopGateway {
     const allowed =
       origin === "http://127.0.0.1:3001" ||
       origin === "http://localhost:3001" ||
-      origin === "http://127.0.0.1:7360";
+      origin === "http://127.0.0.1:7360" ||
+      origin === "https://pos.mazettofood.uz";
 
     if (allowed) {
       response.setHeader("Access-Control-Allow-Origin", origin);
