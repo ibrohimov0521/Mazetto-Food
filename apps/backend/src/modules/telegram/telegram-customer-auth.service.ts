@@ -23,6 +23,11 @@ type TelegramMessage = {
     first_name?: string;
     last_name?: string;
   };
+  location?: {
+    latitude?: number;
+    longitude?: number;
+    horizontal_accuracy?: number;
+  };
 };
 type TelegramCallbackQuery = {
   id?: string;
@@ -138,12 +143,31 @@ export class TelegramCustomerAuthService {
         return { ok: true, handled: true };
       }
 
+      if (
+        message.location &&
+        (await this.telegramCustomerOrderingService.handleCustomerLocation(
+          message,
+        ))
+      ) {
+        return { ok: true, handled: true };
+      }
+
       if (message.text?.trim().startsWith("/start")) {
         await this.sendStartOrMainMenu(message);
         return { ok: true, handled: true };
       }
 
       const text = message.text?.trim();
+
+      if (
+        text?.startsWith("/") &&
+        (await this.telegramCustomerOrderingService.handleCustomerCommand(
+          message,
+          text,
+        ))
+      ) {
+        return { ok: true, handled: true };
+      }
 
       if (text === "🍽 Menyu") {
         await this.telegramCustomerOrderingService.sendCategoryMenu(message);
@@ -170,7 +194,11 @@ export class TelegramCustomerAuthService {
         return { ok: true, handled: true };
       }
 
-      if (await this.telegramCustomerOrderingService.handleCustomerMessage(message)) {
+      if (
+        await this.telegramCustomerOrderingService.handleCustomerMessage(
+          message,
+        )
+      ) {
         return { ok: true, handled: true };
       }
     } catch (error) {
@@ -264,7 +292,10 @@ export class TelegramCustomerAuthService {
     });
 
     await this.sendVerificationCode(chatId, challenge.code);
-    await this.telegramCustomerOrderingService.sendMainMenuFromMessage(message, displayName);
+    await this.telegramCustomerOrderingService.sendMainMenuFromMessage(
+      message,
+      displayName,
+    );
   }
 
   private async sendStartOrMainMenu(message: TelegramMessage) {
@@ -292,17 +323,20 @@ export class TelegramCustomerAuthService {
 
     await this.telegramRequest("sendMessage", {
       chat_id: String(chatId),
-      text:
-        "MAZETTO FOOD profilini ulash uchun telefon raqamingizni yuboring. Keyin web sahifada kodni kiriting.",
+      text: "MAZETTO FOOD profilini ulash uchun telefon raqamingizni yuboring. Keyin web sahifada kodni kiriting.",
       reply_markup: {
-        keyboard: [[{ text: "📱 Telefon raqamni yuborish", request_contact: true }]],
+        keyboard: [
+          [{ text: "📱 Telefon raqamni yuborish", request_contact: true }],
+        ],
         resize_keyboard: true,
         one_time_keyboard: true,
       },
     });
   }
 
-  private async handleCustomerCallback(callback: TelegramCallbackQuery): Promise<void> {
+  private async handleCustomerCallback(
+    callback: TelegramCallbackQuery,
+  ): Promise<void> {
     await this.telegramCustomerOrderingService.handleCustomerCallback(callback);
   }
 
@@ -320,7 +354,9 @@ export class TelegramCustomerAuthService {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, code: true, name: true },
     });
-    const sorted = [...categories].sort((a, b) => (a.code === "SETS" ? -1 : 0) - (b.code === "SETS" ? -1 : 0));
+    const sorted = [...categories].sort(
+      (a, b) => (a.code === "SETS" ? -1 : 0) - (b.code === "SETS" ? -1 : 0),
+    );
 
     await this.telegramRequest("sendMessage", {
       chat_id: chatId,
@@ -334,13 +370,21 @@ export class TelegramCustomerAuthService {
               callback_data: `${customerCallbackPrefix}:cat:${category.id}`,
             },
           ]),
-          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
+          [
+            {
+              text: "🏠 Bosh menyu",
+              callback_data: `${customerCallbackPrefix}:home`,
+            },
+          ],
         ],
       },
     });
   }
 
-  private async sendProductsForCategory(chatId: string, categoryId: string): Promise<void> {
+  private async sendProductsForCategory(
+    chatId: string,
+    categoryId: string,
+  ): Promise<void> {
     const products = await this.prisma.product.findMany({
       where: { categoryId, isAvailable: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -367,7 +411,9 @@ export class TelegramCustomerAuthService {
         "🍽 <b>Mahsulotlar</b>",
         "",
         ...products.flatMap((product) => {
-          const variant = product.variants.find((item) => item.isDefault) ?? product.variants[0];
+          const variant =
+            product.variants.find((item) => item.isDefault) ??
+            product.variants[0];
           return [
             `<b>${this.escapeHtml(product.name)}</b>`,
             `${this.escapeHtml(product.description ?? "Buyurtmadan keyin tayyorlanadi.")}`,
@@ -378,7 +424,14 @@ export class TelegramCustomerAuthService {
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
-        inline_keyboard: [[{ text: "⬅️ Bo'limlarga qaytish", callback_data: `${customerCallbackPrefix}:home` }]],
+        inline_keyboard: [
+          [
+            {
+              text: "⬅️ Bo'limlarga qaytish",
+              callback_data: `${customerCallbackPrefix}:home`,
+            },
+          ],
+        ],
       },
     });
   }
@@ -398,7 +451,14 @@ export class TelegramCustomerAuthService {
       take: 5,
       include: {
         branch: { select: { name: true } },
-        order: { select: { orderNumber: true, displayOrderNumber: true, status: true, total: true } },
+        order: {
+          select: {
+            orderNumber: true,
+            displayOrderNumber: true,
+            status: true,
+            total: true,
+          },
+        },
       },
     });
 
@@ -472,7 +532,9 @@ export class TelegramCustomerAuthService {
           [
             `<b>${this.escapeHtml(branch.name)}</b>`,
             this.escapeHtml(branch.address ?? "Manzil kiritilmagan"),
-            branch.acceptsOrders && !branch.isTemporarilyClosed ? "Buyurtma qabul qilmoqda" : "Hozir buyurtma qabul qilmayapti",
+            branch.acceptsOrders && !branch.isTemporarilyClosed
+              ? "Buyurtma qabul qilmoqda"
+              : "Hozir buyurtma qabul qilmayapti",
             `${branch.pickupEnabled ? "Olib ketish ✅" : "Olib ketish ❌"} · ${branch.deliveryEnabled ? "Yetkazib berish ✅" : "Yetkazib berish ❌"}`,
           ].join("\n"),
         ),
@@ -532,8 +594,7 @@ export class TelegramCustomerAuthService {
 
     await this.telegramRequest("sendMessage", {
       chat_id: String(chatId),
-      text:
-        "Telefon raqamni bog'lashda xatolik bo'ldi. Iltimos, /start bosib qayta urinib ko'ring.",
+      text: "Telefon raqamni bog'lashda xatolik bo'ldi. Iltimos, /start bosib qayta urinib ko'ring.",
     }).catch(() => undefined);
   }
 
@@ -573,22 +634,30 @@ export class TelegramCustomerAuthService {
     return "Amalni bajarishda xatolik bo'ldi. Iltimos, bosh menyudan qayta urinib ko'ring.";
   }
 
-  private async telegramRequest(method: string, payload: unknown): Promise<void> {
+  private async telegramRequest(
+    method: string,
+    payload: unknown,
+  ): Promise<void> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
 
     if (!token) {
       return;
     }
 
-    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/${method}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
+      throw new Error(
+        `Telegram ${method} failed with ${response.status}: ${body}`,
+      );
     }
   }
 
@@ -641,7 +710,10 @@ export class TelegramCustomerAuthService {
       .map((part) => String(part).trim())
       .filter(Boolean);
 
-    return parts.join(" ") || normalizeCustomerPhone(message.contact?.phone_number ?? "");
+    return (
+      parts.join(" ") ||
+      normalizeCustomerPhone(message.contact?.phone_number ?? "")
+    );
   }
 
   private requiredTelegramId(
@@ -656,7 +728,9 @@ export class TelegramCustomerAuthService {
   }
 
   private toTelegramUpdate(update: unknown): TelegramUpdate {
-    return update && typeof update === "object" ? (update as TelegramUpdate) : {};
+    return update && typeof update === "object"
+      ? (update as TelegramUpdate)
+      : {};
   }
 
   private generateVerificationCode(): string {
@@ -668,7 +742,9 @@ export class TelegramCustomerAuthService {
   }
 
   private customerBotUrl(): string | undefined {
-    return process.env.TELEGRAM_CUSTOMER_BOT_URL || process.env.TELEGRAM_BOT_URL;
+    return (
+      process.env.TELEGRAM_CUSTOMER_BOT_URL || process.env.TELEGRAM_BOT_URL
+    );
   }
 
   private withBotUrl(delivery: VerificationDelivery): VerificationDelivery {
@@ -677,7 +753,10 @@ export class TelegramCustomerAuthService {
     return botUrl ? { ...delivery, botUrl } : delivery;
   }
 
-  private categoryButtonLabel(code: string | null | undefined, name: string): string {
+  private categoryButtonLabel(
+    code: string | null | undefined,
+    name: string,
+  ): string {
     const icons: Record<string, string> = {
       BURGER: "🍔",
       CHICKEN_BURGER: "🍔",
