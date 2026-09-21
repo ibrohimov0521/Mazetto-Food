@@ -141,6 +141,12 @@ interactive transaction adapter during the deliberate concurrent-idempotency
 exercise; the assertions and cleanup pass, and this dependency warning is not
 recorded as production certification.
 
+Customer browser QA was also run in installed Chrome at 375, 390, 430, 768,
+1024, 1366 and 1440 px. It found no horizontal overflow, sub-11px text or page
+runtime error. The text-only brand fallback was raised above AA contrast. Full
+product/hero media inspection is still pending because this checkout does not
+contain the generated public media and its local API content was unavailable.
+
 ## Remaining release gates
 
 1. `AUD-101`: obtain a current production backup, restore it to isolation,
