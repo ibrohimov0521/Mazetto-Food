@@ -149,7 +149,8 @@ contain the generated public media and its local API content was unavailable.
 
 ## Remaining release gates
 
-1. `AUD-101`: obtain a current production backup, restore it to isolation,
+1. `AUD-101`: obtain a current production backup from the PostgreSQL Docker
+   service on the self-hosted Dokploy server, restore it to isolation,
    reconcile `_prisma_migrations`, and rehearse deploy plus rollback. No
    production migration or deploy before this gate.
 2. `AUD-102`, `AUD-152`, `AUD-160`: complete recorded customer media/browser

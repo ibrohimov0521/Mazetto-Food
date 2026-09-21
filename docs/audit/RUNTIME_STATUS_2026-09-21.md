@@ -5,13 +5,17 @@ code readiness and external/manual proof.
 
 ## Production topology
 
+Production is self-hosted on the MAZETTO server. Dokploy orchestrates the
+Docker services and Cloudflare exposes only the public HTTP hostnames;
+PostgreSQL remains on the private Docker network.
+
 | Component | Runtime/location | Current proof |
 | --- | --- | --- |
-| Customer web | Cloud service behind `mazettofood.uz` and `www.mazettofood.uz` | Both `/api/health` returned HTTP 200 |
-| POS/Admin/Staff web | Cloud service behind `pos.mazettofood.uz` | `/api/health` returned HTTP 200 |
-| Backend API | Cloud service behind `api.mazettofood.uz/api/v1` | `/health` returned HTTP 200 and database `ok` |
-| Media | MinIO/media service behind `media.mazettofood.uz` | `/healthz` returned HTTP 204 |
-| PostgreSQL | Private production service | Indirectly verified by backend health; no destructive/read-write audit query run |
+| Customer web | Dokploy-managed Docker service behind `mazettofood.uz` and `www.mazettofood.uz` | Both `/api/health` returned HTTP 200 |
+| POS/Admin/Staff web | Dokploy-managed Docker service behind `pos.mazettofood.uz` | `/api/health` returned HTTP 200 |
+| Backend API | Dokploy-managed Docker service behind `api.mazettofood.uz/api/v1` | `/health` returned HTTP 200 and database `ok` |
+| Media | Dokploy-managed MinIO/media service behind `media.mazettofood.uz` | `/healthz` returned HTTP 204 |
+| PostgreSQL | Private Docker service/volume on the self-hosted server | Indirectly verified by backend health; no destructive/read-write audit query run |
 | Redis | Private cache/rate-limit service | Configuration/code present; no public standalone health proof |
 | Telegram agent | Cloud `telegram-bot` service | Code/configuration audited; current webhook status requires protected service access or Telegram API credential |
 | Telegram staff group | Telegram external service | Requires configured chat ID and legitimate human smoke; not proven in this read-only audit |
