@@ -40,13 +40,9 @@ import { moneyCell, numberCell } from "./admin-report-views";
  *
  * Detal `GET /receipts/:id` dan keladi va chek tarkibini beradi.
  *
- * `PATCH /receipts/:id/print` chekni "chop etilgan" deb BELGILAYDI, printerga
- * yubormaydi — `PrintJob` modeli hali yo'q. Tugma matni shuni aytadi; "Qayta
- * chop etish" deyish bo'lmagan ishni va'da qilardi. FIZIK printer agenti
- * ataylab keyinga qoldirilgan va bu ekran uni ishlayotgan qilib
- * KO'RSATMAYDI. Brauzerda chop etish esa haqiqatan bor — kassa chek
- * ekranida (`/pos/receipt/<id>`), shuning uchun detal oynasi shu ekranga
- * havola beradi.
+ * Chek detalidagi "Qayta chop etish" durable printer navbatiga yangi ish
+ * qo'yadi. Desktop agent uni o'zida tanlangan Windows printeriga yuboradi.
+ * Brauzer chop etishi alohida zaxira yo'l bo'lib qoladi.
  *
  * TUZATILGAN NUQSON: "chop etilgan" filtri FAQAT joriy sahifa ichida
  * ishlardi, sahifalash esa filtrlanmagan sonni ko'rsatardi — jadvalda uch
@@ -60,6 +56,7 @@ type Branch = { id: string; code: string; name: string };
 
 type Receipt = {
   id: string;
+  documentType: string;
   receiptNumber: string;
   total: string;
   printed: boolean;
@@ -303,6 +300,22 @@ export function AdminReceiptsPage() {
         receipt.order
           ? (receipt.order.displayOrderNumber ?? receipt.order.orderNumber)
           : "—",
+    },
+    {
+      key: "documentType",
+      header: "Hujjat turi",
+      hideOnMobile: true,
+      render: (receipt) => (
+        <Badge tone="neutral">
+          {receipt.documentType === "KITCHEN"
+            ? "Oshxona"
+            : receipt.documentType === "CANCELLATION"
+              ? "Bekor qilish"
+              : receipt.documentType.startsWith("REFUND")
+                ? "Pul qaytarish"
+                : "Mijoz cheki"}
+        </Badge>
+      ),
     },
     {
       key: "orderStatus",

@@ -555,6 +555,11 @@ function setupAuthControls(): void {
         throw new Error("Qurilma tasdiqlanmagan yoki ushbu foydalanuvchiga ruxsat berilmagan");
       }
 
+      // Native login local gatewayni chetlab o'tishi mumkin. Printer worker ham
+      // shu sessiya bilan server navbatini olishi uchun tokenni bevosita beramiz.
+      printWorker?.setAuthorization(
+        `${payload.data.tokens.tokenType ?? "Bearer"} ${payload.data.tokens.accessToken}`,
+      );
       return payload.data;
     },
   );
@@ -643,6 +648,13 @@ async function silentPrintReceipt(
   });
   try {
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt))}`);
+    // Hidden oynada `loadURL` tugashi sahifa birinchi marta chizilganini
+    // kafolatlamaydi. Godex kabi Windows drayverlari shu onda print qilinsa
+    // bo'sh sahifa berishi mumkin, shuning uchun ikki frame kutamiz.
+    await window.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+      true,
+    );
     await new Promise<void>((resolve, reject) => {
       window.webContents.print(
         {
@@ -741,18 +753,45 @@ function setupSessionControls(): void {
   ipcMain.removeHandler("desktop:session:load");
   ipcMain.removeHandler("desktop:session:save");
   ipcMain.removeHandler("desktop:session:clear");
-  ipcMain.handle("desktop:session:load", () =>
-    readProtectedSetting("staff_auth_session_encrypted"),
-  );
+  ipcMain.handle("desktop:session:load", () => {
+    const serialized = readProtectedSetting("staff_auth_session_encrypted");
+    syncPrinterAuthorization(serialized);
+    return serialized;
+  });
   ipcMain.handle("desktop:session:save", (_event, serialized: unknown) => {
     if (typeof serialized !== "string" || serialized.length > 100_000) {
       throw new Error("Sessiya ma'lumoti noto'g'ri");
     }
     saveProtectedSetting("staff_auth_session_encrypted", serialized);
+    syncPrinterAuthorization(serialized);
   });
   ipcMain.handle("desktop:session:clear", () => {
     store?.setSetting("staff_auth_session_encrypted", "");
+    printWorker?.setAuthorization(undefined);
   });
+}
+
+function syncPrinterAuthorization(serialized: string | null): void {
+  if (!serialized) {
+    printWorker?.setAuthorization(undefined);
+    return;
+  }
+  try {
+    const value = JSON.parse(serialized) as {
+      tokens?: { tokenType?: unknown; accessToken?: unknown };
+    };
+    const accessToken = value.tokens?.accessToken;
+    if (typeof accessToken !== "string" || !accessToken.trim()) {
+      printWorker?.setAuthorization(undefined);
+      return;
+    }
+    const tokenType = typeof value.tokens?.tokenType === "string"
+      ? value.tokens.tokenType
+      : "Bearer";
+    printWorker?.setAuthorization(`${tokenType} ${accessToken}`);
+  } catch {
+    printWorker?.setAuthorization(undefined);
+  }
 }
 
 function readProtectedDeviceToken(): string | null {
