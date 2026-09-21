@@ -98,17 +98,37 @@ async function requestWithSession(
   init: RequestInit | undefined,
   session: AuthSession | null,
 ): Promise<Response> {
-  return fetch(`${getApiBaseUrl()}${path}`, {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  if (session) {
+    headers.set(
+      "Authorization",
+      `${session.tokens.tokenType} ${session.tokens.accessToken}`,
+    );
+  }
+  const request: RequestInit = {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(session
-        ? { Authorization: `${session.tokens.tokenType} ${session.tokens.accessToken}` }
-        : {}),
-      ...init?.headers,
-    },
+    headers,
     credentials: "include",
-  });
+  };
+
+  try {
+    return await fetch(`${getApiBaseUrl()}${path}`, request);
+  } catch (error) {
+    const desktopApi = window.mazettoDesktop?.api;
+    if (!desktopApi) throw error;
+    const body = typeof init?.body === "string" ? init.body : undefined;
+    const nativeResponse = await desktopApi.request({
+      path,
+      method: init?.method ?? "GET",
+      ...(body ? { body } : {}),
+      headers: Object.fromEntries(headers.entries()),
+    });
+    return new Response(nativeResponse.body, {
+      headers: { "Content-Type": nativeResponse.contentType },
+      status: nativeResponse.status,
+    });
+  }
 }
 
 async function refreshSession(session: AuthSession): Promise<AuthSession | null> {
@@ -133,14 +153,13 @@ async function performRefresh(session: AuthSession): Promise<AuthSession | null>
   let response: Response;
 
   try {
-    response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+    response = await requestWithSession("/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(session.tokens.refreshToken
         ? { refreshToken: session.tokens.refreshToken }
         : {}),
-      credentials: "include",
-    });
+    }, null);
   } catch {
     // Tarmoq uzilishi — sessiyani o'chirmaymiz, keyingi urinishda tiklanishi mumkin.
     return null;

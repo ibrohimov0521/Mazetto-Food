@@ -36,6 +36,14 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
     login: (input: { identifier: string; password: string }) =>
       ipcRenderer.invoke("desktop:auth:login", input),
   },
+  api: {
+    request: (input: {
+      path: string;
+      method: string;
+      body?: string;
+      headers?: Record<string, string>;
+    }) => ipcRenderer.invoke("desktop:api:request", input),
+  },
   updates: {
     getStatus: (): Promise<UpdateStatus> =>
       ipcRenderer.invoke("desktop:updates:status"),
