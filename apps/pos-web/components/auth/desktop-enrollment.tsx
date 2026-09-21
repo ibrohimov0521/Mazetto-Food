@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { useAuth } from "./auth-provider";
 import { Button } from "../admin-ui/button";
 import { Modal } from "../admin-ui/modal";
 import { Icon } from "../admin-ui/icon";
@@ -9,6 +10,7 @@ import { Icon } from "../admin-ui/icon";
 type DesktopRuntimeStatus = { deviceId: string };
 
 export function DesktopEnrollmentBadge() {
+  const { session } = useAuth();
   const [isDesktop, setIsDesktop] = useState(false);
   const [deviceId, setDeviceId] = useState("");
   const [open, setOpen] = useState(false);
@@ -28,6 +30,10 @@ export function DesktopEnrollmentBadge() {
         const nextDeviceId = payload.data?.deviceId ?? "";
         setDeviceId(nextDeviceId);
         if (!nextDeviceId) return;
+        if (!session) {
+          setIsEnrolled(false);
+          return;
+        }
         try {
           await apiFetch("/devices/heartbeat", {
             method: "POST",
@@ -40,7 +46,7 @@ export function DesktopEnrollmentBadge() {
         }
       })
       .catch(() => setIsEnrolled(false));
-  }, []);
+  }, [session]);
 
   if (!isDesktop || !deviceId) return null;
 
@@ -58,11 +64,13 @@ export function DesktopEnrollmentBadge() {
           body: JSON.stringify({ deviceId, enrollmentCode: code.trim() }),
         });
       }
-      await apiFetch("/devices/heartbeat", {
-        method: "POST",
-        headers: { "x-mazetto-device-id": deviceId },
-        body: JSON.stringify({}),
-      });
+      if (session) {
+        await apiFetch("/devices/heartbeat", {
+          method: "POST",
+          headers: { "x-mazetto-device-id": deviceId },
+          body: JSON.stringify({}),
+        });
+      }
       setMessage("Qurilma muvaffaqiyatli ulandi.");
       setCode("");
       setIsEnrolled(true);
