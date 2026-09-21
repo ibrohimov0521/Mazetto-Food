@@ -661,6 +661,10 @@ async function silentPrintReceipt(
           silent: true,
           deviceName,
           printBackground: true,
+          // Windows drayverining (xususan Godex) standart label o'lchami
+          // chek HTML'ini ko'rinmaydigan sohaga chiqarib qo'ymasligi uchun
+          // 80 mm termal chek formati aniq beriladi. Qiymatlar mikrometrda.
+          pageSize: { width: 80_000, height: 300_000 },
           margins: { marginType: "none" },
         },
         (success, failureReason) =>

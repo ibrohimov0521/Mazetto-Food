@@ -32,6 +32,12 @@ type PrintJob = {
   id: string;
   receiptId: string;
   leaseToken: string;
+  payload?: Record<string, unknown> | null;
+  receipt?: {
+    receiptNumber?: string;
+    documentType?: string;
+    orderId?: string;
+  } | null;
   printer?: { id: string; name: string; metadata?: PrinterMetadata | null } | null;
 };
 
@@ -151,7 +157,11 @@ export class DesktopPrintWorker {
       });
       if (!job) return;
       try {
-        const receipt = await this.request<PrintableReceipt>(`/receipts/${encodeURIComponent(job.receiptId)}`);
+        // Job payloadi chek yaratilgan tranzaksiyaning immutable nusxasi.
+        // Uni birinchi ishlatish printerdagi ishni keyingi GET so'rovidan
+        // mustaqil qiladi: chek ekrani yoki vaqtinchalik API xatosi sabab
+        // bo'sh sahifa chop etilmaydi.
+        const receipt = printableReceiptFromJob(job) ?? await this.request<PrintableReceipt>(`/receipts/${encodeURIComponent(job.receiptId)}`);
         const route = receiptRoute(receipt);
         if (
           receipt.orderId &&
@@ -160,6 +170,7 @@ export class DesktopPrintWorker {
           await this.completeServerJob(job);
           return;
         }
+        assertPrintableReceipt(receipt);
 
         const metadata = job.printer?.metadata ?? {};
         const host = typeof metadata.host === "string" && metadata.host.trim()
@@ -334,6 +345,42 @@ function receiptRoute(receipt: PrintableReceipt): string {
   if (typeof contentType === "string") return contentType.startsWith("REFUND") ? "REFUND" : contentType;
   if (typeof receipt.documentType === "string") return receipt.documentType.startsWith("REFUND") ? "REFUND" : receipt.documentType;
   return "RECEIPT";
+}
+
+function printableReceiptFromJob(job: PrintJob): PrintableReceipt | null {
+  if (!job.payload || typeof job.payload !== "object" || Array.isArray(job.payload)) {
+    return null;
+  }
+  const documentType = typeof job.payload.documentType === "string"
+    ? job.payload.documentType
+    : job.receipt?.documentType;
+  if (!documentType) return null;
+  return {
+    ...(job.receipt?.receiptNumber ? { receiptNumber: job.receipt.receiptNumber } : {}),
+    ...(job.receipt?.orderId ? { orderId: job.receipt.orderId } : {}),
+    documentType,
+    content: job.payload,
+  };
+}
+
+function assertPrintableReceipt(receipt: PrintableReceipt): void {
+  // TCP ESC/POS printerlari backend tuzgan buyruqlarni ishlatadi; ular uchun
+  // HTML snapshot shart emas.
+  if (Array.isArray(receipt.escpos?.commands) && receipt.escpos.commands.length > 0) {
+    return;
+  }
+  const content = receipt.content;
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    throw new Error("Chek mazmuni topilmadi; chop etish navbatda qoldirildi");
+  }
+  const documentType = receiptRoute(receipt);
+  const hasOrder = typeof content.orderNumber === "string" ||
+    typeof content.displayOrderNumber === "string";
+  const items = content.items;
+  const hasItems = Array.isArray(items) && items.length > 0;
+  if (!hasOrder || (!hasItems && documentType !== "REFUND")) {
+    throw new Error("Chek mazmuni to'liq emas; bo'sh sahifa chop etilmadi");
+  }
 }
 
 function modifierNames(value: unknown): string[] {
