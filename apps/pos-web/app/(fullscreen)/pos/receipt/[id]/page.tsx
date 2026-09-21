@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { ArrowLeft, Check, Printer, RotateCcw } from "lucide-react";
 import { PermissionGuard } from "../../../../../components/auth/permission-guard";
 import { useAuth } from "../../../../../components/auth/auth-provider";
@@ -45,10 +46,12 @@ type Receipt = {
   };
 };
 
-export default function ReceiptPage({ params }: { params: { id: string } }) {
+export default function ReceiptPage() {
+  const params = useParams<{ id?: string | string[] }>();
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
   return (
     <PermissionGuard permission="RECEIPT_VIEW">
-      <ReceiptPreview id={params.id} />
+      <ReceiptPreview id={id ?? ""} />
     </PermissionGuard>
   );
 }
