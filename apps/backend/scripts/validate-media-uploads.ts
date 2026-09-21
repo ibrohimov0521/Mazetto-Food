@@ -31,8 +31,11 @@ assert.match(controller, /limits: \{ fileSize: MAX_IMAGE_BYTES \}/);
 assert.match(controller, /new MaxFileSizeValidator\(\{ maxSize: MAX_IMAGE_BYTES \}\)/);
 assert.match(minio, /MAX_IMAGE_BYTES = 5 \* 1024 \* 1024/);
 
-// Yuklash — katalogni tahrirlashning bir qismi, ochiq endpoint emas.
-assert.match(controller, /@Permissions\(PERMISSIONS\.MENU_EDIT\)/);
+// Yuklash ochiq endpoint emas; papka maqsadiga mos ruxsat alohida tekshiriladi.
+assert.match(controller, /@PermissionsAny\(PERMISSIONS\.MENU_EDIT, PERMISSIONS\.HOMEPAGE_MANAGE\)/);
+assert.match(controller, /target === "homepage"/);
+assert.match(controller, /PERMISSIONS\.HOMEPAGE_MANAGE/);
+assert.match(controller, /PERMISSIONS\.MENU_EDIT/);
 
 // --- Nom va joylashuv ----------------------------------------------------
 
@@ -55,7 +58,7 @@ assert.match(minio, /EXTENSION_BY_MIME\[file\.mimetype\]/);
  */
 assert.match(
   controller,
-  /folder === "categories" \|\| folder === "homepage" \? folder : "products"/,
+  /\["products", "categories", "homepage"\]/,
 );
 
 // --- Saqlash qatlami -----------------------------------------------------

@@ -34,6 +34,12 @@ type NormalizedPaymentTender = {
   transactionId?: string;
 };
 
+const OPERATIONAL_PAYMENT_METHOD_CODES = new Set(["CASH"]);
+
+export function isOperationalPaymentMethod(code: string): boolean {
+  return OPERATIONAL_PAYMENT_METHOD_CODES.has(code.trim().toUpperCase());
+}
+
 @Injectable()
 export class PaymentsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -262,6 +268,12 @@ export class PaymentsService {
               order.branchId,
               tender,
             );
+
+            if (!isOperationalPaymentMethod(method.code)) {
+              throw new BadRequestException(
+                `${method.code} payment provider is not enabled`,
+              );
+            }
 
             if (method.code === "CASH" && !dto.shiftId) {
               throw new BadRequestException(

@@ -20,6 +20,7 @@ type ReceiptDetail = ReceiptSummary & {
 };
 
 type AgentConfig = {
+  enabled: boolean;
   apiUrl: string;
   token: string | null;
   branchId: string | null;
@@ -76,6 +77,17 @@ void main(config, state).catch((error) => {
 
 async function main(agentConfig: AgentConfig, agentState: AgentState): Promise<void> {
   const healthServer = startHealthServer(agentConfig, agentState);
+
+  if (!agentConfig.enabled) {
+    agentState.mode = "idle";
+    agentState.lastError = "Legacy print agent is disabled; MAZETTO Desktop owns printing";
+    console.warn(
+      "Legacy print agent is disabled. Use MAZETTO Desktop, or set MAZETTO_LEGACY_PRINT_AGENT_ENABLED=true for a controlled fallback.",
+    );
+    if (!agentConfig.once) await keepAlive();
+    healthServer.close();
+    return;
+  }
 
   console.log("MAZETTO Print Agent started", {
     apiUrl: agentConfig.apiUrl,
@@ -378,6 +390,7 @@ function renderCommands(commands: Array<Record<string, unknown>>): string {
 
 function readConfig(): AgentConfig {
   return {
+    enabled: process.env.MAZETTO_LEGACY_PRINT_AGENT_ENABLED === "true",
     apiUrl: requiredUrl(process.env.MAZETTO_API_URL ?? "https://api.mazettofood.uz/api/v1"),
     token: process.env.MAZETTO_PRINT_AGENT_TOKEN?.trim() || null,
     branchId: process.env.MAZETTO_BRANCH_ID?.trim() || null,

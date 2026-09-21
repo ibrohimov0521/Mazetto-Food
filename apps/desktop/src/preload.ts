@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
     status: () => ipcRenderer.invoke("desktop:printer:status"),
     save: (input: { host: string; port: number }) => ipcRenderer.invoke("desktop:printer:save", input),
     test: () => ipcRenderer.invoke("desktop:printer:test"),
+    testManaged: () => ipcRenderer.invoke("desktop:printer:test-managed"),
   },
   device: {
     enroll: (input: { deviceId: string; enrollmentCode: string }) =>
@@ -44,5 +45,17 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
       return () =>
         ipcRenderer.removeListener("desktop:updates:status", handler);
     },
+  },
+  support: {
+    export: (): Promise<{ path: string } | null> =>
+      ipcRenderer.invoke("desktop:support:export"),
+  },
+  session: {
+    load: (): Promise<string | null> =>
+      ipcRenderer.invoke("desktop:session:load"),
+    save: (serialized: string): Promise<void> =>
+      ipcRenderer.invoke("desktop:session:save", serialized),
+    clear: (): Promise<void> =>
+      ipcRenderer.invoke("desktop:session:clear"),
   },
 });

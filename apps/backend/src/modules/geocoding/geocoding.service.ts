@@ -72,6 +72,19 @@ export class GeocodingService {
 
   constructor(private readonly cache: RedisCacheService) {}
 
+  async readiness(): Promise<"ready" | "degraded"> {
+    try {
+      const response = await fetch(this.baseUrl(), {
+        method: "HEAD",
+        signal: AbortSignal.timeout(3_000),
+        headers: { "User-Agent": "MAZETTO-Food/health" },
+      });
+      return response.status < 500 ? "ready" : "degraded";
+    } catch {
+      return "degraded";
+    }
+  }
+
   async reverse(
     latitude: number,
     longitude: number,

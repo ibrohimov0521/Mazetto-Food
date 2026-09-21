@@ -5,7 +5,7 @@ import {
   OrderType,
   Prisma,
 } from "@prisma/client";
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PosOrderStatus } from "./dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "./dto/pos-checkout.dto";
@@ -469,5 +469,5 @@ export function createOrderNumber(): string {
   const date = now.toISOString().slice(0, 10).replaceAll("-", "");
   const time = now.toISOString().slice(11, 19).replaceAll(":", "");
 
-  return `POS-${date}-${time}-${randomInt(1000, 10000)}`;
+  return `POS-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
 }

@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -29,7 +30,7 @@ export function receiptPrintRoute(content: Prisma.JsonValue | null | undefined):
 
 export function createReceiptNumber(): string {
   const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  return `RCPT-${date}-${Math.floor(Math.random() * 900000 + 100000)}`;
+  return `RCPT-${date}-${randomUUID().slice(0, 12).toUpperCase()}`;
 }
 
 export async function allocateReceiptNumber(tx: TransactionClient): Promise<string> {

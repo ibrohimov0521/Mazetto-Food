@@ -81,6 +81,8 @@ test("DB yoki Redis muammosi umumiy holatni attention qiladi", async () => {
   const service = new SystemHealthService(
     { checkHealth: async () => ({ status: "ok" }) } as never,
     { getClient: () => null } as never,
+    { readiness: async () => "ready" } as never,
+    { readiness: async () => "ready" } as never,
   );
   const result = await service.snapshot();
   assert.equal(result.database.status, "ok");

@@ -7,6 +7,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import type { ListReceiptsDto } from "./dto/list-receipts.dto";
 import type { ListPrintJobsDto } from "./dto/print-job.dto";
 import { queuePrintJobsForReceipt } from "./receipt-writer";
+import { writeAuditLog } from "../audit/audit-write";
 
 @Injectable()
 export class ReceiptsService {
@@ -302,6 +303,67 @@ export class ReceiptsService {
     });
     return this.prisma.printJob.findUnique({ where: { id } });
   }
+
+  async retryPrintJob(id: string, user: AuthenticatedUser) {
+    const job = await this.prisma.printJob.findUnique({ where: { id } });
+    if (!job) throw new NotFoundException("Print job not found");
+    resolveBranchScope(user, job.branchId);
+
+    if (job.status === "PRINTED" || job.status === "CANCELLED") {
+      throw new BadRequestException("Completed print job cannot be retried");
+    }
+    const now = new Date();
+    if (
+      job.status === "PROCESSING" &&
+      job.leaseExpiresAt &&
+      job.leaseExpiresAt > now
+    ) {
+      throw new BadRequestException("Printer is still processing this job");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const retried = await tx.printJob.updateMany({
+        where: {
+          id,
+          branchId: job.branchId,
+          status: job.status,
+          ...(job.status === "PROCESSING"
+            ? { leaseExpiresAt: { lte: now } }
+            : {}),
+        },
+        data: {
+          status: "PENDING",
+          attemptCount: 0,
+          nextAttemptAt: now,
+          leaseToken: null,
+          leaseExpiresAt: null,
+          lastError: null,
+          printedAt: null,
+        },
+      });
+      if (retried.count !== 1) {
+        throw new BadRequestException("Print job state changed; refresh and retry");
+      }
+      await tx.receipt.update({
+        where: { id: job.receiptId },
+        data: { printed: false, printedAt: null },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "PRINT_JOB_RETRIED",
+        entity: "PrintJob",
+        entityId: id,
+        metadata: {
+          branchId: job.branchId,
+          receiptId: job.receiptId,
+          previousStatus: job.status,
+          previousAttemptCount: job.attemptCount,
+        },
+      });
+    });
+    return this.prisma.printJob.findUnique({ where: { id } });
+  }
+
   private buildEscPos(
     receipt: Prisma.ReceiptGetPayload<{
       include: {

@@ -1,6 +1,6 @@
 # Audit remediation implementation progress
 
-Last local checkpoint: 2026-09-21 01:48 Asia/Tashkent.
+Last local checkpoint: 2026-09-21 06:20 Asia/Tashkent.
 
 This file tracks implementation before the requested final combined push and
 deploy. Changes below are intentionally local until the whole release batch is
@@ -41,22 +41,67 @@ devices need a coordinated one-time re-enrollment after the credential migration
 ## Verification completed
 
 - Backend typecheck passed.
-- Backend tests: 216 passed.
+- Backend tests: 224 passed.
 - Desktop typecheck passed.
-- Desktop tests: 29 passed, including new command registry and printer claim tests.
+- Desktop tests: 38 passed, including command registry, virtual printer and mutation-contract tests.
 - POS typecheck and lint passed.
 - Full workspace `pnpm verify`: 18/18 Turbo tasks passed.
-- Operations validators: 27/27 passed.
+- Operations validators: 28/28 passed.
 
-## Next work after usage reset
+## Second local remediation batch
 
-1. Rehearse both migrations against a restored production backup and complete
-   `AUD-101`; do not deploy before this gate.
-2. Finish `AUD-122` policy for Desktop-required roles/endpoints so omitting all
-   Desktop headers cannot bypass enrollment without breaking ordinary Admin web.
-3. Finish `AUD-114` multi-printer Desktop status/configuration UX and per-printer
-   connectivity test; retain Admin as assignment source of truth.
-4. Complete `AUD-115` queue recovery/operator errors and add receipt/claim service
-   integration tests around stale leases and dead letters.
-5. Bump Desktop version, prepare coordinated re-enrollment instructions, then
-   continue the remaining audit gates before one final push/deploy.
+- `AUD-101` partial: all 37 migrations were applied twice to an isolated clean
+  PostgreSQL 18 database and historical migration checksums are now enforced by
+  `pnpm validate`. A restored-production-copy rehearsal remains mandatory.
+- `AUD-114`/`AUD-115`: Desktop reports/tests every managed printer; the receipt
+  queue exposes errors and audited dead-letter/stale-job retry.
+- `AUD-116`: Desktop is canonical; the legacy print-agent is inert unless an
+  explicit opt-in environment flag is set.
+- `AUD-117` automation portion: a virtual TCP ESC/POS printer proves one-time
+  cancellation output, long-item bytes and cut bytes. Physical 58/80 mm testing
+  is still a human release gate.
+- `AUD-122`/`AUD-123`/`AUD-124`: operational roles require enrolled Desktop
+  credentials, the remembered staff session is encrypted with Windows
+  `safeStorage`, and a redacted support bundle can be exported.
+- `AUD-125`: every backend staff mutation is classified by an AST contract test
+  as queueable or explicitly online-only.
+- `AUD-130` safety gate: only CASH is exposed/accepted until signed provider
+  integrations exist; fake successful card/Click/Payme payments are blocked.
+- `AUD-132`/`AUD-133`: ingredient and warehouse edit/archive lifecycle,
+  reference/stock protection, Admin controls and branch readiness were added.
+- `AUD-134` was verified as already implemented: modifiers have an explicit
+  reversible active/archive lifecycle.
+- `AUD-135`: bounded four-digit random identifiers were replaced with UUID
+  entropy while retaining human-readable prefixes.
+- `AUD-142`: media upload authorization is purpose-aware; homepage managers can
+  upload only homepage assets and catalog editors only catalog assets.
+- `AUD-144`: kitchen seed permissions no longer include shift/cash ownership.
+- `AUD-150`: customer order polling backs off to two minutes while its scoped
+  authenticated realtime socket is healthy and returns to 15 seconds offline.
+- `AUD-154`: the protected system-health view includes timeout-bounded,
+  credential-redacted geocoding and media dependency readiness.
+
+Current verification: backend 224 tests passed, Desktop 38 tests passed, all
+18 workspace typecheck/lint/build tasks passed, and all 28 operations validators
+passed.
+
+## Remaining release gates
+
+1. `AUD-101`: obtain a current production backup, restore it to isolation,
+   reconcile `_prisma_migrations`, and rehearse deploy plus rollback. No
+   production migration or deploy before this gate.
+2. `AUD-102`, `AUD-152`, `AUD-160`, `AUD-161`: complete recorded cross-surface
+   and role/browser acceptance, including Telegram group and disposable full
+   order-to-cash-to-stock-to-print E2E.
+3. `AUD-117`: perform physical 58/80 mm printer acceptance when hardware exists.
+4. `AUD-130`, `AUD-131`: signed Click/Payme/Card integrations and permissioned
+   refund/void accounting remain unimplemented and disabled.
+5. `AUD-140`, `AUD-141`, `AUD-143`: normalize route metadata, move browser
+   refresh sessions to HttpOnly SameSite cookies, and add explicit page intent
+   to the route manifest.
+6. `AUD-151`, `AUD-153`, `AUD-155`: finish Telegram ownership evidence,
+   production alert/SLO ownership and runtime CORS drift checks.
+7. `AUD-162`, `AUD-163`: customer PWA decision and courier proof-of-delivery are
+   later product decisions, not current core release claims.
+8. Only after the blocking gates: bump Desktop version, build/publish update,
+   run release smoke, then perform the single requested push/deploy.

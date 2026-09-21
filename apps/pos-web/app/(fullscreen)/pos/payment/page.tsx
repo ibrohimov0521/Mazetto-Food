@@ -78,6 +78,9 @@ const createPaymentKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
 const successStatuses = ["PAID", "SUCCESS"];
+const enabledPaymentMethods: readonly PaymentMethodCode[] = [
+  ...POS_PAYMENT_METHOD_CODES,
+];
 
 export default function PaymentPage() {
   return (
@@ -268,6 +271,7 @@ function PaymentTerminal() {
   }
 
   function addTender() {
+    if (enabledPaymentMethods.length < 2) return;
     setSubmitError(null);
     setTenders((current) => {
       /*
@@ -286,7 +290,7 @@ function PaymentTerminal() {
       const rest = Math.max(0, Math.round(outstanding - used));
       return [
         ...normalized,
-        { code: "CARD" as PaymentMethodCode, amount: rest ? String(rest) : "" },
+        { code: enabledPaymentMethods[1]!, amount: rest ? String(rest) : "" },
       ];
     });
   }
@@ -480,15 +484,17 @@ function PaymentTerminal() {
                 <div className={styles.payPanel}>
                   <div className={styles.payOrdersHead}>
                     <h3 className={styles.subheading}>To'lov usuli</h3>
-                    <button
-                      className={styles.button}
-                      disabled={isSubmitting || outstanding <= 0}
-                      onClick={addTender}
-                      type="button"
-                    >
-                      <Plus size={16} aria-hidden="true" />
-                      Aralash to'lov
-                    </button>
+                    {enabledPaymentMethods.length > 1 ? (
+                      <button
+                        className={styles.button}
+                        disabled={isSubmitting || outstanding <= 0}
+                        onClick={addTender}
+                        type="button"
+                      >
+                        <Plus size={16} aria-hidden="true" />
+                        Aralash to'lov
+                      </button>
+                    ) : null}
                   </div>
 
                   <div className={styles.payTenders}>
@@ -510,7 +516,7 @@ function PaymentTerminal() {
                               })
                             }
                           >
-                            {POS_PAYMENT_METHOD_CODES.map((code) => (
+                            {enabledPaymentMethods.map((code) => (
                               <option key={code} value={code}>
                                 {paymentMethodLabel(code)}
                               </option>

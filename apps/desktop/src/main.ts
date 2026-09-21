@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { DesktopGateway } from "./gateway.js";
@@ -112,6 +112,8 @@ async function startDesktop(): Promise<void> {
   });
   setupPrinterControls();
   setupDeviceEnrollment();
+  setupSessionControls();
+  setupSupportControls();
   await gateway.start();
   printTimer = setInterval(() => void printWorker?.tick(), 3_000);
   printTimer.unref();
@@ -412,7 +414,7 @@ function setupPrinterControls(): void {
   ipcMain.removeHandler("desktop:printer:status");
   ipcMain.removeHandler("desktop:printer:save");
   ipcMain.removeHandler("desktop:printer:test");
-  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100, managedPrinters: 0 });
+  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100, managedPrinters: 0, managedPrinterDetails: [] });
   ipcMain.handle("desktop:printer:save", async (_event, input: { host?: unknown; port?: unknown }) => {
     const host = typeof input?.host === "string" ? input.host.trim() : "";
     const port = Number(input?.port);
@@ -424,10 +426,75 @@ function setupPrinterControls(): void {
     return printWorker?.status();
   });
   ipcMain.handle("desktop:printer:test", () => printWorker?.testConnection());
+  ipcMain.removeHandler("desktop:printer:test-managed");
+  ipcMain.handle("desktop:printer:test-managed", () => printWorker?.testManagedConnections());
+}
+
+function setupSupportControls(): void {
+  ipcMain.removeHandler("desktop:support:export");
+  ipcMain.handle("desktop:support:export", async () => {
+    if (!store) throw new Error("Desktop ma'lumotlar bazasi tayyor emas");
+    const generatedAt = new Date();
+    const defaultName = `mazetto-support-${generatedAt.toISOString().replace(/[:.]/g, "-")}.json`;
+    const dialogOptions = {
+      title: "Diagnostika faylini saqlash",
+      defaultPath: join(app.getPath("downloads"), defaultName),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    };
+    const selected = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, dialogOptions)
+      : await dialog.showSaveDialog(dialogOptions);
+    if (selected.canceled || !selected.filePath) return null;
+
+    const bundle = {
+      schemaVersion: 1,
+      generatedAt: generatedAt.toISOString(),
+      application: {
+        name: app.getName(),
+        version: app.getVersion(),
+        packaged: app.isPackaged,
+        platform: process.platform,
+        architecture: process.arch,
+      },
+      device: {
+        id: store.deviceId(),
+        enrolledCredentialPresent: Boolean(deviceAuthToken),
+      },
+      connectivity: gateway?.status() ?? null,
+      printers: printWorker?.status() ?? null,
+      updates: updateStatus,
+      upstreamOrigin: new URL(UPSTREAM_API_URL).origin,
+    };
+    await writeFile(selected.filePath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+    shell.showItemInFolder(selected.filePath);
+    return { path: selected.filePath };
+  });
+}
+
+function setupSessionControls(): void {
+  ipcMain.removeHandler("desktop:session:load");
+  ipcMain.removeHandler("desktop:session:save");
+  ipcMain.removeHandler("desktop:session:clear");
+  ipcMain.handle("desktop:session:load", () =>
+    readProtectedSetting("staff_auth_session_encrypted"),
+  );
+  ipcMain.handle("desktop:session:save", (_event, serialized: unknown) => {
+    if (typeof serialized !== "string" || serialized.length > 100_000) {
+      throw new Error("Sessiya ma'lumoti noto'g'ri");
+    }
+    saveProtectedSetting("staff_auth_session_encrypted", serialized);
+  });
+  ipcMain.handle("desktop:session:clear", () => {
+    store?.setSetting("staff_auth_session_encrypted", "");
+  });
 }
 
 function readProtectedDeviceToken(): string | null {
-  const encrypted = store?.getSetting("device_auth_token_encrypted");
+  return readProtectedSetting("device_auth_token_encrypted");
+}
+
+function readProtectedSetting(key: string): string | null {
+  const encrypted = store?.getSetting(key);
   if (!encrypted || !safeStorage.isEncryptionAvailable()) return null;
   try {
     return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
@@ -437,9 +504,13 @@ function readProtectedDeviceToken(): string | null {
 }
 
 function saveProtectedDeviceToken(token: string): void {
+  saveProtectedSetting("device_auth_token_encrypted", token);
+}
+
+function saveProtectedSetting(key: string, value: string): void {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("Windows xavfsiz saqlash xizmati mavjud emas");
   }
-  const encrypted = safeStorage.encryptString(token).toString("base64");
-  store?.setSetting("device_auth_token_encrypted", encrypted);
+  const encrypted = safeStorage.encryptString(value).toString("base64");
+  store?.setSetting(key, encrypted);
 }

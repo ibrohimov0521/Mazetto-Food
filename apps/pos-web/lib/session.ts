@@ -16,49 +16,93 @@ import { authStorageKey, type AuthSession } from "./auth";
 type SessionListener = (session: AuthSession | null) => void;
 
 const listeners = new Set<SessionListener>();
+let memorySession: AuthSession | null = null;
+let hydrated = false;
+
+export async function hydrateSession(): Promise<AuthSession | null> {
+  if (hydrated) return memorySession;
+
+  const desktopSession = window.mazettoDesktop?.session;
+  if (desktopSession) {
+    try {
+      const protectedRaw = await desktopSession.load();
+      const protectedSession = parseSession(protectedRaw);
+      const legacySession = readBrowserSession();
+      memorySession = protectedSession ?? legacySession;
+      if (!protectedSession && legacySession) {
+        await desktopSession.save(JSON.stringify(legacySession));
+      }
+      clearStoredSession();
+      hydrated = true;
+      return memorySession;
+    } catch {
+      // Desktop secure storage is temporarily unavailable; keep the in-memory login.
+      memorySession = readBrowserSession();
+      hydrated = true;
+      return memorySession;
+    }
+  }
+
+  memorySession = readBrowserSession();
+  hydrated = true;
+  return memorySession;
+}
 
 export function readSession(): AuthSession | null {
   if (typeof window === "undefined") {
     return null;
   }
 
-  let raw: string | null;
-
-  try {
-    raw = window.localStorage.getItem(authStorageKey);
-  } catch {
-    return null;
-  }
-
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return isAuthSession(parsed) ? parsed : null;
-  } catch {
-    // Buzilgan yozuv — oq ekran bermaslik uchun tozalaymiz.
-    clearStoredSession();
-    return null;
-  }
+  return hydrated ? memorySession : readBrowserSession();
 }
 
 export function writeSession(session: AuthSession | null): void {
+  memorySession = session;
+  hydrated = true;
   if (typeof window !== "undefined") {
-    try {
-      if (session) {
-        window.localStorage.setItem(authStorageKey, JSON.stringify(session));
-      } else {
-        window.localStorage.removeItem(authStorageKey);
+    const desktopSession = window.mazettoDesktop?.session;
+    if (desktopSession) {
+      clearStoredSession();
+      void (session
+        ? desktopSession.save(JSON.stringify(session))
+        : desktopSession.clear());
+    } else {
+      try {
+        if (session) {
+          window.localStorage.setItem(authStorageKey, JSON.stringify(session));
+        } else {
+          window.localStorage.removeItem(authStorageKey);
+        }
+      } catch {
+        // Saqlab bo'lmadi — xotiradagi holat baribir yangilanadi.
       }
-    } catch {
-      // Saqlab bo'lmadi (masalan, kvota to'lgan) — xotiradagi holat baribir yangilanadi.
     }
   }
 
   for (const listener of listeners) {
     listener(session);
+  }
+}
+
+function readBrowserSession(): AuthSession | null {
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(authStorageKey);
+  } catch {
+    return null;
+  }
+  const session = parseSession(raw);
+  if (raw && !session) clearStoredSession();
+  return session;
+}
+
+function parseSession(raw: string | null): AuthSession | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return isAuthSession(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
 }
 

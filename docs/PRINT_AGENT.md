@@ -1,10 +1,13 @@
-# MAZETTO Print Agent
+# MAZETTO Print Agent (legacy fallback)
 
-Print agent cheklarni backend API dan olib, muvaffaqiyatli chop etilgandan keyingina `printed=true` qilib belgilaydi.
+Production chop etish egasi **MAZETTO Desktop**. Ushbu alohida agent faqat
+Desktop ishlatib bo'lmaydigan nazoratli fallback uchun saqlangan va default
+holatda o'chiq. Uni Desktop bilan bir filialda bir vaqtda yoqish mumkin emas.
 
 ## Kerakli sozlamalar
 
 - `MAZETTO_API_URL` - backend API, masalan `https://api.mazettofood.uz/api/v1`.
+- `MAZETTO_LEGACY_PRINT_AGENT_ENABLED=true` - legacy agentni ataylab yoqadi.
 - `MAZETTO_PRINT_AGENT_TOKEN` - `RECEIPT_VIEW` va `RECEIPT_PRINT` permissionlari bor xodim tokeni.
 - `MAZETTO_BRANCH_ID` - ixtiyoriy, faqat bitta filial cheklarini olish uchun.
 - `MAZETTO_PRINT_DRY_RUN` - default dry-run. Real chop etish uchun `false`.
@@ -18,19 +21,19 @@ Print agent cheklarni backend API dan olib, muvaffaqiyatli chop etilgandan keyin
 Dry-run tekshiruv:
 
 ```bash
-pnpm --filter print-agent start -- --once
+MAZETTO_LEGACY_PRINT_AGENT_ENABLED=true pnpm --filter print-agent start -- --once
 ```
 
 Faylga chiqarish:
 
 ```bash
-MAZETTO_PRINT_DRY_RUN=false MAZETTO_PRINTER_MODE=file pnpm --filter print-agent start
+MAZETTO_LEGACY_PRINT_AGENT_ENABLED=true MAZETTO_PRINT_DRY_RUN=false MAZETTO_PRINTER_MODE=file pnpm --filter print-agent start
 ```
 
 Tarmoq printeriga yuborish:
 
 ```bash
-MAZETTO_PRINT_DRY_RUN=false MAZETTO_PRINTER_MODE=tcp MAZETTO_PRINTER_HOST=192.168.1.50 pnpm --filter print-agent start
+MAZETTO_LEGACY_PRINT_AGENT_ENABLED=true MAZETTO_PRINT_DRY_RUN=false MAZETTO_PRINTER_MODE=tcp MAZETTO_PRINTER_HOST=192.168.1.50 pnpm --filter print-agent start
 ```
 
 Agar printer xato qaytarsa yoki ulanish uzilsa, chek `printed` bo‘lib belgilanmaydi va keyingi siklda qayta urinadi.

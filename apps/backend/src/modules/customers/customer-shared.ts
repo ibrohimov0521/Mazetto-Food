@@ -1,6 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
 import { OrderStatus, Prisma } from "@prisma/client";
-import { randomInt } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { deliveryDistanceKm } from "./delivery-distance";
 
@@ -245,7 +245,7 @@ export function createOrderNumber(): string {
   const date = now.toISOString().slice(0, 10).replaceAll("-", "");
   const time = now.toISOString().slice(11, 19).replaceAll(":", "");
 
-  return `WEB-${date}-${time}-${randomInt(1000, 10000)}`;
+  return `WEB-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
 /*

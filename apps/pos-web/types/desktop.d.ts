@@ -19,7 +19,19 @@ type DesktopPrinterStatus = {
   host: string | null;
   port: number;
   managedPrinters: number;
+  managedPrinterDetails: Array<{
+    id: string;
+    name: string;
+    host: string;
+    port: number;
+  }>;
 };
+
+type DesktopPrinterConnectionResult =
+  DesktopPrinterStatus["managedPrinterDetails"][number] & {
+    ok: boolean;
+    message: string | null;
+  };
 
 type DesktopBridge = {
   device?: {
@@ -35,6 +47,7 @@ type DesktopBridge = {
     status: () => Promise<DesktopPrinterStatus>;
     save: (input: { host: string; port: number }) => Promise<DesktopPrinterStatus>;
     test: () => Promise<void>;
+    testManaged: () => Promise<DesktopPrinterConnectionResult[]>;
   };
   updates?: {
     getStatus: () => Promise<DesktopUpdateStatus>;
@@ -42,6 +55,14 @@ type DesktopBridge = {
     download: () => Promise<DesktopUpdateStatus>;
     install: () => Promise<DesktopUpdateStatus>;
     onStatus: (listener: (status: DesktopUpdateStatus) => void) => () => void;
+  };
+  support?: {
+    export: () => Promise<{ path: string } | null>;
+  };
+  session?: {
+    load: () => Promise<string | null>;
+    save: (serialized: string) => Promise<void>;
+    clear: () => Promise<void>;
   };
 };
 

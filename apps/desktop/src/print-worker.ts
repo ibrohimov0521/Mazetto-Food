@@ -3,9 +3,22 @@ import { Socket } from "node:net";
 type PrinterMetadata = { host?: unknown; port?: unknown };
 type PrinterConfig = {
   id: string;
+  name?: string;
   isActive?: boolean;
   status?: string;
   metadata?: PrinterMetadata | null;
+};
+
+export type ManagedPrinter = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+};
+
+export type PrinterConnectionResult = ManagedPrinter & {
+  ok: boolean;
+  message: string | null;
 };
 type PrintJob = {
   id: string;
@@ -23,6 +36,7 @@ export type DesktopPrintWorkerOptions = {
   deviceId: string;
   deviceToken?: string | null;
   fetchImpl?: typeof fetch;
+  socketImpl?: (host: string, port: number, payload?: Buffer) => Promise<void>;
 };
 
 /** Desktop owns outbound printer connections; printer endpoints are never exposed by the API. */
@@ -34,9 +48,11 @@ export class DesktopPrintWorker {
   private readonly deviceId: string;
   private deviceToken: string | null;
   private readonly fetchImpl: typeof fetch;
+  private readonly socketImpl?: DesktopPrintWorkerOptions["socketImpl"];
   private authorization: string | null = null;
   private running = false;
   private managedPrinters = 0;
+  private managedPrinterDetails: ManagedPrinter[] = [];
 
   constructor(options: DesktopPrintWorkerOptions) {
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
@@ -46,6 +62,7 @@ export class DesktopPrintWorker {
     this.deviceId = options.deviceId;
     this.deviceToken = options.deviceToken ?? null;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.socketImpl = options.socketImpl;
   }
 
   configure(printerHost: string | null, printerPort: number): void {
@@ -53,12 +70,13 @@ export class DesktopPrintWorker {
     this.printerPort = printerPort;
   }
 
-  status(): { configured: boolean; host: string | null; port: number; managedPrinters: number } {
+  status(): { configured: boolean; host: string | null; port: number; managedPrinters: number; managedPrinterDetails: ManagedPrinter[] } {
     return {
       configured: Boolean(this.printerHost) || this.managedPrinters > 0,
       host: this.printerHost,
       port: this.printerPort,
       managedPrinters: this.managedPrinters,
+      managedPrinterDetails: this.managedPrinterDetails.map((printer) => ({ ...printer })),
     };
   }
 
@@ -74,17 +92,7 @@ export class DesktopPrintWorker {
     if (this.running || !this.authorization) return;
     this.running = true;
     try {
-      const printers = await this.request<PrinterConfig[]>("/printers");
-      const readyPrinters = printers.filter((printer) => {
-        const host = printer.metadata?.host;
-        return (
-          printer.isActive !== false &&
-          printer.status === "ONLINE" &&
-          typeof host === "string" &&
-          Boolean(host.trim())
-        );
-      });
-      this.managedPrinters = readyPrinters.length;
+      const readyPrinters = await this.discoverReadyPrinters();
       if (readyPrinters.length === 0 && !this.printerHost) return;
       const job = await this.request<PrintJob | null>("/receipts/print-jobs/claim", {
         method: "POST",
@@ -120,6 +128,67 @@ export class DesktopPrintWorker {
   async testConnection(): Promise<void> {
     if (!this.printerHost) throw new Error("Printer manzili kiritilmagan");
     await this.openSocket(this.printerHost, this.printerPort, undefined);
+  }
+
+  async testManagedConnections(): Promise<PrinterConnectionResult[]> {
+    const printers = this.authorization
+      ? await this.discoverReadyPrinters()
+      : this.managedPrinterDetails;
+
+    if (printers.length === 0) {
+      if (!this.printerHost) {
+        throw new Error("Faol printer topilmadi");
+      }
+      await this.openSocket(this.printerHost, this.printerPort, undefined);
+      return [{
+        id: "fallback",
+        name: "Lokal zaxira printer",
+        host: this.printerHost,
+        port: this.printerPort,
+        ok: true,
+        message: null,
+      }];
+    }
+
+    return Promise.all(
+      printers.map(async (printer) => {
+        try {
+          await this.openSocket(printer.host, printer.port, undefined);
+          return { ...printer, ok: true, message: null };
+        } catch (error) {
+          return { ...printer, ok: false, message: message(error) };
+        }
+      }),
+    );
+  }
+
+  private async discoverReadyPrinters(): Promise<ManagedPrinter[]> {
+    const printers = await this.request<PrinterConfig[]>("/printers");
+    const readyPrinters = printers.flatMap((printer) => {
+      const host = printer.metadata?.host;
+      if (
+        printer.isActive === false ||
+        printer.status !== "ONLINE" ||
+        typeof host !== "string" ||
+        !host.trim()
+      ) {
+        return [];
+      }
+      const rawPort = printer.metadata?.port;
+      const port =
+        typeof rawPort === "number" && Number.isInteger(rawPort)
+          ? rawPort
+          : this.printerPort;
+      return [{
+        id: printer.id,
+        name: printer.name?.trim() || "Printer",
+        host: host.trim(),
+        port,
+      }];
+    });
+    this.managedPrinterDetails = readyPrinters;
+    this.managedPrinters = readyPrinters.length;
+    return readyPrinters;
   }
 
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
@@ -162,6 +231,10 @@ export class DesktopPrintWorker {
   }
 
   private async openSocket(host: string, port: number, payload: Buffer | undefined): Promise<void> {
+    if (this.socketImpl) {
+      await this.socketImpl(host, port, payload);
+      return;
+    }
     await new Promise<void>((resolve, reject) => {
       const socket = new Socket();
       const timer = setTimeout(() => { socket.destroy(); reject(new Error("Printer 5 soniyada javob bermadi")); }, 5_000);

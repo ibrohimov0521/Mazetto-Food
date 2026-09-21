@@ -192,6 +192,8 @@ export function AdminInventoryPage() {
   const [isIngredientOpen, setIsIngredientOpen] = useState(false);
   const [isWarehouseOpen, setIsWarehouseOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingIngredientId, setEditingIngredientId] = useState<string | null>(null);
+  const [editingWarehouseId, setEditingWarehouseId] = useState<string | null>(null);
 
   const [form, setForm] = useState<MovementForm>({
     warehouseId: "",
@@ -341,15 +343,47 @@ export function AdminInventoryPage() {
   }
 
   function openWarehouseForm(): void {
+    setEditingWarehouseId(null);
     setWarehouseDraft({ branchId: branchId || (branches[0]?.id ?? ""), name: "" });
     setWarehouseErrors({});
     setIsWarehouseOpen(true);
   }
 
   function openIngredientForm(): void {
+    setEditingIngredientId(null);
     setIngredientDraft(emptyIngredientDraft);
     setIngredientErrors({});
     setIsIngredientOpen(true);
+  }
+
+  function editIngredient(ingredient: Ingredient): void {
+    setEditingIngredientId(ingredient.id);
+    setIngredientDraft({
+      name: ingredient.name,
+      unit: ingredient.unit,
+      minimumStock: ingredient.minimumStock,
+      costPerUnit: ingredient.costPerUnit,
+    });
+    setIngredientErrors({});
+    setIsIngredientOpen(true);
+  }
+
+  function editWarehouse(warehouse: Warehouse): void {
+    setEditingWarehouseId(warehouse.id);
+    setWarehouseDraft({ branchId: warehouse.branchId, name: warehouse.name });
+    setWarehouseErrors({});
+    setIsWarehouseOpen(true);
+  }
+
+  async function archiveMaster(kind: "ingredients" | "warehouses", id: string, name: string): Promise<void> {
+    if (!window.confirm(`“${name}” arxivga olinsinmi?`)) return;
+    try {
+      await apiFetch(`/inventory/${kind}/${id}`, { method: "DELETE" });
+      showToast("Arxivga olindi.", "success");
+      reloadAll();
+    } catch (caught) {
+      showToast(failureMessage(caught, "Arxivga olib bo'lmadi."), "danger");
+    }
   }
 
   function failureMessage(caught: unknown, fallback: string): string {
@@ -456,16 +490,16 @@ export function AdminInventoryPage() {
     setIsSaving(true);
 
     try {
-      await apiFetch("/inventory/ingredients", {
-        method: "POST",
+      await apiFetch(editingIngredientId ? `/inventory/ingredients/${editingIngredientId}` : "/inventory/ingredients", {
+        method: editingIngredientId ? "PATCH" : "POST",
         body: JSON.stringify({
           name: ingredientDraft.name.trim(),
-          unit: ingredientDraft.unit,
+          ...(editingIngredientId ? {} : { unit: ingredientDraft.unit }),
           minimumStock: minimum,
           costPerUnit: cost,
         }),
       });
-      showToast("Ingredient qo'shildi.", "success");
+      showToast(editingIngredientId ? "Ingredient yangilandi." : "Ingredient qo'shildi.", "success");
       setIsIngredientOpen(false);
       setIngredientDraft(emptyIngredientDraft);
       reloadAll();
@@ -512,14 +546,14 @@ export function AdminInventoryPage() {
     setIsSaving(true);
 
     try {
-      await apiFetch("/inventory/warehouses", {
-        method: "POST",
+      await apiFetch(editingWarehouseId ? `/inventory/warehouses/${editingWarehouseId}` : "/inventory/warehouses", {
+        method: editingWarehouseId ? "PATCH" : "POST",
         body: JSON.stringify({
-          branchId: warehouseDraft.branchId,
+          ...(editingWarehouseId ? {} : { branchId: warehouseDraft.branchId }),
           name: warehouseDraft.name.trim(),
         }),
       });
-      showToast("Ombor qo'shildi.", "success");
+      showToast(editingWarehouseId ? "Ombor yangilandi." : "Ombor qo'shildi.", "success");
       setIsWarehouseOpen(false);
       reloadAll();
     } catch (caught) {
@@ -811,6 +845,38 @@ export function AdminInventoryPage() {
         </CardBody>
       </Card>
 
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card>
+          <CardHeader description="Retseptlarda ishlatiladigan xomashyolar" title="Ingredientlar" />
+          <DataTable
+            caption="Ingredientlar"
+            columns={[
+              { key: "name", header: "Nomi", primary: true, render: (item: Ingredient) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.unit}</p></> },
+              { key: "minimum", header: "Minimum", align: "right", render: (item: Ingredient) => item.minimumStock },
+              { key: "actions", header: "Amal", align: "right", render: (item: Ingredient) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editIngredient(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("ingredients", item.id, item.name)}>Arxiv</Button></div> : null },
+            ]}
+            emptyIcon="boxes"
+            emptyTitle="Ingredient yo'q"
+            getRowKey={(item) => item.id}
+            rows={ingredients}
+          />
+        </Card>
+        <Card>
+          <CardHeader description="Filialning faol saqlash joylari" title="Omborlar" />
+          <DataTable
+            caption="Omborlar"
+            columns={[
+              { key: "name", header: "Nomi", primary: true, render: (item: Warehouse) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.branch?.name ?? "Filial"}</p></> },
+              { key: "actions", header: "Amal", align: "right", render: (item: Warehouse) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editWarehouse(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("warehouses", item.id, item.name)}>Arxiv</Button></div> : null },
+            ]}
+            emptyIcon="inbox"
+            emptyTitle="Ombor yo'q"
+            getRowKey={(item) => item.id}
+            rows={warehouses}
+          />
+        </Card>
+      </div>
+
       <Card>
         <CardHeader
           description="Kirim, chiqim, tuzatish va yo'qotishlar"
@@ -1065,7 +1131,7 @@ export function AdminInventoryPage() {
         }
         isOpen={isIngredientOpen}
         onClose={() => setIsIngredientOpen(false)}
-        title="Yangi ingredient"
+        title={editingIngredientId ? "Ingredientni tahrirlash" : "Yangi ingredient"}
       >
         <form
           className="grid gap-3"
@@ -1094,13 +1160,14 @@ export function AdminInventoryPage() {
           </FormField>
 
           <FormField
-            hint="Yaratilgandan keyin o'zgartirilmaydi — backend'da tahrirlash yo'q."
+            hint="O'lchov birligi tarixiy hisoblar sabab yaratilgandan keyin o'zgarmaydi."
             label="O'lchov birligi"
             required
           >
             {(props) => (
               <Select
                 {...props}
+                disabled={Boolean(editingIngredientId)}
                 onChange={(event) =>
                   setIngredientDraft((current) => ({
                     ...current,
@@ -1191,7 +1258,7 @@ export function AdminInventoryPage() {
         }
         isOpen={isWarehouseOpen}
         onClose={() => setIsWarehouseOpen(false)}
-        title="Yangi ombor"
+        title={editingWarehouseId ? "Omborni tahrirlash" : "Yangi ombor"}
       >
         <form
           className="grid gap-3"
@@ -1209,6 +1276,7 @@ export function AdminInventoryPage() {
             {(props) => (
               <Select
                 {...props}
+                disabled={Boolean(editingWarehouseId)}
                 onChange={(event) =>
                   setWarehouseDraft((current) => ({
                     ...current,

@@ -14,7 +14,7 @@ import {
   OrderType,
   Prisma,
 } from "@prisma/client";
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
@@ -821,6 +821,6 @@ export class CustomerOrderEngineService {
     const date = now.toISOString().slice(0, 10).replaceAll("-", "");
     const time = now.toISOString().slice(11, 19).replaceAll(":", "");
 
-    return `${prefix}-${date}-${time}-${randomInt(1000, 10000)}`;
+    return `${prefix}-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
   }
 }

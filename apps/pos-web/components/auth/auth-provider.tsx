@@ -16,7 +16,7 @@ import {
   type AuthUser,
 } from "../../lib/auth";
 import {
-  readSession,
+  hydrateSession,
   subscribeToSession,
   writeSession,
 } from "../../lib/session";
@@ -46,8 +46,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    setSession(readSession());
-    setIsReady(true);
+    let active = true;
+    void hydrateSession().then((storedSession) => {
+      if (!active) return;
+      setSession(storedSession);
+      setIsReady(true);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   /*

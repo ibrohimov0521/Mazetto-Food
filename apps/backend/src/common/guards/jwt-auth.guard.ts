@@ -15,6 +15,13 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { UserAuthCacheService } from "../auth/user-auth-cache.service";
 import { hashDeviceToken } from "../../modules/devices/devices.service";
 
+const DESKTOP_REQUIRED_ROLES = new Set([
+  "CASHIER",
+  "WAITER",
+  "KITCHEN",
+  "COURIER",
+]);
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -66,10 +73,6 @@ export class JwtAuthGuard implements CanActivate {
       ? rawDeviceToken[0]
       : rawDeviceToken;
 
-    if (!deviceId?.trim()) {
-      return;
-    }
-
     // Login, session refresh and the public enrollment request must remain
     // reachable so an unregistered desktop can receive its first code.
     const pathname = request.path.replace(/^\/api\/v1/, "");
@@ -79,6 +82,20 @@ export class JwtAuthGuard implements CanActivate {
       pathname === "/auth/me" ||
       pathname === "/devices/enroll"
     ) {
+      return;
+    }
+
+    if (!deviceId?.trim()) {
+      if (
+        request.user?.roles.some((role) => DESKTOP_REQUIRED_ROLES.has(role))
+      ) {
+        throw new ForbiddenException(
+          "Bu ish joyi tasdiqlangan desktop qurilma orqali ochilishi kerak.",
+        );
+      }
+
+      // Admin va hisobot rollari oddiy brauzerda ishlashi mumkin. Rasmiy
+      // Desktop har doim device ID yuboradi va quyidagi tekshiruvdan o'tadi.
       return;
     }
 

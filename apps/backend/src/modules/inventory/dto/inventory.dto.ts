@@ -28,6 +28,29 @@ export class CreateWarehouseDto {
   name!: string;
 }
 
+export class UpdateIngredientDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  name?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minimumStock?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  costPerUnit?: number;
+}
+
+export class UpdateWarehouseDto {
+  @IsString()
+  @MaxLength(100)
+  name!: string;
+}
+
 export class CreateStockMovementDto {
   @IsString()
   ingredientId!: string;
