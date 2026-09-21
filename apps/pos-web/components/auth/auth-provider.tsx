@@ -128,6 +128,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 async function getLoginRedirect(session: AuthSession): Promise<string> {
   const fallbackRedirect = getPrimaryRedirect(session.user);
 
+  if (typeof window !== "undefined" && window.navigator.userAgent.includes("MAZETTO-Desktop/")) {
+    try {
+      const desktopStatus = await fetch("http://127.0.0.1:7359/desktop/status", {
+        cache: "no-store",
+      });
+      const desktopPayload = (await desktopStatus.json()) as {
+        data?: { deviceId?: string };
+      };
+      const deviceId = desktopPayload.data?.deviceId;
+      if (deviceId) {
+        const heartbeat = await fetch(`${getApiBaseUrl()}/devices/heartbeat`, {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokens.tokenType} ${session.tokens.accessToken}`,
+            "Content-Type": "application/json",
+            "x-mazetto-device-id": deviceId,
+          },
+          body: JSON.stringify({}),
+        });
+        if (!heartbeat.ok) return "/device-enrollment";
+      }
+    } catch {
+      return "/device-enrollment";
+    }
+  }
+
   if (fallbackRedirect !== "/shift") {
     return fallbackRedirect;
   }
