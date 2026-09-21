@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
@@ -10,7 +10,7 @@ import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
-import { DataTable, type DataTableColumn } from "../admin-ui/data-table";
+import { DataTable, RowAction, type DataTableColumn } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
 import {
   FilterBar,
@@ -61,6 +61,13 @@ type Expense = {
   employee?: { id: string; firstName: string; lastName?: string | null } | null;
 };
 
+type ExpenseCategory = {
+  id: string;
+  name: string;
+  branchId: string;
+  branch?: Branch | null;
+};
+
 type Shift = {
   id: string;
   shiftNumber: number;
@@ -103,6 +110,7 @@ export function AdminExpensesPage() {
   const canSeeShifts = hasPermission(user, "SHIFT_VIEW_BRANCH");
 
   const [categories, setCategories] = useState<string[]>([]);
+  const [categoryRecords, setCategoryRecords] = useState<ExpenseCategory[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [openShifts, setOpenShifts] = useState<Shift[]>([]);
   const [category, setCategory] = useState("");
@@ -112,10 +120,24 @@ export function AdminExpensesPage() {
   const [offset, setOffset] = useState(0);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCategorySaving, setIsCategorySaving] = useState(false);
   const [form, setForm] = useState<ExpenseForm>(emptyForm);
+  const [categoryForm, setCategoryForm] = useState({ id: "", branchId: "", name: "" });
+  const [categoryError, setCategoryError] = useState("");
   const [errors, setErrors] = useState<ExpenseErrors>({});
   const formRef = useRef<HTMLFormElement>(null);
+
+  const loadCategoryData = useCallback(() => {
+    void Promise.all([
+      apiFetch<string[]>("/expenses/categories"),
+      apiFetch<ExpenseCategory[]>("/expenses/category-records"),
+    ]).then(([names, records]) => {
+      setCategories(names);
+      setCategoryRecords(records);
+    }).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (isGlobalScope) {
@@ -123,10 +145,6 @@ export function AdminExpensesPage() {
         .then(setBranches)
         .catch(() => undefined);
     }
-
-    void apiFetch<string[]>("/expenses/categories")
-      .then(setCategories)
-      .catch(() => undefined);
 
     /*
      * Ochiq smenalar ro'yxati — xarajatni smenaga bog'lash uchun.
@@ -138,6 +156,10 @@ export function AdminExpensesPage() {
         .catch(() => undefined);
     }
   }, [canSeeShifts, isGlobalScope]);
+
+  useEffect(() => {
+    loadCategoryData();
+  }, [loadCategoryData]);
 
   const rangeError =
     from && to && from > to
@@ -194,6 +216,17 @@ export function AdminExpensesPage() {
     );
   }, [form.branchId, openShifts]);
 
+  const selectableExpenseCategories = useMemo(
+    () => [
+      ...new Set(
+        categoryRecords
+          .filter((item) => !form.branchId || item.branchId === form.branchId)
+          .map((item) => item.name),
+      ),
+    ],
+    [categoryRecords, form.branchId],
+  );
+
   function openForm(): void {
     setForm({
       ...emptyForm(),
@@ -202,6 +235,68 @@ export function AdminExpensesPage() {
     });
     setErrors({});
     setIsFormOpen(true);
+  }
+
+  function openCategoryForm(categoryRecord?: ExpenseCategory): void {
+    setCategoryForm({
+      id: categoryRecord?.id ?? "",
+      branchId: categoryRecord?.branchId ?? branchId ?? branches[0]?.id ?? "",
+      name: categoryRecord?.name ?? "",
+    });
+    setCategoryError("");
+    setIsCategoryOpen(true);
+  }
+
+  async function saveCategory(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const name = categoryForm.name.trim();
+    if (!name) {
+      setCategoryError("Kategoriya nomini kiriting.");
+      return;
+    }
+    if (isGlobalScope && !categoryForm.id && !categoryForm.branchId) {
+      setCategoryError("Filialni tanlang.");
+      return;
+    }
+    setIsCategorySaving(true);
+    setCategoryError("");
+    try {
+      await apiFetch(
+        categoryForm.id
+          ? `/expenses/categories/${categoryForm.id}`
+          : "/expenses/categories",
+        {
+          method: categoryForm.id ? "PATCH" : "POST",
+          body: JSON.stringify({
+            name,
+            ...(!categoryForm.id && categoryForm.branchId
+              ? { branchId: categoryForm.branchId }
+              : {}),
+          }),
+        },
+      );
+      showToast(categoryForm.id ? "Kategoriya yangilandi." : "Kategoriya qo'shildi.", "success");
+      setIsCategoryOpen(false);
+      loadCategoryData();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      setCategoryError(caught instanceof Error ? caught.message : "Kategoriya saqlanmadi.");
+    } finally {
+      setIsCategorySaving(false);
+    }
+  }
+
+  async function archiveCategory(categoryRecord: ExpenseCategory): Promise<void> {
+    if (!window.confirm(`“${categoryRecord.name}” kategoriyasi arxivga olinsinmi?`)) return;
+    try {
+      await apiFetch(`/expenses/categories/${categoryRecord.id}`, { method: "DELETE" });
+      showToast("Kategoriya arxivga olindi.", "success");
+      if (category === categoryRecord.name) setCategory("");
+      loadCategoryData();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Kategoriya arxivlanmadi.", "danger");
+    }
   }
 
   function validate(draft: ExpenseForm): ExpenseErrors {
@@ -276,9 +371,7 @@ export function AdminExpensesPage() {
       load();
 
       /* Yangi kategoriya ro'yxatga faqat birinchi yozuvdan keyin tushadi. */
-      void apiFetch<string[]>("/expenses/categories")
-        .then(setCategories)
-        .catch(() => undefined);
+      loadCategoryData();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         return;
@@ -391,13 +484,16 @@ export function AdminExpensesPage() {
 
       <Card>
         <CardHeader
-          actions={
-            canCreate ? (
+          actions={canCreate ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button onClick={() => openCategoryForm()} variant="ghost">
+                Kategoriyalar
+              </Button>
               <Button onClick={openForm} size="lg">
                 Xarajat qo&apos;shish
               </Button>
-            ) : undefined
-          }
+            </div>
+          ) : undefined}
           description="Ochiq smenaga bog'langan xarajat kassa hisobiga kiradi"
           title="Xarajatlar"
         />
@@ -508,13 +604,29 @@ export function AdminExpensesPage() {
       </Card>
 
       <Card>
-        <CardHeader description="Nima mumkin emas" title="Yozuv yaxlitligi" />
+        <CardHeader description="Faol kategoriyalar; arxivlash eski xarajatlarni o'zgartirmaydi" title="Xarajat kategoriyalari" />
+        <DataTable
+          caption="Xarajat kategoriyalari"
+          columns={[
+            { key: "name", header: "Nomi", primary: true, render: (item: ExpenseCategory) => item.name },
+            { key: "branch", header: "Filial", render: (item: ExpenseCategory) => item.branch?.name ?? "—" },
+          ]}
+          emptyDescription="Yangi xarajat yozishdan oldin kategoriya qo'shing."
+          emptyIcon="folder"
+          emptyTitle="Faol kategoriya yo'q"
+          getRowKey={(item) => item.id}
+          {...(canCreate ? { rowActions: (item: ExpenseCategory) => (
+            <>
+              <RowAction icon="pencil" label="Kategoriyani tahrirlash" onClick={() => openCategoryForm(item)} />
+              <RowAction icon="trash" label="Kategoriyani arxivlash" onClick={() => void archiveCategory(item)} tone="danger" />
+            </>
+          ) } : {})}
+          rows={categoryRecords}
+        />
         <CardBody>
           <p className="text-sm text-mz-text-muted">
-            Yozilgan xarajat tahrirlanmaydi va o&apos;chirilmaydi — backend&apos;da
-            bunday amal yo&apos;q va moliyaviy yozuv faqat qo&apos;shiladi.
-            Xato yozuv uchun teskari yozuv kerak, lekin uni qo&apos;llab-quvvatlaydigan
-            endpoint hali qurilmagan. Tasdiqlash (approve) jarayoni ham yo&apos;q.
+            Xarajat yozuvlari moliyaviy tarix sifatida o&apos;zgarmaydi. Kategoriya
+            nomini tahrirlash yoki arxivlash oldingi xarajatlardagi snapshot nomini saqlaydi.
           </p>
         </CardBody>
       </Card>
@@ -563,6 +675,7 @@ export function AdminExpensesPage() {
                       branchId: event.target.value,
                       /* Filial o'zgarsa, boshqa filial smenasi yaroqsiz. */
                       shiftId: "",
+                      category: "",
                     })
                   }
                   value={form.branchId}
@@ -580,27 +693,25 @@ export function AdminExpensesPage() {
 
           <FormField
             {...(errors.category ? { error: errors.category } : {})}
-            hint="Masalan: Kommunal, Transport, Ta'mirlash"
+            hint={selectableExpenseCategories.length ? "Faqat shu filialning faol kategoriyalari" : "Avval Kategoriyalar bo'limida kategoriya qo'shing"}
             label="Kategoriya"
             required
           >
             {(props) => (
-              <TextInput
+              <Select
                 {...props}
-                list="expense-categories"
-                maxLength={80}
                 onChange={(event) =>
                   setForm({ ...form, category: event.target.value })
                 }
                 value={form.category}
-              />
+              >
+                <option value="">Tanlang…</option>
+                {selectableExpenseCategories.map((value) => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </Select>
             )}
           </FormField>
-          <datalist id="expense-categories">
-            {categories.map((value) => (
-              <option key={value} value={value} />
-            ))}
-          </datalist>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField
@@ -690,6 +801,37 @@ export function AdminExpensesPage() {
               ? `Yoziladigan summa: ${formatMoney(form.amount)}`
               : ""}
           </p>
+        </form>
+      </Modal>
+
+      <Modal
+        description="Kategoriya filialga tegishli; arxivlangan nom yangi xarajatlarda tanlanmaydi."
+        footer={
+          <>
+            <Button onClick={() => setIsCategoryOpen(false)} variant="ghost">Bekor qilish</Button>
+            <Button form="expense-category-form" isLoading={isCategorySaving} type="submit">Saqlash</Button>
+          </>
+        }
+        isOpen={isCategoryOpen}
+        onClose={() => setIsCategoryOpen(false)}
+        title={categoryForm.id ? "Kategoriyani tahrirlash" : "Yangi kategoriya"}
+      >
+        <form className="grid gap-3" id="expense-category-form" onSubmit={saveCategory}>
+          {isGlobalScope && !categoryForm.id ? (
+            <FormField label="Filial" required>
+              {(props) => (
+                <Select {...props} onChange={(event) => setCategoryForm({ ...categoryForm, branchId: event.target.value })} value={categoryForm.branchId}>
+                  <option value="">Tanlang…</option>
+                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </Select>
+              )}
+            </FormField>
+          ) : null}
+          <FormField {...(categoryError ? { error: categoryError } : {})} label="Kategoriya nomi" required>
+            {(props) => (
+              <TextInput {...props} autoFocus maxLength={80} onChange={(event) => setCategoryForm({ ...categoryForm, name: event.target.value })} value={categoryForm.name} />
+            )}
+          </FormField>
         </form>
       </Modal>
     </div>

@@ -17,7 +17,8 @@ import { createHash } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
-import { ensureOrderReceipt } from "../receipts/receipt-writer";
+import { ensureOrderReceipt, ensureRefundReceipt } from "../receipts/receipt-writer";
+import { writeAuditLog } from "../audit/audit-write";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { ListPaymentsDto } from "./dto/list-payments.dto";
@@ -25,6 +26,7 @@ import type {
   CreatePaymentDto,
   PaymentTenderDto,
   ProcessOrderPaymentDto,
+  RefundPaymentDto,
 } from "./dto/create-payment.dto";
 
 type NormalizedPaymentTender = {
@@ -82,6 +84,7 @@ export class PaymentsService {
         createdAt: true,
         method: { select: { id: true, code: true, name: true } },
         acceptedBy: { select: { id: true, firstName: true, lastName: true } },
+        refund: { select: { id: true, amount: true, reason: true, createdAt: true } },
         order: {
           select: {
             id: true,
@@ -413,6 +416,22 @@ export class PaymentsService {
 
               await ensureOrderReceipt(tx, order.id);
             }
+
+            await writeAuditLog(tx, {
+              userId: user.id,
+              action: "PAYMENT_OPERATION_COMPLETED",
+              entity: "PaymentOperation",
+              entityId: operation.id,
+              metadata: {
+                branchId: order.branchId,
+                orderId: order.id,
+                shiftId: dto.shiftId ?? null,
+                employeeId,
+                paymentIds: createdPayments.map(({ payment }) => payment.id),
+                amount: requestTotal.toFixed(2),
+                methods: createdPayments.map(({ method }) => method.code),
+              },
+            });
           }
 
           await tx.paymentOperation.update({
@@ -441,6 +460,127 @@ export class PaymentsService {
 
       throw error;
     }
+  }
+
+  async refundPayment(
+    paymentId: string,
+    dto: RefundPaymentDto,
+    user: AuthenticatedUser,
+  ) {
+    if (!user.employeeId) {
+      throw new ForbiddenException("Authenticated user is not linked to an employee");
+    }
+    const reason = dto.reason.trim();
+    return this.prisma.$transaction(async (tx) => {
+      const replay = await tx.paymentRefund.findUnique({
+        where: { idempotencyKey: dto.idempotencyKey },
+        include: { payment: true },
+      });
+      if (replay) {
+        if (replay.paymentId !== paymentId) {
+          throw new BadRequestException("Idempotency key belongs to another refund");
+        }
+        return replay;
+      }
+
+      await tx.$executeRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
+      const payment = await tx.payment.findUnique({
+        where: { id: paymentId },
+        include: { order: true, method: true, refund: true },
+      });
+      if (!payment) throw new NotFoundException("Payment not found");
+      resolveBranchScope(user, payment.order.branchId);
+      if (payment.refund || payment.status === PaymentStatus.REFUNDED) {
+        throw new BadRequestException("Payment is already refunded");
+      }
+      if (!this.isSuccessfulPayment(payment.status)) {
+        throw new BadRequestException("Only successful payments can be refunded");
+      }
+      if (payment.method.code !== "CASH") {
+        throw new BadRequestException(`${payment.method.code} refund provider is not enabled`);
+      }
+
+      const shift = await tx.shift.findFirst({
+        where: { id: dto.shiftId, branchId: payment.order.branchId, status: "OPEN" },
+        select: { id: true, employeeId: true },
+      });
+      if (!shift) throw new BadRequestException("Refund requires an open branch shift");
+
+      const refundedAt = new Date();
+      const refund = await tx.paymentRefund.create({
+        data: {
+          paymentId,
+          branchId: payment.order.branchId,
+          shiftId: shift.id,
+          employeeId: shift.employeeId,
+          createdById: user.id,
+          amount: payment.amount,
+          reason,
+          idempotencyKey: dto.idempotencyKey,
+        },
+      });
+      await tx.payment.update({
+        where: { id: paymentId },
+        data: { status: PaymentStatus.REFUNDED, refundedAt },
+      });
+      await tx.revenueRecord.create({
+        data: {
+          branchId: payment.order.branchId,
+          orderId: payment.orderId,
+          paymentId,
+          shiftId: shift.id,
+          employeeId: shift.employeeId,
+          source: RevenueRecordSource.ADJUSTMENT,
+          amount: payment.amount.negated(),
+          description: `Cash refund: ${reason}`,
+        },
+      });
+      await tx.cashTransaction.create({
+        data: {
+          branchId: payment.order.branchId,
+          shiftId: shift.id,
+          employeeId: shift.employeeId,
+          orderId: payment.orderId,
+          paymentId,
+          type: CashTransactionType.REFUND,
+          amount: payment.amount,
+          reason,
+          createdById: user.id,
+        },
+      });
+
+      const remaining = await tx.payment.aggregate({
+        where: {
+          orderId: payment.orderId,
+          status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS] },
+        },
+        _sum: { amount: true },
+      });
+      const remainingPaid = remaining._sum.amount ?? new Prisma.Decimal(0);
+      await tx.order.update({
+        where: { id: payment.orderId },
+        data: {
+          paymentStatus: remainingPaid.isZero()
+            ? PaymentStatus.REFUNDED
+            : PaymentStatus.PARTIALLY_REFUNDED,
+        },
+      });
+      await ensureRefundReceipt(tx, paymentId, reason, payment.amount);
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "PAYMENT_REFUNDED",
+        entity: "Payment",
+        entityId: paymentId,
+        metadata: {
+          branchId: payment.order.branchId,
+          orderId: payment.orderId,
+          shiftId: shift.id,
+          amount: payment.amount.toFixed(2),
+          reason,
+        },
+      });
+      return refund;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   private sumSuccessfulPayments(

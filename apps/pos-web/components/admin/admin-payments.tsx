@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
+import { hasPermission } from "../../lib/auth";
 import {
   formatDateTime,
   formatMoney,
@@ -27,47 +28,28 @@ import {
   type DataTableColumn,
 } from "../admin-ui/data-table";
 import { ErrorState } from "../admin-ui/feedback";
-import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
+import {
+  FilterBar,
+  FormField,
+  Select,
+  Textarea,
+  TextInput,
+} from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
 import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
+import { useToast } from "../admin-ui/toast";
 import { moneyCell } from "./admin-report-views";
 
-/*
- * To'lovlar — MOLIYAVIY DAFTAR (ledger).
- *
- * BU EKRAN ATAYLAB MUTATSIYA YUBORMAYDI, va bu TO'G'RI.
- *
- * MONEY_PATH: "Refund, cancel or void must never silently rewrite an
- * existing money record; they need their own reversal entry with an actor
- * and a reason." Ya'ni to'lov yozuvini tahrirlash yoki o'chirish qoidaga
- * KO'RA taqiqlangan — daftar faqat qo'shiladi.
- *
- * QAYTARISH (refund) esa alohida masala va uni BACKEND QO'LLAB-QUVVATLAMAYDI.
- * Tekshirildi: `payments.controller.ts` da uchta route bor —
- * `GET /payments`, `POST /payments`, `POST /payments/process`. Butun
- * backend bo'ylab `PaymentStatus.REFUNDED` yoki `PARTIALLY_REFUNDED`
- * hech qayerda YOZILMAYDI, `Payment.refundedAt` ustuni o'lik, va
- * `CashTransactionType.REFUND` faqat O'QILADI (`Shift.refundsTotal`
- * shuning uchun doim nol). `/reports/sales` ham shuni ochiq aytadi:
- * `refundHandling: { supported: false }`.
- *
- * Shuning uchun bu yerda "Qaytarish" tugmasi YO'Q: bosilganda 404 beradigan
- * tugma qo'yish — ayni shu panelning asosiy nuqsoni. Kerakli endpoint va
- * uning teskari (reversal) yozuvi hisobotda aniq ko'rsatilgan.
- *
- * Holat filtrida `REFUNDED` qoladi — backend uni filtr sifatida qabul
- * qiladi, lekin bugun natija doim bo'sh bo'ladi. Ekran shuni ochiq aytadi.
- *
- * ORTIQCHA TO'LOV. Backend `processOrderPayment` da
- * `requestTotal <= outstanding` tekshiruvi bor, ya'ni buyurtma summasidan
- * ortiq to'lov YOZILMAYDI — mijozning qaytimi tushum sifatida qayd
- * etilmaydi. Bu yerda hech narsa qurish kerak emas; detal oynasi
- * buyurtma summasi va to'langan summani yonma-yon ko'rsatadi, shunda
- * nomuvofiqlik ko'zga tashlanadi.
- */
+/* To'lovlar immutable ledger: qaytarish asl yozuvni o'chirmaydi, alohida
+ * reversal, kassa chiqimi, audit yozuvi va refund cheki yaratadi. */
 
 type Branch = { id: string; code: string; name: string };
+type OpenShift = {
+  id: string;
+  branchId: string;
+  employee?: { firstName: string; lastName?: string | null } | null;
+};
 
 type Payment = {
   id: string;
@@ -82,6 +64,12 @@ type Payment = {
     id: string;
     firstName: string;
     lastName?: string | null;
+  } | null;
+  refund?: {
+    id: string;
+    amount: string;
+    reason: string;
+    createdAt: string;
   } | null;
   order?: {
     id: string;
@@ -123,7 +111,9 @@ const pageSize = 25;
 
 export function AdminPaymentsPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const showBranchFilter = canSwitchBranch(user);
+  const canRefund = hasPermission(user, "PAYMENT_REFUND");
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [status, setStatus] = useState("");
@@ -133,6 +123,12 @@ export function AdminPaymentsPage() {
   const [to, setTo] = useState("");
   const [offset, setOffset] = useState(0);
   const [detail, setDetail] = useState<Payment | null>(null);
+  const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
+  const [openShifts, setOpenShifts] = useState<OpenShift[]>([]);
+  const [refundShiftId, setRefundShiftId] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundError, setRefundError] = useState("");
+  const [isRefunding, setIsRefunding] = useState(false);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -203,6 +199,66 @@ export function AdminPaymentsPage() {
       total: payments.length,
     };
   }, [payments]);
+
+  async function openRefund(payment: Payment) {
+    const paymentBranchId = payment.order?.branch?.id;
+    if (!paymentBranchId) return;
+    setRefundTarget(payment);
+    setRefundReason("");
+    setRefundShiftId("");
+    setRefundError("");
+    try {
+      const shifts = await apiFetch<OpenShift[]>(
+        `/shifts?status=OPEN&branchId=${encodeURIComponent(paymentBranchId)}&limit=100`,
+      );
+      setOpenShifts(shifts);
+      if (shifts.length === 1 && shifts[0]) setRefundShiftId(shifts[0].id);
+    } catch (loadError) {
+      setOpenShifts([]);
+      setRefundError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Ochiq smenalarni yuklab bo'lmadi.",
+      );
+    }
+  }
+
+  async function submitRefund() {
+    if (!refundTarget || !refundShiftId || refundReason.trim().length < 3) {
+      setRefundError("Ochiq smena va kamida 3 belgili sababni kiriting.");
+      return;
+    }
+    setIsRefunding(true);
+    setRefundError("");
+    try {
+      await apiFetch(`/payments/${refundTarget.id}/refund`, {
+        method: "POST",
+        body: JSON.stringify({
+          shiftId: refundShiftId,
+          reason: refundReason.trim(),
+          idempotencyKey: `refund:${refundTarget.id}:${crypto.randomUUID()}`,
+        }),
+      });
+      setRefundTarget(null);
+      setDetail(null);
+      showToast("To'lov qaytarildi va qaytarish cheki navbatga qo'yildi.", "success");
+      await load();
+    } catch (refundFailure) {
+      setRefundError(
+        refundFailure instanceof Error
+          ? refundFailure.message
+          : "To'lovni qaytarib bo'lmadi.",
+      );
+    } finally {
+      setIsRefunding(false);
+    }
+  }
+
+  const isRefundable = (payment: Payment) =>
+    canRefund &&
+    touchesCashDrawer(payment) &&
+    (payment.status === "SUCCESS" || payment.status === "PAID") &&
+    !payment.refund;
 
   const columns: DataTableColumn<Payment>[] = [
     {
@@ -426,9 +482,7 @@ export function AdminPaymentsPage() {
           emptyDescription={
             rangeError
               ? "Sana oralig'ini to'g'rilang."
-              : status === "REFUNDED" || status === "PARTIALLY_REFUNDED"
-                ? "Qaytarish hali qurilmagan — bu holatda yozuv bo'lishi mumkin emas."
-                : "Filtrni o'zgartirib ko'ring yoki boshqa sahifaga o'ting."
+              : "Filtrni o'zgartirib ko'ring yoki boshqa sahifaga o'ting."
           }
           emptyTitle={rangeError ? "Oraliq noto'g'ri" : "To'lov topilmadi"}
           getRowKey={(payment) => payment.id}
@@ -445,6 +499,13 @@ export function AdminPaymentsPage() {
                   href={`/admin/orders/${payment.order.id}`}
                   icon="externalLink"
                   label="Buyurtmani ochish"
+                />
+              ) : null}
+              {isRefundable(payment) ? (
+                <RowAction
+                  icon="receipt"
+                  label="Naqd to'lovni qaytarish"
+                  onClick={() => void openRefund(payment)}
                 />
               ) : null}
             </>
@@ -464,22 +525,18 @@ export function AdminPaymentsPage() {
 
       <Card>
         <CardHeader
-          description="Nima ishlaydi, nima hali yo'q"
+          description="Moliyaviy yozuv o'chirilmaydi: teskari yozuv, kassa chiqimi, audit va chek yaratiladi"
           title="Qaytarish (refund)"
         />
         <CardBody>
           <p className="text-sm text-mz-text">
-            Admin panelda qaytarish tugmasi <strong>ataylab yo&apos;q</strong>:
-            backend&apos;da qaytarish endpoint&apos;i mavjud emas. Hech qanday
-            kod <code className="tabular-nums">REFUNDED</code> holatini
-            yozmaydi, shuning uchun holat filtri bu qiymatda bo&apos;sh natija
-            beradi.
+            Muvaffaqiyatli <strong>naqd to&apos;lov</strong> detalidan to&apos;liq
+            qaytarish mumkin. Amal uchun ochiq smena va sabab talab qilinadi;
+            qaytarish cheki avtomatik chop navbatiga tushadi.
           </p>
           <p className="mt-2 text-sm text-mz-text-muted">
-            Qaytarish qo&apos;shilganda u mavjud to&apos;lov yozuvini
-            O&apos;ZGARTIRMASLIGI kerak — kim, qachon va nima sababdan
-            qaytarganini ko&apos;rsatadigan alohida teskari yozuv, naqd
-            qaytarishda esa kassa qutisidan chiqim bo&apos;lishi shart.
+            Karta, Click va Payme qaytarishlari provayder integratsiyasi va
+            reconciliation tayyor bo&apos;lmaguncha bloklangan.
           </p>
         </CardBody>
       </Card>
@@ -497,6 +554,14 @@ export function AdminPaymentsPage() {
               >
                 Buyurtmani ochish
               </ButtonLink>
+            ) : null}
+            {detail && isRefundable(detail) ? (
+              <Button
+                onClick={() => void openRefund(detail)}
+                variant="danger"
+              >
+                To&apos;lovni qaytarish
+              </Button>
             ) : null}
           </>
         }
@@ -566,6 +631,84 @@ export function AdminPaymentsPage() {
               etadi, shuning uchun mijozning qaytimi tushum sifatida qayd
               etilmaydi.
             </p>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        footer={
+          <>
+            <Button
+              disabled={isRefunding}
+              onClick={() => setRefundTarget(null)}
+              variant="ghost"
+            >
+              Bekor qilish
+            </Button>
+            <Button
+              disabled={!refundShiftId || refundReason.trim().length < 3}
+              isLoading={isRefunding}
+              onClick={() => void submitRefund()}
+              variant="danger"
+            >
+              Qaytarishni tasdiqlash
+            </Button>
+          </>
+        }
+        isOpen={refundTarget !== null}
+        onClose={() => setRefundTarget(null)}
+        title="Naqd to'lovni qaytarish"
+      >
+        {refundTarget ? (
+          <div className="grid gap-4">
+            <p className="text-sm text-mz-text-muted">
+              {refundTarget.order?.displayOrderNumber ??
+                refundTarget.order?.orderNumber} uchun {formatMoney(refundTarget.amount)}
+              kassa qutisidan chiqim qilinadi. Bu amalni ortga qaytarib
+              bo&apos;lmaydi.
+            </p>
+            <FormField
+              {...(openShifts.length === 0
+                ? { error: "Filialda ochiq smena topilmadi." }
+                : {})}
+              label="Ochiq smena"
+              required
+            >
+              {(props) => (
+                <Select
+                  {...props}
+                  onChange={(event) => setRefundShiftId(event.target.value)}
+                  value={refundShiftId}
+                >
+                  <option value="">Smenani tanlang</option>
+                  {openShifts.map((shift) => (
+                    <option key={shift.id} value={shift.id}>
+                      {shift.employee
+                        ? [shift.employee.firstName, shift.employee.lastName]
+                            .filter(Boolean)
+                            .join(" ")
+                        : shift.id}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </FormField>
+            <FormField label="Qaytarish sababi" required>
+              {(props) => (
+                <Textarea
+                  {...props}
+                  maxLength={500}
+                  onChange={(event) => setRefundReason(event.target.value)}
+                  placeholder="Masalan: mijoz buyurtmani to'liq qaytardi"
+                  value={refundReason}
+                />
+              )}
+            </FormField>
+            {refundError ? (
+              <p className="text-sm font-medium text-mz-danger" role="alert">
+                {refundError}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </Modal>

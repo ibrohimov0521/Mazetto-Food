@@ -219,9 +219,11 @@ model Branch {
   devices                  Device[]
   employees                Employee[]
   expenses                 Expense[]
+  expenseCategories        ExpenseCategory[]
   halls                    Hall[]
   orders                   Order[]
   paymentMethods           PaymentMethod[]
+  paymentRefunds           PaymentRefund[]
   priceHistory             PriceHistory[]
   printers                 Printer[]
   receipts                 Receipt[]
@@ -434,6 +436,7 @@ model User {
   sessions          Session[]
   paymentOperations PaymentOperation[]
   createdPayments   Payment[]            @relation("PaymentCreatedBy")
+  createdRefunds    PaymentRefund[]      @relation("PaymentRefundCreatedBy")
   createdCashEvents CashTransaction[]    @relation("CashTransactionCreatedBy")
   statusChanges     OrderStatusHistory[] @relation("OrderStatusChangedBy")
   stockMovements    StockMovement[]
@@ -597,6 +600,7 @@ model Employee {
   expenses          Expense[]
   paymentOperations PaymentOperation[]
   payments          Payment[]
+  paymentRefunds    PaymentRefund[]
   revenueRecords    RevenueRecord[]
   shifts            Shift[]
   statusChanges     OrderStatusHistory[] @relation("OrderStatusChangedByEmployee")
@@ -697,8 +701,8 @@ model Printer {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  branch   Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  products Product[]
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  products  Product[]
   printJobs PrintJob[]
 
   @@index([branchId, type])
@@ -1025,6 +1029,31 @@ model Order {
   @@index([parentOrderId])
   @@index([closedAt])
   @@map("orders")
+}
+
+model PaymentRefund {
+  id             String   @id @default(cuid())
+  paymentId      String   @unique
+  branchId       String
+  shiftId        String
+  employeeId     String
+  createdById    String
+  amount         Decimal  @db.Decimal(12, 2)
+  reason         String
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy User     @relation("PaymentRefundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([branchId, createdAt])
+  @@index([shiftId, createdAt])
+  @@index([employeeId])
+  @@index([createdById])
+  @@map("payment_refunds")
 }
 
 model KitchenTicket {
@@ -1386,6 +1415,7 @@ model Payment {
   cashTransactions        CashTransaction[]
   cashTransferAllocations CashTransferAllocation[]
   revenueRecords          RevenueRecord[]
+  refund                  PaymentRefund?
 
   @@unique([paymentOperationId, operationTenderIndex])
   @@index([orderId])
@@ -1437,8 +1467,8 @@ model Receipt {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   printJobs PrintJob[]
 
   @@unique([orderId, documentType])
@@ -1465,9 +1495,9 @@ model PrintJob {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  receipt  Receipt       @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  printer  Printer?      @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  receipt  Receipt        @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  branch   Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  printer  Printer?       @relation(fields: [printerId], references: [id], onDelete: SetNull)
   attempts PrintAttempt[]
 
   @@index([branchId, status, nextAttemptAt])
@@ -1476,13 +1506,13 @@ model PrintJob {
 }
 
 model PrintAttempt {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   jobId       String
   agentId     String
   leaseToken  String
-  outcome     String   @default("CLAIMED")
+  outcome     String    @default("CLAIMED")
   error       String?
-  startedAt   DateTime @default(now())
+  startedAt   DateTime  @default(now())
   completedAt DateTime?
 
   job PrintJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -1491,6 +1521,7 @@ model PrintAttempt {
   @@index([agentId, startedAt])
   @@map("print_attempts")
 }
+
 model CustomerOrder {
   id               String            @id @default(cuid())
   customerId       String
@@ -1583,6 +1614,7 @@ model Shift {
   expenses              Expense[]
   orders                Order[]
   revenueRecords        RevenueRecord[]
+  paymentRefunds        PaymentRefund[]
   outgoingCashTransfers CashTransfer[]    @relation("CashTransferFromShift")
   incomingCashTransfers CashTransfer[]    @relation("CashTransferToShift")
 
@@ -1702,6 +1734,22 @@ model Expense {
   @@index([employeeId])
   @@index([category])
   @@map("expenses")
+}
+
+model ExpenseCategory {
+  id             String   @id
+  branchId       String
+  name           String
+  normalizedName String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@unique([branchId, normalizedName])
+  @@index([branchId, isActive, name])
+  @@map("expense_categories")
 }
 
 model RevenueRecord {

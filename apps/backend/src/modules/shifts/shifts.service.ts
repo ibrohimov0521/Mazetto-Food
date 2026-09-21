@@ -362,7 +362,7 @@ export class ShiftsService {
 
             const payments = await tx.payment.findMany({
               where: {
-                status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS] },
+                status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS, PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED] },
                 revenueRecords: { some: { shiftId: id } },
               },
               include: { method: true },

@@ -658,9 +658,15 @@ export class CustomerOrderEngineService {
     branchId: string,
     items: OnlineOrderItemDto[],
   ) {
-    const snapshots = await Promise.all(
-      items.map((item) => this.createItemSnapshot(tx, branchId, item)),
-    );
+    const snapshots: Awaited<
+      ReturnType<typeof this.createItemSnapshot>
+    >[] = [];
+    // Interactive transactions use one PostgreSQL connection. Serial reads
+    // avoid overlapping `pg` queries on that connection and keep pricing
+    // deterministic when several cart lines reference the same stock rows.
+    for (const item of items) {
+      snapshots.push(await this.createItemSnapshot(tx, branchId, item));
+    }
     const subtotal = snapshots.reduce(
       (total, item) => total.add(item.totalPrice),
       new Prisma.Decimal(0),

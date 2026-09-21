@@ -167,7 +167,9 @@ export class CustomerAuthService {
   }
 
   async refresh(dto: CustomerRefreshDto) {
-    const payload = await this.verifyCustomerRefreshToken(dto.refreshToken);
+    const refreshToken = dto.refreshToken;
+    if (!refreshToken) throw new UnauthorizedException("Refresh token is required");
+    const payload = await this.verifyCustomerRefreshToken(refreshToken);
     const session = await this.prisma.customerSession.findFirst({
       where: {
         id: payload.sessionId,
@@ -182,7 +184,7 @@ export class CustomerAuthService {
     }
 
     const tokenMatches = await bcrypt.compare(
-      dto.refreshToken,
+      refreshToken,
       session.refreshTokenHash,
     );
 
@@ -210,6 +212,7 @@ export class CustomerAuthService {
 
   async logout(dto: CustomerLogoutDto) {
     try {
+      if (!dto.refreshToken) return { revoked: false };
       const payload = await this.verifyCustomerRefreshToken(dto.refreshToken);
       await this.prisma.customerSession.updateMany({
         where: {

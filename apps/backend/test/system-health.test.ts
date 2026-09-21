@@ -79,7 +79,11 @@ test("dalil mavjud, lekin dump yo'q bo'lsa backup tasdiqlanmaydi", async () => {
 
 test("DB yoki Redis muammosi umumiy holatni attention qiladi", async () => {
   const service = new SystemHealthService(
-    { checkHealth: async () => ({ status: "ok" }) } as never,
+    {
+      checkHealth: async () => ({ status: "ok" }),
+      printJob: { count: async () => 2 },
+      device: { count: async () => 3 },
+    } as never,
     { getClient: () => null } as never,
     { readiness: async () => "ready" } as never,
     { readiness: async () => "ready" } as never,
@@ -88,4 +92,8 @@ test("DB yoki Redis muammosi umumiy holatni attention qiladi", async () => {
   assert.equal(result.database.status, "ok");
   assert.equal(result.redis.status, "degraded");
   assert.equal(result.status, "attention");
+  assert.equal(result.operations.deadPrintJobs, 2);
+  assert.equal(result.operations.staleDevices, 3);
+  assert.equal(result.cors.originCount > 0, true);
+  assert.equal(result.cors.fingerprint.length, 16);
 });

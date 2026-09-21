@@ -44,7 +44,9 @@ assert.match(service, /categorySales/);
 assert.match(service, /timeSeries/);
 assert.match(service, /resolveBranchScope\(user, query\.branchId\)/);
 assert.match(service, /refundHandling/);
-assert.match(service, /supported: false/);
+assert.match(service, /paymentRefund\.findMany/);
+assert.match(service, /supported: true/);
+assert.match(service, /amount: refundedAmount/);
 assert.doesNotMatch(service, /Math\.random|mock|fake/i);
 
 for (const uiText of [

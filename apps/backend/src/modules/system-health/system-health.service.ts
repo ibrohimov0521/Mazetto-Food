@@ -4,6 +4,7 @@ import { RedisService } from "../../redis/redis.service";
 import { readBackupEvidence } from "./backup-evidence";
 import { GeocodingService } from "../geocoding/geocoding.service";
 import { MinioService } from "../uploads/minio.service";
+import { corsConfigurationSummary } from "../../config/cors.config";
 
 @Injectable()
 export class SystemHealthService {
@@ -25,6 +26,17 @@ export class SystemHealthService {
       this.media.readiness(),
     ]);
     const redis = this.redis.getClient() ? "ready" : "degraded";
+    const staleDeviceThreshold = new Date(Date.now() - 10 * 60 * 1000);
+    const [deadPrintJobs, staleDevices] = await Promise.all([
+      this.prisma.printJob.count({ where: { status: "DEAD_LETTER" } }),
+      this.prisma.device.count({
+        where: {
+          isActive: true,
+          enrolledAt: { not: null },
+          OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: staleDeviceThreshold } }],
+        },
+      }),
+    ]);
 
     return {
       status:
@@ -42,6 +54,12 @@ export class SystemHealthService {
         geocoding: { status: geocoding },
         media: { status: media },
       },
+      operations: {
+        deadPrintJobs,
+        staleDevices,
+        deviceStaleAfterMinutes: 10,
+      },
+      cors: corsConfigurationSummary(),
       backup,
     };
   }

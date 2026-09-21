@@ -185,8 +185,12 @@ assert.match(expensesDto, /@Max\(100\)/, "xarajat DTO da limit chegarasi yo'q");
 assert.match(expensesService, /Cannot add an expense to a closed shift/, "yopiq smena tekshiruvi yo'q");
 assert.match(expensesService, /shift\.branchId !== branchId/, "smena filial tekshiruvi yo'q");
 
-// Xarajat o'zgartirilmaydi/o'chirilmaydi — moliyaviy yozuv yaxlitligi
-assert.doesNotMatch(expensesController, /@(Patch|Put|Delete)\(/, "xarajat o'zgartirish/o'chirish endpoint'i bo'lmasin");
+// Moliyaviy Expense yozuvi o'zgarmaydi; faqat snapshotdan alohida kategoriya
+// master-data lifecycle'iga PATCH/DELETE ruxsat etiladi.
+assert.doesNotMatch(expensesController, /@(Patch|Put|Delete)\(\s*["']?:id/, "xarajat yozuvi o'zgartirish/o'chirish endpoint'i bo'lmasin");
+assert.match(expensesController, /@Patch\("categories\/:id"\)/, "kategoriya tahrirlash endpoint'i yo'q");
+assert.match(expensesController, /@Delete\("categories\/:id"\)/, "kategoriya arxiv endpoint'i yo'q");
+assert.match(expensesService, /EXPENSE_CATEGORY_ARCHIVED/, "kategoriya arxivi audit qilinmagan");
 
 // EXPENSE_CREATE faqat filial kassasini boshqaradigan rolga
 assert.match(branchManagerBlock, /PERMISSIONS\.EXPENSE_CREATE/, "BRANCH_MANAGER da EXPENSE_CREATE yo'q");

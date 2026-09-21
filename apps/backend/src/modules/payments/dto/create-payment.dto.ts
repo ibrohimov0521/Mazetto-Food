@@ -11,6 +11,7 @@ import {
   MaxLength,
   ValidateNested,
   ValidateIf,
+  MinLength,
 } from "class-validator";
 
 export class CreatePaymentDto {
@@ -54,6 +55,20 @@ export class CreatePaymentDto {
   @IsString()
   @MaxLength(120)
   transactionId?: string;
+}
+
+export class RefundPaymentDto {
+  @IsString()
+  shiftId!: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason!: string;
+
+  @IsString()
+  @MaxLength(160)
+  idempotencyKey!: string;
 }
 
 export class PaymentTenderDto {

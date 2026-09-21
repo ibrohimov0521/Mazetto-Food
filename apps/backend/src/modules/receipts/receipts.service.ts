@@ -376,6 +376,7 @@ export class ReceiptsService {
       ? (receipt.content as Record<string, unknown>)
       : {};
     const isCancellation = receipt.documentType === "CANCELLATION" || content.documentType === "CANCELLATION";
+    const isRefund = content.documentType === "REFUND";
     const cancellationReason = typeof content.cancellationReason === "string" ? content.cancellationReason : null;
     const branchName = textValue(content.branchName) ?? receipt.branch.name;
     const orderNumber = textValue(content.orderNumber) ?? receipt.order.orderNumber;
@@ -415,6 +416,7 @@ export class ReceiptsService {
         { type: "bold", value: true },
         { type: "text", value: "MAZETTO FOOD" },
         ...(isCancellation ? [{ type: "text", value: "*** BUYURTMA BEKOR QILINDI ***" }, ...(cancellationReason ? [{ type: "text", value: `Sabab: ${cancellationReason}` }] : [])] : []),
+        ...(isRefund ? [{ type: "text", value: "*** TO'LOV QAYTARILDI ***" }, ...(textValue(content.refundReason) ? [{ type: "text", value: `Sabab: ${textValue(content.refundReason)}` }] : [])] : []),
         { type: "bold", value: false },
         { type: "text", value: branchName },
         { type: "line" },

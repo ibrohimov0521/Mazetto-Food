@@ -27,6 +27,20 @@ type HealthSnapshot = {
   checkedAt: string;
   database: { status: "ok" | "error" };
   redis: { status: "ready" | "degraded" };
+  dependencies: {
+    geocoding: { status: "ready" | "degraded" };
+    media: { status: "ready" | "degraded" | "unconfigured" };
+  };
+  operations: {
+    deadPrintJobs: number;
+    staleDevices: number;
+    deviceStaleAfterMinutes: number;
+  };
+  cors: {
+    source: "environment" | "default";
+    originCount: number;
+    fingerprint: string;
+  };
   backup: BackupEvidence;
 };
 
@@ -69,6 +83,26 @@ export function AdminSystemHealth() {
             tone={data.database.status === "ok" ? "success" : "danger"}
           />
           <HealthItem
+            label="Geokodlash"
+            status={data.dependencies.geocoding.status === "ready" ? "Ulangan" : "Degradatsiya"}
+            tone={data.dependencies.geocoding.status === "ready" ? "success" : "warning"}
+          />
+          <HealthItem
+            label="Media saqlash"
+            status={data.dependencies.media.status === "ready" ? "Ulangan" : "Degradatsiya"}
+            tone={data.dependencies.media.status === "ready" ? "success" : "warning"}
+          />
+          <HealthItem
+            label="Chop etish dead-letter"
+            status={`${data.operations.deadPrintJobs} ta`}
+            tone={data.operations.deadPrintJobs === 0 ? "success" : "danger"}
+          />
+          <HealthItem
+            label="Aloqasiz qurilmalar"
+            status={`${data.operations.staleDevices} ta`}
+            tone={data.operations.staleDevices === 0 ? "success" : "warning"}
+          />
+          <HealthItem
             label="Redis"
             status={data.redis.status === "ready" ? "Ulangan" : "Zaxira rejim"}
             tone={data.redis.status === "ready" ? "success" : "warning"}
@@ -78,6 +112,17 @@ export function AdminSystemHealth() {
             status={backupLabels[backup.status]}
             tone={backup.status === "verified" ? "success" : "warning"}
           />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Runtime konfiguratsiya" description="Maxfiy qiymatlarsiz drift nazorati" />
+        <CardBody>
+          <dl className="grid gap-x-6 gap-y-3 text-[13px] sm:grid-cols-3">
+            <Detail label="CORS manbasi" value={data.cors.source === "environment" ? "Environment" : "Standart"} />
+            <Detail label="Originlar" value={`${data.cors.originCount} ta`} />
+            <Detail label="CORS fingerprint" value={data.cors.fingerprint} />
+          </dl>
         </CardBody>
       </Card>
 

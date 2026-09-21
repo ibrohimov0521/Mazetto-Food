@@ -54,3 +54,16 @@ export function resolveAllowedOrigins(configured = process.env.CORS_ORIGINS): st
 
   return origins;
 }
+
+export function corsConfigurationSummary(configured = process.env.CORS_ORIGINS) {
+  const origins = resolveAllowedOrigins(configured);
+  return {
+    source: configured?.trim() ? ("environment" as const) : ("default" as const),
+    originCount: origins.length,
+    fingerprint: createHash("sha256")
+      .update([...origins].sort().join("\n"))
+      .digest("hex")
+      .slice(0, 16),
+  };
+}
+import { createHash } from "node:crypto";

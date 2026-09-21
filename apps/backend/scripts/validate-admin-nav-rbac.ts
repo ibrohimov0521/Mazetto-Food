@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { adminNavGroups } from "../../pos-web/lib/admin-nav";
 import { resolveRouteAccess, routeAccessRules } from "../../pos-web/lib/route-access";
+import { resolveRouteIntent } from "../../pos-web/lib/route-intent";
 
 /*
  * Admin navigatsiyasi va RBAC muvofiqligi.
@@ -183,6 +184,17 @@ for (const { route } of shellRoutes) {
   assert.ok(
     findRule(route) !== undefined,
     `${route}: (shell) ichida, lekin lib/route-access.ts da qoidasi yo'q`,
+  );
+  assert.ok(
+    resolveRouteIntent(route) !== null,
+    `${route}: sidebar, child, workspace yoki hidden intent e'lon qilinmagan`,
+  );
+}
+
+for (const rule of accessRules) {
+  assert.ok(
+    resolveRouteIntent(rule.pattern) !== null,
+    `${rule.pattern}: route access qoidasi bor, lekin route intent yo'q`,
   );
 }
 

@@ -57,19 +57,23 @@ export function readSession(): AuthSession | null {
 }
 
 export function writeSession(session: AuthSession | null): void {
-  memorySession = session;
+  const desktopSession =
+    typeof window !== "undefined" ? window.mazettoDesktop?.session : undefined;
+  const storedSession = session && !desktopSession
+    ? withoutRefreshToken(session)
+    : session;
+  memorySession = storedSession;
   hydrated = true;
   if (typeof window !== "undefined") {
-    const desktopSession = window.mazettoDesktop?.session;
     if (desktopSession) {
       clearStoredSession();
-      void (session
-        ? desktopSession.save(JSON.stringify(session))
+      void (storedSession
+        ? desktopSession.save(JSON.stringify(storedSession))
         : desktopSession.clear());
     } else {
       try {
-        if (session) {
-          window.localStorage.setItem(authStorageKey, JSON.stringify(session));
+        if (storedSession) {
+          window.localStorage.setItem(authStorageKey, JSON.stringify(storedSession));
         } else {
           window.localStorage.removeItem(authStorageKey);
         }
@@ -80,8 +84,14 @@ export function writeSession(session: AuthSession | null): void {
   }
 
   for (const listener of listeners) {
-    listener(session);
+    listener(storedSession);
   }
+}
+
+function withoutRefreshToken(session: AuthSession): AuthSession {
+  const tokens = { ...session.tokens };
+  delete tokens.refreshToken;
+  return { ...session, tokens };
 }
 
 function readBrowserSession(): AuthSession | null {
@@ -137,6 +147,7 @@ function isAuthSession(value: unknown): value is AuthSession {
     typeof candidate.tokens === "object" &&
     candidate.tokens !== null &&
     typeof candidate.tokens.accessToken === "string" &&
-    typeof candidate.tokens.refreshToken === "string"
+    (candidate.tokens.refreshToken === undefined ||
+      typeof candidate.tokens.refreshToken === "string")
   );
 }

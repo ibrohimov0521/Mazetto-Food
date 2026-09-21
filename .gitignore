@@ -1,7 +1,11 @@
 node_modules/
+**/node_modules/
 .turbo/
+**/.turbo/
 .next/
+**/.next/
 dist/
+**/dist/
 build/
 coverage/
 .qa-screenshots/
@@ -35,3 +39,4 @@ media-source/
 .backups/
 apps/desktop/runtime/
 apps/desktop/release*/
+.release-evidence/

@@ -1,5 +1,10 @@
 # Staff Workspace UX/UI Audit — Mazetto Food `apps/pos-web`
 
+> **Tarixiy audit (joriy release holati emas).** Ushbu hujjat dastlabki
+> statik tekshiruv natijasini saqlaydi. POS, rol nazorati, offline buyruqlar
+> va qurilma ulash oqimining keyingi tuzatishlari bu yerga qayta yozilmagan.
+> Joriy holat `docs/audit/IMPLEMENTATION_PROGRESS.md` da qayd etiladi.
+
 Scope: cashier POS, payment, receipt, shift/cash handover, kitchen display, courier, waiter, login, workspace routing, access-denied, shared staff shell/CSS. All findings are from static code review of the files listed in the brief (plus `components/erp/erp-ui.tsx`, `components/admin-ui/button.tsx`, `app/admin-theme.css`, `lib/auth.ts`, `lib/order-display.ts`, `lib/api.ts`, which those files import). Contrast ratios were computed from the literal hex values in `staff.module.css`/`admin-theme.css`. No files were modified.
 
 Paths below are relative to `D:\projects\Java here\Mazetto-Food\apps\pos-web\`.

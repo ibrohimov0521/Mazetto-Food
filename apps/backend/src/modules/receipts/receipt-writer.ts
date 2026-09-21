@@ -13,7 +13,7 @@ export type OrderForReceipt = Prisma.OrderGetPayload<{
   };
 }>;
 
-export type ReceiptPrintRoute = "RECEIPT" | "CANCELLATION";
+export type ReceiptPrintRoute = "RECEIPT" | "CANCELLATION" | "REFUND";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
 // Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
 const durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
@@ -25,7 +25,8 @@ function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, 
 }
 
 export function receiptPrintRoute(content: Prisma.JsonValue | null | undefined): ReceiptPrintRoute {
-  return jsonObject(content).documentType === "CANCELLATION" ? "CANCELLATION" : "RECEIPT";
+  const type = jsonObject(content).documentType;
+  return type === "CANCELLATION" || type === "REFUND" ? type : "RECEIPT";
 }
 
 export function createReceiptNumber(): string {
@@ -51,7 +52,7 @@ function routeMatches(
     ? metadata.printRoles.filter((role): role is string => typeof role === "string")
     : [];
   if (roles.length > 0) return roles.includes(route);
-  return route === "RECEIPT" && (printer.type === "THERMAL" || printer.type === "RECEIPT");
+  return route !== "CANCELLATION" && (printer.type === "THERMAL" || printer.type === "RECEIPT");
 }
 
 /** Creates one durable job per active printer configured for this document route. */
@@ -148,4 +149,47 @@ export async function ensureCancellationReceipt(
     documentType: "CANCELLATION",
     cancellationReason: reason || "Buyurtma bekor qilindi",
   });
+}
+
+export async function ensureRefundReceipt(
+  tx: TransactionClient,
+  paymentId: string,
+  reason: string,
+  amount: Prisma.Decimal,
+): Promise<void> {
+  const payment = await tx.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      method: true,
+      order: { include: { branch: true, items: true, payments: { include: { method: true } } } },
+    },
+  });
+  if (!payment) return;
+  const documentType = `REFUND:${payment.id}`;
+  const existing = await tx.receipt.findUnique({
+    where: { orderId_documentType: { orderId: payment.orderId, documentType } },
+  });
+  if (existing) return;
+  const receipt = await tx.receipt.create({
+    data: {
+      orderId: payment.orderId,
+      branchId: payment.order.branchId,
+      documentType,
+      receiptNumber: await allocateReceiptNumber(tx),
+      total: amount.negated(),
+      content: {
+        title: "MAZETTO FOOD",
+        documentType: "REFUND",
+        statusLabel: "TO'LOV QAYTARILDI",
+        refundReason: reason,
+        branchName: payment.order.branch.name,
+        orderNumber: payment.order.orderNumber,
+        items: [],
+        payments: [{ method: payment.method.code, amount: `-${amount.toFixed(2)}` }],
+        total: `-${amount.toFixed(2)}`,
+        dateTime: new Date().toISOString(),
+      },
+    },
+  });
+  await queuePrintJobsForReceipt(tx, receipt);
 }

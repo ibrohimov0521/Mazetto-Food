@@ -127,3 +127,8 @@ ESC/POS printer.
 6. Do not delete evidence or manually mutate production tables. Use audited retry,
    reprint, disable or recovery actions.
 7. Before schema repair, create and verify a database backup and rehearse restore.
+   Run `pnpm db:rehearse-restore -- --archive=<verified .dump, .sql or .sql.gz>`
+   against local PostgreSQL. The command refuses remote hosts, applies migrations
+   twice, restores the archive again as rollback proof, compares core row counts,
+   writes `.release-evidence/database-restore-rehearsal.json`, and destroys both
+   temporary databases.

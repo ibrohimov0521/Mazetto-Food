@@ -2,7 +2,12 @@
 
 Last updated: 2026-09-10
 
-This file is the persistent working checklist for the existing MAZETTO FOOD production project. Read this before continuing any Mazetto task.
+> Historical record only. This file was superseded on 2026-09-21 and must not
+> be used for current release or deployment decisions. Start with
+> [`docs/audit/README.md`](./audit/README.md) and
+> [`RUNTIME_STATUS_2026-09-21.md`](./audit/RUNTIME_STATUS_2026-09-21.md).
+
+The content below is preserved as historical implementation evidence.
 
 ## 6-bosqich 1–2-to'lqin — brauzer QA (2026-09-10)
 

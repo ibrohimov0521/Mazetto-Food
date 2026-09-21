@@ -17,7 +17,7 @@ code readiness and external/manual proof.
 | Telegram staff group | Telegram external service | Requires configured chat ID and legitimate human smoke; not proven in this read-only audit |
 | Desktop | Installed on branch Windows devices | Latest public release is `desktop-v0.1.28` |
 | Printers | Branch LAN, reached from Desktop over TCP/9100 | No physical printer available; not certified |
-| Legacy print agent | Optional branch process | Code exists but Desktop is the intended owner; ownership decision pending |
+| Legacy print agent | Optional branch process | Disabled by default; Desktop is the canonical print owner and enabling the legacy agent requires an explicit opt-in |
 
 ## Release state
 
@@ -44,14 +44,23 @@ code readiness and external/manual proof.
 
 - A legitimate customer order through web and through Telegram, observed end to
   end by staff and customer without creating fake production data.
-- External payment and refund flow; these are not implemented.
-- Desktop offline replay for all command types; confirmed registry mismatches exist.
-- Device enrollment as a strict security boundary; a modified client can omit the
-  identifying header.
+- External Click/Payme/Card provider and provider-refund flows; full CASH refund
+  is implemented locally but not yet deployed.
 - Multi-printer and cancellation printing with a physical ESC/POS device.
 - Database migration/restore repeatability from the restored production snapshot.
 - Telegram staff group lifecycle delivery in the current runtime.
 - Authenticated browser regression for every role and admin page after deployment.
+
+## Local release-candidate evidence
+
+- All 39 migrations apply to a fresh disposable PostgreSQL database.
+- Disposable web/Telegram order E2E proves order idempotency, recipe stock
+  deduction, CASH ledger, receipt, printer job and payment audit, then destroys
+  its database.
+- Chromium role matrix passes ADMIN, BRANCH_MANAGER, ACCOUNTANT, CASHIER,
+  WAITER, KITCHEN and COURIER at desktop and mobile widths.
+- Customer visual QA in this worktree remains unavailable because generated
+  customer media assets are absent; production media itself was not modified.
 
 ## Current operational warning
 

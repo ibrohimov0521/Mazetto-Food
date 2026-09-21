@@ -78,7 +78,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | --- | --- | --- | --- |
 | AUD-160 | P2 | No automated authenticated browser matrix across roles and responsive sizes | Add Playwright journeys for customer, admin, manager, accountant, cashier, waiter, kitchen and courier |
 | AUD-161 | P2 | Current tests do not include a full isolated order-to-cash-to-print journey | Seed disposable branch/device/printer, execute lifecycle, assert ledger/stock/receipt/jobs/audit, then destroy isolated DB |
-| AUD-162 | P3 | Customer web is not installable/offline | Decide explicitly: keep online-only or add PWA shell/cache without offline order submission ambiguity |
+| AUD-162 | P3 | Customer web is not installable/offline | Decided online-only: browsing may use its short in-memory cache, but checkout blocks offline submission with a visible reason and never queues an order locally |
 | AUD-163 | P3 | Courier flow has status/assignment but no routing optimization/proof-of-delivery | Add only after core accounting/printing gates; define photo/signature/privacy retention first |
 
 ## Definition of done for every item

@@ -3,6 +3,7 @@ import {
   IsInt,
   IsISO8601,
   IsNumber,
+  IsNotEmpty,
   IsOptional,
   IsPositive,
   IsString,
@@ -57,6 +58,7 @@ export class CreateExpenseDto {
   shiftId?: string;
 
   @IsString()
+  @IsNotEmpty()
   @MaxLength(80)
   category!: string;
 
@@ -72,4 +74,22 @@ export class CreateExpenseDto {
   @IsOptional()
   @IsISO8601()
   expenseDate?: string;
+}
+
+export class CreateExpenseCategoryDto {
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  name!: string;
+}
+
+export class UpdateExpenseCategoryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  name!: string;
 }

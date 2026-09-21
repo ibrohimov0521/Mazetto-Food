@@ -35,7 +35,7 @@ export class ReportsService {
     const paymentWhere = this.successfulPaymentWhere(range, branchId, source);
     const cancelledOrderWhere = this.cancelledOrderWhere(range, branchId, source);
 
-    const [payments, cancelledOrders, orderItems, shifts] = await Promise.all([
+    const [payments, cancelledOrders, orderItems, shifts, refunds] = await Promise.all([
       this.prisma.payment.findMany({
         where: paymentWhere,
         select: {
@@ -130,9 +130,18 @@ export class ReportsService {
         },
         orderBy: { openedAt: "desc" },
       }),
+      this.prisma.paymentRefund.findMany({
+        where: {
+          createdAt: { gte: range.from, lte: range.to },
+          ...(branchId ? { branchId } : {}),
+          ...(source ? { payment: { order: { source } } } : {}),
+        },
+        select: { amount: true },
+      }),
     ]);
 
     const revenue = this.sum(payments.map((payment) => payment.amount));
+    const refundedAmount = this.sum(refunds.map((refund) => refund.amount));
     const uniqueOrderIds = new Set(payments.map((payment) => payment.order.id));
     const orderCount = uniqueOrderIds.size;
     const cashSales = this.sum(
@@ -166,9 +175,9 @@ export class ReportsService {
       cashSales,
       cancelledOrders,
       refundHandling: {
-        supported: false,
-        amount: null,
-        note: "Refund/provider reconciliation is pending integration; refunded payments are not counted as successful sales.",
+        supported: true,
+        amount: refundedAmount,
+        note: "Full CASH refunds are reconciled as immutable reversals and excluded from successful sales. Card/Click/Payme provider refunds remain disabled.",
       },
       paymentBreakdown: this.paymentBreakdown(payments),
       sourceBreakdown,
@@ -183,6 +192,8 @@ export class ReportsService {
           "OrderItem stores product snapshots but not category snapshots; category sales use the current product-category relation.",
         onlinePayments:
           "Click/Payme/Card provider reconciliation is not active; those totals remain N/A until real provider records exist.",
+        productRefundAllocation:
+          "A full payment refund is reconciled at payment and order level; partial item refund allocation is not available.",
       },
     };
   }
