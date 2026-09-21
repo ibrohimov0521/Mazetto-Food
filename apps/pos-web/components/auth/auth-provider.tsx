@@ -73,6 +73,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (identifier: string, password: string) => {
+      const desktopLogin = window.mazettoDesktop?.auth?.login;
+      if (desktopLogin) {
+        const session = await desktopLogin({ identifier, password }) as AuthSession;
+        writeSession(session);
+        router.replace(getPrimaryRedirect(session.user));
+        return;
+      }
+
       const response = await fetch(`${getApiBaseUrl()}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

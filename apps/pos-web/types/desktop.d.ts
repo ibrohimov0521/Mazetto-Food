@@ -72,6 +72,9 @@ type DesktopBridge = {
     install: () => Promise<DesktopUpdateStatus>;
     onStatus: (listener: (status: DesktopUpdateStatus) => void) => () => void;
   };
+  auth?: {
+    login: (input: { identifier: string; password: string }) => Promise<unknown>;
+  };
   support?: {
     export: () => Promise<{ path: string } | null>;
   };

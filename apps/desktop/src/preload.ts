@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
     enroll: (input: { deviceId: string; enrollmentCode: string }) =>
       ipcRenderer.invoke("desktop:device:enroll", input),
   },
+  auth: {
+    login: (input: { identifier: string; password: string }) =>
+      ipcRenderer.invoke("desktop:auth:login", input),
+  },
   updates: {
     getStatus: (): Promise<UpdateStatus> =>
       ipcRenderer.invoke("desktop:updates:status"),
