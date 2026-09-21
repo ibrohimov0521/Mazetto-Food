@@ -246,7 +246,12 @@ function setupAutoUpdater(): void {
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.setFeedURL({ provider: "generic", url: feedUrl });
+  autoUpdater.setFeedURL({
+    provider: "github",
+    owner: "ibrohimov0521",
+    repo: "Mazetto-Food",
+    releaseType: "release",
+  });
   autoUpdater.on("checking-for-update", () =>
     setUpdateStatus({ state: "checking", message: null }),
   );
