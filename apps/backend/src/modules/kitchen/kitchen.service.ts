@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { ensureCancellationReceipt } from "../receipts/receipt-writer";
 import {
   eventForLegacyStatus,
   orderStateForLegacyStatus,
@@ -550,6 +551,19 @@ export class KitchenService {
             reason: `${actor.reasonPrefix}: ${this.actionLabel(action)}`,
           },
         });
+      }
+
+      // Kitchen-originated cancellations bypass OrdersService, so create the
+      // cancellation document here as part of the same state transition.
+      if (
+        transition.orderStatus === OrderStatus.CANCELLED &&
+        order.status !== OrderStatus.CANCELLED
+      ) {
+        await ensureCancellationReceipt(
+          tx,
+          orderId,
+          actor.cancellationReason ?? "Buyurtma oshxonada bekor qilindi",
+        );
       }
 
       if (ticket.status !== transition.ticketStatus) {
