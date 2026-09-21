@@ -28,7 +28,7 @@ export function DesktopUpdateBadge() {
   const isReady = currentState === "downloaded";
   const isDownloading = currentState === "downloading";
   const isChecking = currentState === "checking";
-  const label = !bridge ? "Yangilanish" : isReady ? "O'rnatish" : isDownloading ? `%${status?.percent ?? 0}` : isChecking ? "Tekshirilmoqda" : currentState === "available" ? "Yuklash" : "Yangilanishni tekshirish";
+  const label = !bridge ? "Yangilanish" : isReady ? "O'rnatish" : isDownloading ? `%${status?.percent ?? 0}` : isChecking ? "Tekshirilmoqda" : currentState === "available" ? "Yuklash" : currentState === "error" ? "Yuklab olish" : "Yangilanishni tekshirish";
   const Icon = !bridge ? Download : isReady ? RotateCw : isDownloading ? Download : RefreshCw;
 
   async function handleClick(): Promise<void> {
@@ -37,12 +37,20 @@ export function DesktopUpdateBadge() {
       window.open(DESKTOP_RELEASE_URL, "_blank", "noopener,noreferrer");
       return;
     }
+    if (currentState === "error") {
+      openLatestDownload();
+      return;
+    }
     setBusy(true);
     try {
       if (isReady) setStatus(await bridge.install());
       else if (currentState === "available") setStatus(await bridge.download());
       else setStatus(await bridge.check());
     } finally { setBusy(false); }
+  }
+
+  function openLatestDownload(): void {
+    window.open("https://github.com/ibrohimov0521/Mazetto-Food/releases/latest/download/MAZETTO-Desktop-latest-x64.exe", "_blank", "noopener,noreferrer");
   }
 
   return (
