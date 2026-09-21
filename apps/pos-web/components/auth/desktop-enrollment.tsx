@@ -9,7 +9,13 @@ import { Icon } from "../admin-ui/icon";
 
 type DesktopRuntimeStatus = { deviceId: string };
 
-export function DesktopEnrollmentBadge() {
+export function DesktopEnrollmentBadge({
+  onEnrolled,
+  openOnUnenrolled = false,
+}: {
+  onEnrolled?: () => void;
+  openOnUnenrolled?: boolean;
+}) {
   const { session } = useAuth();
   const [isDesktop, setIsDesktop] = useState(false);
   const [deviceId, setDeviceId] = useState("");
@@ -48,6 +54,10 @@ export function DesktopEnrollmentBadge() {
       .catch(() => setIsEnrolled(false));
   }, [session]);
 
+  useEffect(() => {
+    if (openOnUnenrolled && isEnrolled === false && deviceId) setOpen(true);
+  }, [deviceId, isEnrolled, openOnUnenrolled]);
+
   if (!isDesktop || !deviceId) return null;
 
   async function enroll(): Promise<void> {
@@ -74,6 +84,7 @@ export function DesktopEnrollmentBadge() {
       setMessage("Qurilma muvaffaqiyatli ulandi.");
       setCode("");
       setIsEnrolled(true);
+      onEnrolled?.();
     } catch (caught) {
       const reason = caught instanceof Error ? caught.message : "Noma'lum xato";
       setMessage(
