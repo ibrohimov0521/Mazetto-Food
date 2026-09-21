@@ -28,8 +28,9 @@ assert.deepEqual(
 );
 
 for (const migration of migrations) {
+  const canonicalSql = readFileSync(join(root, migration), "utf8").replace(/\r\n/g, "\n");
   const actual = createHash("sha256")
-    .update(readFileSync(join(root, migration)))
+    .update(canonicalSql)
     .digest("hex");
   assert.equal(
     actual,
