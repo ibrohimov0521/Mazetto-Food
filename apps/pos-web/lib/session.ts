@@ -67,9 +67,16 @@ export function writeSession(session: AuthSession | null): void {
   if (typeof window !== "undefined") {
     if (desktopSession) {
       clearStoredSession();
-      void (storedSession
-        ? desktopSession.save(JSON.stringify(storedSession))
-        : desktopSession.clear());
+      if (storedSession) {
+        void desktopSession.save(JSON.stringify(storedSession)).catch(() => {
+          // Electron secure storage can be unavailable on first launch or
+          // after a profile migration. Keep the device session usable until
+          // secure storage recovers instead of silently logging out.
+          writeBrowserSession(storedSession);
+        });
+      } else {
+        void desktopSession.clear().catch(() => undefined);
+      }
     } else {
       try {
         if (storedSession) {
@@ -104,6 +111,18 @@ function readBrowserSession(): AuthSession | null {
   const session = parseSession(raw);
   if (raw && !session) clearStoredSession();
   return session;
+}
+
+function writeBrowserSession(session: AuthSession | null): void {
+  try {
+    if (session) {
+      window.localStorage.setItem(authStorageKey, JSON.stringify(session));
+    } else {
+      window.localStorage.removeItem(authStorageKey);
+    }
+  } catch {
+    // Browser storage may be disabled; in-memory state remains valid.
+  }
 }
 
 function parseSession(raw: string | null): AuthSession | null {

@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { PhoneInput } from "../../components/phone-input";
 import { Mail, Phone } from "lucide-react";
 import { DesktopEnrollmentBadge } from "../../components/auth/desktop-enrollment";
-import { DesktopUpdateBadge } from "../../components/auth/desktop-update";
 
 export default function LoginPage() {
   const { isReady, login, session } = useAuth();
@@ -156,7 +155,6 @@ export default function LoginPage() {
           </button>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <DesktopEnrollmentBadge />
-            <DesktopUpdateBadge />
           </div>
         </form>
       </section>
