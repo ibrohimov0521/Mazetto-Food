@@ -53,7 +53,6 @@ export function DesktopEnrollmentBadge({
       })
       .catch(() => setIsEnrolled(false));
   }, [session]);
-
   useEffect(() => {
     if (openOnUnenrolled && isEnrolled === false && deviceId) setOpen(true);
   }, [deviceId, isEnrolled, openOnUnenrolled]);
