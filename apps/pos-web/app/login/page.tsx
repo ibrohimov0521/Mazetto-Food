@@ -153,7 +153,7 @@ export default function LoginPage() {
           >
             {isSubmitting ? "Kirilmoqda..." : "Kirish"}
           </button>
-          <div className="flex justify-center">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <DesktopEnrollmentBadge />
           </div>
         </form>

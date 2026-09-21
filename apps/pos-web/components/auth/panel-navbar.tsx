@@ -10,7 +10,6 @@ import { PanelSwitcher } from "./panel-switcher";
 import { BranchScopeBadge } from "../admin-shell/branch-scope-badge";
 import { DesktopStatusBadge } from "./desktop-status";
 import { DesktopUpdateBadge } from "./desktop-update";
-import { DesktopEnrollmentBadge } from "./desktop-enrollment";
 
 /*
  * Admin header — to'q teal, sticky.
@@ -200,7 +199,6 @@ export function PanelNavbar({
 
       {actions && <div className="mz-panel-actions">{actions}</div>}
       <DesktopStatusBadge />
-      <DesktopEnrollmentBadge />
       <DesktopUpdateBadge />
       <BranchScopeBadge user={user} />
 
