@@ -130,8 +130,30 @@ export function categoryButtonLabel(
   return `${categoryIcons[code ?? ""] ?? "🍽"} ${name}`;
 }
 
-export function telegramProductButtonLabel(code: string, name: string): string {
-  return productButtonLabels[code] ?? name;
+export function telegramProductButtonLabel(
+  code: string,
+  name: string,
+  categoryCode?: string | null,
+): string {
+  const label = productButtonLabels[code] ?? name;
+
+  // The category heading already provides this word on narrow two-column rows.
+  if (categoryCode === "LAVASH") {
+    const compact = label
+      .replace(/\bLavash\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    return compact || "Oddiy";
+  }
+  if (categoryCode === "BURGER") {
+    const compact = label
+      .replace(/\bBurger\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    return compact || "Oddiy";
+  }
+
+  return label.length > 24 ? `${label.slice(0, 23).trim()}…` : label;
 }
 
 export function formatMoney(value: Prisma.Decimal | number | string): string {

@@ -8,6 +8,7 @@ import {
   OnlineOrderTypeDto,
   OnlinePaymentMethodDto,
 } from "../customers/dto/customer.dto";
+import type { DeliveryLocationDto } from "../customers/dto/delivery-location.dto";
 import { TelegramCartService } from "./telegram-cart.service";
 import { TelegramCheckoutSessionService } from "./telegram-checkout-session.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
@@ -64,6 +65,73 @@ type TelegramCheckoutSessionForKey = {
   address: string | null;
   note: string | null;
 };
+
+type TelegramLocationDraft = Pick<
+  DeliveryLocationDto,
+  "latitude" | "longitude" | "accuracyMeters"
+> & {
+  address: string;
+  house?: string;
+};
+
+const telegramLocationPrefix = "tg-location:";
+
+function readLocationDraft(
+  value: string | null | undefined,
+): TelegramLocationDraft | null {
+  if (!value?.startsWith(telegramLocationPrefix)) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(
+      value.slice(telegramLocationPrefix.length),
+    );
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return null;
+    const draft = parsed as Partial<TelegramLocationDraft>;
+    return Number.isFinite(draft.latitude) &&
+      Number.isFinite(draft.longitude) &&
+      typeof draft.address === "string"
+      ? {
+          latitude: Number(draft.latitude),
+          longitude: Number(draft.longitude),
+          address: draft.address,
+          ...(typeof draft.house === "string" ? { house: draft.house } : {}),
+          ...(Number.isFinite(draft.accuracyMeters)
+            ? { accuracyMeters: Number(draft.accuracyMeters) }
+            : {}),
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocationDraft(draft: TelegramLocationDraft): string {
+  return `${telegramLocationPrefix}${JSON.stringify(draft)}`;
+}
+
+function deliveryAddressText(value: string | null | undefined): string | null {
+  const draft = readLocationDraft(value);
+  return cleanAddress(draft?.address ?? value ?? "");
+}
+
+function deliveryLocationFromSession(
+  value: string | null | undefined,
+): DeliveryLocationDto | undefined {
+  const draft = readLocationDraft(value);
+  if (!draft) return undefined;
+  return {
+    latitude: draft.latitude,
+    longitude: draft.longitude,
+    address: draft.address,
+    house: draft.house || "Aniqlashtiriladi",
+    source: "gps",
+    ...(draft.accuracyMeters !== undefined
+      ? { accuracyMeters: draft.accuracyMeters }
+      : {}),
+  };
+}
 
 @Injectable()
 export class TelegramCheckoutService {
@@ -221,11 +289,14 @@ export class TelegramCheckoutService {
         "",
         `Filial: <b>${escapeHtml(branch.name)}</b>`,
         "",
-        "Manzilingizni yuboring. Masalan: Sergeli 7, 12-uy, 3-podyezd, mo'ljal - maktab yonida.",
+        "Lokatsiyangizni yuboring yoki manzilni qo'lda yozing. Lokatsiyadan keyin uy/podyezd/qavatni aniqlashtirasiz.",
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
-        keyboard: [["⬅️ Orqaga", "🏠 Bosh menyu"]],
+        keyboard: [
+          [{ text: "📍 Lokatsiyamni yuborish", request_location: true }],
+          ["⬅️ Orqaga", "🏠 Bosh menyu"],
+        ],
         resize_keyboard: true,
       },
     });
@@ -246,9 +317,23 @@ export class TelegramCheckoutService {
       return;
     }
 
+    const session = await this.checkoutSession.getActiveCheckoutSession(
+      customer.id,
+      chatId,
+    );
+    const draft = readLocationDraft(session?.address);
+    const completedAddress = draft
+      ? `${draft.address}, ${normalizedAddress}`.slice(0, 500)
+      : normalizedAddress;
+    const house =
+      normalizedAddress.match(/\b\d+[\p{L}\d/-]*\b/u)?.[0] ??
+      "Aniqlashtiriladi";
+
     await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
       step: "NOTE",
-      address: normalizedAddress,
+      address: draft
+        ? writeLocationDraft({ ...draft, address: completedAddress, house })
+        : completedAddress,
     });
 
     await this.screen.telegramRequest("sendMessage", {
@@ -285,6 +370,39 @@ export class TelegramCheckoutService {
             },
           ],
         ],
+      },
+    });
+  }
+
+  async acceptDeliveryLocation(
+    chatId: string,
+    customer: LinkedCustomer,
+    location: Pick<
+      TelegramLocationDraft,
+      "latitude" | "longitude" | "accuracyMeters"
+    >,
+  ): Promise<void> {
+    const suggestedAddress = await this.reverseGeocode(location).catch(
+      () =>
+        `GPS nuqta: ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`,
+    );
+    await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
+      step: "ADDRESS",
+      address: writeLocationDraft({ ...location, address: suggestedAddress }),
+    });
+    await this.screen.telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: [
+        "📍 <b>Lokatsiya olindi</b>",
+        "",
+        `Topilgan manzil: <b>${escapeHtml(suggestedAddress)}</b>`,
+        "",
+        "Uy raqami, podyezd, qavat va mo'ljalni yozing. Manzil noto'g'ri bo'lsa, to'liq to'g'ri manzilni yozing.",
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        keyboard: [["⬅️ Orqaga", "🏠 Bosh menyu"]],
+        resize_keyboard: true,
       },
     });
   }
@@ -382,7 +500,7 @@ export class TelegramCheckoutService {
 
     if (
       orderType === CustomerOrderType.DELIVERY &&
-      !cleanAddress(session.address ?? "")
+      !deliveryAddressText(session.address)
     ) {
       await this.checkoutSession.upsertCheckoutSession(
         customer.id,
@@ -399,6 +517,7 @@ export class TelegramCheckoutService {
       { step: "SUMMARY" },
     );
     const totals = await this.cart.calculateCartTotals(cart.items);
+    const sessionLocation = deliveryLocationFromSession(session.address);
     const quote = await this.customerOrderEngine.quoteCheckout(customer.id, {
       branchId: branch.id,
       type:
@@ -412,6 +531,7 @@ export class TelegramCheckoutService {
         modifiers: readCartModifiers(item.modifierSnapshot),
         ...(item.notes ? { notes: item.notes } : {}),
       })),
+      ...(sessionLocation ? { deliveryLocation: sessionLocation } : {}),
     });
     const deliveryFee = Number(quote.deliveryFee);
 
@@ -422,7 +542,7 @@ export class TelegramCheckoutService {
         `Filial: <b>${escapeHtml(branch.name)}</b>`,
         `Turi: <b>${orderType === CustomerOrderType.DELIVERY ? "Yetkazib berish" : "Olib ketish"}</b>`,
         orderType === CustomerOrderType.DELIVERY
-          ? `Manzil: <b>${escapeHtml(session.address ?? "")}</b>`
+          ? `Manzil: <b>${escapeHtml(deliveryAddressText(session.address) ?? "")}</b>`
           : "",
         session.note ? `Izoh: ${escapeHtml(session.note)}` : "",
         "To'lov: <b>Naqd</b>",
@@ -509,8 +629,9 @@ export class TelegramCheckoutService {
 
     const deliveryAddress =
       orderType === CustomerOrderType.DELIVERY
-        ? cleanAddress(session.address ?? "")
+        ? deliveryAddressText(session.address)
         : null;
+    const sessionLocation = deliveryLocationFromSession(session.address);
 
     if (orderType === CustomerOrderType.DELIVERY && !deliveryAddress) {
       await this.checkoutSession.upsertCheckoutSession(
@@ -538,6 +659,7 @@ export class TelegramCheckoutService {
               ? OnlineOrderTypeDto.DELIVERY
               : OnlineOrderTypeDto.PICKUP,
           ...(deliveryAddress ? { address: deliveryAddress } : {}),
+          ...(sessionLocation ? { deliveryLocation: sessionLocation } : {}),
           paymentMethod: OnlinePaymentMethodDto.CASH,
           notes: session.note
             ? `Telegram orqali buyurtma. ${session.note}`
@@ -634,5 +756,37 @@ export class TelegramCheckoutService {
       .slice(0, 32);
 
     return `telegram:${customerId}:${cart.id}:${hash}`;
+  }
+
+  private async reverseGeocode(
+    location: Pick<TelegramLocationDraft, "latitude" | "longitude">,
+  ): Promise<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4_000);
+    try {
+      const url = new URL("https://nominatim.openstreetmap.org/reverse");
+      url.searchParams.set("format", "jsonv2");
+      url.searchParams.set("lat", String(location.latitude));
+      url.searchParams.set("lon", String(location.longitude));
+      url.searchParams.set("zoom", "18");
+      const response = await fetch(url, {
+        headers: { "User-Agent": "MAZETTO-Food-Delivery/1.0" },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Reverse geocoding failed: ${response.status}`);
+      }
+      const body = (await response.json()) as { display_name?: unknown };
+      const label =
+        typeof body.display_name === "string"
+          ? body.display_name.replace(/, Uzbekistan$/i, "").trim()
+          : "";
+      if (!label) {
+        throw new Error("Reverse geocoding returned no address");
+      }
+      return label.slice(0, 300);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }

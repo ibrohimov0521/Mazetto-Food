@@ -76,7 +76,9 @@ async function main(botConfig: TelegramBotConfig): Promise<void> {
 
   if (botConfig.deleteWebhook) {
     await requireToken(botConfig);
-    await telegramRequest<boolean>(botConfig, "deleteWebhook", { drop_pending_updates: false });
+    await telegramRequest<boolean>(botConfig, "deleteWebhook", {
+      drop_pending_updates: false,
+    });
     console.log("Telegram webhook deleted");
     await refreshState(botConfig, state);
     healthServer.close();
@@ -86,6 +88,8 @@ async function main(botConfig: TelegramBotConfig): Promise<void> {
   if (botConfig.setWebhook) {
     await setWebhook(botConfig);
   }
+
+  await configureBotInterface(botConfig);
 
   await refreshState(botConfig, state);
 
@@ -109,7 +113,9 @@ async function setWebhook(botConfig: TelegramBotConfig): Promise<void> {
   await requireToken(botConfig);
 
   if (!botConfig.webhookSecret) {
-    throw new Error("TELEGRAM_WEBHOOK_SECRET is required when using --set-webhook");
+    throw new Error(
+      "TELEGRAM_WEBHOOK_SECRET is required when using --set-webhook",
+    );
   }
 
   const url = webhookUrl(botConfig);
@@ -121,7 +127,31 @@ async function setWebhook(botConfig: TelegramBotConfig): Promise<void> {
   console.log(`Telegram webhook set to ${url}`);
 }
 
-async function refreshState(botConfig: TelegramBotConfig, agentState: AgentState): Promise<void> {
+async function configureBotInterface(
+  botConfig: TelegramBotConfig,
+): Promise<void> {
+  if (!botConfig.token) {
+    return;
+  }
+
+  await telegramRequest<boolean>(botConfig, "setMyCommands", {
+    commands: [
+      { command: "start", description: "Bosh menyu" },
+      { command: "menu", description: "Menyu" },
+      { command: "cart", description: "Savat" },
+      { command: "orders", description: "Buyurtmalarim" },
+      { command: "profile", description: "Profil" },
+      { command: "branches", description: "Filiallar" },
+      { command: "cancel", description: "Jarayonni bekor qilish" },
+      { command: "support", description: "Yordam" },
+    ],
+  });
+}
+
+async function refreshState(
+  botConfig: TelegramBotConfig,
+  agentState: AgentState,
+): Promise<void> {
   agentState.mode = "checking";
   agentState.lastCheckedAt = new Date().toISOString();
   agentState.tokenConfigured = Boolean(botConfig.token);
@@ -136,15 +166,25 @@ async function refreshState(botConfig: TelegramBotConfig, agentState: AgentState
     return;
   }
 
-  const info = await telegramRequest<WebhookInfo>(botConfig, "getWebhookInfo", {});
+  const info = await telegramRequest<WebhookInfo>(
+    botConfig,
+    "getWebhookInfo",
+    {},
+  );
   agentState.webhookUrl = info.url || null;
   agentState.pendingUpdates = info.pending_update_count;
   agentState.lastTelegramError = info.last_error_message ?? null;
 
   const expectedUrl = botConfig.webhookSecret ? webhookUrl(botConfig) : null;
-  const webhookMatches = expectedUrl ? info.url === expectedUrl : Boolean(info.url);
-  agentState.mode = agentState.backendOk && webhookMatches && !info.last_error_message ? "ready" : "degraded";
-  agentState.lastError = agentState.mode === "ready" ? null : agentState.lastError;
+  const webhookMatches = expectedUrl
+    ? info.url === expectedUrl
+    : Boolean(info.url);
+  agentState.mode =
+    agentState.backendOk && webhookMatches && !info.last_error_message
+      ? "ready"
+      : "degraded";
+  agentState.lastError =
+    agentState.mode === "ready" ? null : agentState.lastError;
 
   console.log("Telegram status", {
     mode: agentState.mode,
@@ -157,7 +197,9 @@ async function refreshState(botConfig: TelegramBotConfig, agentState: AgentState
 
 async function checkBackend(url: string): Promise<boolean> {
   try {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+    });
     return response.ok;
   } catch {
     return false;
@@ -170,17 +212,26 @@ async function requireToken(botConfig: TelegramBotConfig): Promise<void> {
   }
 }
 
-async function telegramRequest<T>(botConfig: TelegramBotConfig, method: string, payload: unknown): Promise<T> {
-  const response = await fetch(`https://api.telegram.org/bot${botConfig.token}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+async function telegramRequest<T>(
+  botConfig: TelegramBotConfig,
+  method: string,
+  payload: unknown,
+): Promise<T> {
+  const response = await fetch(
+    `https://api.telegram.org/bot${botConfig.token}/${method}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 
-  const body = await response.json() as TelegramApiResponse<T>;
+  const body = (await response.json()) as TelegramApiResponse<T>;
 
   if (!response.ok || !body.ok) {
-    throw new Error(`Telegram ${method} failed: ${body.description ?? response.statusText}`);
+    throw new Error(
+      `Telegram ${method} failed: ${body.description ?? response.statusText}`,
+    );
   }
 
   if (body.result === undefined) {
@@ -190,9 +241,15 @@ async function telegramRequest<T>(botConfig: TelegramBotConfig, method: string, 
   return body.result;
 }
 
-function startHealthServer(botConfig: TelegramBotConfig, agentState: AgentState): Server {
+function startHealthServer(
+  botConfig: TelegramBotConfig,
+  agentState: AgentState,
+): Server {
   const server = createServer((request, response) => {
-    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    const url = new URL(
+      request.url ?? "/",
+      `http://${request.headers.host ?? "localhost"}`,
+    );
 
     if (url.pathname === "/health") {
       sendJson(response, agentState.mode === "ready" ? 200 : 503, {
@@ -215,8 +272,14 @@ function startHealthServer(botConfig: TelegramBotConfig, agentState: AgentState)
   return server;
 }
 
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+function sendJson(
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+): void {
+  response.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
   response.end(JSON.stringify(body, null, 2));
 }
 
@@ -234,7 +297,9 @@ function webhookUrl(botConfig: TelegramBotConfig): string {
 }
 
 function readConfig(): TelegramBotConfig {
-  const publicApiUrl = normalizeApiUrl(process.env.MAZETTO_PUBLIC_API_URL ?? "https://api.mazettofood.uz/api/v1");
+  const publicApiUrl = normalizeApiUrl(
+    process.env.MAZETTO_PUBLIC_API_URL ?? "https://api.mazettofood.uz/api/v1",
+  );
   return {
     token: process.env.TELEGRAM_BOT_TOKEN?.trim() || null,
     publicApiUrl,
@@ -245,7 +310,9 @@ function readConfig(): TelegramBotConfig {
     checkMs: readPositiveInt(process.env.MAZETTO_TELEGRAM_CHECK_MS, 60000),
     healthPort: readPositiveInt(process.env.MAZETTO_TELEGRAM_HEALTH_PORT, 7358),
     healthHost: process.env.MAZETTO_TELEGRAM_HEALTH_HOST?.trim() || "0.0.0.0",
-    backendHealthUrl: process.env.MAZETTO_BACKEND_HEALTH_URL?.trim() || `${publicApiUrl}/health`,
+    backendHealthUrl:
+      process.env.MAZETTO_BACKEND_HEALTH_URL?.trim() ||
+      `${publicApiUrl}/health`,
   };
 }
 
@@ -267,5 +334,9 @@ function errorMessage(error: unknown): string {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char] ?? char);
+  return value.replace(
+    /[&<>"]/g,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char] ?? char,
+  );
 }

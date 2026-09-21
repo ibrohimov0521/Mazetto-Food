@@ -36,6 +36,10 @@ export type TelegramInlineButton = {
   url?: string;
 };
 
+export type TelegramReplyButton =
+  | string
+  | { text: string; request_location?: boolean; request_contact?: boolean };
+
 export type CustomerScreenPayload = {
   text: string;
   parse_mode?: "HTML";
@@ -50,9 +54,14 @@ export type CustomerScreenPayload = {
    */
   reply_markup?: {
     inline_keyboard?: TelegramInlineButton[][];
-    keyboard?: string[][];
+    keyboard?: TelegramReplyButton[][];
     resize_keyboard?: boolean;
   };
+};
+
+export type CustomerPhotoScreenPayload = Omit<CustomerScreenPayload, "text"> & {
+  photo: string;
+  caption: string;
 };
 
 @Injectable()
@@ -92,6 +101,37 @@ export class TelegramCustomerScreenService {
     await this.telegramRequest("sendMessage", {
       chat_id: target.chatId,
       ...payload,
+    });
+  }
+
+  /** Product cards need a real Telegram photo, while all other screens stay text. */
+  async renderCustomerPhotoScreen(
+    target: CustomerScreenTarget,
+    payload: CustomerPhotoScreenPayload,
+  ): Promise<void> {
+    const { photo, caption, ...rest } = payload;
+
+    if (target.messageId) {
+      try {
+        await this.telegramRequest("editMessageCaption", {
+          chat_id: target.chatId,
+          message_id: target.messageId,
+          caption,
+          ...rest,
+        });
+        return;
+      } catch (error) {
+        if (isMessageNotModifiedError(error)) {
+          return;
+        }
+      }
+    }
+
+    await this.telegramRequest("sendPhoto", {
+      chat_id: target.chatId,
+      photo,
+      caption,
+      ...rest,
     });
   }
 

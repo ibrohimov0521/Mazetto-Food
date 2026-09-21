@@ -7,8 +7,6 @@ import {
   customerVisibleProductCodes,
 } from "../customers/customer-catalog-visibility";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
-import {
-} from "../customers/dto/customer.dto";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 import {
   branchMapUrl,
@@ -28,6 +26,7 @@ import {
 } from "./telegram-customer-presentation";
 import {
   TelegramCustomerScreenService,
+  type CustomerScreenPayload,
   type CustomerScreenTarget,
   type TelegramCallbackQuery,
 } from "./telegram-customer-screen.service";
@@ -42,6 +41,11 @@ type TelegramMessage = {
   chat?: { id?: number | string };
   from?: { id?: number | string; first_name?: string; last_name?: string };
   text?: string;
+  location?: {
+    latitude?: number;
+    longitude?: number;
+    horizontal_accuracy?: number;
+  };
 };
 
 @Injectable()
@@ -115,7 +119,11 @@ export class TelegramCustomerOrderingService {
 
     if (action === "prod" && values[0]) {
       await this.screen.answerCallback(callback);
-      await this.sendProductConfigurator(target, values[0]);
+      await this.sendProductConfigurator(target, values[0], {
+        categoryId: values[1],
+        quantity: values[2],
+        variantId: values[3],
+      });
       return true;
     }
 
@@ -136,7 +144,15 @@ export class TelegramCustomerOrderingService {
     }
 
     if (action === "addp" && values[0]) {
-      await this.addProductToCart(target, callback, customer, values[0]);
+      await this.addProductToCart(
+        target,
+        callback,
+        customer,
+        values[0],
+        values[1],
+        values[2],
+        values[3],
+      );
       return true;
     }
 
@@ -221,6 +237,12 @@ export class TelegramCustomerOrderingService {
       return false;
     }
 
+    if (text === "🏠 Bosh menyu") {
+      await this.checkoutSession.clearCheckoutSession(customer.id, chatId);
+      await this.sendMainMenu({ chatId }, customer.name, customer.id);
+      return true;
+    }
+
     const session = await this.checkoutSession.getActiveCheckoutSession(
       customer.id,
       chatId,
@@ -228,12 +250,6 @@ export class TelegramCustomerOrderingService {
 
     if (!session) {
       return false;
-    }
-
-    if (text === "🏠 Bosh menyu") {
-      await this.checkoutSession.clearCheckoutSession(customer.id, chatId);
-      await this.sendMainMenu({ chatId }, customer.name, customer.id);
-      return true;
     }
 
     if (text === "⬅️ Orqaga") {
@@ -252,6 +268,98 @@ export class TelegramCustomerOrderingService {
     }
 
     return false;
+  }
+
+  async handleCustomerCommand(
+    message: TelegramMessage,
+    command: string,
+  ): Promise<boolean> {
+    const normalized = command.toLowerCase().replace(/@[^\s]+$/, "");
+
+    if (normalized === "/menu") {
+      await this.sendCategoryMenu(message);
+      return true;
+    }
+    if (normalized === "/cart") {
+      await this.sendCartFromMessage(message);
+      return true;
+    }
+    if (normalized === "/branches") {
+      await this.sendBranches(message);
+      return true;
+    }
+    if (normalized === "/orders") {
+      const chatId = requiredTelegramId(message.chat?.id, "chat id");
+      const customer = await this.findLinkedCustomer(message.from?.id);
+      if (!customer) {
+        await this.screen.sendLinkRequired({ chatId });
+      } else {
+        await this.sendCustomerOrders({ chatId }, customer);
+      }
+      return true;
+    }
+    if (normalized === "/profile") {
+      const chatId = requiredTelegramId(message.chat?.id, "chat id");
+      const customer = await this.findLinkedCustomer(message.from?.id);
+      if (!customer) {
+        await this.screen.sendLinkRequired({ chatId });
+      } else {
+        await this.sendCustomerProfile({ chatId }, customer);
+      }
+      return true;
+    }
+    if (normalized === "/cancel") {
+      const chatId = requiredTelegramId(message.chat?.id, "chat id");
+      const customer = await this.findLinkedCustomer(message.from?.id);
+      if (customer) {
+        await this.checkoutSession.clearCheckoutSession(customer.id, chatId);
+        await this.sendMainMenu({ chatId }, customer.name, customer.id);
+      }
+      return true;
+    }
+    if (normalized === "/support" || normalized === "/help") {
+      const chatId = requiredTelegramId(message.chat?.id, "chat id");
+      await this.screen.renderCustomerScreen(
+        { chatId },
+        {
+          text: "Yordam kerak bo'lsa, /menu orqali menyuni oching yoki operatorga murojaat qiling.",
+        },
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  async handleCustomerLocation(message: TelegramMessage): Promise<boolean> {
+    const chatId = requiredTelegramId(message.chat?.id, "chat id");
+    const customer = await this.findLinkedCustomer(message.from?.id);
+    const location = message.location;
+    if (
+      !customer ||
+      !location ||
+      !Number.isFinite(location.latitude) ||
+      !Number.isFinite(location.longitude)
+    ) {
+      return false;
+    }
+
+    const session = await this.checkoutSession.getActiveCheckoutSession(
+      customer.id,
+      chatId,
+    );
+    if (session?.step !== "ADDRESS") {
+      return false;
+    }
+
+    await this.checkout.acceptDeliveryLocation(chatId, customer, {
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+      ...(Number.isFinite(location.horizontal_accuracy)
+        ? { accuracyMeters: Number(location.horizontal_accuracy) }
+        : {}),
+    });
+    return true;
   }
 
   async sendCategoryMenu(message: TelegramMessage): Promise<void> {
@@ -286,7 +394,7 @@ export class TelegramCustomerOrderingService {
 
     await this.screen.renderCustomerScreen(target, {
       text: "🍽 <b>Menyu bo'limini tanlang</b>",
-      parse_mode: "HTML",
+      parse_mode: "HTML" as const,
       reply_markup: {
         inline_keyboard: [
           ...chunkButtons(
@@ -371,7 +479,7 @@ export class TelegramCustomerOrderingService {
           ].join("\n"),
         ),
       ].join("\n\n"),
-      parse_mode: "HTML",
+      parse_mode: "HTML" as const,
       reply_markup: {
         inline_keyboard: [
           ...branches.flatMap((branch) => {
@@ -494,7 +602,7 @@ export class TelegramCustomerOrderingService {
         isActive: true,
         code: { in: [...customerVisibleCategoryCodes] },
       },
-      select: { code: true, name: true },
+      select: { code: true, name: true, imageUrl: true },
     });
 
     if (category?.code === "LAVASH" || category?.code === "BURGER") {
@@ -503,6 +611,7 @@ export class TelegramCustomerOrderingService {
         customerId,
         categoryId,
         category.code,
+        category.imageUrl,
       );
       return;
     }
@@ -546,31 +655,23 @@ export class TelegramCustomerOrderingService {
     }
 
     const cartLabel = await this.cartButtonLabel(customerId);
-    const hasQuickAddableProducts = products.some((product) =>
-      isSimpleQuickAddProduct(product),
-    );
-
-    await this.screen.renderCustomerScreen(target, {
+    const payload: CustomerScreenPayload = {
       text: [
-        "🍽 <b>Mahsulot tanlang</b>",
-        hasQuickAddableProducts
-          ? "\nBitta turdagi mahsulotlar bir bosishda savatga qo'shiladi."
-          : "",
+        `🍽 <b>${escapeHtml(category?.name ?? "Mahsulotlar")}</b>`,
+        "Mahsulotni tanlang, keyingi sahifada miqdorini belgilang.",
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
           ...chunkButtons(
             products.map((product) => {
-              const variant =
-                product.variants.find((item) => item.isDefault) ??
-                product.variants[0];
-              const quickAddable = isSimpleQuickAddProduct(product);
               return {
-                text: `${quickAddable ? "➕ " : ""}${product.name} · ${formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
-                callback_data: quickAddable
-                  ? `${customerCallbackPrefix}:qprod:${product.id}:${categoryId}`
-                  : `${customerCallbackPrefix}:prod:${product.id}`,
+                text: telegramProductButtonLabel(
+                  product.code,
+                  product.name,
+                  product.category?.code,
+                ),
+                callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
               };
             }),
             2,
@@ -589,7 +690,17 @@ export class TelegramCustomerOrderingService {
           ],
         ],
       },
-    });
+    };
+    if (category?.imageUrl) {
+      await this.screen.renderCustomerPhotoScreen(target, {
+        photo: category.imageUrl,
+        caption: payload.text,
+        parse_mode: "HTML",
+        reply_markup: payload.reply_markup!,
+      });
+      return;
+    }
+    await this.screen.renderCustomerScreen(target, payload);
   }
 
   private async sendPairedCanonicalProductsForCategory(
@@ -597,6 +708,7 @@ export class TelegramCustomerOrderingService {
     customerId: string,
     categoryId: string,
     categoryCode: "LAVASH" | "BURGER",
+    categoryImageUrl?: string | null,
   ): Promise<void> {
     const configuredRows =
       categoryCode === "LAVASH" ? lavashTelegramRows : burgerTelegramRows;
@@ -635,14 +747,13 @@ export class TelegramCustomerOrderingService {
             Boolean(product),
           )
           .map((product) => {
-            const variant =
-              product.variants.find((item) => item.isDefault) ??
-              product.variants[0];
             return {
-              text: `${telegramProductButtonLabel(product.code, product.name)} · ${formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
-              callback_data: isSimpleQuickAddProduct(product)
-                ? `${customerCallbackPrefix}:qprod:${product.id}:${categoryId}:1`
-                : `${customerCallbackPrefix}:prod:${product.id}`,
+              text: telegramProductButtonLabel(
+                product.code,
+                product.name,
+                categoryCode,
+              ),
+              callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
             };
           }),
       )
@@ -650,14 +761,14 @@ export class TelegramCustomerOrderingService {
 
     const cartLabel = await this.cartButtonLabel(customerId);
 
-    await this.screen.renderCustomerScreen(target, {
+    const payload: CustomerScreenPayload = {
       text: [
         categoryCode === "LAVASH"
           ? "🌯 <b>Lavashlar</b>"
           : "🍔 <b>Burgerlar</b>",
         "",
         "Chapda mol go'shtli, o'ngda tovuqli mahsulotlar.",
-        "Tanlanganda mahsulot savatga qo'shiladi.",
+        "Mahsulotni tanlang, keyingi sahifada miqdorini belgilang.",
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
@@ -677,12 +788,27 @@ export class TelegramCustomerOrderingService {
           ],
         ],
       },
-    });
+    };
+    if (categoryImageUrl) {
+      await this.screen.renderCustomerPhotoScreen(target, {
+        photo: categoryImageUrl,
+        caption: payload.text,
+        parse_mode: "HTML",
+        reply_markup: payload.reply_markup!,
+      });
+      return;
+    }
+    await this.screen.renderCustomerScreen(target, payload);
   }
 
   private async sendProductConfigurator(
     target: CustomerScreenTarget,
     productId: string,
+    selection: {
+      categoryId?: string | undefined;
+      quantity?: string | undefined;
+      variantId?: string | undefined;
+    } = {},
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
@@ -691,7 +817,7 @@ export class TelegramCustomerOrderingService {
         code: { in: [...customerVisibleProductCodes] },
       },
       include: {
-        category: { select: { name: true } },
+        category: { select: { id: true, name: true } },
         variants: {
           where: { isAvailable: true },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -711,47 +837,73 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    const variantButtons = product.variants.length
-      ? product.variants.map((variant) => [
-          {
-            text: `${variant.name} · ${formatMoney(variant.sellingPrice)}`,
-            callback_data: `${customerCallbackPrefix}:addv:${variant.id}`,
-          },
-        ])
-      : [
-          [
+    const categoryId = selection.categoryId || product.category.id;
+    const quantity = Math.max(1, Math.min(99, Number(selection.quantity) || 1));
+    const selectedVariant =
+      product.variants.find((variant) => variant.id === selection.variantId) ??
+      product.variants.find((variant) => variant.isDefault) ??
+      product.variants[0] ??
+      null;
+    const price = selectedVariant?.sellingPrice ?? product.sellingPrice;
+    const state = (
+      nextQuantity: number,
+      variantId = selectedVariant?.id ?? "-",
+    ) =>
+      `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:${nextQuantity}:${variantId}`;
+    const controls = [
+      ...(product.variants.length > 1
+        ? product.variants.map((variant) => [
             {
-              text: `Savatga qo'shish · ${formatMoney(product.sellingPrice)}`,
-              callback_data: `${customerCallbackPrefix}:addp:${product.id}`,
+              text: `${variant.id === selectedVariant?.id ? "✓ " : ""}${variant.name} · ${formatMoney(variant.sellingPrice)}`,
+              callback_data: state(quantity, variant.id),
             },
-          ],
-        ];
-
-    await this.screen.renderCustomerScreen(target, {
+          ])
+        : []),
+      [
+        { text: "−", callback_data: state(Math.max(1, quantity - 1)) },
+        { text: String(quantity), callback_data: state(quantity) },
+        { text: "+", callback_data: state(Math.min(99, quantity + 1)) },
+      ],
+      [
+        {
+          text: "🛒 Savatga qo'shish",
+          callback_data: `${customerCallbackPrefix}:addp:${product.id}:${selectedVariant?.id ?? "-"}:${quantity}:${categoryId}`,
+        },
+      ],
+      [
+        {
+          text: "⬅️ Orqaga",
+          callback_data: `${customerCallbackPrefix}:cat:${categoryId}`,
+        },
+      ],
+    ];
+    const payload = {
       text: [
         `🍽 <b>${escapeHtml(product.name)}</b>`,
-        product.category?.name ? escapeHtml(product.category.name) : "",
+        `Narxi: <b>${formatMoney(price)}</b>`,
         "",
         escapeHtml(product.description ?? "Buyurtmadan keyin tayyorlanadi."),
         product.modifiers.length
-          ? "\nQo'shimchalarni mahsulot savatga qo'shilgandan keyin tanlaysiz."
+          ? "\nQo'shimchalarni savatda mahsulotga biriktirasiz."
           : "",
       ]
         .filter(Boolean)
         .join("\n"),
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          ...variantButtons,
-          [
-            {
-              text: "⬅️ Menyuga qaytish",
-              callback_data: `${customerCallbackPrefix}:home`,
-            },
-          ],
-        ],
-      },
-    });
+      parse_mode: "HTML" as const,
+      reply_markup: { inline_keyboard: controls },
+    };
+
+    if (product.imageUrl) {
+      await this.screen.renderCustomerPhotoScreen(target, {
+        photo: product.imageUrl,
+        caption: payload.text,
+        parse_mode: payload.parse_mode,
+        reply_markup: payload.reply_markup,
+      });
+      return;
+    }
+
+    await this.screen.renderCustomerScreen(target, payload);
   }
 
   private async quickAddSimpleProduct(
@@ -866,6 +1018,9 @@ export class TelegramCustomerOrderingService {
     callback: TelegramCallbackQuery,
     customer: LinkedCustomer,
     productId: string,
+    rawVariantId?: string,
+    rawQuantity?: string,
+    categoryId?: string,
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
@@ -894,7 +1049,36 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    const cartItem = await this.addCartItem(customer.id, product.id, null);
+    const variant =
+      rawVariantId && rawVariantId !== "-"
+        ? await this.prisma.productVariant.findFirst({
+            where: {
+              id: rawVariantId,
+              productId: product.id,
+              isAvailable: true,
+            },
+            select: { id: true },
+          })
+        : null;
+    if (rawVariantId && rawVariantId !== "-" && !variant) {
+      await this.screen.answerCallback(
+        callback,
+        "Tanlangan tur hozir mavjud emas.",
+        true,
+      );
+      await this.sendProductConfigurator(target, product.id, {
+        ...(categoryId ? { categoryId } : {}),
+      });
+      return;
+    }
+
+    const quantity = Math.max(1, Math.min(99, Number(rawQuantity) || 1));
+    const cartItem = await this.addCartItem(
+      customer.id,
+      product.id,
+      variant?.id ?? null,
+      quantity,
+    );
     await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
     await this.sendCartItemConfigured(target, cartItem.id, product.name);
   }
@@ -903,6 +1087,7 @@ export class TelegramCustomerOrderingService {
     customerId: string,
     productId: string,
     variantId: string | null,
+    quantity = 1,
   ) {
     return this.prisma.$transaction(async (tx) => {
       await this.cart.lockTelegramCart(tx, customerId);
@@ -934,7 +1119,7 @@ export class TelegramCustomerOrderingService {
         return tx.cartItem.update({
           where: { id: existing.id },
           data: {
-            quantity: new Prisma.Decimal(existing.quantity).add(1),
+            quantity: new Prisma.Decimal(existing.quantity).add(quantity),
           },
           select: { id: true },
         });
@@ -945,7 +1130,7 @@ export class TelegramCustomerOrderingService {
           cartId: cart.id,
           productId,
           variantId,
-          quantity: new Prisma.Decimal(1),
+          quantity: new Prisma.Decimal(quantity),
           modifierSnapshot: [],
         },
         select: { id: true },
@@ -1082,34 +1267,12 @@ export class TelegramCustomerOrderingService {
       ].join("\n"),
       parse_mode: "HTML",
       reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "🍽 Menyu",
-              callback_data: `${customerCallbackPrefix}:menu`,
-            },
-            {
-              text: cartLabel,
-              callback_data: `${customerCallbackPrefix}:cart`,
-            },
-          ],
-          [
-            {
-              text: "📦 Buyurtmalarim",
-              callback_data: `${customerCallbackPrefix}:orders`,
-            },
-            {
-              text: "📍 Filial",
-              callback_data: `${customerCallbackPrefix}:branches`,
-            },
-          ],
-          [
-            {
-              text: "👤 Profil",
-              callback_data: `${customerCallbackPrefix}:profile`,
-            },
-          ],
+        keyboard: [
+          ["🍽 Menyu", cartLabel],
+          ["📦 Buyurtmalarim", "📍 Filial"],
+          ["👤 Profil", "🏠 Bosh menyu"],
         ],
+        resize_keyboard: true,
       },
     });
   }
