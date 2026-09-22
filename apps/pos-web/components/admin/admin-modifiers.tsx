@@ -78,6 +78,7 @@ export function AdminModifiersPage() {
   const { showToast } = useToast();
   const canCreate = hasPermission(user, "MENU_CREATE");
   const canEdit = hasPermission(user, "MENU_EDIT");
+  const canDelete = hasPermission(user, "MENU_DELETE");
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("ALL");
@@ -89,6 +90,7 @@ export function AdminModifiersPage() {
   const [isSaving, setIsSaving] = useState(false);
   /** Qaysi qator hozir serverga yozilmoqda — takroriy bosishni to'sadi. */
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const {
     data,
@@ -249,6 +251,20 @@ export function AdminModifiersPage() {
     }
   }
 
+  async function permanentlyDeleteSelected(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta qo'shimchani bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/menu/modifiers/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: selectedIds }) });
+      showToast("Tanlangan qo'shimchalar o'chirildi.", "success");
+      setSelectedIds([]);
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Qo'shimchalarni o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   const columns: DataTableColumn<Modifier>[] = [
     {
       key: "name",
@@ -322,12 +338,13 @@ export function AdminModifiersPage() {
               : `${filtered.length} / ${modifiers.length} ta qo'shimcha`
           }
           title="Qo'shimchalar katalogi"
-          {...(canCreate
+          {...(canCreate || canDelete
             ? {
                 actions: (
-                  <Button onClick={openCreate} size="lg">
-                    Yangi qo&apos;shimcha
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {canDelete && selectedIds.length ? <Button onClick={() => void permanentlyDeleteSelected()} variant="danger">{selectedIds.length} ta o'chirish</Button> : null}
+                    <Button onClick={openCreate} size="lg">Yangi qo&apos;shimcha</Button>
+                  </div>
                 ),
               }
             : {})}
@@ -377,6 +394,10 @@ export function AdminModifiersPage() {
         <DataTable
           caption="Modifier katalogi"
           columns={columns}
+          selectable={canDelete}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
+          selectionDisabled={(modifier: Modifier) => Boolean(modifier._count?.products)}
           emptyDescription={
             isFiltered
               ? "Qidiruv yoki holat filtrini o'zgartirib ko'ring."

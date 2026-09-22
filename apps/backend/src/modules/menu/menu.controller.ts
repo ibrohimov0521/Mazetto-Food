@@ -109,6 +109,12 @@ export class MenuController {
     return this.menuService.createModifier(dto);
   }
 
+  @Delete("modifiers/bulk/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteModifiers(@Body() dto: { ids: string[] }) {
+    return this.menuService.permanentlyDeleteModifiers(dto.ids);
+  }
+
   @Patch("modifiers/:id")
   @Permissions(PERMISSIONS.MENU_EDIT)
   updateModifier(@Param("id") id: string, @Body() dto: UpdateModifierDto) {

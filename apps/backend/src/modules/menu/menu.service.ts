@@ -774,6 +774,20 @@ export class MenuService {
     });
   }
 
+  async permanentlyDeleteModifiers(ids: string[]) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta qo'shimcha tanlanishi kerak");
+    const rows = await this.prisma.modifier.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, name: true, products: { select: { productId: true } } },
+    });
+    if (rows.length !== uniqueIds.length) throw new NotFoundException("Modifier not found");
+    const blocked = rows.find((row) => row.products.length);
+    if (blocked) throw new BadRequestException(`Qo'shimcha ${blocked.name} mahsulotga biriktirilgan; avval bog'lamani olib tashlang`);
+    await this.prisma.modifier.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   private async assertCategory(id: string): Promise<void> {
     const category = await this.prisma.category.findUnique({ where: { id }, select: { id: true } });
 
