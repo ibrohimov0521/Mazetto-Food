@@ -185,6 +185,7 @@ function PrintersConsole() {
   const [pendingDeactivate, setPendingDeactivate] = useState<Printer | null>(
     null,
   );
+  const [pendingDelete, setPendingDelete] = useState<Printer | null>(null);
 
   // Filial ichidagi "Qurilmalar" havolasi shu filtrni beradi. URL o'zgarsa,
   // bir marta ochilgan sahifa ham yangi filial bilan qayta yuklanadi.
@@ -390,6 +391,25 @@ function PrintersConsole() {
     }
   }
 
+  async function confirmDelete(): Promise<void> {
+    if (!pendingDelete) return;
+    setIsSaving(true);
+    try {
+      await apiFetch("/printers/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: [pendingDelete.id] }),
+      });
+      showToast(`${pendingDelete.name} bazadan butunlay o'chirildi.`, "success");
+      setPendingDelete(null);
+      printersResource.reload();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Printerni o'chirib bo'lmadi.", "danger");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const columns: DataTableColumn<Printer>[] = [
     {
       key: "name",
@@ -579,6 +599,12 @@ function PrintersConsole() {
                   tone="danger"
                 />
               ) : null}
+              <RowAction
+                icon="trash"
+                label={`${printer.name} — bazadan butunlay o'chirish`}
+                onClick={() => setPendingDelete(printer)}
+                tone="danger"
+              />
             </>
           )}
           rows={printers}
@@ -789,6 +815,26 @@ function PrintersConsole() {
             ) : null}
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        footer={
+          <>
+            <Button onClick={() => setPendingDelete(null)} variant="ghost">Bekor qilish</Button>
+            <Button isLoading={isSaving} onClick={() => void confirmDelete()} size="lg" variant="danger">
+              Butunlay o'chirish
+            </Button>
+          </>
+        }
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title="Printerni bazadan butunlay o'chirish"
+      >
+        <p className="text-sm text-mz-text">
+          <span className="font-semibold">{pendingDelete?.name}</span> bazadan
+          butunlay o'chiriladi. Eski chop navbatlari bilan bog'langan printer
+          bo'lsa, server tarixni saqlash uchun amalni rad etadi.
+        </p>
       </Modal>
 
       {/* --- Ishdan chiqarishni tasdiqlash --------------------------------- */}
