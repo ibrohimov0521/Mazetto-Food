@@ -2,6 +2,7 @@ import { Body, Controller, Param, Post, UnauthorizedException } from "@nestjs/co
 import { Public } from "../../common/decorators/public.decorator";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
+import { TelegramStaffService } from "./telegram-staff.service";
 
 type TelegramDiagnosticMessage = {
   chat?: {
@@ -23,6 +24,7 @@ export class TelegramController {
   constructor(
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
+    private readonly telegramStaffService?: TelegramStaffService,
   ) {}
 
   @Public()
@@ -32,6 +34,12 @@ export class TelegramController {
 
     if (await this.handleStaffChatIdDiagnostic(update)) {
       return { ok: true, handled: true };
+    }
+
+    const staffResult = await this.telegramStaffService?.handleWebhookUpdate(update);
+
+    if (staffResult?.handled) {
+      return staffResult;
     }
 
     const customerResult =

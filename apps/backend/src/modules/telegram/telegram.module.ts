@@ -1,9 +1,11 @@
 import { Module } from "@nestjs/common";
 import { BranchesModule } from "../branches/branches.module";
+import { CustomerCourierService } from "../customers/customer-courier.service";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
 import { KitchenModule } from "../kitchen/kitchen.module";
 import { GeocodingModule } from "../geocoding/geocoding.module";
 import { OrdersModule } from "../orders/orders.module";
+import { PaymentsModule } from "../payments/payments.module";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { TelegramController } from "./telegram.controller";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
@@ -14,11 +16,13 @@ import { TelegramCheckoutSessionService } from "./telegram-checkout-session.serv
 import { TelegramCustomerScreenService } from "./telegram-customer-screen.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 import { TelegramCustomerOrderHistoryService } from "./telegram-customer-order-history.service";
+import { TelegramStaffService } from "./telegram-staff.service";
 
 @Module({
-  imports: [PrismaModule, BranchesModule, KitchenModule, OrdersModule, GeocodingModule],
+  imports: [PrismaModule, BranchesModule, KitchenModule, OrdersModule, PaymentsModule, GeocodingModule],
   controllers: [TelegramController],
   providers: [
+    CustomerCourierService,
     CustomerOrderEngineService,
     TelegramOrderNotificationService,
     TelegramCustomerAuthService,
@@ -28,6 +32,7 @@ import { TelegramCustomerOrderHistoryService } from "./telegram-customer-order-h
     TelegramCheckoutService,
     TelegramCustomerOrderHistoryService,
     TelegramCustomerOrderingService,
+    TelegramStaffService,
   ],
   exports: [TelegramOrderNotificationService, TelegramCustomerAuthService],
 })
