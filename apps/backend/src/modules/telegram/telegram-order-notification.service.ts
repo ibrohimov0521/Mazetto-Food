@@ -39,6 +39,7 @@ type StaffOrderForMessage = {
   customerName: string | null;
   customerPhone: string | null;
   deliveryAddress: string | null;
+  deliveryLocation: Prisma.JsonValue | null;
   type: string;
   status: OrderStatus;
   acceptedAt?: Date | null;
@@ -358,7 +359,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       `<b>Holat:</b> ${ticket?.status === KitchenTicketStatus.COMPLETED && order.status === OrderStatus.READY ? "Oshxonadan topshirildi" : order.status === OrderStatus.CONFIRMED && ticket?.status === KitchenTicketStatus.NEW ? "Yangi" : this.orderStatusLabel(order.status, order.customerOrder?.type ?? order.type)}`,
       `<b>Mijoz:</b> ${this.escapeHtml(order.customerName ?? "Noma'lum")}`,
       `<b>Telefon:</b> ${this.escapeHtml(order.customerPhone ?? "Kiritilmagan")}`,
-      `<b>Manzil:</b> ${this.escapeHtml(order.deliveryAddress ?? "Olib ketish")}`,
+      ...this.formatDeliveryLocationLines(order),
       `<b>Turi:</b> ${this.orderTypeLabel(order.customerOrder?.type ?? order.type)}`,
       `<b>To'lov:</b> ${this.paymentMethodLabel(order.customerOrder?.paymentMethod ?? null)}`,
       "",
@@ -388,6 +389,46 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     const modifiers = this.modifierNames(item.modifierSnapshot).map((modifier) => `  - ${this.escapeHtml(modifier)}`);
     const notes = item.notes ? [`  - Izoh: ${this.escapeHtml(item.notes)}`] : [];
     return [title, ...modifiers, ...notes];
+  }
+
+  private formatDeliveryLocationLines(order: StaffOrderForMessage): string[] {
+    const type = order.customerOrder?.type ?? order.type;
+
+    if (type !== "DELIVERY") {
+      return [`<b>Manzil:</b> ${this.escapeHtml(order.deliveryAddress ?? "Olib ketish")}`];
+    }
+
+    const lines = [
+      `<b>Manzil:</b> ${this.escapeHtml(order.deliveryAddress ?? "Kiritilmagan")}`,
+    ];
+    const mapUrl = this.deliveryMapUrl(order.deliveryLocation);
+
+    if (mapUrl) {
+      lines.push(`<b>Lokatsiya:</b> <a href="${mapUrl}">Google Maps</a>`);
+    }
+
+    return lines;
+  }
+
+  private deliveryMapUrl(location: Prisma.JsonValue | null): string | null {
+    if (!location || typeof location !== "object" || Array.isArray(location)) {
+      return null;
+    }
+
+    const record = location as Record<string, unknown>;
+    const latitude = Number(record.latitude);
+    const longitude = Number(record.longitude);
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      Math.abs(latitude) > 90 ||
+      Math.abs(longitude) > 180
+    ) {
+      return null;
+    }
+
+    return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
   }
 
   private modifierNames(snapshot: Prisma.JsonValue | null): string[] {

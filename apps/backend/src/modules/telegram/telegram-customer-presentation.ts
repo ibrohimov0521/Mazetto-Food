@@ -141,6 +141,35 @@ const productIcons: Record<string, string> = {
   SETS: "🔥",
 };
 
+function productFeatureIcon(code: string, label: string): string | null {
+  const haystack = `${code} ${label}`.toUpperCase();
+
+  if (haystack.includes("SPICY") || /ACHCH?IQ|OSTRIY|ОСТР/i.test(label)) {
+    return "🌶";
+  }
+
+  if (
+    haystack.includes("CHEESE") ||
+    /PISHLOQ|SIRLI|CHIZ|CHEESE|СЫР/i.test(label)
+  ) {
+    return "🧀";
+  }
+
+  if (haystack.includes("CHICKEN") || /TOVUQ|KURIN|CHICKEN/i.test(label)) {
+    return "🍗";
+  }
+
+  if (haystack.includes("TANDIR") || /TANDIR/i.test(label)) {
+    return "♨️";
+  }
+
+  if (haystack.includes("DOUBLE") || haystack.includes("BIG") || /KATTA|BIG|DOUBLE/i.test(label)) {
+    return "➕";
+  }
+
+  return null;
+}
+
 export function categoryButtonLabel(
   code: string | null | undefined,
   name: string,
@@ -155,11 +184,12 @@ export function telegramProductButtonLabel(
 ): string {
   const label = productButtonLabels[code] ?? name;
   const icon =
-    categoryCode === "LAVASH"
+    productFeatureIcon(code, label) ??
+    (categoryCode === "LAVASH"
       ? "🌯"
       : categoryCode === "BURGER"
         ? "🍔"
-        : productIcons[categoryCode ?? ""] ?? "";
+        : productIcons[categoryCode ?? ""] ?? "");
 
   // The category heading already provides this word on narrow two-column rows.
   if (categoryCode === "LAVASH") {

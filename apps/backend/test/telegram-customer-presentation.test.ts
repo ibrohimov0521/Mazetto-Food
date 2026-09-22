@@ -75,7 +75,15 @@ test("kategoriya yorlig'i noma'lum kodga ham ikonka beradi", () => {
 test("mahsulot yorlig'i qisqartiriladi, noma'lumi katalog nomida qoladi", () => {
   assert.equal(
     telegramProductButtonLabel("BIG_CHICKEN_LAVASH", "Katta tovuqli lavash"),
-    "Kurinniy Big",
+    "🍗 Kurinniy Big",
+  );
+  assert.equal(
+    telegramProductButtonLabel("LAVASH_SPICY", "Achchiq lavash", "LAVASH"),
+    "🌶 Achchiq",
+  );
+  assert.equal(
+    telegramProductButtonLabel("LAVASH_CHEESE", "Pishloqli lavash", "LAVASH"),
+    "🧀 Pishloqli",
   );
   assert.equal(
     telegramProductButtonLabel("YANGI_MAHSULOT", "Yangi mahsulot"),
