@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { hasPermission } from "../../lib/auth";
 import { useApiResource } from "../../lib/use-api-resource";
 import {
   formatDateTime,
@@ -17,6 +18,8 @@ import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
 import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
+import { useAuth } from "../auth/auth-provider";
+import { useToast } from "../admin-ui/toast";
 
 /*
  * Mijozlar ro'yxati.
@@ -60,11 +63,15 @@ type CustomerStats = {
 };
 
 export function AdminCustomersPage() {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const canDelete = hasPermission(user, "CUSTOMER_DELETE");
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState("");
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [offset, setOffset] = useState(0);
   const [detail, setDetail] = useState<Customer | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const {
     data,
@@ -114,6 +121,24 @@ export function AdminCustomersPage() {
 
       return next;
     });
+  }
+
+  async function deleteSelected(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta mijozni bazadan butunlay o'chirishni tasdiqlaysizmi? Buyurtma tarixi bor mijozlar o'chirilmaydi.`)) return;
+    try {
+      await apiFetch("/customers/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      setSelectedIds([]);
+      await load();
+    } catch (caught) {
+      showToast(
+        caught instanceof Error ? caught.message : "Mijozlarni o'chirib bo'lmadi.",
+        "danger",
+      );
+    }
   }
 
   const columns: DataTableColumn<Customer>[] = [
@@ -258,7 +283,12 @@ export function AdminCustomersPage() {
 
       <Card>
         <CardHeader
-          description="Mijoz yozuvlari faqat o'qish uchun: serverda admin tomonidan tahrirlash, bloklash yoki bonusni o'zgartirish imkoni yo'q."
+          actions={canDelete && selectedIds.length ? (
+            <Button onClick={() => void deleteSelected()} size="sm" variant="danger">
+              {selectedIds.length} ta o&apos;chirish
+            </Button>
+          ) : undefined}
+          description="Mijoz yozuvlari tahrirlanmaydi. Buyurtma tarixi bor mijozlar faqat anonimlashtirish yoki biznes siyosati orqali boshqariladi."
           title="Mijozlar bazasi"
         />
 
@@ -318,6 +348,12 @@ export function AdminCustomersPage() {
           emptyTitle={hasFilters ? "Mijoz topilmadi" : "Mijoz yo'q"}
           getRowKey={(customer) => customer.id}
           isLoading={isLoading}
+          selectable={canDelete}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
+          selectionDisabled={(customer: Customer) =>
+            Boolean(customer._count?.customerOrders)
+          }
           rowActions={(customer) => (
             <RowAction
               icon="eye"
