@@ -877,7 +877,7 @@ export function AdminInventoryPage() {
             columns={[
               { key: "name", header: "Nomi", primary: true, render: (item: Ingredient) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.unit}</p></> },
               { key: "minimum", header: "Minimum", align: "right", render: (item: Ingredient) => item.minimumStock },
-              { key: "actions", header: "Amal", align: "right", render: (item: Ingredient) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editIngredient(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("ingredients", item.id, item.name)}>Arxiv</Button></div> : null },
+              { key: "actions", header: "Amal", align: "right", render: (item: Ingredient) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editIngredient(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("ingredients", item.id, item.name)}>Arxiv</Button><Button size="sm" variant="danger" onClick={() => void permanentlyDeleteMaster("ingredients", [item.id])}>O'chirish</Button></div> : null },
             ]}
             emptyIcon="boxes"
             emptyTitle="Ingredient yo'q"
@@ -895,7 +895,7 @@ export function AdminInventoryPage() {
             selectionDisabled={(item: Warehouse) => false}
             columns={[
               { key: "name", header: "Nomi", primary: true, render: (item: Warehouse) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.branch?.name ?? "Filial"}</p></> },
-              { key: "actions", header: "Amal", align: "right", render: (item: Warehouse) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editWarehouse(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("warehouses", item.id, item.name)}>Arxiv</Button></div> : null },
+              { key: "actions", header: "Amal", align: "right", render: (item: Warehouse) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editWarehouse(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("warehouses", item.id, item.name)}>Arxiv</Button><Button size="sm" variant="danger" onClick={() => void permanentlyDeleteMaster("warehouses", [item.id])}>O'chirish</Button></div> : null },
             ]}
             emptyIcon="inbox"
             emptyTitle="Ombor yo'q"

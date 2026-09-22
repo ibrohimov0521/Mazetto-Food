@@ -68,7 +68,7 @@ type CategoryDraft = {
   isActive: boolean;
 };
 
-type PendingAction = { category: Category; mode: "archive" | "restore" };
+type PendingAction = { category: Category; mode: "archive" | "restore" | "permanent" };
 
 const emptyDraft: CategoryDraft = {
   name: "",
@@ -266,7 +266,13 @@ export function AdminCategoriesPage() {
     setIsSaving(true);
 
     try {
-      if (pending.mode === "archive") {
+      if (pending.mode === "permanent") {
+        await apiFetch("/menu/categories/bulk/permanent", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: [pending.category.id] }),
+        });
+        showToast("Kategoriya bazadan butunlay o'chirildi.", "success");
+      } else if (pending.mode === "archive") {
         await apiFetch(`/menu/categories/${pending.category.id}`, {
           method: "DELETE",
         });
@@ -473,6 +479,14 @@ export function AdminCategoriesPage() {
                         />
                       )
                     ) : null}
+                    {canArchive && !category._count?.products && !category._count?.children ? (
+                      <RowAction
+                        icon="trash"
+                        label={`${category.name} — bazadan butunlay o'chirish`}
+                        onClick={() => setPending({ category, mode: "permanent" })}
+                        tone="danger"
+                      />
+                    ) : null}
                 </>
               ) : null}
             </>
@@ -640,7 +654,9 @@ export function AdminCategoriesPage() {
 
       <Modal
         description={
-          pending?.mode === "archive"
+          pending?.mode === "permanent"
+            ? "Kategoriya bazadan butunlay o'chiriladi. Bu amalni qaytarib bo'lmaydi."
+            : pending?.mode === "archive"
             ? "Kategoriya o'chirilmaydi — nofaol holatga o'tadi. Undagi mahsulotlar va buyurtma tarixi saqlanadi, lekin menyuda ko'rinmaydi."
             : "Kategoriya menyuga qaytadi va mijoz saytida darhol ko'rinadi."
         }
@@ -652,9 +668,9 @@ export function AdminCategoriesPage() {
             <Button
               isLoading={isSaving}
               onClick={() => void confirmPending()}
-              variant={pending?.mode === "archive" ? "danger" : "primary"}
+              variant={pending?.mode === "restore" ? "primary" : "danger"}
             >
-              {pending?.mode === "archive" ? "Arxivlash" : "Qaytarish"}
+              {pending?.mode === "permanent" ? "Butunlay o'chirish" : pending?.mode === "archive" ? "Arxivlash" : "Qaytarish"}
             </Button>
           </>
         }
@@ -662,7 +678,9 @@ export function AdminCategoriesPage() {
         onClose={() => setPending(null)}
         title={
           pending
-            ? pending.mode === "archive"
+            ? pending.mode === "permanent"
+              ? `${pending.category.name} butunlay o'chirilsinmi?`
+              : pending.mode === "archive"
               ? `${pending.category.name} arxivlansinmi?`
               : `${pending.category.name} qaytarilsinmi?`
             : "Tasdiqlash"

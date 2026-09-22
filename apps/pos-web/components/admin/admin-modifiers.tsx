@@ -265,6 +265,19 @@ export function AdminModifiersPage() {
     }
   }
 
+  async function permanentlyDeleteSelectedSingle(id: string): Promise<void> {
+    if (!window.confirm("Bu qo'shimchani bazadan butunlay o'chirishni tasdiqlaysizmi?")) return;
+    try {
+      await apiFetch("/menu/modifiers/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: [id] }) });
+      showToast("Qo'shimcha bazadan o'chirildi.", "success");
+      setSelectedIds((current) => current.filter((selectedId) => selectedId !== id));
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Qo'shimchani o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   const columns: DataTableColumn<Modifier>[] = [
     {
       key: "name",
@@ -410,16 +423,16 @@ export function AdminModifiersPage() {
           getRowKey={(modifier) => modifier.id}
           isLoading={isLoading && !data}
           rows={filtered}
-          {...(canEdit
+          {...(canEdit || canDelete
             ? {
                 rowActions: (modifier: Modifier) => (
                   <>
-                    <RowAction
+                    {canEdit ? <RowAction
                       icon="pencil"
                       label={`${modifier.name} — tahrirlash`}
                       onClick={() => openEdit(modifier)}
-                    />
-                    <RowAction
+                    /> : null}
+                    {canEdit ? <RowAction
                       icon={modifier.isActive ? "close" : "check"}
                       label={
                         modifier.isActive
@@ -427,17 +440,22 @@ export function AdminModifiersPage() {
                           : `${modifier.name} — faollashtirish`
                       }
                       onClick={() => void toggleActive(modifier)}
-                    />
+                    /> : null}
+                    {canDelete && !modifier._count?.products ? <RowAction
+                      icon="trash"
+                      label={`${modifier.name} — bazadan butunlay o'chirish`}
+                      onClick={() => void permanentlyDeleteSelectedSingle(modifier.id)}
+                      tone="danger"
+                    /> : null}
                   </>
                 ),
               }
             : {})}
         />
         <p className="border-t border-mz-border px-4 py-2.5 text-[13px] text-mz-text-muted">
-          Qo&apos;shimchalar o&apos;chirilmaydi — ular buyurtma tarixidagi
-          qo&apos;shimcha nusxalari bilan bog&apos;liq. Ishlatilmaydigan
-          qo&apos;shimchani nofaol qiling: u yangi buyurtmalarda
-          ko&apos;rinmaydi, tarix esa buzilmaydi.
+          Mahsulotga biriktirilgan qo&apos;shimchalar permanent o&apos;chirilmaydi;
+          ular uchun nofaol qilish ishlatiladi. Bog&apos;lanmagan qo&apos;shimchani
+          bazadan butunlay o&apos;chirish mumkin.
         </p>
       </Card>
 
