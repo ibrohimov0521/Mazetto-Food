@@ -163,6 +163,9 @@ async function configureBotInterface(
   await telegramRequest<boolean>(botConfig, "setMyCommands", {
     commands: botConfig.mode === "staff" ? staffCommands : customerCommands,
   });
+  await telegramRequest<boolean>(botConfig, "setChatMenuButton", {
+    menu_button: { type: "commands" },
+  });
 }
 
 async function refreshState(
