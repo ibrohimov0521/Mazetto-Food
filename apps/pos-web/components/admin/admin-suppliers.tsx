@@ -94,6 +94,7 @@ export function AdminSuppliersPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Supplier | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
 
   const {
@@ -266,6 +267,25 @@ export function AdminSuppliersPage() {
     }
   }
 
+  async function deleteSelected(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta yetkazib beruvchini bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    setIsArchiving(true);
+    try {
+      await apiFetch("/suppliers/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta yetkazib beruvchi o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Yetkazib beruvchilarni o'chirib bo'lmadi.", "danger");
+    } finally {
+      setIsArchiving(false);
+    }
+  }
+
   const columns: DataTableColumn<Supplier>[] = [
     {
       key: "name",
@@ -341,11 +361,18 @@ export function AdminSuppliersPage() {
       <Card>
         <CardHeader
           actions={
-            canCreate ? (
-              <Button onClick={openCreate} size="lg">
-                Yangi yetkazib beruvchi
-              </Button>
-            ) : undefined
+            <div className="flex flex-wrap gap-2">
+              {canEdit && selectedIds.length ? (
+                <Button onClick={() => void deleteSelected()} size="lg" variant="danger">
+                  {selectedIds.length} ta o&apos;chirish
+                </Button>
+              ) : null}
+              {canCreate ? (
+                <Button onClick={openCreate} size="lg">
+                  Yangi yetkazib beruvchi
+                </Button>
+              ) : null}
+            </div>
           }
           description="Aloqa kartotekasi — xarid buyurtmasi va qarz hisobi hali yo'q"
           title="Yetkazib beruvchilar"
@@ -401,6 +428,9 @@ export function AdminSuppliersPage() {
           getRowKey={(supplier) => supplier.id}
           isLoading={isLoading}
           rows={filtered}
+          selectable={canEdit}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
           {...(canEdit
             ? {
                 rowActions: (supplier: Supplier) => (

@@ -47,6 +47,15 @@ export class SuppliersController {
     return this.suppliersService.updateSupplier(id, dto, user);
   }
 
+  @Delete("bulk")
+  @Permissions(PERMISSIONS.INVENTORY_EDIT)
+  deleteSuppliersBulk(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.suppliersService.deleteSuppliersBulk(dto.ids, user);
+  }
+
   @Delete(":id")
   @Permissions(PERMISSIONS.INVENTORY_EDIT)
   deleteSupplier(
