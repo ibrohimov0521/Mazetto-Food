@@ -64,6 +64,15 @@ export type CustomerPhotoScreenPayload = Omit<CustomerScreenPayload, "text"> & {
   caption: string;
 };
 
+function isTelegramPhotoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class TelegramCustomerScreenService {
   /*
@@ -110,6 +119,17 @@ export class TelegramCustomerScreenService {
     payload: CustomerPhotoScreenPayload,
   ): Promise<void> {
     const { photo, caption, ...rest } = payload;
+
+    // Telegram `sendPhoto` accepts a publicly reachable HTTP(S) URL, not the
+    // relative paths historically stored for some catalogue images. Do not let
+    // a bad image make the whole menu unusable.
+    if (!isTelegramPhotoUrl(photo)) {
+      await this.renderCustomerScreen(target, {
+        text: caption,
+        ...rest,
+      });
+      return;
+    }
 
     if (target.messageId) {
       try {
