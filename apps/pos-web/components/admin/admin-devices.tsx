@@ -85,7 +85,7 @@ export function AdminDevices() {
     }
 
     try {
-      await apiFetch(`/devices/${device.id}`, { method: "DELETE" });
+      await apiFetch("/devices/bulk", { method: "DELETE", body: JSON.stringify({ ids: [device.id] }) });
       showToast("Qurilma o'chirildi.", "success");
       resource.reload();
     } catch (caught) {
