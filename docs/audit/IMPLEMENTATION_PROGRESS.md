@@ -16,8 +16,10 @@ The following release-candidate changes are on branch
   audit or ledger integrity; the API rejects those records explicitly.
 - Single-row delete actions now use the same permanent-delete contract as the
   corresponding bulk action where both archive and delete are offered.
+- Receipts now expose the same guarded permanent-delete action for one row as
+  for multi-selection; an open receipt detail is closed after deletion.
 - Current commits in the release branch include `5052c68`, `13fcad1`,
-  `a52a34a`, `d189511`, `30b797c`, `0005229`, `359c1e7`, `4cfecc1` and
+  `401a1a8`, `a52a34a`, `d189511`, `30b797c`, `0005229`, `359c1e7`, `4cfecc1` and
   `684349e` (plus their preceding remediation commits).
 
 Verification after this checkpoint:
