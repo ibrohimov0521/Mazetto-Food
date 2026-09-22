@@ -278,6 +278,20 @@ export function AdminReceiptsPage() {
     }
   }
 
+  async function deleteReceipt(receipt: Receipt): Promise<void> {
+    if (!window.confirm(`${receipt.receiptNumber} chekini bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/receipts/bulk", { method: "DELETE", body: JSON.stringify({ ids: [receipt.id] }) });
+      if (detail?.id === receipt.id) setDetailId(null);
+      setSelectedReceiptIds((current) => current.filter((id) => id !== receipt.id));
+      showToast("Chek bazadan o'chirildi.", "success");
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Chekni o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   const stats = useMemo(() => {
     const printedCount = receipts.filter((receipt) => receipt.printed).length;
     const amount = receipts.reduce(
@@ -519,6 +533,12 @@ export function AdminReceiptsPage() {
                 icon="externalLink"
                 label={`${receipt.receiptNumber} — buyurtmani ochish`}
               />
+              {canMarkPrinted ? <RowAction
+                icon="trash"
+                label={`${receipt.receiptNumber} — bazadan butunlay o'chirish`}
+                onClick={() => void deleteReceipt(receipt)}
+                tone="danger"
+              /> : null}
             </>
           )}
           rows={receipts}
