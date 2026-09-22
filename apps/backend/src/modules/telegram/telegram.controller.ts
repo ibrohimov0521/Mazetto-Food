@@ -32,10 +32,6 @@ export class TelegramController {
   async handleWebhook(@Param("secret") secret: string, @Body() update: unknown) {
     this.assertWebhookSecret(secret, process.env.TELEGRAM_WEBHOOK_SECRET);
 
-    if (await this.handleStaffChatIdDiagnostic(update)) {
-      return { ok: true, handled: true };
-    }
-
     const customerResult =
       await this.telegramCustomerAuthService.handleWebhookUpdate(update);
 
