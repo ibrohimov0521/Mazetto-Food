@@ -6,6 +6,8 @@ import { KitchenModule } from "../kitchen/kitchen.module";
 import { GeocodingModule } from "../geocoding/geocoding.module";
 import { OrdersModule } from "../orders/orders.module";
 import { PaymentsModule } from "../payments/payments.module";
+import { TablesModule } from "../tables/tables.module";
+import { CashRegisterModule } from "../cash-register/cash-register.module";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { TelegramController } from "./telegram.controller";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
@@ -19,7 +21,7 @@ import { TelegramCustomerOrderHistoryService } from "./telegram-customer-order-h
 import { TelegramStaffService } from "./telegram-staff.service";
 
 @Module({
-  imports: [PrismaModule, BranchesModule, KitchenModule, OrdersModule, PaymentsModule, GeocodingModule],
+  imports: [PrismaModule, BranchesModule, KitchenModule, TablesModule, CashRegisterModule, OrdersModule, PaymentsModule, GeocodingModule],
   controllers: [TelegramController],
   providers: [
     CustomerCourierService,

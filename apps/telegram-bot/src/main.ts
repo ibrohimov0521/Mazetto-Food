@@ -27,6 +27,8 @@ type TelegramBotConfig = {
   healthPort: number;
   healthHost: string;
   backendHealthUrl: string;
+  webhookPath: string;
+  mode: "customer" | "staff";
 };
 
 type AgentState = {
@@ -134,21 +136,32 @@ async function configureBotInterface(
     return;
   }
 
-  await telegramRequest<boolean>(botConfig, "setMyCommands", {
-    commands: [
+  const customerCommands = [
       { command: "start", description: "Bosh menyu" },
       { command: "menu", description: "Menyu" },
       { command: "cart", description: "Savat" },
       { command: "orders", description: "Buyurtmalarim" },
       { command: "profile", description: "Profil" },
       { command: "branches", description: "Filiallar" },
-      { command: "staff", description: "Xodim paneli" },
-      { command: "courier", description: "Kuryer buyurtmalari" },
-      { command: "admin", description: "Rol bo'yicha boshqaruv" },
       { command: "cancel", description: "Jarayonni bekor qilish" },
       { command: "support", description: "Yordam" },
+      { command: "help", description: "Yordam" },
+      { command: "terms", description: "Foydalanish shartlari" },
+    ];
+  const staffCommands = [
+      { command: "start", description: "Xodim paneli" },
+      { command: "staff", description: "Xodim paneli" },
+      { command: "courier", description: "Kuryer buyurtmalari" },
+      { command: "kitchen", description: "Oshxona buyurtmalari" },
+      { command: "waiter", description: "Ofitsiant buyurtmalari" },
+      { command: "cashier", description: "Kassa smenasi" },
+      { command: "admin", description: "Boshqaruv paneli" },
+      { command: "accountant", description: "Buxgalteriya" },
       { command: "myid", description: "Telegram ID ni ko'rsatish" },
-    ],
+      { command: "help", description: "Yordam" },
+    ];
+  await telegramRequest<boolean>(botConfig, "setMyCommands", {
+    commands: botConfig.mode === "staff" ? staffCommands : customerCommands,
   });
 }
 
@@ -297,7 +310,7 @@ function renderStatusPage(agentState: AgentState): string {
 }
 
 function webhookUrl(botConfig: TelegramBotConfig): string {
-  return `${botConfig.publicApiUrl}/telegram/webhook/${encodeURIComponent(botConfig.webhookSecret ?? "")}`;
+  return `${botConfig.publicApiUrl}/${botConfig.webhookPath}/${encodeURIComponent(botConfig.webhookSecret ?? "")}`;
 }
 
 function readConfig(): TelegramBotConfig {
@@ -305,9 +318,21 @@ function readConfig(): TelegramBotConfig {
     process.env.MAZETTO_PUBLIC_API_URL ?? "https://api.mazettofood.uz/api/v1",
   );
   return {
-    token: process.env.TELEGRAM_BOT_TOKEN?.trim() || null,
+    token:
+      (process.env.MAZETTO_TELEGRAM_BOT_MODE === "staff"
+        ? process.env.TELEGRAM_STAFF_BOT_TOKEN
+        : process.env.TELEGRAM_BOT_TOKEN)?.trim() || null,
     publicApiUrl,
-    webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null,
+    webhookSecret:
+      (process.env.MAZETTO_TELEGRAM_BOT_MODE === "staff"
+        ? process.env.TELEGRAM_STAFF_WEBHOOK_SECRET
+        : process.env.TELEGRAM_WEBHOOK_SECRET)?.trim() || null,
+    webhookPath:
+      process.env.MAZETTO_TELEGRAM_WEBHOOK_PATH?.trim() ||
+      (process.env.MAZETTO_TELEGRAM_BOT_MODE === "staff"
+        ? "telegram/staff-webhook"
+        : "telegram/webhook"),
+    mode: process.env.MAZETTO_TELEGRAM_BOT_MODE === "staff" ? "staff" : "customer",
     setWebhook: process.argv.includes("--set-webhook"),
     deleteWebhook: process.argv.includes("--delete-webhook"),
     once: process.argv.includes("--once"),

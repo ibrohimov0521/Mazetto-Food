@@ -8,5 +8,6 @@ import { TablesService } from "./tables.service";
   imports: [PrismaModule, KitchenModule],
   controllers: [TablesController],
   providers: [TablesService],
+  exports: [TablesService],
 })
 export class TablesModule {}

@@ -125,10 +125,6 @@ export class TelegramCustomerScreenService implements OnModuleInit {
         { command: "orders", description: "Buyurtmalarim" },
         { command: "profile", description: "Profil" },
         { command: "branches", description: "Filiallar" },
-        { command: "staff", description: "Xodim paneli" },
-        { command: "courier", description: "Kuryer buyurtmalari" },
-        { command: "admin", description: "Rol bo'yicha boshqaruv" },
-        { command: "myid", description: "Telegram ID" },
         { command: "help", description: "Xizmat haqida" },
         { command: "terms", description: "Foydalanish shartlari" },
         { command: "support", description: "Biz bilan aloqa" },
@@ -231,7 +227,14 @@ export class TelegramCustomerScreenService implements OnModuleInit {
   }
 
   async telegramRequest(method: string, payload: unknown): Promise<void> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+    await this.telegramRequestWithToken(process.env.TELEGRAM_BOT_TOKEN, method, payload);
+  }
+
+  async telegramRequestWithToken(
+    token: string | undefined,
+    method: string,
+    payload: unknown,
+  ): Promise<void> {
 
     // Token yo'q — bot o'chiq. Bu xato emas, ilova ishlayveradi.
     if (!token) {
@@ -253,6 +256,50 @@ export class TelegramCustomerScreenService implements OnModuleInit {
         `Telegram ${method} failed with ${response.status}: ${body}`,
       );
     }
+  }
+
+  async renderWithToken(
+    token: string | undefined,
+    target: CustomerScreenTarget,
+    payload: CustomerScreenPayload,
+  ): Promise<void> {
+    if (!token) {
+      return;
+    }
+    if (target.messageId) {
+      try {
+        await this.telegramRequestWithToken(token, "editMessageText", {
+          chat_id: target.chatId,
+          message_id: target.messageId,
+          ...payload,
+        });
+        return;
+      } catch (error) {
+        if (isMessageNotModifiedError(error)) {
+          return;
+        }
+      }
+    }
+    await this.telegramRequestWithToken(token, "sendMessage", {
+      chat_id: target.chatId,
+      ...payload,
+    });
+  }
+
+  async answerCallbackWithToken(
+    token: string | undefined,
+    callback: TelegramCallbackQuery,
+    text?: string,
+    showAlert = false,
+  ): Promise<void> {
+    if (!token || !callback.id) {
+      return;
+    }
+    await this.telegramRequestWithToken(token, "answerCallbackQuery", {
+      callback_query_id: callback.id,
+      ...(text ? { text } : {}),
+      ...(showAlert ? { show_alert: true } : {}),
+    }).catch(() => undefined);
   }
 
   /*

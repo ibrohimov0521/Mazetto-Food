@@ -30,16 +30,10 @@ export class TelegramController {
   @Public()
   @Post("webhook/:secret")
   async handleWebhook(@Param("secret") secret: string, @Body() update: unknown) {
-    this.assertWebhookSecret(secret);
+    this.assertWebhookSecret(secret, process.env.TELEGRAM_WEBHOOK_SECRET);
 
     if (await this.handleStaffChatIdDiagnostic(update)) {
       return { ok: true, handled: true };
-    }
-
-    const staffResult = await this.telegramStaffService?.handleWebhookUpdate(update);
-
-    if (staffResult?.handled) {
-      return staffResult;
     }
 
     const customerResult =
@@ -52,15 +46,27 @@ export class TelegramController {
     return this.telegramOrderNotificationService.handleWebhook(secret, update);
   }
 
-  private assertWebhookSecret(secret: string): void {
-    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  @Public()
+  @Post("staff-webhook/:secret")
+  async handleStaffWebhook(@Param("secret") secret: string, @Body() update: unknown) {
+    this.assertWebhookSecret(secret, process.env.TELEGRAM_STAFF_WEBHOOK_SECRET);
+    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_STAFF_BOT_TOKEN)) {
+      return { ok: true, handled: true };
+    }
+    return (
+      (await this.telegramStaffService?.handleWebhookUpdate(update)) ??
+      { ok: true, handled: false }
+    );
+  }
+
+  private assertWebhookSecret(secret: string, expectedSecret: string | undefined): void {
 
     if (!expectedSecret || secret !== expectedSecret) {
       throw new UnauthorizedException("Invalid Telegram webhook secret");
     }
   }
 
-  private async handleStaffChatIdDiagnostic(update: unknown): Promise<boolean> {
+  private async handleStaffChatIdDiagnostic(update: unknown, token = process.env.TELEGRAM_BOT_TOKEN): Promise<boolean> {
     const message = this.toTelegramDiagnosticUpdate(update).message;
 
     if (!message?.chat?.id || !this.isDiagnosticCommand(message.text)) {
@@ -110,7 +116,6 @@ export class TelegramController {
 
   private async telegramRequest(method: string, payload: unknown): Promise<void> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
-
     if (!token) {
       return;
     }
