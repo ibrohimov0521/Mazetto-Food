@@ -289,6 +289,22 @@ export function AdminRolesPage() {
     }
   }
 
+  async function permanentlyDeleteRole(id: string): Promise<void> {
+    if (!window.confirm("Bu maxsus rolni bazadan butunlay o'chirishni tasdiqlaysizmi?")) return;
+    setIsSaving(true);
+    try {
+      await apiFetch("/roles/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: [id] }) });
+      showToast("Maxsus rol bazadan o'chirildi.", "success");
+      setSelectedRoleIds((current) => current.filter((roleId) => roleId !== id));
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Rolni o'chirib bo'lmadi.", "danger");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <div aria-busy="true" className="grid gap-5">
@@ -482,6 +498,14 @@ export function AdminRolesPage() {
                     >
                       <Icon className="h-4 w-4" name="trash" />
                       Arxivlash
+                    </Button>
+                    <Button
+                      onClick={() => void permanentlyDeleteRole(role.id)}
+                      size="sm"
+                      variant="danger"
+                    >
+                      <Icon className="h-4 w-4" name="trash" />
+                      Butunlay o'chirish
                     </Button>
                   </div>
                 ) : null}

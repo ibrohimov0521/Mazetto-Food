@@ -314,6 +314,19 @@ export function AdminExpensesPage() {
     }
   }
 
+  async function permanentlyDeleteCategory(id: string): Promise<void> {
+    if (!window.confirm("Bu xarajat kategoriyasini bazadan butunlay o'chirishni tasdiqlaysizmi?")) return;
+    try {
+      await apiFetch("/expenses/categories/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: [id] }) });
+      showToast("Xarajat kategoriyasi bazadan o'chirildi.", "success");
+      setSelectedCategoryIds((current) => current.filter((categoryId) => categoryId !== id));
+      loadCategoryData();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Kategoriyani o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   function validate(draft: ExpenseForm): ExpenseErrors {
     const next: ExpenseErrors = {};
     const amount = Number(draft.amount);
@@ -637,6 +650,7 @@ export function AdminExpensesPage() {
             <>
               <RowAction icon="pencil" label="Kategoriyani tahrirlash" onClick={() => openCategoryForm(item)} />
               <RowAction icon="trash" label="Kategoriyani arxivlash" onClick={() => void archiveCategory(item)} tone="danger" />
+              <RowAction icon="trash" label="Kategoriyani bazadan butunlay o'chirish" onClick={() => void permanentlyDeleteCategory(item.id)} tone="danger" />
             </>
           ) } : {})}
           rows={categoryRecords}
