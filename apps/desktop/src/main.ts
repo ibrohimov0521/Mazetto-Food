@@ -647,15 +647,15 @@ async function silentPrintReceipt(
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   try {
-    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt))}`);
+    const godexLabelPrinter = /\bgodex\b/i.test(deviceName);
+    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, godexLabelPrinter))}`);
     // Hidden oynada `loadURL` tugashi sahifa birinchi marta chizilganini
     // kafolatlamaydi. Godex kabi Windows drayverlari shu onda print qilinsa
     // bo'sh sahifa berishi mumkin, shuning uchun ikki frame kutamiz.
     await window.webContents.executeJavaScript(
-      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+      "new Promise((resolve, reject) => requestAnimationFrame(() => requestAnimationFrame(() => { if (!document.body || !document.body.innerText.trim()) reject(new Error('Chek oynasi bo\'sh render bo\'ldi')); else resolve(); })))",
       true,
     );
-    const godexLabelPrinter = /\bgodex\b/i.test(deviceName);
     await new Promise<void>((resolve, reject) => {
       window.webContents.print(
         {
@@ -678,7 +678,7 @@ async function silentPrintReceipt(
   }
 }
 
-function printableReceiptHtml(receipt: PrintableReceipt): string {
+function printableReceiptHtml(receipt: PrintableReceipt, godexLabelPrinter = false): string {
   const content = receipt.content ?? {};
   const documentType = String(content.documentType ?? receipt.documentType ?? "RECEIPT");
   const kitchen = documentType === "KITCHEN";
@@ -705,7 +705,9 @@ function printableReceiptHtml(receipt: PrintableReceipt): string {
     return `<li><span>${escapeHtml(String(payment.method ?? "To'lov"))}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
   }).join("");
   const heading = cancelled ? "BUYURTMA BEKOR QILINDI" : refunded ? "TO'LOV QAYTARILDI" : kitchen ? "OSHXONA BUYURTMASI" : "MIJOZ CHEKI";
-  return `<!doctype html><html><head><meta charset="utf-8"><style>@page{margin:2mm}*{box-sizing:border-box}body{width:76mm;max-width:calc(100% - 4mm);margin:0 auto;font-family:Arial,sans-serif;color:#000;font-size:12px}header{text-align:center;border-bottom:2px dashed #000;padding:4mm 0 3mm}h1{font-size:${kitchen ? "24px" : "18px"};margin:0 0 2mm}h2{font-size:${kitchen ? "28px" : "15px"};margin:0}ul{list-style:none;padding:0;margin:2mm 0;border-bottom:1px dashed #000}li{display:flex;justify-content:space-between;gap:3mm;padding:2mm 0;border-top:1px dotted #777}small{display:block;font-weight:400;margin:1mm 0 0 4mm}.total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-top:3mm}.meta{display:flex;justify-content:space-between;margin-top:2mm}.alert{font-weight:800;font-size:17px;margin-top:2mm}.footer{text-align:center;margin-top:4mm}</style></head><body><header><h1>MAZETTO FOOD</h1><div>${escapeHtml(String(content.branchName ?? ""))}</div><div class="${cancelled || refunded ? "alert" : ""}">${heading}</div><h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2></header><div class="meta"><span>${escapeHtml(String(content.orderType ?? ""))}</span><span>${escapeHtml(String(content.dateTime ?? ""))}</span></div>${cancelled && content.cancellationReason ? `<p class="alert">Sabab: ${escapeHtml(String(content.cancellationReason))}</p>` : ""}<ul>${itemRows}</ul>${kitchen ? "" : `<ul>${paymentRows}</ul><div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total ?? ""))}</span></div>`}${content.orderNotes ? `<p><b>Izoh:</b> ${escapeHtml(String(content.orderNotes))}</p>` : ""}<p class="footer">${kitchen ? "Tayyorlash uchun" : "Xaridingiz uchun rahmat!"}</p></body></html>`;
+  const pageStyle = godexLabelPrinter ? "@page{size:90mm 80mm;margin:0}" : "@page{margin:2mm}";
+  const bodyWidth = godexLabelPrinter ? "86mm" : "76mm";
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${pageStyle}*{box-sizing:border-box}body{width:${bodyWidth};max-width:calc(100% - 4mm);margin:0 auto;font-family:Arial,sans-serif;color:#000;font-size:12px}header{text-align:center;border-bottom:2px dashed #000;padding:4mm 0 3mm}h1{font-size:${kitchen ? "24px" : "18px"};margin:0 0 2mm}h2{font-size:${kitchen ? "28px" : "15px"};margin:0}ul{list-style:none;padding:0;margin:2mm 0;border-bottom:1px dashed #000}li{display:flex;justify-content:space-between;gap:3mm;padding:2mm 0;border-top:1px dotted #777}small{display:block;font-weight:400;margin:1mm 0 0 4mm}.total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-top:3mm}.meta{display:flex;justify-content:space-between;margin-top:2mm}.alert{font-weight:800;font-size:17px;margin-top:2mm}.footer{text-align:center;margin-top:4mm}</style></head><body><header><h1>MAZETTO FOOD</h1><div>${escapeHtml(String(content.branchName ?? ""))}</div><div class="${cancelled || refunded ? "alert" : ""}">${heading}</div><h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2></header><div class="meta"><span>${escapeHtml(String(content.orderType ?? ""))}</span><span>${escapeHtml(String(content.dateTime ?? ""))}</span></div>${cancelled && content.cancellationReason ? `<p class="alert">Sabab: ${escapeHtml(String(content.cancellationReason))}</p>` : ""}<ul>${itemRows}</ul>${kitchen ? "" : `<ul>${paymentRows}</ul><div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total ?? ""))}</span></div>`}${content.orderNotes ? `<p><b>Izoh:</b> ${escapeHtml(String(content.orderNotes))}</p>` : ""}<p class="footer">${kitchen ? "Tayyorlash uchun" : "Xaridingiz uchun rahmat!"}</p></body></html>`;
 }
 
 function escapeHtml(value: string): string {
