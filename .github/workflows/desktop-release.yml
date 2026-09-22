@@ -2,7 +2,7 @@ name: Desktop Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/telegram-photo-url-fallback]
     paths:
       - "apps/desktop/**"
       - "apps/pos-web/**"
