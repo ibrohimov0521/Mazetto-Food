@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import {
   isMessageNotModifiedError,
   requiredTelegramId,
@@ -74,7 +74,41 @@ function isTelegramPhotoUrl(value: string): boolean {
 }
 
 @Injectable()
-export class TelegramCustomerScreenService {
+export class TelegramCustomerScreenService implements OnModuleInit {
+  private readonly logger = new Logger(TelegramCustomerScreenService.name);
+
+  async onModuleInit(): Promise<void> {
+    if (!process.env.TELEGRAM_BOT_TOKEN) {
+      return;
+    }
+
+    try {
+      await this.telegramRequest("setMyCommands", {
+        commands: [
+          { command: "start", description: "Foydalanishni boshlash" },
+          { command: "buy", description: "Buyurtma berish" },
+          { command: "menu", description: "Menyu" },
+          { command: "cart", description: "Savat" },
+          { command: "orders", description: "Buyurtmalarim" },
+          { command: "profile", description: "Profil" },
+          { command: "branches", description: "Filiallar" },
+          { command: "help", description: "Xizmat haqida" },
+          { command: "terms", description: "Foydalanish shartlari" },
+          { command: "support", description: "Biz bilan aloqa" },
+        ],
+      });
+      await this.telegramRequest("setChatMenuButton", {
+        menu_button: { type: "commands" },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Telegram command menu setup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   /*
    * Bitta ekran — bitta xabar.
    *

@@ -130,10 +130,11 @@ export class TelegramCustomerOrderingService {
 
     if (action === "prod" && values[0]) {
       await this.screen.answerCallback(callback);
+      const legacyFormat = values.length >= 4;
       await this.sendProductConfigurator(target, values[0], {
-        categoryId: values[1],
-        quantity: values[2],
-        variantId: values[3],
+        ...(legacyFormat ? { categoryId: values[1] } : {}),
+        quantity: legacyFormat ? values[2] : values[1],
+        variantId: legacyFormat ? values[3] : values[2],
       });
       return true;
     }
@@ -299,7 +300,7 @@ export class TelegramCustomerOrderingService {
   ): Promise<boolean> {
     const normalized = command.toLowerCase().replace(/@[^\s]+$/, "");
 
-    if (normalized === "/menu") {
+    if (normalized === "/menu" || normalized === "/buy") {
       await this.sendCategoryMenu(message);
       return true;
     }
@@ -346,6 +347,16 @@ export class TelegramCustomerOrderingService {
         { chatId },
         {
           text: "Yordam kerak bo'lsa, /menu orqali menyuni oching yoki operatorga murojaat qiling.",
+        },
+      );
+      return true;
+    }
+    if (normalized === "/terms") {
+      const chatId = requiredTelegramId(message.chat?.id, "chat id");
+      await this.screen.renderCustomerScreen(
+        { chatId },
+        {
+          text: "Foydalanish shartlari: buyurtmani tasdiqlaganingizdan keyin filial uni tayyorlashni boshlaydi. Yetkazib berish hududi va vaqtiga qarab operator aniqlashtirishi mumkin.",
         },
       );
       return true;
@@ -625,7 +636,7 @@ export class TelegramCustomerOrderingService {
     const cartLabel = await this.cartButtonLabel(customerId);
     const productButtons = products.map((product) => ({
       text: telegramProductButtonLabel(product.code, product.name, product.category?.code),
-      callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
+      callback_data: `${customerCallbackPrefix}:prod:${product.id}`,
     }));
     const columns = productButtons.some((button) => button.text.length > 18) ? 1 : 2;
     const payload: CustomerScreenPayload = {
@@ -717,7 +728,7 @@ export class TelegramCustomerOrderingService {
                 product.name,
                 categoryCode,
               ),
-              callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
+              callback_data: `${customerCallbackPrefix}:prod:${product.id}`,
             };
           }),
       )
@@ -813,7 +824,7 @@ export class TelegramCustomerOrderingService {
       nextQuantity: number,
       variantId = selectedVariant?.id ?? "-",
     ) =>
-      `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:${nextQuantity}:${variantId}`;
+      `${customerCallbackPrefix}:prod:${product.id}:${nextQuantity}:${variantId}`;
     const controls = [
       ...(product.variants.length > 1
         ? product.variants.map((variant) => [
@@ -831,7 +842,7 @@ export class TelegramCustomerOrderingService {
       [
         {
           text: "🛒 Savatga qo'shish",
-          callback_data: `${customerCallbackPrefix}:addp:${product.id}:${selectedVariant?.id ?? "-"}:${quantity}:${categoryId}`,
+          callback_data: `${customerCallbackPrefix}:addp:${product.id}:${selectedVariant?.id ?? "-"}:${quantity}`,
         },
       ],
       [
