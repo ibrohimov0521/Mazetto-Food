@@ -8,7 +8,6 @@ import {
   formatMoney,
   maskPhone,
   orderStatusLabel,
-  orderStatusLabels,
   orderStatusTone,
   type OrderStatus,
 } from "../../lib/order-display";

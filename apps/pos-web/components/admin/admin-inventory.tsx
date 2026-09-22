@@ -873,7 +873,7 @@ export function AdminInventoryPage() {
             selectable={canEdit}
             selectedKeys={selectedIngredientIds}
             onSelectionChange={setSelectedIngredientIds}
-            selectionDisabled={(item: Ingredient) => false}
+            selectionDisabled={() => false}
             columns={[
               { key: "name", header: "Nomi", primary: true, render: (item: Ingredient) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.unit}</p></> },
               { key: "minimum", header: "Minimum", align: "right", render: (item: Ingredient) => item.minimumStock },
@@ -892,7 +892,7 @@ export function AdminInventoryPage() {
             selectable={canEdit}
             selectedKeys={selectedWarehouseIds}
             onSelectionChange={setSelectedWarehouseIds}
-            selectionDisabled={(item: Warehouse) => false}
+            selectionDisabled={() => false}
             columns={[
               { key: "name", header: "Nomi", primary: true, render: (item: Warehouse) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.branch?.name ?? "Filial"}</p></> },
               { key: "actions", header: "Amal", align: "right", render: (item: Warehouse) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editWarehouse(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("warehouses", item.id, item.name)}>Arxiv</Button><Button size="sm" variant="danger" onClick={() => void permanentlyDeleteMaster("warehouses", [item.id])}>O'chirish</Button></div> : null },

@@ -33,6 +33,35 @@ type StaffIdentity = {
   displayName: string;
 };
 
+type TelegramStaffItem = {
+  productName?: unknown;
+  quantity?: unknown;
+  totalPrice?: unknown;
+};
+
+type TelegramStaffOrder = {
+  id: string;
+  status?: unknown;
+  displayOrderNumber?: unknown;
+  orderNumber?: unknown;
+  total?: unknown;
+  outstandingAmount?: unknown;
+  items?: TelegramStaffItem[];
+  order?: TelegramStaffOrder;
+  customer?: { name?: unknown; phone?: unknown };
+  deliveryAddress?: unknown;
+  deliveryLocation?: unknown;
+  paymentMethod?: unknown;
+};
+
+type TelegramKitchenTicket = {
+  id: string;
+  status?: unknown;
+  ticketNumber?: unknown;
+  order?: Pick<TelegramStaffOrder, "displayOrderNumber" | "orderNumber"> | null;
+  items?: TelegramStaffItem[];
+};
+
 const staffCallbackPrefix = "staff";
 
 @Injectable()
@@ -421,7 +450,7 @@ export class TelegramStaffService {
     return orders.find((order) => order.id === customerOrderId) ?? null;
   }
 
-  private courierActionRows(order: any) {
+  private courierActionRows(order: TelegramStaffOrder) {
     const status = order.order?.status as OrderStatus | undefined;
     if (status === OrderStatus.READY) {
       return [
@@ -446,17 +475,17 @@ export class TelegramStaffService {
     return [];
   }
 
-  private courierOrderLine(order: any): string {
+  private courierOrderLine(order: TelegramStaffOrder): string {
     const status = order.order?.status as OrderStatus | undefined;
     const number = order.order?.displayOrderNumber ?? order.order?.orderNumber ?? order.id;
     const total = this.formatMoney(order.order?.total);
     const address = order.deliveryAddress ?? "Manzil ko'rsatilmagan";
     return [
-      `<b>#${this.escapeHtml(number)}</b> · ${this.escapeHtml(
+      `<b>#${this.escapeHtml(String(number))}</b> · ${this.escapeHtml(
         status ? orderStatusLabel(status, "DELIVERY") : "Noma'lum",
       )}`,
-      `${this.escapeHtml(order.customer?.name ?? "Mijoz")} · ${this.escapeHtml(order.customer?.phone ?? "—")}`,
-      `${this.escapeHtml(address)}`,
+      `${this.escapeHtml(String(order.customer?.name ?? "Mijoz"))} · ${this.escapeHtml(String(order.customer?.phone ?? "—"))}`,
+      `${this.escapeHtml(String(address))}`,
       `<b>Jami:</b> ${this.escapeHtml(total)}`,
     ].join("\n");
   }
@@ -468,11 +497,11 @@ export class TelegramStaffService {
     }
     const tickets = await this.kitchenService.listOrders(staff.user);
     const text = tickets.length
-      ? `<b>🍳 Oshxona navbati</b>\n\n${tickets.map((ticket: any) => `<b>#${this.escapeHtml(ticket.order?.displayOrderNumber ?? ticket.order?.orderNumber ?? ticket.ticketNumber)}</b> · ${this.escapeHtml(String(ticket.status))}\n${(ticket.items ?? []).map((item: any) => `${Number(item.quantity)}x ${this.escapeHtml(item.productName)}`).join(", ")}`).join("\n\n")}`
+      ? `<b>🍳 Oshxona navbati</b>\n\n${tickets.map((ticket: TelegramKitchenTicket) => `<b>#${this.escapeHtml(String(ticket.order?.displayOrderNumber ?? ticket.order?.orderNumber ?? ticket.ticketNumber))}</b> · ${this.escapeHtml(String(ticket.status))}\n${(ticket.items ?? []).map((item: TelegramStaffItem) => `${Number(item.quantity)}x ${this.escapeHtml(String(item.productName ?? "—"))}`).join(", ")}`).join("\n\n")}`
       : "🍳 Hozir oshxonada faol buyurtma yo'q.";
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
       text, parse_mode: "HTML", reply_markup: { inline_keyboard: [
-        ...tickets.map((ticket: any) => [{ text: `#${ticket.order?.displayOrderNumber ?? ticket.ticketNumber}`, callback_data: `${staffCallbackPrefix}:kitchen_ticket:${ticket.id}:next` }]),
+        ...tickets.map((ticket: TelegramKitchenTicket) => [{ text: `#${String(ticket.order?.displayOrderNumber ?? ticket.ticketNumber)}`, callback_data: `${staffCallbackPrefix}:kitchen_ticket:${ticket.id}:next` }]),
         [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:kitchen` }],
         [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
       ] },
@@ -496,7 +525,7 @@ export class TelegramStaffService {
     }
     const orders = await this.tablesService.listWaiterOrders(staff.user);
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
-      text: orders.length ? `<b>🍽 Ofitsiant buyurtmalari</b>\n\n${orders.map((order: any) => `#${this.escapeHtml(order.displayOrderNumber ?? order.orderNumber)} · ${this.escapeHtml(String(order.status))}\n${(order.items ?? []).map((item: any) => `${Number(item.quantity)}x ${this.escapeHtml(item.productName)}`).join(", ")}`).join("\n\n")}` : "🍽 Sizga biriktirilgan faol zal buyurtmasi yo'q.",
+      text: orders.length ? `<b>🍽 Ofitsiant buyurtmalari</b>\n\n${orders.map((order: TelegramStaffOrder) => `#${this.escapeHtml(String(order.displayOrderNumber ?? order.orderNumber))} · ${this.escapeHtml(String(order.status))}\n${(order.items ?? []).map((item: TelegramStaffItem) => `${Number(item.quantity)}x ${this.escapeHtml(String(item.productName ?? "—"))}`).join(", ")}`).join("\n\n")}` : "🍽 Sizga biriktirilgan faol zal buyurtmasi yo'q.",
       parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:waiter` }], [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }]] },
     });
   }
@@ -549,31 +578,29 @@ export class TelegramStaffService {
       : "Bu accountga Telegram orqali bajariladigan amal biriktirilmagan.";
   }
 
-  private courierOrderDetailText(order: any): string {
+  private courierOrderDetailText(order: TelegramStaffOrder): string {
     const status = order.order?.status as OrderStatus | undefined;
     const items = (order.order?.items ?? [])
       .map(
-        (item: any) =>
-          `• ${this.escapeHtml(item.productName)} × ${Number(item.quantity)} — ${this.escapeHtml(this.formatMoney(item.totalPrice))}`,
+        (item: TelegramStaffItem) =>
+          `• ${this.escapeHtml(String(item.productName ?? "—"))} × ${Number(item.quantity)} — ${this.escapeHtml(this.formatMoney(item.totalPrice))}`,
       )
       .join("\n");
     const outstanding = Number(order.order?.outstandingAmount ?? 0);
-    const location = order.deliveryLocation
-      ? `https://maps.google.com/?q=${order.deliveryLocation.latitude},${order.deliveryLocation.longitude}`
-      : null;
+    const location = this.locationLink(order.deliveryLocation);
 
     return [
-      `<b>🚚 Buyurtma #${this.escapeHtml(order.order?.displayOrderNumber ?? order.order?.orderNumber ?? order.id)}</b>`,
+      `<b>🚚 Buyurtma #${this.escapeHtml(String(order.order?.displayOrderNumber ?? order.order?.orderNumber ?? order.id))}</b>`,
       `<b>Holat:</b> ${this.escapeHtml(status ? orderStatusLabel(status, "DELIVERY") : "Noma'lum")}`,
-      `<b>Mijoz:</b> ${this.escapeHtml(order.customer?.name ?? "—")}`,
-      `<b>Telefon:</b> ${this.escapeHtml(order.customer?.phone ?? "—")}`,
-      `<b>Manzil:</b> ${this.escapeHtml(order.deliveryAddress ?? "—")}`,
+      `<b>Mijoz:</b> ${this.escapeHtml(String(order.customer?.name ?? "—"))}`,
+      `<b>Telefon:</b> ${this.escapeHtml(String(order.customer?.phone ?? "—"))}`,
+      `<b>Manzil:</b> ${this.escapeHtml(String(order.deliveryAddress ?? "—"))}`,
       ...(location ? [`<b>Lokatsiya:</b> ${location}`] : []),
       "",
       `<b>Tarkib:</b>`,
       items || "—",
       "",
-      `<b>To'lov:</b> ${this.escapeHtml(order.paymentMethod ?? "—")}`,
+      `<b>To'lov:</b> ${this.escapeHtml(String(order.paymentMethod ?? "—"))}`,
       `<b>Jami:</b> ${this.escapeHtml(this.formatMoney(order.order?.total))}`,
       `<b>Qoldiq:</b> ${this.escapeHtml(this.formatMoney(outstanding))}`,
     ].join("\n");
@@ -662,6 +689,18 @@ export class TelegramStaffService {
     return Number.isFinite(number)
       ? `${new Intl.NumberFormat("uz-UZ").format(Math.round(number))} so'm`
       : "—";
+  }
+
+  private locationLink(value: unknown): string | null {
+    if (!value || typeof value !== "object" || !("latitude" in value) || !("longitude" in value)) {
+      return null;
+    }
+    const location = value as { latitude: unknown; longitude: unknown };
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+    return Number.isFinite(latitude) && Number.isFinite(longitude)
+      ? `https://maps.google.com/?q=${latitude},${longitude}`
+      : null;
   }
 
   private escapeHtml(value: string): string {

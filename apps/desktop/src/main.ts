@@ -653,7 +653,7 @@ async function silentPrintReceipt(
     // kafolatlamaydi. Godex kabi Windows drayverlari shu onda print qilinsa
     // bo'sh sahifa berishi mumkin, shuning uchun ikki frame kutamiz.
     await window.webContents.executeJavaScript(
-      "new Promise((resolve, reject) => requestAnimationFrame(() => requestAnimationFrame(() => { if (!document.body || !document.body.innerText.trim()) reject(new Error('Chek oynasi bo\'sh render bo\'ldi')); else resolve(); })))",
+      "new Promise((resolve, reject) => requestAnimationFrame(() => requestAnimationFrame(() => { if (!document.body || !document.body.innerText.trim()) reject(new Error(\"Chek oynasi bo'sh render bo'ldi\")); else resolve(); })))",
       true,
     );
     await new Promise<void>((resolve, reject) => {

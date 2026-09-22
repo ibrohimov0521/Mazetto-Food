@@ -1,6 +1,6 @@
 # Audit remediation implementation progress
 
-Last local checkpoint: 2026-09-21 13:05 Asia/Tashkent.
+Last local checkpoint: 2026-09-23 Asia/Tashkent.
 
 ## Continuation checkpoint: 2026-09-23
 
@@ -18,13 +18,20 @@ The following release-candidate changes are on branch
   corresponding bulk action where both archive and delete are offered.
 - Receipts now expose the same guarded permanent-delete action for one row as
   for multi-selection; an open receipt detail is closed after deletion.
+- The destructive-action audit is now explicit: operational master data has
+  guarded single-row and multi-row permanent deletion where references allow
+  it; audit events, payments, expense records, shifts and reports remain
+  immutable, while reversible business data keeps archive/restore controls.
+- Hall/table administration follows the same rule: empty halls/tables can be
+  permanently removed, but tables with order history are rejected rather than
+  corrupting historical orders.
 - Current commits in the release branch include `5052c68`, `13fcad1`,
   `401a1a8`, `a52a34a`, `d189511`, `30b797c`, `0005229`, `359c1e7`, `4cfecc1` and
-  `684349e` (plus their preceding remediation commits).
+  `684349e`, `f50d47b` and `a39ef30` (plus their preceding remediation commits).
 
 Verification after this checkpoint:
 
-- Backend tests: 238/238 passed.
+- Backend tests: 240/240 passed.
 - Backend and POS/Admin typechecks passed.
 - Telegram typecheck passed.
 - Read-only release smoke: 22/22 passed.
@@ -186,10 +193,10 @@ contain the generated public media and its local API content was unavailable.
 
 ## Remaining release gates
 
-1. `AUD-101`: obtain a current production backup from the PostgreSQL Docker
-   service on the self-hosted Dokploy server, restore it to isolation,
-   reconcile `_prisma_migrations`, and rehearse deploy plus rollback. No
-   production migration or deploy before this gate.
+1. `AUD-101`: the current production backup was obtained from the PostgreSQL
+   Docker service, restored to isolation, checked with `pg_restore --list`, and
+   all 40 migrations were rehearsed against the restored copy. Production
+   migration/deploy is still gated on PR merge and the final rollback record.
 2. `AUD-102`, `AUD-152`, `AUD-160`: complete recorded customer media/browser
    and live Telegram staff-group acceptance. Staff role matrix and disposable
    order-to-cash-to-stock-to-print E2E are automated.

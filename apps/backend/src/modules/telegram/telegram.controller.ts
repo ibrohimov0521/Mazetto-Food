@@ -77,7 +77,7 @@ export class TelegramController {
           telegramUserId === undefined || telegramUserId === null
             ? "Telegram foydalanuvchi ID topilmadi. Botga shaxsiy chatdan /myid yuboring."
             : `Sizning Telegram ID: ${telegramUserId}\n\nBu raqamni Admin boshqaruv → Xodimlar → Telegram foydalanuvchi ID maydoniga kiriting.`,
-      });
+      }, token);
       return true;
     }
 
@@ -89,7 +89,7 @@ export class TelegramController {
         `Chat type: ${message.chat.type ?? "unknown"}`,
         ...(message.chat.title ? [`Title: ${message.chat.title}`] : []),
       ].join("\n"),
-    });
+    }, token);
 
     return true;
   }
@@ -110,8 +110,8 @@ export class TelegramController {
     return update && typeof update === "object" ? (update as TelegramDiagnosticUpdate) : {};
   }
 
-  private async telegramRequest(method: string, payload: unknown): Promise<void> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+  private async telegramRequest(method: string, payload: unknown, requestToken = process.env.TELEGRAM_BOT_TOKEN): Promise<void> {
+    const token = requestToken;
     if (!token) {
       return;
     }
