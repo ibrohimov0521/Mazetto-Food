@@ -976,16 +976,12 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    const cartItem = await this.addCartItem(
-      customer.id,
-      variant.productId,
-      variant.id,
-    );
+    await this.addCartItem(customer.id, variant.productId, variant.id);
     await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
-    await this.sendCartItemConfigured(
+    await this.sendProductsForCategory(
       target,
-      cartItem.id,
-      variant.product.name,
+      customer.id,
+      variant.product.categoryId,
     );
   }
 
@@ -1049,14 +1045,18 @@ export class TelegramCustomerOrderingService {
     }
 
     const quantity = Math.max(1, Math.min(99, Number(rawQuantity) || 1));
-    const cartItem = await this.addCartItem(
+    await this.addCartItem(
       customer.id,
       product.id,
       variant?.id ?? null,
       quantity,
     );
     await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
-    await this.sendCartItemConfigured(target, cartItem.id, product.name);
+    await this.sendProductsForCategory(
+      target,
+      customer.id,
+      categoryId ?? product.categoryId,
+    );
   }
 
   private async addCartItem(
@@ -1111,43 +1111,6 @@ export class TelegramCustomerOrderingService {
         },
         select: { id: true },
       });
-    });
-  }
-
-  private async sendCartItemConfigured(
-    target: CustomerScreenTarget,
-    cartItemId: string,
-    productName: string,
-  ): Promise<void> {
-    await this.screen.renderCustomerScreen(target, {
-      text: `✅ <b>${escapeHtml(productName)}</b> savatga qo'shildi.`,
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "−",
-              callback_data: `${customerCallbackPrefix}:qty:${cartItemId}:dec`,
-            },
-            {
-              text: "+",
-              callback_data: `${customerCallbackPrefix}:qty:${cartItemId}:inc`,
-            },
-          ],
-          [
-            {
-              text: "🛒 Savatni ko'rish",
-              callback_data: `${customerCallbackPrefix}:cart`,
-            },
-          ],
-          [
-            {
-              text: "🍽 Menyuga qaytish",
-              callback_data: `${customerCallbackPrefix}:home`,
-            },
-          ],
-        ],
-      },
     });
   }
 
