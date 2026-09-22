@@ -12,6 +12,7 @@ import {
   formatMoney,
   maskPhone,
   orderSourceLabels,
+  orderStatusLabel,
   orderStatusLabels,
   orderStatusTone,
   orderTypeLabels,
@@ -603,7 +604,7 @@ export function AdminOrdersPage() {
       header: "Holat",
       render: (order) => (
         <Badge tone={orderStatusTone(order.status)} withDot>
-          {orderStatusLabels[order.status]}
+          {orderStatusLabel(order.status, order.type)}
         </Badge>
       ),
     },
@@ -1269,7 +1270,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+    <div className="grid gap-5">
       <div className="flex justify-end">
         <StaffSync
           updatedAt={realtimeUpdatedAt}
@@ -1278,7 +1279,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           refreshing={isLoading}
           onRefresh={() => void load()}
         />
-      </div>      <div className="grid gap-5">
+      </div>
+
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid gap-5">
         <Card>
           <CardHeader
             description={`${orderSourceLabels[order.source]} · ${orderTypeLabels[order.type]}`}
@@ -1290,7 +1294,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           />
           <CardBody className="flex flex-wrap gap-2">
             <Badge tone={orderStatusTone(order.status)} withDot>
-              {orderStatusLabels[order.status]}
+              {orderStatusLabel(order.status, order.type)}
             </Badge>
             <Badge tone={paymentStatusTone(order.paymentStatus)}>
               {paymentStatusLabels[order.paymentStatus]}
@@ -1364,7 +1368,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                       }}
                       variant={status === "CANCELLED" ? "danger" : "ghost"}
                     >
-                      {orderStatusLabels[status]}
+                      {orderStatusLabel(status, order.type)}
                     </Button>
                   ))}
                 </div>
@@ -1428,7 +1432,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                     key={entry.id}
                   >
                     <Badge tone={orderStatusTone(entry.toStatus)}>
-                      {orderStatusLabels[entry.toStatus]}
+                      {orderStatusLabel(entry.toStatus, order.type)}
                     </Badge>
                     <span className="text-xs text-mz-text-muted">
                       {formatDateTime(entry.createdAt)}
@@ -1447,9 +1451,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             </CardBody>
           </Card>
         ) : null}
-      </div>
+        </div>
 
-      <aside className="grid content-start gap-5">
+        <aside className="grid content-start gap-5">
         <Card>
           <CardHeader title="Hisob" />
           <CardBody className="grid gap-2 text-sm">
@@ -1520,7 +1524,8 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             </CardBody>
           </Card>
         ) : null}
-      </aside>
+        </aside>
+      </div>
 
       <Modal
         description={
@@ -1549,7 +1554,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         onClose={() => setPendingStatus(null)}
         title={
           pendingStatus
-            ? `${order.displayOrderNumber ?? order.orderNumber} → ${orderStatusLabels[pendingStatus]}`
+            ? `${order.displayOrderNumber ?? order.orderNumber} → ${orderStatusLabel(
+                pendingStatus,
+                order.type,
+              )}`
             : "Holatni o'zgartirish"
         }
       >

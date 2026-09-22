@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatMoney,
   maskPhone,
+  orderStatusLabel,
   orderStatusLabels,
   orderStatusTone,
   type OrderStatus,
@@ -295,7 +296,8 @@ export function AdminCouriersPage() {
       header: "Holat",
       render: (item) => (
         <Badge tone={orderStatusTone(item.status as OrderStatus)} withDot>
-          {orderStatusLabels[item.status as OrderStatus] ?? item.status}
+          {orderStatusLabel(item.status as OrderStatus, "DELIVERY") ??
+            item.status}
         </Badge>
       ),
     },

@@ -996,7 +996,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
         />
       ) : null}
       <form className="space-y-5" onSubmit={handleSubmit} ref={formRef}>
-        <div className="grid items-start gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="grid content-start gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
             <FormField
               label="Ism familiya"
@@ -1140,7 +1140,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                     }
                   : {})}
             >
-              <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2 2xl:grid-cols-4">
                 {roles.map((role) => (
                   <Checkbox
                     checked={form.roleCodes.includes(role.code)}

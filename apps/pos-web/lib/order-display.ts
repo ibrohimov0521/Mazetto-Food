@@ -36,6 +36,21 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
   CANCELLED: "Bekor qilingan",
 };
 
+export function orderStatusLabel(
+  status: OrderStatus,
+  type?: OrderType | null,
+): string {
+  if (status === "SERVED") {
+    return type === "DELIVERY" ? "Kuryer yo'lda" : "Topshirildi";
+  }
+
+  if (status === "COMPLETED") {
+    return type === "DELIVERY" ? "Yetkazildi" : orderStatusLabels.COMPLETED;
+  }
+
+  return orderStatusLabels[status];
+}
+
 export const orderTypeLabels: Record<OrderType, string> = {
   DINE_IN: "Zalda",
   TAKEAWAY: "Olib ketish",
