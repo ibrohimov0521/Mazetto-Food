@@ -599,18 +599,17 @@ export function AdminSuppliersPage() {
         }
         isOpen={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
-        title="Arxivlashni tasdiqlang"
+        title="Butunlay o'chirishni tasdiqlang"
       >
         <div className="grid gap-3">
           <p className="text-sm text-mz-text">
             <span className="font-semibold">{pendingDelete?.name}</span>{" "}
-            arxivlanadi va ro&apos;yxatda ko&apos;rinmaydi.
+            bazadan butunlay o&apos;chiriladi va ro&apos;yxatda ko&apos;rinmaydi.
           </p>
           <p className="rounded-mz-control border border-mz-border border-l-4 border-l-mz-warning bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
-            Bu amalni panel orqali QAYTARIB BO&apos;LMAYDI: ro&apos;yxat faqat
-            faol yozuvlarni qaytaradi, arxivlanganlarni ko&apos;rsatadigan
-            endpoint hali yo&apos;q. Kerak bo&apos;lsa yozuvni qaytadan
-            qo&apos;shing.
+            Bu amalni panel orqali qaytarib bo&apos;lmaydi. Bog&apos;langan zaxira
+            harakatlari mavjud bo&apos;lsa, server ma&apos;lumotlar tarixini saqlash
+            uchun o&apos;chirishni rad etadi.
           </p>
         </div>
       </Modal>
