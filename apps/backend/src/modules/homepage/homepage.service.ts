@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
-import { customerVisibleProductCodes } from "../customers/customer-catalog-visibility";
+import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
 import type {
   HomepageHeroSlideDto,
   PromotionDto,
@@ -101,7 +101,7 @@ export class HomepageService {
         ...this.activeWindowWhere(),
         OR: [
           { productId: null },
-          { product: { is: { code: { in: [...customerVisibleProductCodes] } } } },
+          { product: { is: customerVisibleProductWhere() } },
         ],
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -115,7 +115,7 @@ export class HomepageService {
         ...this.activeWindowWhere(),
         OR: [
           { productId: null },
-          { product: { is: { code: { in: [...customerVisibleProductCodes] } } } },
+          { product: { is: customerVisibleProductWhere() } },
         ],
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -128,7 +128,7 @@ export class HomepageService {
       where: {
         isAvailable: true,
         isRecommended: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],

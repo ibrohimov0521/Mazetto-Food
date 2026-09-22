@@ -25,11 +25,12 @@ export function roleCodeLabel(code: string): string {
 /*
  * Mahsulot katalog ko'rinishi.
  *
- * `CANONICAL` mijoz saytida ko'rinadigan ommaviy menyu, `LEGACY` eski
- * import qatorlari, `INTERNAL` faqat kassa ichida ishlatiladigan pozitsiya.
+ * `CANONICAL` tizimdagi asosiy menyu, `CUSTOM` admin qo'shgan ommaviy
+ * mahsulot, `LEGACY` eski import qatorlari, `INTERNAL` faqat ichki pozitsiya.
  */
 export const catalogVisibilityLabels: Record<string, string> = {
   CANONICAL: "Ommaviy menyu",
+  CUSTOM: "Qo'shilgan ommaviy",
   LEGACY: "Arxiv",
   INTERNAL: "Faqat ichki",
 };

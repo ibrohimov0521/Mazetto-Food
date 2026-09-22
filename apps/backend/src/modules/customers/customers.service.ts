@@ -24,7 +24,7 @@ import {
 } from "./dto/list-customers.dto";
 import {
   customerVisibleCategoryCodes,
-  customerVisibleProductCodes,
+  customerVisibleProductWhere,
 } from "./customer-catalog-visibility";
 import type {
   CustomerCheckoutQuoteDto,
@@ -92,7 +92,7 @@ export class CustomersService {
     return this.prisma.product.findMany({
       where: {
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
         ...this.branchesService.getUnavailableProductWhere(branchId),
         ...(categoryId ? { categoryId } : {}),
@@ -107,7 +107,7 @@ export class CustomersService {
       where: {
         id,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: productInclude(),
     });

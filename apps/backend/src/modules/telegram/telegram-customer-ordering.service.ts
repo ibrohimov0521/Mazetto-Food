@@ -4,6 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import {
   customerVisibleCategoryCodes,
   customerVisibleProductCodes,
+  customerVisibleProductWhere,
 } from "../customers/customer-catalog-visibility";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
@@ -599,7 +600,7 @@ export class TelegramCustomerOrderingService {
       where: {
         categoryId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
@@ -789,7 +790,7 @@ export class TelegramCustomerOrderingService {
       where: {
         id: productId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: {
         category: { select: { id: true, name: true } },
@@ -892,7 +893,7 @@ export class TelegramCustomerOrderingService {
       where: {
         id: productId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: {
         category: { select: { code: true, name: true } },
@@ -947,7 +948,7 @@ export class TelegramCustomerOrderingService {
         isAvailable: true,
         product: {
           isAvailable: true,
-          code: { in: [...customerVisibleProductCodes] },
+          ...customerVisibleProductWhere(),
         },
       },
       include: {
@@ -1001,7 +1002,7 @@ export class TelegramCustomerOrderingService {
       where: {
         id: productId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: {
         modifiers: {

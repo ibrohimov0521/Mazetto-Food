@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 export const customerVisibleCategoryCodes = [
   "LAVASH",
   "BURGER",
@@ -111,3 +113,13 @@ export const customerVisibleProductCodeSet = new Set<string>(
   customerVisibleProductCodes,
 );
 export const legacyProductCodeSet = new Set<string>(legacyProductCodes);
+
+export function customerVisibleProductWhere(): Prisma.ProductWhereInput {
+  return {
+    code: { notIn: [...legacyProductCodes] },
+  };
+}
+
+export function isCustomerVisibleProductCode(code: string): boolean {
+  return !legacyProductCodeSet.has(code);
+}

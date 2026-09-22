@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   customerVisibleProductCodeSet,
+  isCustomerVisibleProductCode,
   legacyProductCodeSet,
 } from "../customers/customer-catalog-visibility";
 import type { ListMenuDto } from "./dto/list-menu.dto";
@@ -316,7 +317,7 @@ export class MenuService {
     };
   }
 
-  private getCatalogVisibility(code: string): "CANONICAL" | "LEGACY" | "INTERNAL" {
+  private getCatalogVisibility(code: string): "CANONICAL" | "LEGACY" | "CUSTOM" | "INTERNAL" {
     if (customerVisibleProductCodeSet.has(code)) {
       return "CANONICAL";
     }
@@ -325,7 +326,7 @@ export class MenuService {
       return "LEGACY";
     }
 
-    return "INTERNAL";
+    return isCustomerVisibleProductCode(code) ? "CUSTOM" : "INTERNAL";
   }
 
   async createCategory(dto: CreateCategoryDto) {

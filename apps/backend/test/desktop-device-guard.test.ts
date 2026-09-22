@@ -61,13 +61,10 @@ const operationalUser: TestUser = {
   permissions: ["POS_USE"],
 };
 
-test("operatsion rol device headersiz backendni chetlab o'tolmaydi", async () => {
+test("operatsion rol oddiy webda device headersiz ishlaydi", async () => {
   const guard = createGuard({ user: operationalUser });
 
-  await assert.rejects(
-    () => guard.canActivate(context({})),
-    /tasdiqlangan desktop qurilma/,
-  );
+  assert.equal(await guard.canActivate(context({})), true);
 });
 
 test("admin oddiy brauzerda device headersiz ishlay oladi", async () => {
@@ -112,6 +109,15 @@ test("device ID bor bo'lsa admin ham noto'g'ri token bilan o'tolmaydi", async ()
       guard.canActivate(
         context({ deviceId: "desktop-1", deviceToken: "wrong-token" }),
       ),
+    /kod bilan tasdiqlanmagan/,
+  );
+});
+
+test("desktop header yuborilsa operatsion rol uchun token majburiy", async () => {
+  const guard = createGuard({ user: operationalUser });
+
+  await assert.rejects(
+    () => guard.canActivate(context({ deviceId: "desktop-1" })),
     /kod bilan tasdiqlanmagan/,
   );
 });

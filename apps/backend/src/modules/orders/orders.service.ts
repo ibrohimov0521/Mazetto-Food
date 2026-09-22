@@ -27,7 +27,7 @@ import {
 } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
-import { customerVisibleProductCodes } from "../customers/customer-catalog-visibility";
+import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
 import { buildOrderSearchWhere } from "../customers/customer-shared";
 import { InventoryService } from "../inventory/inventory.service";
 import { KitchenService } from "../kitchen/kitchen.service";
@@ -129,7 +129,7 @@ export class OrdersService {
         OR: [{ branchId }, { branchId: null }],
         products: {
           some: {
-            code: { in: [...customerVisibleProductCodes] },
+            ...customerVisibleProductWhere(),
             isAvailable: true,
             OR: [{ branchId }, { branchId: null }],
             ...unavailableProductWhere(branchId),
@@ -148,7 +148,7 @@ export class OrdersService {
 
     const products = await this.prisma.product.findMany({
       where: {
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
         ...unavailableProductWhere(branchId),
@@ -1323,7 +1323,7 @@ export class OrdersService {
       where: {
         id: dto.productId,
         ...(options?.requireCanonical
-          ? { code: { in: [...customerVisibleProductCodes] } }
+          ? customerVisibleProductWhere()
           : {}),
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
