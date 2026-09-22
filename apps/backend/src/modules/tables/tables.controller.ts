@@ -1,5 +1,6 @@
 import {
   Body,
+  Delete,
   Controller,
   Get,
   Param,
@@ -111,6 +112,24 @@ export class TablesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tablesService.createTable(dto, user);
+  }
+
+  @Delete("halls/bulk/permanent")
+  @Permissions(PERMISSIONS.TABLE_EDIT)
+  permanentlyDeleteHalls(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tablesService.permanentlyDeleteHalls(dto.ids, user);
+  }
+
+  @Delete("tables/bulk/permanent")
+  @Permissions(PERMISSIONS.TABLE_EDIT)
+  permanentlyDeleteTables(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tablesService.permanentlyDeleteTables(dto.ids, user);
   }
 
   @Get("waiter/orders")

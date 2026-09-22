@@ -442,7 +442,7 @@ export function AdminSuppliersPage() {
                     />
                     <RowAction
                       icon="trash"
-                      label={`${supplier.name} — arxivlash`}
+                      label={`${supplier.name} — bazadan butunlay o'chirish`}
                       onClick={() => setPendingDelete(supplier)}
                       tone="danger"
                     />
