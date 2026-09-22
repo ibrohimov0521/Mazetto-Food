@@ -263,9 +263,7 @@ export class TelegramStaffService {
           `<b>Xodim:</b> ${this.escapeHtml(staff.displayName)}`,
           `<b>Rollar:</b> ${staff.user.roles.join(", ") || "—"}`,
           "",
-          staff.user.roles.includes("COURIER")
-            ? "Kuryer buyurtmalaringizni ko'rish uchun pastdagi tugmani bosing."
-            : "Bu rol uchun Telegram amallari keyingi bosqichda qo'shiladi.",
+          this.staffPanelHint(staff.user.roles),
         ].join("\n"),
         parse_mode: "HTML",
         reply_markup: {
@@ -536,6 +534,19 @@ export class TelegramStaffService {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     return start;
+  }
+
+  private staffPanelHint(roles: string[]): string {
+    const actions = [
+      roles.includes("COURIER") ? "kuryer buyurtmalari" : null,
+      roles.includes("KITCHEN") ? "oshxona buyurtmalari" : null,
+      roles.includes("WAITER") ? "zal buyurtmalari" : null,
+      roles.some((role) => ["CASHIER", "ACCOUNTANT"].includes(role)) ? "kassa" : null,
+      roles.some((role) => ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role)) ? "boshqaruv ko'rsatkichlari" : null,
+    ].filter((item): item is string => Boolean(item));
+    return actions.length
+      ? `Siz uchun mavjud bo'limlar: ${actions.join(", ")}. Kerakli tugmani tanlang.`
+      : "Bu accountga Telegram orqali bajariladigan amal biriktirilmagan.";
   }
 
   private courierOrderDetailText(order: any): string {
