@@ -238,7 +238,7 @@ export function AdminSuppliersPage() {
     }
   }
 
-  async function confirmArchive(): Promise<void> {
+  async function confirmDelete(): Promise<void> {
     if (!pendingDelete) {
       return;
     }
@@ -246,11 +246,11 @@ export function AdminSuppliersPage() {
     setIsArchiving(true);
 
     try {
-      await apiFetch(`/suppliers/${pendingDelete.id}`, { method: "DELETE" });
-      showToast(
-        `${pendingDelete.name} arxivlandi va ro'yxatdan chiqdi.`,
-        "success",
-      );
+      await apiFetch("/suppliers/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: [pendingDelete.id] }),
+      });
+      showToast(`${pendingDelete.name} bazadan butunlay o'chirildi.`, "success");
       setPendingDelete(null);
       load();
     } catch (caught) {
@@ -259,7 +259,7 @@ export function AdminSuppliersPage() {
       }
 
       showToast(
-        caught instanceof Error ? caught.message : "Arxivlab bo'lmadi.",
+        caught instanceof Error ? caught.message : "O'chirib bo'lmadi.",
         "danger",
       );
     } finally {
@@ -581,7 +581,7 @@ export function AdminSuppliersPage() {
       </Modal>
 
       <Modal
-        description="Bu HARD DELETE emas: yozuv arxivlanadi va mavjud zaxira harakatlari saqlanib qoladi."
+        description="Yozuv bazadan butunlay o'chiriladi. Bog'langan tarix mavjud bo'lsa, server o'chirishni rad etadi."
         footer={
           <>
             <Button onClick={() => setPendingDelete(null)} variant="ghost">
@@ -589,11 +589,11 @@ export function AdminSuppliersPage() {
             </Button>
             <Button
               isLoading={isArchiving}
-              onClick={() => void confirmArchive()}
+              onClick={() => void confirmDelete()}
               size="lg"
               variant="danger"
             >
-              Arxivlash
+              Butunlay o'chirish
             </Button>
           </>
         }
