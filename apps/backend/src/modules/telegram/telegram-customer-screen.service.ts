@@ -116,24 +116,23 @@ export class TelegramCustomerScreenService implements OnModuleInit {
   }
 
   private async configureBotCommands(): Promise<void> {
-    try {
-      await this.telegramRequest("setMyCommands", {
-        commands: [
-          { command: "start", description: "Foydalanishni boshlash" },
-          { command: "buy", description: "Buyurtma berish" },
-          { command: "menu", description: "Menyu" },
-          { command: "cart", description: "Savat" },
-          { command: "orders", description: "Buyurtmalarim" },
-          { command: "profile", description: "Profil" },
-          { command: "branches", description: "Filiallar" },
-          { command: "help", description: "Xizmat haqida" },
-          { command: "terms", description: "Foydalanish shartlari" },
-          { command: "support", description: "Biz bilan aloqa" },
-        ],
-      });
-      await this.telegramRequest("setChatMenuButton", {
-        menu_button: { type: "commands" },
-      });
+    await this.telegramRequest("setMyCommands", {
+      commands: [
+        { command: "start", description: "Foydalanishni boshlash" },
+        { command: "buy", description: "Buyurtma berish" },
+        { command: "menu", description: "Menyu" },
+        { command: "cart", description: "Savat" },
+        { command: "orders", description: "Buyurtmalarim" },
+        { command: "profile", description: "Profil" },
+        { command: "branches", description: "Filiallar" },
+        { command: "help", description: "Xizmat haqida" },
+        { command: "terms", description: "Foydalanish shartlari" },
+        { command: "support", description: "Biz bilan aloqa" },
+      ],
+    });
+    await this.telegramRequest("setChatMenuButton", {
+      menu_button: { type: "commands" },
+    });
   }
 
   /*
