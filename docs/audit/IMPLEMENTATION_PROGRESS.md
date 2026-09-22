@@ -2,6 +2,41 @@
 
 Last local checkpoint: 2026-09-21 13:05 Asia/Tashkent.
 
+## Continuation checkpoint: 2026-09-23
+
+The following release-candidate changes are on branch
+`fix/release-readiness-batch` and are not deployed to production yet:
+
+- Admin permanent and bulk deletion was added for products, categories,
+  orders, receipts, staff, devices, printers, suppliers, customers,
+  ingredients, warehouses, roles, expense categories, branches, modifiers,
+  homepage slides/promotions, halls and tables.
+- Destructive actions are guarded by permission, branch scope and historical
+  references. Financial/order history is not deleted when doing so would break
+  audit or ledger integrity; the API rejects those records explicitly.
+- Single-row delete actions now use the same permanent-delete contract as the
+  corresponding bulk action where both archive and delete are offered.
+- Current commits in the release branch include `5052c68`, `13fcad1`,
+  `a52a34a`, `d189511`, `30b797c`, `0005229`, `359c1e7`, `4cfecc1` and
+  `684349e` (plus their preceding remediation commits).
+
+Verification after this checkpoint:
+
+- Backend tests: 238/238 passed.
+- Backend and POS/Admin typechecks passed.
+- Telegram typecheck passed.
+- Read-only release smoke: 22/22 passed.
+- Media validation: 74 available product assets, 0 unresolved available
+  product assets, 10 category assets.
+- Production PostgreSQL backup was restored into an isolated container and all
+  40 migrations were rehearsed there; production was not modified.
+
+Still open before the final release: authenticated human Telegram/staff-group
+acceptance, physical Godex/ESC-POS printer acceptance, real Desktop offline
+and updater regression, customer media/browser visual acceptance, PR merge to
+protected `main`, Dokploy deployment, and post-deploy smoke. The branch has
+been pushed, but no PR or production deployment is claimed by this checkpoint.
+
 This file tracks implementation before the requested final combined push and
 deploy. Changes below are intentionally local until the whole release batch is
 ready and its database rollout has been rehearsed.
