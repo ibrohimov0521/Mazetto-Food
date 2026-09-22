@@ -98,6 +98,24 @@ export class TelegramCustomerScreenService implements OnModuleInit {
       return;
     }
 
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await this.configureBotCommands();
+        return;
+      } catch (error) {
+        this.logger.warn(
+          `Telegram command menu setup failed (attempt ${attempt}/3): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+        }
+      }
+    }
+  }
+
+  private async configureBotCommands(): Promise<void> {
     try {
       await this.telegramRequest("setMyCommands", {
         commands: [
@@ -116,13 +134,6 @@ export class TelegramCustomerScreenService implements OnModuleInit {
       await this.telegramRequest("setChatMenuButton", {
         menu_button: { type: "commands" },
       });
-    } catch (error) {
-      this.logger.warn(
-        `Telegram command menu setup failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   }
 
   /*
