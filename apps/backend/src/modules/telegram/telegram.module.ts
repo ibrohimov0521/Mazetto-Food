@@ -13,6 +13,7 @@ import { TelegramCheckoutService } from "./telegram-checkout.service";
 import { TelegramCheckoutSessionService } from "./telegram-checkout-session.service";
 import { TelegramCustomerScreenService } from "./telegram-customer-screen.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
+import { TelegramCustomerOrderHistoryService } from "./telegram-customer-order-history.service";
 
 @Module({
   imports: [PrismaModule, BranchesModule, KitchenModule, OrdersModule, GeocodingModule],
@@ -25,6 +26,7 @@ import { TelegramOrderNotificationService } from "./telegram-order-notification.
     TelegramCheckoutSessionService,
     TelegramCartService,
     TelegramCheckoutService,
+    TelegramCustomerOrderHistoryService,
     TelegramCustomerOrderingService,
   ],
   exports: [TelegramOrderNotificationService, TelegramCustomerAuthService],

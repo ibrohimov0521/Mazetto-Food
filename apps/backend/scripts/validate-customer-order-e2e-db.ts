@@ -28,6 +28,7 @@ import { TelegramCustomerScreenService } from "../src/modules/telegram/telegram-
 import { TelegramCheckoutSessionService } from "../src/modules/telegram/telegram-checkout-session.service";
 import { TelegramCartService } from "../src/modules/telegram/telegram-cart.service";
 import { TelegramCheckoutService } from "../src/modules/telegram/telegram-checkout.service";
+import { TelegramCustomerOrderHistoryService } from "../src/modules/telegram/telegram-customer-order-history.service";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
@@ -254,6 +255,11 @@ function createServices(prisma: PrismaService) {
       new TelegramCheckoutSessionService(prisma as never),
       new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
       { reverse: async () => ({ label: "Toshkent", inCity: true }) } as never,
+    ),
+    new TelegramCustomerOrderHistoryService(
+      prisma as never,
+      new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+      new TelegramCustomerScreenService(),
     ),
   );
   const telegramAuth = new TelegramCustomerAuthService(
