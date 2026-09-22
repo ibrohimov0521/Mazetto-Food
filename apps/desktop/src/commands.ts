@@ -34,10 +34,12 @@ const onlineOnlyMutationPatterns = [
   /^\/api\/v1\/payments$/,
   /^\/api\/v1\/payments\/[^/]+\/refund$/,
   /^\/api\/v1\/orders$/,
+  /^\/api\/v1\/orders\/bulk$/,
   /^\/api\/v1\/orders\/bulk\/status$/,
   /^\/api\/v1\/courier\/orders\/[^/]+\/assign$/,
   /^\/api\/v1\/shifts\/[^/]+\/force-handover$/,
   /^\/api\/v1\/receipts\/(?:print-jobs(?:\/|$)|[^/]+\/reprint$)/,
+  /^\/api\/v1\/receipts\/bulk$/,
 ] as const;
 
 export type OfflineMutationPolicy = "queueable" | "online-only" | "unknown";
