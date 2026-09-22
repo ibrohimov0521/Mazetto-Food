@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
@@ -61,6 +61,10 @@ export class HomepageService {
     });
   }
 
+  async deleteHeroSlidesBulk(ids: string[]) {
+    return this.deleteHomepageRows(ids, "hero-slides");
+  }
+
   listPromotions() {
     return this.prisma.promotion.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -93,6 +97,29 @@ export class HomepageService {
       data: { isActive: false },
       include: this.promotionInclude(),
     });
+  }
+
+  async deletePromotionsBulk(ids: string[]) {
+    return this.deleteHomepageRows(ids, "promotions");
+  }
+
+  private async deleteHomepageRows(ids: string[], kind: "hero-slides" | "promotions") {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException("Kamida bitta yozuv tanlanishi kerak");
+    }
+
+    if (kind === "hero-slides") {
+      const count = await this.prisma.homepageHeroSlide.count({ where: { id: { in: uniqueIds } } });
+      if (count !== uniqueIds.length) throw new NotFoundException("Tanlangan slaydlarning biri topilmadi");
+      await this.prisma.homepageHeroSlide.deleteMany({ where: { id: { in: uniqueIds } } });
+    } else {
+      const count = await this.prisma.promotion.count({ where: { id: { in: uniqueIds } } });
+      if (count !== uniqueIds.length) throw new NotFoundException("Tanlangan aksiyalarning biri topilmadi");
+      await this.prisma.promotion.deleteMany({ where: { id: { in: uniqueIds } } });
+    }
+
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   private listActiveHeroSlides() {

@@ -161,6 +161,7 @@ export function AdminHomepagePage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [pendingDelete, setPendingDelete] = useState<{
     kind: EntityKind;
@@ -362,6 +363,26 @@ export function AdminHomepagePage() {
     }
   }
 
+  async function deleteSelected(): Promise<void> {
+    if (!selectedIds.length) return;
+    const label = tab === "hero" ? "slayd" : "aksiyani";
+    if (!window.confirm(`${selectedIds.length} ta ${label}ni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    setIsSaving(true);
+    try {
+      await apiFetch(`${endpoints[tab]}/bulk`, {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta ${label} o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Tanlangan yozuvlarni o'chirib bo'lmadi.", "danger");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const columns: DataTableColumn<HomepageItem>[] = [
     {
       key: "title",
@@ -444,9 +465,16 @@ export function AdminHomepagePage() {
       <Card>
         <CardHeader
           actions={
-            <Button onClick={() => openCreate(tab)} size="lg">
-              {tab === "hero" ? "Yangi slayd" : "Yangi aksiya"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {selectedIds.length ? (
+                <Button onClick={() => void deleteSelected()} size="lg" variant="danger">
+                  {selectedIds.length} ta o&apos;chirish
+                </Button>
+              ) : null}
+              <Button onClick={() => openCreate(tab)} size="lg">
+                {tab === "hero" ? "Yangi slayd" : "Yangi aksiya"}
+              </Button>
+            </div>
           }
           description={
             tab === "hero"
@@ -461,7 +489,10 @@ export function AdminHomepagePage() {
             active={tab}
             items={tabs}
             label="Bosh sahifa bo'limlari"
-            onChange={(key) => setTab(key as EntityKind)}
+            onChange={(key) => {
+              setTab(key as EntityKind);
+              setSelectedIds([]);
+            }}
             panelId="homepage-panel"
           />
         </div>
@@ -479,6 +510,9 @@ export function AdminHomepagePage() {
             emptyTitle={tab === "hero" ? "Slayd yo'q" : "Aksiya yo'q"}
             getRowKey={(item) => item.id}
             isLoading={isLoading}
+            selectable
+            selectedKeys={selectedIds}
+            onSelectionChange={setSelectedIds}
             rowActions={(item) => (
               <>
                 <RowAction
