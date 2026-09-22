@@ -63,6 +63,16 @@ type NominatimAddress = {
   country_code?: string;
   state?: string;
   county?: string;
+  city?: string;
+  town?: string;
+  suburb?: string;
+  neighbourhood?: string;
+  quarter?: string;
+  road?: string;
+  pedestrian?: string;
+  footway?: string;
+  residential?: string;
+  building?: string;
   house_number?: string;
 };
 
@@ -131,7 +141,7 @@ export class GeocodingService {
       !REGION_PATTERN.test(address.county ?? "");
 
     const result: ReverseResult = {
-      label: payload.display_name?.trim() ?? "",
+      label: compactAddressLabel(address, payload.display_name),
       inCity,
       ...(address.house_number?.trim()
         ? { houseNumber: address.house_number.trim() }
@@ -233,6 +243,40 @@ export class GeocodingService {
       return null;
     }
   }
+}
+
+function compactAddressLabel(
+  address: NominatimAddress,
+  fallback?: string,
+): string {
+  const parts = [
+    address.road,
+    address.pedestrian,
+    address.footway,
+    address.residential,
+    address.building,
+    address.house_number,
+    address.neighbourhood,
+    address.quarter,
+    address.suburb,
+    address.city,
+    address.town,
+  ]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
+
+  const uniqueParts = parts.filter(
+    (part, index) =>
+      parts.findIndex(
+        (candidate) => candidate.toLowerCase() === part.toLowerCase(),
+      ) === index,
+  );
+
+  if (uniqueParts.length > 0) {
+    return uniqueParts.slice(0, 5).join(", ");
+  }
+
+  return fallback?.trim() ?? "";
 }
 
 function normalizeLang(value: string): Lang {

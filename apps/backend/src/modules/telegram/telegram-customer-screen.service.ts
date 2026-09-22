@@ -64,12 +64,28 @@ export type CustomerPhotoScreenPayload = Omit<CustomerScreenPayload, "text"> & {
   caption: string;
 };
 
-function isTelegramPhotoUrl(value: string): boolean {
+function mediaPublicUrl(): string {
+  return (
+    process.env.MEDIA_PUBLIC_URL?.trim() ||
+    process.env.MINIO_PUBLIC_URL?.trim() ||
+    "https://media.mazettofood.uz"
+  ).replace(/[/]+$/, "");
+}
+
+export function resolveTelegramPhotoUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
   try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
+    const url = new URL(trimmed);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : null;
   } catch {
-    return false;
+    const objectName = trimmed.replace(/^[/]+/, "");
+    return objectName ? `${mediaPublicUrl()}/${objectName}` : null;
   }
 }
 
@@ -153,17 +169,24 @@ export class TelegramCustomerScreenService implements OnModuleInit {
     payload: CustomerPhotoScreenPayload,
   ): Promise<void> {
     const { photo, caption, ...rest } = payload;
+    const photoUrl = resolveTelegramPhotoUrl(photo);
 
     // Telegram `sendPhoto` accepts a publicly reachable HTTP(S) URL, not the
     // relative paths historically stored for some catalogue images. Do not let
     // a bad image make the whole menu unusable.
-    if (!isTelegramPhotoUrl(photo)) {
+    if (!photoUrl) {
       await this.renderCustomerScreen(target, {
         text: caption,
         ...rest,
       });
       return;
     }
+
+    const fallbackToText = async () =>
+      this.renderCustomerScreen(target, {
+        text: caption,
+        ...rest,
+      });
 
     if (target.messageId) {
       try {
@@ -181,12 +204,16 @@ export class TelegramCustomerScreenService implements OnModuleInit {
       }
     }
 
-    await this.telegramRequest("sendPhoto", {
-      chat_id: target.chatId,
-      photo,
-      caption,
-      ...rest,
-    });
+    try {
+      await this.telegramRequest("sendPhoto", {
+        chat_id: target.chatId,
+        photo: photoUrl,
+        caption,
+        ...rest,
+      });
+    } catch {
+      await fallbackToText();
+    }
   }
 
   async telegramRequest(method: string, payload: unknown): Promise<void> {

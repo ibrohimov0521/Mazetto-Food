@@ -88,9 +88,17 @@ const categoryIcons: Record<string, string> = {
   DRINKS: "🥤",
   FAST_FOOD: "🍟",
   HOT_DOG: "🌭",
+  KLAB: "🥙",
+  KLAB_DONER: "🥙",
   LAVASH: "🌯",
+  PIZZA: "🍕",
+  PROMOTIONS: "🎁",
   SAUCES: "🥫",
   SETS: "🔥",
+  SNEACKS: "🍟",
+  SNACKS: "🍟",
+  SWEETS: "🍰",
+  XAGGI: "🥙",
 };
 
 /*
@@ -123,6 +131,16 @@ const productButtonLabels: Record<string, string> = {
   TANDIR_LAVASH_CHEESE: "Tandir Pishloqli",
 };
 
+const productIcons: Record<string, string> = {
+  BURGER: "🍔",
+  DONER: "🥙",
+  DRINKS: "🥤",
+  HOT_DOG: "🌭",
+  LAVASH: "🌯",
+  SAUCES: "🥫",
+  SETS: "🔥",
+};
+
 export function categoryButtonLabel(
   code: string | null | undefined,
   name: string,
@@ -136,6 +154,12 @@ export function telegramProductButtonLabel(
   categoryCode?: string | null,
 ): string {
   const label = productButtonLabels[code] ?? name;
+  const icon =
+    categoryCode === "LAVASH"
+      ? "🌯"
+      : categoryCode === "BURGER"
+        ? "🍔"
+        : productIcons[categoryCode ?? ""] ?? "";
 
   // The category heading already provides this word on narrow two-column rows.
   if (categoryCode === "LAVASH") {
@@ -143,17 +167,18 @@ export function telegramProductButtonLabel(
       .replace(/\bLavash\b/gi, "")
       .replace(/\s{2,}/g, " ")
       .trim();
-    return compact || "Oddiy";
+    return `${icon} ${compact || "Oddiy"}`.trim();
   }
   if (categoryCode === "BURGER") {
     const compact = label
       .replace(/\bBurger\b/gi, "")
       .replace(/\s{2,}/g, " ")
       .trim();
-    return compact || "Oddiy";
+    return `${icon} ${compact || "Oddiy"}`.trim();
   }
 
-  return label.length > 24 ? `${label.slice(0, 23).trim()}…` : label;
+  const compact = label.length > 24 ? `${label.slice(0, 23).trim()}…` : label;
+  return `${icon} ${compact}`.trim();
 }
 
 export function formatMoney(value: Prisma.Decimal | number | string): string {

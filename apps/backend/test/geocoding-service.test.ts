@@ -146,6 +146,37 @@ test("reverse geokoder aniq uy raqamini checkout uchun qaytaradi", async () => {
   }
 });
 
+test("reverse geokoder manzilni aniq qismlardan yig'adi", async () => {
+  const { service: cache } = fakeCache();
+  const fetchStub = stubFetch(() => ({
+    display_name:
+      "Uzun va noaniq umumiy label, Sergeli tumani, Toshkent, Uzbekistan",
+    address: {
+      country_code: "uz",
+      state: "Toshkent",
+      city: "Toshkent",
+      suburb: "Sergeli",
+      neighbourhood: "2-mavze",
+      road: "Yangi Sergeli ko'chasi",
+      house_number: "28",
+    },
+  }));
+  try {
+    const result = await new GeocodingService(cache).reverse(
+      TASHKENT.lat,
+      TASHKENT.lng,
+      "uz",
+    );
+    assert.equal(
+      result.label,
+      "Yangi Sergeli ko'chasi, 28, 2-mavze, Sergeli, Toshkent",
+    );
+  } finally {
+    fetchStub.restore();
+  }
+});
+
+
 test("kesh kaliti ~11 metrgacha yaxlitlaydi, ya'ni qo'shni nuqtalar bitta so'rov", async () => {
   const { service: cache } = fakeCache();
   const fetchStub = stubFetch(() => ({
