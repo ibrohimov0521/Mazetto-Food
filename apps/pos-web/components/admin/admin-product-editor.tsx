@@ -24,6 +24,7 @@ import { Icon } from "../admin-ui/icon";
 import { Modal } from "../admin-ui/modal";
 import { ImageDropzone } from "../admin-ui/image-dropzone";
 import { useToast } from "../admin-ui/toast";
+import { catalogVisibilityLabel } from "./people-branch-labels";
 
 /*
  * Mahsulot tahrirlash — katalog 2-bosqichi.
@@ -1159,7 +1160,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                           : "neutral"
                     }
                   >
-                    {product.catalogVisibility}
+                    {catalogVisibilityLabel(product.catalogVisibility)}
                   </Badge>
                 ) : (
                   <Badge tone="neutral">YANGI</Badge>

@@ -612,6 +612,59 @@ export class MenuService {
     });
   }
 
+  async permanentlyDeleteProduct(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        code: true,
+        _count: {
+          select: {
+            cartItems: true,
+            orderItems: true,
+            favorites: true,
+            usedInBundles: true,
+            bundleItems: true,
+            heroSlides: true,
+            promotions: true,
+            variants: { where: { recipe: { isNot: null } } },
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException("Product not found");
+    }
+
+    if (this.getCatalogVisibility(product.code) !== "CUSTOM") {
+      throw new BadRequestException(
+        "Faqat admin qo'shgan yangi mahsulotlarni butunlay o'chirish mumkin",
+      );
+    }
+
+    const blockers = [
+      product._count.orderItems ? "buyurtma tarixi" : null,
+      product._count.cartItems ? "mijoz savati" : null,
+      product._count.favorites ? "mijoz sevimlilari" : null,
+      product._count.usedInBundles ? "set tarkibi" : null,
+      product._count.bundleItems ? "set mahsuloti" : null,
+      product._count.heroSlides ? "bosh sahifa slaydi" : null,
+      product._count.promotions ? "aksiya/reklama" : null,
+      product._count.variants ? "retsept" : null,
+    ].filter(Boolean);
+
+    if (blockers.length) {
+      throw new BadRequestException(
+        `Mahsulotni butunlay o'chirib bo'lmaydi: ${blockers.join(", ")} bog'langan. Uni arxivga oling.`,
+      );
+    }
+
+    await this.prisma.product.delete({ where: { id } });
+
+    return { deleted: true, id };
+  }
+
   /**
    * Modifier katalogi.
    *

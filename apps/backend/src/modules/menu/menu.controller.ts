@@ -79,6 +79,12 @@ export class MenuController {
     return this.menuService.deleteProduct(id);
   }
 
+  @Delete("products/:id/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteProduct(@Param("id") id: string) {
+    return this.menuService.permanentlyDeleteProduct(id);
+  }
+
   @Get("modifiers")
   @Permissions(PERMISSIONS.MENU_VIEW)
   listModifiers(@Query("includeInactive") includeInactive?: string) {
