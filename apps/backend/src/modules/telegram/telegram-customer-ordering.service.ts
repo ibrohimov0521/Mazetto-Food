@@ -105,6 +105,16 @@ export class TelegramCustomerOrderingService {
       return true;
     }
 
+    if (action === "order" && values[0] && values[1]) {
+      await this.screen.answerCallback(callback);
+      if (values[0] === "detail") {
+        await this.sendCustomerOrderDetail(target, customer, values[1]);
+      } else if (values[0] === "repeat") {
+        await this.repeatCustomerOrder(target, customer, values[1]);
+      }
+      return true;
+    }
+
     if (action === "profile") {
       await this.screen.answerCallback(callback);
       await this.sendCustomerProfile(target, customer);
@@ -178,6 +188,12 @@ export class TelegramCustomerOrderingService {
       return true;
     }
 
+    if (action === "clear" && values[0]) {
+      await this.screen.answerCallback(callback);
+      await this.handleCartClear(target, customer, values[0]);
+      return true;
+    }
+
     if (action === "checkout") {
       await this.screen.answerCallback(callback);
       await this.checkout.startCheckout(target, customer);
@@ -193,6 +209,12 @@ export class TelegramCustomerOrderingService {
     if (action === "note" && values[0]) {
       await this.screen.answerCallback(callback);
       await this.checkout.handleNoteChoice(target, customer, values[0]);
+      return true;
+    }
+
+    if (action === "address" && values[0]) {
+      await this.screen.answerCallback(callback);
+      await this.checkout.handleAddressChoice(target, customer, values[0]);
       return true;
     }
 
@@ -421,6 +443,112 @@ export class TelegramCustomerOrderingService {
     });
   }
 
+  private async sendCustomerOrderDetail(
+    target: CustomerScreenTarget,
+    customer: LinkedCustomer,
+    customerOrderId: string,
+  ): Promise<void> {
+    const customerOrder = await this.prisma.customerOrder.findFirst({
+      where: { id: customerOrderId, customerId: customer.id },
+      include: {
+        branch: { select: { name: true } },
+        order: { include: { items: { orderBy: { createdAt: "asc" } } } },
+      },
+    });
+    if (!customerOrder) {
+      await this.sendCustomerOrders(target, customer);
+      return;
+    }
+    const order = customerOrder.order;
+    await this.screen.renderCustomerScreen(target, {
+      text: [
+        `📄 <b>${escapeHtml(order.displayOrderNumber ?? order.orderNumber)}</b>`,
+        `${escapeHtml(customerOrder.branch.name)} · ${sharedOrderStatusLabel(order.status, customerOrder.type)}`,
+        "",
+        ...order.items.map((item) => `${Number(item.quantity)}x ${escapeHtml(item.productName)}${item.variantName ? ` · ${escapeHtml(item.variantName)}` : ""}`),
+        "",
+        `<b>Jami: ${formatMoney(order.total)}</b>`,
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔁 Savatga qayta qo'shish", callback_data: `${customerCallbackPrefix}:order:repeat:${customerOrder.id}` }],
+          [{ text: "⬅️ Buyurtmalarim", callback_data: `${customerCallbackPrefix}:orders` }],
+          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
+        ],
+      },
+    });
+  }
+
+  private async repeatCustomerOrder(
+    target: CustomerScreenTarget,
+    customer: LinkedCustomer,
+    customerOrderId: string,
+  ): Promise<void> {
+    const customerOrder = await this.prisma.customerOrder.findFirst({
+      where: { id: customerOrderId, customerId: customer.id },
+      include: {
+        order: {
+          include: {
+            items: {
+              where: { status: "ACTIVE" },
+              include: {
+                product: { select: { id: true, isAvailable: true } },
+                variant: { select: { id: true, isAvailable: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!customerOrder) {
+      await this.sendCustomerOrders(target, customer);
+      return;
+    }
+    const availableItems = customerOrder.order.items.filter(
+      (item) => item.product?.isAvailable && (!item.variantId || item.variant?.isAvailable),
+    );
+    if (!availableItems.length) {
+      await this.screen.renderCustomerScreen(target, {
+        text: "Bu buyurtmadagi mahsulotlar hozir mavjud emas. Menyudan yangisini tanlang.",
+        reply_markup: { inline_keyboard: [
+          [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
+          [{ text: "⬅️ Buyurtmalarim", callback_data: `${customerCallbackPrefix}:orders` }],
+        ] },
+      });
+      return;
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await this.cart.lockTelegramCart(tx, customer.id);
+      const cart = await this.cart.getOrCreateCartForTransaction(tx, customer.id);
+      for (const item of availableItems) {
+        await this.cart.lockCartLine(tx, cart.id, item.productId!, item.variantId);
+        await tx.cartItem.create({
+          data: {
+            cartId: cart.id,
+            productId: item.productId!,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
+            notes: item.notes,
+          },
+        });
+      }
+    });
+    const skipped = customerOrder.order.items.length - availableItems.length;
+    if (skipped) {
+      await this.screen.renderCustomerScreen(target, {
+        text: `${availableItems.length} ta mahsulot savatga qo'shildi. ${skipped} tasi hozir mavjud emas.`,
+        reply_markup: { inline_keyboard: [
+          [{ text: "🛒 Savatni ko'rish", callback_data: `${customerCallbackPrefix}:cart` }],
+          [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
+        ] },
+      });
+      return;
+    }
+    await this.cart.sendCart(target, customer);
+  }
+
   async sendCartFromMessage(message: TelegramMessage): Promise<void> {
     const chatId = requiredTelegramId(message.chat?.id, "chat id");
     const customer = await this.findLinkedCustomer(message.from?.id);
@@ -537,6 +665,12 @@ export class TelegramCustomerOrderingService {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
+          ...orders.map((order) => [
+            {
+              text: `📄 ${order.order.displayOrderNumber ?? order.order.orderNumber}`,
+              callback_data: `${customerCallbackPrefix}:order:detail:${order.id}`,
+            },
+          ]),
           [
             {
               text: "🍽 Menyu",
@@ -655,6 +789,11 @@ export class TelegramCustomerOrderingService {
     }
 
     const cartLabel = await this.cartButtonLabel(customerId);
+    const productButtons = products.map((product) => ({
+      text: telegramProductButtonLabel(product.code, product.name, product.category?.code),
+      callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
+    }));
+    const columns = productButtons.some((button) => button.text.length > 18) ? 1 : 2;
     const payload: CustomerScreenPayload = {
       text: [
         `🍽 <b>${escapeHtml(category?.name ?? "Mahsulotlar")}</b>`,
@@ -664,17 +803,8 @@ export class TelegramCustomerOrderingService {
       reply_markup: {
         inline_keyboard: [
           ...chunkButtons(
-            products.map((product) => {
-              return {
-                text: telegramProductButtonLabel(
-                  product.code,
-                  product.name,
-                  product.category?.code,
-                ),
-                callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
-              };
-            }),
-            2,
+            productButtons,
+            columns,
           ),
           [
             {
@@ -1203,6 +1333,31 @@ export class TelegramCustomerOrderingService {
     await this.cart.sendCart(target, customer);
   }
 
+  private async handleCartClear(
+    target: CustomerScreenTarget,
+    customer: LinkedCustomer,
+    choice: string,
+  ): Promise<void> {
+    if (choice === "confirm") {
+      const count = await this.cart.clearCart(customer.id);
+      await this.screen.renderCustomerScreen(target, {
+        text: count ? "🗑 Savat bo'shatildi." : "🛒 Savat allaqachon bo'sh.",
+        reply_markup: { inline_keyboard: [
+          [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
+          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
+        ] },
+      });
+      return;
+    }
+    await this.screen.renderCustomerScreen(target, {
+      text: "Savatdagi barcha mahsulotlar o'chiriladi. Davom etasizmi?",
+      reply_markup: { inline_keyboard: [
+        [{ text: "🗑 Ha, bo'shatish", callback_data: `${customerCallbackPrefix}:clear:confirm` }],
+        [{ text: "⬅️ Savatga qaytish", callback_data: `${customerCallbackPrefix}:cart` }],
+      ] },
+    });
+  }
+
   private async handleBack(
     chatId: string,
     customer: LinkedCustomer,
@@ -1213,6 +1368,18 @@ export class TelegramCustomerOrderingService {
     if (step === "ADDRESS") {
       await this.checkout.startCheckout(target, customer);
       return;
+    }
+
+    if (step === "ADDRESS_CONFIRM") {
+      const session = await this.checkoutSession.getActiveCheckoutSession(customer.id, chatId);
+      const branch = session?.branchId
+        ? await this.checkoutSession.findBranchForCheckout(session.branchId)
+        : null;
+      await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, { step: "ADDRESS" });
+      if (branch) {
+        await this.checkout.askDeliveryAddress(target, branch);
+        return;
+      }
     }
 
     if (step === "NOTE") {

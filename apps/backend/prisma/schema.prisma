@@ -576,6 +576,7 @@ model Session {
 model Employee {
   id           String         @id @default(cuid())
   userId       String?        @unique
+  telegramUserId String?      @unique
   branchId     String
   employeeCode String
   firstName    String

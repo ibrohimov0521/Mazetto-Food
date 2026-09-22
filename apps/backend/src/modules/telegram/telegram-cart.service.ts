@@ -110,6 +110,20 @@ export class TelegramCartService {
     });
   }
 
+  async clearCart(customerId: string): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockTelegramCart(tx, customerId);
+      const cart = await tx.cart.findFirst({
+        where: { customerId },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      if (!cart) return 0;
+      const deleted = await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+      return deleted.count;
+    });
+  }
+
   /*
    * Narx SERVERDA hisoblanadi va modifikator narxlari bazadan JORIY
    * holatda o'qiladi — savatda saqlangan eski narx ishlatilmaydi.
@@ -281,6 +295,12 @@ export class TelegramCartService {
             {
               text: "✅ Buyurtma berish",
               callback_data: `${customerCallbackPrefix}:checkout`,
+            },
+          ],
+          [
+            {
+              text: "🗑 Savatni bo'shatish",
+              callback_data: `${customerCallbackPrefix}:clear:ask`,
             },
           ],
           [

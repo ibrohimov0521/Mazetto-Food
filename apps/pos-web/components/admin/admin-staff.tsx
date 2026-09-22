@@ -69,6 +69,7 @@ type Staff = {
     id: string;
     branchId: string;
     employeeCode: string;
+    telegramUserId?: string | null;
     status: string;
     hiredAt?: string | null;
     terminatedAt?: string | null;
@@ -103,6 +104,7 @@ type StaffFormState = {
   name: string;
   email: string;
   phone: string;
+  telegramUserId: string;
   password: string;
   roleCodes: string[];
   branchId: string;
@@ -491,6 +493,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
     name: "",
     email: "",
     phone: "",
+    telegramUserId: "",
     password: "",
     roleCodes: ["CASHIER"],
     branchId: "",
@@ -519,6 +522,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           name: nextStaff.displayName ?? "",
           email: nextStaff.email ?? "",
           phone: nextStaff.phone ?? "",
+          telegramUserId: nextStaff.employee?.telegramUserId ?? "",
           password: "",
           roleCodes: nextStaff.roles.map((role) => role.code),
           branchId: nextStaff.employee?.branchId ?? "",
@@ -705,6 +709,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
             name: form.name.trim(),
             email: form.email.trim() || undefined,
             phone: form.phone.trim() || undefined,
+            telegramUserId: form.telegramUserId.trim() || undefined,
             password: form.password,
             roleCodes: form.roleCodes,
             branchId: needsBranch(form.roleCodes, roles)
@@ -743,6 +748,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           name: form.name.trim(),
           email: form.email.trim() || null,
           phone: form.phone.trim() || null,
+          telegramUserId: form.telegramUserId.trim() || null,
           branchId: sameRoles(currentRoles, form.roleCodes)
             ? needsBranch(form.roleCodes, roles)
               ? form.branchId
@@ -1034,6 +1040,22 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                 )}
               </FormField>
             </div>
+            <FormField
+              hint="Botga /myid yuborib raqamni oling. Faqat shu ID bilan bog'langan faol oshxona xodimi guruhdagi buyurtma tugmalarini bosishi mumkin."
+              label="Telegram foydalanuvchi ID"
+            >
+              {(props) => (
+                <TextInput
+                  {...props}
+                  inputMode="numeric"
+                  placeholder="Masalan: 123456789"
+                  value={form.telegramUserId}
+                  onChange={(event) =>
+                    setForm({ ...form, telegramUserId: event.target.value })
+                  }
+                />
+              )}
+            </FormField>
             {isNew ? (
               <FormField
                 hint="Kamida 8 belgi"

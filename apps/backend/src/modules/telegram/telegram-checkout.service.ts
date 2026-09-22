@@ -9,6 +9,8 @@ import {
   OnlinePaymentMethodDto,
 } from "../customers/dto/customer.dto";
 import type { DeliveryLocationDto } from "../customers/dto/delivery-location.dto";
+import { isWithinTashkent } from "../customers/tashkent-bounds";
+import { GeocodingService } from "../geocoding/geocoding.service";
 import { TelegramCartService } from "./telegram-cart.service";
 import { TelegramCheckoutSessionService } from "./telegram-checkout-session.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
@@ -144,6 +146,7 @@ export class TelegramCheckoutService {
     private readonly screen: TelegramCustomerScreenService,
     private readonly checkoutSession: TelegramCheckoutSessionService,
     private readonly cart: TelegramCartService,
+    private readonly geocoding: GeocodingService,
   ) {}
 
   async startCheckout(
@@ -330,48 +333,13 @@ export class TelegramCheckoutService {
       "Aniqlashtiriladi";
 
     await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
-      step: "NOTE",
+      step: "ADDRESS_CONFIRM",
       address: draft
         ? writeLocationDraft({ ...draft, address: completedAddress, house })
         : completedAddress,
     });
 
-    await this.screen.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: [
-        "Manzil qabul qilindi.",
-        "",
-        "Kur'er uchun izoh qo'shasizmi?",
-      ].join("\n"),
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "Izoh qo'shish",
-              callback_data: `${customerCallbackPrefix}:note:add`,
-            },
-          ],
-          [
-            {
-              text: "O'tkazib yuborish",
-              callback_data: `${customerCallbackPrefix}:note:skip`,
-            },
-          ],
-          [
-            {
-              text: "⬅️ Orqaga",
-              callback_data: `${customerCallbackPrefix}:type:DELIVERY`,
-            },
-          ],
-          [
-            {
-              text: "🏠 Bosh menyu",
-              callback_data: `${customerCallbackPrefix}:home`,
-            },
-          ],
-        ],
-      },
-    });
+    await this.askAddressConfirmation({ chatId }, completedAddress, Boolean(draft));
   }
 
   async acceptDeliveryLocation(
@@ -382,10 +350,28 @@ export class TelegramCheckoutService {
       "latitude" | "longitude" | "accuracyMeters"
     >,
   ): Promise<void> {
-    const suggestedAddress = await this.reverseGeocode(location).catch(
-      () =>
-        `GPS nuqta: ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`,
+    if (!isWithinTashkent(location.latitude, location.longitude)) {
+      await this.screen.telegramRequest("sendMessage", {
+        chat_id: chatId,
+        text: "Hozircha faqat Toshkent shahri bo'ylab yetkazib beramiz. Iltimos, shahar ichidagi lokatsiyani tanlang.",
+      });
+      return;
+    }
+    const reverse = await this.geocoding.reverse(
+      location.latitude,
+      location.longitude,
+      "uz",
     );
+    if (!reverse.inCity) {
+      await this.screen.telegramRequest("sendMessage", {
+        chat_id: chatId,
+        text: "Bu lokatsiya yetkazib berish hududidan tashqarida. Iltimos, Toshkent shahri ichidagi manzilni tanlang.",
+      });
+      return;
+    }
+    const suggestedAddress =
+      reverse.label ||
+      `GPS nuqta: ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`;
     await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
       step: "ADDRESS",
       address: writeLocationDraft({ ...location, address: suggestedAddress }),
@@ -403,6 +389,72 @@ export class TelegramCheckoutService {
       reply_markup: {
         keyboard: [["⬅️ Orqaga", "🏠 Bosh menyu"]],
         resize_keyboard: true,
+      },
+    });
+  }
+
+  async handleAddressChoice(
+    target: CustomerScreenTarget,
+    customer: LinkedCustomer,
+    choice: string,
+  ): Promise<void> {
+    const session = await this.checkoutSession.getActiveCheckoutSession(
+      customer.id,
+      target.chatId,
+    );
+    const address = deliveryAddressText(session?.address);
+
+    if (choice === "confirm" && address) {
+      await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, {
+        step: "NOTE",
+      });
+      await this.screen.renderCustomerScreen(target, {
+        text: "Manzil tasdiqlandi. Kur'er uchun izoh qo'shasizmi?",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Izoh qo'shish", callback_data: `${customerCallbackPrefix}:note:add` }],
+            [{ text: "O'tkazib yuborish", callback_data: `${customerCallbackPrefix}:note:skip` }],
+            [{ text: "⬅️ Orqaga", callback_data: `${customerCallbackPrefix}:address:edit` }],
+          ],
+        },
+      });
+      return;
+    }
+
+    await this.checkoutSession.upsertCheckoutSession(customer.id, target.chatId, {
+      step: "ADDRESS",
+      ...(choice === "change_location" ? { address: null } : {}),
+    });
+    const branch = session?.branchId
+      ? await this.checkoutSession.findBranchForCheckout(session.branchId)
+      : null;
+    if (branch) {
+      await this.askDeliveryAddress(target, branch);
+    }
+  }
+
+  private async askAddressConfirmation(
+    target: CustomerScreenTarget,
+    address: string,
+    hasLocation: boolean,
+  ): Promise<void> {
+    await this.screen.renderCustomerScreen(target, {
+      text: [
+        "📍 <b>Manzilni tasdiqlang</b>",
+        "",
+        `<b>Manzil:</b> ${escapeHtml(address)}`,
+        hasLocation ? "Lokatsiya ham saqlandi." : "Manzil qo'lda kiritildi.",
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "✅ Tasdiqlash", callback_data: `${customerCallbackPrefix}:address:confirm` }],
+          [{ text: "✏️ Manzilni tahrirlash", callback_data: `${customerCallbackPrefix}:address:edit` }],
+          ...(hasLocation
+            ? [[{ text: "📍 Boshqa lokatsiya", callback_data: `${customerCallbackPrefix}:address:change_location` }]]
+            : []),
+          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
+        ],
       },
     });
   }
@@ -758,35 +810,4 @@ export class TelegramCheckoutService {
     return `telegram:${customerId}:${cart.id}:${hash}`;
   }
 
-  private async reverseGeocode(
-    location: Pick<TelegramLocationDraft, "latitude" | "longitude">,
-  ): Promise<string> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4_000);
-    try {
-      const url = new URL("https://nominatim.openstreetmap.org/reverse");
-      url.searchParams.set("format", "jsonv2");
-      url.searchParams.set("lat", String(location.latitude));
-      url.searchParams.set("lon", String(location.longitude));
-      url.searchParams.set("zoom", "18");
-      const response = await fetch(url, {
-        headers: { "User-Agent": "MAZETTO-Food-Delivery/1.0" },
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`Reverse geocoding failed: ${response.status}`);
-      }
-      const body = (await response.json()) as { display_name?: unknown };
-      const label =
-        typeof body.display_name === "string"
-          ? body.display_name.replace(/, Uzbekistan$/i, "").trim()
-          : "";
-      if (!label) {
-        throw new Error("Reverse geocoding returned no address");
-      }
-      return label.slice(0, 300);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
 }

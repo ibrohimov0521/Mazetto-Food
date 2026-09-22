@@ -253,6 +253,7 @@ function createServices(prisma: PrismaService) {
       new TelegramCustomerScreenService(),
       new TelegramCheckoutSessionService(prisma as never),
       new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+      { reverse: async () => ({ label: "Toshkent", inCity: true }) } as never,
     ),
   );
   const telegramAuth = new TelegramCustomerAuthService(

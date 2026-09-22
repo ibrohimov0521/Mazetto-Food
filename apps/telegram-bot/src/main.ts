@@ -144,6 +144,7 @@ async function configureBotInterface(
       { command: "branches", description: "Filiallar" },
       { command: "cancel", description: "Jarayonni bekor qilish" },
       { command: "support", description: "Yordam" },
+      { command: "myid", description: "Telegram ID ni ko'rsatish" },
     ],
   });
 }

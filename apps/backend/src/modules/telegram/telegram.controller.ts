@@ -9,6 +9,9 @@ type TelegramDiagnosticMessage = {
     title?: string;
     type?: string;
   };
+  from?: {
+    id?: number | string;
+  };
   text?: string;
 };
 type TelegramDiagnosticUpdate = {
@@ -52,8 +55,20 @@ export class TelegramController {
   private async handleStaffChatIdDiagnostic(update: unknown): Promise<boolean> {
     const message = this.toTelegramDiagnosticUpdate(update).message;
 
-    if (!message?.chat?.id || !this.isStaffIdCommand(message.text)) {
+    if (!message?.chat?.id || !this.isDiagnosticCommand(message.text)) {
       return false;
+    }
+
+    if (this.isMyIdCommand(message.text)) {
+      const telegramUserId = message.from?.id;
+      await this.telegramRequest("sendMessage", {
+        chat_id: message.chat.id,
+        text:
+          telegramUserId === undefined || telegramUserId === null
+            ? "Telegram foydalanuvchi ID topilmadi. Botga shaxsiy chatdan /myid yuboring."
+            : `Sizning Telegram ID: ${telegramUserId}\n\nBu raqamni Admin boshqaruv → Xodimlar → Telegram foydalanuvchi ID maydoniga kiriting.`,
+      });
+      return true;
     }
 
     await this.telegramRequest("sendMessage", {
@@ -71,6 +86,14 @@ export class TelegramController {
 
   private isStaffIdCommand(text: string | undefined): boolean {
     return /^\/staffid(?:@[A-Za-z0-9_]+)?$/.test(text?.trim() ?? "");
+  }
+
+  private isDiagnosticCommand(text: string | undefined): boolean {
+    return this.isStaffIdCommand(text) || this.isMyIdCommand(text);
+  }
+
+  private isMyIdCommand(text: string | undefined): boolean {
+    return /^\/myid(?:@[A-Za-z0-9_]+)?$/.test(text?.trim() ?? "");
   }
 
   private toTelegramDiagnosticUpdate(update: unknown): TelegramDiagnosticUpdate {

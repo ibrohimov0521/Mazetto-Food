@@ -18,7 +18,12 @@ import {
  * Bog'liqlik yo'nalishi bir tomonlama: buyurtma -> sessiya -> baza.
  */
 
-export type CheckoutStep = "ORDER_TYPE" | "ADDRESS" | "NOTE" | "SUMMARY";
+export type CheckoutStep =
+  | "ORDER_TYPE"
+  | "ADDRESS"
+  | "ADDRESS_CONFIRM"
+  | "NOTE"
+  | "SUMMARY";
 
 /*
  * Sessiya bir soatdan keyin o'ladi.

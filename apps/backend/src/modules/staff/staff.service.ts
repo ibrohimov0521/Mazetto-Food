@@ -64,6 +64,7 @@ const staffSelect = {
       id: true,
       branchId: true,
       employeeCode: true,
+      telegramUserId: true,
       firstName: true,
       lastName: true,
       status: true,
@@ -160,7 +161,14 @@ export class StaffService {
           assignedById: actor.id,
         })),
       });
-      await this.syncEmployee(tx, created.id, branchId, dto.name, dto.isActive);
+      await this.syncEmployee(
+        tx,
+        created.id,
+        branchId,
+        dto.name,
+        dto.isActive,
+        this.normalizeTelegramUserId(dto.telegramUserId),
+      );
       await this.createAuditLog(tx, actor.id, "STAFF_CREATED", created.id, {
         roleCodes,
         branchId,
@@ -214,13 +222,20 @@ export class StaffService {
         },
       });
 
-      if (dto.name !== undefined || dto.branchId !== undefined) {
+      if (
+        dto.name !== undefined ||
+        dto.branchId !== undefined ||
+        dto.telegramUserId !== undefined
+      ) {
         await this.syncEmployee(
           tx,
           id,
           nextBranchId,
           dto.name ?? existing.displayName ?? nextEmail ?? nextPhone ?? "Staff",
           existing.isActive,
+          dto.telegramUserId === undefined
+            ? undefined
+            : this.normalizeTelegramUserId(dto.telegramUserId),
         );
       }
 
@@ -229,6 +244,7 @@ export class StaffService {
         emailChanged: dto.email !== undefined,
         phoneChanged: dto.phone !== undefined,
         nameChanged: dto.name !== undefined,
+        telegramUserIdChanged: dto.telegramUserId !== undefined,
       });
 
       return tx.user.findUniqueOrThrow({
@@ -719,6 +735,15 @@ export class StaffService {
     return value ? normalizeCustomerPhone(value) : null;
   }
 
+  private normalizeTelegramUserId(value?: string | null): string | null {
+    const normalized = value?.trim();
+    if (!normalized) return null;
+    if (!/^\d{3,20}$/.test(normalized)) {
+      throw new BadRequestException("Telegram foydalanuvchi ID raqam bo'lishi kerak");
+    }
+    return normalized;
+  }
+
   private assertHasLogin(login: NormalizedStaffLogin): void {
     if (!login.email && !login.phone) {
       throw new BadRequestException("Email or phone is required");
@@ -1037,6 +1062,7 @@ export class StaffService {
     branchId: string | null,
     displayName: string,
     isActive: boolean,
+    telegramUserId?: string | null,
   ): Promise<void> {
     const existing = await tx.employee.findUnique({
       where: { userId },
@@ -1067,6 +1093,7 @@ export class StaffService {
           branchId,
           firstName: name.firstName,
           lastName: name.lastName,
+          ...(telegramUserId !== undefined ? { telegramUserId } : {}),
           ...(existing.status === EmployeeStatus.TERMINATED
             ? {}
             : {
@@ -1084,6 +1111,7 @@ export class StaffService {
       data: {
         branchId,
         userId,
+        telegramUserId: telegramUserId ?? null,
         employeeCode: this.createEmployeeCode(),
         firstName: name.firstName,
         lastName: name.lastName,

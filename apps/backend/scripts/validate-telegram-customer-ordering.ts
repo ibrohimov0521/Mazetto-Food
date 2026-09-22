@@ -1003,6 +1003,9 @@ async function testDeliveryFlow(): Promise<void> {
     from: { id: "tg_1" },
     text: "Sergeli 7, 12-uy, 3-podyezd",
   });
+  assert.match(lastText(), /Manzilni tasdiqlang/);
+  assert.ok(lastKeyboardText().includes("✅ Tasdiqlash"));
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:address:confirm" });
   assert.match(lastText(), /Kur'er uchun izoh/);
 
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:note:skip" });
@@ -1069,6 +1072,7 @@ async function testDeliveryNoteFlow(): Promise<void> {
     from: { id: "tg_1" },
     text: "Sergeli 7, 12-uy, 3-podyezd",
   });
+  await service.handleCustomerCallback({ ...callbackBase, data: "cust:address:confirm" });
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:note:add" });
   assert.match(lastText(), /Kur'er uchun izohni yuboring/);
   assert.equal(engineCalls.length, 0);
@@ -1174,6 +1178,7 @@ function createService(prisma: InMemoryPrisma) {
       new TelegramCustomerScreenService(),
       new TelegramCheckoutSessionService(prisma as never),
       new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+      { reverse: async () => ({ label: "Toshkent", inCity: true }) } as never,
     ),
   );
   const callbackBase = {
@@ -1253,7 +1258,8 @@ function assertCartHasOnlyQuantityControls(): void {
     keyboard.flat().every((button) =>
       button.callback_data?.startsWith("cust:qty:") ||
       button.callback_data === "cust:checkout" ||
-      button.callback_data === "cust:menu",
+      button.callback_data === "cust:menu" ||
+      button.callback_data === "cust:clear:ask",
     ),
     "cart keyboard must contain only item quantity controls plus cart-level actions",
   );

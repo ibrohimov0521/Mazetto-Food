@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { BranchesModule } from "../branches/branches.module";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
 import { KitchenModule } from "../kitchen/kitchen.module";
+import { GeocodingModule } from "../geocoding/geocoding.module";
 import { OrdersModule } from "../orders/orders.module";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { TelegramController } from "./telegram.controller";
@@ -14,7 +15,7 @@ import { TelegramCustomerScreenService } from "./telegram-customer-screen.servic
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 
 @Module({
-  imports: [PrismaModule, BranchesModule, KitchenModule, OrdersModule],
+  imports: [PrismaModule, BranchesModule, KitchenModule, OrdersModule, GeocodingModule],
   controllers: [TelegramController],
   providers: [
     CustomerOrderEngineService,

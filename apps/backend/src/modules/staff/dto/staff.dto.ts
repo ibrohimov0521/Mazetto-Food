@@ -26,6 +26,11 @@ export class CreateStaffDto {
   @MaxLength(40)
   phone?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  telegramUserId?: string | null;
+
   @IsString()
   @MinLength(8)
   @MaxLength(128)
@@ -66,6 +71,11 @@ export class UpdateStaffDto {
   @IsString()
   @MaxLength(40)
   phone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  telegramUserId?: string | null;
 
   @IsOptional()
   @IsString()

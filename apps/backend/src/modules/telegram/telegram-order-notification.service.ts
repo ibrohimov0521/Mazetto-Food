@@ -1,6 +1,6 @@
 import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
 import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, UnauthorizedException } from "@nestjs/common";
-import { CustomerOrderType, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
+import { CustomerOrderType, EmployeeStatus, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
 import type { KitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
@@ -21,6 +21,7 @@ type TelegramInlineKeyboard = {
 type TelegramCallbackQuery = {
   id: string;
   data?: string;
+  from?: { id?: number | string };
   message?: {
     chat?: { id: number | string };
     message_id?: number;
@@ -82,6 +83,7 @@ type TelegramResponse = {
 };
 
 const callbackPrefix = "mazetto_order";
+const staffTelegramRoleCodes = ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "KITCHEN"];
 const telegramRequestMaxAttempts = 3;
 const telegramRequestRetryDelayMs = 250;
 const actionLabels: Record<StaffOrderAction, string> = {
@@ -260,8 +262,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     }
 
     try {
-      this.assertStaffCallback(callback);
       const { orderId, action } = this.parseCallbackData(callback.data);
+      await this.assertStaffCallback(callback, orderId);
       const result = await this.applyStaffAction(orderId, action);
       const callbackText = result.changed
         ? `${this.publicOrderNumber(result.order)}: ${actionLabels[action]}`
@@ -274,8 +276,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       return { ok: true, handled: true };
     } catch (error) {
       try {
-        this.assertStaffCallback(callback);
         const { orderId } = this.parseCallbackData(callback.data);
+        await this.assertStaffCallback(callback, orderId);
         await this.refreshStaffOrderMessageFromKitchen({ orderId, action: "refresh" });
       } catch {
         // Unauthorized and malformed callbacks must not refresh any order.
@@ -709,12 +711,53 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     }
   }
 
-  private assertStaffCallback(callback: TelegramCallbackQuery): void {
+  private async assertStaffCallback(
+    callback: TelegramCallbackQuery,
+    orderId: string,
+  ): Promise<void> {
     const expectedChatId = this.staffChatId();
     const actualChatId = callback.message?.chat?.id;
 
     if (!expectedChatId || !actualChatId || String(actualChatId) !== expectedChatId) {
       throw new ForbiddenException("Unauthorized staff Telegram chat");
+    }
+
+    const telegramUserId = callback.from?.id;
+    if (telegramUserId === undefined || telegramUserId === null) {
+      throw new ForbiddenException("Telegram callback does not identify a staff member");
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { branchId: true },
+    });
+    if (!order) {
+      throw new BadRequestException("Buyurtma topilmadi");
+    }
+
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        telegramUserId: String(telegramUserId),
+        branchId: order.branchId,
+        status: EmployeeStatus.ACTIVE,
+        user: {
+          is: {
+            isActive: true,
+            roles: {
+              some: {
+                role: { code: { in: staffTelegramRoleCodes } },
+              },
+            },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!employee) {
+      throw new ForbiddenException(
+        "Telegram foydalanuvchisi bu filialdagi faol oshxona xodimiga biriktirilmagan",
+      );
     }
   }
 
