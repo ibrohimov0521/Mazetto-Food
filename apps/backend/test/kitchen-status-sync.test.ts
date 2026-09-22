@@ -41,10 +41,10 @@ test("every terminal order status maps to a terminal kitchen ticket status", () 
   }
 });
 
-test("pickup handoff is served while delivery handoff remains ready", () => {
+test("kitchen handoff closes pickup and dine-in while delivery remains ready", () => {
   assert.equal(
     orderStatusAfterKitchenHandoff(OrderType.TAKEAWAY),
-    OrderStatus.SERVED,
+    OrderStatus.COMPLETED,
   );
   assert.equal(
     orderStatusAfterKitchenHandoff(OrderType.DELIVERY),
@@ -52,6 +52,6 @@ test("pickup handoff is served while delivery handoff remains ready", () => {
   );
   assert.equal(
     orderStatusAfterKitchenHandoff(OrderType.DINE_IN),
-    OrderStatus.READY,
+    OrderStatus.COMPLETED,
   );
 });

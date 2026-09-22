@@ -382,7 +382,7 @@ export class ReceiptsService {
     const branchName = textValue(content.branchName) ?? receipt.branch.name;
     const orderNumber = textValue(content.orderNumber) ?? receipt.order.orderNumber;
     const displayOrderNumber = textValue(content.displayOrderNumber) ?? receipt.order.displayOrderNumber ?? orderNumber;
-    const dateTime = textValue(content.dateTime) ?? receipt.createdAt.toISOString();
+    const dateTime = formatReceiptDateTime(textValue(content.dateTime), receipt.createdAt);
     const total = textValue(content.total) ?? receipt.total.toFixed(2);
     const snapshotItems = objectArray(content.items);
     const snapshotPayments = objectArray(content.payments);
@@ -390,7 +390,7 @@ export class ReceiptsService {
       ? snapshotItems.map((item) => ({
           type: "item",
           name: [textValue(item.name), textValue(item.variant)].filter(Boolean).join(" "),
-          quantity: textValue(item.quantity) ?? "",
+          quantity: formatReceiptQuantity(textValue(item.quantity) ?? ""),
           total: textValue(item.total) ?? "",
           notes: textValue(item.notes),
           modifiers: item.modifiers,
@@ -398,7 +398,7 @@ export class ReceiptsService {
       : receipt.order.items.map((item) => ({
           type: "item",
           name: `${item.productName}${item.variantName ? ` ${item.variantName}` : ""}`,
-          quantity: item.quantity.toFixed(3),
+          quantity: formatReceiptQuantity(item.quantity.toFixed(3)),
           total: item.totalPrice.toFixed(2),
         }));
     const paymentCommands = snapshotPayments.length > 0
@@ -428,7 +428,7 @@ export class ReceiptsService {
         { type: "align", value: "left" },
         ...(!isKitchen ? [{ type: "text", value: `Chek: ${receipt.receiptNumber}` }] : []),
         { type: "text", value: `Buyurtma: ${displayOrderNumber}` },
-        ...(isKitchen && textValue(content.orderType) ? [{ type: "text", value: `Turi: ${textValue(content.orderType)}` }] : []),
+        ...(isKitchen && textValue(content.orderType) ? [{ type: "text", value: `Turi: ${formatReceiptOrderType(textValue(content.orderType)!)}` }] : []),
         { type: "line" },
         ...itemCommands,
         { type: "line" },
@@ -454,4 +454,40 @@ function objectArray(value: unknown): Record<string, unknown>[] {
     (item): item is Record<string, unknown> =>
       Boolean(item) && typeof item === "object" && !Array.isArray(item),
   );
+}
+
+function formatReceiptOrderType(value: string): string {
+  switch (value) {
+    case "DELIVERY":
+      return "Yetkazib berish";
+    case "DINE_IN":
+      return "Zal";
+    case "TAKEAWAY":
+    case "PICKUP":
+      return "Olib ketish";
+    default:
+      return value;
+  }
+}
+
+function formatReceiptQuantity(value: string): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return value;
+  if (Number.isInteger(numeric)) return String(numeric);
+  return value.replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatReceiptDateTime(value: string | null, fallback: Date): string {
+  const parsed = value ? new Date(value) : null;
+  const date = parsed && Number.isFinite(parsed.getTime()) ? parsed : fallback;
+  return `${new Intl.DateTimeFormat("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date)} Toshkent vaqti`;
 }

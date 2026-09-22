@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { OrderType, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
 type TransactionClient = Prisma.TransactionClient;
@@ -17,6 +17,16 @@ export type ReceiptPrintRoute = "RECEIPT" | "KITCHEN" | "CANCELLATION" | "REFUND
 const RECEIPT_NUMBER_ATTEMPTS = 5;
 // Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
 const durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
+const tashkentDateTimeFormatter = new Intl.DateTimeFormat("uz-UZ", {
+  timeZone: "Asia/Tashkent",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
 
 function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -110,20 +120,20 @@ export async function writeReceiptRow(
         branchName: order.branch.name,
         orderNumber: order.orderNumber,
         displayOrderNumber: order.displayOrderNumber,
-        orderType: order.type,
+        orderType: orderTypeLabel(order.type),
         orderSource: order.source,
         orderNotes: order.kitchenComment ?? order.notes,
         items: order.items.map((item) => ({
           name: item.productName,
           variant: item.variantName,
-          quantity: item.quantity.toFixed(3),
+          quantity: formatQuantity(item.quantity),
           total: item.totalPrice.toFixed(2),
           notes: item.notes,
           modifiers: item.modifierSnapshot,
         })),
         payments: order.payments.map((payment) => ({ method: payment.method.code, amount: payment.amount.toFixed(2) })),
         total: order.total.toFixed(2),
-        dateTime: new Date().toISOString(),
+        dateTime: formatTashkentDateTime(new Date()),
       },
     },
   });
@@ -224,9 +234,32 @@ export async function ensureRefundReceipt(
         items: [],
         payments: [{ method: payment.method.code, amount: `-${amount.toFixed(2)}` }],
         total: `-${amount.toFixed(2)}`,
-        dateTime: new Date().toISOString(),
+        dateTime: formatTashkentDateTime(new Date()),
       },
     },
   });
   await queuePrintJobsForReceipt(tx, receipt);
+}
+
+function orderTypeLabel(type: OrderType): string {
+  switch (type) {
+    case OrderType.DELIVERY:
+      return "Yetkazib berish";
+    case OrderType.DINE_IN:
+      return "Zal";
+    case OrderType.TAKEAWAY:
+      return "Olib ketish";
+    default:
+      return String(type);
+  }
+}
+
+function formatQuantity(quantity: Prisma.Decimal): string {
+  const numeric = Number(quantity);
+  if (Number.isInteger(numeric)) return String(numeric);
+  return quantity.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatTashkentDateTime(value: Date): string {
+  return `${tashkentDateTimeFormatter.format(value)} Toshkent vaqti`;
 }
