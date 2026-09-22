@@ -84,6 +84,15 @@ export class InventoryController {
     return this.inventoryService.updateIngredient(id, dto, user);
   }
 
+  @Delete("ingredients/bulk/permanent")
+  @Permissions(PERMISSIONS.INVENTORY_EDIT)
+  permanentlyDeleteIngredients(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.permanentlyDeleteIngredients(dto.ids, user);
+  }
+
   @Delete("ingredients/:id")
   @Permissions(PERMISSIONS.INVENTORY_EDIT)
   archiveIngredient(
@@ -101,6 +110,15 @@ export class InventoryController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.inventoryService.updateWarehouse(id, dto, user);
+  }
+
+  @Delete("warehouses/bulk/permanent")
+  @Permissions(PERMISSIONS.INVENTORY_EDIT)
+  permanentlyDeleteWarehouses(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.permanentlyDeleteWarehouses(dto.ids, user);
   }
 
   @Delete("warehouses/:id")

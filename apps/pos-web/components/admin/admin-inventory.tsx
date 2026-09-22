@@ -187,6 +187,8 @@ export function AdminInventoryPage() {
   const [movementType, setMovementType] = useState("");
   const [movementIngredient, setMovementIngredient] = useState("");
   const [movementLimit, setMovementLimit] = useState(100);
+  const [selectedIngredientIds, setSelectedIngredientIds] = useState<string[]>([]);
+  const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isIngredientOpen, setIsIngredientOpen] = useState(false);
@@ -383,6 +385,24 @@ export function AdminInventoryPage() {
       reloadAll();
     } catch (caught) {
       showToast(failureMessage(caught, "Arxivga olib bo'lmadi."), "danger");
+    }
+  }
+
+  async function permanentlyDeleteMaster(kind: "ingredients" | "warehouses", ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const label = kind === "ingredients" ? "ingredient" : "ombor";
+    if (!window.confirm(`${ids.length} ta ${label}ni bazadan butunlay o'chirishni tasdiqlaysizmi? Tarixi bor yozuvlar o'chirilmaydi.`)) return;
+    try {
+      await apiFetch(`/inventory/${kind}/bulk/permanent`, {
+        method: "DELETE",
+        body: JSON.stringify({ ids }),
+      });
+      showToast(`${ids.length} ta ${label} o'chirildi.`, "success");
+      if (kind === "ingredients") setSelectedIngredientIds([]);
+      else setSelectedWarehouseIds([]);
+      reloadAll();
+    } catch (caught) {
+      showToast(failureMessage(caught, `${label}larni o'chirib bo'lmadi.`), "danger");
     }
   }
 
@@ -847,9 +867,13 @@ export function AdminInventoryPage() {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
-          <CardHeader description="Retseptlarda ishlatiladigan xomashyolar" title="Ingredientlar" />
+          <CardHeader description="Retseptlarda ishlatiladigan xomashyolar" title="Ingredientlar" actions={canEdit && selectedIngredientIds.length ? <Button size="sm" variant="danger" onClick={() => void permanentlyDeleteMaster("ingredients", selectedIngredientIds)}>{selectedIngredientIds.length} ta o'chirish</Button> : undefined} />
           <DataTable
             caption="Ingredientlar"
+            selectable={canEdit}
+            selectedKeys={selectedIngredientIds}
+            onSelectionChange={setSelectedIngredientIds}
+            selectionDisabled={(item: Ingredient) => false}
             columns={[
               { key: "name", header: "Nomi", primary: true, render: (item: Ingredient) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.unit}</p></> },
               { key: "minimum", header: "Minimum", align: "right", render: (item: Ingredient) => item.minimumStock },
@@ -862,9 +886,13 @@ export function AdminInventoryPage() {
           />
         </Card>
         <Card>
-          <CardHeader description="Filialning faol saqlash joylari" title="Omborlar" />
+          <CardHeader description="Filialning faol saqlash joylari" title="Omborlar" actions={canEdit && selectedWarehouseIds.length ? <Button size="sm" variant="danger" onClick={() => void permanentlyDeleteMaster("warehouses", selectedWarehouseIds)}>{selectedWarehouseIds.length} ta o'chirish</Button> : undefined} />
           <DataTable
             caption="Omborlar"
+            selectable={canEdit}
+            selectedKeys={selectedWarehouseIds}
+            onSelectionChange={setSelectedWarehouseIds}
+            selectionDisabled={(item: Warehouse) => false}
             columns={[
               { key: "name", header: "Nomi", primary: true, render: (item: Warehouse) => <><p className="font-semibold">{item.name}</p><p className="text-[13px] text-mz-text-muted">{item.branch?.name ?? "Filial"}</p></> },
               { key: "actions", header: "Amal", align: "right", render: (item: Warehouse) => canEdit ? <div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => editWarehouse(item)}>Tahrirlash</Button><Button size="sm" variant="danger" onClick={() => void archiveMaster("warehouses", item.id, item.name)}>Arxiv</Button></div> : null },
