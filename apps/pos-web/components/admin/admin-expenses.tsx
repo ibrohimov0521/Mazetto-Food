@@ -123,6 +123,7 @@ export function AdminExpensesPage() {
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCategorySaving, setIsCategorySaving] = useState(false);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [form, setForm] = useState<ExpenseForm>(emptyForm);
   const [categoryForm, setCategoryForm] = useState({ id: "", branchId: "", name: "" });
   const [categoryError, setCategoryError] = useState("");
@@ -296,6 +297,20 @@ export function AdminExpensesPage() {
     } catch (caught) {
       if (caught instanceof SessionExpiredError) return;
       showToast(caught instanceof Error ? caught.message : "Kategoriya arxivlanmadi.", "danger");
+    }
+  }
+
+  async function permanentlyDeleteCategories(): Promise<void> {
+    if (!selectedCategoryIds.length) return;
+    if (!window.confirm(`${selectedCategoryIds.length} ta xarajat kategoriyasini bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/expenses/categories/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: selectedCategoryIds }) });
+      showToast("Tanlangan kategoriyalar o'chirildi.", "success");
+      setSelectedCategoryIds([]);
+      loadCategoryData();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Kategoriyalarni o'chirib bo'lmadi.", "danger");
     }
   }
 
@@ -604,9 +619,12 @@ export function AdminExpensesPage() {
       </Card>
 
       <Card>
-        <CardHeader description="Faol kategoriyalar; arxivlash eski xarajatlarni o'zgartirmaydi" title="Xarajat kategoriyalari" />
+        <CardHeader actions={canCreate && selectedCategoryIds.length ? <Button onClick={() => void permanentlyDeleteCategories()} variant="danger">{selectedCategoryIds.length} ta o'chirish</Button> : undefined} description="Faol kategoriyalar; arxivlash eski xarajatlarni o'zgartirmaydi" title="Xarajat kategoriyalari" />
         <DataTable
           caption="Xarajat kategoriyalari"
+          selectable={canCreate}
+          selectedKeys={selectedCategoryIds}
+          onSelectionChange={setSelectedCategoryIds}
           columns={[
             { key: "name", header: "Nomi", primary: true, render: (item: ExpenseCategory) => item.name },
             { key: "branch", header: "Filial", render: (item: ExpenseCategory) => item.branch?.name ?? "—" },
