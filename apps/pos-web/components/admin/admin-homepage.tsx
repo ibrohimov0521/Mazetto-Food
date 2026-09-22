@@ -343,10 +343,11 @@ export function AdminHomepagePage() {
     setIsSaving(true);
 
     try {
-      await apiFetch(`${endpoints[pendingDelete.kind]}/${pendingDelete.id}`, {
+      await apiFetch(`${endpoints[pendingDelete.kind]}/bulk`, {
         method: "DELETE",
+        body: JSON.stringify({ ids: [pendingDelete.id] }),
       });
-      showToast("O'chirildi. Mijoz saytida darhol yo'qoladi.", "success");
+      showToast("Bazadan butunlay o'chirildi.", "success");
       setPendingDelete(null);
       load();
     } catch (caught) {
