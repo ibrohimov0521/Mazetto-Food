@@ -69,6 +69,15 @@ export class DevicesController {
     return this.devicesService.updateDevice(id, dto, user);
   }
 
+  @Delete("bulk")
+  @Permissions(PERMISSIONS.DEVICE_MANAGE)
+  deleteDevices(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.devicesService.deleteDevices(dto.ids, user);
+  }
+
   @Delete(":id")
   @Permissions(PERMISSIONS.DEVICE_MANAGE)
   deleteDevice(

@@ -88,6 +88,27 @@ export class ReceiptsService {
     });
   }
 
+  async deleteReceipts(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta chek tanlanishi kerak");
+    const receipts = await this.prisma.receipt.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, branchId: true, receiptNumber: true, documentType: true },
+    });
+    for (const receipt of receipts) resolveBranchScope(user, receipt.branchId);
+    if (receipts.length !== uniqueIds.length) throw new NotFoundException("Tanlangan cheklarning biri topilmadi");
+    await this.prisma.$transaction(async (tx) => {
+      await tx.receipt.deleteMany({ where: { id: { in: uniqueIds } } });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "RECEIPTS_BULK_DELETED",
+        entity: "Receipt",
+        metadata: { ids: receipts.map((receipt) => receipt.id), receipts },
+      });
+    });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   private async restoreMissingPrintJobs(branchId?: string) {
     const receipts = await this.prisma.receipt.findMany({
       where: {

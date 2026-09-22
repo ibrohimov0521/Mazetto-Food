@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -55,6 +56,15 @@ export class OrdersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.ordersService.listOrders(query, user);
+  }
+
+  @Delete("bulk")
+  @Permissions(PERMISSIONS.ORDER_UPDATE)
+  permanentlyDeleteOrders(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ordersService.permanentlyDeleteOrders(dto.ids, user);
   }
 
   @Patch("bulk/status")

@@ -408,6 +408,13 @@ export class StaffService {
     return { deleted: true, id };
   }
 
+  async deleteStaffBulk(ids: string[], actor: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta xodim tanlanishi kerak");
+    for (const id of uniqueIds) await this.deleteStaff(id, actor);
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   async terminateStaff(
     id: string,
     dto: TerminateStaffDto,

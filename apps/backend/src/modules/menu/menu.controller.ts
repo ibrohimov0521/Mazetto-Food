@@ -43,6 +43,12 @@ export class MenuController {
     return this.menuService.updateCategory(id, dto);
   }
 
+  @Delete("categories/bulk/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteCategories(@Body() dto: { ids: string[] }) {
+    return this.menuService.permanentlyDeleteCategories(dto.ids);
+  }
+
   @Delete("categories/:id")
   @Permissions(PERMISSIONS.MENU_DELETE)
   deleteCategory(@Param("id") id: string) {
@@ -71,6 +77,12 @@ export class MenuController {
   @Permissions(PERMISSIONS.MENU_EDIT)
   updateProduct(@Param("id") id: string, @Body() dto: UpdateProductDto) {
     return this.menuService.updateProduct(id, dto);
+  }
+
+  @Delete("products/bulk/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteProducts(@Body() dto: { ids: string[] }) {
+    return this.menuService.permanentlyDeleteProducts(dto.ids);
   }
 
   @Delete("products/:id")

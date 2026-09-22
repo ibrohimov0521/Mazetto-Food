@@ -181,6 +181,7 @@ function PrintersConsole() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pendingDeactivate, setPendingDeactivate] = useState<Printer | null>(
     null,
   );
@@ -376,6 +377,19 @@ function PrintersConsole() {
     }
   }
 
+  async function deleteSelectedPrinters(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta printerni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/printers/bulk", { method: "DELETE", body: JSON.stringify({ ids: selectedIds }) });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta printer o'chirildi.`, "success");
+      printersResource.reload();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Printerlarni o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   const columns: DataTableColumn<Printer>[] = [
     {
       key: "name",
@@ -495,10 +509,13 @@ function PrintersConsole() {
       <Card>
         <CardHeader
           actions={
-            <Button onClick={openCreate} size="lg">
-              <Icon className="h-4 w-4" name="plus" />
-              Yangi printer
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {selectedIds.length ? <Button onClick={() => void deleteSelectedPrinters()} size="lg" variant="danger">{selectedIds.length} ta o'chirish</Button> : null}
+              <Button onClick={openCreate} size="lg">
+                <Icon className="h-4 w-4" name="plus" />
+                Yangi printer
+              </Button>
+            </div>
           }
           description={`${printers.length} ta qurilma qaydga olingan`}
           title="Qaydga olingan printerlar"
@@ -565,6 +582,9 @@ function PrintersConsole() {
             </>
           )}
           rows={printers}
+          selectable
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
         />
       </Card>
 

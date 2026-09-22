@@ -410,6 +410,40 @@ export class MenuService {
     });
   }
 
+  async permanentlyDeleteCategories(ids: string[]) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException("Kamida bitta kategoriya tanlanishi kerak");
+    }
+
+    const categories = await this.prisma.category.findMany({
+      where: { id: { in: uniqueIds } },
+      select: {
+        id: true,
+        name: true,
+        _count: { select: { products: true, children: true, promotions: true } },
+      },
+    });
+    if (categories.length !== uniqueIds.length) {
+      throw new NotFoundException("Tanlangan kategoriyalarning biri topilmadi");
+    }
+
+    const blocked = categories.filter(
+      (category) =>
+        category._count.products > 0 ||
+        category._count.children > 0 ||
+        category._count.promotions > 0,
+    );
+    if (blocked.length) {
+      throw new BadRequestException(
+        `Mahsulot, quyi kategoriya yoki aksiya bog'langan kategoriyalarni o'chirib bo'lmaydi: ${blocked.map((category) => category.name).join(", ")}`,
+      );
+    }
+
+    await this.prisma.category.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   async createProduct(dto: CreateProductDto) {
     assertUniqueProductModifiers(dto.modifiers);
     const defaultVariant = dto.variants?.find((variant) => variant.isDefault) ?? dto.variants?.[0];
@@ -663,6 +697,19 @@ export class MenuService {
     await this.prisma.product.delete({ where: { id } });
 
     return { deleted: true, id };
+  }
+
+  async permanentlyDeleteProducts(ids: string[]) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException("Kamida bitta mahsulot tanlanishi kerak");
+    }
+    const deleted: string[] = [];
+    for (const id of uniqueIds) {
+      await this.permanentlyDeleteProduct(id);
+      deleted.push(id);
+    }
+    return { deleted: true, count: deleted.length, ids: deleted };
   }
 
   /**

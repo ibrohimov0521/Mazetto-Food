@@ -291,6 +291,7 @@ export function AdminOrdersPage() {
   const [bulkReason, setBulkReason] = useState("");
   const [bulkReasonError, setBulkReasonError] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkOrderStatusResult | null>(
     null,
   );
@@ -539,6 +540,33 @@ export function AdminOrdersPage() {
       );
     } finally {
       setBulkBusy(false);
+    }
+  }
+
+  async function permanentlyDeleteSelected(): Promise<void> {
+    if (!selectedOrderIds.size || deleteBusy) return;
+    const confirmed = window.confirm(
+      `${selectedOrderIds.size} ta buyurtmani bazadan butunlay o'chirishni tasdiqlaysizmi? Bu amal qaytarilmaydi. To'lov yoki kassaviy tarixi bor buyurtmalar o'chirilmaydi.`,
+    );
+    if (!confirmed) return;
+
+    setDeleteBusy(true);
+    setSaveError("");
+    try {
+      await apiFetch("/orders/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: [...selectedOrderIds] }),
+      });
+      setSelectedOrderIds(new Set());
+      await load();
+    } catch (caught) {
+      setSaveError(
+        caught instanceof Error
+          ? caught.message
+          : "Buyurtmalarni bazadan o'chirib bo'lmadi.",
+      );
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -847,6 +875,13 @@ export function AdminOrdersPage() {
               {selectedOrders.length} ta buyurtma tanlandi
             </p>
             <div className="flex flex-wrap items-end gap-2">
+              <Button
+                disabled={bulkBusy || deleteBusy}
+                onClick={() => void permanentlyDeleteSelected()}
+                variant="danger"
+              >
+                Bazadan o&apos;chirish
+              </Button>
               <div className="w-52">
                 <Select
                   aria-label="Tanlangan buyurtmalar uchun ommaviy amal"

@@ -221,6 +221,13 @@ export class DevicesService {
     return { id: device.id };
   }
 
+  async deleteDevices(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta qurilma tanlanishi kerak");
+    for (const id of uniqueIds) await this.deleteDevice(id, user);
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   async heartbeat(
     deviceId: string,
     softwareVersion: string | undefined,

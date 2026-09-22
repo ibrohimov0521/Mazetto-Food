@@ -145,6 +145,7 @@ export function AdminReceiptsPage() {
   const [offset, setOffset] = useState(0);
   const [printJobStatus, setPrintJobStatus] = useState("");
   const [busyPrintJobId, setBusyPrintJobId] = useState<string | null>(null);
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -261,6 +262,19 @@ export function AdminReceiptsPage() {
       showToast(caught instanceof Error ? caught.message : "Qayta chop etib bo'lmadi.", "danger");
     } finally {
       setIsMarking(false);
+    }
+  }
+
+  async function deleteSelectedReceipts(): Promise<void> {
+    if (!selectedReceiptIds.length) return;
+    if (!window.confirm(`${selectedReceiptIds.length} ta chekni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/receipts/bulk", { method: "DELETE", body: JSON.stringify({ ids: selectedReceiptIds }) });
+      setSelectedReceiptIds([]);
+      showToast(`${selectedReceiptIds.length} ta chek o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Cheklarni o'chirib bo'lmadi.", "danger");
     }
   }
 
@@ -400,6 +414,7 @@ export function AdminReceiptsPage() {
       </Card>
       <Card>
         <CardHeader
+          actions={canMarkPrinted && selectedReceiptIds.length ? <Button onClick={() => void deleteSelectedReceipts()} size="sm" variant="danger">{selectedReceiptIds.length} ta o'chirish</Button> : undefined}
           description="Cheklar, brauzer chop etishi va ishonchli printer navbati"
           title="Cheklar"
         />
@@ -507,6 +522,9 @@ export function AdminReceiptsPage() {
             </>
           )}
           rows={receipts}
+          selectable={canMarkPrinted}
+          selectedKeys={selectedReceiptIds}
+          onSelectionChange={setSelectedReceiptIds}
         />
 
         <Pagination

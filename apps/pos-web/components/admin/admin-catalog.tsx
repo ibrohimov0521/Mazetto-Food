@@ -83,6 +83,7 @@ export function AdminProductsPage() {
   const [categoryId, setCategoryId] = useState("ALL");
   const [visibility, setVisibility] = useState("ALL");
   const [status, setStatus] = useState("ALL");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     const requestedCategory = new URLSearchParams(window.location.search).get(
@@ -197,6 +198,23 @@ export function AdminProductsPage() {
     }
   }
 
+  async function permanentlyDeleteSelected(): Promise<void> {
+    const selected = products.filter((product) => selectedIds.includes(product.id));
+    if (!selected.length) return;
+    if (!window.confirm(`${selected.length} ta mahsulotni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/menu/products/bulk/permanent", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selected.map((product) => product.id) }),
+      });
+      setSelectedIds([]);
+      showToast(`${selected.length} ta mahsulot o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Tanlangan mahsulotlarni o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   const columns: DataTableColumn<Product>[] = [
     {
       key: "product",
@@ -273,15 +291,17 @@ export function AdminProductsPage() {
               : `${filtered.length} / ${products.length} ta mahsulot`
           }
           title="Mahsulotlar"
-          {...(isFiltered
-            ? {
-                actions: (
-                  <Button onClick={resetFilters} size="sm" variant="ghost">
-                    Filtrni tozalash
-                  </Button>
-                ),
-              }
-            : {})}
+          actions={
+            selectedIds.length ? (
+              <Button onClick={() => void permanentlyDeleteSelected()} size="sm" variant="danger">
+                {selectedIds.length} ta tanlanganini o'chirish
+              </Button>
+            ) : isFiltered ? (
+              <Button onClick={resetFilters} size="sm" variant="ghost">
+                Filtrni tozalash
+              </Button>
+            ) : undefined
+          }
         />
 
         <FilterBar>
@@ -375,6 +395,10 @@ export function AdminProductsPage() {
           getRowKey={(product) => product.id}
           isLoading={isLoading && !data}
           rows={filtered}
+          selectable={canArchive}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
+          selectionDisabled={(product: Product) => product.catalogVisibility !== "CUSTOM"}
           rowActions={(product: Product) => (
             <>
                     {/*

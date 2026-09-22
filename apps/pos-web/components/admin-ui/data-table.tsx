@@ -99,6 +99,11 @@ export function DataTable<T>({
   sort,
   onSort,
   rowActions,
+  selectable = false,
+  selectedKeys = [],
+  onSelectionChange,
+  selectionDisabled,
+  selectionLabel = "Tanlash",
   scrollHeightClass = "max-h-[70vh]",
 }: {
   columns: DataTableColumn<T>[];
@@ -114,6 +119,12 @@ export function DataTable<T>({
   onSort?: (key: string) => void;
   /** Qator amallari — o'ngdagi qo'shimcha ustun. */
   rowActions?: (row: T) => React.ReactNode;
+  /** Ko'p qatorli admin amallari uchun ixtiyoriy tanlash ustuni. */
+  selectable?: boolean;
+  selectedKeys?: string[];
+  onSelectionChange?: (keys: string[]) => void;
+  selectionDisabled?: (row: T) => boolean;
+  selectionLabel?: string;
   /**
    * Jadval konteynerining eng katta balandligi.
    *
@@ -148,6 +159,22 @@ export function DataTable<T>({
   const secondaryColumns = columns.filter(
     (column) => column !== primaryColumn && !column.hideOnMobile,
   );
+  const selectableRows = selectable
+    ? rows.filter((row) => !selectionDisabled?.(row)).map(getRowKey)
+    : [];
+  const allSelected = selectableRows.length > 0 && selectableRows.every((key) => selectedKeys.includes(key));
+  const toggleRow = (key: string) => {
+    if (!onSelectionChange) return;
+    onSelectionChange(selectedKeys.includes(key)
+      ? selectedKeys.filter((item) => item !== key)
+      : [...selectedKeys, key]);
+  };
+  const toggleAll = () => {
+    if (!onSelectionChange) return;
+    onSelectionChange(allSelected
+      ? selectedKeys.filter((key) => !selectableRows.includes(key))
+      : [...new Set([...selectedKeys, ...selectableRows])]);
+  };
 
   return (
     <>
@@ -159,6 +186,11 @@ export function DataTable<T>({
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-mz-border bg-mz-surface-sunken">
+              {selectable ? (
+                <th className="sticky top-0 w-12 border-b border-mz-border bg-mz-surface-sunken px-3 py-2.5 text-left" scope="col">
+                  <input aria-label={`${selectionLabel}: barchasi`} checked={allSelected} onChange={toggleAll} type="checkbox" />
+                </th>
+              ) : null}
               {columns.map((column) => (
                 <SortableHeader
                   column={column}
@@ -180,6 +212,11 @@ export function DataTable<T>({
                 className="border-b border-mz-border last:border-b-0 hover:bg-mz-surface-sunken"
                 key={getRowKey(row)}
               >
+                {selectable ? (
+                  <td className="px-3 py-3 align-middle">
+                    <input aria-label={`${selectionLabel}: ${getRowKey(row)}`} checked={selectedKeys.includes(getRowKey(row))} disabled={selectionDisabled?.(row)} onChange={() => toggleRow(getRowKey(row))} type="checkbox" />
+                  </td>
+                ) : null}
                 {columns.map((column) => (
                   <td
                     className={`px-3 py-3 align-middle text-mz-text ${
@@ -210,6 +247,12 @@ export function DataTable<T>({
             className="rounded-mz-control border border-mz-border bg-mz-surface p-3"
             key={getRowKey(row)}
           >
+            {selectable ? (
+              <label className="mb-2 flex items-center gap-2 text-sm text-mz-text-muted">
+                <input checked={selectedKeys.includes(getRowKey(row))} disabled={selectionDisabled?.(row)} onChange={() => toggleRow(getRowKey(row))} type="checkbox" />
+                {selectionLabel}
+              </label>
+            ) : null}
             <div className="mb-2 text-sm font-semibold text-mz-text">
               {primaryColumn.render(row)}
             </div>

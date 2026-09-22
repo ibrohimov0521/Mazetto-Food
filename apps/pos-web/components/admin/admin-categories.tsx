@@ -89,6 +89,7 @@ export function AdminCategoriesPage() {
   const [draft, setDraft] = useState<CategoryDraft>(emptyDraft);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const canCreate = hasPermission(user, "MENU_CREATE");
   const canEdit = hasPermission(user, "MENU_EDIT");
@@ -294,6 +295,29 @@ export function AdminCategoriesPage() {
     }
   }
 
+  async function permanentlyDeleteSelected(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta kategoriyani bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+
+    setIsSaving(true);
+    try {
+      await apiFetch("/menu/categories/bulk/permanent", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta kategoriya o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(
+        caught instanceof Error ? caught.message : "Kategoriyalarni o'chirib bo'lmadi.",
+        "danger",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const columns: DataTableColumn<Category>[] = [
     {
       key: "name",
@@ -374,16 +398,21 @@ export function AdminCategoriesPage() {
                 } ta faol`
           }
           title="Kategoriyalar"
-          {...(canCreate
-            ? {
-                actions: (
-                  <Button onClick={openCreate} size="lg">
-                    <Icon className="h-4 w-4" name="plus" />
-                    Yangi kategoriya
-                  </Button>
-                ),
-              }
-            : {})}
+          actions={
+            <div className="flex flex-wrap gap-2">
+              {canArchive && selectedIds.length ? (
+                <Button onClick={() => void permanentlyDeleteSelected()} size="lg" variant="danger">
+                  {selectedIds.length} ta o&apos;chirish
+                </Button>
+              ) : null}
+              {canCreate ? (
+                <Button onClick={openCreate} size="lg">
+                  <Icon className="h-4 w-4" name="plus" />
+                  Yangi kategoriya
+                </Button>
+              ) : null}
+            </div>
+          }
         />
         <DataTable
           caption="Kategoriyalar ro'yxati"
@@ -394,6 +423,12 @@ export function AdminCategoriesPage() {
           getRowKey={(category) => category.id}
           isLoading={isLoading && !data}
           rows={categoryRows}
+          selectable={canArchive}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
+          selectionDisabled={(category: Category) =>
+            Boolean(category._count?.products || category._count?.children)
+          }
           {...(canCreate
             ? {
                 emptyAction: (
