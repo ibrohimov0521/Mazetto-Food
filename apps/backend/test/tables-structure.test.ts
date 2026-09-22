@@ -118,6 +118,36 @@ test("stol yaratilganda zal, filial va ko'rsatilgan tartib saqlanadi", async () 
   assert.equal(createdData.sortOrder, 9);
 });
 
+test("buyurtma tarixi bor stol permanent o'chirilmaydi", async () => {
+  let deleted = false;
+  const service = createService({
+    restaurantTable: {
+      findMany: async () => [{ id: "table-1", branchId: "branch-1", _count: { orders: 2 } }],
+      deleteMany: async () => { deleted = true; },
+    },
+  });
+
+  await assert.rejects(
+    () => service.permanentlyDeleteTables(["table-1"], branchManager),
+    /Buyurtma tarixi bor stolni o'chirib bo'lmaydi/,
+  );
+  assert.equal(deleted, false);
+});
+
+test("bo'sh zal permanent o'chiriladi", async () => {
+  let deletedWhere: unknown;
+  const service = createService({
+    hall: {
+      findMany: async () => [{ id: "hall-1", branchId: "branch-1", _count: { tables: 0 } }],
+      deleteMany: async (args: { where: unknown }) => { deletedWhere = args.where; },
+    },
+  });
+
+  const result = await service.permanentlyDeleteHalls(["hall-1"], branchManager);
+  assert.deepEqual(deletedWhere, { id: { in: ["hall-1"] } });
+  assert.deepEqual(result, { deleted: true, count: 1, ids: ["hall-1"] });
+});
+
 test("ochiq buyurtmali stol arxivlanmaydi", async () => {
   const service = createService({
     restaurantTable: {
