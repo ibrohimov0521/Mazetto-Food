@@ -9,6 +9,7 @@ import { BranchDayOfWeek, Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { writeAuditLog } from "../audit/audit-write";
 import type {
   BranchWorkingHourDto,
   CreateBranchDto,
@@ -77,6 +78,57 @@ export class BranchesService {
       data,
       include: { workingHours: true },
     });
+  }
+
+  async permanentlyDeleteBranches(ids: string[], user: AuthenticatedUser) {
+    this.assertGlobalBranchManagement(user);
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (!uniqueIds.length) throw new BadRequestException("Branch IDs are required");
+    const rows = await this.prisma.branch.findMany({
+      where: { id: { in: uniqueIds } },
+      select: {
+        id: true,
+        name: true,
+        _count: {
+          select: {
+            categories: true,
+            cashTransactions: true,
+            cashTransfers: true,
+            devices: true,
+            employees: true,
+            expenses: true,
+            expenseCategories: true,
+            halls: true,
+            orders: true,
+            paymentMethods: true,
+            paymentRefunds: true,
+            priceHistory: true,
+            printers: true,
+            receipts: true,
+            printJobs: true,
+            products: true,
+            productAvailabilities: true,
+            revenueRecords: true,
+            customerOrders: true,
+            telegramCheckoutSessions: true,
+            shifts: true,
+            suppliers: true,
+            tables: true,
+            warehouses: true,
+          },
+        },
+      },
+    });
+    if (rows.length !== uniqueIds.length) throw new NotFoundException("Branch not found");
+    const blocked = rows.find((row) => Object.values(row._count).some((value) => value > 0));
+    if (blocked) throw new BadRequestException(`Filial ${blocked.name} tarix yoki bog'langan obyektlarga ega; o'chirish uchun avval ularni ko'chiring`);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.branch.deleteMany({ where: { id: { in: uniqueIds } } });
+      for (const id of uniqueIds) {
+        await writeAuditLog(tx, { userId: user.id, action: "BRANCH_DELETED", entity: "Branch", entityId: id });
+      }
+    });
+    return { deletedCount: uniqueIds.length };
   }
 
   async updateBranch(

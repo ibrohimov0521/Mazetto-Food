@@ -25,8 +25,8 @@ import { useToast } from "../admin-ui/toast";
  *
  * Backend `POST /branches`, `PATCH /branches/:id` va
  * `PATCH /branches/:id/working-hours` ni qo'llab-quvvatlaydi. O'CHIRISH
- * endpoint'i YO'Q va shuning uchun bu ekranda ham o'chirish tugmasi yo'q —
- * filial ishdan chiqarilganda "Faol" o'chiriladi.
+ * permanent delete faqat hech qanday tarixiy yoki bog'langan ma'lumotga ega
+ * bo'lmagan filiallar uchun ishlaydi; odatiy holatda filial arxivlanadi.
  *
  * `PATCH /branches/:id/product-availability` bu yerda TAKRORLANMAYDI —
  * u mahsulot tahrirlagichida, mahsulot kontekstida turadi.
@@ -210,6 +210,7 @@ export function AdminBranchesPage() {
   const { showToast } = useToast();
 
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
 
   const [editing, setEditing] = useState<Branch | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -247,6 +248,20 @@ export function AdminBranchesPage() {
       ),
     [data],
   );
+
+  async function permanentlyDeleteBranches(): Promise<void> {
+    if (!selectedBranchIds.length) return;
+    if (!window.confirm(`${selectedBranchIds.length} ta filialni bazadan butunlay o'chirishni tasdiqlaysizmi? Bog'langan yoki tarixli filiallar o'chirilmaydi.`)) return;
+    try {
+      await apiFetch("/branches/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: selectedBranchIds }) });
+      showToast("Tanlangan filiallar o'chirildi.", "success");
+      setSelectedBranchIds([]);
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Filiallarni o'chirib bo'lmadi.", "danger");
+    }
+  }
 
   function openCreate(): void {
     setDraft(emptyDraft);
@@ -599,9 +614,8 @@ export function AdminBranchesPage() {
           <p className="text-[13px] text-mz-text-muted">
             Bu ekrandagi holat o&apos;zgarishlari mijoz saytida va Telegram
             botda <span className="font-semibold text-mz-text">darhol</span>{" "}
-            ko&apos;rinadi. Filialni o&apos;chirib tashlash imkoni yo&apos;q —
-            ishdan chiqqan filialda &laquo;Faol&raquo; o&apos;chiriladi va
-            tarixi saqlanib qoladi.
+            ko&apos;rinadi. Ishlatilgan filiallar arxivlanadi va tarixi saqlanadi;
+            faqat butunlay bo&apos;sh filialni permanent o&apos;chirish mumkin.
           </p>
         </CardBody>
       </Card>
@@ -609,12 +623,15 @@ export function AdminBranchesPage() {
       <Card>
         <CardHeader
           actions={
-            canCreate ? (
-              <Button onClick={openCreate} size="lg">
-                <Icon className="h-4 w-4" name="plus" />
-                Yangi filial
-              </Button>
-            ) : null
+            <div className="flex flex-wrap gap-2">
+              {canEdit && selectedBranchIds.length ? <Button onClick={() => void permanentlyDeleteBranches()} variant="danger">{selectedBranchIds.length} ta o'chirish</Button> : null}
+              {canCreate ? (
+                <Button onClick={openCreate} size="lg">
+                  <Icon className="h-4 w-4" name="plus" />
+                  Yangi filial
+                </Button>
+              ) : null}
+            </div>
           }
           description={`${branches.length} ta filial · ustunlar: xodim · kassa qurilmasi · printer`}
           title="Filiallar"
@@ -622,6 +639,9 @@ export function AdminBranchesPage() {
         <DataTable
           caption="Filiallar ro'yxati"
           columns={columns}
+          selectable={canEdit}
+          selectedKeys={selectedBranchIds}
+          onSelectionChange={setSelectedBranchIds}
           emptyDescription="Birinchi filialni qo'shing — mahsulot, xodim va kassa shundan keyin biriktiriladi."
           emptyIcon="building"
           emptyTitle="Filial yo'q"
