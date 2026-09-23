@@ -6,7 +6,7 @@ candidate is deployed.
 
 | Area | Current result | Evidence | Remaining gate |
 | --- | --- | --- | --- |
-| Admin permanent and bulk delete | Complete for 17 mutable surfaces | `validate-admin-deletion-matrix`: 17/17; `pnpm validate`: 32/32 | Historical audit, payment and shift rows remain intentionally immutable |
+| Admin permanent and bulk delete | Complete for 17 mutable surfaces | `validate-admin-deletion-matrix`: 17/17; `pnpm validate`: 33/33 | Historical audit, payment and shift rows remain intentionally immutable |
 | Telegram customer/staff split | Code and automated flows complete | Backend 244/244, Telegram validators, staff/customer webhook paths; read-only `pnpm telegram:smoke` is ready | Real BotFather tokens, webhook info and customer/staff human smoke |
 | Production media | Passed read-only audit | 74/74 customer products had image URLs; all 74 media HEAD checks returned HTTP 200 | Browser visual check with real media remains external evidence |
 | Receipts and print queue | Local renderer and virtual printer passed | 40-migration order-to-print E2E; Desktop 43/43; virtual ESC/POS tests | Physical Godex output, cancellation and reprint |

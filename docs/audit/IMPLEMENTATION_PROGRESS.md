@@ -243,7 +243,7 @@ contain the generated public media and its local API content was unavailable.
 Latest local acceptance evidence includes a successful combined
 `pnpm release:acceptance` run with `TURBO_UI=stream` and
 `TURBO_DAEMON=false`: workspace verification, automated tests, 40-migration
-disposable E2E, 32/32 validators and cleanup all passed. Production smoke was
+disposable E2E, 33/33 validators and cleanup all passed. Production smoke was
 read-only and no deploy was performed; the release remains gated on physical
 printer/live Telegram evidence and the protected-main release flow.
 
