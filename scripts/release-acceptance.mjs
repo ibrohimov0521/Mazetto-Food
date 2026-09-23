@@ -17,6 +17,13 @@ for (const [label, args] of stages) {
   console.log(`\n=== ${label} ===`);
   const result = spawnSync(process.execPath, [pnpmCli, ...args], {
     stdio: "inherit",
+    // Windows PTY/TUI can keep Turbo alive after a successful build. Release
+    // acceptance must behave like CI so the next gate can start reliably.
+    env: {
+      ...process.env,
+      CI: process.env.CI || "1",
+      TURBO_UI: "stream",
+    },
   });
   if (result.status !== 0) {
     console.error(`\nRelease acceptance stopped at: ${label}`);
