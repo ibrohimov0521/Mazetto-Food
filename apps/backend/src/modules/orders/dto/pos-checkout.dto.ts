@@ -11,6 +11,7 @@ import {
   IsString,
   Max,
   MaxLength,
+  Matches,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -69,6 +70,12 @@ export class CreatePosCheckoutDto {
   @IsString()
   @MaxLength(160)
   idempotencyKey!: string;
+
+  /** Stable number printed by the desktop while it is disconnected. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^K-[A-F0-9]{12}$/)
+  offlineDisplayOrderNumber?: string;
 
   @IsArray()
   @ArrayMinSize(1)

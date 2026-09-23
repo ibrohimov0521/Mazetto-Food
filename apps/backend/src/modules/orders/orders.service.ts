@@ -332,6 +332,9 @@ export class OrdersService {
                 branchId,
                 orderNumber: createOrderNumber(),
                 ...displayOrder,
+                ...(dto.offlineDisplayOrderNumber
+                  ? { displayOrderNumber: dto.offlineDisplayOrderNumber }
+                  : {}),
                 shiftId: openShift.id,
                 source: OrderSource.POS,
                 type: orderType,
