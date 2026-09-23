@@ -11,6 +11,7 @@ import {
   type PrintableReceipt,
   type SystemPrinterTarget,
 } from "./print-worker.js";
+import { resolveDesktopUpdateFeed } from "./update-feed.js";
 
 const require = createRequire(import.meta.url);
 const { autoUpdater } =
@@ -248,12 +249,7 @@ function setupAutoUpdater(): void {
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.setFeedURL({
-    provider: "github",
-    owner: "ibrohimov0521",
-    repo: "Mazetto-Food",
-    releaseType: "release",
-  });
+  autoUpdater.setFeedURL(resolveDesktopUpdateFeed(feedUrl));
   autoUpdater.on("checking-for-update", () =>
     setUpdateStatus({ state: "checking", message: null }),
   );
