@@ -25,9 +25,8 @@ The following release-candidate changes are on branch
 - Hall/table administration follows the same rule: empty halls/tables can be
   permanently removed, but tables with order history are rejected rather than
   corrupting historical orders.
-- Current commits in the release branch include `5052c68`, `13fcad1`,
-  `401a1a8`, `a52a34a`, `d189511`, `30b797c`, `0005229`, `359c1e7`, `4cfecc1` and
-  `684349e`, `f50d47b` and `a39ef30` (plus their preceding remediation commits).
+- Current release-branch checkpoints include `a39ef30`, `b413454`, `a613832`
+  and `b4ae108` (plus their preceding remediation commits).
 
 Verification after this checkpoint:
 
@@ -44,7 +43,7 @@ Still open before the final release: authenticated human Telegram/staff-group
 acceptance, physical Godex/ESC-POS printer acceptance, real Desktop offline
 and updater regression, customer media/browser visual acceptance, PR merge to
 protected `main`, Dokploy deployment, and post-deploy smoke. The branch has
-been pushed, but no PR or production deployment is claimed by this checkpoint.
+not been pushed; no PR or production deployment is claimed by this checkpoint.
 
 This file tracks implementation before the requested final combined push and
 deploy. Changes below are intentionally local until the whole release batch is
@@ -85,21 +84,22 @@ devices need a coordinated one-time re-enrollment after the credential migration
 ## Verification completed
 
 - Backend typecheck passed.
-- Backend tests: 231 passed.
+- Backend tests: 240 passed.
 - Desktop typecheck passed.
-- Desktop tests: 38 passed, including command registry, virtual printer and mutation-contract tests.
+- Desktop tests: 40 passed, including command registry, virtual printer and mutation-contract tests.
 - POS typecheck and lint passed.
 - Workspace typecheck/lint: 12/12 Turbo tasks passed.
 - Workspace production build: 6/6 Turbo tasks passed.
-- Operations validators: 31/31 passed.
-- `pnpm test`: backend 231/231 and Desktop 38/38 passed.
-- Windows note: the combined `pnpm verify` run completed all 18 Turbo tasks,
-  but its interactive Turbo cache writer did not exit after printing success;
-  `pnpm validate` was therefore run separately and exited successfully.
+- Operations validators: 32/32 passed, including the admin deletion matrix.
+- `pnpm test`: backend 240/240 and Desktop 40/40 passed.
+- Windows note: workspace typecheck/lint and build stages passed, but the
+  combined acceptance runner's Turbo process did not exit after build output;
+  the remaining validator, test, E2E and smoke stages were run separately and
+  exited successfully.
 
 ## Second local remediation batch
 
-- `AUD-101` partial: all 39 migrations were applied twice to an isolated clean
+- `AUD-101` partial: all 40 migrations were applied to an isolated clean
   PostgreSQL 18 database and historical migration checksums are now enforced by
   `pnpm validate`. A restored-production-copy rehearsal remains mandatory.
 - `AUD-114`/`AUD-115`: Desktop reports/tests every managed printer; the receipt
@@ -174,7 +174,7 @@ devices need a coordinated one-time re-enrollment after the credential migration
   The runner is ready, but a current production backup is still required before
   it can satisfy the release gate.
 
-The clean-database rehearsal applies all 39 migrations, including refund and
+The clean-database rehearsal applies all 40 migrations, including refund and
 expense-category lifecycle schemas, and verifies five refund foreign keys. The
 guarded disposable E2E passed
 after migration and seed, proving web and Telegram order creation through
@@ -183,7 +183,7 @@ audit. Aggregate backend, Desktop, workspace and operations suites were rerun at
 this checkpoint and passed as recorded above.
 
 The final local acceptance rerun passed 12/12 typecheck/lint tasks, 6/6 builds,
-31/31 validators, 240 backend tests, 40 Desktop tests and the disposable
+32/32 validators, 240 backend tests, 40 Desktop tests and the disposable
 40-migration E2E. A `pg@8` deprecation warning can still be emitted by Prisma's
 interactive transaction adapter during the deliberate concurrent-idempotency
 exercise; the assertions and cleanup pass, and this dependency warning is not
@@ -218,10 +218,13 @@ contain the generated public media and its local API content was unavailable.
 8. Only after the blocking gates: bump Desktop version, build/publish update,
    run release smoke, then perform the single requested push/deploy.
 
-Latest local acceptance: `pnpm release:acceptance` passed all workspace
-verification, automated tests, 40-migration disposable E2E, and cleanup. It
-did not run production smoke or deploy; those remain intentionally gated on
-physical printer/live Telegram evidence and protected-main release flow.
+Latest local acceptance evidence is split by stage: workspace verification and
+6/6 builds passed, while the combined runner's Windows Turbo process did not
+return after build output. Automated tests, 40-migration disposable E2E,
+32/32 validators, cleanup and read-only smoke were then run separately and
+passed. Production smoke was local only and no deploy was performed; the
+release remains gated on physical printer/live Telegram evidence and the
+protected-main release flow.
 
 The read-only smoke suite was also rerun locally after that acceptance:
 `pnpm release:smoke` passed `22/22`, including backend/database, customer-web,

@@ -6,14 +6,15 @@ replace physical printer, Telegram account, or production backup evidence.
 ## Latest local candidate run
 
 - Branch: `fix/release-readiness-batch`
-- Run at: 2026-09-21 11:57 Asia/Tashkent
-- Result: automated code gates passed locally; production release remains
-  blocked by the mandatory external evidence listed below.
-- Evidence: 12/12 typecheck/lint tasks, 6/6 production builds, 31/31
-  operations validators, 231/231 backend tests, 38/38 Desktop tests, and a
-  disposable 39-migration web/Telegram order-to-cash-to-stock-to-print E2E.
-- Note: Turbo's Windows interactive cache spinner required the already-passed
-  stages to be run separately. The stage exit results above are authoritative.
+- Run at: 2026-09-23 Asia/Tashkent
+- Result: local automated gates passed by stage; production release remains
+  gated by the mandatory external evidence listed below.
+- Evidence: 12/12 typecheck/lint tasks, 6/6 production builds, 32/32
+  operations validators, 240/240 backend tests, 40/40 Desktop tests, and a
+  disposable 40-migration web/Telegram order-to-cash-to-stock-to-print E2E.
+- Note: the Windows Turbo process did not return after build output in the
+  combined runner, so the remaining stages were run separately. Their exit
+  results are authoritative; this is not a production certification.
 
 ## Release identity
 
