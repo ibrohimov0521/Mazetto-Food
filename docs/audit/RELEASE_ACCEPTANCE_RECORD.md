@@ -21,6 +21,9 @@ replace physical printer, Telegram account, or production backup evidence.
 - Desktop release candidate `0.1.40` was built locally as an NSIS x64
   installer; `release/latest.yml` points to the matching `0.1.40` artifact.
   The artifact has not been published or deployed yet.
+- Public GitHub `latest.yml` was checked read-only and still reports `0.1.39`;
+  therefore the missing update is currently a publication gap, not an updater
+  version-detection gap.
 
 ## Release identity
 
