@@ -1,0 +1,119 @@
+{
+  "document": "MAZETTO Telegram Bot implementation plan",
+  "version": "1.0",
+  "createdAt": "2026-09-22",
+  "reference": "Oqtepa Lavash bot screenshots supplied by the product owner",
+  "principles": [
+    "Use a command menu and a small persistent reply keyboard for navigation.",
+    "Require location confirmation before creating a delivery order.",
+    "Keep full product details separate from compact category buttons.",
+    "Authorize staff Telegram actions by employee and branch, not only group chat id.",
+    "Treat payment providers and Mini App as separate rollout decisions."
+  ],
+  "phases": [
+    {
+      "id": "TG-P0",
+      "name": "Navigation, commands, and access control",
+      "priority": "P0",
+      "dependsOn": [],
+      "work": [
+        "Register customer commands: start, menu, cart, orders, profile, branches, support, cancel.",
+        "Configure Telegram Menu Button to open the command list.",
+        "Add a persistent reply keyboard for menu, cart, orders, profile, branches, and support.",
+        "Use contextual Back and Home controls only inside checkout steps.",
+        "Verify staff callback users against employee roles and branch access."
+      ],
+      "acceptance": [
+        "Typing slash shows the command list.",
+        "The Menu control appears beside the text field.",
+        "A non-authorized group member cannot change an order status.",
+        "Every navigation action has a predictable destination."
+      ],
+      "tests": ["Webhook command contract", "Keyboard UI snapshots", "Unauthorized staff callback regression"]
+    },
+    {
+      "id": "TG-P1",
+      "name": "Delivery location and address confirmation",
+      "priority": "P0",
+      "dependsOn": ["TG-P0"],
+      "work": [
+        "Request current Telegram location or allow a saved/manual address.",
+        "Validate the service zone before checkout continues.",
+        "Reverse-geocode the selected point through a configured provider with manual fallback.",
+        "Collect house, apartment, entrance, floor, and landmark.",
+        "Show map link and formatted address with Confirm, Edit, and Change location actions.",
+        "Persist confirmed coordinates in the order and optionally in the saved-address book."
+      ],
+      "acceptance": [
+        "Delivery order cannot be created without confirmed location and address details.",
+        "Outside-zone points receive a clear refusal.",
+        "Courier receives both readable address and coordinates."
+      ],
+      "tests": ["Location update contract", "Zone boundaries", "Address confirmation state machine", "Duplicate checkout idempotency"]
+    },
+    {
+      "id": "TG-P2",
+      "name": "Catalog and basket experience",
+      "priority": "P1",
+      "dependsOn": ["TG-P0"],
+      "work": [
+        "Use category-aware short labels in two-column product grids.",
+        "Remove repeated category words such as Lavash and Burger from buttons.",
+        "Move to one column when labels cannot fit safely.",
+        "Add catalog pagination, search, product photos, and product details.",
+        "Add order history detail, repeat order, and clear basket confirmation.",
+        "Add promo-code flow after business rules are defined."
+      ],
+      "acceptance": [
+        "No product button truncates an important product distinction.",
+        "Category browsing works with large catalogs.",
+        "Basket total, delivery fee, and changes remain consistent."
+      ],
+      "tests": ["Long-name layout matrix", "Catalog pagination", "Cart concurrency", "Promo validation"]
+    },
+    {
+      "id": "TG-P3",
+      "name": "Payments, support, and retention",
+      "priority": "P1",
+      "dependsOn": ["TG-P1", "TG-P2"],
+      "work": [
+        "Offer cash, Click, and Payme according to active branch settings.",
+        "Integrate Telegram invoice only after a compatible provider is approved.",
+        "Add support routing, opening hours, and a human handoff policy.",
+        "Add order status notifications, re-order, favorites, bonus view, and targeted promotions."
+      ],
+      "acceptance": [
+        "Payment state matches the backend order state.",
+        "Support requests reach the responsible team without exposing customer data.",
+        "Promotional messages use opt-in and rate limits."
+      ],
+      "tests": ["Payment callback idempotency", "Notification delivery", "Opt-in and throttling"]
+    },
+    {
+      "id": "TG-P4",
+      "name": "Operations and observability",
+      "priority": "P1",
+      "dependsOn": ["TG-P0"],
+      "work": [
+        "Expose webhook health, pending updates, command/menu configuration, and dead-letter count in admin.",
+        "Add alerts for failed Telegram delivery and persistent webhook errors.",
+        "Track funnel metrics from start through paid/accepted order."
+      ],
+      "acceptance": [
+        "Operations team can see a broken webhook before orders are missed.",
+        "Failed messages can be retried safely.",
+        "Dashboard separates customer and staff bot health."
+      ],
+      "tests": ["Webhook health smoke", "Dead-letter retry", "Metrics event contract"]
+    },
+    {
+      "id": "TG-P5",
+      "name": "Optional Telegram Mini App",
+      "priority": "P2",
+      "dependsOn": ["TG-P1", "TG-P2"],
+      "decision": "Build only if the native bot catalog becomes too dense. Native commands and checkout remain the fallback.",
+      "work": ["Open customer web menu inside Telegram", "Validate init data server-side", "Share basket and address state with the bot"]
+    }
+  ],
+  "outOfScopeUntilApproved": ["Inline mode", "Games", "Polls", "Broadcast advertising", "Telegram payments provider selection"]
+}
