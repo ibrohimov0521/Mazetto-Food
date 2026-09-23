@@ -27,7 +27,10 @@ replace physical printer, Telegram account, or production backup evidence.
   version-detection gap.
 - Godex G500 acceptance is not passed: Windows reports the printer as normal,
   but 21 queued jobs remain with `PagesPrinted=0` (oldest job 01:10 Asia/Tashkent)
-  on `USB001`. No paper output can be inferred from this spooler state.
+  on `USB001`. A present USB device is also reported as `Unknown USB device`
+  with `USB\VID_0000&PID_0002` and descriptor-request failure. No paper output
+  can be inferred from this spooler state; the hardware/USB layer must be fixed
+  before the receipt renderer can receive physical acceptance.
 
 ## Release identity
 
