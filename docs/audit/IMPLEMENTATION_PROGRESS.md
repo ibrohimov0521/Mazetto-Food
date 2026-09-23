@@ -82,6 +82,10 @@ ready and its database rollout has been rehearsed.
   immutable reversal, cash transaction, audit event and refund receipt queue
   entry. Click/Payme/Card provider refunds remain disabled until signed
   provider callbacks and reconciliation are available.
+- Admin sidebar access now follows the same permission-first rule as admin
+  route access, so custom roles with `ADMIN_ACCESS` and an explicit section
+  permission see the section in navigation even when they are not one of the
+  built-in role codes. The behavior is covered by custom-role tests.
 
 ## Added database changes
 

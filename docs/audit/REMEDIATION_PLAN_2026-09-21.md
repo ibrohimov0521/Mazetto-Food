@@ -55,7 +55,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 
 | ID | Priority | Confirmed gap | Required result and acceptance test |
 | --- | --- | --- | --- |
-| AUD-140 | P1 | Admin route metadata contains roles, but filtering/enforcement semantics differ by route group | Define permission-first contract, remove misleading metadata or enforce it consistently; test every seeded role against every page |
+| AUD-140 | P1 | Admin route access and sidebar previously disagreed for custom roles | Permission-first access is now used consistently for `/admin` routes and sidebar items; built-in `roles` remain descriptive metadata, with custom-role regression coverage |
 | AUD-141 | P2 | Customer and staff refresh tokens are in localStorage | Move browser refresh sessions to Secure HttpOnly SameSite cookies with rotation/revocation and CSRF design |
 | AUD-142 | P2 | Homepage image upload requires `MENU_EDIT`, blocking a homepage-only custom role | Add purpose-aware upload permission and strict folder mapping; test homepage manager without menu edit |
 | AUD-143 | P2 | Navigation validation checks listed links but not reachable pages omitted accidentally | Maintain route manifest with `sidebar`, `child`, `workspace` or `hidden` intent; CI verifies all pages |
