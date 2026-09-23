@@ -86,6 +86,10 @@ ready and its database rollout has been rehearsed.
   route access, so custom roles with `ADMIN_ACCESS` and an explicit section
   permission see the section in navigation even when they are not one of the
   built-in role codes. The behavior is covered by custom-role tests.
+- Custom admin login redirects now include the full admin workspace permission
+  set (homepage, kitchen monitor, courier/customer management, devices,
+  payments, receipts, printers, shifts, inventory and recipes). Operational
+  permissions such as `TABLE_VIEW` still keep their waiter workspace priority.
 
 ## Added database changes
 
