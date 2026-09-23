@@ -24,7 +24,10 @@ const menuEditor: AuthenticatedUser = {
 
 function controller() {
   return new UploadsController({
-    uploadImage: async (_file, target) => ({ target }),
+    uploadImage: async (
+      _file: Express.Multer.File,
+      target: "products" | "categories" | "homepage",
+    ) => ({ target }),
   } as never);
 }
 
