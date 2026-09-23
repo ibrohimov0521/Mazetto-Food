@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { OrderStatus } from "@prisma/client";
+import { KitchenTicketStatus, OrderStatus } from "@prisma/client";
 import { orderStatusLabel } from "../../common/utils/order-status-label";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -62,6 +62,31 @@ type TelegramKitchenTicket = {
   items?: TelegramStaffItem[];
 };
 
+type TelegramStaffRoleRecord = {
+  role: {
+    code: string;
+    isBranchScoped: boolean;
+    permissions: Array<{ permission: { code: string } }>;
+  };
+};
+
+type TelegramStaffUserRecord = {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  displayName: string | null;
+  isActive: boolean;
+  roles: TelegramStaffRoleRecord[];
+};
+
+type TelegramStaffEmployeeRecord = {
+  id: string;
+  branchId: string;
+  firstName: string;
+  lastName: string | null;
+  status: string;
+};
+
 const staffCallbackPrefix = "staff";
 
 @Injectable()
@@ -98,7 +123,13 @@ export class TelegramStaffService {
         text,
       );
       const isStaffKeyboard =
-        text === "👔 Xodim paneli" || text === "🚚 Kuryer buyurtmalari";
+        [
+          "👔 Xodim paneli",
+          "🚚 Kuryer buyurtmalari",
+          "🍳 Oshxona buyurtmalari",
+          "🍽 Ofitsiant buyurtmalari",
+          "💵 Kassa",
+        ].includes(text);
 
       if (!isStaffCommand && !isStaffKeyboard) {
         return { ok: true, handled: false };
@@ -106,7 +137,7 @@ export class TelegramStaffService {
 
       const staff = await this.findStaffByTelegramId(message.from?.id);
       if (!staff) {
-        if (/^\/(?:staff|courier|admin)/.test(text)) {
+        if (isStaffCommand || isStaffKeyboard) {
           await this.screen.telegramRequestWithToken(this.botToken, "sendMessage", {
             chat_id: message.chat?.id,
             text: "Bu Telegram account xodimga biriktirilmagan. Avval admin panelda xodim profiliga Telegram foydalanuvchi ID ni kiriting.",
@@ -257,13 +288,13 @@ export class TelegramStaffService {
         },
       ]);
     }
-    if (staff.user.roles.includes("KITCHEN")) {
+    if (this.canUseKitchen(staff)) {
       rows.push([{ text: "🍳 Oshxona buyurtmalari", callback_data: `${staffCallbackPrefix}:kitchen` }]);
     }
     if (staff.user.roles.includes("WAITER")) {
       rows.push([{ text: "🍽 Ofitsiant buyurtmalari", callback_data: `${staffCallbackPrefix}:waiter` }]);
     }
-    if (staff.user.roles.some((role) => ["CASHIER", "ACCOUNTANT"].includes(role))) {
+    if (this.canUseCashier(staff)) {
       rows.push([{ text: "💵 Kassa", callback_data: `${staffCallbackPrefix}:cashier` }]);
     }
     if (staff.user.roles.some((role) => ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role))) {
@@ -279,9 +310,9 @@ export class TelegramStaffService {
 
     const keyboard: TelegramReplyButton[][] = [["👔 Xodim paneli"]];
     if (staff.user.roles.includes("COURIER")) keyboard.push(["🚚 Kuryer buyurtmalari"]);
-    if (staff.user.roles.includes("KITCHEN")) keyboard.push(["🍳 Oshxona buyurtmalari"]);
+    if (this.canUseKitchen(staff)) keyboard.push(["🍳 Oshxona buyurtmalari"]);
     if (staff.user.roles.includes("WAITER")) keyboard.push(["🍽 Ofitsiant buyurtmalari"]);
-    if (staff.user.roles.some((role) => ["CASHIER", "ACCOUNTANT"].includes(role))) keyboard.push(["💵 Kassa"]);
+    if (this.canUseCashier(staff)) keyboard.push(["💵 Kassa"]);
 
     await this.screen.renderWithToken(this.botToken,
       this.screenTarget(chatId, messageId),
@@ -491,8 +522,19 @@ export class TelegramStaffService {
   }
 
   private async sendKitchenOrders(chatId: string, staff: StaffIdentity, messageId?: number): Promise<void> {
-    if (!staff.user.roles.includes("KITCHEN")) {
+    if (!this.canUseKitchen(staff)) {
       await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), { text: "Sizda oshxona paneliga ruxsat yo'q." });
+      return;
+    }
+    if (!staff.user.employeeId) {
+      await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
+        text: "Oshxona paneli uchun xodim filialga biriktirilgan bo'lishi kerak.",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+          ],
+        },
+      });
       return;
     }
     const tickets = await this.kitchenService.listOrders(staff.user);
@@ -510,7 +552,13 @@ export class TelegramStaffService {
 
   private async changeKitchenTicket(chatId: string, staff: StaffIdentity, ticketId: string, action: string, messageId?: number): Promise<void> {
     const ticket = await this.kitchenService.getTicket(ticketId, staff.user);
-    const next = ticket.status === "NEW" ? "accept" : ticket.status === "ACCEPTED" ? "start" : ticket.status === "COOKING" ? "ready" : "complete";
+    const next = ticket.status === KitchenTicketStatus.NEW
+      ? "accept"
+      : ticket.status === KitchenTicketStatus.ACCEPTED
+        ? "start"
+        : ticket.status === KitchenTicketStatus.COOKING
+          ? "ready"
+          : "complete";
     if (next === "accept") await this.kitchenService.acceptTicket(ticketId, staff.user);
     else if (next === "start") await this.kitchenService.startTicket(ticketId, staff.user);
     else if (next === "ready") await this.kitchenService.readyTicket(ticketId, staff.user);
@@ -531,8 +579,19 @@ export class TelegramStaffService {
   }
 
   private async sendCashierPanel(chatId: string, staff: StaffIdentity, messageId?: number): Promise<void> {
-    if (!staff.user.roles.some((role) => ["CASHIER", "ACCOUNTANT", "ADMIN", "SUPER_ADMIN"].includes(role))) {
+    if (!this.canUseCashier(staff)) {
       await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), { text: "Sizda kassa ma'lumotlariga ruxsat yo'q." });
+      return;
+    }
+    if (!staff.user.employeeId) {
+      await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
+        text: "Kassa paneli uchun xodim filialga biriktirilgan bo'lishi kerak.",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+          ],
+        },
+      });
       return;
     }
     const shift = await this.cashRegisterService.getCurrentShift(staff.user);
@@ -570,7 +629,7 @@ export class TelegramStaffService {
       roles.includes("COURIER") ? "kuryer buyurtmalari" : null,
       roles.includes("KITCHEN") ? "oshxona buyurtmalari" : null,
       roles.includes("WAITER") ? "zal buyurtmalari" : null,
-      roles.some((role) => ["CASHIER", "ACCOUNTANT"].includes(role)) ? "kassa" : null,
+      roles.some((role) => ["CASHIER", "ACCOUNTANT", "ADMIN", "SUPER_ADMIN"].includes(role)) ? "kassa" : null,
       roles.some((role) => ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role)) ? "boshqaruv ko'rsatkichlari" : null,
     ].filter((item): item is string => Boolean(item));
     return actions.length
@@ -613,19 +672,19 @@ export class TelegramStaffService {
       return null;
     }
 
-    const employee = await this.prisma.employee.findUnique({
-      where: { telegramUserId: String(telegramUserId) },
+    const telegramUserIdText = String(telegramUserId);
+    const userRecord = await this.prisma.user.findUnique({
+      where: { telegramUserId: telegramUserIdText },
       include: {
-        user: {
+        employee: true,
+        roles: {
+          where: { role: { isActive: true } },
           include: {
-            roles: {
-              where: { role: { isActive: true } },
+            role: {
               include: {
-                role: {
+                permissions: {
                   include: {
-                    permissions: {
-                      include: { permission: { select: { code: true } } },
-                    },
+                    permission: { select: { code: true } },
                   },
                 },
               },
@@ -635,38 +694,83 @@ export class TelegramStaffService {
       },
     });
 
-    if (!employee || employee.status !== "ACTIVE" || !employee.user?.isActive) {
+    let employee: TelegramStaffEmployeeRecord | null =
+      userRecord?.employee ?? null;
+    let staffUser: TelegramStaffUserRecord | null = userRecord;
+
+    if (!staffUser) {
+      const employeeRecord = await this.prisma.employee.findUnique({
+        where: { telegramUserId: telegramUserIdText },
+        include: {
+          user: {
+            include: {
+              roles: {
+                where: { role: { isActive: true } },
+                include: {
+                  role: {
+                    include: {
+                      permissions: {
+                        include: { permission: { select: { code: true } } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      employee = employeeRecord;
+      staffUser = employeeRecord?.user ?? null;
+    }
+
+    if (!staffUser?.isActive) {
+      return null;
+    }
+    if (employee && employee.status !== "ACTIVE") {
       return null;
     }
 
-    const roles = employee.user.roles.map((item) => item.role.code);
-    const permissions = employee.user.roles.flatMap((item) =>
+    const roles = staffUser.roles.map((item) => item.role.code);
+    const permissions = staffUser.roles.flatMap((item) =>
       item.role.permissions.map((permission) => permission.permission.code),
     );
 
     const user: AuthenticatedUser = {
-      id: employee.user.id,
-      employeeId: employee.id,
-      branchId: employee.branchId,
-      isGlobalScope: employee.user.roles.some(
+      id: staffUser.id,
+      ...(employee ? { employeeId: employee.id, branchId: employee.branchId } : {}),
+      isGlobalScope: staffUser.roles.some(
         (item) => !item.role.isBranchScoped,
       ),
       roles,
       permissions,
     };
-    if (employee.user.email) {
-      user.email = employee.user.email;
+    if (staffUser.email) {
+      user.email = staffUser.email;
     }
-    if (employee.user.phone) {
-      user.phone = employee.user.phone;
+    if (staffUser.phone) {
+      user.phone = staffUser.phone;
     }
 
     return {
       user,
-      displayName: [employee.firstName, employee.lastName]
-        .filter(Boolean)
-        .join(" "),
+      displayName:
+        employee
+          ? [employee.firstName, employee.lastName].filter(Boolean).join(" ")
+          : (staffUser.displayName ?? staffUser.email ?? staffUser.phone ?? "Xodim"),
     };
+  }
+
+  private canUseKitchen(staff: StaffIdentity): boolean {
+    return staff.user.roles.some((role) =>
+      ["KITCHEN", "ADMIN", "SUPER_ADMIN", "BRANCH_MANAGER"].includes(role),
+    );
+  }
+
+  private canUseCashier(staff: StaffIdentity): boolean {
+    return staff.user.roles.some((role) =>
+      ["CASHIER", "ACCOUNTANT", "ADMIN", "SUPER_ADMIN"].includes(role),
+    );
   }
 
   private toTelegramUpdate(update: unknown): TelegramUpdate {

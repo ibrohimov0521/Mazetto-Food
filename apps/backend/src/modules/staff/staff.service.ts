@@ -56,6 +56,7 @@ const staffSelect = {
   displayName: true,
   avatarUrl: true,
   isActive: true,
+  telegramUserId: true,
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
@@ -144,6 +145,8 @@ export class StaffService {
     const user = await this.prisma.$transaction(async (tx) => {
       await this.assertUniqueLogin(tx, normalized);
       const roles = await this.findActiveRoles(tx, roleCodes);
+      const telegramUserId = this.normalizeTelegramUserId(dto.telegramUserId);
+      await this.assertUniqueTelegramUserId(tx, telegramUserId);
       const created = await tx.user.create({
         data: {
           displayName: dto.name.trim(),
@@ -151,6 +154,7 @@ export class StaffService {
           phone: normalized.phone,
           passwordHash,
           isActive: dto.isActive,
+          telegramUserId,
         },
       });
 
@@ -167,7 +171,7 @@ export class StaffService {
         branchId,
         dto.name,
         dto.isActive,
-        this.normalizeTelegramUserId(dto.telegramUserId),
+        telegramUserId,
       );
       await this.createAuditLog(tx, actor.id, "STAFF_CREATED", created.id, {
         roleCodes,
@@ -197,6 +201,10 @@ export class StaffService {
     this.assertHasLogin({ email: nextEmail, phone: nextPhone });
 
     const currentRoleCodes = this.roleCodesFromStaff(existing);
+    const nextTelegramUserId =
+      dto.telegramUserId === undefined
+        ? existing.telegramUserId
+        : this.normalizeTelegramUserId(dto.telegramUserId);
     const nextBranchId =
       dto.branchId === undefined
         ? (existing.employee?.branchId ?? null)
@@ -212,6 +220,7 @@ export class StaffService {
         { email: nextEmail, phone: nextPhone },
         id,
       );
+      await this.assertUniqueTelegramUserId(tx, nextTelegramUserId, id);
 
       await tx.user.update({
         where: { id },
@@ -219,6 +228,9 @@ export class StaffService {
           ...(dto.name !== undefined ? { displayName: dto.name.trim() } : {}),
           ...(dto.email !== undefined ? { email: nextEmail } : {}),
           ...(dto.phone !== undefined ? { phone: nextPhone } : {}),
+          ...(dto.telegramUserId !== undefined
+            ? { telegramUserId: nextTelegramUserId }
+            : {}),
         },
       });
 
@@ -693,6 +705,7 @@ export class StaffService {
       id: staff.id,
       email: staff.email,
       phone: staff.phone,
+      telegramUserId: staff.telegramUserId,
       displayName: staff.displayName,
       avatarUrl: staff.avatarUrl,
       isActive: staff.isActive,
@@ -779,6 +792,41 @@ export class StaffService {
     if (duplicate) {
       throw new ConflictException(
         "Email or phone is already used by another staff account",
+      );
+    }
+  }
+
+  private async assertUniqueTelegramUserId(
+    tx: Prisma.TransactionClient,
+    telegramUserId: string | null,
+    exceptUserId?: string,
+  ): Promise<void> {
+    if (!telegramUserId) {
+      return;
+    }
+
+    const [duplicateUser, duplicateEmployee] = await Promise.all([
+      tx.user.findFirst({
+        where: {
+          telegramUserId,
+          ...(exceptUserId ? { id: { not: exceptUserId } } : {}),
+        },
+        select: { id: true },
+      }),
+      tx.employee.findFirst({
+        where: {
+          telegramUserId,
+          ...(exceptUserId
+            ? { OR: [{ userId: null }, { userId: { not: exceptUserId } }] }
+            : {}),
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (duplicateUser || duplicateEmployee) {
+      throw new ConflictException(
+        "Telegram foydalanuvchi ID boshqa xodimga biriktirilgan",
       );
     }
   }
@@ -1075,6 +1123,15 @@ export class StaffService {
       where: { userId },
       select: { id: true, employeeCode: true, status: true },
     });
+    const inheritedTelegramUserId =
+      telegramUserId === undefined
+        ? (
+            await tx.user.findUnique({
+              where: { id: userId },
+              select: { telegramUserId: true },
+            })
+          )?.telegramUserId
+        : telegramUserId;
 
     if (!branchId) {
       if (existing) {
@@ -1082,6 +1139,7 @@ export class StaffService {
           where: { id: existing.id },
           data: {
             userId: null,
+            telegramUserId: null,
             status: EmployeeStatus.INACTIVE,
             terminatedAt: null,
           },
@@ -1118,7 +1176,7 @@ export class StaffService {
       data: {
         branchId,
         userId,
-        telegramUserId: telegramUserId ?? null,
+        telegramUserId: inheritedTelegramUserId ?? null,
         employeeCode: this.createEmployeeCode(),
         firstName: name.firstName,
         lastName: name.lastName,

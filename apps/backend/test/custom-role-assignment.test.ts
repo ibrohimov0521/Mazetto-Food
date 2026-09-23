@@ -69,3 +69,52 @@ test("branch custom rol faqat biriktirilgan filialda qoladi", () => {
   assert.equal(resolveBranchScope(actor), "branch-1");
   assert.throws(() => resolveBranchScope(actor, "branch-2"), /Boshqa filialga/);
 });
+
+test("global rolga o'tganda eski employee Telegram ID ghost bo'lib qolmaydi", async () => {
+  const updates: unknown[] = [];
+  const staff = new StaffService({} as never, {} as never);
+  const internals = staff as unknown as {
+    syncEmployee(
+      tx: unknown,
+      userId: string,
+      branchId: string | null,
+      displayName: string,
+      isActive: boolean,
+      telegramUserId?: string | null,
+    ): Promise<void>;
+  };
+
+  await internals.syncEmployee(
+    {
+      employee: {
+        findUnique: async () => ({
+          id: "employee-1",
+          employeeCode: "STF-1",
+          status: "ACTIVE",
+        }),
+        update: async (args: unknown) => {
+          updates.push(args);
+        },
+      },
+      user: {
+        findUnique: async () => ({ telegramUserId: "6388458077" }),
+      },
+    },
+    "user-1",
+    null,
+    "Global Admin",
+    true,
+  );
+
+  assert.deepEqual(updates, [
+    {
+      where: { id: "employee-1" },
+      data: {
+        userId: null,
+        telegramUserId: null,
+        status: "INACTIVE",
+        terminatedAt: null,
+      },
+    },
+  ]);
+});

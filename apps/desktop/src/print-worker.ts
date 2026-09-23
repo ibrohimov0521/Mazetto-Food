@@ -88,6 +88,11 @@ export class DesktopPrintWorker {
   private managedPrinterDetails: ManagedPrinter[] = [];
   private localAssignedPrinterIds: string[] = [];
   private systemPrinters: SystemPrinterTarget[];
+  private printerDiscoveryCache: {
+    expiresAt: number;
+    readyPrinters: ManagedPrinter[];
+    localAssignedPrinterIds: string[];
+  } | null = null;
 
   constructor(options: DesktopPrintWorkerOptions) {
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
@@ -106,6 +111,7 @@ export class DesktopPrintWorker {
   configure(printerHost: string | null, printerPort: number): void {
     this.printerHost = printerHost;
     this.printerPort = printerPort;
+    this.printerDiscoveryCache = null;
   }
 
   configureSystemPrinters(printers: SystemPrinterTarget[]): void {
@@ -113,6 +119,7 @@ export class DesktopPrintWorker {
       ...printer,
       roles: [...new Set(printer.roles)],
     }));
+    this.printerDiscoveryCache = null;
   }
 
   status() {
@@ -256,6 +263,18 @@ export class DesktopPrintWorker {
   }
 
   private async discoverReadyPrinters(): Promise<ManagedPrinter[]> {
+    const now = Date.now();
+    if (this.printerDiscoveryCache && this.printerDiscoveryCache.expiresAt > now) {
+      this.localAssignedPrinterIds = [
+        ...this.printerDiscoveryCache.localAssignedPrinterIds,
+      ];
+      this.managedPrinterDetails = this.printerDiscoveryCache.readyPrinters.map(
+        (printer) => ({ ...printer }),
+      );
+      this.managedPrinters = this.managedPrinterDetails.length;
+      return this.managedPrinterDetails;
+    }
+
     const printers = await this.request<PrinterConfig[]>("/printers");
     const localRoles = new Set(this.systemPrinters.flatMap((printer) => printer.roles));
     this.localAssignedPrinterIds = printers.flatMap((printer) => {
@@ -283,6 +302,11 @@ export class DesktopPrintWorker {
     });
     this.managedPrinterDetails = readyPrinters;
     this.managedPrinters = readyPrinters.length;
+    this.printerDiscoveryCache = {
+      expiresAt: now + 10_000,
+      readyPrinters: readyPrinters.map((printer) => ({ ...printer })),
+      localAssignedPrinterIds: [...this.localAssignedPrinterIds],
+    };
     return readyPrinters;
   }
 
