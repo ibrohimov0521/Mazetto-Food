@@ -789,7 +789,25 @@ export class TelegramCustomerOrderingService {
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
-        OR: [{ id: productId }, { code: productId }],
+        id: productId,
+        isAvailable: true,
+        ...customerVisibleProductWhere(),
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+        variants: {
+          where: { isAvailable: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+        modifiers: {
+          where: { modifier: { isActive: true } },
+          orderBy: { sortOrder: "asc" },
+          include: { modifier: true },
+        },
+      },
+    }) ?? await this.prisma.product.findFirst({
+      where: {
+        code: productId,
         isAvailable: true,
         ...customerVisibleProductWhere(),
       },
@@ -893,7 +911,25 @@ export class TelegramCustomerOrderingService {
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
-        OR: [{ id: productId }, { code: productId }],
+        id: productId,
+        isAvailable: true,
+        ...customerVisibleProductWhere(),
+      },
+      include: {
+        category: { select: { code: true, name: true } },
+        variants: {
+          where: { isAvailable: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+        modifiers: {
+          where: { modifier: { isActive: true } },
+          orderBy: { sortOrder: "asc" },
+          include: { modifier: true },
+        },
+      },
+    }) ?? await this.prisma.product.findFirst({
+      where: {
+        code: productId,
         isAvailable: true,
         ...customerVisibleProductWhere(),
       },
@@ -1002,7 +1038,20 @@ export class TelegramCustomerOrderingService {
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
-        OR: [{ id: productId }, { code: productId }],
+        id: productId,
+        isAvailable: true,
+        ...customerVisibleProductWhere(),
+      },
+      include: {
+        modifiers: {
+          where: { modifier: { isActive: true } },
+          orderBy: { sortOrder: "asc" },
+          include: { modifier: true },
+        },
+      },
+    }) ?? await this.prisma.product.findFirst({
+      where: {
+        code: productId,
         isAvailable: true,
         ...customerVisibleProductWhere(),
       },
@@ -1029,14 +1078,21 @@ export class TelegramCustomerOrderingService {
 
     const variant =
       rawVariantId && rawVariantId !== "-"
-        ? await this.prisma.productVariant.findFirst({
+        ? (await this.prisma.productVariant.findFirst({
             where: {
-              OR: [{ id: rawVariantId }, { code: rawVariantId }],
+              id: rawVariantId,
               productId: product.id,
               isAvailable: true,
             },
             select: { id: true },
-          })
+          }) ?? await this.prisma.productVariant.findFirst({
+            where: {
+              code: rawVariantId,
+              productId: product.id,
+              isAvailable: true,
+            },
+            select: { id: true },
+          }))
         : null;
     if (rawVariantId && rawVariantId !== "-" && !variant) {
       await this.screen.answerCallback(
