@@ -18,6 +18,9 @@ replace physical printer, Telegram account, or production backup evidence.
 - Read-only production smoke: `pnpm release:smoke` passed `22/22` against the
   default public production domains on 2026-09-23; the checks were GET-only and
   did not create or mutate production data.
+- Desktop release candidate `0.1.40` was built locally as an NSIS x64
+  installer; `release/latest.yml` points to the matching `0.1.40` artifact.
+  The artifact has not been published or deployed yet.
 
 ## Release identity
 
