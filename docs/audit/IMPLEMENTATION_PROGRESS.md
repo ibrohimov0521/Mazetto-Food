@@ -112,12 +112,11 @@ devices need a coordinated one-time re-enrollment after the credential migration
 - POS typecheck and lint passed.
 - Workspace typecheck/lint: 12/12 Turbo tasks passed.
 - Workspace production build: 6/6 Turbo tasks passed.
-- Operations validators: 32/32 passed, including the admin deletion matrix.
+- Operations validators: 33/33 passed, including the admin deletion matrix.
 - `pnpm test`: backend 244/244 and Desktop 43/43 passed.
-- Windows note: workspace typecheck/lint and build stages passed, but the
-  combined acceptance runner's Turbo process did not exit after build output;
-  the remaining validator, test, E2E and smoke stages were run separately and
-  exited successfully.
+- `pnpm release:acceptance`: passed end-to-end after the runner was changed to
+  call each package directly instead of relying on Turbo's aggregate process on
+  Windows.
 
 ## Second local remediation batch
 
@@ -151,9 +150,11 @@ devices need a coordinated one-time re-enrollment after the credential migration
   authenticated realtime socket is healthy and returns to 15 seconds offline.
 - `AUD-154`: the protected system-health view includes timeout-bounded,
   credential-redacted geocoding and media dependency readiness.
-- `AUD-102`: one `pnpm release:acceptance` runner now executes workspace verify
-  and tests, with optional read-only production smoke, plus a human evidence
-  record for backup, Telegram, Desktop and physical printing.
+- `AUD-102`: one `pnpm release:acceptance` runner now executes package-level
+  generate/typecheck/lint/build/test stages, static validators, media asset
+  validation and the disposable order-to-print E2E, with optional read-only
+  production smoke, plus a human evidence record for backup, Telegram, Desktop
+  and physical printing.
 - `AUD-140`/`AUD-143`: authorization remains permission-first for custom roles;
   every shell route must now declare sidebar, child, workspace or hidden intent.
 - `AUD-141`: browser refresh secrets are migrated out of localStorage into
@@ -204,9 +205,11 @@ payment, revenue, cash movement, stock movement, receipt, print job and payment
 audit. Aggregate backend, Desktop, workspace and operations suites were rerun at
 this checkpoint and passed as recorded above.
 
-The final local acceptance rerun passed 12/12 typecheck/lint tasks, 6/6 builds,
-32/32 validators, 244 backend tests, 43 Desktop tests and the disposable
-40-migration E2E. A `pg@8` deprecation warning can still be emitted by Prisma's
+The final local acceptance rerun passed backend, POS, customer-web,
+Telegram-bot, print-agent and Desktop typecheck/lint/build stages, 33/33
+validators, media validation with 0 unresolved product assets, 244 backend
+tests, 43 Desktop tests and the disposable 40-migration E2E. A `pg@8`
+deprecation warning can still be emitted by Prisma's
 interactive transaction adapter during the deliberate concurrent-idempotency
 exercise; the assertions and cleanup pass, and this dependency warning is not
 recorded as production certification.
@@ -241,11 +244,12 @@ contain the generated public media and its local API content was unavailable.
    run release smoke, then perform the single requested push/deploy.
 
 Latest local acceptance evidence includes a successful combined
-`pnpm release:acceptance` run with `TURBO_UI=stream` and
-`TURBO_DAEMON=false`: workspace verification, automated tests, 40-migration
-disposable E2E, 33/33 validators and cleanup all passed. Production smoke was
-read-only and no deploy was performed; the release remains gated on physical
-printer/live Telegram evidence and the protected-main release flow.
+`pnpm release:acceptance` run. The runner now avoids the Windows Turbo hang by
+executing package-level stages directly with `TURBO_DAEMON=false`; backend,
+POS/Admin, customer web, Telegram bot, print agent, Desktop, 33/33 validators,
+media validation, 40-migration disposable E2E and cleanup all passed. No deploy
+was performed; the release remains gated on physical printer/live Telegram
+evidence and the protected-main release flow.
 
 The read-only smoke suite was also rerun against the default public production
 domains: `pnpm release:smoke` passed `23/23`, including backend/database,

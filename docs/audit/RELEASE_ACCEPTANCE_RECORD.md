@@ -9,13 +9,15 @@ replace physical printer, Telegram account, or production backup evidence.
 - Run at: 2026-09-23 Asia/Tashkent
 - Result: local automated gates passed by stage; production release remains
   gated by the mandatory external evidence listed below.
-- Evidence: 12/12 typecheck/lint tasks, 6/6 production builds, 32/32
-  operations validators, 244/244 backend tests, 43/43 Desktop tests, and a
-  disposable 40-migration web/Telegram order-to-cash-to-stock-to-print E2E.
-- `pnpm release:acceptance` was rerun with `TURBO_UI=stream` and
-  `TURBO_DAEMON=false`; the combined runner returned successfully after all
-  stages. This is still not a production certification because no deploy was
-  performed.
+- Evidence: backend, POS/Admin, customer web, Telegram bot, print-agent and
+  Desktop generate/typecheck/lint/build stages, 33/33 operations validators,
+  media validation with 0 unresolved product assets, 244/244 backend tests,
+  43/43 Desktop tests, and a disposable 40-migration web/Telegram
+  order-to-cash-to-stock-to-print E2E.
+- `pnpm release:acceptance` was rerun after replacing the Turbo aggregate
+  stages with package-level commands; the combined runner returned successfully
+  after all stages. This is still not a production certification because no
+  deploy was performed.
 - Read-only production smoke: `pnpm release:smoke` passed `23/23` against the
   default public production domains on 2026-09-23; the checks were GET-only and
   did not create or mutate production data.
