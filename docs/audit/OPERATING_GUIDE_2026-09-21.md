@@ -111,11 +111,14 @@ Target design:
 7. Reprint renders the immutable document snapshot captured at issue time. Later
    order edits must never change the contents of an already issued receipt.
 
-Current limitation: Desktop exposes one fallback host, printer deletion is absent,
+Current limitation: physical paper-output acceptance is not yet recorded,
+although the local Windows Godex G500 is detected; printer deletion and multiple
+system-printer routing are now implemented,
 untargeted jobs can be claimed without readiness, the receipt schema allows only
 one document row per order, and current ESC/POS rendering reads live order rows.
-Do not certify physical printing until these are fixed and tested with a real
-ESC/POS printer.
+Do not certify physical printing until a real test receipt, a kitchen receipt,
+and a cancellation/reprint case are observed and recorded with the printer
+name, paper width, timestamp and result.
 
 ## Incident checklist
 
