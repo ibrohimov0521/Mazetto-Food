@@ -257,19 +257,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const browserCustomer = legacyCustomer
       ? withoutCustomerRefreshToken(legacyCustomer)
       : null;
-    setCustomerState(legacyCustomer ?? browserCustomer);
+    // Refresh tokens are HttpOnly cookies. Keep only the short-lived access
+    // token and profile in localStorage; old stored refresh tokens are used
+    // once below to migrate existing browsers into the cookie session.
+    setCustomerState(browserCustomer);
     if (browserCustomer) {
       window.localStorage.setItem(customerKey, JSON.stringify(browserCustomer));
     }
-    if (legacyCustomer?.refreshToken) {
-      void fetch(`${getCustomerApiBaseUrl()}/customer/auth/refresh`, {
+    void fetch(`${getCustomerApiBaseUrl()}/customer/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: legacyCustomer.refreshToken }),
+        body: JSON.stringify(
+          legacyCustomer?.refreshToken
+            ? { refreshToken: legacyCustomer.refreshToken }
+            : {},
+        ),
         credentials: "include",
       })
         .then(async (response) => {
-          if (!response.ok) return;
+          if (!response.ok) {
+            if (response.status === 401 && browserCustomer) {
+              setCustomerState(null);
+              window.localStorage.removeItem(customerKey);
+            }
+            return;
+          }
           const payload = (await response.json()) as {
             data?: { customer: Omit<CustomerSession, "accessToken" | "refreshToken" | "tokenType">; tokens: Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType"> };
           };
@@ -279,7 +291,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           window.localStorage.setItem(customerKey, JSON.stringify(migrated));
         })
         .catch(() => undefined);
-    }
     setFavoriteIds(readStoredValue<string[]>(favoritesKey, []));
     setHydrated(true);
   }, []);
@@ -333,7 +344,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch(
         `${getCustomerApiBaseUrl()}/customer/auth/refresh`,
         {
-          body: JSON.stringify(customer.refreshToken ? { refreshToken: customer.refreshToken } : {}),
+          // The refresh token is sent automatically as an HttpOnly cookie.
+          body: "{}",
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
           method: "POST",
