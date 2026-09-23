@@ -10,7 +10,7 @@ replace physical printer, Telegram account, or production backup evidence.
 - Result: local automated gates passed by stage; production release remains
   gated by the mandatory external evidence listed below.
 - Evidence: 12/12 typecheck/lint tasks, 6/6 production builds, 32/32
-  operations validators, 240/240 backend tests, 40/40 Desktop tests, and a
+  operations validators, 240/240 backend tests, 43/43 Desktop tests, and a
   disposable 40-migration web/Telegram order-to-cash-to-stock-to-print E2E.
 - Note: the Windows Turbo process did not return after build output in the
   combined runner, so the remaining stages were run separately. Their exit
