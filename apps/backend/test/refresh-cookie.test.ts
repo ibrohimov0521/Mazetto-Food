@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   clearRefreshCookie,
+  CUSTOMER_REFRESH_COOKIE,
   readRefreshToken,
   setRefreshCookie,
   STAFF_REFRESH_COOKIE,
@@ -34,4 +35,34 @@ test("refresh cookie HttpOnly, SameSite va cheklangan path bilan yoziladi", () =
     sameSite: "lax",
     path: "/api/v1/auth",
   }]);
+});
+
+test("production customer refresh cookie Secure va customer auth path bilan yoziladi", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    const calls: unknown[][] = [];
+    const response = {
+      cookie: (...args: unknown[]) => calls.push(args),
+    } as never;
+
+    setRefreshCookie(
+      response,
+      CUSTOMER_REFRESH_COOKIE,
+      "customer-secret",
+      "/api/v1/customer/auth",
+      604800,
+    );
+
+    assert.deepEqual(calls[0], [CUSTOMER_REFRESH_COOKIE, "customer-secret", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/api/v1/customer/auth",
+      maxAge: 604_800_000,
+    }]);
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
 });
