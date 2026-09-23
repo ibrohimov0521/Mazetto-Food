@@ -35,7 +35,9 @@ export class TelegramController {
     // Diagnostic commands belong to the customer bot when sent to its webhook;
     // handle them before customer auth/ordering so a partial test double or a
     // normal customer update can never turn /staffid into a generic error.
-    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_BOT_TOKEN)) {
+    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_BOT_TOKEN, {
+      includeMyId: false,
+    })) {
       return { ok: true, handled: true };
     }
 
@@ -53,7 +55,9 @@ export class TelegramController {
   @Post("staff-webhook/:secret")
   async handleStaffWebhook(@Param("secret") secret: string, @Body() update: unknown) {
     this.assertWebhookSecret(secret, process.env.TELEGRAM_STAFF_WEBHOOK_SECRET);
-    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_STAFF_BOT_TOKEN)) {
+    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_STAFF_BOT_TOKEN, {
+      includeMyId: true,
+    })) {
       return { ok: true, handled: true };
     }
     return (
@@ -69,10 +73,14 @@ export class TelegramController {
     }
   }
 
-  private async handleStaffChatIdDiagnostic(update: unknown, token = process.env.TELEGRAM_BOT_TOKEN): Promise<boolean> {
+  private async handleStaffChatIdDiagnostic(
+    update: unknown,
+    token = process.env.TELEGRAM_BOT_TOKEN,
+    options: { includeMyId: boolean } = { includeMyId: true },
+  ): Promise<boolean> {
     const message = this.toTelegramDiagnosticUpdate(update).message;
 
-    if (!message?.chat?.id || !this.isDiagnosticCommand(message.text)) {
+    if (!message?.chat?.id || !this.isDiagnosticCommand(message.text, options)) {
       return false;
     }
 
@@ -105,8 +113,11 @@ export class TelegramController {
     return /^\/staffid(?:@[A-Za-z0-9_]+)?$/.test(text?.trim() ?? "");
   }
 
-  private isDiagnosticCommand(text: string | undefined): boolean {
-    return this.isStaffIdCommand(text) || this.isMyIdCommand(text);
+  private isDiagnosticCommand(
+    text: string | undefined,
+    options: { includeMyId: boolean },
+  ): boolean {
+    return this.isStaffIdCommand(text) || (options.includeMyId && this.isMyIdCommand(text));
   }
 
   private isMyIdCommand(text: string | undefined): boolean {

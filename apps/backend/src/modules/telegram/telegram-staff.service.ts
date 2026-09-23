@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { KitchenTicketStatus, OrderStatus } from "@prisma/client";
 import { orderStatusLabel } from "../../common/utils/order-status-label";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -87,10 +87,11 @@ type TelegramStaffEmployeeRecord = {
   status: string;
 };
 
-const staffCallbackPrefix = "staff";
+const staffCallbackPrefix = "s";
+const legacyStaffCallbackPrefix = "staff";
 
 @Injectable()
-export class TelegramStaffService {
+export class TelegramStaffService implements OnModuleInit {
   private readonly logger = new Logger(TelegramStaffService.name);
   private readonly botToken = process.env.TELEGRAM_STAFF_BOT_TOKEN;
 
@@ -103,13 +104,45 @@ export class TelegramStaffService {
     private readonly screen: TelegramCustomerScreenService,
   ) {}
 
+  async onModuleInit(): Promise<void> {
+    if (!this.botToken) {
+      return;
+    }
+
+    try {
+      await this.screen.telegramRequestWithToken(this.botToken, "setMyCommands", {
+        commands: [
+          { command: "start", description: "Xodim paneli" },
+          { command: "staff", description: "Xodim paneli" },
+          { command: "courier", description: "Kuryer buyurtmalari" },
+          { command: "kitchen", description: "Oshxona buyurtmalari" },
+          { command: "waiter", description: "Ofitsiant buyurtmalari" },
+          { command: "cashier", description: "Kassa smenasi" },
+          { command: "admin", description: "Boshqaruv paneli" },
+          { command: "accountant", description: "Buxgalteriya" },
+          { command: "myid", description: "Telegram ID ni ko'rsatish" },
+          { command: "help", description: "Yordam" },
+        ],
+      });
+      await this.screen.telegramRequestWithToken(this.botToken, "setChatMenuButton", {
+        menu_button: { type: "commands" },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Telegram staff command menu setup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   async handleWebhookUpdate(update: unknown) {
     const telegramUpdate = this.toTelegramUpdate(update);
     const callback = telegramUpdate.callback_query;
     const message = telegramUpdate.message;
 
     try {
-      if (callback?.data?.startsWith(`${staffCallbackPrefix}:`)) {
+      if (callback && this.isStaffCallback(callback.data)) {
         await this.handleStaffCallback(callback);
         return { ok: true, handled: true };
       }
@@ -195,21 +228,21 @@ export class TelegramStaffService {
     }
 
     const chatId = String(rawChatId);
-    const [, action, ...values] = (callback.data ?? "").split(":");
+    const { action, values } = this.parseStaffCallback(callback.data ?? "");
 
-    if (action === "home") {
+    if (action === "home" || action === "h") {
       await this.screen.answerCallbackWithToken(this.botToken, callback);
       await this.sendStaffPanel(chatId, staff, callback.message?.message_id);
       return;
     }
 
-    if (action === "courier") {
+    if (action === "courier" || action === "co") {
       await this.screen.answerCallbackWithToken(this.botToken, callback);
       await this.sendCourierOrders(chatId, staff, callback.message?.message_id);
       return;
     }
 
-    if (action === "courier_order" && values[0]) {
+    if ((action === "courier_order" || action === "cod") && values[0]) {
       await this.screen.answerCallbackWithToken(this.botToken, callback);
       await this.sendCourierOrderDetail(
         chatId,
@@ -220,37 +253,37 @@ export class TelegramStaffService {
       return;
     }
 
-    if (action === "kitchen") {
+    if (action === "kitchen" || action === "ki") {
       await this.screen.answerCallbackWithToken(this.botToken, callback);
       await this.sendKitchenOrders(chatId, staff, callback.message?.message_id);
       return;
     }
 
-    if (action === "waiter") {
+    if (action === "waiter" || action === "wa") {
       await this.screen.answerCallbackWithToken(this.botToken, callback);
       await this.sendWaiterOrders(chatId, staff, callback.message?.message_id);
       return;
     }
 
-    if (action === "cashier") {
+    if (action === "cashier" || action === "ca") {
       await this.screen.answerCallbackWithToken(this.botToken, callback);
       await this.sendCashierPanel(chatId, staff, callback.message?.message_id);
       return;
     }
 
-    if (action === "management") {
+    if (action === "management" || action === "mg") {
       await this.screen.answerCallbackWithToken(this.botToken, callback);
       await this.sendManagementPanel(chatId, staff, callback.message?.message_id);
       return;
     }
 
-    if (action === "kitchen_ticket" && values[0] && values[1]) {
+    if ((action === "kitchen_ticket" || action === "kt") && values[0] && values[1]) {
       await this.screen.answerCallbackWithToken(this.botToken, callback, "Amal bajarilmoqda...");
       await this.changeKitchenTicket(chatId, staff, values[0], values[1], callback.message?.message_id);
       return;
     }
 
-    if (action === "courier_status" && values[0] && values[1]) {
+    if ((action === "courier_status" || action === "cs") && values[0] && values[1]) {
       await this.screen.answerCallbackWithToken(this.botToken, callback, "Amal bajarilmoqda...");
       await this.changeCourierStatus(
         chatId,
@@ -284,27 +317,27 @@ export class TelegramStaffService {
       rows.push([
         {
           text: "🚚 Kuryer buyurtmalari",
-          callback_data: `${staffCallbackPrefix}:courier`,
+              callback_data: `${staffCallbackPrefix}:co`,
         },
       ]);
     }
     if (this.canUseKitchen(staff)) {
-      rows.push([{ text: "🍳 Oshxona buyurtmalari", callback_data: `${staffCallbackPrefix}:kitchen` }]);
+      rows.push([{ text: "🍳 Oshxona buyurtmalari", callback_data: `${staffCallbackPrefix}:ki` }]);
     }
     if (staff.user.roles.includes("WAITER")) {
-      rows.push([{ text: "🍽 Ofitsiant buyurtmalari", callback_data: `${staffCallbackPrefix}:waiter` }]);
+      rows.push([{ text: "🍽 Ofitsiant buyurtmalari", callback_data: `${staffCallbackPrefix}:wa` }]);
     }
     if (this.canUseCashier(staff)) {
-      rows.push([{ text: "💵 Kassa", callback_data: `${staffCallbackPrefix}:cashier` }]);
+      rows.push([{ text: "💵 Kassa", callback_data: `${staffCallbackPrefix}:ca` }]);
     }
     if (staff.user.roles.some((role) => ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role))) {
-      rows.push([{ text: "📊 Boshqaruv ko'rsatkichlari", callback_data: `${staffCallbackPrefix}:management` }]);
+      rows.push([{ text: "📊 Boshqaruv ko'rsatkichlari", callback_data: `${staffCallbackPrefix}:mg` }]);
     }
 
     rows.push([
       {
         text: "🔄 Yangilash",
-        callback_data: `${staffCallbackPrefix}:home`,
+        callback_data: `${staffCallbackPrefix}:h`,
       },
     ]);
 
@@ -355,7 +388,7 @@ export class TelegramStaffService {
           text: "Sizda kuryer buyurtmalarini ko'rish ruxsati yo'q.",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+              [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }],
             ],
           },
         },
@@ -375,8 +408,8 @@ export class TelegramStaffService {
           text: "🚚 Hozir sizga tegishli faol yetkazish buyurtmasi yo'q.",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:courier` }],
-              [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+              [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:co` }],
+              [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }],
             ],
           },
         },
@@ -396,11 +429,11 @@ export class TelegramStaffService {
             ...orders.map((order) => [
               {
                 text: `#${order.order?.displayOrderNumber ?? order.order?.orderNumber ?? order.id}`,
-                callback_data: `${staffCallbackPrefix}:courier_order:${order.id}`,
+                callback_data: `${staffCallbackPrefix}:cod:${order.id}`,
               },
             ]),
-            [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:courier` }],
-            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+            [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:co` }],
+            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }],
           ],
         },
       },
@@ -421,7 +454,7 @@ export class TelegramStaffService {
           text: "Buyurtma topilmadi yoki endi sizga tegishli emas.",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🚚 Ro'yxat", callback_data: `${staffCallbackPrefix}:courier` }],
+              [{ text: "🚚 Ro'yxat", callback_data: `${staffCallbackPrefix}:co` }],
             ],
           },
         },
@@ -437,8 +470,8 @@ export class TelegramStaffService {
         reply_markup: {
           inline_keyboard: [
             ...this.courierActionRows(order),
-            [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:courier_order:${order.id}` }],
-            [{ text: "⬅️ Ro'yxat", callback_data: `${staffCallbackPrefix}:courier` }],
+            [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:cod:${order.id}` }],
+            [{ text: "⬅️ Ro'yxat", callback_data: `${staffCallbackPrefix}:co` }],
           ],
         },
       },
@@ -488,7 +521,7 @@ export class TelegramStaffService {
         [
           {
             text: "🚚 Yo'lga chiqdim",
-            callback_data: `${staffCallbackPrefix}:courier_status:${order.id}:${CourierOrderStatus.SERVED}`,
+            callback_data: `${staffCallbackPrefix}:cs:${order.id}:${CourierOrderStatus.SERVED}`,
           },
         ],
       ];
@@ -498,7 +531,7 @@ export class TelegramStaffService {
         [
           {
             text: "✅ Yetkazdim",
-            callback_data: `${staffCallbackPrefix}:courier_status:${order.id}:${CourierOrderStatus.COMPLETED}`,
+            callback_data: `${staffCallbackPrefix}:cs:${order.id}:${CourierOrderStatus.COMPLETED}`,
           },
         ],
       ];
@@ -531,7 +564,7 @@ export class TelegramStaffService {
         text: "Oshxona paneli uchun xodim filialga biriktirilgan bo'lishi kerak.",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }],
           ],
         },
       });
@@ -543,9 +576,9 @@ export class TelegramStaffService {
       : "🍳 Hozir oshxonada faol buyurtma yo'q.";
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
       text, parse_mode: "HTML", reply_markup: { inline_keyboard: [
-        ...tickets.map((ticket: TelegramKitchenTicket) => [{ text: `#${String(ticket.order?.displayOrderNumber ?? ticket.ticketNumber)}`, callback_data: `${staffCallbackPrefix}:kitchen_ticket:${ticket.id}:next` }]),
-        [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:kitchen` }],
-        [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+        ...tickets.map((ticket: TelegramKitchenTicket) => [{ text: `#${String(ticket.order?.displayOrderNumber ?? ticket.ticketNumber)}`, callback_data: `${staffCallbackPrefix}:kt:${ticket.id}:n` }]),
+        [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:ki` }],
+        [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }],
       ] },
     });
   }
@@ -574,7 +607,7 @@ export class TelegramStaffService {
     const orders = await this.tablesService.listWaiterOrders(staff.user);
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
       text: orders.length ? `<b>🍽 Ofitsiant buyurtmalari</b>\n\n${orders.map((order: TelegramStaffOrder) => `#${this.escapeHtml(String(order.displayOrderNumber ?? order.orderNumber))} · ${this.escapeHtml(String(order.status))}\n${(order.items ?? []).map((item: TelegramStaffItem) => `${Number(item.quantity)}x ${this.escapeHtml(String(item.productName ?? "—"))}`).join(", ")}`).join("\n\n")}` : "🍽 Sizga biriktirilgan faol zal buyurtmasi yo'q.",
-      parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:waiter` }], [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }]] },
+      parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:wa` }], [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }]] },
     });
   }
 
@@ -588,7 +621,7 @@ export class TelegramStaffService {
         text: "Kassa paneli uchun xodim filialga biriktirilgan bo'lishi kerak.",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }],
+            [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }],
           ],
         },
       });
@@ -597,7 +630,7 @@ export class TelegramStaffService {
     const shift = await this.cashRegisterService.getCurrentShift(staff.user);
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
       text: shift ? `<b>💵 Kassa smenasi</b>\n\nHolat: Ochiq\nFilial: ${this.escapeHtml(shift.branch?.name ?? "—")}\nJami naqd: ${this.escapeHtml(this.formatMoney(shift.cashSales ?? 0))}\nBuyurtmalar: ${shift.orderCount ?? 0}` : "💵 Sizda ochiq kassa smenasi yo'q.",
-      parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:cashier` }], [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }]] },
+      parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:ca` }], [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }]] },
     });
   }
 
@@ -614,7 +647,7 @@ export class TelegramStaffService {
     ]);
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
       text: `<b>📊 Boshqaruv</b>\n\nBugungi buyurtmalar: <b>${orders}</b>\nFaol xodimlar: <b>${employees}</b>\nRollar: ${this.escapeHtml(staff.user.roles.join(", "))}`,
-      parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:management` }], [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:home` }]] },
+      parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:mg` }], [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }]] },
     });
   }
 
@@ -771,6 +804,18 @@ export class TelegramStaffService {
     return staff.user.roles.some((role) =>
       ["CASHIER", "ACCOUNTANT", "ADMIN", "SUPER_ADMIN"].includes(role),
     );
+  }
+
+  private isStaffCallback(data: string | undefined): boolean {
+    return Boolean(
+      data?.startsWith(`${staffCallbackPrefix}:`) ||
+      data?.startsWith(`${legacyStaffCallbackPrefix}:`),
+    );
+  }
+
+  private parseStaffCallback(data: string): { action: string; values: string[] } {
+    const [, action, ...values] = data.split(":");
+    return { action: action ?? "", values };
   }
 
   private toTelegramUpdate(update: unknown): TelegramUpdate {

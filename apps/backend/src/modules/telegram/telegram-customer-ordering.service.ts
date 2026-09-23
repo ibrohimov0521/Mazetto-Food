@@ -130,7 +130,7 @@ export class TelegramCustomerOrderingService {
       return true;
     }
 
-    if (action === "prod" && values[0]) {
+    if ((action === "prod" || action === "p") && values[0]) {
       await this.screen.answerCallback(callback);
       const legacyFormat = values.length >= 4;
       await this.sendProductConfigurator(target, values[0], {
@@ -157,7 +157,7 @@ export class TelegramCustomerOrderingService {
       return true;
     }
 
-    if (action === "addp" && values[0]) {
+    if ((action === "addp" || action === "a") && values[0]) {
       await this.addProductToCart(
         target,
         callback,
@@ -789,7 +789,7 @@ export class TelegramCustomerOrderingService {
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
-        id: productId,
+        OR: [{ id: productId }, { code: productId }],
         isAvailable: true,
         ...customerVisibleProductWhere(),
       },
@@ -822,17 +822,18 @@ export class TelegramCustomerOrderingService {
       product.variants[0] ??
       null;
     const price = selectedVariant?.sellingPrice ?? product.sellingPrice;
+    const productToken = this.callbackToken(product) ?? product.id;
     const state = (
       nextQuantity: number,
-      variantId = selectedVariant?.id ?? "-",
+      variantToken = this.callbackToken(selectedVariant) ?? "-",
     ) =>
-      `${customerCallbackPrefix}:prod:${product.id}:${nextQuantity}:${variantId}`;
+      `${customerCallbackPrefix}:p:${productToken}:${nextQuantity}:${variantToken}`;
     const controls = [
       ...(product.variants.length > 1
         ? product.variants.map((variant) => [
             {
               text: `${variant.id === selectedVariant?.id ? "✓ " : ""}${variant.name} · ${formatMoney(variant.sellingPrice)}`,
-              callback_data: state(quantity, variant.id),
+              callback_data: state(quantity, this.callbackToken(variant) ?? variant.id),
             },
           ])
         : []),
@@ -844,7 +845,7 @@ export class TelegramCustomerOrderingService {
       [
         {
           text: "🛒 Savatga qo'shish",
-          callback_data: `${customerCallbackPrefix}:addp:${product.id}:${selectedVariant?.id ?? "-"}:${quantity}`,
+          callback_data: `${customerCallbackPrefix}:a:${productToken}:${this.callbackToken(selectedVariant) ?? "-"}:${quantity}`,
         },
       ],
       [
@@ -892,7 +893,7 @@ export class TelegramCustomerOrderingService {
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
-        id: productId,
+        OR: [{ id: productId }, { code: productId }],
         isAvailable: true,
         ...customerVisibleProductWhere(),
       },
@@ -1001,7 +1002,7 @@ export class TelegramCustomerOrderingService {
   ): Promise<void> {
     const product = await this.prisma.product.findFirst({
       where: {
-        id: productId,
+        OR: [{ id: productId }, { code: productId }],
         isAvailable: true,
         ...customerVisibleProductWhere(),
       },
@@ -1030,7 +1031,7 @@ export class TelegramCustomerOrderingService {
       rawVariantId && rawVariantId !== "-"
         ? await this.prisma.productVariant.findFirst({
             where: {
-              id: rawVariantId,
+              OR: [{ id: rawVariantId }, { code: rawVariantId }],
               productId: product.id,
               isAvailable: true,
             },
@@ -1117,6 +1118,13 @@ export class TelegramCustomerOrderingService {
         select: { id: true },
       });
     });
+  }
+
+  private callbackToken(
+    record: { code?: string | null; id?: string | null } | null | undefined,
+  ): string | null {
+    const code = record?.code?.trim();
+    return code || record?.id || null;
   }
 
   private async changeCartQuantity(
