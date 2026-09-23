@@ -67,6 +67,7 @@ test("bitta maxsus hisobot permissioni hisobot route'ini ochadi", () => {
 test("custom admin role permissioni berilgan bo'limni sidebar'da ko'rsatadi", () => {
   const user = customUser(["ADMIN_ACCESS", "HOMEPAGE_MANAGE"]);
 
+  assert.equal(getPrimaryRedirect(user), "/admin/homepage");
   assert.equal(checkRouteAccess(user, "/admin/homepage"), "allowed");
   assert.ok(
     resolveAdminNav(user).some((group) =>
