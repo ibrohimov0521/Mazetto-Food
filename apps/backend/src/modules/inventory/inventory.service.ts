@@ -139,6 +139,25 @@ export class InventoryService {
     });
   }
 
+  async permanentlyDeleteIngredients(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (!uniqueIds.length) throw new BadRequestException("Ingredient IDs are required");
+    const rows = await this.prisma.ingredient.findMany({
+      where: { id: { in: uniqueIds } },
+      include: { _count: { select: { recipeItems: true, stock: true, stockMovements: true } } },
+    });
+    if (rows.length !== uniqueIds.length) throw new NotFoundException("Ingredient not found");
+    const blocked = rows.find((row) => row._count.recipeItems || row._count.stock || row._count.stockMovements);
+    if (blocked) throw new BadRequestException(`Ingredient ${blocked.name} has inventory or recipe history and cannot be deleted`);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.ingredient.deleteMany({ where: { id: { in: uniqueIds } } });
+      for (const id of uniqueIds) {
+        await writeAuditLog(tx, { userId: user.id, action: "INGREDIENT_DELETED", entity: "Ingredient", entityId: id });
+      }
+    });
+    return { deletedCount: uniqueIds.length };
+  }
+
   async updateWarehouse(
     id: string,
     dto: UpdateWarehouseDto,
@@ -183,6 +202,26 @@ export class InventoryService {
       });
       return archived;
     });
+  }
+
+  async permanentlyDeleteWarehouses(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (!uniqueIds.length) throw new BadRequestException("Warehouse IDs are required");
+    const rows = await this.prisma.warehouse.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, branchId: true, name: true, stock: { select: { id: true } }, stockMovements: { select: { id: true } } },
+    });
+    if (rows.length !== uniqueIds.length) throw new NotFoundException("Warehouse not found");
+    for (const row of rows) resolveBranchScope(user, row.branchId);
+    const blocked = rows.find((row) => row.stock.length || row.stockMovements.length);
+    if (blocked) throw new BadRequestException(`Warehouse ${blocked.name} has inventory history and cannot be deleted`);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.warehouse.deleteMany({ where: { id: { in: uniqueIds } } });
+      for (const id of uniqueIds) {
+        await writeAuditLog(tx, { userId: user.id, action: "WAREHOUSE_DELETED", entity: "Warehouse", entityId: id });
+      }
+    });
+    return { deletedCount: uniqueIds.length };
   }
 
   async getReadiness(user: AuthenticatedUser, requestedBranchId?: string) {

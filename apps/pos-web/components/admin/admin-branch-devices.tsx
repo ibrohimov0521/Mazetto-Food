@@ -102,6 +102,7 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
   } | null>(null);
   const [nameError, setNameError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const resource = useApiResource<[Branch, Device[]]>(
     () =>
@@ -131,11 +132,24 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
   async function deleteDevice(device: Device): Promise<void> {
     if (!window.confirm(`${device.name} qurilmasini o'chirishni tasdiqlaysizmi?`)) return;
     try {
-      await apiFetch(`/devices/${device.id}`, { method: "DELETE" });
+      await apiFetch("/devices/bulk", { method: "DELETE", body: JSON.stringify({ ids: [device.id] }) });
       showToast("Qurilma o'chirildi.", "success");
       resource.reload();
     } catch (caught) {
       showToast(caught instanceof Error ? caught.message : "Qurilmani o'chirib bo'lmadi.", "danger");
+    }
+  }
+
+  async function deleteSelectedDevices(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta qurilmani bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/devices/bulk", { method: "DELETE", body: JSON.stringify({ ids: selectedIds }) });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta qurilma o'chirildi.`, "success");
+      resource.reload();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Qurilmalarni o'chirib bo'lmadi.", "danger");
     }
   }
   async function save(): Promise<void> {
@@ -267,10 +281,13 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
       <AdminPageHeader
         actions={
           canManage ? (
-            <Button onClick={() => setEditor({ ...emptyDraft })} size="lg">
+            <div className="flex flex-wrap gap-2">
+              {selectedIds.length ? <Button onClick={() => void deleteSelectedDevices()} size="lg" variant="danger">{selectedIds.length} ta o'chirish</Button> : null}
+              <Button onClick={() => setEditor({ ...emptyDraft })} size="lg">
               <Icon className="h-4 w-4" name="plus" />
               Yangi qurilma
-            </Button>
+              </Button>
+            </div>
           ) : null
         }
         backHref={`/admin/branches/${branch.id}`}
@@ -307,6 +324,9 @@ export function AdminBranchDevices({ branchId }: { branchId: string }) {
               }
             : {})}
           rows={devices}
+          selectable={canManage}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
         />
       </Card>
 

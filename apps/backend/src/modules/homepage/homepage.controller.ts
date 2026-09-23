@@ -55,6 +55,12 @@ export class HomepageAdminController {
     return this.homepageService.updateHeroSlide(id, dto);
   }
 
+  @Delete("hero-slides/bulk")
+  @Permissions(PERMISSIONS.HOMEPAGE_MANAGE)
+  deleteHeroSlidesBulk(@Body() dto: { ids: string[] }) {
+    return this.homepageService.deleteHeroSlidesBulk(dto.ids);
+  }
+
   @Delete("hero-slides/:id")
   @Permissions(PERMISSIONS.HOMEPAGE_MANAGE)
   deleteHeroSlide(@Param("id") id: string) {
@@ -77,6 +83,12 @@ export class HomepageAdminController {
   @Permissions(PERMISSIONS.HOMEPAGE_MANAGE)
   updatePromotion(@Param("id") id: string, @Body() dto: UpdatePromotionDto) {
     return this.homepageService.updatePromotion(id, dto);
+  }
+
+  @Delete("promotions/bulk")
+  @Permissions(PERMISSIONS.HOMEPAGE_MANAGE)
+  deletePromotionsBulk(@Body() dto: { ids: string[] }) {
+    return this.homepageService.deletePromotionsBulk(dto.ids);
   }
 
   @Delete("promotions/:id")

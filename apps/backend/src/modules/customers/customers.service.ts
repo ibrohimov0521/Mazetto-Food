@@ -24,7 +24,7 @@ import {
 } from "./dto/list-customers.dto";
 import {
   customerVisibleCategoryCodes,
-  customerVisibleProductCodes,
+  customerVisibleProductWhere,
 } from "./customer-catalog-visibility";
 import type {
   CustomerCheckoutQuoteDto,
@@ -92,7 +92,7 @@ export class CustomersService {
     return this.prisma.product.findMany({
       where: {
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
         ...this.branchesService.getUnavailableProductWhere(branchId),
         ...(categoryId ? { categoryId } : {}),
@@ -107,7 +107,7 @@ export class CustomersService {
       where: {
         id,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: productInclude(),
     });
@@ -358,6 +358,37 @@ export class CustomersService {
         _count: { select: { customerOrders: true, favorites: true } },
       },
     });
+  }
+
+  async deleteCustomersBulk(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta mijoz tanlanishi kerak");
+
+    const branchId = resolveBranchScope(user);
+    const customers = await this.prisma.customer.findMany({
+      where: {
+        id: { in: uniqueIds },
+        ...(branchId ? { customerOrders: { some: { branchId } } } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        _count: { select: { customerOrders: true } },
+      },
+    });
+    if (customers.length !== uniqueIds.length) {
+      throw new NotFoundException("Tanlangan mijozlarning biri topilmadi yoki filial doirasida emas");
+    }
+
+    const blocked = customers.filter((customer) => customer._count.customerOrders > 0);
+    if (blocked.length) {
+      throw new BadRequestException(
+        `Buyurtma tarixi bor mijozlarni o'chirib bo'lmaydi: ${blocked.map((customer) => customer.name).join(", ")}`,
+      );
+    }
+
+    await this.prisma.customer.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   async listOnlineOrders(query: ListOnlineOrdersDto, user: AuthenticatedUser) {

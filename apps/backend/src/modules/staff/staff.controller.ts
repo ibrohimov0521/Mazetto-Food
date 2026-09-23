@@ -78,6 +78,15 @@ export class StaffController {
     return this.staffService.updateStatus(id, dto, user);
   }
 
+  @Delete("bulk")
+  @Permissions(PERMISSIONS.STAFF_DELETE)
+  deleteStaffBulk(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.staffService.deleteStaffBulk(dto.ids, user);
+  }
+
   @Delete(":id")
   @Permissions(PERMISSIONS.STAFF_DELETE)
   deleteStaff(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {

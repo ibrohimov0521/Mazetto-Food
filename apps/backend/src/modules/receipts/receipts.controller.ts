@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -67,6 +67,11 @@ export class ReceiptsController {
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
   retryPrintJob(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.receiptsService.retryPrintJob(id, user);
+  }
+  @Delete("bulk")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  deleteReceipts(@Body() body: { ids: string[] }, @CurrentUser() user: AuthenticatedUser) {
+    return this.receiptsService.deleteReceipts(body.ids, user);
   }
   @Post(":id/reprint")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)

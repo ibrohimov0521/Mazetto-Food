@@ -6,14 +6,41 @@ replace physical printer, Telegram account, or production backup evidence.
 ## Latest local candidate run
 
 - Branch: `fix/release-readiness-batch`
-- Run at: 2026-09-21 11:57 Asia/Tashkent
-- Result: automated code gates passed locally; production release remains
-  blocked by the mandatory external evidence listed below.
-- Evidence: 12/12 typecheck/lint tasks, 6/6 production builds, 31/31
-  operations validators, 231/231 backend tests, 38/38 Desktop tests, and a
-  disposable 39-migration web/Telegram order-to-cash-to-stock-to-print E2E.
-- Note: Turbo's Windows interactive cache spinner required the already-passed
-  stages to be run separately. The stage exit results above are authoritative.
+- Run at: 2026-09-23 Asia/Tashkent
+- Result: local automated gates passed by stage; production release remains
+  gated by the mandatory external evidence listed below.
+- Evidence: backend, POS/Admin, customer web, Telegram bot, print-agent and
+  Desktop generate/typecheck/lint/build stages, 33/33 operations validators,
+  media validation with 0 unresolved product assets, 244/244 backend tests,
+  43/43 Desktop tests, and a disposable 40-migration web/Telegram
+  order-to-cash-to-stock-to-print E2E.
+- `pnpm release:acceptance` was rerun after replacing the Turbo aggregate
+  stages with package-level commands; the combined runner returned successfully
+  after all stages. This is still not a production certification because no
+  deploy was performed.
+- Read-only production smoke: a later `pnpm release:smoke` run at 2026-09-23
+  10:32 Asia/Tashkent failed `0/23`. All checked public hostnames returned
+  HTTP 530, including backend, customer-web, POS/admin and media health. The
+  checks were GET-only and did not create or mutate production data.
+- Desktop release candidate `0.1.40` was built locally as an NSIS x64
+  installer; `release/latest.yml` points to the matching `0.1.40` artifact.
+  The artifact has not been published or deployed yet.
+- Public GitHub `latest.yml` was checked read-only and still reports `0.1.39`;
+  therefore the missing update is currently a publication gap, not an updater
+  version-detection gap.
+- Godex G500 acceptance is not passed: Windows reports the printer as normal,
+  but 21 queued jobs remain with `PagesPrinted=0` (oldest job 01:10 Asia/Tashkent)
+  on `USB001`. A present USB device is also reported as `Unknown USB device`
+  with `USB\VID_0000&PID_0002` and descriptor-request failure. No paper output
+  can be inferred from this spooler state; the hardware/USB layer must be fixed
+  before the receipt renderer can receive physical acceptance.
+- Read-only production media audit checked all 74 customer-catalog products;
+  every product had an image URL and all 74 media `HEAD` requests returned
+  HTTP 200.
+- Read-only Telegram acceptance is available as `pnpm telegram:smoke`; it
+  requires `TELEGRAM_BOT_TOKEN` (and optionally the staff token), never changes
+  a webhook, and never prints credentials. It could not run in this checkout
+  because production tokens are not present.
 
 ## Release identity
 

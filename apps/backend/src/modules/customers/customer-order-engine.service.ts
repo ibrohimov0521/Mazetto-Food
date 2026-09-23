@@ -21,7 +21,7 @@ import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
 import { OrdersService } from "../orders/orders.service";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
-import { customerVisibleProductCodes } from "./customer-catalog-visibility";
+import { customerVisibleProductWhere } from "./customer-catalog-visibility";
 import type {
   CustomerCheckoutQuoteDto,
   CreateOnlineOrderDto,
@@ -558,7 +558,7 @@ export class CustomerOrderEngineService {
       where: {
         id: dto.productId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
         OR: [{ branchId }, { branchId: null }],
         ...this.branchesService.getUnavailableProductWhere(branchId),
       },

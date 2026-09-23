@@ -10,6 +10,7 @@ import {
   formatDateTime,
   formatMoney,
   maskPhone,
+  orderStatusLabel,
   orderStatusLabels,
   orderStatusTone,
   type OrderStatus,
@@ -410,7 +411,10 @@ export function AdminOnlineOrdersPage() {
       header: "Holat",
       render: (item) => (
         <Badge tone={orderStatusTone(item.status as OrderStatus)} withDot>
-          {orderStatusLabels[item.status as OrderStatus] ?? item.status}
+          {orderStatusLabel(
+            item.status as OrderStatus,
+            item.type === "DELIVERY" ? "DELIVERY" : "TAKEAWAY",
+          ) ?? item.status}
         </Badge>
       ),
     },

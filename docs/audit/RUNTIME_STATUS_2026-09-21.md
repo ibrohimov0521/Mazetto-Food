@@ -20,7 +20,7 @@ PostgreSQL remains on the private Docker network.
 | Telegram agent | Cloud `telegram-bot` service | Code/configuration audited; current webhook status requires protected service access or Telegram API credential |
 | Telegram staff group | Telegram external service | Requires configured chat ID and legitimate human smoke; not proven in this read-only audit |
 | Desktop | Installed on branch Windows devices | Latest public release is `desktop-v0.1.28` |
-| Printers | Branch LAN, reached from Desktop over TCP/9100 | No physical printer available; not certified |
+| Printers | Windows Desktop; Godex G500 detected on `USB001` | Device is present and `Normal`; no paper-output evidence recorded yet |
 | Legacy print agent | Optional branch process | Disabled by default; Desktop is the canonical print owner and enabling the legacy agent requires an explicit opt-in |
 
 ## Release state
@@ -50,7 +50,8 @@ PostgreSQL remains on the private Docker network.
   end by staff and customer without creating fake production data.
 - External Click/Payme/Card provider and provider-refund flows; full CASH refund
   is implemented locally but not yet deployed.
-- Multi-printer and cancellation printing with a physical ESC/POS device.
+- Multi-printer and cancellation printing with a physical ESC/POS device; the
+  local Godex is detected but still requires an observed test receipt.
 - Database migration/restore repeatability from the restored production snapshot.
 - Telegram staff group lifecycle delivery in the current runtime.
 - Authenticated browser regression for every role and admin page after deployment.

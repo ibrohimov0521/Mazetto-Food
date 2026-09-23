@@ -4,6 +4,8 @@ import { PrismaService } from "../../prisma/prisma.service";
 import {
   customerVisibleCategoryCodes,
   customerVisibleProductCodes,
+  customerVisibleProductCodeSet,
+  customerVisibleProductWhere,
 } from "../customers/customer-catalog-visibility";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
@@ -130,10 +132,11 @@ export class TelegramCustomerOrderingService {
 
     if (action === "prod" && values[0]) {
       await this.screen.answerCallback(callback);
+      const legacyFormat = values.length >= 4;
       await this.sendProductConfigurator(target, values[0], {
-        categoryId: values[1],
-        quantity: values[2],
-        variantId: values[3],
+        ...(legacyFormat ? { categoryId: values[1] } : {}),
+        quantity: legacyFormat ? values[2] : values[1],
+        variantId: legacyFormat ? values[3] : values[2],
       });
       return true;
     }
@@ -299,7 +302,7 @@ export class TelegramCustomerOrderingService {
   ): Promise<boolean> {
     const normalized = command.toLowerCase().replace(/@[^\s]+$/, "");
 
-    if (normalized === "/menu") {
+    if (normalized === "/menu" || normalized === "/buy") {
       await this.sendCategoryMenu(message);
       return true;
     }
@@ -346,6 +349,16 @@ export class TelegramCustomerOrderingService {
         { chatId },
         {
           text: "Yordam kerak bo'lsa, /menu orqali menyuni oching yoki operatorga murojaat qiling.",
+        },
+      );
+      return true;
+    }
+    if (normalized === "/terms") {
+      const chatId = requiredTelegramId(message.chat?.id, "chat id");
+      await this.screen.renderCustomerScreen(
+        { chatId },
+        {
+          text: "Foydalanish shartlari: buyurtmani tasdiqlaganingizdan keyin filial uni tayyorlashni boshlaydi. Yetkazib berish hududi va vaqtiga qarab operator aniqlashtirishi mumkin.",
         },
       );
       return true;
@@ -588,7 +601,7 @@ export class TelegramCustomerOrderingService {
       where: {
         categoryId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
@@ -625,7 +638,7 @@ export class TelegramCustomerOrderingService {
     const cartLabel = await this.cartButtonLabel(customerId);
     const productButtons = products.map((product) => ({
       text: telegramProductButtonLabel(product.code, product.name, product.category?.code),
-      callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
+      callback_data: `${customerCallbackPrefix}:prod:${product.id}`,
     }));
     const columns = productButtons.some((button) => button.text.length > 18) ? 1 : 2;
     const payload: CustomerScreenPayload = {
@@ -717,7 +730,7 @@ export class TelegramCustomerOrderingService {
                 product.name,
                 categoryCode,
               ),
-              callback_data: `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:1:-`,
+              callback_data: `${customerCallbackPrefix}:prod:${product.id}`,
             };
           }),
       )
@@ -778,7 +791,7 @@ export class TelegramCustomerOrderingService {
       where: {
         id: productId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: {
         category: { select: { id: true, name: true } },
@@ -813,7 +826,7 @@ export class TelegramCustomerOrderingService {
       nextQuantity: number,
       variantId = selectedVariant?.id ?? "-",
     ) =>
-      `${customerCallbackPrefix}:prod:${product.id}:${categoryId}:${nextQuantity}:${variantId}`;
+      `${customerCallbackPrefix}:prod:${product.id}:${nextQuantity}:${variantId}`;
     const controls = [
       ...(product.variants.length > 1
         ? product.variants.map((variant) => [
@@ -831,7 +844,7 @@ export class TelegramCustomerOrderingService {
       [
         {
           text: "🛒 Savatga qo'shish",
-          callback_data: `${customerCallbackPrefix}:addp:${product.id}:${selectedVariant?.id ?? "-"}:${quantity}:${categoryId}`,
+          callback_data: `${customerCallbackPrefix}:addp:${product.id}:${selectedVariant?.id ?? "-"}:${quantity}`,
         },
       ],
       [
@@ -881,7 +894,7 @@ export class TelegramCustomerOrderingService {
       where: {
         id: productId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: {
         category: { select: { code: true, name: true } },
@@ -897,7 +910,11 @@ export class TelegramCustomerOrderingService {
       },
     });
 
-    if (!product || !isSimpleQuickAddProduct(product)) {
+    if (
+      !product ||
+      !customerVisibleProductCodeSet.has(product.code) ||
+      !isSimpleQuickAddProduct(product)
+    ) {
       await this.screen.answerCallback(
         callback,
         "Bu mahsulotni qayta tanlang.",
@@ -936,7 +953,7 @@ export class TelegramCustomerOrderingService {
         isAvailable: true,
         product: {
           isAvailable: true,
-          code: { in: [...customerVisibleProductCodes] },
+          ...customerVisibleProductWhere(),
         },
       },
       include: {
@@ -964,16 +981,12 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    const cartItem = await this.addCartItem(
-      customer.id,
-      variant.productId,
-      variant.id,
-    );
+    await this.addCartItem(customer.id, variant.productId, variant.id);
     await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
-    await this.sendCartItemConfigured(
+    await this.sendProductsForCategory(
       target,
-      cartItem.id,
-      variant.product.name,
+      customer.id,
+      variant.product.categoryId,
     );
   }
 
@@ -990,7 +1003,7 @@ export class TelegramCustomerOrderingService {
       where: {
         id: productId,
         isAvailable: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
       },
       include: {
         modifiers: {
@@ -1037,14 +1050,18 @@ export class TelegramCustomerOrderingService {
     }
 
     const quantity = Math.max(1, Math.min(99, Number(rawQuantity) || 1));
-    const cartItem = await this.addCartItem(
+    await this.addCartItem(
       customer.id,
       product.id,
       variant?.id ?? null,
       quantity,
     );
     await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
-    await this.sendCartItemConfigured(target, cartItem.id, product.name);
+    await this.sendProductsForCategory(
+      target,
+      customer.id,
+      categoryId ?? product.categoryId,
+    );
   }
 
   private async addCartItem(
@@ -1099,43 +1116,6 @@ export class TelegramCustomerOrderingService {
         },
         select: { id: true },
       });
-    });
-  }
-
-  private async sendCartItemConfigured(
-    target: CustomerScreenTarget,
-    cartItemId: string,
-    productName: string,
-  ): Promise<void> {
-    await this.screen.renderCustomerScreen(target, {
-      text: `✅ <b>${escapeHtml(productName)}</b> savatga qo'shildi.`,
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "−",
-              callback_data: `${customerCallbackPrefix}:qty:${cartItemId}:dec`,
-            },
-            {
-              text: "+",
-              callback_data: `${customerCallbackPrefix}:qty:${cartItemId}:inc`,
-            },
-          ],
-          [
-            {
-              text: "🛒 Savatni ko'rish",
-              callback_data: `${customerCallbackPrefix}:cart`,
-            },
-          ],
-          [
-            {
-              text: "🍽 Menyuga qaytish",
-              callback_data: `${customerCallbackPrefix}:home`,
-            },
-          ],
-        ],
-      },
     });
   }
 

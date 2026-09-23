@@ -27,7 +27,8 @@ import {
 } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
-import { customerVisibleProductCodes } from "../customers/customer-catalog-visibility";
+import { writeAuditLog } from "../audit/audit-write";
+import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
 import { buildOrderSearchWhere } from "../customers/customer-shared";
 import { InventoryService } from "../inventory/inventory.service";
 import { KitchenService } from "../kitchen/kitchen.service";
@@ -129,7 +130,7 @@ export class OrdersService {
         OR: [{ branchId }, { branchId: null }],
         products: {
           some: {
-            code: { in: [...customerVisibleProductCodes] },
+            ...customerVisibleProductWhere(),
             isAvailable: true,
             OR: [{ branchId }, { branchId: null }],
             ...unavailableProductWhere(branchId),
@@ -148,7 +149,7 @@ export class OrdersService {
 
     const products = await this.prisma.product.findMany({
       where: {
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
         ...unavailableProductWhere(branchId),
@@ -721,6 +722,37 @@ export class OrdersService {
       take: query.limit,
       include: orderInclude(),
     });
+  }
+
+  async permanentlyDeleteOrders(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta buyurtma tanlanishi kerak");
+    const orders = await this.prisma.order.findMany({
+      where: { id: { in: uniqueIds } },
+      select: {
+        id: true,
+        branchId: true,
+        orderNumber: true,
+        _count: { select: { payments: true, paymentOperations: true, cashTransactions: true, revenueRecords: true } },
+      },
+    });
+    if (orders.length !== uniqueIds.length) throw new NotFoundException("Tanlangan buyurtmalarning biri topilmadi");
+    for (const order of orders) resolveBranchScope(user, order.branchId);
+    const blocked = orders.filter((order) => order._count.payments || order._count.paymentOperations || order._count.cashTransactions || order._count.revenueRecords);
+    if (blocked.length) {
+      throw new BadRequestException(`Moliyaviy tarixi bor buyurtmalarni o'chirib bo'lmaydi: ${blocked.map((order) => order.orderNumber).join(", ")}`);
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const events = await tx.orderEvent.findMany({ where: { orderId: { in: uniqueIds } }, select: { id: true } });
+      await tx.outboxEvent.deleteMany({ where: { OR: [
+        { sourceEventId: { in: events.map((event) => event.id) } },
+        { aggregateType: "Order", aggregateId: { in: uniqueIds } },
+      ] } });
+      await tx.orderEvent.deleteMany({ where: { orderId: { in: uniqueIds } } });
+      await tx.order.deleteMany({ where: { id: { in: uniqueIds } } });
+      await writeAuditLog(tx, { userId: user.id, action: "ORDERS_BULK_DELETED", entity: "Order", metadata: { ids: uniqueIds, orders } });
+    });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   async getOrder(id: string, user: AuthenticatedUser) {
@@ -1323,7 +1355,7 @@ export class OrdersService {
       where: {
         id: dto.productId,
         ...(options?.requireCanonical
-          ? { code: { in: [...customerVisibleProductCodes] } }
+          ? customerVisibleProductWhere()
           : {}),
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],

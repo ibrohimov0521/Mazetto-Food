@@ -24,6 +24,7 @@ import { Icon } from "../admin-ui/icon";
 import { Modal } from "../admin-ui/modal";
 import { ImageDropzone } from "../admin-ui/image-dropzone";
 import { useToast } from "../admin-ui/toast";
+import { catalogVisibilityLabel } from "./people-branch-labels";
 
 /*
  * Mahsulot tahrirlash — katalog 2-bosqichi.
@@ -96,7 +97,7 @@ type Product = {
   isRecommended: boolean;
   isCombo: boolean;
   sortOrder: number;
-  catalogVisibility: "CANONICAL" | "LEGACY" | "INTERNAL";
+  catalogVisibility: "CANONICAL" | "LEGACY" | "CUSTOM" | "INTERNAL";
   variants: Variant[];
   modifiers?: {
     isRequired?: boolean;
@@ -1152,12 +1153,14 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                     tone={
                       product.catalogVisibility === "CANONICAL"
                         ? "success"
-                        : product.catalogVisibility === "LEGACY"
+                        : product.catalogVisibility === "CUSTOM"
+                          ? "success"
+                          : product.catalogVisibility === "LEGACY"
                           ? "warning"
                           : "neutral"
                     }
                   >
-                    {product.catalogVisibility}
+                    {catalogVisibilityLabel(product.catalogVisibility)}
                   </Badge>
                 ) : (
                   <Badge tone="neutral">YANGI</Badge>
@@ -1165,8 +1168,8 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                 {product?.isCombo ? <Badge tone="info">SET</Badge> : null}
               </div>
               <p className="text-[13px] text-mz-text-muted">
-                Yangi mahsulot avtomatik ommaviy katalogga kirmaydi. Katalog
-                siyosati alohida tasdiqlanadi.
+                Faol yangi mahsulotlar ommaviy katalog, POS va bot menyusida
+                ko'rinadi. Arxiv pozitsiyalar mijozlarga ko'rsatilmaydi.
               </p>
             </CardBody>
           </Card>

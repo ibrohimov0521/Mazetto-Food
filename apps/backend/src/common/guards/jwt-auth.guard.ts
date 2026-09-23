@@ -15,13 +15,6 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { UserAuthCacheService } from "../auth/user-auth-cache.service";
 import { hashDeviceToken } from "../../modules/devices/devices.service";
 
-const DESKTOP_REQUIRED_ROLES = new Set([
-  "CASHIER",
-  "WAITER",
-  "KITCHEN",
-  "COURIER",
-]);
-
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -85,22 +78,23 @@ export class JwtAuthGuard implements CanActivate {
       return;
     }
 
-    if (!deviceId?.trim()) {
-      if (
-        request.user?.roles.some((role) => DESKTOP_REQUIRED_ROLES.has(role))
-      ) {
-        throw new ForbiddenException(
-          "Bu ish joyi tasdiqlangan desktop qurilma orqali ochilishi kerak.",
-        );
-      }
+    const normalizedDeviceId = deviceId?.trim();
+    const normalizedDeviceToken = deviceToken?.trim();
 
-      // Admin va hisobot rollari oddiy brauzerda ishlashi mumkin. Rasmiy
-      // Desktop har doim device ID yuboradi va quyidagi tekshiruvdan o'tadi.
+    if (!normalizedDeviceId && !normalizedDeviceToken) {
+      // Oddiy web va mobil web qurilma tasdiqlash talab qilmaydi. Rasmiy
+      // desktop app esa device headerlarini yuboradi va pastdagi tekshiruvdan o'tadi.
       return;
     }
 
+    if (!normalizedDeviceId || !normalizedDeviceToken) {
+      throw new ForbiddenException(
+        "Bu desktop qurilma hali kod bilan tasdiqlanmagan.",
+      );
+    }
+
     const device = await this.prisma.device.findUnique({
-      where: { hardwareId: deviceId.trim() },
+      where: { hardwareId: normalizedDeviceId },
       select: { isActive: true, enrolledAt: true, deviceAuthTokenHash: true },
     });
 
@@ -108,8 +102,7 @@ export class JwtAuthGuard implements CanActivate {
       !device?.isActive ||
       !device.enrolledAt ||
       !device.deviceAuthTokenHash ||
-      !deviceToken ||
-      !secureTokenMatches(device.deviceAuthTokenHash, deviceToken)
+      !secureTokenMatches(device.deviceAuthTokenHash, normalizedDeviceToken)
     ) {
       throw new ForbiddenException(
         "Bu desktop qurilma hali kod bilan tasdiqlanmagan.",

@@ -64,6 +64,18 @@ test("bitta maxsus hisobot permissioni hisobot route'ini ochadi", () => {
   );
 });
 
+test("custom admin role permissioni berilgan bo'limni sidebar'da ko'rsatadi", () => {
+  const user = customUser(["ADMIN_ACCESS", "HOMEPAGE_MANAGE"]);
+
+  assert.equal(getPrimaryRedirect(user), "/admin/homepage");
+  assert.equal(checkRouteAccess(user, "/admin/homepage"), "allowed");
+  assert.ok(
+    resolveAdminNav(user).some((group) =>
+      group.items.some((item) => item.href === "/admin/homepage"),
+    ),
+  );
+});
+
 test("CSV qiymatlari vergul, qo'shtirnoq va yangi qatordan himoyalanadi", () => {
   assert.equal(
     toCsv(["Nomi", "Izoh"], [["Lavash, katta", 'U "maxsus"\nissiq']]),

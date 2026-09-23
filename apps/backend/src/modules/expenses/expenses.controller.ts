@@ -58,6 +58,15 @@ export class ExpensesController {
     return this.expensesService.updateCategory(id, dto, user);
   }
 
+  @Delete("categories/bulk/permanent")
+  @Permissions(PERMISSIONS.EXPENSE_CREATE)
+  permanentlyDeleteCategories(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.expensesService.permanentlyDeleteCategories(dto.ids, user);
+  }
+
   @Delete("categories/:id")
   @Permissions(PERMISSIONS.EXPENSE_CREATE)
   archiveCategory(

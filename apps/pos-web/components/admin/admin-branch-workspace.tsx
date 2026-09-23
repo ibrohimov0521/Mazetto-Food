@@ -185,6 +185,7 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
   const { showToast } = useToast();
   const canViewTables = hasPermission(user, "TABLE_VIEW");
   const canCreateTables = hasPermission(user, "TABLE_CREATE");
+  const canEditTables = hasPermission(user, "TABLE_EDIT");
   const [isCreateHallOpen, setIsCreateHallOpen] = useState(false);
   const [hallDraft, setHallDraft] = useState<HallDraft>({
     name: "",
@@ -192,6 +193,7 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
     sortOrder: "0",
   });
   const [isSavingHall, setIsSavingHall] = useState(false);
+  const [selectedHallIds, setSelectedHallIds] = useState<string[]>([]);
 
   const resource = useApiResource<[Branch, HallListItem[]]>(
     () =>
@@ -267,6 +269,19 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
       showToast(messageOf(caught, "Zalni yaratib bo'lmadi."), "danger");
     } finally {
       setIsSavingHall(false);
+    }
+  }
+
+  async function permanentlyDeleteHalls(): Promise<void> {
+    if (!selectedHallIds.length) return;
+    if (!window.confirm(`${selectedHallIds.length} ta zalni bazadan butunlay o'chirishni tasdiqlaysizmi? Stolli zallar o'chirilmaydi.`)) return;
+    try {
+      await apiFetch("/halls/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: selectedHallIds }) });
+      showToast("Tanlangan zallar o'chirildi.", "success");
+      setSelectedHallIds([]);
+      resource.reload();
+    } catch (caught) {
+      showToast(messageOf(caught, "Zallarni o'chirib bo'lmadi."), "danger");
     }
   }
 
@@ -410,6 +425,7 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
       <section className="mt-5" id="halls">
         <Card>
           <CardHeader
+            actions={canEditTables && selectedHallIds.length ? <Button onClick={() => void permanentlyDeleteHalls()} size="lg" variant="danger">{selectedHallIds.length} ta o'chirish</Button> : undefined}
             description={
               canViewTables
                 ? `${halls.length} ta zal. Stol faqat tegishli zal ichidan qo'shiladi.`
@@ -427,6 +443,7 @@ export function AdminBranchWorkspace({ branchId }: { branchId: string }) {
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
                       <div className="min-w-0">
+                        {canEditTables ? <label className="mb-2 flex items-center gap-2 text-[12px] text-mz-text-muted"><input checked={selectedHallIds.includes(hall.id)} onChange={(event) => setSelectedHallIds((current) => event.target.checked ? [...current, hall.id] : current.filter((id) => id !== hall.id))} type="checkbox" /> Tanlash</label> : null}
                         <p className="text-[13px] font-medium text-mz-text-muted">
                           {hall.code}
                         </p>
@@ -597,6 +614,7 @@ export function AdminHallWorkspace({
     sortOrder: "1",
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
 
   const resource = useApiResource<HallDetail>(
     () => apiFetch<HallDetail>(`/halls/${hallId}`),
@@ -740,6 +758,19 @@ export function AdminHallWorkspace({
     }
   }
 
+  async function permanentlyDeleteTables(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    if (!window.confirm(`${ids.length} ta stolni bazadan butunlay o'chirishni tasdiqlaysizmi? Buyurtma tarixi bor stollar o'chirilmaydi.`)) return;
+    try {
+      await apiFetch("/tables/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids }) });
+      showToast("Tanlangan stollar o'chirildi.", "success");
+      setSelectedTableIds([]);
+      resource.reload();
+    } catch (caught) {
+      showToast(messageOf(caught, "Stollarni o'chirib bo'lmadi."), "danger");
+    }
+  }
+
   if (resource.isLoading && !hall) {
     return resourceLoading();
   }
@@ -879,7 +910,8 @@ export function AdminHallWorkspace({
 
       <Card className="mt-5">
         <CardHeader
-          description={`${hall.tables.length} ta faol stol`}
+            actions={canEditTables && selectedTableIds.length ? <Button onClick={() => void permanentlyDeleteTables(selectedTableIds)} size="sm" variant="danger">{selectedTableIds.length} ta o'chirish</Button> : undefined}
+            description={`${hall.tables.length} ta faol stol`}
           title="Stollar"
         />
         <DataTable
@@ -898,13 +930,15 @@ export function AdminHallWorkspace({
           emptyTitle="Stol yo'q"
           getRowKey={(table) => table.id}
           rowActions={(table) => (
-            <RowAction
-              href={`/admin/branches/${branchId}/halls/${hallId}/tables/${table.id}`}
-              icon="eye"
-              label={`${table.name} - ochish`}
-            />
+            <>
+              <RowAction href={`/admin/branches/${branchId}/halls/${hallId}/tables/${table.id}`} icon="eye" label={`${table.name} - ochish`} />
+              {canEditTables ? <RowAction icon="trash" label={`${table.name} - bazadan butunlay o'chirish`} onClick={() => void permanentlyDeleteTables([table.id])} tone="danger" /> : null}
+            </>
           )}
           rows={hall.tables}
+          selectable={canEditTables}
+          selectedKeys={selectedTableIds}
+          onSelectionChange={setSelectedTableIds}
         />
       </Card>
 

@@ -6,7 +6,7 @@ import {
 } from "@prisma/client";
 
 export function orderStatusAfterKitchenHandoff(type: OrderType): OrderStatus {
-  return type === OrderType.TAKEAWAY ? OrderStatus.SERVED : OrderStatus.READY;
+  return type === OrderType.DELIVERY ? OrderStatus.READY : OrderStatus.COMPLETED;
 }
 
 export function kitchenStatusForOrder(

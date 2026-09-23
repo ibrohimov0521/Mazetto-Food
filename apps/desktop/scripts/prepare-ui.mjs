@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   copyFile,
   link,
@@ -60,10 +61,10 @@ await materializeTree(
   join(posDirectory, ".next", "static"),
   join(standaloneApp, ".next", "static"),
 );
-await materializeTree(
-  join(posDirectory, "public"),
-  join(standaloneApp, "public"),
-);
+const publicDirectory = join(posDirectory, "public");
+if (existsSync(publicDirectory)) {
+  await materializeTree(publicDirectory, join(standaloneApp, "public"));
+}
 
 // A packaged Electron binary cannot reliably act as a child Node runtime on
 // Windows. Ship the Node executable used during packaging for the bundled UI.

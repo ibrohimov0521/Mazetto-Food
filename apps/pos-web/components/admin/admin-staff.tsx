@@ -126,10 +126,13 @@ const formatter = new Intl.DateTimeFormat("uz-UZ", {
 
 export function AdminStaffPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("ALL");
   const [branchFilter, setBranchFilter] = useState("ALL");
   const [isPasswordOpen, setIsPasswordOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const canDeleteStaff = hasPermission(user, "STAFF_DELETE");
 
   /*
    * `useApiResource` qo'lda yozilgan `try/catch` o'rniga: u javob TARTIBI
@@ -305,6 +308,19 @@ export function AdminStaffPage() {
   const hasFilters =
     Boolean(query.trim()) || status !== "ALL" || branchFilter !== "ALL";
 
+  async function deleteSelectedStaff(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta xodimni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/staff/bulk", { method: "DELETE", body: JSON.stringify({ ids: selectedIds }) });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta xodim o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Xodimlarni o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   if (isLoading && !data) {
     return (
       <div aria-busy="true" className="grid gap-5">
@@ -354,6 +370,11 @@ export function AdminStaffPage() {
                 <Icon className="h-4 w-4" name="plus" />
                 Yangi xodim
               </ButtonLink>
+              {canDeleteStaff && selectedIds.length ? (
+                <Button onClick={() => void deleteSelectedStaff()} size="lg" variant="danger">
+                  {selectedIds.length} ta o'chirish
+                </Button>
+              ) : null}
             </>
           }
           description={`${staff.length} ta yozuv yuklandi (eng yangi 200 tasi). Qidiruv va filtrlar shu yozuvlar ichida ishlaydi.`}
@@ -436,6 +457,10 @@ export function AdminStaffPage() {
           getRowKey={(item) => item.id}
           isLoading={isLoading}
           rows={filtered}
+          selectable={canDeleteStaff}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
+          selectionDisabled={(item: Staff) => item.id === user?.id}
         />
       </Card>
 
@@ -996,7 +1021,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
         />
       ) : null}
       <form className="space-y-5" onSubmit={handleSubmit} ref={formRef}>
-        <div className="grid items-start gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="grid content-start gap-4 rounded-mz-card border border-mz-border bg-mz-surface p-5 shadow-mz-card">
             <FormField
               label="Ism familiya"
@@ -1140,7 +1165,7 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
                     }
                   : {})}
             >
-              <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-1 rounded-mz-control border border-mz-border bg-mz-surface-sunken p-2 sm:grid-cols-2 2xl:grid-cols-4">
                 {roles.map((role) => (
                   <Checkbox
                     checked={form.roleCodes.includes(role.code)}

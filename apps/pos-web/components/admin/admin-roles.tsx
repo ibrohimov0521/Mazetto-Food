@@ -86,6 +86,7 @@ export function AdminRolesPage() {
   const [editorQuery, setEditorQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [pendingArchive, setPendingArchive] = useState<Role | null>(null);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
 
   const {
     data,
@@ -268,6 +269,42 @@ export function AdminRolesPage() {
     }
   }
 
+  async function permanentlyDeleteRoles(): Promise<void> {
+    if (!selectedRoleIds.length) return;
+    if (!window.confirm(`${selectedRoleIds.length} ta maxsus rolni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    setIsSaving(true);
+    try {
+      await apiFetch("/roles/bulk/permanent", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedRoleIds }),
+      });
+      showToast("Tanlangan maxsus rollar o'chirildi.", "success");
+      setSelectedRoleIds([]);
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Rollarni o'chirib bo'lmadi.", "danger");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function permanentlyDeleteRole(id: string): Promise<void> {
+    if (!window.confirm("Bu maxsus rolni bazadan butunlay o'chirishni tasdiqlaysizmi?")) return;
+    setIsSaving(true);
+    try {
+      await apiFetch("/roles/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: [id] }) });
+      showToast("Maxsus rol bazadan o'chirildi.", "success");
+      setSelectedRoleIds((current) => current.filter((roleId) => roleId !== id));
+      load();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Rolni o'chirib bo'lmadi.", "danger");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <div aria-busy="true" className="grid gap-5">
@@ -382,10 +419,13 @@ export function AdminRolesPage() {
         <CardHeader
           actions={
             canManage ? (
-              <Button onClick={openCreate}>
-                <Icon className="h-4 w-4" name="plus" />
-                Yangi maxsus rol
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {selectedRoleIds.length ? <Button onClick={() => void permanentlyDeleteRoles()} variant="danger">{selectedRoleIds.length} ta o'chirish</Button> : null}
+                <Button onClick={openCreate}>
+                  <Icon className="h-4 w-4" name="plus" />
+                  Yangi maxsus rol
+                </Button>
+              </div>
             ) : null
           }
           description="Har rolning huquq hajmi va doirasi"
@@ -403,6 +443,15 @@ export function AdminRolesPage() {
                 key={role.id}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
+                  {!role.isSystem && canManage ? (
+                    <input
+                      aria-label={`${role.name}ni tanlash`}
+                      checked={selectedRoleIds.includes(role.id)}
+                      className="mt-1 h-4 w-4"
+                      onChange={() => setSelectedRoleIds((current) => current.includes(role.id) ? current.filter((id) => id !== role.id) : [...current, role.id])}
+                      type="checkbox"
+                    />
+                  ) : null}
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-mz-text">
                       {roleCodeLabel(role.code)}
@@ -449,6 +498,14 @@ export function AdminRolesPage() {
                     >
                       <Icon className="h-4 w-4" name="trash" />
                       Arxivlash
+                    </Button>
+                    <Button
+                      onClick={() => void permanentlyDeleteRole(role.id)}
+                      size="sm"
+                      variant="danger"
+                    >
+                      <Icon className="h-4 w-4" name="trash" />
+                      Butunlay o'chirish
                     </Button>
                   </div>
                 ) : null}

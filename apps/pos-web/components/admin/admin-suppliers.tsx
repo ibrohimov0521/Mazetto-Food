@@ -94,6 +94,7 @@ export function AdminSuppliersPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Supplier | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
 
   const {
@@ -237,7 +238,7 @@ export function AdminSuppliersPage() {
     }
   }
 
-  async function confirmArchive(): Promise<void> {
+  async function confirmDelete(): Promise<void> {
     if (!pendingDelete) {
       return;
     }
@@ -245,11 +246,11 @@ export function AdminSuppliersPage() {
     setIsArchiving(true);
 
     try {
-      await apiFetch(`/suppliers/${pendingDelete.id}`, { method: "DELETE" });
-      showToast(
-        `${pendingDelete.name} arxivlandi va ro'yxatdan chiqdi.`,
-        "success",
-      );
+      await apiFetch("/suppliers/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: [pendingDelete.id] }),
+      });
+      showToast(`${pendingDelete.name} bazadan butunlay o'chirildi.`, "success");
       setPendingDelete(null);
       load();
     } catch (caught) {
@@ -258,9 +259,28 @@ export function AdminSuppliersPage() {
       }
 
       showToast(
-        caught instanceof Error ? caught.message : "Arxivlab bo'lmadi.",
+        caught instanceof Error ? caught.message : "O'chirib bo'lmadi.",
         "danger",
       );
+    } finally {
+      setIsArchiving(false);
+    }
+  }
+
+  async function deleteSelected(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta yetkazib beruvchini bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    setIsArchiving(true);
+    try {
+      await apiFetch("/suppliers/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta yetkazib beruvchi o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Yetkazib beruvchilarni o'chirib bo'lmadi.", "danger");
     } finally {
       setIsArchiving(false);
     }
@@ -341,11 +361,18 @@ export function AdminSuppliersPage() {
       <Card>
         <CardHeader
           actions={
-            canCreate ? (
-              <Button onClick={openCreate} size="lg">
-                Yangi yetkazib beruvchi
-              </Button>
-            ) : undefined
+            <div className="flex flex-wrap gap-2">
+              {canEdit && selectedIds.length ? (
+                <Button onClick={() => void deleteSelected()} size="lg" variant="danger">
+                  {selectedIds.length} ta o&apos;chirish
+                </Button>
+              ) : null}
+              {canCreate ? (
+                <Button onClick={openCreate} size="lg">
+                  Yangi yetkazib beruvchi
+                </Button>
+              ) : null}
+            </div>
           }
           description="Aloqa kartotekasi — xarid buyurtmasi va qarz hisobi hali yo'q"
           title="Yetkazib beruvchilar"
@@ -401,6 +428,9 @@ export function AdminSuppliersPage() {
           getRowKey={(supplier) => supplier.id}
           isLoading={isLoading}
           rows={filtered}
+          selectable={canEdit}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
           {...(canEdit
             ? {
                 rowActions: (supplier: Supplier) => (
@@ -412,7 +442,7 @@ export function AdminSuppliersPage() {
                     />
                     <RowAction
                       icon="trash"
-                      label={`${supplier.name} — arxivlash`}
+                      label={`${supplier.name} — bazadan butunlay o'chirish`}
                       onClick={() => setPendingDelete(supplier)}
                       tone="danger"
                     />
@@ -551,7 +581,7 @@ export function AdminSuppliersPage() {
       </Modal>
 
       <Modal
-        description="Bu HARD DELETE emas: yozuv arxivlanadi va mavjud zaxira harakatlari saqlanib qoladi."
+        description="Yozuv bazadan butunlay o'chiriladi. Bog'langan tarix mavjud bo'lsa, server o'chirishni rad etadi."
         footer={
           <>
             <Button onClick={() => setPendingDelete(null)} variant="ghost">
@@ -559,28 +589,27 @@ export function AdminSuppliersPage() {
             </Button>
             <Button
               isLoading={isArchiving}
-              onClick={() => void confirmArchive()}
+              onClick={() => void confirmDelete()}
               size="lg"
               variant="danger"
             >
-              Arxivlash
+              Butunlay o'chirish
             </Button>
           </>
         }
         isOpen={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
-        title="Arxivlashni tasdiqlang"
+        title="Butunlay o'chirishni tasdiqlang"
       >
         <div className="grid gap-3">
           <p className="text-sm text-mz-text">
             <span className="font-semibold">{pendingDelete?.name}</span>{" "}
-            arxivlanadi va ro&apos;yxatda ko&apos;rinmaydi.
+            bazadan butunlay o&apos;chiriladi va ro&apos;yxatda ko&apos;rinmaydi.
           </p>
           <p className="rounded-mz-control border border-mz-border border-l-4 border-l-mz-warning bg-mz-surface px-3 py-2 text-[13px] text-mz-text-muted">
-            Bu amalni panel orqali QAYTARIB BO&apos;LMAYDI: ro&apos;yxat faqat
-            faol yozuvlarni qaytaradi, arxivlanganlarni ko&apos;rsatadigan
-            endpoint hali yo&apos;q. Kerak bo&apos;lsa yozuvni qaytadan
-            qo&apos;shing.
+            Bu amalni panel orqali qaytarib bo&apos;lmaydi. Bog&apos;langan zaxira
+            harakatlari mavjud bo&apos;lsa, server ma&apos;lumotlar tarixini saqlash
+            uchun o&apos;chirishni rad etadi.
           </p>
         </div>
       </Modal>

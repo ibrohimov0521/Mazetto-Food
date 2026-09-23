@@ -41,6 +41,15 @@ test("customer and kitchen documents use separate durable print routes", () => {
   assert.match(receiptService, /!isKitchen \? paymentCommands/);
 });
 
+test("receipt output is localized for order type, time and quantities", () => {
+  assert.match(receiptWriter, /orderTypeLabel\(order\.type\)/);
+  assert.match(receiptWriter, /formatTashkentDateTime\(new Date\(\)\)/);
+  assert.match(receiptWriter, /formatQuantity\(item\.quantity\)/);
+  assert.match(receiptService, /formatReceiptOrderType/);
+  assert.match(receiptService, /formatReceiptDateTime/);
+  assert.match(receiptService, /formatReceiptQuantity/);
+});
+
 test("production startup migrates the print queue and restores old unprinted receipts", () => {
   assert.match(backendDockerfile, /ensure-print-queue\.mjs/);
   assert.doesNotMatch(backendDockerfile, /prisma:migrate:deploy/);

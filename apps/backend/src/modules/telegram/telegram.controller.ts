@@ -2,6 +2,7 @@ import { Body, Controller, Param, Post, UnauthorizedException } from "@nestjs/co
 import { Public } from "../../common/decorators/public.decorator";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
+import { TelegramStaffService } from "./telegram-staff.service";
 
 type TelegramDiagnosticMessage = {
   chat?: {
@@ -23,14 +24,18 @@ export class TelegramController {
   constructor(
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
+    private readonly telegramStaffService?: TelegramStaffService,
   ) {}
 
   @Public()
   @Post("webhook/:secret")
   async handleWebhook(@Param("secret") secret: string, @Body() update: unknown) {
-    this.assertWebhookSecret(secret);
+    this.assertWebhookSecret(secret, process.env.TELEGRAM_WEBHOOK_SECRET);
 
-    if (await this.handleStaffChatIdDiagnostic(update)) {
+    // Diagnostic commands belong to the customer bot when sent to its webhook;
+    // handle them before customer auth/ordering so a partial test double or a
+    // normal customer update can never turn /staffid into a generic error.
+    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_BOT_TOKEN)) {
       return { ok: true, handled: true };
     }
 
@@ -44,15 +49,27 @@ export class TelegramController {
     return this.telegramOrderNotificationService.handleWebhook(secret, update);
   }
 
-  private assertWebhookSecret(secret: string): void {
-    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  @Public()
+  @Post("staff-webhook/:secret")
+  async handleStaffWebhook(@Param("secret") secret: string, @Body() update: unknown) {
+    this.assertWebhookSecret(secret, process.env.TELEGRAM_STAFF_WEBHOOK_SECRET);
+    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_STAFF_BOT_TOKEN)) {
+      return { ok: true, handled: true };
+    }
+    return (
+      (await this.telegramStaffService?.handleWebhookUpdate(update)) ??
+      { ok: true, handled: false }
+    );
+  }
+
+  private assertWebhookSecret(secret: string, expectedSecret: string | undefined): void {
 
     if (!expectedSecret || secret !== expectedSecret) {
       throw new UnauthorizedException("Invalid Telegram webhook secret");
     }
   }
 
-  private async handleStaffChatIdDiagnostic(update: unknown): Promise<boolean> {
+  private async handleStaffChatIdDiagnostic(update: unknown, token = process.env.TELEGRAM_BOT_TOKEN): Promise<boolean> {
     const message = this.toTelegramDiagnosticUpdate(update).message;
 
     if (!message?.chat?.id || !this.isDiagnosticCommand(message.text)) {
@@ -67,7 +84,7 @@ export class TelegramController {
           telegramUserId === undefined || telegramUserId === null
             ? "Telegram foydalanuvchi ID topilmadi. Botga shaxsiy chatdan /myid yuboring."
             : `Sizning Telegram ID: ${telegramUserId}\n\nBu raqamni Admin boshqaruv → Xodimlar → Telegram foydalanuvchi ID maydoniga kiriting.`,
-      });
+      }, token);
       return true;
     }
 
@@ -79,7 +96,7 @@ export class TelegramController {
         `Chat type: ${message.chat.type ?? "unknown"}`,
         ...(message.chat.title ? [`Title: ${message.chat.title}`] : []),
       ].join("\n"),
-    });
+    }, token);
 
     return true;
   }
@@ -100,9 +117,8 @@ export class TelegramController {
     return update && typeof update === "object" ? (update as TelegramDiagnosticUpdate) : {};
   }
 
-  private async telegramRequest(method: string, payload: unknown): Promise<void> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-
+  private async telegramRequest(method: string, payload: unknown, requestToken = process.env.TELEGRAM_BOT_TOKEN): Promise<void> {
+    const token = requestToken;
     if (!token) {
       return;
     }

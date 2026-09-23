@@ -44,6 +44,16 @@ export class RolesController {
     return this.rolesService.updateRole(id, dto, user);
   }
 
+  @Delete("roles/bulk/permanent")
+  @Roles("SUPER_ADMIN")
+  @Permissions(PERMISSIONS.ROLE_MANAGE)
+  permanentlyDeleteRoles(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.rolesService.permanentlyDeleteRoles(dto.ids, user);
+  }
+
   @Delete("roles/:id")
   @Roles("SUPER_ADMIN")
   @Permissions(PERMISSIONS.ROLE_MANAGE)

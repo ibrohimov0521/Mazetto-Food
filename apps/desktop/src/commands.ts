@@ -29,15 +29,17 @@ const registry: OfflineCommandDefinition[] = [
 
 const onlineOnlyMutationPatterns = [
   /^\/api\/v1\/(?:auth|customer|telegram|uploads)(?:\/|$)/,
-  /^\/api\/v1\/(?:branches|devices|expenses|homepage|inventory|menu|notifications|printers|recipes|roles|settings|staff|suppliers)(?:\/|$)/,
+  /^\/api\/v1\/(?:branches|customers|devices|expenses|homepage|inventory|menu|notifications|printers|recipes|roles|settings|staff|suppliers)(?:\/|$)/,
   /^\/api\/v1\/(?:tables|halls)(?:\/|$)/,
   /^\/api\/v1\/payments$/,
   /^\/api\/v1\/payments\/[^/]+\/refund$/,
   /^\/api\/v1\/orders$/,
+  /^\/api\/v1\/orders\/bulk$/,
   /^\/api\/v1\/orders\/bulk\/status$/,
   /^\/api\/v1\/courier\/orders\/[^/]+\/assign$/,
   /^\/api\/v1\/shifts\/[^/]+\/force-handover$/,
   /^\/api\/v1\/receipts\/(?:print-jobs(?:\/|$)|[^/]+\/reprint$)/,
+  /^\/api\/v1\/receipts\/bulk$/,
 ] as const;
 
 export type OfflineMutationPolicy = "queueable" | "online-only" | "unknown";

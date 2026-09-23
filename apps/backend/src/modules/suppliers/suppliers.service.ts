@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -55,6 +55,25 @@ export class SuppliersService {
       where: { id },
       data: { isActive: false },
     });
+  }
+
+  async deleteSuppliersBulk(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta yetkazib beruvchi tanlanishi kerak");
+
+    const suppliers = await this.prisma.supplier.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, branchId: true },
+    });
+    if (suppliers.length !== uniqueIds.length) {
+      throw new NotFoundException("Tanlangan yetkazib beruvchilarning biri topilmadi");
+    }
+    for (const supplier of suppliers) {
+      if (supplier.branchId) resolveBranchScope(user, supplier.branchId);
+    }
+
+    await this.prisma.supplier.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   private async assertSupplier(id: string, user: AuthenticatedUser): Promise<void> {

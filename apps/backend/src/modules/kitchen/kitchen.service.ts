@@ -473,7 +473,7 @@ export class KitchenService {
 
       const now = new Date();
       if (
-        transition.orderStatus === OrderStatus.SERVED &&
+        transition.orderStatus === OrderStatus.COMPLETED &&
         order.type === OrderType.TAKEAWAY &&
         order.customerOrder?.paymentMethod?.toUpperCase() === "CASH"
       ) {
@@ -509,6 +509,14 @@ export class KitchenService {
 
         if (user?.employeeId) {
           orderData.cancelledBy = { connect: { id: user.employeeId } };
+        }
+      }
+
+      if (transition.orderStatus === OrderStatus.COMPLETED) {
+        orderData.closedAt = now;
+        if (user?.employeeId) {
+          orderData.closedBy = { connect: { id: user.employeeId } };
+          orderData.servedBy = { connect: { id: user.employeeId } };
         }
       }
 

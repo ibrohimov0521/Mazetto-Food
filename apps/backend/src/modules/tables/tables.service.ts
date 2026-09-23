@@ -297,6 +297,36 @@ export class TablesService {
     });
   }
 
+  async permanentlyDeleteHalls(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta zal tanlanishi kerak");
+    const halls = await this.prisma.hall.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, branchId: true, _count: { select: { tables: true } } },
+    });
+    if (halls.length !== uniqueIds.length) throw new NotFoundException("Tanlangan zallardan biri topilmadi");
+    for (const hall of halls) resolveBranchScope(user, hall.branchId);
+    const occupied = halls.find((hall) => hall._count.tables > 0);
+    if (occupied) throw new BadRequestException("Stollari mavjud zalni avval bo'shating yoki arxivlang");
+    await this.prisma.hall.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
+  async permanentlyDeleteTables(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta stol tanlanishi kerak");
+    const tables = await this.prisma.restaurantTable.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, branchId: true, _count: { select: { orders: true } } },
+    });
+    if (tables.length !== uniqueIds.length) throw new NotFoundException("Tanlangan stollardan biri topilmadi");
+    for (const table of tables) resolveBranchScope(user, table.branchId);
+    const withHistory = tables.find((table) => table._count.orders > 0);
+    if (withHistory) throw new BadRequestException("Buyurtma tarixi bor stolni o'chirib bo'lmaydi");
+    await this.prisma.restaurantTable.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   async createOrderForTable(
     id: string,
     dto: CreateTableOrderDto,

@@ -18,6 +18,7 @@ import { ErrorState } from "../admin-ui/feedback";
 import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
 import { useToast } from "../admin-ui/toast";
+import { catalogVisibilityLabel } from "./people-branch-labels";
 
 /*
  * Mahsulotlar katalogi.
@@ -34,7 +35,7 @@ import { useToast } from "../admin-ui/toast";
  * uchun u faqat filtr va nishon — tugma emas.
  */
 
-type CatalogVisibility = "CANONICAL" | "LEGACY" | "INTERNAL";
+type CatalogVisibility = "CANONICAL" | "CUSTOM" | "LEGACY" | "INTERNAL";
 
 type Category = {
   id: string;
@@ -67,7 +68,10 @@ type Product = {
   variants: ProductVariant[];
 };
 
-type PendingAction = { product: Product; mode: "archive" | "restore" };
+type PendingAction = {
+  product: Product;
+  mode: "archive" | "restore" | "delete";
+};
 
 export function AdminProductsPage() {
   const { user } = useAuth();
@@ -79,6 +83,7 @@ export function AdminProductsPage() {
   const [categoryId, setCategoryId] = useState("ALL");
   const [visibility, setVisibility] = useState("ALL");
   const [status, setStatus] = useState("ALL");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     const requestedCategory = new URLSearchParams(window.location.search).get(
@@ -164,6 +169,11 @@ export function AdminProductsPage() {
           method: "DELETE",
         });
         showToast(`${pending.product.name} menyudan olindi.`, "success");
+      } else if (pending.mode === "delete") {
+        await apiFetch(`/menu/products/${pending.product.id}/permanent`, {
+          method: "DELETE",
+        });
+        showToast(`${pending.product.name} butunlay o'chirildi.`, "success");
       } else {
         await apiFetch(`/menu/products/${pending.product.id}`, {
           method: "PATCH",
@@ -188,6 +198,23 @@ export function AdminProductsPage() {
     }
   }
 
+  async function permanentlyDeleteSelected(): Promise<void> {
+    const selected = products.filter((product) => selectedIds.includes(product.id));
+    if (!selected.length) return;
+    if (!window.confirm(`${selected.length} ta mahsulotni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/menu/products/bulk/permanent", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selected.map((product) => product.id) }),
+      });
+      setSelectedIds([]);
+      showToast(`${selected.length} ta mahsulot o'chirildi.`, "success");
+      load();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Tanlangan mahsulotlarni o'chirib bo'lmadi.", "danger");
+    }
+  }
+
   const columns: DataTableColumn<Product>[] = [
     {
       key: "product",
@@ -204,12 +231,14 @@ export function AdminProductsPage() {
               tone={
                 product.catalogVisibility === "CANONICAL"
                   ? "success"
+                  : product.catalogVisibility === "CUSTOM"
+                    ? "success"
                   : product.catalogVisibility === "LEGACY"
                     ? "warning"
                     : "neutral"
               }
             >
-              {product.catalogVisibility}
+              {catalogVisibilityLabel(product.catalogVisibility)}
             </UiBadge>
             {product.isCombo ? <UiBadge tone="info">SET</UiBadge> : null}
             {!product.isAvailable ? (
@@ -262,15 +291,17 @@ export function AdminProductsPage() {
               : `${filtered.length} / ${products.length} ta mahsulot`
           }
           title="Mahsulotlar"
-          {...(isFiltered
-            ? {
-                actions: (
-                  <Button onClick={resetFilters} size="sm" variant="ghost">
-                    Filtrni tozalash
-                  </Button>
-                ),
-              }
-            : {})}
+          actions={
+            selectedIds.length ? (
+              <Button onClick={() => void permanentlyDeleteSelected()} size="sm" variant="danger">
+                {selectedIds.length} ta tanlanganini o'chirish
+              </Button>
+            ) : isFiltered ? (
+              <Button onClick={resetFilters} size="sm" variant="ghost">
+                Filtrni tozalash
+              </Button>
+            ) : undefined
+          }
         />
 
         <FilterBar>
@@ -313,9 +344,10 @@ export function AdminProductsPage() {
                   onChange={(event) => setVisibility(event.target.value)}
                 >
                   <option value="ALL">Barchasi</option>
-                  <option value="CANONICAL">Canonical</option>
-                  <option value="LEGACY">Legacy</option>
-                  <option value="INTERNAL">Internal</option>
+                  <option value="CANONICAL">Ommaviy menyu</option>
+                  <option value="CUSTOM">Qo&apos;shilgan ommaviy</option>
+                  <option value="LEGACY">Arxiv</option>
+                  <option value="INTERNAL">Faqat ichki</option>
                 </Select>
               )}
             </FormField>
@@ -363,6 +395,10 @@ export function AdminProductsPage() {
           getRowKey={(product) => product.id}
           isLoading={isLoading && !data}
           rows={filtered}
+          selectable={canArchive}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
+          selectionDisabled={(product: Product) => product.catalogVisibility !== "CUSTOM"}
           rowActions={(product: Product) => (
             <>
                     {/*
@@ -398,6 +434,14 @@ export function AdminProductsPage() {
                         />
                       )
                     ) : null}
+                    {canArchive && product.catalogVisibility === "CUSTOM" ? (
+                      <RowAction
+                        icon="trash"
+                        label={`${product.name} — butunlay o'chirish`}
+                        onClick={() => setPending({ product, mode: "delete" })}
+                        tone="danger"
+                      />
+                    ) : null}
             </>
           )}
         />
@@ -407,7 +451,9 @@ export function AdminProductsPage() {
         description={
           pending?.mode === "archive"
             ? "Mahsulot o'chirilmaydi — menyudan chiqadi va mijoz saytida ko'rinmay qoladi. Buyurtma tarixi saqlanadi, keyin qaytarish mumkin."
-            : "Mahsulot menyuga qaytadi va mijoz saytida darhol ko'rinadi."
+            : pending?.mode === "delete"
+              ? "Mahsulot bazadan butunlay o'chiriladi. Agar u buyurtma, savat, retsept, set yoki aksiya bilan bog'langan bo'lsa tizim o'chirishni rad qiladi."
+              : "Mahsulot menyuga qaytadi va mijoz saytida darhol ko'rinadi."
         }
         footer={
           <>
@@ -417,10 +463,16 @@ export function AdminProductsPage() {
             <Button
               isLoading={isMutating}
               onClick={() => void confirmPending()}
-              variant={pending?.mode === "archive" ? "danger" : "primary"}
+              variant={
+                pending?.mode === "archive" || pending?.mode === "delete"
+                  ? "danger"
+                  : "primary"
+              }
             >
               {pending?.mode === "archive"
                 ? "Menyudan olish"
+                : pending?.mode === "delete"
+                  ? "Butunlay o'chirish"
                 : "Menyuga qaytarish"}
             </Button>
           </>
@@ -431,6 +483,8 @@ export function AdminProductsPage() {
           pending
             ? pending.mode === "archive"
               ? `${pending.product.name} menyudan olinsinmi?`
+              : pending.mode === "delete"
+                ? `${pending.product.name} butunlay o'chirilsinmi?`
               : `${pending.product.name} qaytarilsinmi?`
             : "Tasdiqlash"
         }

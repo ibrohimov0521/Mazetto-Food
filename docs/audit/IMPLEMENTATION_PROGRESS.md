@@ -1,6 +1,50 @@
 # Audit remediation implementation progress
 
-Last local checkpoint: 2026-09-21 13:05 Asia/Tashkent.
+Last local checkpoint: 2026-09-23 Asia/Tashkent.
+
+## Continuation checkpoint: 2026-09-23
+
+The following release-candidate changes are on branch
+`fix/release-readiness-batch` and are not deployed to production yet:
+
+- Admin permanent and bulk deletion was added for products, categories,
+  orders, receipts, staff, devices, printers, suppliers, customers,
+  ingredients, warehouses, roles, expense categories, branches, modifiers,
+  homepage slides/promotions, halls and tables.
+- Destructive actions are guarded by permission, branch scope and historical
+  references. Financial/order history is not deleted when doing so would break
+  audit or ledger integrity; the API rejects those records explicitly.
+- Single-row delete actions now use the same permanent-delete contract as the
+  corresponding bulk action where both archive and delete are offered.
+- Receipts now expose the same guarded permanent-delete action for one row as
+  for multi-selection; an open receipt detail is closed after deletion.
+- The destructive-action audit is now explicit: operational master data has
+  guarded single-row and multi-row permanent deletion where references allow
+  it; audit events, payments, expense records, shifts and reports remain
+  immutable, while reversible business data keeps archive/restore controls.
+- Hall/table administration follows the same rule: empty halls/tables can be
+  permanently removed, but tables with order history are rejected rather than
+  corrupting historical orders.
+- Current release-branch checkpoints include `a39ef30`, `b413454`, `a613832`
+  and `b4ae108` (plus their preceding remediation commits).
+
+Verification after this checkpoint:
+
+- Backend tests: 244/244 passed.
+- Backend and POS/Admin typechecks passed.
+- Telegram typecheck passed.
+- Read-only production smoke: 23/23 passed against the default public
+  production domains; no write operation was performed.
+- Media validation: 74 available product assets, 0 unresolved available
+  product assets, 10 category assets.
+- Production PostgreSQL backup was restored into an isolated container and all
+  40 migrations were rehearsed there; production was not modified.
+
+Still open before the final release: authenticated human Telegram/staff-group
+acceptance, physical Godex/ESC-POS printer acceptance, real Desktop offline
+and updater regression, customer media/browser visual acceptance, PR merge to
+protected `main`, Dokploy deployment, and post-deploy smoke. The branch has
+not been pushed; no PR or production deployment is claimed by this checkpoint.
 
 This file tracks implementation before the requested final combined push and
 deploy. Changes below are intentionally local until the whole release batch is
@@ -29,6 +73,27 @@ ready and its database rollout has been rehearsed.
 - Device hardening portion of `AUD-122`: enrollment issues a random 256-bit
   device secret, only its hash is stored server-side, official Gateway and print
   worker send it, and the backend uses constant-time verification.
+- Desktop update feed now honors `MAZETTO_DESKTOP_UPDATE_URL`: the built-in
+  GitHub release feed remains supported, while Dokploy/admin-managed generic
+  feeds use electron-updater's generic provider. Both paths have regression
+  tests; installed Windows download/install still requires human acceptance.
+- Cash payment refunds are available from the admin Payments page. The flow
+  requires `PAYMENT_REFUND`, an open branch shift and a reason, then writes an
+  immutable reversal, cash transaction, audit event and refund receipt queue
+  entry. Click/Payme/Card provider refunds remain disabled until signed
+  provider callbacks and reconciliation are available.
+- Admin sidebar access now follows the same permission-first rule as admin
+  route access, so custom roles with `ADMIN_ACCESS` and an explicit section
+  permission see the section in navigation even when they are not one of the
+  built-in role codes. The behavior is covered by custom-role tests.
+- Custom admin login redirects now include the full admin workspace permission
+  set (homepage, kitchen monitor, courier/customer management, devices,
+  payments, receipts, printers, shifts, inventory and recipes). Operational
+  permissions such as `TABLE_VIEW` still keep their waiter workspace priority.
+- Customer-web authentication now restores and rotates refresh sessions through
+  the Secure HttpOnly cookie. Legacy local refresh tokens are consumed only
+  once for migration, then removed; customer localStorage keeps no refresh
+  token. Production cookie/CORS/CSRF behavior still needs hosted acceptance.
 
 ## Added database changes
 
@@ -41,21 +106,21 @@ devices need a coordinated one-time re-enrollment after the credential migration
 ## Verification completed
 
 - Backend typecheck passed.
-- Backend tests: 231 passed.
+- Backend tests: 244 passed.
 - Desktop typecheck passed.
-- Desktop tests: 38 passed, including command registry, virtual printer and mutation-contract tests.
+- Desktop tests: 40 passed, including command registry, virtual printer and mutation-contract tests.
 - POS typecheck and lint passed.
 - Workspace typecheck/lint: 12/12 Turbo tasks passed.
 - Workspace production build: 6/6 Turbo tasks passed.
-- Operations validators: 31/31 passed.
-- `pnpm test`: backend 231/231 and Desktop 38/38 passed.
-- Windows note: the combined `pnpm verify` run completed all 18 Turbo tasks,
-  but its interactive Turbo cache writer did not exit after printing success;
-  `pnpm validate` was therefore run separately and exited successfully.
+- Operations validators: 33/33 passed, including the admin deletion matrix.
+- `pnpm test`: backend 244/244 and Desktop 43/43 passed.
+- `pnpm release:acceptance`: passed end-to-end after the runner was changed to
+  call each package directly instead of relying on Turbo's aggregate process on
+  Windows.
 
 ## Second local remediation batch
 
-- `AUD-101` partial: all 39 migrations were applied twice to an isolated clean
+- `AUD-101` partial: all 40 migrations were applied to an isolated clean
   PostgreSQL 18 database and historical migration checksums are now enforced by
   `pnpm validate`. A restored-production-copy rehearsal remains mandatory.
 - `AUD-114`/`AUD-115`: Desktop reports/tests every managed printer; the receipt
@@ -85,9 +150,11 @@ devices need a coordinated one-time re-enrollment after the credential migration
   authenticated realtime socket is healthy and returns to 15 seconds offline.
 - `AUD-154`: the protected system-health view includes timeout-bounded,
   credential-redacted geocoding and media dependency readiness.
-- `AUD-102`: one `pnpm release:acceptance` runner now executes workspace verify
-  and tests, with optional read-only production smoke, plus a human evidence
-  record for backup, Telegram, Desktop and physical printing.
+- `AUD-102`: one `pnpm release:acceptance` runner now executes package-level
+  generate/typecheck/lint/build/test stages, static validators, media asset
+  validation and the disposable order-to-print E2E, with optional read-only
+  production smoke, plus a human evidence record for backup, Telegram, Desktop
+  and physical printing.
 - `AUD-140`/`AUD-143`: authorization remains permission-first for custom roles;
   every shell route must now declare sidebar, child, workspace or hidden intent.
 - `AUD-141`: browser refresh secrets are migrated out of localStorage into
@@ -95,6 +162,10 @@ devices need a coordinated one-time re-enrollment after the credential migration
 - `AUD-151`/`AUD-153`/`AUD-155`: Telegram's single webhook owner, alert owners
   and thresholds are documented and validated; system health reports print
   dead letters, stale devices and a redacted CORS configuration fingerprint.
+- Telegram diagnostic commands now terminate before customer authentication on
+  the customer webhook, and staff diagnostics reply with the token belonging
+  to the webhook that received the update. Legacy quick-add callbacks cannot
+  add hidden/legacy products back into a customer cart.
 - `AUD-131` core CASH workflow: branch managers with `PAYMENT_REFUND` can fully
   refund a successful CASH payment against an open branch shift. The operation
   is idempotent and records an immutable refund, negative revenue adjustment,
@@ -126,7 +197,7 @@ devices need a coordinated one-time re-enrollment after the credential migration
   The runner is ready, but a current production backup is still required before
   it can satisfy the release gate.
 
-The clean-database rehearsal applies all 39 migrations, including refund and
+The clean-database rehearsal applies all 40 migrations, including refund and
 expense-category lifecycle schemas, and verifies five refund foreign keys. The
 guarded disposable E2E passed
 after migration and seed, proving web and Telegram order creation through
@@ -134,9 +205,11 @@ payment, revenue, cash movement, stock movement, receipt, print job and payment
 audit. Aggregate backend, Desktop, workspace and operations suites were rerun at
 this checkpoint and passed as recorded above.
 
-The final local acceptance rerun passed 12/12 typecheck/lint tasks, 6/6 builds,
-31/31 validators, 231 backend tests, 38 Desktop tests and the disposable
-39-migration E2E. A `pg@8` deprecation warning can still be emitted by Prisma's
+The final local acceptance rerun passed backend, POS, customer-web,
+Telegram-bot, print-agent and Desktop typecheck/lint/build stages, 33/33
+validators, media validation with 0 unresolved product assets, 244 backend
+tests, 43 Desktop tests and the disposable 40-migration E2E. A `pg@8`
+deprecation warning can still be emitted by Prisma's
 interactive transaction adapter during the deliberate concurrent-idempotency
 exercise; the assertions and cleanup pass, and this dependency warning is not
 recorded as production certification.
@@ -149,10 +222,10 @@ contain the generated public media and its local API content was unavailable.
 
 ## Remaining release gates
 
-1. `AUD-101`: obtain a current production backup from the PostgreSQL Docker
-   service on the self-hosted Dokploy server, restore it to isolation,
-   reconcile `_prisma_migrations`, and rehearse deploy plus rollback. No
-   production migration or deploy before this gate.
+1. `AUD-101`: the current production backup was obtained from the PostgreSQL
+   Docker service, restored to isolation, checked with `pg_restore --list`, and
+   all 40 migrations were rehearsed against the restored copy. Production
+   migration/deploy is still gated on PR merge and the final rollback record.
 2. `AUD-102`, `AUD-152`, `AUD-160`: complete recorded customer media/browser
    and live Telegram staff-group acceptance. Staff role matrix and disposable
    order-to-cash-to-stock-to-print E2E are automated.
@@ -169,3 +242,18 @@ contain the generated public media and its local API content was unavailable.
    claim.
 8. Only after the blocking gates: bump Desktop version, build/publish update,
    run release smoke, then perform the single requested push/deploy.
+
+Latest local acceptance evidence includes a successful combined
+`pnpm release:acceptance` run. The runner now avoids the Windows Turbo hang by
+executing package-level stages directly with `TURBO_DAEMON=false`; backend,
+POS/Admin, customer web, Telegram bot, print agent, Desktop, 33/33 validators,
+media validation, 40-migration disposable E2E and cleanup all passed. No deploy
+was performed; the release remains gated on physical printer/live Telegram
+evidence and the protected-main release flow.
+
+The read-only smoke suite was rerun again against the default public production
+domains at 2026-09-23 10:32 Asia/Tashkent: `pnpm release:smoke` failed `0/23`.
+Every checked public endpoint returned HTTP 530 through the Cloudflare-backed
+hostnames (`api.mazettofood.uz`, `mazettofood.uz`, `pos.mazettofood.uz` and
+`media.mazettofood.uz`). This is a current production connectivity/origin gate;
+it does not reflect this local release branch being deployed.

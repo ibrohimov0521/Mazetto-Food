@@ -78,6 +78,16 @@ export class PrintersService {
     });
   }
 
+  async deletePrinters(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new NotFoundException("Kamida bitta printer tanlanishi kerak");
+    for (const id of uniqueIds) {
+      await this.assertPrinter(id, user);
+      await this.prisma.printer.delete({ where: { id } });
+    }
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   private async assertPrinter(
     id: string,
     user: AuthenticatedUser,

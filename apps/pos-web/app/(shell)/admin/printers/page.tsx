@@ -181,9 +181,11 @@ function PrintersConsole() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pendingDeactivate, setPendingDeactivate] = useState<Printer | null>(
     null,
   );
+  const [pendingDelete, setPendingDelete] = useState<Printer | null>(null);
 
   // Filial ichidagi "Qurilmalar" havolasi shu filtrni beradi. URL o'zgarsa,
   // bir marta ochilgan sahifa ham yangi filial bilan qayta yuklanadi.
@@ -376,6 +378,38 @@ function PrintersConsole() {
     }
   }
 
+  async function deleteSelectedPrinters(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta printerni bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/printers/bulk", { method: "DELETE", body: JSON.stringify({ ids: selectedIds }) });
+      setSelectedIds([]);
+      showToast(`${selectedIds.length} ta printer o'chirildi.`, "success");
+      printersResource.reload();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Printerlarni o'chirib bo'lmadi.", "danger");
+    }
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!pendingDelete) return;
+    setIsSaving(true);
+    try {
+      await apiFetch("/printers/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: [pendingDelete.id] }),
+      });
+      showToast(`${pendingDelete.name} bazadan butunlay o'chirildi.`, "success");
+      setPendingDelete(null);
+      printersResource.reload();
+    } catch (caught) {
+      if (caught instanceof SessionExpiredError) return;
+      showToast(caught instanceof Error ? caught.message : "Printerni o'chirib bo'lmadi.", "danger");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const columns: DataTableColumn<Printer>[] = [
     {
       key: "name",
@@ -495,10 +529,13 @@ function PrintersConsole() {
       <Card>
         <CardHeader
           actions={
-            <Button onClick={openCreate} size="lg">
-              <Icon className="h-4 w-4" name="plus" />
-              Yangi printer
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {selectedIds.length ? <Button onClick={() => void deleteSelectedPrinters()} size="lg" variant="danger">{selectedIds.length} ta o'chirish</Button> : null}
+              <Button onClick={openCreate} size="lg">
+                <Icon className="h-4 w-4" name="plus" />
+                Yangi printer
+              </Button>
+            </div>
           }
           description={`${printers.length} ta qurilma qaydga olingan`}
           title="Qaydga olingan printerlar"
@@ -562,9 +599,18 @@ function PrintersConsole() {
                   tone="danger"
                 />
               ) : null}
+              <RowAction
+                icon="trash"
+                label={`${printer.name} — bazadan butunlay o'chirish`}
+                onClick={() => setPendingDelete(printer)}
+                tone="danger"
+              />
             </>
           )}
           rows={printers}
+          selectable
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
         />
       </Card>
 
@@ -769,6 +815,26 @@ function PrintersConsole() {
             ) : null}
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        footer={
+          <>
+            <Button onClick={() => setPendingDelete(null)} variant="ghost">Bekor qilish</Button>
+            <Button isLoading={isSaving} onClick={() => void confirmDelete()} size="lg" variant="danger">
+              Butunlay o'chirish
+            </Button>
+          </>
+        }
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title="Printerni bazadan butunlay o'chirish"
+      >
+        <p className="text-sm text-mz-text">
+          <span className="font-semibold">{pendingDelete?.name}</span> bazadan
+          butunlay o'chiriladi. Eski chop navbatlari bilan bog'langan printer
+          bo'lsa, server tarixni saqlash uchun amalni rad etadi.
+        </p>
       </Modal>
 
       {/* --- Ishdan chiqarishni tasdiqlash --------------------------------- */}

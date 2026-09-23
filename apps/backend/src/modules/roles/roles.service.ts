@@ -188,6 +188,26 @@ export class RolesService {
     });
   }
 
+  async permanentlyDeleteRoles(ids: string[], actor: AuthenticatedUser) {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (!uniqueIds.length) throw new BadRequestException("Role IDs are required");
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, name: true, isSystem: true, users: { select: { userId: true } } },
+    });
+    if (roles.length !== uniqueIds.length) throw new NotFoundException("Role not found");
+    if (roles.some((role) => role.isSystem)) throw new BadRequestException("Tizim rollarini o'chirib bo'lmaydi");
+    const assigned = roles.find((role) => role.users.length);
+    if (assigned) throw new BadRequestException(`Rol ${assigned.name} xodimga biriktirilgan; avval rolni olib tashlang`);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.role.deleteMany({ where: { id: { in: uniqueIds } } });
+      for (const id of uniqueIds) {
+        await writeAuditLog(tx, { userId: actor.id, action: "ROLE_DELETED", entity: "Role", entityId: id });
+      }
+    });
+    return { deletedCount: uniqueIds.length };
+  }
+
   private async getRole(id: string) {
     return this.prisma.role.findUniqueOrThrow({
       where: { id },

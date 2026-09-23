@@ -168,6 +168,24 @@ export class ExpensesService {
     });
   }
 
+  async permanentlyDeleteCategories(ids: string[], user: AuthenticatedUser) {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (!uniqueIds.length) throw new BadRequestException("Category IDs are required");
+    const rows = await this.prisma.expenseCategory.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, branchId: true },
+    });
+    if (rows.length !== uniqueIds.length) throw new NotFoundException("Expense category not found");
+    for (const row of rows) resolveBranchScope(user, row.branchId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.expenseCategory.deleteMany({ where: { id: { in: uniqueIds } } });
+      for (const id of uniqueIds) {
+        await writeAuditLog(tx, { userId: user.id, action: "EXPENSE_CATEGORY_DELETED", entity: "ExpenseCategory", entityId: id });
+      }
+    });
+    return { deletedCount: uniqueIds.length };
+  }
+
   async createExpense(dto: CreateExpenseDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
 

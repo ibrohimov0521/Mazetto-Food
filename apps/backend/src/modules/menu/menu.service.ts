@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   customerVisibleProductCodeSet,
+  isCustomerVisibleProductCode,
   legacyProductCodeSet,
 } from "../customers/customer-catalog-visibility";
 import type { ListMenuDto } from "./dto/list-menu.dto";
@@ -316,7 +317,7 @@ export class MenuService {
     };
   }
 
-  private getCatalogVisibility(code: string): "CANONICAL" | "LEGACY" | "INTERNAL" {
+  private getCatalogVisibility(code: string): "CANONICAL" | "LEGACY" | "CUSTOM" | "INTERNAL" {
     if (customerVisibleProductCodeSet.has(code)) {
       return "CANONICAL";
     }
@@ -325,7 +326,7 @@ export class MenuService {
       return "LEGACY";
     }
 
-    return "INTERNAL";
+    return isCustomerVisibleProductCode(code) ? "CUSTOM" : "INTERNAL";
   }
 
   async createCategory(dto: CreateCategoryDto) {
@@ -407,6 +408,40 @@ export class MenuService {
       where: { id },
       data: { isActive: false },
     });
+  }
+
+  async permanentlyDeleteCategories(ids: string[]) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException("Kamida bitta kategoriya tanlanishi kerak");
+    }
+
+    const categories = await this.prisma.category.findMany({
+      where: { id: { in: uniqueIds } },
+      select: {
+        id: true,
+        name: true,
+        _count: { select: { products: true, children: true, promotions: true } },
+      },
+    });
+    if (categories.length !== uniqueIds.length) {
+      throw new NotFoundException("Tanlangan kategoriyalarning biri topilmadi");
+    }
+
+    const blocked = categories.filter(
+      (category) =>
+        category._count.products > 0 ||
+        category._count.children > 0 ||
+        category._count.promotions > 0,
+    );
+    if (blocked.length) {
+      throw new BadRequestException(
+        `Mahsulot, quyi kategoriya yoki aksiya bog'langan kategoriyalarni o'chirib bo'lmaydi: ${blocked.map((category) => category.name).join(", ")}`,
+      );
+    }
+
+    await this.prisma.category.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   async createProduct(dto: CreateProductDto) {
@@ -611,6 +646,72 @@ export class MenuService {
     });
   }
 
+  async permanentlyDeleteProduct(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        code: true,
+        _count: {
+          select: {
+            cartItems: true,
+            orderItems: true,
+            favorites: true,
+            usedInBundles: true,
+            bundleItems: true,
+            heroSlides: true,
+            promotions: true,
+            variants: { where: { recipe: { isNot: null } } },
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException("Product not found");
+    }
+
+    if (this.getCatalogVisibility(product.code) !== "CUSTOM") {
+      throw new BadRequestException(
+        "Faqat admin qo'shgan yangi mahsulotlarni butunlay o'chirish mumkin",
+      );
+    }
+
+    const blockers = [
+      product._count.orderItems ? "buyurtma tarixi" : null,
+      product._count.cartItems ? "mijoz savati" : null,
+      product._count.favorites ? "mijoz sevimlilari" : null,
+      product._count.usedInBundles ? "set tarkibi" : null,
+      product._count.bundleItems ? "set mahsuloti" : null,
+      product._count.heroSlides ? "bosh sahifa slaydi" : null,
+      product._count.promotions ? "aksiya/reklama" : null,
+      product._count.variants ? "retsept" : null,
+    ].filter(Boolean);
+
+    if (blockers.length) {
+      throw new BadRequestException(
+        `Mahsulotni butunlay o'chirib bo'lmaydi: ${blockers.join(", ")} bog'langan. Uni arxivga oling.`,
+      );
+    }
+
+    await this.prisma.product.delete({ where: { id } });
+
+    return { deleted: true, id };
+  }
+
+  async permanentlyDeleteProducts(ids: string[]) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException("Kamida bitta mahsulot tanlanishi kerak");
+    }
+    const deleted: string[] = [];
+    for (const id of uniqueIds) {
+      await this.permanentlyDeleteProduct(id);
+      deleted.push(id);
+    }
+    return { deleted: true, count: deleted.length, ids: deleted };
+  }
+
   /**
    * Modifier katalogi.
    *
@@ -671,6 +772,20 @@ export class MenuService {
         ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
       },
     });
+  }
+
+  async permanentlyDeleteModifiers(ids: string[]) {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta qo'shimcha tanlanishi kerak");
+    const rows = await this.prisma.modifier.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, name: true, products: { select: { productId: true } } },
+    });
+    if (rows.length !== uniqueIds.length) throw new NotFoundException("Modifier not found");
+    const blocked = rows.find((row) => row.products.length);
+    if (blocked) throw new BadRequestException(`Qo'shimcha ${blocked.name} mahsulotga biriktirilgan; avval bog'lamani olib tashlang`);
+    await this.prisma.modifier.deleteMany({ where: { id: { in: uniqueIds } } });
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   private async assertCategory(id: string): Promise<void> {

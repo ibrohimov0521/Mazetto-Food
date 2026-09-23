@@ -118,6 +118,17 @@ function deliveryAddressText(value: string | null | undefined): string | null {
   return cleanAddress(draft?.address ?? value ?? "");
 }
 
+function shouldReplaceLocationAddress(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return (
+    value.length > 70 ||
+    normalized.includes(",") ||
+    /\b(ko['‘`]?cha|kochasi|ko'chasi|street|улица|toshkent|chilonzor|yunusobod|sergeli|mirzo|shayxontohur|olmazor|bektemir|yakkasaroy|uchtepa|yashnobod|mirobod)\b/i.test(
+      normalized,
+    )
+  );
+}
+
 function deliveryLocationFromSession(
   value: string | null | undefined,
 ): DeliveryLocationDto | undefined {
@@ -326,7 +337,9 @@ export class TelegramCheckoutService {
     );
     const draft = readLocationDraft(session?.address);
     const completedAddress = draft
-      ? `${draft.address}, ${normalizedAddress}`.slice(0, 500)
+      ? shouldReplaceLocationAddress(normalizedAddress)
+        ? normalizedAddress
+        : `${draft.address}, ${normalizedAddress}`.slice(0, 500)
       : normalizedAddress;
     const house =
       normalizedAddress.match(/\b\d+[\p{L}\d/-]*\b/u)?.[0] ??

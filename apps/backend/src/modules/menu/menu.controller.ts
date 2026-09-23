@@ -43,6 +43,12 @@ export class MenuController {
     return this.menuService.updateCategory(id, dto);
   }
 
+  @Delete("categories/bulk/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteCategories(@Body() dto: { ids: string[] }) {
+    return this.menuService.permanentlyDeleteCategories(dto.ids);
+  }
+
   @Delete("categories/:id")
   @Permissions(PERMISSIONS.MENU_DELETE)
   deleteCategory(@Param("id") id: string) {
@@ -73,10 +79,22 @@ export class MenuController {
     return this.menuService.updateProduct(id, dto);
   }
 
+  @Delete("products/bulk/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteProducts(@Body() dto: { ids: string[] }) {
+    return this.menuService.permanentlyDeleteProducts(dto.ids);
+  }
+
   @Delete("products/:id")
   @Permissions(PERMISSIONS.MENU_DELETE)
   deleteProduct(@Param("id") id: string) {
     return this.menuService.deleteProduct(id);
+  }
+
+  @Delete("products/:id/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteProduct(@Param("id") id: string) {
+    return this.menuService.permanentlyDeleteProduct(id);
   }
 
   @Get("modifiers")
@@ -89,6 +107,12 @@ export class MenuController {
   @Permissions(PERMISSIONS.MENU_CREATE)
   createModifier(@Body() dto: CreateModifierDto) {
     return this.menuService.createModifier(dto);
+  }
+
+  @Delete("modifiers/bulk/permanent")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  permanentlyDeleteModifiers(@Body() dto: { ids: string[] }) {
+    return this.menuService.permanentlyDeleteModifiers(dto.ids);
   }
 
   @Patch("modifiers/:id")

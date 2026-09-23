@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
-import { customerVisibleProductCodes } from "../customers/customer-catalog-visibility";
+import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
 import type {
   HomepageHeroSlideDto,
   PromotionDto,
@@ -61,6 +61,10 @@ export class HomepageService {
     });
   }
 
+  async deleteHeroSlidesBulk(ids: string[]) {
+    return this.deleteHomepageRows(ids, "hero-slides");
+  }
+
   listPromotions() {
     return this.prisma.promotion.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -95,13 +99,36 @@ export class HomepageService {
     });
   }
 
+  async deletePromotionsBulk(ids: string[]) {
+    return this.deleteHomepageRows(ids, "promotions");
+  }
+
+  private async deleteHomepageRows(ids: string[], kind: "hero-slides" | "promotions") {
+    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException("Kamida bitta yozuv tanlanishi kerak");
+    }
+
+    if (kind === "hero-slides") {
+      const count = await this.prisma.homepageHeroSlide.count({ where: { id: { in: uniqueIds } } });
+      if (count !== uniqueIds.length) throw new NotFoundException("Tanlangan slaydlarning biri topilmadi");
+      await this.prisma.homepageHeroSlide.deleteMany({ where: { id: { in: uniqueIds } } });
+    } else {
+      const count = await this.prisma.promotion.count({ where: { id: { in: uniqueIds } } });
+      if (count !== uniqueIds.length) throw new NotFoundException("Tanlangan aksiyalarning biri topilmadi");
+      await this.prisma.promotion.deleteMany({ where: { id: { in: uniqueIds } } });
+    }
+
+    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
+  }
+
   private listActiveHeroSlides() {
     return this.prisma.homepageHeroSlide.findMany({
       where: {
         ...this.activeWindowWhere(),
         OR: [
           { productId: null },
-          { product: { is: { code: { in: [...customerVisibleProductCodes] } } } },
+          { product: { is: customerVisibleProductWhere() } },
         ],
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -115,7 +142,7 @@ export class HomepageService {
         ...this.activeWindowWhere(),
         OR: [
           { productId: null },
-          { product: { is: { code: { in: [...customerVisibleProductCodes] } } } },
+          { product: { is: customerVisibleProductWhere() } },
         ],
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -128,7 +155,7 @@ export class HomepageService {
       where: {
         isAvailable: true,
         isRecommended: true,
-        code: { in: [...customerVisibleProductCodes] },
+        ...customerVisibleProductWhere(),
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],

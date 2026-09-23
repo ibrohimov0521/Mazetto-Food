@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -34,6 +34,15 @@ export class BranchesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.branchesService.createBranch(dto, user);
+  }
+
+  @Delete("bulk/permanent")
+  @Permissions(PERMISSIONS.BRANCH_EDIT)
+  permanentlyDeleteBranches(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.branchesService.permanentlyDeleteBranches(dto.ids, user);
   }
 
   @Patch(":id")

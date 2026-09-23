@@ -45,6 +45,7 @@ export function AdminDevices() {
   const canManage = hasPermission(user, "DEVICE_MANAGE");
   const { showToast } = useToast();
   const [enrollmentInfo, setEnrollmentInfo] = useState<EnrollmentInfo | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const resource = useApiResource<Device[]>(() => apiFetch<Device[]>("/devices"), [], "Qurilmalarni yuklab bo'lmadi.");
@@ -84,11 +85,24 @@ export function AdminDevices() {
     }
 
     try {
-      await apiFetch(`/devices/${device.id}`, { method: "DELETE" });
+      await apiFetch("/devices/bulk", { method: "DELETE", body: JSON.stringify({ ids: [device.id] }) });
       showToast("Qurilma o'chirildi.", "success");
       resource.reload();
     } catch (caught) {
       showToast(caught instanceof Error ? caught.message : "Qurilmani o'chirib bo'lmadi.", "danger");
+    }
+  }
+
+  async function deleteSelectedDevices(): Promise<void> {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`${selectedIds.length} ta qurilmani bazadan butunlay o'chirishni tasdiqlaysizmi?`)) return;
+    try {
+      await apiFetch("/devices/bulk", { method: "DELETE", body: JSON.stringify({ ids: selectedIds }) });
+      showToast("Tanlangan qurilmalar o'chirildi.", "success");
+      setSelectedIds([]);
+      resource.reload();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : "Qurilmalarni o'chirib bo'lmadi.", "danger");
     }
   }
 
@@ -111,8 +125,8 @@ export function AdminDevices() {
       title="Qurilmalar"
     />
     <Card>
-      <CardHeader description="Kodni qayta chiqarish eski kodni darhol bekor qiladi." title={`${resource.data?.length ?? 0} ta qurilma`} />
-      <DataTable caption="Barcha qurilmalar" columns={columns} emptyDescription="Avval filial ichidan yangi qurilma yarating." emptyIcon="monitor" emptyTitle="Qurilmalar yo'q" getRowKey={(device) => device.id} rowActions={(device) => <>
+      <CardHeader actions={canManage && selectedIds.length ? <Button onClick={() => void deleteSelectedDevices()} variant="danger">{selectedIds.length} ta o'chirish</Button> : undefined} description="Kodni qayta chiqarish eski kodni darhol bekor qiladi." title={`${resource.data?.length ?? 0} ta qurilma`} />
+      <DataTable caption="Barcha qurilmalar" columns={columns} emptyDescription="Avval filial ichidan yangi qurilma yarating." emptyIcon="monitor" emptyTitle="Qurilmalar yo'q" getRowKey={(device) => device.id} selectable={canManage} selectedKeys={selectedIds} onSelectionChange={setSelectedIds} rowActions={(device) => <>
         <RowAction icon="shield" label={`${device.name} uchun yangi ulash kodi`} onClick={() => void rotateCode(device)} />
         <RowAction icon="pencil" label={`${device.name} tahrirlash`} href={`/admin/branches/${device.branch.id}/devices`} />
         <RowAction icon="trash" label={`${device.name} qurilmasini o'chirish`} onClick={() => void deleteDevice(device)} />

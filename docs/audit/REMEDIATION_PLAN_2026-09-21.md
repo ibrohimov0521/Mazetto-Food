@@ -45,7 +45,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | ID | Priority | Confirmed gap | Required result and acceptance test |
 | --- | --- | --- | --- |
 | AUD-130 | P1 | Click/Payme/Card providers, callbacks and reconciliation are absent | Implement provider-signed initiation/callback/idempotency, payment state, reconciliation and failure UX before enabling method |
-| AUD-131 | P1 | Refund/void is not implemented although schema/report concepts exist | Add permissioned refund workflow, provider/cash ledger entry, receipt document, audit and report treatment |
+| AUD-131 | P1 | Cash refund is implemented; external provider refund/reconciliation remains disabled | Keep cash refund permissioned and idempotent with immutable reversal, cash ledger, refund receipt and audit/report treatment; add signed Click/Payme/Card provider refund only after provider contracts and reconciliation are available |
 | AUD-132 | P2 | Ingredient and warehouse master data lacks edit/deactivate lifecycle | Add branch-safe update/archive with reference protection and history |
 | AUD-133 | P2 | Automatic recipe deduction fails if no active warehouse exists | Add readiness check/dashboard and prevent enabling recipe deduction until warehouse mapping is valid |
 | AUD-134 | P2 | Modifier lifecycle has create/update but no explicit archive/delete action | Define archive policy, expose action and preserve historical orders |
@@ -55,8 +55,8 @@ is important completeness/security, and `P3` is improvement or cleanup.
 
 | ID | Priority | Confirmed gap | Required result and acceptance test |
 | --- | --- | --- | --- |
-| AUD-140 | P1 | Admin route metadata contains roles, but filtering/enforcement semantics differ by route group | Define permission-first contract, remove misleading metadata or enforce it consistently; test every seeded role against every page |
-| AUD-141 | P2 | Customer and staff refresh tokens are in localStorage | Move browser refresh sessions to Secure HttpOnly SameSite cookies with rotation/revocation and CSRF design |
+| AUD-140 | P1 | Admin route access and sidebar previously disagreed for custom roles | Permission-first access is now used consistently for `/admin` routes and sidebar items; built-in `roles` remain descriptive metadata, with custom-role regression coverage |
+| AUD-141 | P2 | Customer refresh session migration needed to remove browser storage dependency | Customer-web now restores/rotates the Secure HttpOnly SameSite cookie and only keeps short-lived access/profile data locally; production cookie/CORS/CSRF acceptance remains |
 | AUD-142 | P2 | Homepage image upload requires `MENU_EDIT`, blocking a homepage-only custom role | Add purpose-aware upload permission and strict folder mapping; test homepage manager without menu edit |
 | AUD-143 | P2 | Navigation validation checks listed links but not reachable pages omitted accidentally | Maintain route manifest with `sidebar`, `child`, `workspace` or `hidden` intent; CI verifies all pages |
 | AUD-144 | P3 | Kitchen seeded role includes shift/cash permissions that may violate responsibility separation | Confirm business policy; remove permissions unless kitchen staff owns cash operations |

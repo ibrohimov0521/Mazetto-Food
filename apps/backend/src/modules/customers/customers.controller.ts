@@ -224,6 +224,15 @@ export class CustomersAdminController {
     return this.customersService.getCustomerStats(user);
   }
 
+  @Delete("customers/bulk")
+  @Permissions(PERMISSIONS.CUSTOMER_DELETE)
+  deleteCustomersBulk(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.customersService.deleteCustomersBulk(dto.ids, user);
+  }
+
   @Get("online-orders")
   @Permissions(PERMISSIONS.ONLINE_ORDER_VIEW)
   listOnlineOrders(

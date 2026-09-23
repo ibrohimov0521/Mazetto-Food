@@ -354,6 +354,10 @@ export function resolveAdminNav(user: AuthUser | null): AdminNavGroup[] {
         }
 
         if (item.href.startsWith("/admin")) {
+          // Admin route access is permission-first so custom roles can use
+          // their explicitly granted workspace permissions. The `roles`
+          // field remains metadata for built-in-role documentation; applying
+          // it here would make the sidebar disagree with the route guard.
           return hasPermission(user, "ADMIN_ACCESS");
         }
 

@@ -489,25 +489,22 @@ class InMemoryPrisma {
   };
 
   productVariant = {
-    findFirst: async ({ where }: { where: { id: string; product?: { code?: { in: string[] } } } }) =>
-      allProducts.some(
-        (candidate) =>
-          where.id === `${candidate.id}_standard` &&
-          (!where.product?.code?.in || where.product.code.in.includes(candidate.code)),
-      ) || where.id === variant.id
+    findFirst: async ({ where }: { where: { id: string; product?: { code?: { in?: string[]; notIn?: string[] } } } }) => {
+      const productId = where.id === variant.id ? product.id : where.id.replace(/_standard$/, "");
+      const foundProduct = allProducts.find((candidate) => candidate.id === productId);
+      const visible = foundProduct &&
+        (!where.product?.code?.in || where.product.code.in.includes(foundProduct.code)) &&
+        (!where.product?.code?.notIn || !where.product.code.notIn.includes(foundProduct.code));
+      return visible
         ? {
             ...variant,
             id: where.id,
-            productId: where.id === variant.id ? product.id : where.id.replace(/_standard$/, ""),
-            sellingPrice: (
-              allProducts.find((candidate) => candidate.id === where.id.replace(/_standard$/, "")) ?? product
-            ).sellingPrice,
-            product: {
-              ...(allProducts.find((candidate) => candidate.id === where.id.replace(/_standard$/, "")) ?? product),
-              modifiers: this.productModifiers(where.id.replace(/_standard$/, "")),
-            },
+            productId,
+            sellingPrice: foundProduct.sellingPrice,
+            product: { ...foundProduct, modifiers: this.productModifiers(productId) },
           }
-        : null,
+        : null;
+    },
   };
 
   private productModifiers(productId: string) {
@@ -1129,7 +1126,10 @@ async function seedCart(
   assert.match(lastText(), /Big Lavash/);
 
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:addv:variant_standard" });
-  assert.match(lastText(), /savatga qo'shildi/);
+  assert.ok(
+    sentTelegramPayloads.some((payload) => /savatga qo'shildi/i.test(payload.text ?? "")),
+    "variant qo'shilgani haqida callback javobi yuborilmadi",
+  );
   assert.equal(prisma.cartRecord?.items.length, 1);
   prisma.cartRecord!.items[0]!.modifierSnapshot = [{ modifierId: modifier.id, quantity: 1 }];
 }
@@ -1238,7 +1238,11 @@ function lastProductButtonTexts(): string[] {
 }
 
 function normalizedLastProductButtonTexts(): string[] {
-  return lastProductButtonTexts().map((text) => text.replace(/\u00a0/g, " "));
+  return lastProductButtonTexts().map((text) =>
+    text
+      .replace(/\u00a0/g, " ")
+      .replace(/^(?:🌯|🍗|🍔|➕|🧀|🌶|♨️)\s*/u, ""),
+  );
 }
 
 function assertNoPaginationControls(): void {

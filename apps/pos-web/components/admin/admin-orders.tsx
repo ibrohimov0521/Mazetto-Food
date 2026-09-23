@@ -12,6 +12,7 @@ import {
   formatMoney,
   maskPhone,
   orderSourceLabels,
+  orderStatusLabel,
   orderStatusLabels,
   orderStatusTone,
   orderTypeLabels,
@@ -53,9 +54,9 @@ import { useToast } from "../admin-ui/toast";
  * Ikkalasi ham `ORDER_SEND_KITCHEN` talab qiladi va serverda qo'shimcha
  * shart bor: chaqiruvchi shu FILIALNING faol xodimi bo'lishi kerak.
  *
- * PUL QAYTARISH (refund/void) bu yerda YO'Q, chunki backendda umuman
- * yo'q: `PosOrderStatus` enum'ida REFUNDED yo'q va `payments` moduli
- * qaytarish endpoint'i bermaydi. Ishlamaydigan tugma qo'yilmadi.
+ * PUL QAYTARISH (refund/void) buyurtma ro'yxatida bajarilmaydi: bu amal
+ * `Kassa va hisobot > To'lovlar` sahifasida permission, ochiq smena va
+ * sabab bilan boshqariladi. Buyurtma ekrani faqat to'lov holatini ko'rsatadi.
  */
 
 type Branch = { id: string; code: string; name: string };
@@ -290,6 +291,7 @@ export function AdminOrdersPage() {
   const [bulkReason, setBulkReason] = useState("");
   const [bulkReasonError, setBulkReasonError] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkOrderStatusResult | null>(
     null,
   );
@@ -541,6 +543,33 @@ export function AdminOrdersPage() {
     }
   }
 
+  async function permanentlyDeleteSelected(): Promise<void> {
+    if (!selectedOrderIds.size || deleteBusy) return;
+    const confirmed = window.confirm(
+      `${selectedOrderIds.size} ta buyurtmani bazadan butunlay o'chirishni tasdiqlaysizmi? Bu amal qaytarilmaydi. To'lov yoki kassaviy tarixi bor buyurtmalar o'chirilmaydi.`,
+    );
+    if (!confirmed) return;
+
+    setDeleteBusy(true);
+    setSaveError("");
+    try {
+      await apiFetch("/orders/bulk", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: [...selectedOrderIds] }),
+      });
+      setSelectedOrderIds(new Set());
+      await load();
+    } catch (caught) {
+      setSaveError(
+        caught instanceof Error
+          ? caught.message
+          : "Buyurtmalarni bazadan o'chirib bo'lmadi.",
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   /** Filtr o'zgarganda birinchi sahifaga qaytamiz. */
   function changeFilter(apply: () => void): void {
     apply();
@@ -603,7 +632,7 @@ export function AdminOrdersPage() {
       header: "Holat",
       render: (order) => (
         <Badge tone={orderStatusTone(order.status)} withDot>
-          {orderStatusLabels[order.status]}
+          {orderStatusLabel(order.status, order.type)}
         </Badge>
       ),
     },
@@ -846,6 +875,13 @@ export function AdminOrdersPage() {
               {selectedOrders.length} ta buyurtma tanlandi
             </p>
             <div className="flex flex-wrap items-end gap-2">
+              <Button
+                disabled={bulkBusy || deleteBusy}
+                onClick={() => void permanentlyDeleteSelected()}
+                variant="danger"
+              >
+                Bazadan o&apos;chirish
+              </Button>
               <div className="w-52">
                 <Select
                   aria-label="Tanlangan buyurtmalar uchun ommaviy amal"
@@ -1269,7 +1305,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+    <div className="grid gap-5">
       <div className="flex justify-end">
         <StaffSync
           updatedAt={realtimeUpdatedAt}
@@ -1278,7 +1314,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           refreshing={isLoading}
           onRefresh={() => void load()}
         />
-      </div>      <div className="grid gap-5">
+      </div>
+
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid gap-5">
         <Card>
           <CardHeader
             description={`${orderSourceLabels[order.source]} · ${orderTypeLabels[order.type]}`}
@@ -1290,7 +1329,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           />
           <CardBody className="flex flex-wrap gap-2">
             <Badge tone={orderStatusTone(order.status)} withDot>
-              {orderStatusLabels[order.status]}
+              {orderStatusLabel(order.status, order.type)}
             </Badge>
             <Badge tone={paymentStatusTone(order.paymentStatus)}>
               {paymentStatusLabels[order.paymentStatus]}
@@ -1364,7 +1403,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                       }}
                       variant={status === "CANCELLED" ? "danger" : "ghost"}
                     >
-                      {orderStatusLabels[status]}
+                      {orderStatusLabel(status, order.type)}
                     </Button>
                   ))}
                 </div>
@@ -1428,7 +1467,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                     key={entry.id}
                   >
                     <Badge tone={orderStatusTone(entry.toStatus)}>
-                      {orderStatusLabels[entry.toStatus]}
+                      {orderStatusLabel(entry.toStatus, order.type)}
                     </Badge>
                     <span className="text-xs text-mz-text-muted">
                       {formatDateTime(entry.createdAt)}
@@ -1447,9 +1486,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             </CardBody>
           </Card>
         ) : null}
-      </div>
+        </div>
 
-      <aside className="grid content-start gap-5">
+        <aside className="grid content-start gap-5">
         <Card>
           <CardHeader title="Hisob" />
           <CardBody className="grid gap-2 text-sm">
@@ -1520,7 +1559,8 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
             </CardBody>
           </Card>
         ) : null}
-      </aside>
+        </aside>
+      </div>
 
       <Modal
         description={
@@ -1549,7 +1589,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         onClose={() => setPendingStatus(null)}
         title={
           pendingStatus
-            ? `${order.displayOrderNumber ?? order.orderNumber} → ${orderStatusLabels[pendingStatus]}`
+            ? `${order.displayOrderNumber ?? order.orderNumber} → ${orderStatusLabel(
+                pendingStatus,
+                order.type,
+              )}`
             : "Holatni o'zgartirish"
         }
       >

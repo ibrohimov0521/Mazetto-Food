@@ -47,6 +47,15 @@ export class PrintersController {
     return this.printersService.updatePrinter(id, dto, user);
   }
 
+  @Delete("bulk")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  deletePrinters(
+    @Body() dto: { ids: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.printersService.deletePrinters(dto.ids, user);
+  }
+
   @Delete(":id")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
   deactivatePrinter(

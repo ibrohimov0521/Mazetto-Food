@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import {
   isMessageNotModifiedError,
   requiredTelegramId,
@@ -64,8 +64,77 @@ export type CustomerPhotoScreenPayload = Omit<CustomerScreenPayload, "text"> & {
   caption: string;
 };
 
+function mediaPublicUrl(): string {
+  return (
+    process.env.MEDIA_PUBLIC_URL?.trim() ||
+    process.env.MINIO_PUBLIC_URL?.trim() ||
+    "https://media.mazettofood.uz"
+  ).replace(/[/]+$/, "");
+}
+
+export function resolveTelegramPhotoUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : null;
+  } catch {
+    const objectName = trimmed.replace(/^[/]+/, "");
+    return objectName ? `${mediaPublicUrl()}/${objectName}` : null;
+  }
+}
+
 @Injectable()
-export class TelegramCustomerScreenService {
+export class TelegramCustomerScreenService implements OnModuleInit {
+  private readonly logger = new Logger(TelegramCustomerScreenService.name);
+
+  async onModuleInit(): Promise<void> {
+    if (!process.env.TELEGRAM_BOT_TOKEN) {
+      return;
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await this.configureBotCommands();
+        return;
+      } catch (error) {
+        this.logger.warn(
+          `Telegram command menu setup failed (attempt ${attempt}/3): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+        }
+      }
+    }
+  }
+
+  private async configureBotCommands(): Promise<void> {
+    await this.telegramRequest("setMyCommands", {
+      commands: [
+        { command: "start", description: "Foydalanishni boshlash" },
+        { command: "buy", description: "Buyurtma berish" },
+        { command: "menu", description: "Menyu" },
+        { command: "cart", description: "Savat" },
+        { command: "orders", description: "Buyurtmalarim" },
+        { command: "profile", description: "Profil" },
+        { command: "branches", description: "Filiallar" },
+        { command: "help", description: "Xizmat haqida" },
+        { command: "terms", description: "Foydalanish shartlari" },
+        { command: "support", description: "Biz bilan aloqa" },
+      ],
+    });
+    await this.telegramRequest("setChatMenuButton", {
+      menu_button: { type: "commands" },
+    });
+  }
+
   /*
    * Bitta ekran — bitta xabar.
    *
@@ -110,6 +179,24 @@ export class TelegramCustomerScreenService {
     payload: CustomerPhotoScreenPayload,
   ): Promise<void> {
     const { photo, caption, ...rest } = payload;
+    const photoUrl = resolveTelegramPhotoUrl(photo);
+
+    // Telegram `sendPhoto` accepts a publicly reachable HTTP(S) URL, not the
+    // relative paths historically stored for some catalogue images. Do not let
+    // a bad image make the whole menu unusable.
+    if (!photoUrl) {
+      await this.renderCustomerScreen(target, {
+        text: caption,
+        ...rest,
+      });
+      return;
+    }
+
+    const fallbackToText = async () =>
+      this.renderCustomerScreen(target, {
+        text: caption,
+        ...rest,
+      });
 
     if (target.messageId) {
       try {
@@ -127,16 +214,27 @@ export class TelegramCustomerScreenService {
       }
     }
 
-    await this.telegramRequest("sendPhoto", {
-      chat_id: target.chatId,
-      photo,
-      caption,
-      ...rest,
-    });
+    try {
+      await this.telegramRequest("sendPhoto", {
+        chat_id: target.chatId,
+        photo: photoUrl,
+        caption,
+        ...rest,
+      });
+    } catch {
+      await fallbackToText();
+    }
   }
 
   async telegramRequest(method: string, payload: unknown): Promise<void> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+    await this.telegramRequestWithToken(process.env.TELEGRAM_BOT_TOKEN, method, payload);
+  }
+
+  async telegramRequestWithToken(
+    token: string | undefined,
+    method: string,
+    payload: unknown,
+  ): Promise<void> {
 
     // Token yo'q — bot o'chiq. Bu xato emas, ilova ishlayveradi.
     if (!token) {
@@ -158,6 +256,50 @@ export class TelegramCustomerScreenService {
         `Telegram ${method} failed with ${response.status}: ${body}`,
       );
     }
+  }
+
+  async renderWithToken(
+    token: string | undefined,
+    target: CustomerScreenTarget,
+    payload: CustomerScreenPayload,
+  ): Promise<void> {
+    if (!token) {
+      return;
+    }
+    if (target.messageId) {
+      try {
+        await this.telegramRequestWithToken(token, "editMessageText", {
+          chat_id: target.chatId,
+          message_id: target.messageId,
+          ...payload,
+        });
+        return;
+      } catch (error) {
+        if (isMessageNotModifiedError(error)) {
+          return;
+        }
+      }
+    }
+    await this.telegramRequestWithToken(token, "sendMessage", {
+      chat_id: target.chatId,
+      ...payload,
+    });
+  }
+
+  async answerCallbackWithToken(
+    token: string | undefined,
+    callback: TelegramCallbackQuery,
+    text?: string,
+    showAlert = false,
+  ): Promise<void> {
+    if (!token || !callback.id) {
+      return;
+    }
+    await this.telegramRequestWithToken(token, "answerCallbackQuery", {
+      callback_query_id: callback.id,
+      ...(text ? { text } : {}),
+      ...(showAlert ? { show_alert: true } : {}),
+    }).catch(() => undefined);
   }
 
   /*
