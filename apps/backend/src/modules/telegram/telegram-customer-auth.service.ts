@@ -212,7 +212,9 @@ export class TelegramCustomerAuthService {
       }
       const chatId = message?.chat?.id ?? callback?.message?.chat?.id;
 
-      if (message?.contact) {
+      if (callback?.id) {
+        await this.answerCustomerCallbackError(callback.id, error);
+      } else if (message?.contact) {
         await this.sendCustomerAuthError(chatId);
       } else {
         await this.sendCustomerInteractionError(chatId, error);
@@ -650,6 +652,7 @@ export class TelegramCustomerAuthService {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(8_000),
       },
     );
 
@@ -659,6 +662,17 @@ export class TelegramCustomerAuthService {
         `Telegram ${method} failed with ${response.status}: ${body}`,
       );
     }
+  }
+
+  private async answerCustomerCallbackError(
+    callbackQueryId: string,
+    error: unknown,
+  ): Promise<void> {
+    await this.telegramRequest("answerCallbackQuery", {
+      callback_query_id: callbackQueryId,
+      text: this.customerInteractionErrorMessage(error),
+      show_alert: false,
+    }).catch(() => undefined);
   }
 
   private async assertCanCreateChallenge(

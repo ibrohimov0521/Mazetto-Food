@@ -72,6 +72,9 @@ function mediaPublicUrl(): string {
   ).replace(/[/]+$/, "");
 }
 
+const telegramRequestMaxAttempts = 2;
+const telegramRequestRetryDelayMs = 250;
+
 export function resolveTelegramPhotoUrl(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -241,21 +244,66 @@ export class TelegramCustomerScreenService implements OnModuleInit {
       return;
     }
 
-    const response = await fetch(
-      `https://api.telegram.org/bot${token}/${method}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
+    let lastError: unknown;
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(
-        `Telegram ${method} failed with ${response.status}: ${body}`,
+    for (let attempt = 1; attempt <= telegramRequestMaxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(
+          `https://api.telegram.org/bot${token}/${method}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(8_000),
+          },
+        );
+
+        if (response.ok) {
+          return;
+        }
+
+        const body = await response.text();
+        const error = new Error(
+          `Telegram ${method} failed with ${response.status}: ${body}`,
+        );
+
+        if (!this.shouldRetryTelegramRequest(error, response.status) || attempt === telegramRequestMaxAttempts) {
+          throw error;
+        }
+
+        lastError = error;
+      } catch (error) {
+        if (!this.shouldRetryTelegramRequest(error) || attempt === telegramRequestMaxAttempts) {
+          throw error;
+        }
+
+        lastError = error;
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, telegramRequestRetryDelayMs * attempt),
       );
     }
+
+    throw lastError instanceof Error ? lastError : new Error(`Telegram ${method} failed`);
+  }
+
+  private shouldRetryTelegramRequest(error: unknown, status?: number): boolean {
+    if (status && (status === 429 || status >= 500)) {
+      return true;
+    }
+
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("fetch failed") ||
+      message.includes("econnreset") ||
+      message.includes("etimedout") ||
+      message.includes("abort")
+    );
   }
 
   async renderWithToken(

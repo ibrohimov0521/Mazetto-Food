@@ -153,7 +153,6 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         chat_id: this.staffChatId(),
         text: this.formatStaffOrderMessage(order),
         parse_mode: "HTML",
-        reply_markup: this.orderKeyboard(order),
       });
       await this.rememberStaffMessage(order.id, response);
     } catch (error) {
@@ -447,42 +446,12 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       .filter((value): value is string => Boolean(value));
   }
 
-  private orderKeyboard(order: Pick<StaffOrderForMessage, "id" | "status" | "kitchenTickets">): TelegramInlineKeyboard {
-    const ticketStatus = order.kitchenTickets[0]?.status ?? null;
-    const buttons: TelegramInlineButton[][] = [];
-
-    if (
-      order.status === OrderStatus.NEW ||
-      (order.status === OrderStatus.CONFIRMED && ticketStatus === KitchenTicketStatus.NEW)
-    ) {
-      buttons.push([
-        { text: "Qabul qilish", callback_data: this.callbackData(order.id, "accept") },
-        { text: "Bekor qilish", callback_data: this.callbackData(order.id, "cancel") },
-      ]);
-    } else if (order.status === OrderStatus.CONFIRMED && ticketStatus === KitchenTicketStatus.ACCEPTED) {
-      buttons.push([
-        { text: "Tayyorlash", callback_data: this.callbackData(order.id, "start_preparing") },
-        { text: "Bekor qilish", callback_data: this.callbackData(order.id, "cancel") },
-      ]);
-    } else if (order.status === OrderStatus.PREPARING && ticketStatus === KitchenTicketStatus.COOKING) {
-      buttons.push([
-        { text: "Tayyor", callback_data: this.callbackData(order.id, "mark_ready") },
-        { text: "Bekor qilish", callback_data: this.callbackData(order.id, "cancel") },
-      ]);
-    }
-
-    if (order.status === OrderStatus.READY && ticketStatus === KitchenTicketStatus.READY) {
-      buttons.push([{ text: "Topshirish", callback_data: this.callbackData(order.id, "complete") }]);
-    }
-    return { inline_keyboard: buttons };
+  private clearedOrderKeyboard(): TelegramInlineKeyboard {
+    return { inline_keyboard: [] };
   }
 
   private staffOrderTitle(status: OrderStatus, type?: string): string {
     return `<b>${sharedOrderStatusLabel(status, type)}</b>`;
-  }
-
-  private callbackData(orderId: string, action: StaffOrderAction): string {
-    return `${callbackPrefix}:${action}:${orderId}`;
   }
 
   private parseCallbackData(data: string): { action: StaffOrderAction; orderId: string } {
@@ -559,7 +528,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       chat_id: chatId,
       text: this.formatStaffOrderMessage(order),
       parse_mode: "HTML",
-      reply_markup: this.orderKeyboard(order),
+      reply_markup: this.clearedOrderKeyboard(),
     };
 
     if (messageId) {
@@ -590,7 +559,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       chat_id: order.staffTelegramChatId ?? this.staffChatId(),
       text: this.formatStaffOrderMessage(order),
       parse_mode: "HTML",
-      reply_markup: this.orderKeyboard(order),
+      reply_markup: this.clearedOrderKeyboard(),
     };
 
     if (order.staffTelegramMessageId) {
