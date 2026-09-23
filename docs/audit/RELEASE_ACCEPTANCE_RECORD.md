@@ -18,9 +18,10 @@ replace physical printer, Telegram account, or production backup evidence.
   stages with package-level commands; the combined runner returned successfully
   after all stages. This is still not a production certification because no
   deploy was performed.
-- Read-only production smoke: `pnpm release:smoke` passed `23/23` against the
-  default public production domains on 2026-09-23; the checks were GET-only and
-  did not create or mutate production data.
+- Read-only production smoke: a later `pnpm release:smoke` run at 2026-09-23
+  10:32 Asia/Tashkent failed `0/23`. All checked public hostnames returned
+  HTTP 530, including backend, customer-web, POS/admin and media health. The
+  checks were GET-only and did not create or mutate production data.
 - Desktop release candidate `0.1.40` was built locally as an NSIS x64
   installer; `release/latest.yml` points to the matching `0.1.40` artifact.
   The artifact has not been published or deployed yet.

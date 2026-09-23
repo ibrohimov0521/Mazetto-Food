@@ -251,8 +251,9 @@ media validation, 40-migration disposable E2E and cleanup all passed. No deploy
 was performed; the release remains gated on physical printer/live Telegram
 evidence and the protected-main release flow.
 
-The read-only smoke suite was also rerun against the default public production
-domains: `pnpm release:smoke` passed `23/23`, including backend/database,
-customer-web, POS/admin, protected operational routes and media health. This
-proves current public endpoint health only; it does not prove that this local
-release branch has been deployed.
+The read-only smoke suite was rerun again against the default public production
+domains at 2026-09-23 10:32 Asia/Tashkent: `pnpm release:smoke` failed `0/23`.
+Every checked public endpoint returned HTTP 530 through the Cloudflare-backed
+hostnames (`api.mazettofood.uz`, `mazettofood.uz`, `pos.mazettofood.uz` and
+`media.mazettofood.uz`). This is a current production connectivity/origin gate;
+it does not reflect this local release branch being deployed.
