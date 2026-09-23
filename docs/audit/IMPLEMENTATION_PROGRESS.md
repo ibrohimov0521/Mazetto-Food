@@ -30,7 +30,7 @@ The following release-candidate changes are on branch
 
 Verification after this checkpoint:
 
-- Backend tests: 240/240 passed.
+- Backend tests: 244/244 passed.
 - Backend and POS/Admin typechecks passed.
 - Telegram typecheck passed.
 - Read-only production smoke: 23/23 passed against the default public
@@ -106,14 +106,14 @@ devices need a coordinated one-time re-enrollment after the credential migration
 ## Verification completed
 
 - Backend typecheck passed.
-- Backend tests: 240 passed.
+- Backend tests: 244 passed.
 - Desktop typecheck passed.
 - Desktop tests: 40 passed, including command registry, virtual printer and mutation-contract tests.
 - POS typecheck and lint passed.
 - Workspace typecheck/lint: 12/12 Turbo tasks passed.
 - Workspace production build: 6/6 Turbo tasks passed.
 - Operations validators: 32/32 passed, including the admin deletion matrix.
-- `pnpm test`: backend 240/240 and Desktop 43/43 passed.
+- `pnpm test`: backend 244/244 and Desktop 43/43 passed.
 - Windows note: workspace typecheck/lint and build stages passed, but the
   combined acceptance runner's Turbo process did not exit after build output;
   the remaining validator, test, E2E and smoke stages were run separately and
@@ -205,7 +205,7 @@ audit. Aggregate backend, Desktop, workspace and operations suites were rerun at
 this checkpoint and passed as recorded above.
 
 The final local acceptance rerun passed 12/12 typecheck/lint tasks, 6/6 builds,
-32/32 validators, 240 backend tests, 43 Desktop tests and the disposable
+32/32 validators, 244 backend tests, 43 Desktop tests and the disposable
 40-migration E2E. A `pg@8` deprecation warning can still be emitted by Prisma's
 interactive transaction adapter during the deliberate concurrent-idempotency
 exercise; the assertions and cleanup pass, and this dependency warning is not
