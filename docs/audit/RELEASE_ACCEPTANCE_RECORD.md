@@ -34,6 +34,10 @@ replace physical printer, Telegram account, or production backup evidence.
 - Read-only production media audit checked all 74 customer-catalog products;
   every product had an image URL and all 74 media `HEAD` requests returned
   HTTP 200.
+- Read-only Telegram acceptance is available as `pnpm telegram:smoke`; it
+  requires `TELEGRAM_BOT_TOKEN` (and optionally the staff token), never changes
+  a webhook, and never prints credentials. It could not run in this checkout
+  because production tokens are not present.
 
 ## Release identity
 

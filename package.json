@@ -22,6 +22,7 @@
     "ops:health": "node scripts/ops-health.mjs",
     "release:gate": "node scripts/release-gate.mjs",
     "release:smoke": "node scripts/smoke-production.mjs",
+    "telegram:smoke": "node scripts/smoke-telegram-production.mjs",
     "release:acceptance": "node scripts/release-acceptance.mjs",
     "qa:customer": "node scripts/qa-customer-contrast.mjs",
     "qa:role-matrix": "node scripts/qa-authenticated-role-matrix.mjs",
