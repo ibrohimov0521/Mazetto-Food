@@ -222,3 +222,8 @@ Latest local acceptance: `pnpm release:acceptance` passed all workspace
 verification, automated tests, 40-migration disposable E2E, and cleanup. It
 did not run production smoke or deploy; those remain intentionally gated on
 physical printer/live Telegram evidence and protected-main release flow.
+
+The read-only smoke suite was also rerun locally after that acceptance:
+`pnpm release:smoke` passed `22/22`, including backend/database, customer-web,
+POS/admin, protected operational routes and media health. This is local smoke
+evidence, not a claim that the protected production deployment has occurred.
