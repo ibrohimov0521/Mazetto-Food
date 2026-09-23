@@ -20,6 +20,7 @@ const { autoUpdater } =
 const GATEWAY_PORT = 7359;
 const UPSTREAM_API_URL =
   process.env.MAZETTO_API_URL?.trim() || "https://api.mazettofood.uz/api/v1";
+const LOCAL_GATEWAY_API_URL = `http://127.0.0.1:${GATEWAY_PORT}/api/v1`;
 const DESKTOP_UPDATE_URL =
   process.env.MAZETTO_DESKTOP_UPDATE_URL?.trim() ||
   "https://github.com/ibrohimov0521/Mazetto-Food/releases/latest/download/";
@@ -589,7 +590,13 @@ function setupApiControls(): void {
       requestHeaders.set("x-mazetto-device-id", store?.deviceId() ?? "");
       if (deviceAuthToken) requestHeaders.set("x-mazetto-device-token", deviceAuthToken);
 
-      const response = await fetch(`${UPSTREAM_API_URL}${path}`, {
+      /*
+       * The renderer already talks to the local gateway in desktop mode, but
+       * apiFetch falls back to this native bridge when browser fetch fails.
+       * Keep the fallback on the same gateway too; otherwise an offline sale
+       * bypasses the outbox/local-print logic and becomes a raw `fetch failed`.
+       */
+      const response = await fetch(`${LOCAL_GATEWAY_API_URL}${path}`, {
         method,
         headers: requestHeaders,
         ...(body ? { body } : {}),
