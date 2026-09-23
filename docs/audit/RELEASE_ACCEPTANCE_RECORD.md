@@ -31,6 +31,9 @@ replace physical printer, Telegram account, or production backup evidence.
   with `USB\VID_0000&PID_0002` and descriptor-request failure. No paper output
   can be inferred from this spooler state; the hardware/USB layer must be fixed
   before the receipt renderer can receive physical acceptance.
+- Read-only production media audit checked all 74 customer-catalog products;
+  every product had an image URL and all 74 media `HEAD` requests returned
+  HTTP 200.
 
 ## Release identity
 
