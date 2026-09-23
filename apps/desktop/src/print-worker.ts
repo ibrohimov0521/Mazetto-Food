@@ -145,7 +145,10 @@ export class DesktopPrintWorker {
     if (this.running) return;
     this.running = true;
     try {
-      if (await this.printNextLocalJob()) return;
+      while (await this.printNextLocalJob()) {
+        // Drain locally queued tickets in this pass; polling once per second
+        // between every customer and kitchen slip adds avoidable delay.
+      }
       if (!this.authorization) return;
 
       const readyPrinters = await this.discoverReadyPrinters();

@@ -305,8 +305,7 @@ export class DesktopGateway {
     targetUrl: string;
     definition: OfflineCommandDefinition;
   }): { command: PendingOutboxCommand } {
-    const bodyText = Buffer.from(input.body).toString("utf8");
-    const parsedBody = parseJsonObject(bodyText);
+    let parsedBody = parseJsonObject(Buffer.from(input.body).toString("utf8"));
     const context = readJwtContext(input.authorization);
     const idempotencyKey =
       headerValue(input.request.headers["idempotency-key"]) ??
@@ -316,6 +315,13 @@ export class DesktopGateway {
     const localAggregateId = createsLocalAggregate(input.definition.commandType)
       ? `local-${randomUUID()}`
       : null;
+    if (input.definition.commandType === "pos.order.create" && localAggregateId && parsedBody) {
+      parsedBody = {
+        ...parsedBody,
+        offlineDisplayOrderNumber: offlineDisplayNumber(localAggregateId),
+      };
+    }
+    const bodyText = parsedBody ? JSON.stringify(parsedBody) : Buffer.from(input.body).toString("utf8");
     const baseVersion = numberField(parsedBody, "expectedVersion");
     const offlineOrderSnapshot =
       input.definition.commandType === "pos.order.create" && localAggregateId
@@ -902,8 +908,8 @@ function optimisticOrder(
   const tableId = stringField(body, "tableId") ?? undefined;
   return {
     id,
-    orderNumber: `OFF-${command.id.slice(0, 8).toUpperCase()}`,
-    displayOrderNumber: `OFF-${command.id.slice(0, 8).toUpperCase()}`,
+    orderNumber: offlineDisplayNumber(id),
+    displayOrderNumber: stringField(body, "offlineDisplayOrderNumber") ?? offlineDisplayNumber(id),
     status: "NEW",
     orderState: "PLACED",
     paymentStatus: "PENDING",
@@ -1013,7 +1019,7 @@ function queuedResponseData(
   const parsedBody = parseJsonObject(Buffer.from(body).toString("utf8"));
   const total = paymentTotal(parsedBody);
   const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
-  const offlineNumber = `OFF-${command.id.slice(0, 8).toUpperCase()}`;
+  const offlineNumber = offlineDisplayNumber(command.aggregateId ?? command.id);
   const base = {
     offlineQueued: true,
     queued: true,
@@ -1265,7 +1271,7 @@ function buildOfflineOrderSnapshot(
   const table = tables.find(
     (candidate) => isRecord(candidate) && candidate.id === tableId,
   );
-  const offlineNumber = `OFF-${localOrderId.slice(-8).toUpperCase()}`;
+  const offlineNumber = stringField(body, "offlineDisplayOrderNumber") ?? offlineDisplayNumber(localOrderId);
   return {
     id: localOrderId,
     orderNumber: offlineNumber,
@@ -1335,9 +1341,28 @@ function buildOfflinePrintDocument(
     items: order.items,
     payments,
     total: order.total,
-    dateTime: order.createdAt,
+    dateTime: formatTashkentDateTime(
+      new Date(stringField(order, "createdAt") ?? new Date().toISOString()),
+    ),
     offline: true,
   };
+}
+
+function offlineDisplayNumber(localOrderId: string): string {
+  return `K-${localOrderId.replace(/[^a-f0-9]/gi, "").slice(-12).toUpperCase()}`;
+}
+
+function formatTashkentDateTime(value: Date): string {
+  return `${new Intl.DateTimeFormat("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(value)} Toshkent vaqti`;
 }
 
 function buildOfflineCancellationDocument(
@@ -1379,7 +1404,7 @@ function buildOfflineCancellationDocument(
     orderType: order.type,
     items: Array.isArray(order.items) ? order.items : [],
     total: order.total,
-    dateTime: new Date().toISOString(),
+    dateTime: formatTashkentDateTime(new Date()),
     offline: true,
   };
 }
