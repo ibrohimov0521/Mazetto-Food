@@ -425,6 +425,7 @@ model User {
   displayName  String?
   avatarUrl    String?
   isActive     Boolean   @default(true)
+  telegramUserId String? @unique
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

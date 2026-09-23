@@ -140,7 +140,7 @@ async function startDesktop(): Promise<void> {
   setupSessionControls();
   setupSupportControls();
   await gateway.start();
-  printTimer = setInterval(() => void printWorker?.tick(), 3_000);
+  printTimer = setInterval(() => void printWorker?.tick(), 1_000);
   printTimer.unref();
   setupAutoUpdater();
   const uiUrl = await resolveUiUrl();

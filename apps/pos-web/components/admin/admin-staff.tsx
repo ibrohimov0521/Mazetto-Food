@@ -61,6 +61,7 @@ type Staff = {
   id: string;
   email?: string | null;
   phone?: string | null;
+  telegramUserId?: string | null;
   displayName?: string | null;
   isActive: boolean;
   lastLoginAt?: string | null;
@@ -188,6 +189,8 @@ export function AdminStaffPage() {
         item.displayName,
         item.email,
         item.phone,
+        item.telegramUserId,
+        item.employee?.telegramUserId,
         // Kod VA o'zbekcha lavozim bo'yicha qidiriladi: admin "kassir" deb
         // yozganda ham topilishi kerak, faqat "CASHIER" emas.
         item.roles
@@ -547,7 +550,8 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
           name: nextStaff.displayName ?? "",
           email: nextStaff.email ?? "",
           phone: nextStaff.phone ?? "",
-          telegramUserId: nextStaff.employee?.telegramUserId ?? "",
+          telegramUserId:
+            nextStaff.telegramUserId ?? nextStaff.employee?.telegramUserId ?? "",
           password: "",
           roleCodes: nextStaff.roles.map((role) => role.code),
           branchId: nextStaff.employee?.branchId ?? "",
