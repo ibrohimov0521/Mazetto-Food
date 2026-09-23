@@ -73,6 +73,10 @@ ready and its database rollout has been rehearsed.
 - Device hardening portion of `AUD-122`: enrollment issues a random 256-bit
   device secret, only its hash is stored server-side, official Gateway and print
   worker send it, and the backend uses constant-time verification.
+- Desktop update feed now honors `MAZETTO_DESKTOP_UPDATE_URL`: the built-in
+  GitHub release feed remains supported, while Dokploy/admin-managed generic
+  feeds use electron-updater's generic provider. Both paths have regression
+  tests; installed Windows download/install still requires human acceptance.
 
 ## Added database changes
 
