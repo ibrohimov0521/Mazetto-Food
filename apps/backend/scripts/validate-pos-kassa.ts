@@ -51,7 +51,7 @@ assert.match(posDto, /@Max\(99\)/);
 assert.match(ordersService, /resolveRequiredBranchScope\(user\)/);
 assert.match(ordersService, /const employeeId = requireEmployee\(user\)/);
 assert.match(ordersService, /source: OrderSource\.POS/);
-assert.match(ordersService, /code: \{ in: \[\.\.\.customerVisibleProductCodes\] \}/);
+assert.match(ordersService, /customerVisibleProductWhere\(\)/);
 assert.match(ordersService, /this\.createItemSnapshot\([\s\S]{0,200}requireCanonical: true/);
 assert.match(ordersService, /summarizePosPayment\(dto, order\.total\)/);
 assert.match(ordersService, /new Prisma\.Decimal\(dto\.cashReceived \?\? cashTender\.amount\)/);

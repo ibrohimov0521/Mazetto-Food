@@ -4,6 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import {
   customerVisibleCategoryCodes,
   customerVisibleProductCodes,
+  customerVisibleProductCodeSet,
   customerVisibleProductWhere,
 } from "../customers/customer-catalog-visibility";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
@@ -909,7 +910,11 @@ export class TelegramCustomerOrderingService {
       },
     });
 
-    if (!product || !isSimpleQuickAddProduct(product)) {
+    if (
+      !product ||
+      !customerVisibleProductCodeSet.has(product.code) ||
+      !isSimpleQuickAddProduct(product)
+    ) {
       await this.screen.answerCallback(
         callback,
         "Bu mahsulotni qayta tanlang.",

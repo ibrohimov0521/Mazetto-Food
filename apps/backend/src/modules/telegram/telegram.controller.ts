@@ -32,6 +32,13 @@ export class TelegramController {
   async handleWebhook(@Param("secret") secret: string, @Body() update: unknown) {
     this.assertWebhookSecret(secret, process.env.TELEGRAM_WEBHOOK_SECRET);
 
+    // Diagnostic commands belong to the customer bot when sent to its webhook;
+    // handle them before customer auth/ordering so a partial test double or a
+    // normal customer update can never turn /staffid into a generic error.
+    if (await this.handleStaffChatIdDiagnostic(update, process.env.TELEGRAM_BOT_TOKEN)) {
+      return { ok: true, handled: true };
+    }
+
     const customerResult =
       await this.telegramCustomerAuthService.handleWebhookUpdate(update);
 

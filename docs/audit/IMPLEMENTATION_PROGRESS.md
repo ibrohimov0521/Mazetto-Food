@@ -139,6 +139,10 @@ devices need a coordinated one-time re-enrollment after the credential migration
 - `AUD-151`/`AUD-153`/`AUD-155`: Telegram's single webhook owner, alert owners
   and thresholds are documented and validated; system health reports print
   dead letters, stale devices and a redacted CORS configuration fingerprint.
+- Telegram diagnostic commands now terminate before customer authentication on
+  the customer webhook, and staff diagnostics reply with the token belonging
+  to the webhook that received the update. Legacy quick-add callbacks cannot
+  add hidden/legacy products back into a customer cart.
 - `AUD-131` core CASH workflow: branch managers with `PAYMENT_REFUND` can fully
   refund a successful CASH payment against an open branch shift. The operation
   is idempotent and records an immutable refund, negative revenue adjustment,
@@ -179,8 +183,8 @@ audit. Aggregate backend, Desktop, workspace and operations suites were rerun at
 this checkpoint and passed as recorded above.
 
 The final local acceptance rerun passed 12/12 typecheck/lint tasks, 6/6 builds,
-31/31 validators, 231 backend tests, 38 Desktop tests and the disposable
-39-migration E2E. A `pg@8` deprecation warning can still be emitted by Prisma's
+31/31 validators, 240 backend tests, 40 Desktop tests and the disposable
+40-migration E2E. A `pg@8` deprecation warning can still be emitted by Prisma's
 interactive transaction adapter during the deliberate concurrent-idempotency
 exercise; the assertions and cleanup pass, and this dependency warning is not
 recorded as production certification.
@@ -213,3 +217,8 @@ contain the generated public media and its local API content was unavailable.
    claim.
 8. Only after the blocking gates: bump Desktop version, build/publish update,
    run release smoke, then perform the single requested push/deploy.
+
+Latest local acceptance: `pnpm release:acceptance` passed all workspace
+verification, automated tests, 40-migration disposable E2E, and cleanup. It
+did not run production smoke or deploy; those remain intentionally gated on
+physical printer/live Telegram evidence and protected-main release flow.

@@ -146,10 +146,10 @@ assert.match(
  */
 // Media yuklash hali yo'qligi foydalanuvchiga aytilishi kerak
 assert.match(adminProductEditor, /Media yuklash|Rasm boshqaruvi/);
-// Yangi mahsulot ommaviy katalogga avtomatik kirmasligi aytilishi kerak
+// Yangi mahsulotning ommaviy katalogga chiqish qoidasi aytilishi kerak
 assert.match(
   adminProductEditor,
-  /avtomatik ommaviy katalogga kirmaydi|avtomatik canonical/,
+  /ommaviy katalog, POS va bot menyusida|avtomatik ommaviy katalogga kirmaydi|avtomatik canonical/,
 );
 assert.doesNotMatch(adminProductEditor, /method: "DELETE"/);
 
@@ -194,20 +194,10 @@ assert.match(
   "getProduct filial mavjudligini qaytarmayapti",
 );
 
-/*
- * Modifier o'chirilmasligi kerak — buyurtma tarixidagi `modifierSnapshot`
- * bilan bog'liq. Nofaol qilish tarixiy yaxlitlikni saqlaydi.
- */
-assert.doesNotMatch(
-  menuController,
-  /@Delete\("modifiers/,
-  "modifier o'chirish endpoint'i bo'lmasin",
-);
-assert.doesNotMatch(
-  adminModifiers,
-  /method: "DELETE"/,
-  "modifier ekranida o'chirish bo'lmasin",
-);
+/* Modifier history is protected by reference checks; unused modifiers may be
+ * permanently deleted, while referenced modifiers remain archive-only. */
+assert.match(menuController, /@Delete\("modifiers\/bulk\/permanent"\)/);
+assert.match(adminModifiers, /method: "DELETE"/);
 
 assert.match(posRouteVerifier, /pos\.mazettofood\.uz/);
 assert.match(posRouteVerifier, /Kitchen API public safety/);
