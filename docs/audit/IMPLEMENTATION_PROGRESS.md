@@ -90,6 +90,10 @@ ready and its database rollout has been rehearsed.
   set (homepage, kitchen monitor, courier/customer management, devices,
   payments, receipts, printers, shifts, inventory and recipes). Operational
   permissions such as `TABLE_VIEW` still keep their waiter workspace priority.
+- Customer-web authentication now restores and rotates refresh sessions through
+  the Secure HttpOnly cookie. Legacy local refresh tokens are consumed only
+  once for migration, then removed; customer localStorage keeps no refresh
+  token. Production cookie/CORS/CSRF behavior still needs hosted acceptance.
 
 ## Added database changes
 
