@@ -15,6 +15,9 @@ replace physical printer, Telegram account, or production backup evidence.
 - Note: the Windows Turbo process did not return after build output in the
   combined runner, so the remaining stages were run separately. Their exit
   results are authoritative; this is not a production certification.
+- Read-only production smoke: `pnpm release:smoke` passed `22/22` against the
+  default public production domains on 2026-09-23; the checks were GET-only and
+  did not create or mutate production data.
 
 ## Release identity
 
