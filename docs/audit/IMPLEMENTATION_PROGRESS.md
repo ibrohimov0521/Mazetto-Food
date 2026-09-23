@@ -33,7 +33,7 @@ Verification after this checkpoint:
 - Backend tests: 240/240 passed.
 - Backend and POS/Admin typechecks passed.
 - Telegram typecheck passed.
-- Read-only production smoke: 22/22 passed against the default public
+- Read-only production smoke: 23/23 passed against the default public
   production domains; no write operation was performed.
 - Media validation: 74 available product assets, 0 unresolved available
   product assets, 10 category assets.
@@ -231,7 +231,7 @@ read-only and no deploy was performed; the release remains gated on physical
 printer/live Telegram evidence and the protected-main release flow.
 
 The read-only smoke suite was also rerun against the default public production
-domains: `pnpm release:smoke` passed `22/22`, including backend/database,
+domains: `pnpm release:smoke` passed `23/23`, including backend/database,
 customer-web, POS/admin, protected operational routes and media health. This
 proves current public endpoint health only; it does not prove that this local
 release branch has been deployed.

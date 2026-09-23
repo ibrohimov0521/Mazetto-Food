@@ -107,9 +107,62 @@ const checks = [
     status: [200],
   },
   { name: "media health", url: `${media}/healthz`, status: [200, 204] },
+  {
+    name: "customer catalog media assets",
+    custom: async () => {
+      const response = await fetch(`${api}/customer/menu/products`, {
+        headers: { "User-Agent": "mazetto-release-smoke" },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok) return `${response.status}, katalog olinmadi`;
+
+      const payload = await response.json();
+      const products = Array.isArray(payload?.data) ? payload.data : [];
+      if (products.length === 0) return "katalog bo'sh yoki noto'g'ri formatda";
+
+      const failures = [];
+      await Promise.all(
+        products.map(async (product) => {
+          const image = typeof product?.imageUrl === "string" ? product.imageUrl.trim() : "";
+          if (!image) {
+            failures.push(`${product?.name ?? "noma'lum"}: imageUrl yo'q`);
+            return;
+          }
+
+          const imageUrl = image.startsWith("http")
+            ? image
+            : `${media}/${image.replace(/^\/+/, "")}`;
+          try {
+            const imageResponse = await fetch(imageUrl, {
+              method: "HEAD",
+              redirect: "manual",
+              signal: AbortSignal.timeout(15000),
+            });
+            if (imageResponse.status !== 200) {
+              failures.push(`${product?.name ?? "noma'lum"}: HTTP ${imageResponse.status}`);
+            }
+          } catch (error) {
+            failures.push(`${product?.name ?? "noma'lum"}: ${error.name ?? "network error"}`);
+          }
+        }),
+      );
+
+      return failures.length
+        ? `${failures.length}/${products.length} media xatosi: ${failures.slice(0, 3).join("; ")}`
+        : null;
+    },
+  },
 ];
 
 async function run(check) {
+  if (check.custom) {
+    try {
+      return await check.custom();
+    } catch (error) {
+      return `tekshiruv yiqildi (${error.cause?.code ?? error.name})`;
+    }
+  }
+
   try {
     const response = await fetch(check.url, {
       headers: { "User-Agent": "mazetto-release-smoke" },

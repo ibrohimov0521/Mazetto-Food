@@ -14,7 +14,7 @@ candidate is deployed.
 | Desktop update | Local candidate ready | Version `0.1.40`; NSIS installer and matching `latest.yml` built | Publish release; public feed is still `0.1.39`; install/update on a real device |
 | Offline/POS/kitchen | Automated acceptance passed | `pnpm release:acceptance`; offline queue, conflict and print tests | Real disconnected POS and kitchen device rehearsal |
 | Database recovery | Rehearsed locally | Production dump listed/restored in isolation; all 40 migrations replayed | Final deploy backup/rollback record |
-| Production services | Read-only health passed | `pnpm release:smoke`: 22/22 | Deploy this branch and rerun post-deploy smoke |
+| Production services | Read-only health passed | `pnpm release:smoke`: 23/23, including all 74 catalog media assets | Deploy this branch and rerun post-deploy smoke |
 | Push/deploy | Not performed | Branch is local and clean | Protected-main merge/push, Dokploy deploy, post-deploy acceptance |
 
 ## Release rule
