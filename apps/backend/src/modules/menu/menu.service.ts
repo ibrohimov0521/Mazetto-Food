@@ -428,19 +428,25 @@ export class MenuService {
       throw new NotFoundException("Tanlangan kategoriyalarning biri topilmadi");
     }
 
-    const blocked = categories.filter(
-      (category) =>
-        category._count.products > 0 ||
-        category._count.children > 0 ||
-        category._count.promotions > 0,
-    );
-    if (blocked.length) {
-      throw new BadRequestException(
-        `Mahsulot, quyi kategoriya yoki aksiya bog'langan kategoriyalarni o'chirib bo'lmaydi: ${blocked.map((category) => category.name).join(", ")}`,
+    await this.prisma.$transaction(async (tx) => {
+      const products = await tx.product.findMany({
+        where: { categoryId: { in: uniqueIds } },
+        select: { id: true },
+      });
+      await this.deleteProductRows(
+        tx,
+        products.map((product) => product.id),
       );
-    }
-
-    await this.prisma.category.deleteMany({ where: { id: { in: uniqueIds } } });
+      await tx.promotion.updateMany({
+        where: { categoryId: { in: uniqueIds } },
+        data: { categoryId: null },
+      });
+      await tx.category.updateMany({
+        where: { parentId: { in: uniqueIds } },
+        data: { parentId: null },
+      });
+      await tx.category.deleteMany({ where: { id: { in: uniqueIds } } });
+    });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
@@ -671,30 +677,7 @@ export class MenuService {
       throw new NotFoundException("Product not found");
     }
 
-    if (this.getCatalogVisibility(product.code) !== "CUSTOM") {
-      throw new BadRequestException(
-        "Faqat admin qo'shgan yangi mahsulotlarni butunlay o'chirish mumkin",
-      );
-    }
-
-    const blockers = [
-      product._count.orderItems ? "buyurtma tarixi" : null,
-      product._count.cartItems ? "mijoz savati" : null,
-      product._count.favorites ? "mijoz sevimlilari" : null,
-      product._count.usedInBundles ? "set tarkibi" : null,
-      product._count.bundleItems ? "set mahsuloti" : null,
-      product._count.heroSlides ? "bosh sahifa slaydi" : null,
-      product._count.promotions ? "aksiya/reklama" : null,
-      product._count.variants ? "retsept" : null,
-    ].filter(Boolean);
-
-    if (blockers.length) {
-      throw new BadRequestException(
-        `Mahsulotni butunlay o'chirib bo'lmaydi: ${blockers.join(", ")} bog'langan. Uni arxivga oling.`,
-      );
-    }
-
-    await this.prisma.product.delete({ where: { id } });
+    await this.prisma.$transaction((tx) => this.deleteProductRows(tx, [id]));
 
     return { deleted: true, id };
   }
@@ -705,11 +688,62 @@ export class MenuService {
       throw new BadRequestException("Kamida bitta mahsulot tanlanishi kerak");
     }
     const deleted: string[] = [];
-    for (const id of uniqueIds) {
-      await this.permanentlyDeleteProduct(id);
-      deleted.push(id);
-    }
+    await this.prisma.$transaction(async (tx) => {
+      const products = await tx.product.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true },
+      });
+      if (products.length !== uniqueIds.length) {
+        throw new NotFoundException("Tanlangan mahsulotlarning biri topilmadi");
+      }
+      await this.deleteProductRows(tx, uniqueIds);
+      deleted.push(...uniqueIds);
+    });
     return { deleted: true, count: deleted.length, ids: deleted };
+  }
+
+  private async deleteProductRows(
+    tx: Prisma.TransactionClient,
+    ids: string[],
+  ) {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (!uniqueIds.length) return;
+
+    const variantIds = (
+      await tx.productVariant.findMany({
+        where: { productId: { in: uniqueIds } },
+        select: { id: true },
+      })
+    ).map((variant) => variant.id);
+
+    await tx.cartItem.deleteMany({ where: { productId: { in: uniqueIds } } });
+    await tx.homepageHeroSlide.updateMany({
+      where: { productId: { in: uniqueIds } },
+      data: { productId: null },
+    });
+    await tx.promotion.updateMany({
+      where: { productId: { in: uniqueIds } },
+      data: { productId: null },
+    });
+    await tx.productBundleItem.updateMany({
+      where: { componentProductId: { in: uniqueIds } },
+      data: { componentProductId: null },
+    });
+    await tx.orderItem.updateMany({
+      where: { productId: { in: uniqueIds } },
+      data: { productId: null, variantId: null },
+    });
+    if (variantIds.length) {
+      await tx.cartItem.updateMany({
+        where: { variantId: { in: variantIds } },
+        data: { variantId: null },
+      });
+      await tx.orderItem.updateMany({
+        where: { variantId: { in: variantIds } },
+        data: { variantId: null },
+      });
+    }
+    await tx.product.deleteMany({ where: { id: { in: uniqueIds } } });
   }
 
   /**

@@ -37,6 +37,18 @@ export class CloseShiftDto {
   closingBalance!: number;
 }
 
+export class ForceCloseShiftDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  closingBalance?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class CreateCashTransactionDto {
   @IsEnum(CashTransactionType)
   type!: CashTransactionType;

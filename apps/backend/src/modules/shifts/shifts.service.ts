@@ -24,6 +24,7 @@ import type {
   CloseShiftDto,
   CreateCashTransactionDto,
   CreateCashTransferDto,
+  ForceCloseShiftDto,
   ForceCashHandoverDto,
   OpenShiftDto,
 } from "./dto/shift.dto";
@@ -434,6 +435,150 @@ export class ShiftsService {
     }
 
     throw new BadRequestException("Shift could not be closed");
+  }
+
+  async forceCloseShift(
+    id: string,
+    dto: ForceCloseShiftDto,
+    user: AuthenticatedUser,
+  ) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRawUnsafe(
+              'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+              id,
+            );
+            const shift = await tx.shift.findUnique({ where: { id } });
+
+            if (!shift) {
+              throw new NotFoundException("Shift not found");
+            }
+
+            if (shift.status !== ShiftStatus.OPEN) {
+              throw new BadRequestException("Shift is already closed");
+            }
+
+            resolveBranchScope(user, shift.branchId);
+
+            const pendingTransfers = await tx.cashTransfer.updateMany({
+              where: { fromShiftId: id, status: CashTransferStatus.PENDING },
+              data: {
+                status: CashTransferStatus.DISPUTED,
+                reason:
+                  dto.reason?.trim() ||
+                  "Admin smenani majburiy yopgani uchun topshiruv yopildi",
+                rejectedAt: new Date(),
+              },
+            });
+
+            const payments = await tx.payment.findMany({
+              where: {
+                status: {
+                  in: [
+                    PaymentStatus.PAID,
+                    PaymentStatus.SUCCESS,
+                    PaymentStatus.REFUNDED,
+                    PaymentStatus.PARTIALLY_REFUNDED,
+                  ],
+                },
+                revenueRecords: { some: { shiftId: id } },
+              },
+              include: { method: true },
+            });
+            const cashTransactions = await tx.cashTransaction.findMany({
+              where: { shiftId: id },
+            });
+            const orderIds = new Set(
+              payments.map((payment) => payment.orderId),
+            );
+            const totals = this.calculateShiftTotals(
+              payments,
+              cashTransactions,
+              orderIds.size,
+            );
+            const expectedCash = this.calculateExpectedCash(
+              shift.openingBalance,
+              totals,
+              cashTransactions,
+            );
+            const currentCash = this.calculateCashBalance(
+              shift.openingBalance,
+              cashTransactions,
+            );
+            const closingBalance =
+              dto.closingBalance === undefined
+                ? currentCash
+                : new Prisma.Decimal(dto.closingBalance);
+            const cashDifference = closingBalance.sub(expectedCash);
+
+            const closed = await tx.shift.updateMany({
+              where: { id, status: ShiftStatus.OPEN },
+              data: {
+                status: ShiftStatus.CLOSED,
+                closedAt: new Date(),
+                closingBalance,
+                expectedCash,
+                cashDifference,
+                ...totals,
+              },
+            });
+
+            if (closed.count !== 1) {
+              throw new BadRequestException("Shift is already closed");
+            }
+
+            await tx.cashTransaction.create({
+              data: {
+                branchId: shift.branchId,
+                shiftId: id,
+                employeeId: shift.employeeId,
+                type: CashTransactionType.CLOSING_BALANCE,
+                amount: closingBalance,
+                reason:
+                  dto.reason?.trim() ||
+                  "Admin smenani majburiy yopdi",
+                createdById: user.id,
+              },
+            });
+
+            await writeAuditLog(tx, {
+              userId: user.id,
+              action: "SHIFT_FORCE_CLOSED",
+              entity: "Shift",
+              entityId: id,
+              metadata: {
+                branchId: shift.branchId,
+                employeeId: shift.employeeId,
+                closingBalance: closingBalance.toString(),
+                expectedCash: expectedCash.toString(),
+                cashDifference: cashDifference.toString(),
+                pendingTransfersDisputed: pendingTransfers.count,
+                reason: dto.reason?.trim() || null,
+              },
+            });
+
+            return tx.shift.findUniqueOrThrow({
+              where: { id },
+              include: this.shiftInclude(),
+            });
+          },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: 15000,
+          },
+        );
+      } catch (error) {
+        if (this.isRetryableTransactionConflict(error) && attempt < 2) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new BadRequestException("Shift could not be force closed");
   }
 
   async createCashTransaction(
