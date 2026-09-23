@@ -77,6 +77,11 @@ ready and its database rollout has been rehearsed.
   GitHub release feed remains supported, while Dokploy/admin-managed generic
   feeds use electron-updater's generic provider. Both paths have regression
   tests; installed Windows download/install still requires human acceptance.
+- Cash payment refunds are available from the admin Payments page. The flow
+  requires `PAYMENT_REFUND`, an open branch shift and a reason, then writes an
+  immutable reversal, cash transaction, audit event and refund receipt queue
+  entry. Click/Payme/Card provider refunds remain disabled until signed
+  provider callbacks and reconciliation are available.
 
 ## Added database changes
 

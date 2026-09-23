@@ -54,9 +54,9 @@ import { useToast } from "../admin-ui/toast";
  * Ikkalasi ham `ORDER_SEND_KITCHEN` talab qiladi va serverda qo'shimcha
  * shart bor: chaqiruvchi shu FILIALNING faol xodimi bo'lishi kerak.
  *
- * PUL QAYTARISH (refund/void) bu yerda YO'Q, chunki backendda umuman
- * yo'q: `PosOrderStatus` enum'ida REFUNDED yo'q va `payments` moduli
- * qaytarish endpoint'i bermaydi. Ishlamaydigan tugma qo'yilmadi.
+ * PUL QAYTARISH (refund/void) buyurtma ro'yxatida bajarilmaydi: bu amal
+ * `Kassa va hisobot > To'lovlar` sahifasida permission, ochiq smena va
+ * sabab bilan boshqariladi. Buyurtma ekrani faqat to'lov holatini ko'rsatadi.
  */
 
 type Branch = { id: string; code: string; name: string };

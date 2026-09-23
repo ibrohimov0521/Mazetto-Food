@@ -45,7 +45,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | ID | Priority | Confirmed gap | Required result and acceptance test |
 | --- | --- | --- | --- |
 | AUD-130 | P1 | Click/Payme/Card providers, callbacks and reconciliation are absent | Implement provider-signed initiation/callback/idempotency, payment state, reconciliation and failure UX before enabling method |
-| AUD-131 | P1 | Refund/void is not implemented although schema/report concepts exist | Add permissioned refund workflow, provider/cash ledger entry, receipt document, audit and report treatment |
+| AUD-131 | P1 | Cash refund is implemented; external provider refund/reconciliation remains disabled | Keep cash refund permissioned and idempotent with immutable reversal, cash ledger, refund receipt and audit/report treatment; add signed Click/Payme/Card provider refund only after provider contracts and reconciliation are available |
 | AUD-132 | P2 | Ingredient and warehouse master data lacks edit/deactivate lifecycle | Add branch-safe update/archive with reference protection and history |
 | AUD-133 | P2 | Automatic recipe deduction fails if no active warehouse exists | Add readiness check/dashboard and prevent enabling recipe deduction until warehouse mapping is valid |
 | AUD-134 | P2 | Modifier lifecycle has create/update but no explicit archive/delete action | Define archive policy, expose action and preserve historical orders |

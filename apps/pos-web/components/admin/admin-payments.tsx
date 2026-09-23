@@ -85,10 +85,9 @@ type Payment = {
 /*
  * Filtr uchun to'lov usuli kodlari.
  *
- * Backend'da to'lov usullarini qaytaradigan endpoint YO'Q
- * (`components/payment/payment-methods.ts` shuni batafsil yozadi va
- * `paymentMethod.findMany` butun backend bo'ylab chaqirilmaydi). Shuning
- * uchun ro'yxat `prisma/seed.ts` dagi seed bilan mos qo'lda saqlanadi.
+ * Backend'da to'lov usullarini boshqaradigan katalog endpoint'i yo'q
+ * (`components/payment/payment-methods.ts` kassadagi tenderlar uchun ishlaydi).
+ * Shuning uchun ro'yxat `prisma/seed.ts` dagi seed bilan mos qo'lda saqlanadi.
  * Bu DAFTAR filtri, kassaga tender taklifi emas — shuning uchun hali
  * ishlatilmayotgan kodlar ham bor: tarixda ular uchrashi mumkin.
  */
