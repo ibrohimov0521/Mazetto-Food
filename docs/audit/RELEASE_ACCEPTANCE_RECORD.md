@@ -25,6 +25,9 @@ replace physical printer, Telegram account, or production backup evidence.
 - Public GitHub `latest.yml` was checked read-only and still reports `0.1.39`;
   therefore the missing update is currently a publication gap, not an updater
   version-detection gap.
+- Godex G500 acceptance is not passed: Windows reports the printer as normal,
+  but 21 queued jobs remain with `PagesPrinted=0` (oldest job 01:10 Asia/Tashkent)
+  on `USB001`. No paper output can be inferred from this spooler state.
 
 ## Release identity
 
