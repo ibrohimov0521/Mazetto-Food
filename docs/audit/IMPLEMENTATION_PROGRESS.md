@@ -223,13 +223,12 @@ contain the generated public media and its local API content was unavailable.
 8. Only after the blocking gates: bump Desktop version, build/publish update,
    run release smoke, then perform the single requested push/deploy.
 
-Latest local acceptance evidence is split by stage: workspace verification and
-6/6 builds passed, while the combined runner's Windows Turbo process did not
-return after build output. Automated tests, 40-migration disposable E2E,
-32/32 validators, cleanup and read-only smoke were then run separately and
-passed. Production smoke was local only and no deploy was performed; the
-release remains gated on physical printer/live Telegram evidence and the
-protected-main release flow.
+Latest local acceptance evidence includes a successful combined
+`pnpm release:acceptance` run with `TURBO_UI=stream` and
+`TURBO_DAEMON=false`: workspace verification, automated tests, 40-migration
+disposable E2E, 32/32 validators and cleanup all passed. Production smoke was
+read-only and no deploy was performed; the release remains gated on physical
+printer/live Telegram evidence and the protected-main release flow.
 
 The read-only smoke suite was also rerun against the default public production
 domains: `pnpm release:smoke` passed `22/22`, including backend/database,
