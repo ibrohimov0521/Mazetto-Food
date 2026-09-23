@@ -8,6 +8,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   OrderItemStatus,
@@ -82,6 +83,7 @@ import {
   recordOrderEvent,
   type OrderEventName,
 } from "./order-events";
+import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 
 type TransactionClient = Prisma.TransactionClient;
 type ConfirmOrderForPreparationOptions = {
@@ -117,6 +119,8 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly inventoryService: InventoryService,
     private readonly kitchenService: KitchenService,
+    @Optional()
+    private readonly telegramOrderNotificationService?: TelegramOrderNotificationService,
   ) {}
 
   async listPosCatalog(user: AuthenticatedUser) {
@@ -574,6 +578,7 @@ export class OrdersService {
         if (kitchenTicket) {
           this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
         }
+        void this.notifyTelegramStaffGroupIfNeeded(order.id);
 
         /*
          * To'lov xulosasi TRANZAKSIYADAN TASHQARIDA hisoblanadi, chunki
@@ -695,6 +700,23 @@ export class OrdersService {
 
     this.kitchenService.emitOrderCreated(order);
     return order;
+  }
+
+  private async notifyTelegramStaffGroupIfNeeded(orderId: string): Promise<void> {
+    if (!this.telegramOrderNotificationService) {
+      return;
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { staffTelegramMessageId: true },
+    });
+
+    if (order?.staffTelegramMessageId) {
+      return;
+    }
+
+    await this.telegramOrderNotificationService.notifyNewOrder(orderId);
   }
 
   async listOrders(query: ListOrdersDto, user: AuthenticatedUser) {

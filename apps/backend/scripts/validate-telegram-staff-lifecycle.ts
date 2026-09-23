@@ -147,8 +147,7 @@ async function proveNewOrderNotification(
   assert.equal(message?.payload.chat_id, process.env.TELEGRAM_STAFF_CHAT_ID);
   assert.match(message?.payload.text ?? "", /Yangi buyurtma/);
   assert.match(message?.payload.text ?? "", new RegExp(order.orderNumber));
-  assertKeyboardTexts(message, ["Qabul qilish", "Bekor qilish"]);
-  assertNoKeyboardTexts(message, ["Tayyorlanmoqda", "Tayyor"]);
+  assertNoKeyboardTexts(message, ["Qabul qilish", "Bekor qilish", "Tayyorlash", "Tayyor", "Topshirish"]);
 }
 
 async function proveNewOrderNotificationRetriesTransientFailure(
@@ -179,7 +178,7 @@ async function proveLifecycle(
 
   await handleStaffCallback(staffNotifications, `mazetto_order:accept:${order.id}`, 1001);
   await assertOrderState(prisma, order.id, OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED);
-  assertKeyboardTexts(latestEdit(), ["Tayyorlash", "Bekor qilish"]);
+  assertNoKeyboardTexts(latestEdit(), ["Tayyorlash", "Bekor qilish"]);
   assertCustomerMessage(order.orderNumber, /qabul qilindi/);
   const afterAcceptHistory = await statusHistoryCount(prisma, order.id);
 
@@ -188,12 +187,12 @@ async function proveLifecycle(
 
   await handleStaffCallback(staffNotifications, `mazetto_order:start_preparing:${order.id}`, 1001);
   await assertOrderState(prisma, order.id, OrderStatus.PREPARING, KitchenTicketStatus.COOKING);
-  assertKeyboardTexts(latestEdit(), ["Tayyor", "Bekor qilish"]);
+  assertNoKeyboardTexts(latestEdit(), ["Tayyor", "Bekor qilish"]);
   assertCustomerMessage(order.orderNumber, /tayyorlanmoqda/);
 
   await handleStaffCallback(staffNotifications, `mazetto_order:mark_ready:${order.id}`, 1001);
   await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.READY);
-  assertKeyboardTexts(latestEdit(), ["Topshirish"]);
+  assertNoKeyboardTexts(latestEdit(), ["Topshirish"]);
   assertCustomerMessage(order.orderNumber, /tayyor/);
   await handleStaffCallback(staffNotifications, `mazetto_order:complete:${order.id}`, 1001);
   await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.COMPLETED);
@@ -219,7 +218,7 @@ async function proveLifecycleCustomerNotificationSurvivesCallbackAckFailure(
   }
 
   await assertOrderState(prisma, order.id, OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED);
-  assertKeyboardTexts(latestEdit(), ["Tayyorlash", "Bekor qilish"]);
+  assertNoKeyboardTexts(latestEdit(), ["Tayyorlash", "Bekor qilish"]);
   assertCustomerMessage(order.orderNumber, /qabul qilindi/);
 }
 
@@ -450,14 +449,6 @@ function latestEdit(): SentTelegramPayload | undefined {
 
 function latestAnswer(): SentTelegramPayload | undefined {
   return sentTelegramPayloads.toReversed().find((payload) => payload.method === "answerCallbackQuery");
-}
-
-function assertKeyboardTexts(payload: SentTelegramPayload | undefined, labels: string[]): void {
-  const texts = keyboardTexts(payload);
-
-  for (const label of labels) {
-    assert.ok(texts.includes(label), `keyboard must include ${label}`);
-  }
 }
 
 function assertNoKeyboardTexts(payload: SentTelegramPayload | undefined, labels: string[]): void {

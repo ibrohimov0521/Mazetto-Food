@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { BranchesModule } from "../branches/branches.module";
 import { CustomerCourierService } from "../customers/customer-courier.service";
 import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
@@ -21,7 +21,7 @@ import { TelegramCustomerOrderHistoryService } from "./telegram-customer-order-h
 import { TelegramStaffService } from "./telegram-staff.service";
 
 @Module({
-  imports: [PrismaModule, BranchesModule, KitchenModule, TablesModule, CashRegisterModule, OrdersModule, PaymentsModule, GeocodingModule],
+  imports: [PrismaModule, BranchesModule, KitchenModule, TablesModule, CashRegisterModule, forwardRef(() => OrdersModule), PaymentsModule, GeocodingModule],
   controllers: [TelegramController],
   providers: [
     CustomerCourierService,
