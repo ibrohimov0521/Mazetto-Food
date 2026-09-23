@@ -288,7 +288,7 @@ export function AdminShiftsPage() {
   const openCloseDialog = useCallback((shift: Shift) => {
     setClosing(shift);
     setCloseError("");
-    setClosingBalance("");
+    setClosingBalance(shift.currentCash ? String(Number(shift.currentCash)) : "");
   }, []);
 
   const openHandoverDialog = useCallback(
@@ -375,13 +375,20 @@ export function AdminShiftsPage() {
     setCloseError("");
 
     try {
-      const closed = await apiFetch<Shift>(`/shifts/${closing.id}/close`, {
+      const forceClose = canForceHandover;
+      const closed = await apiFetch<Shift>(
+        `/shifts/${closing.id}/${forceClose ? "force-close" : "close"}`,
+        {
         method: "POST",
-        body: JSON.stringify({ closingBalance: amount }),
-      });
+          body: JSON.stringify({
+            closingBalance: amount,
+            ...(forceClose ? { reason: "Admin paneldan majburiy yopildi" } : {}),
+          }),
+        },
+      );
 
       showToast(
-        `#${closed.shiftNumber} smena yopildi. Farq: ${formatMoney(closed.cashDifference)}`,
+        `#${closed.shiftNumber} smena ${forceClose ? "majburiy " : ""}yopildi. Farq: ${formatMoney(closed.cashDifference)}`,
         "success",
       );
       setClosing(null);
@@ -646,10 +653,10 @@ export function AdminShiftsPage() {
                * bosiladigan, lekin hech narsa qilmaydigan tugma berardi —
                * aynan shu ekran tuzatmoqchi bo'lgan nuqson.
                */}
-              {canClose && shift.status === "OPEN" ? (
+              {(canClose || canForceHandover) && shift.status === "OPEN" ? (
                 <RowAction
                   icon="check"
-                  label={`#${shift.shiftNumber} smenani yopish`}
+                  label={`#${shift.shiftNumber} smenani ${canForceHandover ? "majburiy " : ""}yopish`}
                   onClick={() => openCloseDialog(shift)}
                 />
               ) : null}
@@ -678,7 +685,7 @@ export function AdminShiftsPage() {
       </Card>
 
       <ShiftDetailModal
-        canClose={canClose}
+        canClose={canClose || canForceHandover}
         canForceHandover={canForceHandover}
         onClose={() => setDetail(null)}
         onRequestHandover={openHandoverDialog}

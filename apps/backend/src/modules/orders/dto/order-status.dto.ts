@@ -24,6 +24,10 @@ export class UpdateOrderStatusDto {
   status!: PosOrderStatus;
 
   @IsOptional()
+  @IsBoolean()
+  force?: boolean;
+
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   reason?: string;

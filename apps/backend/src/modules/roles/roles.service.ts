@@ -197,9 +197,8 @@ export class RolesService {
     });
     if (roles.length !== uniqueIds.length) throw new NotFoundException("Role not found");
     if (roles.some((role) => role.isSystem)) throw new BadRequestException("Tizim rollarini o'chirib bo'lmaydi");
-    const assigned = roles.find((role) => role.users.length);
-    if (assigned) throw new BadRequestException(`Rol ${assigned.name} xodimga biriktirilgan; avval rolni olib tashlang`);
     await this.prisma.$transaction(async (tx) => {
+      await tx.userRole.deleteMany({ where: { roleId: { in: uniqueIds } } });
       await tx.role.deleteMany({ where: { id: { in: uniqueIds } } });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, { userId: actor.id, action: "ROLE_DELETED", entity: "Role", entityId: id });

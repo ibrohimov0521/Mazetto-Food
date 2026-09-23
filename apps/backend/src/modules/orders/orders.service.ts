@@ -755,22 +755,45 @@ export class OrdersService {
         id: true,
         branchId: true,
         orderNumber: true,
-        _count: { select: { payments: true, paymentOperations: true, cashTransactions: true, revenueRecords: true } },
       },
     });
     if (orders.length !== uniqueIds.length) throw new NotFoundException("Tanlangan buyurtmalarning biri topilmadi");
     for (const order of orders) resolveBranchScope(user, order.branchId);
-    const blocked = orders.filter((order) => order._count.payments || order._count.paymentOperations || order._count.cashTransactions || order._count.revenueRecords);
-    if (blocked.length) {
-      throw new BadRequestException(`Moliyaviy tarixi bor buyurtmalarni o'chirib bo'lmaydi: ${blocked.map((order) => order.orderNumber).join(", ")}`);
-    }
+
     await this.prisma.$transaction(async (tx) => {
+      const paymentIds = (
+        await tx.payment.findMany({
+          where: { orderId: { in: uniqueIds } },
+          select: { id: true },
+        })
+      ).map((payment) => payment.id);
       const events = await tx.orderEvent.findMany({ where: { orderId: { in: uniqueIds } }, select: { id: true } });
       await tx.outboxEvent.deleteMany({ where: { OR: [
         { sourceEventId: { in: events.map((event) => event.id) } },
         { aggregateType: "Order", aggregateId: { in: uniqueIds } },
       ] } });
       await tx.orderEvent.deleteMany({ where: { orderId: { in: uniqueIds } } });
+      if (paymentIds.length) {
+        await tx.paymentRefund.deleteMany({ where: { paymentId: { in: paymentIds } } });
+      }
+      await tx.revenueRecord.updateMany({
+        where: { orderId: { in: uniqueIds } },
+        data: { orderId: null, paymentId: null },
+      });
+      await tx.cashTransferAllocation.updateMany({
+        where: { orderId: { in: uniqueIds } },
+        data: { orderId: null, paymentId: null },
+      });
+      await tx.cashTransaction.updateMany({
+        where: { orderId: { in: uniqueIds } },
+        data: { orderId: null, paymentId: null },
+      });
+      if (paymentIds.length) {
+        await tx.payment.deleteMany({ where: { id: { in: paymentIds } } });
+      }
+      await tx.paymentOperation.deleteMany({
+        where: { orderId: { in: uniqueIds } },
+      });
       await tx.order.deleteMany({ where: { id: { in: uniqueIds } } });
       await writeAuditLog(tx, { userId: user.id, action: "ORDERS_BULK_DELETED", entity: "Order", metadata: { ids: uniqueIds, orders } });
     });
@@ -1026,7 +1049,8 @@ export class OrdersService {
     user: AuthenticatedUser,
     context?: OrderMutationContext,
   ) {
-    const employeeId = requireEmployee(user);
+    const force = dto.force === true;
+    const employeeId = force ? (user.employeeId ?? null) : requireEmployee(user);
     const nextStatus = toStoredStatus(dto.status);
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -1037,7 +1061,11 @@ export class OrdersService {
         throw new NotFoundException("Order not found");
       }
 
-      await assertEmployeeInBranch(tx, employeeId, order.branchId);
+      if (force) {
+        resolveBranchScope(user, order.branchId);
+      } else {
+        await assertEmployeeInBranch(tx, employeeId!, order.branchId);
+      }
 
       if (
         context?.expectedVersion !== undefined &&
@@ -1070,8 +1098,9 @@ export class OrdersService {
       }
 
       if (
-        order.status === OrderStatus.COMPLETED ||
-        order.status === OrderStatus.CANCELLED
+        !force &&
+        (order.status === OrderStatus.COMPLETED ||
+          order.status === OrderStatus.CANCELLED)
       ) {
         throw new BadRequestException(
           "Completed or cancelled orders cannot change status",
@@ -1086,7 +1115,12 @@ export class OrdersService {
             details: { currentVersion: order.version },
           });
         }
-        if (nextStatus === OrderStatus.CONFIRMED) {
+        if (
+          nextStatus === OrderStatus.CONFIRMED &&
+          (!force ||
+            order.status === OrderStatus.NEW ||
+            order.status === OrderStatus.CONFIRMED)
+        ) {
           const confirmed = await this.confirmOrderForPreparation(tx, {
             orderId,
             userId: user.id,
@@ -1110,7 +1144,12 @@ export class OrdersService {
         };
       }
 
-      if (nextStatus === OrderStatus.CONFIRMED) {
+      if (
+        nextStatus === OrderStatus.CONFIRMED &&
+        (!force ||
+          order.status === OrderStatus.NEW ||
+          order.status === OrderStatus.CONFIRMED)
+      ) {
         const confirmed = await this.confirmOrderForPreparation(tx, {
           orderId,
           userId: user.id,
@@ -1129,6 +1168,7 @@ export class OrdersService {
       }
 
       if (
+        !force &&
         order.status === OrderStatus.NEW &&
         nextStatus !== OrderStatus.CANCELLED
       ) {
@@ -1144,17 +1184,17 @@ export class OrdersService {
       };
 
       if (nextStatus === OrderStatus.SERVED) {
-        data.servedBy = { connect: { id: employeeId } };
+        if (employeeId) data.servedBy = { connect: { id: employeeId } };
       }
 
       if (nextStatus === OrderStatus.COMPLETED) {
         data.closedAt = new Date();
-        data.closedBy = { connect: { id: employeeId } };
+        if (employeeId) data.closedBy = { connect: { id: employeeId } };
       }
 
       if (nextStatus === OrderStatus.CANCELLED) {
         data.cancelledAt = new Date();
-        data.cancelledBy = { connect: { id: employeeId } };
+        if (employeeId) data.cancelledBy = { connect: { id: employeeId } };
         data.cancellationReason = dto.reason ?? null;
       }
 
@@ -1202,8 +1242,9 @@ export class OrdersService {
         source: context?.source ?? "API",
         previousState: order.orderState,
         newState: updated.orderState,
-        payload: { fromStatus: order.status, toStatus: nextStatus },
-        reasonCode: context?.reasonCode ?? `LEGACY_${nextStatus}`,
+        payload: { fromStatus: order.status, toStatus: nextStatus, force },
+        reasonCode:
+          context?.reasonCode ?? (force ? `ADMIN_FORCE_${nextStatus}` : `LEGACY_${nextStatus}`),
         correlationId: context?.correlationId,
         idempotencyKey: context?.idempotencyKey,
       });

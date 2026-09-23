@@ -439,31 +439,22 @@ export function AdminOrdersPage() {
     () => orders.filter((order) => selectedOrderIds.has(order.id)),
     [orders, selectedOrderIds],
   );
-  const selectableOrders = orders.filter(
-    (order) => nextOrderStatuses(order.status).length > 0,
-  );
+  const selectableOrders = orders;
   const allSelectableChecked =
     selectableOrders.length > 0 &&
     selectableOrders.every((order) => selectedOrderIds.has(order.id));
 
   /*
-   * OMMAVIY AMAL uchun ruxsat etilgan maqsadlar — tanlangan BARCHA
-   * buyurtmalar uchun bir vaqtda mumkin bo'lgan holatlar kesishmasi.
-   *
-   * Ilgari ro'yxat qat'iy oltita edi: NEW va READY buyurtmalarni birga
-   * tanlab "Berildi" ni qo'llash mumkin bo'lardi, server esa NEW larni
-   * rad etardi va operator nima uchunligini bilmasdi.
+   * Admin ommaviy amali majburiy status qo'yadi. Shu sabab oddiy oqimdagi
+   * "keyingi qadam" bilan cheklanmaydi: yakunlangan yoki bekor qilingan
+   * buyurtmani ham xato tuzatish uchun qayta statuslash mumkin.
    */
   const bulkStatusOptions = useMemo(() => {
     if (!selectedOrders.length) {
       return [] as OrderStatus[];
     }
 
-    return selectedOrders
-      .map((order) => nextOrderStatuses(order.status))
-      .reduce((shared, allowed) =>
-        shared.filter((status) => allowed.includes(status)),
-      );
+    return Object.keys(orderStatusLabels) as OrderStatus[];
   }, [selectedOrders]);
 
   useEffect(() => {
@@ -526,6 +517,7 @@ export function AdminOrdersPage() {
               reason ||
               `Ommaviy amal: ${orderStatusLabels[bulkStatus]} (admin ro'yxati)`,
             confirm: true,
+            force: true,
           }),
         },
       );
@@ -585,7 +577,6 @@ export function AdminOrdersPage() {
       render: (order) => (
         <SelectRowCheckbox
           checked={selectedOrderIds.has(order.id)}
-          disabled={!nextOrderStatuses(order.status).length}
           label={`${order.displayOrderNumber ?? order.orderNumber} buyurtmani tanlash`}
           onChange={(checked) => toggleSelected(order.id, checked)}
         />
@@ -849,7 +840,7 @@ export function AdminOrdersPage() {
           <Checkbox
             checked={allSelectableChecked}
             disabled={!selectableOrders.length || isLoading}
-            label="Joriy sahifadagi amaldagi buyurtmalar"
+            label="Joriy sahifadagi barcha buyurtmalar"
             onChange={(checked) => toggleCurrentPage(checked)}
           />
           {bulkResult ? (
@@ -1165,15 +1156,21 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
 
     const reason = statusReason.trim();
     const actionVersion = domainActions?.version ?? order?.version;
-
-    if ((pendingStatus === "CONFIRMED" || pendingStatus === "CANCELLED") && actionVersion === undefined) {
-      showToast("Buyurtma versiyasi topilmadi. Qayta yuklang.", "danger");
-      await load();
-      return;
-    }
+    const action =
+      pendingStatus === "CONFIRMED" && domainActions?.actions.includes("accept")
+        ? "accept"
+        : pendingStatus === "CANCELLED" && domainActions?.actions.includes("cancel")
+          ? "cancel"
+          : null;
 
     if (statusNeedsReason(pendingStatus) && !reason) {
       setStatusReasonError("Bekor qilish sababini yozing.");
+      return;
+    }
+
+    if (action && actionVersion === undefined) {
+      showToast("Buyurtma versiyasi topilmadi. Qayta yuklang.", "danger");
+      await load();
       return;
     }
 
@@ -1181,12 +1178,6 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     setIsChanging(true);
 
     try {
-      const action =
-        pendingStatus === "CONFIRMED"
-          ? "accept"
-          : pendingStatus === "CANCELLED"
-            ? "cancel"
-            : null;
       const fingerprint = JSON.stringify({ orderId, action, actionVersion, reason });
       if (action && pendingActionKey.current?.fingerprint !== fingerprint) {
         pendingActionKey.current = { fingerprint, key: crypto.randomUUID() };
@@ -1208,6 +1199,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
               method: "PATCH",
               body: JSON.stringify({
                 status: pendingStatus,
+                force: true,
                 ...(reason ? { reason } : {}),
               }),
             },
@@ -1247,12 +1239,12 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     );
   }
 
-  const statusBlockReason = statusChangeBlockReason(user, order);
-  const allowedStatuses = nextOrderStatuses(order.status).filter((status) => {
-    if (status === "CONFIRMED") return domainActions?.actions.includes("accept");
-    if (status === "CANCELLED") return domainActions?.actions.includes("cancel");
-    return true;
-  });
+  const statusBlockReason = hasPermission(user, "ORDER_SEND_KITCHEN")
+    ? null
+    : "Sizda buyurtma holatini o'zgartirish ruxsati yo'q.";
+  const allowedStatuses = (Object.keys(orderStatusLabels) as OrderStatus[]).filter(
+    (status) => status !== order.status,
+  );
   /*
    * Chek FAQAT to'langan buyurtmada yaratiladi (`receipts` bo'sh bo'lsa
    * chek ham yo'q). `GET /receipts/:id` `RECEIPT_VIEW` talab qiladi,
