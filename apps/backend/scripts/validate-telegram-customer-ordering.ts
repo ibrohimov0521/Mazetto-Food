@@ -13,6 +13,9 @@ type SentTelegramPayload = {
   chat_id: string;
   message_id?: number;
   text?: string;
+  caption?: string;
+  photo?: string;
+  media?: { type: string; media: string; caption?: string };
   reply_markup?: {
     inline_keyboard?: { text: string; callback_data?: string; url?: string }[][];
     keyboard?: string[][];
@@ -46,13 +49,23 @@ const customer = {
   bonusBalance: new Prisma.Decimal(0),
 };
 const category = { id: "category_sets", code: "SETS", name: "Setlar" };
-const lavashCategory = { id: "category_lavash", code: "LAVASH", name: "Lavash" };
+const lavashCategory = {
+  id: "category_lavash",
+  code: "LAVASH",
+  name: "Lavash",
+  imageUrl: "/categories/lavash.webp",
+};
 const chickenLavashCategory = {
   id: "category_chicken_lavash",
   code: "CHICKEN_LAVASH",
   name: "Tovuqli lavash",
 };
-const burgerCategory = { id: "category_burger", code: "BURGER", name: "Burgerlar" };
+const burgerCategory = {
+  id: "category_burger",
+  code: "BURGER",
+  name: "Burgerlar",
+  imageUrl: "/categories/burger.webp",
+};
 const chickenBurgerCategory = {
   id: "category_chicken_burger",
   code: "CHICKEN_BURGER",
@@ -109,6 +122,7 @@ const canonicalLavashProducts = [
     categoryId: lavashCategory.id,
     code: "CLASSIC_LAVASH",
     name: "Lavash",
+    imageUrl: "https://media.mazettofood.uz/products/classic-lavash.webp",
     sellingPrice: new Prisma.Decimal(32000),
   },
   {
@@ -786,7 +800,11 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
   assert.ok(!menuButtons.includes("Ko'p mahsulot"));
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${lavashCategory.id}` });
-  assert.equal(lastMethod(), "editMessageText");
+  assert.equal(lastMethod(), "editMessageMedia");
+  assert.equal(
+    lastPayload().media?.media,
+    "https://media.mazettofood.uz/products/classic-lavash.webp",
+  );
   assert.match(lastText(), /Lavashlar/);
   assert.ok(!lastKeyboardText().includes("Keyingi"));
   assert.ok(!lastKeyboardText().includes("1+"));
@@ -812,7 +830,7 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
   ]);
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${burgerCategory.id}` });
-  assert.equal(lastMethod(), "editMessageText");
+  assert.equal(lastMethod(), "editMessageMedia");
   assert.match(lastText(), /Burgerlar/);
   assert.ok(!lastKeyboardText().includes("Keyingi"));
   assert.ok(!lastText().includes("Go'sht turini tanlang"));
@@ -1198,7 +1216,8 @@ function createService(prisma: InMemoryPrisma) {
 }
 
 function lastText(): string {
-  return sentTelegramPayloads.at(-1)?.text ?? "";
+  const payload = sentTelegramPayloads.at(-1);
+  return payload?.text ?? payload?.caption ?? payload?.media?.caption ?? "";
 }
 
 function lastMethod(): string {
