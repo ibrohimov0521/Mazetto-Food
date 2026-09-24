@@ -43,7 +43,11 @@ test("relative catalogue image does not break the Telegram menu", async () => {
 test("catalogue image URL normalization supports stored object paths", () => {
   assert.equal(
     resolveTelegramPhotoUrl("products/lavash.jpg"),
-    "https://media.mazettofood.uz/products/lavash.jpg",
+    "https://mazettofood.uz/products/lavash.jpg",
+  );
+  assert.equal(
+    resolveTelegramPhotoUrl("/categories/lavash.webp"),
+    "https://mazettofood.uz/categories/lavash.webp",
   );
   assert.equal(
     resolveTelegramPhotoUrl("/uploads/catalog/lavash.jpg"),
@@ -64,4 +68,36 @@ test("public catalogue image still uses Telegram photo rendering", async () => {
   );
 
   assert.equal(screen.calls[0]?.method, "sendPhoto");
+});
+
+test("editing a catalogue screen replaces its photo instead of keeping the old one", async () => {
+  const screen = new RecordingScreen();
+
+  await screen.renderCustomerPhotoScreen(
+    { chatId: "123", messageId: 456 },
+    {
+      photo: "/categories/lavash.webp",
+      caption: "Lavashlar",
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[{ text: "Oddiy" }]] },
+    },
+  );
+
+  assert.deepEqual(screen.calls, [
+    {
+      method: "editMessageMedia",
+      payload: {
+        chat_id: "123",
+        message_id: 456,
+        media: {
+          type: "photo",
+          media: "https://mazettofood.uz/categories/lavash.webp",
+          caption: "Lavashlar",
+          parse_mode: "HTML",
+        },
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "Oddiy" }]] },
+      },
+    },
+  ]);
 });

@@ -791,8 +791,6 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
   assert.ok(!lastKeyboardText().includes("Keyingi"));
   assert.ok(!lastKeyboardText().includes("1+"));
   assert.ok(!lastKeyboardText().includes("Xaggi"));
-  assert.ok(!lastKeyboardText().includes("Mini lavash"));
-  assert.ok(!lastKeyboardText().includes("Mol go'shtli lavash"));
   assert.ok(!lastText().includes("Go'sht turini tanlang"));
   assert.deepEqual(normalizedLastProductButtonTexts(), [
     "Oddiy",
@@ -809,6 +807,8 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
     "Achchiq Kurinniy Big",
     "Tandir",
     "Tandir Pishloqli",
+    "Mini",
+    "Mol go'shtli",
   ]);
 
   await service.handleCustomerCallback({ ...callbackBase, data: `cust:cat:${burgerCategory.id}` });
@@ -825,6 +825,7 @@ async function testFlattenedCategoryNavigation(): Promise<void> {
     "Double Chicken",
     "Double Chizburger",
     "Double Chicken Chizburger",
+    "Katta",
   ]);
 }
 

@@ -72,6 +72,12 @@ function mediaPublicUrl(): string {
   ).replace(/[/]+$/, "");
 }
 
+function customerWebPublicUrl(): string {
+  return (
+    process.env.CUSTOMER_WEB_PUBLIC_URL?.trim() || "https://mazettofood.uz"
+  ).replace(/[/]+$/, "");
+}
+
 const telegramRequestMaxAttempts = 2;
 const telegramRequestRetryDelayMs = 250;
 
@@ -88,7 +94,13 @@ export function resolveTelegramPhotoUrl(value: string): string | null {
       : null;
   } catch {
     const objectName = trimmed.replace(/^[/]+/, "");
-    return objectName ? `${mediaPublicUrl()}/${objectName}` : null;
+    if (!objectName) return null;
+    if (/^(products|categories)\//i.test(objectName)) {
+      // The customer web rewrites these catalog paths to its full-resolution
+      // canonical assets. Telegram must render the same catalog image.
+      return `${customerWebPublicUrl()}/${objectName}`;
+    }
+    return `${mediaPublicUrl()}/${objectName}`;
   }
 }
 
@@ -203,10 +215,15 @@ export class TelegramCustomerScreenService implements OnModuleInit {
 
     if (target.messageId) {
       try {
-        await this.telegramRequest("editMessageCaption", {
+        await this.telegramRequest("editMessageMedia", {
           chat_id: target.chatId,
           message_id: target.messageId,
-          caption,
+          media: {
+            type: "photo",
+            media: photoUrl,
+            caption,
+            ...(rest.parse_mode ? { parse_mode: rest.parse_mode } : {}),
+          },
           ...rest,
         });
         return;
@@ -214,6 +231,18 @@ export class TelegramCustomerScreenService implements OnModuleInit {
         if (isMessageNotModifiedError(error)) {
           return;
         }
+      }
+
+      // Editing only the caption leaves the previous screen's photo in place.
+      // If Telegram cannot replace the media in-place, send a fresh photo
+      // instead of silently keeping an image from another catalog item.
+      try {
+        await this.telegramRequest("deleteMessage", {
+          chat_id: target.chatId,
+          message_id: target.messageId,
+        });
+      } catch {
+        // The message may already be too old to delete; still send the right one.
       }
     }
 
