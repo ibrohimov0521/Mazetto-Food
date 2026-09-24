@@ -667,8 +667,7 @@ export class TelegramCustomerOrderingService {
         ],
       },
     };
-    const categoryPhotoUrl =
-      products.find((product) => product.imageUrl)?.imageUrl ?? category?.imageUrl;
+    const categoryPhotoUrl = products.find((product) => product.imageUrl)?.imageUrl ?? category?.imageUrl;
     if (categoryPhotoUrl) {
       await this.screen.renderCustomerPhotoScreen(target, {
         photo: categoryPhotoUrl,
@@ -710,8 +709,7 @@ export class TelegramCustomerOrderingService {
         },
       },
     });
-    const categoryPhotoUrl =
-      products.find((product) => product.imageUrl)?.imageUrl ?? categoryImageUrl;
+    const categoryPhotoUrl = products.find((product) => product.imageUrl)?.imageUrl ?? categoryImageUrl;
     const productByCode = new Map(
       products.map((product) => [product.code, product]),
     );
