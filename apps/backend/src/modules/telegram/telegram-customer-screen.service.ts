@@ -72,6 +72,12 @@ function mediaPublicUrl(): string {
   ).replace(/[/]+$/, "");
 }
 
+function customerWebPublicUrl(): string {
+  return (
+    process.env.CUSTOMER_WEB_PUBLIC_URL?.trim() || "https://mazettofood.uz"
+  ).replace(/[/]+$/, "");
+}
+
 const telegramRequestMaxAttempts = 2;
 const telegramRequestRetryDelayMs = 250;
 
@@ -88,7 +94,13 @@ export function resolveTelegramPhotoUrl(value: string): string | null {
       : null;
   } catch {
     const objectName = trimmed.replace(/^[/]+/, "");
-    return objectName ? `${mediaPublicUrl()}/${objectName}` : null;
+    if (!objectName) return null;
+    if (/^(products|categories)\//i.test(objectName)) {
+      // The customer web rewrites these catalog paths to its full-resolution
+      // canonical assets. Telegram must render the same catalog image.
+      return `${customerWebPublicUrl()}/${objectName}`;
+    }
+    return `${mediaPublicUrl()}/${objectName}`;
   }
 }
 

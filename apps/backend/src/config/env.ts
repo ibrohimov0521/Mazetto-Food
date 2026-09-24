@@ -155,6 +155,7 @@ const envSchema = z.object({
   MINIO_USE_SSL: envBoolean(false),
   MEDIA_UPLOAD_URL: optionalText,
   MEDIA_PUBLIC_URL: optionalText,
+  CUSTOMER_WEB_PUBLIC_URL: optionalText,
 
   SWAGGER_ENABLED: envBoolean(false),
 });

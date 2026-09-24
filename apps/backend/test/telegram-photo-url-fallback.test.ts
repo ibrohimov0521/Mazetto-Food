@@ -43,7 +43,11 @@ test("relative catalogue image does not break the Telegram menu", async () => {
 test("catalogue image URL normalization supports stored object paths", () => {
   assert.equal(
     resolveTelegramPhotoUrl("products/lavash.jpg"),
-    "https://media.mazettofood.uz/products/lavash.jpg",
+    "https://mazettofood.uz/products/lavash.jpg",
+  );
+  assert.equal(
+    resolveTelegramPhotoUrl("/categories/lavash.webp"),
+    "https://mazettofood.uz/categories/lavash.webp",
   );
   assert.equal(
     resolveTelegramPhotoUrl("/uploads/catalog/lavash.jpg"),

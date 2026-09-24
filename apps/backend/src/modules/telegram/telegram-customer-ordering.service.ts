@@ -3,7 +3,6 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   customerVisibleCategoryCodes,
-  customerVisibleProductCodes,
   customerVisibleProductCodeSet,
   customerVisibleProductWhere,
 } from "../customers/customer-catalog-visibility";
@@ -689,17 +688,13 @@ export class TelegramCustomerOrderingService {
   ): Promise<void> {
     const configuredRows =
       categoryCode === "LAVASH" ? lavashTelegramRows : burgerTelegramRows;
-    const productCodes = configuredRows.flat();
     const products = await this.prisma.product.findMany({
       where: {
         categoryId,
-        code: {
-          in: productCodes.filter((code) =>
-            customerVisibleProductCodes.includes(code),
-          ),
-        },
         isAvailable: true,
+        ...customerVisibleProductWhere(),
       },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         category: { select: { code: true, name: true } },
         variants: {
@@ -735,6 +730,18 @@ export class TelegramCustomerOrderingService {
           }),
       )
       .filter((row) => row.length > 0);
+    const configuredProductCodes = new Set<string>(configuredRows.flat());
+    const additionalButtons = products
+      .filter((product) => !configuredProductCodes.has(product.code))
+      .map((product) => ({
+        text: telegramProductButtonLabel(
+          product.code,
+          product.name,
+          categoryCode,
+        ),
+        callback_data: `${customerCallbackPrefix}:prod:${product.id}`,
+      }));
+    rows.push(...chunkButtons(additionalButtons, 2));
 
     const cartLabel = await this.cartButtonLabel(customerId);
 
