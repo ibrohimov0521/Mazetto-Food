@@ -194,6 +194,9 @@ export class DesktopGateway {
       this.mode = "online";
       this.lastOnlineAt = new Date().toISOString();
       this.lastError = null;
+      if (method === "POST" && url.pathname === "/api/v1/pos/orders" && upstream.ok) {
+        rememberOnlinePosSequence(this.store, responseBody);
+      }
       if (authorization) {
         void this.flushPendingMutations(authorization, authScope);
       }
@@ -316,9 +319,13 @@ export class DesktopGateway {
       ? `local-${randomUUID()}`
       : null;
     if (input.definition.commandType === "pos.order.create" && localAggregateId && parsedBody) {
+      const offlineDisplayOrderSequence = nextOfflineDisplayOrderSequence(
+        this.store,
+        input.authScope,
+      );
       parsedBody = {
         ...parsedBody,
-        offlineDisplayOrderNumber: offlineDisplayNumber(localAggregateId),
+        offlineDisplayOrderSequence,
       };
     }
     const bodyText = parsedBody ? JSON.stringify(parsedBody) : Buffer.from(input.body).toString("utf8");
@@ -908,8 +915,8 @@ function optimisticOrder(
   const tableId = stringField(body, "tableId") ?? undefined;
   return {
     id,
-    orderNumber: offlineDisplayNumber(id),
-    displayOrderNumber: stringField(body, "offlineDisplayOrderNumber") ?? offlineDisplayNumber(id),
+    orderNumber: offlinePosInternalOrderNumber(id),
+    displayOrderNumber: numberField(body, "offlineDisplayOrderSequence") ?? 101,
     status: "NEW",
     orderState: "PLACED",
     paymentStatus: "PENDING",
@@ -1016,10 +1023,14 @@ function queuedResponseData(
   command: PendingOutboxCommand,
   body: ArrayBuffer,
 ): unknown {
-  const parsedBody = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const queuedPayload = parseJsonObject(command.payloadJson);
+  const parsedBody = parseJsonObject(
+    stringField(queuedPayload, "body") ?? Buffer.from(body).toString("utf8"),
+  );
   const total = paymentTotal(parsedBody);
   const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
-  const offlineNumber = offlineDisplayNumber(command.aggregateId ?? command.id);
+  const offlineNumber = offlinePosInternalOrderNumber(command.aggregateId ?? command.id);
+  const displayNumber = numberField(parsedBody, "offlineDisplayOrderSequence") ?? 101;
   const base = {
     offlineQueued: true,
     queued: true,
@@ -1034,7 +1045,7 @@ function queuedResponseData(
       order: {
         id: command.aggregateId ?? command.id,
         orderNumber: offlineNumber,
-        displayOrderNumber: offlineNumber,
+        displayOrderNumber: displayNumber,
         total: String(total),
         receipts: [],
       },
@@ -1271,10 +1282,10 @@ function buildOfflineOrderSnapshot(
   const table = tables.find(
     (candidate) => isRecord(candidate) && candidate.id === tableId,
   );
-  const offlineNumber = stringField(body, "offlineDisplayOrderNumber") ?? offlineDisplayNumber(localOrderId);
+  const offlineNumber = numberField(body, "offlineDisplayOrderSequence") ?? 101;
   return {
     id: localOrderId,
-    orderNumber: offlineNumber,
+    orderNumber: offlinePosInternalOrderNumber(localOrderId),
     displayOrderNumber: offlineNumber,
     status: "NEW",
     orderState: "PLACED",
@@ -1348,8 +1359,77 @@ function buildOfflinePrintDocument(
   };
 }
 
-function offlineDisplayNumber(localOrderId: string): string {
-  return `K-${localOrderId.replace(/[^a-f0-9]/gi, "").slice(-12).toUpperCase()}`;
+function offlinePosInternalOrderNumber(localOrderId: string): string {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replaceAll("-", "");
+  const time = now.toISOString().slice(11, 19).replaceAll(":", "");
+  const suffix = localOrderId.replace(/[^a-f0-9]/gi, "").slice(-8).toUpperCase();
+  return `POS-${date}-${time}-${suffix}`;
+}
+
+function nextOfflineDisplayOrderSequence(
+  store: DesktopStore,
+  authScope: string,
+): number {
+  const today = tashkentDateKey(new Date());
+  const settingKey = `pos-sequence:${today}`;
+  const savedSequence = Number(store.getSetting(settingKey) ?? 100);
+  const cachedOrders = store.getLatestCachedResponse(authScope, "/api/v1/orders");
+  const cachedSequence = cachedOrders
+    ? maxPosDisplaySequence(parseJsonValue(cachedOrders.body), today)
+    : 100;
+  const nextSequence = Math.max(100, savedSequence, cachedSequence) + 1;
+  store.setSetting(settingKey, String(nextSequence));
+  return nextSequence;
+}
+
+function rememberOnlinePosSequence(store: DesktopStore, responseBody: string): void {
+  const response = parseJsonObject(responseBody);
+  const data = recordField(response, "data") ?? response;
+  const order = recordField(data, "order") ?? data;
+  if (!order) return;
+  const displayOrderDate = stringField(order, "displayOrderDate");
+  const dateKey = displayOrderDate
+    ? displayOrderDate.slice(0, 10)
+    : tashkentDateKey(new Date(stringField(order, "createdAt") ?? Date.now()));
+  const numberFromLabel = Number(stringField(order, "displayOrderNumber") ?? 0);
+  const sequence = numberField(order, "displayOrderSequence") ?? numberFromLabel;
+  if (!Number.isInteger(sequence) || sequence < 101) return;
+  const key = `pos-sequence:${dateKey}`;
+  const saved = Number(store.getSetting(key) ?? 100);
+  if (sequence > saved) store.setSetting(key, String(sequence));
+}
+
+function maxPosDisplaySequence(value: unknown, dateKey: string): number {
+  if (Array.isArray(value)) {
+    return value.reduce(
+      (max, item) => Math.max(max, maxPosDisplaySequence(item, dateKey)),
+      100,
+    );
+  }
+  if (!isRecord(value)) return 100;
+  const source = stringField(value, "source");
+  const displayDate = stringField(value, "displayOrderDate")?.slice(0, 10);
+  const isPosOrder = source === "POS" && (!displayDate || displayDate === dateKey);
+  const ownSequence: number = isPosOrder
+    ? numberField(value, "displayOrderSequence") ??
+      Number(stringField(value, "displayOrderNumber") ?? 0)
+    : 100;
+  return Object.values(value).reduce<number>(
+    (max, child) => Math.max(max, maxPosDisplaySequence(child, dateKey)),
+    Number.isFinite(ownSequence) ? ownSequence : 100,
+  );
+}
+
+function tashkentDateKey(value: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 function formatTashkentDateTime(value: Date): string {

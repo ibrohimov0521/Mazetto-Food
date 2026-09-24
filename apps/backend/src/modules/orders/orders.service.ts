@@ -326,15 +326,34 @@ export class OrdersService {
               tx,
               OrderSource.POS,
             );
+            const offlineSequence = dto.offlineDisplayOrderSequence;
+            const offlineNumberAvailable = Number.isInteger(offlineSequence)
+              ? !(await tx.order.findFirst({
+                  where: {
+                    source: OrderSource.POS,
+                    displayOrderDate: displayOrder.displayOrderDate,
+                    displayOrderNumber: String(offlineSequence),
+                  },
+                  select: { id: true },
+                }))
+              : false;
+            const persistedDisplayOrder =
+              offlineNumberAvailable && offlineSequence! >= 101
+                ? {
+                    ...displayOrder,
+                    displayOrderSequence: Math.max(
+                      displayOrder.displayOrderSequence,
+                      offlineSequence!,
+                    ),
+                    displayOrderNumber: String(offlineSequence),
+                  }
+                : displayOrder;
 
             const order = await tx.order.create({
               data: {
                 branchId,
                 orderNumber: createOrderNumber(),
-                ...displayOrder,
-                ...(dto.offlineDisplayOrderNumber
-                  ? { displayOrderNumber: dto.offlineDisplayOrderNumber }
-                  : {}),
+                ...persistedDisplayOrder,
                 shiftId: openShift.id,
                 source: OrderSource.POS,
                 type: orderType,
