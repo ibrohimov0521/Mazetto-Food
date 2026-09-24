@@ -667,9 +667,10 @@ export class TelegramCustomerOrderingService {
         ],
       },
     };
-    if (category?.imageUrl) {
+    const categoryPhotoUrl = products.find((product) => product.imageUrl)?.imageUrl ?? category?.imageUrl;
+    if (categoryPhotoUrl) {
       await this.screen.renderCustomerPhotoScreen(target, {
-        photo: category.imageUrl,
+        photo: categoryPhotoUrl,
         caption: payload.text,
         parse_mode: "HTML",
         reply_markup: payload.reply_markup!,
@@ -708,6 +709,7 @@ export class TelegramCustomerOrderingService {
         },
       },
     });
+    const categoryPhotoUrl = products.find((product) => product.imageUrl)?.imageUrl ?? categoryImageUrl;
     const productByCode = new Map(
       products.map((product) => [product.code, product]),
     );
@@ -773,9 +775,9 @@ export class TelegramCustomerOrderingService {
         ],
       },
     };
-    if (categoryImageUrl) {
+    if (categoryPhotoUrl) {
       await this.screen.renderCustomerPhotoScreen(target, {
-        photo: categoryImageUrl,
+        photo: categoryPhotoUrl,
         caption: payload.text,
         parse_mode: "HTML",
         reply_markup: payload.reply_markup!,
