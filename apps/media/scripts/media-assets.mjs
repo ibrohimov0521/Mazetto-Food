@@ -7,6 +7,7 @@ export const categoryAssets = [
   ["chicken-burger.webp", "apps/customer-web/public/menu-media/source/categories/chicken-burger.webp"],
   ["hot-dog.webp", "apps/customer-web/public/menu-media/source/categories/hot-dog.webp"],
   ["doner.webp", "apps/customer-web/public/menu-media/source/categories/doner.webp"],
+  ["blyudalar.webp", "apps/customer-web/public/menu-media/source/categories/blyudalar.webp"],
   ["fast-food.webp", "apps/customer-web/public/menu-media/source/categories/fast-food.webp"],
   ["drinks.webp", "apps/customer-web/public/menu-media/source/categories/drinks.webp"],
   ["sauces.webp", "apps/customer-web/public/menu-media/source/categories/sauces.webp"],

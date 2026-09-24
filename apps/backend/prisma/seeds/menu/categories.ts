@@ -53,7 +53,7 @@ export const menuCategories: MenuCategorySeed[] = [
     code: "BLYUDALAR",
     name: "Blyudalar",
     description: "Tarelka va uy uslubidagi blyudalar.",
-    imageUrl: "/categories/doner.webp",
+    imageUrl: "/categories/blyudalar.webp",
     sortOrder: 65,
   },
   {

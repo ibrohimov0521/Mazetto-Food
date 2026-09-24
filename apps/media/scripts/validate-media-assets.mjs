@@ -24,7 +24,7 @@ function main() {
     `nginx root must stay ${mediaRoot}`,
   );
 
-  assert(categoryAssets.length === 10, "Expected 10 category media assets");
+  assert(categoryAssets.length === 11, "Expected 11 category media assets");
   assert(productAssets.length === 74, "Expected 74 available product media assets");
   assert(unresolvedProductAssets.length === 0, "Expected 0 unresolved product assets");
 
