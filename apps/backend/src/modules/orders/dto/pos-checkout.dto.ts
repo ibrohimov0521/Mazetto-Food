@@ -5,13 +5,13 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
   Max,
   MaxLength,
-  Matches,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -71,11 +71,11 @@ export class CreatePosCheckoutDto {
   @MaxLength(160)
   idempotencyKey!: string;
 
-  /** Stable number printed by the desktop while it is disconnected. */
+  /** Display sequence printed by the desktop while it is disconnected. */
   @IsOptional()
-  @IsString()
-  @Matches(/^K-[A-F0-9]{12}$/)
-  offlineDisplayOrderNumber?: string;
+  @IsInt()
+  @Min(101)
+  offlineDisplayOrderSequence?: number;
 
   @IsArray()
   @ArrayMinSize(1)

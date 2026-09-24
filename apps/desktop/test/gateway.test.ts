@@ -121,7 +121,9 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     assert.equal(sale.headers.get("x-mazetto-desktop"), "offline-queued");
     assert.equal(store.summary().pendingCommands, 1);
     assert.equal(store.summary().pendingPrintJobs, 2);
-    assert.match((await sale.json()).data.order.orderNumber, /^K-[A-F0-9]{12}$/);
+    const saleData = (await sale.json()).data;
+    assert.match(saleData.order.orderNumber, /^POS-\d{8}-\d{6}-[A-F0-9]{8}$/);
+    assert.equal(saleData.order.displayOrderNumber, 101);
 
     online = true;
     const onlineRequest = await fetch(
