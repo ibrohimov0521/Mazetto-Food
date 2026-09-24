@@ -511,6 +511,29 @@ export class MenuService {
     });
   }
 
+  async deleteProductsPermanently(ids: string[]) {
+    const uniqueIds = [...new Set(ids)];
+
+    return this.prisma.$transaction(async (tx) => {
+      const products = await tx.product.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true },
+      });
+
+      if (products.length !== uniqueIds.length) {
+        throw new NotFoundException("One or more products were not found");
+      }
+
+      // Active carts cannot reference a deleted product; order snapshots remain intact.
+      await tx.cartItem.deleteMany({ where: { productId: { in: uniqueIds } } });
+      const result = await tx.product.deleteMany({
+        where: { id: { in: uniqueIds } },
+      });
+
+      return { deletedCount: result.count };
+    });
+  }
+
   /**
    * Modifier katalogi.
    *

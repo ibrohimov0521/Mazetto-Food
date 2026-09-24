@@ -467,7 +467,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
     const body = {
       categoryId: form.categoryId,
       name: form.name.trim(),
-      description: form.description.trim() || undefined,
+      description: form.description.trim(),
       image: form.image.trim() || undefined,
       preparationTime: Number(form.preparationTime) || undefined,
       ...(isNew ? {} : { isActive: form.isActive }),

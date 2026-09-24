@@ -15,6 +15,7 @@ import {
   CreateCategoryDto,
   CreateModifierDto,
   CreateProductDto,
+  DeleteProductsDto,
   UpdateCategoryDto,
   UpdateModifierDto,
   UpdateProductDto,
@@ -65,6 +66,12 @@ export class MenuController {
   @Permissions(PERMISSIONS.MENU_CREATE)
   createProduct(@Body() dto: CreateProductDto) {
     return this.menuService.createProduct(dto);
+  }
+
+  @Delete("products")
+  @Permissions(PERMISSIONS.MENU_DELETE)
+  deleteProducts(@Body() dto: DeleteProductsDto) {
+    return this.menuService.deleteProductsPermanently(dto.ids);
   }
 
   @Patch("products/:id")

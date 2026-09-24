@@ -1,6 +1,9 @@
 import { Type } from "class-transformer";
 import {
   IsArray,
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsBoolean,
   IsNumber,
   IsOptional,
@@ -10,6 +13,15 @@ import {
   Min,
   ValidateNested,
 } from "class-validator";
+
+export class DeleteProductsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(250)
+  @ArrayUnique()
+  @IsString({ each: true })
+  ids!: string[];
+}
 
 export class CreateCategoryDto {
   @IsOptional()

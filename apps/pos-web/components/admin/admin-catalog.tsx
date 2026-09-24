@@ -67,7 +67,7 @@ type Product = {
   variants: ProductVariant[];
 };
 
-type PendingAction = { product: Product; mode: "archive" | "restore" };
+type PendingAction = { products: Product[]; mode: "archive" | "restore" | "delete" };
 
 export function AdminProductsPage() {
   const { user } = useAuth();
@@ -82,6 +82,7 @@ export function AdminProductsPage() {
 
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [isMutating, setIsMutating] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const {
     data,
@@ -139,6 +140,26 @@ export function AdminProductsPage() {
     setStatus("ALL");
   }
 
+  function toggleSelected(id: string, checked: boolean): void {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function selectVisible(checked: boolean): void {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const product of filtered) {
+        if (checked) next.add(product.id);
+        else next.delete(product.id);
+      }
+      return next;
+    });
+  }
+
   /*
    * Arxivlash `DELETE` bilan, qayta yoqish `PATCH { isActive: true }` bilan.
    * Ikkisi ham MIJOZ SAYTIDA darhol ko'rinadi, shuning uchun ikkisi ham
@@ -152,17 +173,29 @@ export function AdminProductsPage() {
     setIsMutating(true);
 
     try {
-      if (pending.mode === "archive") {
-        await apiFetch(`/menu/products/${pending.product.id}`, {
+      if (pending.mode === "delete") {
+        const { deletedCount } = await apiFetch<{ deletedCount: number }>(
+          "/menu/products",
+          {
+            method: "DELETE",
+            body: JSON.stringify({ ids: pending.products.map((product) => product.id) }),
+          },
+        );
+        showToast(`${deletedCount} ta mahsulot bazadan o'chirildi.`, "success");
+        setSelectedIds(new Set());
+      } else if (pending.mode === "archive") {
+        const product = pending.products[0]!;
+        await apiFetch(`/menu/products/${product.id}`, {
           method: "DELETE",
         });
-        showToast(`${pending.product.name} menyudan olindi.`, "success");
+        showToast(`${product.name} menyudan olindi.`, "success");
       } else {
-        await apiFetch(`/menu/products/${pending.product.id}`, {
+        const product = pending.products[0]!;
+        await apiFetch(`/menu/products/${product.id}`, {
           method: "PATCH",
           body: JSON.stringify({ isActive: true }),
         });
-        showToast(`${pending.product.name} menyuga qaytarildi.`, "success");
+        showToast(`${product.name} menyuga qaytarildi.`, "success");
       }
 
       setPending(null);
@@ -182,6 +215,25 @@ export function AdminProductsPage() {
   }
 
   const columns: DataTableColumn<Product>[] = [
+    ...(canArchive
+      ? [
+          {
+            key: "select",
+            header: "Tanlash",
+            render: (product) => (
+              <input
+                aria-label={`${product.name} mahsulotini tanlash`}
+                checked={selectedIds.has(product.id)}
+                className="h-5 w-5 accent-mz-info"
+                onChange={(event) =>
+                  toggleSelected(product.id, event.target.checked)
+                }
+                type="checkbox"
+              />
+            ),
+          } satisfies DataTableColumn<Product>,
+        ]
+      : []),
     {
       key: "product",
       header: "Mahsulot",
@@ -330,6 +382,41 @@ export function AdminProductsPage() {
           </div>
         </FilterBar>
 
+        {canArchive ? (
+          <div className="flex flex-wrap items-center gap-2 border-b border-mz-border px-4 py-3">
+            <Button onClick={() => selectVisible(true)} size="sm" variant="ghost">
+              Ko'rsatilganlarni tanlash
+            </Button>
+            <Button
+              disabled={selectedIds.size === 0}
+              onClick={() => selectVisible(false)}
+              size="sm"
+              variant="ghost"
+            >
+              Tanlovni tozalash
+            </Button>
+            {selectedIds.size ? (
+              <>
+                <span className="text-sm text-mz-text-muted">
+                  {selectedIds.size} ta tanlandi
+                </span>
+                <Button
+                  onClick={() =>
+                    setPending({
+                      mode: "delete",
+                      products: products.filter((product) => selectedIds.has(product.id)),
+                    })
+                  }
+                  size="sm"
+                  variant="danger"
+                >
+                  Tanlanganlarni bazadan o'chirish
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
         <DataTable
           caption="Mahsulotlar ro'yxati"
           columns={columns}
@@ -376,10 +463,10 @@ export function AdminProductsPage() {
                     {canArchive ? (
                       product.isAvailable ? (
                         <RowAction
-                          icon="trash"
+                          icon="eye"
                           label={`${product.name} — menyudan olish`}
                           onClick={() =>
-                            setPending({ product, mode: "archive" })
+                          setPending({ products: [product], mode: "archive" })
                           }
                           tone="danger"
                         />
@@ -388,10 +475,18 @@ export function AdminProductsPage() {
                           icon="check"
                           label={`${product.name} — menyuga qaytarish`}
                           onClick={() =>
-                            setPending({ product, mode: "restore" })
+                          setPending({ products: [product], mode: "restore" })
                           }
                         />
                       )
+                    ) : null}
+                    {canArchive ? (
+                      <RowAction
+                        icon="trash"
+                        label={`${product.name} — bazadan butunlay o'chirish`}
+                        onClick={() => setPending({ products: [product], mode: "delete" })}
+                        tone="danger"
+                      />
                     ) : null}
                   </>
                 ),
@@ -404,7 +499,9 @@ export function AdminProductsPage() {
         description={
           pending?.mode === "archive"
             ? "Mahsulot o'chirilmaydi — menyudan chiqadi va mijoz saytida ko'rinmay qoladi. Buyurtma tarixi saqlanadi, keyin qaytarish mumkin."
-            : "Mahsulot menyuga qaytadi va mijoz saytida darhol ko'rinadi."
+            : pending?.mode === "delete"
+              ? `${pending.products.length} ta mahsulot bazadan butunlay o'chadi (${pending.products.slice(0, 5).map((product) => product.name).join(", ")}${pending.products.length > 5 ? ", …" : ""}). Tarixiy buyurtma tarkibi saqlanadi, joriy savatlardagi shu mahsulotlar olib tashlanadi. Bu amalni qaytarib bo'lmaydi.`
+              : "Mahsulot menyuga qaytadi va mijoz saytida darhol ko'rinadi."
         }
         footer={
           <>
@@ -414,11 +511,13 @@ export function AdminProductsPage() {
             <Button
               isLoading={isMutating}
               onClick={() => void confirmPending()}
-              variant={pending?.mode === "archive" ? "danger" : "primary"}
+              variant={pending?.mode === "archive" || pending?.mode === "delete" ? "danger" : "primary"}
             >
               {pending?.mode === "archive"
                 ? "Menyudan olish"
-                : "Menyuga qaytarish"}
+                : pending?.mode === "delete"
+                  ? "Bazadan butunlay o'chirish"
+                  : "Menyuga qaytarish"}
             </Button>
           </>
         }
@@ -427,8 +526,10 @@ export function AdminProductsPage() {
         title={
           pending
             ? pending.mode === "archive"
-              ? `${pending.product.name} menyudan olinsinmi?`
-              : `${pending.product.name} qaytarilsinmi?`
+              ? `${pending.products[0]?.name} menyudan olinsinmi?`
+              : pending.mode === "delete"
+                ? `${pending.products.length} ta mahsulot bazadan o'chirilsinmi?`
+                : `${pending.products[0]?.name} qaytarilsinmi?`
             : "Tasdiqlash"
         }
       />
