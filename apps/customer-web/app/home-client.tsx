@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ContactFooter } from "../components/contact-footer";
 import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
@@ -19,6 +20,7 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
   const [loading, setLoading] = useState(!initial);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadVersion = useRef(0);
+  const categoryScrollerRef = useRef<HTMLDivElement>(null);
   // Skips re-rendering every card when the background refresh matches what was
   // server-rendered, which is the common case behind the five-minute revalidate.
   const renderedRef = useRef(
@@ -99,20 +101,28 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
       {loading ? <SkeletonProductSection title="Tavsiya qilamiz" /> : <ProductSection eager products={featured.length ? featured : popular.slice(0, 4)} title="Tavsiya qilamiz" />}
 
       <MotionDiv {...sectionMotion} className="mx-auto w-full max-w-6xl px-4 pb-8">
-        <div className="no-scrollbar mf-home-category-row flex max-w-full gap-2.5 overflow-x-auto pb-2 sm:gap-3">
-          {loading ? Array.from({ length: 5 }, (_, index) => <div className="skeleton h-32 w-30 shrink-0 rounded-[1.15rem]" key={index} />) : categories.map((category) => (
-            <Link className="pressable ripple mf-home-category-card shrink-0" href={`/menu?category=${category.id}`} key={category.id}>
-              <MediaImage
-                alt={category.name}
-                aspectClassName="h-22 w-22"
-                className="rounded-full"
-                fallbackLabel={category.name}
-                sizes="88px"
-                src={category.imageUrl}
-              />
-              <span>{category.name}</span>
-            </Link>
-          ))}
+        <div className="mf-home-category-shell">
+          <button aria-label="Oldingi kategoriyalar" className="mf-home-category-arrow mf-home-category-arrow-prev" onClick={() => scrollCategories(categoryScrollerRef.current, -1)} type="button">
+            <ChevronLeft aria-hidden="true" size={20} />
+          </button>
+          <div className="no-scrollbar mf-home-category-row flex max-w-full gap-2.5 overflow-x-auto pb-2 sm:gap-3" ref={categoryScrollerRef}>
+            {loading ? Array.from({ length: 5 }, (_, index) => <div className="skeleton mf-home-category-card-skeleton shrink-0" key={index} />) : categories.map((category) => (
+              <Link className="pressable ripple mf-home-category-card shrink-0" href={`/menu?category=${category.id}`} key={category.id}>
+                <MediaImage
+                  alt={category.name}
+                  aspectClassName="h-20 w-20"
+                  className="rounded-md"
+                  fallbackLabel={category.name}
+                  sizes="80px"
+                  src={categoryImage(category)}
+                />
+                <span>{category.name}</span>
+              </Link>
+            ))}
+          </div>
+          <button aria-label="Keyingi kategoriyalar" className="mf-home-category-arrow mf-home-category-arrow-next" onClick={() => scrollCategories(categoryScrollerRef.current, 1)} type="button">
+            <ChevronRight aria-hidden="true" size={20} />
+          </button>
         </div>
       </MotionDiv>
 
@@ -132,6 +142,28 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
       </div>
     </SiteShell>
   );
+}
+
+function scrollCategories(element: HTMLDivElement | null, direction: -1 | 1) {
+  if (!element) return;
+  element.scrollBy({ left: direction * Math.max(element.clientWidth * 0.72, 220), behavior: "smooth" });
+}
+
+function categoryImage(category: Category): string {
+  const images: Record<string, string> = {
+    LAVASH: "/categories/lavash.webp",
+    CHICKEN_LAVASH: "/categories/chicken-lavash.webp",
+    BURGER: "/categories/burger.webp",
+    CHICKEN_BURGER: "/categories/chicken-burger.webp",
+    HOT_DOG: "/categories/hot-dog.webp",
+    DONER: "/categories/doner.webp",
+    BLYUDALAR: "/categories/blyudalar.webp",
+    FAST_FOOD: "/categories/fast-food.webp",
+    DRINKS: "/categories/drinks.webp",
+    SAUCES: "/categories/sauces.webp",
+    SETS: "/categories/sets.webp",
+  };
+  return images[category.code?.toUpperCase() ?? ""] ?? category.imageUrl ?? "";
 }
 
 function sortSetsFirst(categories: Category[]): Category[] {
