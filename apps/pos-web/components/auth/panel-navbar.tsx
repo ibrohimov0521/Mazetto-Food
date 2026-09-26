@@ -198,8 +198,10 @@ export function PanelNavbar({
       <div className="min-w-0 flex-1 xl:hidden" />
 
       {actions && <div className="mz-panel-actions">{actions}</div>}
-      <DesktopStatusBadge />
-      <DesktopUpdateBadge />
+      <div className="mz-panel-runtime-status">
+        <DesktopStatusBadge />
+        <DesktopUpdateBadge />
+      </div>
       <BranchScopeBadge user={user} />
 
       <div className="relative shrink-0" ref={menuRef}>

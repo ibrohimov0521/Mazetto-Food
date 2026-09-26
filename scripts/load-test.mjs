@@ -1,7 +1,11 @@
 import { performance } from "node:perf_hooks";
 
-const baseUrl = stripTrailingSlash(process.env.LOAD_TEST_BASE_URL ?? "https://mazettofood.uz");
-const apiUrl = stripTrailingSlash(process.env.LOAD_TEST_API_URL ?? "https://api.mazettofood.uz/api/v1");
+const baseUrl = stripTrailingSlash(
+  process.env.LOAD_TEST_BASE_URL ?? "http://127.0.0.1:3000",
+);
+const apiUrl = stripTrailingSlash(
+  process.env.LOAD_TEST_API_URL ?? "http://127.0.0.1:4000/api/v1",
+);
 const levels = (process.env.LOAD_TEST_LEVELS ?? "10,25,50,100")
   .split(",")
   .map((value) => Number(value.trim()))
@@ -18,8 +22,19 @@ const scenario = [
   { name: "api products", url: `${apiUrl}/customer/menu/products` },
 ];
 
+for (const target of [baseUrl, apiUrl]) {
+  const hostname = new URL(target).hostname;
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(hostname)) {
+    throw new Error(
+      `Load tests are restricted to localhost; refused ${hostname}`,
+    );
+  }
+}
+
 if (levels.length === 0) {
-  throw new Error("LOAD_TEST_LEVELS must contain at least one positive integer");
+  throw new Error(
+    "LOAD_TEST_LEVELS must contain at least one positive integer",
+  );
 }
 
 console.log(`Mazetto read-only load test`);
@@ -40,7 +55,9 @@ async function runLevel(users) {
   const samples = (await Promise.all(workers)).flat();
   const durationMs = performance.now() - startedAt;
   const failures = samples.filter((sample) => !sample.ok);
-  const latencies = samples.map((sample) => sample.durationMs).sort((a, b) => a - b);
+  const latencies = samples
+    .map((sample) => sample.durationMs)
+    .sort((a, b) => a - b);
 
   return {
     users,
@@ -53,7 +70,9 @@ async function runLevel(users) {
     p95: percentile(latencies, 0.95),
     p99: percentile(latencies, 0.99),
     slowest: latencies.at(-1) ?? 0,
-    failedByEndpoint: countBy(failures, (sample) => `${sample.name} ${sample.status ?? sample.error ?? "ERR"}: ${sample.errorMessage ?? ""}`.trim()),
+    failedByEndpoint: countBy(failures, (sample) =>
+      `${sample.name} ${sample.status ?? sample.error ?? "ERR"}: ${sample.errorMessage ?? ""}`.trim(),
+    ),
   };
 }
 
@@ -101,7 +120,10 @@ async function fetchTimed(endpoint) {
 }
 
 function printResult(result) {
-  const failed = result.failures === 0 ? "0" : `${result.failures} (${(result.failureRate * 100).toFixed(1)}%)`;
+  const failed =
+    result.failures === 0
+      ? "0"
+      : `${result.failures} (${(result.failureRate * 100).toFixed(1)}%)`;
   console.log(
     [
       `${result.users} users`,
@@ -125,7 +147,10 @@ function percentile(values, ratio) {
     return 0;
   }
 
-  const index = Math.min(values.length - 1, Math.ceil(values.length * ratio) - 1);
+  const index = Math.min(
+    values.length - 1,
+    Math.ceil(values.length * ratio) - 1,
+  );
   return values[index];
 }
 

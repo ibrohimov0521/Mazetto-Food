@@ -32,6 +32,8 @@ import {
   type PaymentMethodCode,
 } from "../../../../components/payment/payment-methods";
 import { apiFetch, SessionExpiredError } from "../../../../lib/api";
+import { useStaffRealtime } from "../../../../lib/use-staff-realtime";
+import { Pagination } from "../../../../components/admin-ui/pagination";
 import {
   formatMoney,
   orderTypeLabels,
@@ -81,6 +83,7 @@ const successStatuses = ["PAID", "SUCCESS"];
 const enabledPaymentMethods: readonly PaymentMethodCode[] = [
   ...POS_PAYMENT_METHOD_CODES,
 ];
+const orderPageSize = 50;
 
 export default function PaymentPage() {
   return (
@@ -92,12 +95,15 @@ export default function PaymentPage() {
 
 function PaymentTerminal() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, session, user } = useAuth();
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [tenders, setTenders] = useState<Tender[]>([
     { code: "CASH", amount: "" },
   ]);
@@ -131,6 +137,7 @@ function PaymentTerminal() {
   );
 
   const loadOrders = useCallback(async () => {
+    if (submissionLock.current) return;
     loadRequest.current?.abort();
     const controller = new AbortController();
     loadRequest.current = controller;
@@ -141,8 +148,18 @@ function PaymentTerminal() {
         controller.signal,
         AbortSignal.timeout(12000),
       ]);
+      const params = new URLSearchParams({
+        paymentStatus: "PENDING",
+        excludeStatus: "CANCELLED",
+        limit: String(orderPageSize),
+        offset: String(offset),
+      });
+      if (appliedSearch) params.set("search", appliedSearch);
       const [nextOrders, shift] = await Promise.all([
-        apiFetch<Order[]>("/orders?limit=50", { cache: "no-store", signal }),
+        apiFetch<Order[]>(`/orders?${params.toString()}`, {
+          cache: "no-store",
+          signal,
+        }),
         apiFetch<Shift>("/cash-register/shift", { signal }).catch(() => null),
       ]);
 
@@ -151,8 +168,7 @@ function PaymentTerminal() {
       }
 
       const payable = nextOrders.filter(
-        (order) =>
-          order.status !== "CANCELLED" && order.paymentStatus !== "PAID",
+        (order) => order.paymentStatus !== "PAID",
       );
       setOrders(payable);
       setCurrentShift(shift);
@@ -174,11 +190,38 @@ function PaymentTerminal() {
         setIsLoading(false);
       }
     }
-  }, [handleFailure]);
+  }, [appliedSearch, handleFailure, offset]);
 
   useEffect(() => {
     void loadOrders();
     return () => loadRequest.current?.abort();
+  }, [loadOrders]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAppliedSearch(search.trim());
+      setOffset(0);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const realtimeState = useStaffRealtime({
+    accessToken: session?.tokens.accessToken,
+    branchId: user?.branchId,
+    cursorScope: `${user?.id ?? "staff"}:payment-queue:${user?.branchId ?? "all"}`,
+    onEvent: () => void loadOrders(),
+  });
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadOrders();
+    };
+    const timer = window.setInterval(refresh, 15000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [loadOrders]);
 
   const selectedOrder = useMemo(
@@ -385,6 +428,7 @@ function PaymentTerminal() {
           <h2 className={styles.pageHeading}>To'lovni qabul qilish</h2>
           <StaffSync
             updatedAt={updatedAt}
+            connectionState={realtimeState}
             error={!!loadError}
             refreshing={isLoading}
             onRefresh={() => void loadOrders()}
@@ -417,6 +461,17 @@ function PaymentTerminal() {
                 <h3 className={styles.subheading}>To'lanmagan buyurtmalar</h3>
                 <span className={styles.badge}>{orders.length} ta</span>
               </div>
+              <label className={styles.field}>
+                <span>Buyurtma qidirish</span>
+                <input
+                  className={styles.input}
+                  onChange={(event) => setSearch(event.target.value)}
+                  maxLength={120}
+                  placeholder="Raqam, mijoz yoki taom"
+                  type="search"
+                  value={search}
+                />
+              </label>
               {orders.length ? (
                 <div className={styles.payOrderList}>
                   {orders.map((order) => (
@@ -438,9 +493,17 @@ function PaymentTerminal() {
                 </div>
               ) : (
                 <StaffEmpty title="To'lanmagan buyurtma yo'q">
-                  Yangi buyurtmalar shu yerda ko'rinadi.
+                  Qidiruvni o'zgartiring yoki yangi buyurtma tushishini kuting.
                 </StaffEmpty>
               )}
+              <Pagination
+                count={orders.length}
+                isLoading={isLoading}
+                noun="buyurtma"
+                offset={offset}
+                onOffsetChange={setOffset}
+                pageSize={orderPageSize}
+              />
             </aside>
 
             {selectedOrder ? (

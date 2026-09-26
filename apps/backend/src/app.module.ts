@@ -26,6 +26,7 @@ import { MaintenanceModule } from "./modules/maintenance/maintenance.module";
 import { MenuModule } from "./modules/menu/menu.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
+import { PlatformAgentModule } from "./modules/platform-monitoring/platform-agent.module";
 import { PrintersModule } from "./modules/printers/printers.module";
 import { ProductsModule } from "./modules/products/products.module";
 import { ReceiptsModule } from "./modules/receipts/receipts.module";
@@ -94,6 +95,7 @@ import { RedisService } from "./redis/redis.service";
     ProductsModule,
     OrdersModule,
     PaymentsModule,
+    PlatformAgentModule,
     ReceiptsModule,
     PrintersModule,
     ShiftsModule,

@@ -24,6 +24,7 @@ import {
   kitchenColumns,
   kitchenStatusLabels,
   type KitchenAction,
+  type KitchenQueueResponse,
   type KitchenTicket,
 } from "../../../components/kitchen/kitchen-types";
 import { useKitchenChime } from "../../../components/kitchen/use-kitchen-chime";
@@ -48,6 +49,8 @@ export default function KitchenPage() {
 function KitchenDisplay() {
   const { user, session } = useAuth();
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
+  const [queueHasMore, setQueueHasMore] = useState(false);
+  const [queueLimit, setQueueLimit] = useState(250);
   const [now, setNow] = useState(() => Date.now());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [density, setDensity] = useState<KitchenDensity>("normal");
@@ -86,7 +89,7 @@ function KitchenDisplay() {
     const version = ++loadVersion.current;
     setRefreshing(true);
     try {
-      const nextTickets = await apiFetch<KitchenTicket[]>("/kitchen/orders", {
+      const queue = await apiFetch<KitchenQueueResponse>("/kitchen/orders", {
         cache: "no-store",
         signal: AbortSignal.any([
           controller.signal,
@@ -94,7 +97,9 @@ function KitchenDisplay() {
         ]),
       });
       if (version !== loadVersion.current) return;
-      setTickets(nextTickets);
+      setTickets(queue.items);
+      setQueueHasMore(queue.hasMore);
+      setQueueLimit(queue.limit);
       setError(null);
       setLastUpdatedAt(new Date());
     } catch (caught) {
@@ -117,9 +122,7 @@ function KitchenDisplay() {
     accessToken: session?.tokens.accessToken,
     branchId: user?.branchId,
     cursorScope:
-      (user?.id ?? "staff") +
-      ":kitchen-display:" +
-      (user?.branchId ?? "all"),
+      (user?.id ?? "staff") + ":kitchen-display:" + (user?.branchId ?? "all"),
     onEvent: () => void loadTickets(),
   });
 
@@ -433,6 +436,13 @@ function KitchenDisplay() {
             {error}
           </div>
         )}
+        {queueHasMore ? (
+          <div className={styles.error} role="alert">
+            Faol navbat {queueLimit} ta buyurtmadan oshdi. Hozir birinchi{" "}
+            {queueLimit} tasi ko'rsatilmoqda; navbatdagi buyurtmalarni ko'rish
+            uchun faol buyurtmalarni yakunlang.
+          </div>
+        ) : null}
         <p className={styles.srOnly} aria-live="polite">
           {unacknowledgedCount > 0
             ? `${unacknowledgedCount} ta yangi buyurtma navbatda`

@@ -57,10 +57,8 @@ import { nextOrderStatuses, statusChangeBlockReason } from "./admin-orders";
  * biriktirilgan bo'lsa 403 qaytaradi — ya'ni u kuryerning o'zi uchun,
  * admin uchun emas.
  *
- * SAHIFALASH: `/online-orders` `limit`/`offset` qabul qiladi. Filial
- * filtri serverda; qidiruv va holat filtri esa BRAUZERDA — DTO'da
- * `search`/`status` maydonlari bo'lsa ham `listOnlineOrders` ularni
- * o'qimaydi. Yorliq buni ochiq aytadi.
+ * Filial, holat va qidiruv serverda qo'llanadi; brauzer faqat bitta
+ * sahifadagi natijalarni ko'rsatadi. Statistika ham sahifa kesimida.
  */
 
 const pageSize = 50;
@@ -123,11 +121,21 @@ export function AdminOnlineOrdersPage() {
   const [branchId, setBranchId] = useState("");
   const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [status, setStatus] = useState("");
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAppliedQuery(query.trim());
+      setOffset(0);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -156,10 +164,12 @@ export function AdminOnlineOrdersPage() {
       if (branchId) {
         params.set("branchId", branchId);
       }
+      if (status) params.set("status", status);
+      if (appliedQuery) params.set("search", appliedQuery);
 
       return apiFetch<CustomerOrder[]>(`/online-orders?${params.toString()}`);
     },
-    [branchId, offset],
+    [appliedQuery, branchId, offset, status],
     "Online buyurtmalarni yuklab bo'lmadi.",
   );
   const orders = data ?? [];
@@ -196,28 +206,6 @@ export function AdminOnlineOrdersPage() {
     () => new Map(couriers.map((courier) => [courier.id, courier])),
     [couriers],
   );
-
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-
-    return orders.filter((item) => {
-      const identity = [
-        item.order?.orderNumber,
-        item.order?.displayOrderNumber,
-        item.customer?.name,
-        item.customer?.phone,
-        item.deliveryAddress,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return (
-        (!needle || identity.includes(needle)) &&
-        (!status || item.status === status)
-      );
-    });
-  }, [orders, query, status]);
 
   const stats = useMemo(() => {
     const delivery = orders.filter((item) => item.type === "DELIVERY").length;
@@ -525,30 +513,28 @@ export function AdminOnlineOrdersPage() {
           onRefresh={() => void load()}
         />
       </div>
-      {error ? (
-        <ErrorState message={error} onRetry={() => load()} />
-      ) : null}
+      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
 
       <StatGrid>
         <InfoBox
           icon="globe"
-          label="Jami online buyurtma"
+          label="Sahifadagi buyurtma"
           value={`${stats.total} ta`}
         />
         <InfoBox
           icon="clock"
-          label="Jarayonda"
+          label="Jarayonda (sahifada)"
           tone="warning"
           value={`${stats.active} ta`}
         />
         <InfoBox
           icon="truck"
-          label="Yetkazib berish"
+          label="Yetkazib berish (sahifada)"
           value={`${stats.delivery} ta`}
         />
         <InfoBox
           icon="wallet"
-          label="Umumiy summa"
+          label="Summa (sahifada)"
           tone="brand"
           value={formatMoney(stats.revenue)}
         />
@@ -573,7 +559,7 @@ export function AdminOnlineOrdersPage() {
         <FilterBar>
           <div className="min-w-52 flex-1">
             <FormField
-              hint="Server tomonda qidiruv yo'q — faqat shu sahifa ichida."
+              hint="Buyurtma raqami, mijoz, telefon yoki manzil bo'yicha qidiradi."
               label="Qidirish"
             >
               {(props) => (
@@ -592,7 +578,10 @@ export function AdminOnlineOrdersPage() {
               {(props) => (
                 <Select
                   {...props}
-                  onChange={(event) => setStatus(event.target.value)}
+                  onChange={(event) => {
+                    setStatus(event.target.value);
+                    setOffset(0);
+                  }}
                   value={status}
                 >
                   <option value="">Barcha holatlar</option>
@@ -643,7 +632,7 @@ export function AdminOnlineOrdersPage() {
           getRowKey={(item) => item.id}
           isLoading={isLoading}
           rowActions={rowActions}
-          rows={filtered}
+          rows={orders}
         />
 
         <Pagination

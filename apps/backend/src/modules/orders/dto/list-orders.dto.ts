@@ -21,6 +21,10 @@ export class ListOrdersDto {
   status?: OrderStatus;
 
   @IsOptional()
+  @IsEnum(OrderStatus)
+  excludeStatus?: OrderStatus;
+
+  @IsOptional()
   @IsEnum(OrderType)
   type?: OrderType;
 

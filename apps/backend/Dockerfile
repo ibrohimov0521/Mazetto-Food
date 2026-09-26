@@ -13,6 +13,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/backend/package.json ./apps/backend/package.json
 COPY apps/customer-web/package.json ./apps/customer-web/package.json
 COPY apps/pos-web/package.json ./apps/pos-web/package.json
+COPY apps/platform-web/package.json ./apps/platform-web/package.json
 COPY apps/print-agent/package.json ./apps/print-agent/package.json
 COPY apps/telegram-bot/package.json ./apps/telegram-bot/package.json
 
@@ -26,7 +27,7 @@ COPY . .
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" pnpm --filter backend prisma:generate
 RUN pnpm --filter backend build
 
-FROM base AS runner
+FROM base AS runner-base
 
 WORKDIR /app
 
@@ -50,5 +51,7 @@ COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/scripts ./apps/backe
 USER nestjs
 
 EXPOSE 4000
+
+FROM runner-base AS runner
 
 CMD ["sh", "-c", "node apps/backend/scripts/ensure-print-queue.mjs && exec node apps/backend/dist/main.js"]

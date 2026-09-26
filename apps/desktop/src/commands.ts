@@ -29,7 +29,7 @@ const registry: OfflineCommandDefinition[] = [
 
 const onlineOnlyMutationPatterns = [
   /^\/api\/v1\/(?:auth|customer|telegram|uploads)(?:\/|$)/,
-  /^\/api\/v1\/(?:branches|customers|devices|expenses|homepage|inventory|menu|notifications|printers|recipes|roles|settings|staff|suppliers)(?:\/|$)/,
+  /^\/api\/v1\/(?:branches|customers|devices|expenses|homepage|inventory|menu|notifications|platform|printers|recipes|roles|settings|staff|suppliers)(?:\/|$)/,
   /^\/api\/v1\/(?:tables|halls)(?:\/|$)/,
   /^\/api\/v1\/payments$/,
   /^\/api\/v1\/payments\/[^/]+\/refund$/,

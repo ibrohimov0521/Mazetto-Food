@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsNumber,
@@ -133,6 +134,39 @@ export class ProductModifierDto {
   sortOrder?: number;
 }
 
+export class ProductBundleItemDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @IsString()
+  @MaxLength(100)
+  componentCode!: string;
+
+  @IsString()
+  @MaxLength(100)
+  componentName!: string;
+
+  @IsOptional()
+  @IsString()
+  componentProductId?: string | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  quantity!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  unitLabel?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sortOrder?: number;
+}
+
 export class CreateProductDto {
   @IsOptional()
   @IsString()
@@ -164,6 +198,10 @@ export class CreateProductDto {
   isRecommended?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isCombo?: boolean;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   sortOrder?: number;
@@ -179,6 +217,13 @@ export class CreateProductDto {
   @ValidateNested({ each: true })
   @Type(() => ProductModifierDto)
   modifiers?: ProductModifierDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => ProductBundleItemDto)
+  bundleItems?: ProductBundleItemDto[];
 }
 
 export class UpdateProductDto {
@@ -214,6 +259,10 @@ export class UpdateProductDto {
   isRecommended?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isCombo?: boolean;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   sortOrder?: number;
@@ -229,6 +278,13 @@ export class UpdateProductDto {
   @ValidateNested({ each: true })
   @Type(() => ProductModifierDto)
   modifiers?: ProductModifierDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => ProductBundleItemDto)
+  bundleItems?: ProductBundleItemDto[];
 }
 
 export class CreateModifierDto {

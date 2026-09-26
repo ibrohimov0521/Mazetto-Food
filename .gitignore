@@ -1,9 +1,13 @@
 node_modules/
 **/node_modules/
+.pnpm-store/
+**/.pnpm-store/
 .turbo/
 **/.turbo/
 .next/
 **/.next/
+.next-*/
+**/.next-*/
 dist/
 **/dist/
 build/

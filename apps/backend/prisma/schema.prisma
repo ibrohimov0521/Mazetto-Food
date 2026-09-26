@@ -6,6 +6,19 @@ datasource db {
   provider = "postgresql"
 }
 
+enum RestaurantTenantStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum TenantDomainStatus {
+  PENDING
+  VERIFIED
+  DISABLED
+}
+
 enum EmployeeStatus {
   ACTIVE
   INACTIVE
@@ -198,6 +211,7 @@ enum KitchenTicketStatus {
 model Branch {
   id                  String   @id @default(cuid())
   code                String   @unique
+  tenantId            String   @default("tenant_mazetto_food")
   name                String
   address             String?
   phone               String?
@@ -213,6 +227,7 @@ model Branch {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  tenant                   RestaurantTenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   categories               Category[]
   cashTransactions         CashTransaction[]
   cashTransfers            CashTransfer[]
@@ -240,10 +255,42 @@ model Branch {
   workingHours             BranchWorkingHour[]
 
   @@index([isActive])
+  @@index([tenantId, isActive])
   @@index([isActive, acceptsOrders])
   @@index([sortOrder])
   @@map("branches")
 }
+model RestaurantTenant {
+  id        String                 @id @default(cuid())
+  code      String                 @unique
+  name      String
+  status    RestaurantTenantStatus @default(PROVISIONING)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  branches Branch[]
+  domains  TenantDomain[]
+
+  @@index([status, createdAt])
+  @@map("restaurant_tenants")
+}
+
+model TenantDomain {
+  id                    String            @id @default(cuid())
+  hostname              String            @unique
+  tenantId              String
+  status                TenantDomainStatus @default(PENDING)
+  verificationTokenHash String?           @unique
+  verifiedAt            DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("tenant_domains")
+}
+
 
 model BranchWorkingHour {
   id        String          @id @default(cuid())
@@ -418,31 +465,32 @@ model CartItem {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String?   @unique
-  phone        String?   @unique
-  passwordHash String?
-  displayName  String?
-  avatarUrl    String?
-  isActive     Boolean   @default(true)
-  telegramUserId String? @unique
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  email          String?   @unique
+  phone          String?   @unique
+  passwordHash   String?
+  displayName    String?
+  avatarUrl      String?
+  isActive       Boolean   @default(true)
+  telegramUserId String?   @unique
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  auditLogs         AuditLog[]
-  employee          Employee?
-  priceChanges      PriceHistory[]       @relation("PriceHistoryChangedBy")
-  roles             UserRole[]
-  sessions          Session[]
-  paymentOperations PaymentOperation[]
-  createdPayments   Payment[]            @relation("PaymentCreatedBy")
-  createdRefunds    PaymentRefund[]      @relation("PaymentRefundCreatedBy")
-  createdCashEvents CashTransaction[]    @relation("CashTransactionCreatedBy")
-  statusChanges     OrderStatusHistory[] @relation("OrderStatusChangedBy")
-  stockMovements    StockMovement[]
-  assignedUserRoles UserRole[]           @relation("UserRoleAssignedBy")
-  settingsUpdated   Setting[]            @relation("SettingUpdatedBy")
+  auditLogs                  AuditLog[]
+  employee                   Employee?
+  priceChanges               PriceHistory[]       @relation("PriceHistoryChangedBy")
+  roles                      UserRole[]
+  sessions                   Session[]
+  paymentOperations          PaymentOperation[]
+  createdPayments            Payment[]            @relation("PaymentCreatedBy")
+  createdRefunds             PaymentRefund[]      @relation("PaymentRefundCreatedBy")
+  createdCashEvents          CashTransaction[]    @relation("CashTransactionCreatedBy")
+  statusChanges              OrderStatusHistory[] @relation("OrderStatusChangedBy")
+  stockMovements             StockMovement[]
+  assignedUserRoles          UserRole[]           @relation("UserRoleAssignedBy")
+  settingsUpdated            Setting[]            @relation("SettingUpdatedBy")
+  acknowledgedPlatformEvents PlatformSiteEvent[]  @relation("PlatformEventAcknowledgedBy")
 
   @@index([isActive])
   @@index([createdAt])
@@ -532,6 +580,80 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model PlatformSite {
+  id                  String    @id @default(cuid())
+  siteKey             String    @unique
+  name                String
+  productCode         String    @default("MAZETTO_FOOD")
+  websiteUrl          String
+  apiHealthUrl        String
+  tokenHash           String    @unique
+  isActive            Boolean   @default(true)
+  lastHeartbeatAt     DateTime?
+  lastHeartbeatStatus String?
+  lastHeartbeatData   Json?
+  websiteStatus       String    @default("UNKNOWN")
+  websiteStatusCode   Int?
+  websiteLatencyMs    Int?
+  websiteCheckedAt    DateTime?
+  websiteError        String?
+  apiStatus           String    @default("UNKNOWN")
+  apiStatusCode       Int?
+  apiLatencyMs        Int?
+  apiCheckedAt        DateTime?
+  apiError            String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  events      PlatformSiteEvent[]
+  diagnostics PlatformSiteDiagnostic[]
+
+  @@index([isActive, lastHeartbeatAt])
+  @@index([websiteStatus, apiStatus])
+  @@map("platform_sites")
+}
+
+model PlatformSiteEvent {
+  id               String    @id @default(cuid())
+  siteId           String
+  externalId       String
+  code             String
+  branchId         String?
+  branchName       String?
+  occurredAt       DateTime
+  receivedAt       DateTime  @default(now())
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+
+  site           PlatformSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?        @relation("PlatformEventAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@unique([siteId, externalId])
+  @@index([siteId, occurredAt])
+  @@index([siteId, branchId, occurredAt])
+  @@index([acknowledgedAt, occurredAt])
+  @@index([siteId, acknowledgedAt, occurredAt])
+  @@map("platform_site_events")
+}
+
+model PlatformSiteDiagnostic {
+  id         String   @id @default(cuid())
+  siteId     String
+  externalId String
+  service    String
+  code       String
+  severity   String
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  site PlatformSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, externalId])
+  @@index([siteId, occurredAt])
+  @@index([severity, occurredAt])
+  @@map("platform_site_diagnostics")
+}
+
 model IdempotencyRequest {
   id             String                   @id @default(cuid())
   scope          String
@@ -575,19 +697,19 @@ model Session {
 }
 
 model Employee {
-  id           String         @id @default(cuid())
-  userId       String?        @unique
-  telegramUserId String?      @unique
-  branchId     String
-  employeeCode String
-  firstName    String
-  lastName     String?
-  phone        String?
-  status       EmployeeStatus @default(ACTIVE)
-  hiredAt      DateTime?
-  terminatedAt DateTime?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  userId         String?        @unique
+  telegramUserId String?        @unique
+  branchId       String
+  employeeCode   String
+  firstName      String
+  lastName       String?
+  phone          String?
+  status         EmployeeStatus @default(ACTIVE)
+  hiredAt        DateTime?
+  terminatedAt   DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   branch            Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
   user              User?                @relation(fields: [userId], references: [id], onDelete: SetNull)

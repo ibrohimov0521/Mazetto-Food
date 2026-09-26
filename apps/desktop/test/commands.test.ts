@@ -47,5 +47,7 @@ for (const [method, pathname, commandType] of [
 test("admin mutations are explicitly online-only instead of silently unknown", () => {
   assert.equal(classifyOfflineMutation("POST", "/api/v1/menu/products"), "online-only");
   assert.equal(classifyOfflineMutation("PATCH", "/api/v1/branches/branch-1"), "online-only");
+  assert.equal(classifyOfflineMutation("POST", "/api/v1/platform/sites"), "online-only");
+  assert.equal(classifyOfflineMutation("POST", "/api/v1/platform/sites/site-1/rotate-token"), "online-only");
   assert.equal(classifyOfflineMutation("POST", "/api/v1/unknown/action"), "unknown");
 });
