@@ -29,6 +29,7 @@ COPY . .
 
 RUN test -n "$BESTTEAM_API_INTERNAL_URL"
 RUN pnpm exec turbo run build --filter=platform-web
+RUN node -e 'const m=require("./apps/platform-web/.next/routes-manifest.json");const r=[...m.rewrites.beforeFiles,...m.rewrites.afterFiles,...m.rewrites.fallback];if(!r.some(x=>x.source==="/api/v1/:path*"&&x.destination===`${process.env.BESTTEAM_API_INTERNAL_URL}/api/v1/:path*`))throw new Error("Platform API rewrite missing from build output")'
 
 FROM node:24-alpine AS runner
 
