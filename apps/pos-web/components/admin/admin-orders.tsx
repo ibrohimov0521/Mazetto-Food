@@ -113,7 +113,13 @@ type OrderEventEntry = {
 type AllowedOrderActions = {
   orderId: string;
   version: number;
-  orderState: "DRAFT" | "PLACED" | "ACCEPTED" | "REJECTED" | "COMPLETED" | "CANCELLED";
+  orderState:
+    | "DRAFT"
+    | "PLACED"
+    | "ACCEPTED"
+    | "REJECTED"
+    | "COMPLETED"
+    | "CANCELLED";
   actions: Array<"accept" | "cancel">;
 };
 
@@ -173,7 +179,13 @@ export type AdminOrder = {
 
 const pageSize = 25;
 const openOrderStatuses = ["NEW", "CONFIRMED", "PREPARING", "READY"] as const;
-const paidOrderStatuses = ["CONFIRMED", "PREPARING", "READY", "SERVED", "COMPLETED"] as const;
+const paidOrderStatuses = [
+  "CONFIRMED",
+  "PREPARING",
+  "READY",
+  "SERVED",
+  "COMPLETED",
+] as const;
 type StatusGroup = "" | "open" | "paid";
 
 function queryOrderStatus(value: string | null): OrderStatus | "" {
@@ -256,15 +268,21 @@ export function AdminOrdersPage() {
   const searchParamsKey = searchParams.toString();
 
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [status, setStatus] = useState(() => queryOrderStatus(searchParams.get("status")));
+  const [status, setStatus] = useState(() =>
+    queryOrderStatus(searchParams.get("status")),
+  );
   const [statusGroup, setStatusGroup] = useState<StatusGroup>(() =>
     queryStatusGroup(searchParams.get("statusGroup")),
   );
-  const [type, setType] = useState(() => queryOrderType(searchParams.get("type")));
+  const [type, setType] = useState(() =>
+    queryOrderType(searchParams.get("type")),
+  );
   const [paymentStatus, setPaymentStatus] = useState(() =>
     queryPaymentStatus(searchParams.get("paymentStatus")),
   );
-  const [branchId, setBranchId] = useState(() => searchParams.get("branchId") ?? "");
+  const [branchId, setBranchId] = useState(
+    () => searchParams.get("branchId") ?? "",
+  );
   /*
    * QIDIRUV va SANA ORALIG'I.
    *
@@ -282,7 +300,9 @@ export function AdminOrdersPage() {
   );
   const [from, setFrom] = useState(() => queryDate(searchParams.get("from")));
   const [to, setTo] = useState(() => queryDate(searchParams.get("to")));
-  const [offset, setOffset] = useState(() => queryOffset(searchParams.get("offset")));
+  const [offset, setOffset] = useState(() =>
+    queryOffset(searchParams.get("offset")),
+  );
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
     new Set(),
   );
@@ -318,7 +338,9 @@ export function AdminOrdersPage() {
 
   useEffect(() => {
     const nextStatusGroup = queryStatusGroup(searchParams.get("statusGroup"));
-    setStatus(nextStatusGroup ? "" : queryOrderStatus(searchParams.get("status")));
+    setStatus(
+      nextStatusGroup ? "" : queryOrderStatus(searchParams.get("status")),
+    );
     setStatusGroup(nextStatusGroup);
     setType(queryOrderType(searchParams.get("type")));
     setPaymentStatus(queryPaymentStatus(searchParams.get("paymentStatus")));
@@ -342,7 +364,17 @@ export function AdminOrdersPage() {
     if (to) params.set("to", to);
     if (offset > 0) params.set("offset", String(offset));
     return params.toString();
-  }, [appliedSearch, branchId, from, offset, paymentStatus, status, statusGroup, to, type]);
+  }, [
+    appliedSearch,
+    branchId,
+    from,
+    offset,
+    paymentStatus,
+    status,
+    statusGroup,
+    to,
+    type,
+  ]);
 
   useEffect(() => {
     if (filterQuery === searchParamsKey) {
@@ -367,13 +399,9 @@ export function AdminOrdersPage() {
       if (paymentStatus) params.set("paymentStatus", paymentStatus);
       if (branchId) params.set("branchId", branchId);
       if (appliedSearch) params.set("search", appliedSearch);
-      /*
-       * Sana maydoni `YYYY-MM-DD` beradi. Boshi kunning boshidan,
-       * oxiri kunning OXIRIGA qadar olinadi — aks holda "to" sifatida
-       * tanlangan kun butunlay tushib qolardi.
-       */
-      if (from) params.set("from", `${from}T00:00:00.000Z`);
-      if (to) params.set("to", `${to}T23:59:59.999Z`);
+      // Sana kalitlari serverda Asia/Tashkent kun oralig'iga aylantiriladi.
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
 
       const groupedStatuses = statusGroupStatuses(statusGroup);
       if (groupedStatuses) {
@@ -401,7 +429,17 @@ export function AdminOrdersPage() {
       params.set("offset", String(offset));
       return apiFetch<AdminOrder[]>(`/orders?${params.toString()}`);
     },
-    [appliedSearch, branchId, from, offset, paymentStatus, status, statusGroup, to, type],
+    [
+      appliedSearch,
+      branchId,
+      from,
+      offset,
+      paymentStatus,
+      status,
+      statusGroup,
+      to,
+      type,
+    ],
     "Buyurtmalarni yuklab bo'lmadi.",
   );
   // `data` hali kelmagan yoki xato bo'lgan paytda yangi `[]` yaratish
@@ -740,7 +778,9 @@ export function AdminOrdersPage() {
                     changeFilter(() => {
                       const value = event.target.value;
                       if (value === "group:open" || value === "group:paid") {
-                        setStatusGroup(value.replace("group:", "") as StatusGroup);
+                        setStatusGroup(
+                          value.replace("group:", "") as StatusGroup,
+                        );
                         setStatus("");
                         return;
                       }
@@ -753,7 +793,9 @@ export function AdminOrdersPage() {
                 >
                   <option value="">Barcha holatlar</option>
                   <option value="group:open">Ochiq buyurtmalar</option>
-                  <option value="group:paid">Tushumga kirgan buyurtmalar</option>
+                  <option value="group:paid">
+                    Tushumga kirgan buyurtmalar
+                  </option>
                   {Object.entries(orderStatusLabels).map(([value, label]) => (
                     <option key={value} value={value}>
                       {label}
@@ -770,7 +812,9 @@ export function AdminOrdersPage() {
                 <Select
                   {...props}
                   onChange={(event) =>
-                    changeFilter(() => setType(queryOrderType(event.target.value)))
+                    changeFilter(() =>
+                      setType(queryOrderType(event.target.value)),
+                    )
                   }
                   value={type}
                 >
@@ -1095,9 +1139,8 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   const { showToast } = useToast();
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [events, setEvents] = useState<OrderEventEntry[]>([]);
-  const [domainActions, setDomainActions] = useState<AllowedOrderActions | null>(
-    null,
-  );
+  const [domainActions, setDomainActions] =
+    useState<AllowedOrderActions | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [realtimeUpdatedAt, setRealtimeUpdatedAt] = useState<Date | null>(null);
@@ -1105,7 +1148,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   const [statusReasonError, setStatusReasonError] = useState("");
   const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null);
   const [isChanging, setIsChanging] = useState(false);
-  const pendingActionKey = useRef<{ fingerprint: string; key: string } | null>(null);
+  const pendingActionKey = useRef<{ fingerprint: string; key: string } | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -1159,7 +1204,8 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     const action =
       pendingStatus === "CONFIRMED" && domainActions?.actions.includes("accept")
         ? "accept"
-        : pendingStatus === "CANCELLED" && domainActions?.actions.includes("cancel")
+        : pendingStatus === "CANCELLED" &&
+            domainActions?.actions.includes("cancel")
           ? "cancel"
           : null;
 
@@ -1178,13 +1224,20 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     setIsChanging(true);
 
     try {
-      const fingerprint = JSON.stringify({ orderId, action, actionVersion, reason });
+      const fingerprint = JSON.stringify({
+        orderId,
+        action,
+        actionVersion,
+        reason,
+      });
       if (action && pendingActionKey.current?.fingerprint !== fingerprint) {
         pendingActionKey.current = { fingerprint, key: crypto.randomUUID() };
       }
 
       await apiFetch(
-        action ? `/orders/${orderId}/actions/${action}` : `/orders/${orderId}/status`,
+        action
+          ? `/orders/${orderId}/actions/${action}`
+          : `/orders/${orderId}/status`,
         action
           ? {
               method: "POST",
@@ -1192,7 +1245,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
               body: JSON.stringify({
                 expectedVersion: actionVersion,
                 ...(reason ? { reason } : {}),
-                ...(action === "cancel" ? { reasonCode: "ADMIN_CANCELLED" } : {}),
+                ...(action === "cancel"
+                  ? { reasonCode: "ADMIN_CANCELLED" }
+                  : {}),
               }),
             }
           : {
@@ -1242,9 +1297,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   const statusBlockReason = hasPermission(user, "ORDER_SEND_KITCHEN")
     ? null
     : "Sizda buyurtma holatini o'zgartirish ruxsati yo'q.";
-  const allowedStatuses = (Object.keys(orderStatusLabels) as OrderStatus[]).filter(
-    (status) => status !== order.status,
-  );
+  const allowedStatuses = (
+    Object.keys(orderStatusLabels) as OrderStatus[]
+  ).filter((status) => status !== order.status);
   /*
    * Chek FAQAT to'langan buyurtmada yaratiladi (`receipts` bo'sh bo'lsa
    * chek ham yo'q). `GET /receipts/:id` `RECEIPT_VIEW` talab qiladi,
@@ -1310,247 +1365,249 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid gap-5">
-        <Card>
-          <CardHeader
-            description={`${orderSourceLabels[order.source]} · ${orderTypeLabels[order.type]}`}
-            title={
-              order.displayOrderNumber
-                ? `${order.displayOrderNumber} · ${order.orderNumber}`
-                : order.orderNumber
-            }
-          />
-          <CardBody className="flex flex-wrap gap-2">
-            <Badge tone={orderStatusTone(order.status)} withDot>
-              {orderStatusLabel(order.status, order.type)}
-            </Badge>
-            <Badge tone={paymentStatusTone(order.paymentStatus)}>
-              {paymentStatusLabels[order.paymentStatus]}
-            </Badge>
-            {order.table ? (
-              <Badge tone="neutral">{order.table.name}</Badge>
-            ) : null}
-            {order.branch ? (
-              <Badge tone="neutral">{order.branch.name}</Badge>
-            ) : null}
-            <Badge tone="neutral">v{order.version}</Badge>
-          </CardBody>
-          {/*
-           * CHEK HAVOLASI.
-           *
-           * Ilgari detal sahifasidan chekka yo'l yo'q edi, holbuki
-           * `orderInclude()` chek ishoratlarini allaqachon qaytaradi va
-           * `/pos/receipt/:id` sahifasi (chop etish tugmasi bilan) bor.
-           * Operator chekni qayta chiqarish uchun POS ni ochishga majbur
-           * bo'lardi.
-           */}
-          {receipt ? (
-            <CardBody className="flex flex-wrap items-center gap-3 border-t border-mz-border">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-mz-text">
-                  Chek {receipt.receiptNumber}
-                </p>
-                <p className="text-xs text-mz-text-muted">
-                  {receipt.printed
-                    ? `Chop etilgan · ${formatDateTime(receipt.printedAt)}`
-                    : "Hali chop etilmagan"}
-                </p>
-              </div>
-              {canSeeReceipt ? (
-                <ButtonLink
-                  className="ml-auto"
-                  href={`/pos/receipt/${receipt.id}`}
-                  size="sm"
-                  variant="ghost"
-                >
-                  Chekni ochish
-                </ButtonLink>
-              ) : (
-                <p className="ml-auto text-xs text-mz-text-muted">
-                  Chekni ko&apos;rish uchun ruxsat yo&apos;q.
-                </p>
-              )}
-            </CardBody>
-          ) : null}
-        </Card>
-
-        {hasPermission(user, "ORDER_SEND_KITCHEN") ? (
           <Card>
             <CardHeader
-              description="Faqat joriy holatdan mumkin bo'lgan qadamlar ko'rsatiladi. O'zgarish tarixga yoziladi va oshxonaga yetkaziladi."
-              title="Holatni o'zgartirish"
+              description={`${orderSourceLabels[order.source]} · ${orderTypeLabels[order.type]}`}
+              title={
+                order.displayOrderNumber
+                  ? `${order.displayOrderNumber} · ${order.orderNumber}`
+                  : order.orderNumber
+              }
             />
-            <CardBody>
-              {statusBlockReason ? (
-                <p className="text-sm text-mz-text-muted">
-                  {statusBlockReason}
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {allowedStatuses.map((status) => (
-                    <Button
-                      key={status}
-                      onClick={() => {
-                        setStatusReasonError("");
-                        setPendingStatus(status);
-                      }}
-                      variant={status === "CANCELLED" ? "danger" : "ghost"}
-                    >
-                      {orderStatusLabel(status, order.type)}
-                    </Button>
-                  ))}
+            <CardBody className="flex flex-wrap gap-2">
+              <Badge tone={orderStatusTone(order.status)} withDot>
+                {orderStatusLabel(order.status, order.type)}
+              </Badge>
+              <Badge tone={paymentStatusTone(order.paymentStatus)}>
+                {paymentStatusLabels[order.paymentStatus]}
+              </Badge>
+              {order.table ? (
+                <Badge tone="neutral">{order.table.name}</Badge>
+              ) : null}
+              {order.branch ? (
+                <Badge tone="neutral">{order.branch.name}</Badge>
+              ) : null}
+              <Badge tone="neutral">v{order.version}</Badge>
+            </CardBody>
+            {/*
+             * CHEK HAVOLASI.
+             *
+             * Ilgari detal sahifasidan chekka yo'l yo'q edi, holbuki
+             * `orderInclude()` chek ishoratlarini allaqachon qaytaradi va
+             * `/pos/receipt/:id` sahifasi (chop etish tugmasi bilan) bor.
+             * Operator chekni qayta chiqarish uchun POS ni ochishga majbur
+             * bo'lardi.
+             */}
+            {receipt ? (
+              <CardBody className="flex flex-wrap items-center gap-3 border-t border-mz-border">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-mz-text">
+                    Chek {receipt.receiptNumber}
+                  </p>
+                  <p className="text-xs text-mz-text-muted">
+                    {receipt.printed
+                      ? `Chop etilgan · ${formatDateTime(receipt.printedAt)}`
+                      : "Hali chop etilmagan"}
+                  </p>
                 </div>
-              )}
-            </CardBody>
-          </Card>
-        ) : null}
-
-        <Card>
-          <CardHeader title="Tarkib" />
-          <DataTable
-            caption="Buyurtma tarkibi"
-            columns={itemColumns}
-            emptyTitle="Buyurtmada mahsulot yo'q"
-            getRowKey={(item) => item.id}
-            rows={order.items ?? []}
-          />
-        </Card>
-
-        {events.length > 0 ? (
-          <Card>
-            <CardHeader
-              description="O'zgarmas business eventlar va aggregate versiyalari"
-              title="Amallar tarixi"
-            />
-            <CardBody>
-              <ol className="grid gap-2">
-                {events.map((entry) => (
-                  <li
-                    className="grid gap-1 border-b border-mz-border py-2 last:border-0"
-                    key={entry.id}
+                {canSeeReceipt ? (
+                  <ButtonLink
+                    className="ml-auto"
+                    href={`/pos/receipt/${receipt.id}`}
+                    size="sm"
+                    variant="ghost"
                   >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone="neutral">v{entry.aggregateVersion}</Badge>
-                      <span className="text-sm font-semibold text-mz-text">
-                        {entry.eventType}
-                      </span>
+                    Chekni ochish
+                  </ButtonLink>
+                ) : (
+                  <p className="ml-auto text-xs text-mz-text-muted">
+                    Chekni ko&apos;rish uchun ruxsat yo&apos;q.
+                  </p>
+                )}
+              </CardBody>
+            ) : null}
+          </Card>
+
+          {hasPermission(user, "ORDER_SEND_KITCHEN") ? (
+            <Card>
+              <CardHeader
+                description="Faqat joriy holatdan mumkin bo'lgan qadamlar ko'rsatiladi. O'zgarish tarixga yoziladi va oshxonaga yetkaziladi."
+                title="Holatni o'zgartirish"
+              />
+              <CardBody>
+                {statusBlockReason ? (
+                  <p className="text-sm text-mz-text-muted">
+                    {statusBlockReason}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {allowedStatuses.map((status) => (
+                      <Button
+                        key={status}
+                        onClick={() => {
+                          setStatusReasonError("");
+                          setPendingStatus(status);
+                        }}
+                        variant={status === "CANCELLED" ? "danger" : "ghost"}
+                      >
+                        {orderStatusLabel(status, order.type)}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader title="Tarkib" />
+            <DataTable
+              caption="Buyurtma tarkibi"
+              columns={itemColumns}
+              emptyTitle="Buyurtmada mahsulot yo'q"
+              getRowKey={(item) => item.id}
+              rows={order.items ?? []}
+            />
+          </Card>
+
+          {events.length > 0 ? (
+            <Card>
+              <CardHeader
+                description="O'zgarmas business eventlar va aggregate versiyalari"
+                title="Amallar tarixi"
+              />
+              <CardBody>
+                <ol className="grid gap-2">
+                  {events.map((entry) => (
+                    <li
+                      className="grid gap-1 border-b border-mz-border py-2 last:border-0"
+                      key={entry.id}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone="neutral">v{entry.aggregateVersion}</Badge>
+                        <span className="text-sm font-semibold text-mz-text">
+                          {entry.eventType}
+                        </span>
+                        <span className="text-xs text-mz-text-muted">
+                          {formatDateTime(entry.createdAt)}
+                        </span>
+                      </div>
+                      <p className="break-all text-xs text-mz-text-faint">
+                        {entry.actorType} · {entry.source}
+                        {entry.reasonCode
+                          ? ` · ${entry.reasonCode}`
+                          : ""} · {entry.correlationId}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {order.statusHistory && order.statusHistory.length > 0 ? (
+            <Card>
+              <CardHeader title="Holat tarixi" />
+              <CardBody>
+                <ol className="grid gap-2">
+                  {order.statusHistory.map((entry) => (
+                    <li
+                      className="flex flex-wrap items-center gap-2 text-sm"
+                      key={entry.id}
+                    >
+                      <Badge tone={orderStatusTone(entry.toStatus)}>
+                        {orderStatusLabel(entry.toStatus, order.type)}
+                      </Badge>
                       <span className="text-xs text-mz-text-muted">
                         {formatDateTime(entry.createdAt)}
                       </span>
-                    </div>
-                    <p className="break-all text-xs text-mz-text-faint">
-                      {entry.actorType} · {entry.source}
-                      {entry.reasonCode ? ` · ${entry.reasonCode}` : ""} · {entry.correlationId}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            </CardBody>
-          </Card>
-        ) : null}
-
-        {order.statusHistory && order.statusHistory.length > 0 ? (
-          <Card>
-            <CardHeader title="Holat tarixi" />
-            <CardBody>
-              <ol className="grid gap-2">
-                {order.statusHistory.map((entry) => (
-                  <li
-                    className="flex flex-wrap items-center gap-2 text-sm"
-                    key={entry.id}
-                  >
-                    <Badge tone={orderStatusTone(entry.toStatus)}>
-                      {orderStatusLabel(entry.toStatus, order.type)}
-                    </Badge>
-                    <span className="text-xs text-mz-text-muted">
-                      {formatDateTime(entry.createdAt)}
-                    </span>
-                    <span className="text-xs text-mz-text-muted">
-                      {statusActor(entry)}
-                    </span>
-                    {entry.reason ? (
-                      <span className="text-xs text-mz-text-faint">
-                        {entry.reason}
+                      <span className="text-xs text-mz-text-muted">
+                        {statusActor(entry)}
                       </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            </CardBody>
-          </Card>
-        ) : null}
+                      {entry.reason ? (
+                        <span className="text-xs text-mz-text-faint">
+                          {entry.reason}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              </CardBody>
+            </Card>
+          ) : null}
         </div>
 
         <aside className="grid content-start gap-5">
-        <Card>
-          <CardHeader title="Hisob" />
-          <CardBody className="grid gap-2 text-sm">
-            <SummaryRow
-              label="Oraliq summa"
-              value={formatMoney(order.subtotal)}
-            />
-            {Number(order.discountTotal) > 0 ? (
-              <SummaryRow
-                label="Chegirma"
-                value={`− ${formatMoney(order.discountTotal)}`}
-              />
-            ) : null}
-            {Number(order.deliveryFeeTotal) > 0 ? (
-              <SummaryRow
-                label="Yetkazib berish"
-                value={formatMoney(order.deliveryFeeTotal)}
-              />
-            ) : null}
-            <div className="mt-1 flex items-center justify-between border-t border-mz-border pt-2">
-              <span className="font-semibold text-mz-text">Jami</span>
-              <span className="text-lg font-bold text-mz-text">
-                {formatMoney(order.total)}
-              </span>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Mijoz" />
-          <CardBody className="grid gap-2 text-sm">
-            <SummaryRow label="Ism" value={order.customerName ?? "—"} />
-            {/* Detal sahifasida to'liq raqam — operatorga qo'ng'iroq qilish uchun kerak. */}
-            <SummaryRow label="Telefon" value={order.customerPhone ?? "—"} />
-            {order.deliveryAddress ? (
-              <SummaryRow label="Manzil" value={order.deliveryAddress} />
-            ) : null}
-            {order.notes ? (
-              <SummaryRow label="Izoh" value={order.notes} />
-            ) : null}
-          </CardBody>
-        </Card>
-
-        {order.payments && order.payments.length > 0 ? (
           <Card>
-            <CardHeader title="To'lovlar" />
-            <CardBody className="grid gap-3 text-sm">
-              {order.payments.map((payment) => (
-                <div className="grid gap-1" key={payment.id}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-mz-text">
-                      {payment.method?.name ?? payment.methodCode ?? "To'lov"}
-                    </span>
-                    <span className="font-semibold text-mz-text">
-                      {formatMoney(payment.amount)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge tone={paymentStatusTone(payment.status)}>
-                      {paymentStatusLabels[payment.status]}
-                    </Badge>
-                    <span className="text-xs text-mz-text-muted">
-                      {formatDateTime(payment.paidAt)}
-                    </span>
-                  </div>
-                </div>
-              ))}
+            <CardHeader title="Hisob" />
+            <CardBody className="grid gap-2 text-sm">
+              <SummaryRow
+                label="Oraliq summa"
+                value={formatMoney(order.subtotal)}
+              />
+              {Number(order.discountTotal) > 0 ? (
+                <SummaryRow
+                  label="Chegirma"
+                  value={`− ${formatMoney(order.discountTotal)}`}
+                />
+              ) : null}
+              {Number(order.deliveryFeeTotal) > 0 ? (
+                <SummaryRow
+                  label="Yetkazib berish"
+                  value={formatMoney(order.deliveryFeeTotal)}
+                />
+              ) : null}
+              <div className="mt-1 flex items-center justify-between border-t border-mz-border pt-2">
+                <span className="font-semibold text-mz-text">Jami</span>
+                <span className="text-lg font-bold text-mz-text">
+                  {formatMoney(order.total)}
+                </span>
+              </div>
             </CardBody>
           </Card>
-        ) : null}
+
+          <Card>
+            <CardHeader title="Mijoz" />
+            <CardBody className="grid gap-2 text-sm">
+              <SummaryRow label="Ism" value={order.customerName ?? "—"} />
+              {/* Detal sahifasida to'liq raqam — operatorga qo'ng'iroq qilish uchun kerak. */}
+              <SummaryRow label="Telefon" value={order.customerPhone ?? "—"} />
+              {order.deliveryAddress ? (
+                <SummaryRow label="Manzil" value={order.deliveryAddress} />
+              ) : null}
+              {order.notes ? (
+                <SummaryRow label="Izoh" value={order.notes} />
+              ) : null}
+            </CardBody>
+          </Card>
+
+          {order.payments && order.payments.length > 0 ? (
+            <Card>
+              <CardHeader title="To'lovlar" />
+              <CardBody className="grid gap-3 text-sm">
+                {order.payments.map((payment) => (
+                  <div className="grid gap-1" key={payment.id}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-mz-text">
+                        {payment.method?.name ?? payment.methodCode ?? "To'lov"}
+                      </span>
+                      <span className="font-semibold text-mz-text">
+                        {formatMoney(payment.amount)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge tone={paymentStatusTone(payment.status)}>
+                        {paymentStatusLabels[payment.status]}
+                      </Badge>
+                      <span className="text-xs text-mz-text-muted">
+                        {formatDateTime(payment.paidAt)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </CardBody>
+            </Card>
+          ) : null}
         </aside>
       </div>
 

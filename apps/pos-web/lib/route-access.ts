@@ -218,6 +218,11 @@ export const routeAccessRules: RouteAccessRule[] = [
     roles: [SUPER],
     permission: "SYSTEM_HEALTH_VIEW",
   },
+  {
+    pattern: "/admin/platform-monitoring",
+    roles: [SUPER],
+    permission: "SYSTEM_HEALTH_VIEW",
+  },
   // Kill switch va cheklov qiymatlari — filial darajasidagi qaror emas.
   { pattern: "/admin/settings", roles: [SUPER], permission: "SETTING_MANAGE" },
 

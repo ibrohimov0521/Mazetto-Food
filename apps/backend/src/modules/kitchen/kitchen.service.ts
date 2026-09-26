@@ -19,6 +19,10 @@ import { randomUUID } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import {
+  MAX_ACTIVE_KITCHEN_TICKETS,
+  trimKitchenQueue,
+} from "./kitchen-queue-window";
 import { ensureCancellationReceipt } from "../receipts/receipt-writer";
 import {
   eventForLegacyStatus,
@@ -88,37 +92,40 @@ export class KitchenService {
   ) {}
 
   async listOrders(user: AuthenticatedUser) {
+    return (await this.listOrdersWithOverflow(user)).items;
+  }
+
+  async listOrdersWithOverflow(user: AuthenticatedUser) {
     this.requireEmployee(user);
     const branchId = resolveBranchScope(user);
-    const day = this.todayTashkentRange();
 
-    const tickets = await this.prisma.kitchenTicket.findMany({
-      where: {
-        order: {
-          ...(branchId ? { branchId } : {}),
-          createdAt: { gte: day.start, lt: day.end },
-          status: {
-            notIn: [
-              OrderStatus.SERVED,
-              OrderStatus.COMPLETED,
-              OrderStatus.CANCELLED,
-            ],
-          },
-        },
+    const where = {
+      order: {
+        ...(branchId ? { branchId } : {}),
         status: {
-          in: [
-            KitchenTicketStatus.NEW,
-            KitchenTicketStatus.ACCEPTED,
-            KitchenTicketStatus.COOKING,
-            KitchenTicketStatus.READY,
+          notIn: [
+            OrderStatus.SERVED,
+            OrderStatus.COMPLETED,
+            OrderStatus.CANCELLED,
           ],
         },
       },
+      status: {
+        in: [
+          KitchenTicketStatus.NEW,
+          KitchenTicketStatus.ACCEPTED,
+          KitchenTicketStatus.COOKING,
+          KitchenTicketStatus.READY,
+        ],
+      },
+    };
+    const tickets = await this.prisma.kitchenTicket.findMany({
+      where,
       include: this.ticketInclude(),
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
-      take: 250,
+      take: MAX_ACTIVE_KITCHEN_TICKETS + 1,
     });
-    return tickets;
+    return trimKitchenQueue(tickets);
   }
 
   async listHistory(

@@ -5,13 +5,21 @@ This checklist prepares MAZETTO FOOD for production deployment on Dokploy. It is
 ## Required Services
 
 1. PostgreSQL
-2. Backend
-3. POS Web
-4. Customer Web
+2. Redis
+3. Backend
+4. Media storage
+5. POS Web
+6. Customer Web
+7. Customer Telegram bot
+8. Staff Telegram bot
 
-Optional future services such as Redis, Telegram Bot, and Print Agent should be deployed only after their production logic and environment variables are implemented.
+Redis, media storage, and both Telegram bots are already active services in the current Mazetto Dokploy deployment; this checklist must not create duplicates. A separate print agent is not part of the current service list.
 
-## Deployment Order
+## Shared Platform Direction
+
+`mazettofood.uz` remains one restaurant. `admin.mazetto.uz` will be the private owner frontend, and `mazetto.uz` will be a separate no-login demo with no persistent writes. Restaurant-branded web apps and Telegram bots remain separate per tenant, but use the one shared backend and PostgreSQL database after tenant isolation is implemented.
+
+Do not create a second backend or database for the owner panel or another restaurant. The existing API is not tenant-safe yet; creating tenants or routing new restaurant domains is blocked until the architecture and release gate in `MAZETTO_PLATFORM_ARCHITECTURE.md` are complete.
 
 ```text
 PostgreSQL

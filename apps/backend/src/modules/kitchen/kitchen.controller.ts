@@ -22,7 +22,7 @@ export class KitchenController {
   @Get("orders")
   @Permissions(PERMISSIONS.KITCHEN_VIEW)
   listOrders(@CurrentUser() user: AuthenticatedUser) {
-    return this.kitchenService.listOrders(user);
+    return this.kitchenService.listOrdersWithOverflow(user);
   }
 
   @Get("orders/history")

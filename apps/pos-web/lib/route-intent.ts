@@ -19,7 +19,7 @@ const childRoutes = new Set([
 ]);
 
 const workspaceRoutes = new Set(["/accounting", "/manager/dashboard"]);
-const hiddenRoutes = new Set(["/admin", "/admin/menu", "/admin/tables"]);
+const hiddenRoutes = new Set(["/admin", "/admin/menu", "/admin/tables", "/admin/platform-monitoring"]);
 
 export function resolveRouteIntent(pattern: string): RouteIntent | null {
   if (sidebarRoutes.has(pattern)) return "sidebar";

@@ -146,6 +146,8 @@ export function AdminKitchenMonitor() {
   const { user, session } = useAuth();
   const { showToast } = useToast();
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
+  const [queueHasMore, setQueueHasMore] = useState(false);
+  const [queueLimit, setQueueLimit] = useState(250);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -184,13 +186,19 @@ export function AdminKitchenMonitor() {
     }
 
     try {
-      const next = await apiFetch<KitchenTicket[]>("/kitchen/orders");
+      const next = await apiFetch<{
+        items: KitchenTicket[];
+        hasMore: boolean;
+        limit: number;
+      }>("/kitchen/orders");
 
       if (version !== request.current) {
         return;
       }
 
-      setTickets(next);
+      setTickets(next.items);
+      setQueueHasMore(next.hasMore);
+      setQueueLimit(next.limit);
       setError("");
       setLastUpdatedAt(Date.now());
       setNowMs(Date.now());
@@ -492,6 +500,15 @@ export function AdminKitchenMonitor() {
       </div>
       {error ? (
         <ErrorState message={error} onRetry={() => void load()} />
+      ) : null}
+      {queueHasMore ? (
+        <div
+          className="rounded-mz-control bg-mz-warning-bg px-4 py-3 text-sm font-medium text-mz-warning"
+          role="alert"
+        >
+          Faol navbat {queueLimit} ta buyurtmadan oshdi. Oshxona ekranida
+          birinchi {queueLimit} tasi ko'rsatilmoqda.
+        </div>
       ) : null}
 
       <StatGrid>

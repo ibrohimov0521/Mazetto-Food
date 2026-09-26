@@ -7,6 +7,7 @@ export default [
     ignores: [
       "**/node_modules/**",
       "**/.next/**",
+      "**/.next-*/**",
       "**/dist/**",
       "**/.turbo/**",
       "**/runtime/**",

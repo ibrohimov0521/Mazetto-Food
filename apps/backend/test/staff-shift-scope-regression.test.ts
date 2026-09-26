@@ -22,28 +22,28 @@ const shiftMigration = readFileSync(
 );
 
 function methodSource(source: string, name: string): string {
-  const start = source.indexOf(`${name}(`);
+  const start = source.indexOf(`async ${name}(`);
   assert.notEqual(start, -1, `${name} method must exist`);
   const next = source.indexOf("\n  async ", start + 1);
   return source.slice(start, next === -1 ? undefined : next);
 }
 
-test("kitchen queue is shared within today's branch, while history belongs to the acting employee", () => {
-  const active = methodSource(kitchenSource, "listOrders");
+test("kitchen queue keeps every active branch ticket; history remains today's and employee-scoped", () => {
+  const active = methodSource(kitchenSource, "listOrdersWithOverflow");
   const history = methodSource(kitchenSource, "listHistory");
 
-  for (const method of [active, history]) {
-    assert.match(method, /this\.requireEmployee\(user\)/);
-    assert.match(method, /resolveBranchScope\(user\)/);
-    assert.match(method, /const day = this\.todayTashkentRange\(\)/);
-    assert.match(method, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
-  }
+  assert.match(active, /this\.requireEmployee\(user\)/);
+  assert.match(active, /resolveBranchScope\(user\)/);
+  assert.doesNotMatch(active, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
+  assert.match(active, /take: MAX_ACTIVE_KITCHEN_TICKETS \+ 1/);
+  assert.match(active, /trimKitchenQueue\(tickets\)/);
 
-  // New branch tickets have no employee status history until someone acts on them.
   assert.doesNotMatch(active, /changedByEmployeeId: employeeId/);
   assert.match(history, /const employeeId = this\.requireEmployee\(user\)/);
+  assert.match(history, /resolveBranchScope\(user\)/);
+  assert.match(history, /const day = this\.todayTashkentRange\(\)/);
+  assert.match(history, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
   assert.match(history, /changedByEmployeeId: employeeId/);
-  assert.match(active, /take: 250/);
   assert.match(history, /take: this\.parseLimit\(query\.limit\)/);
 });
 
@@ -62,10 +62,22 @@ test("employee shift history stays scoped to the open shift and today", () => {
 
 test("cash ownership is unified across POS, courier and payment flows", () => {
   const sources = [
-    readFileSync(join(__dirname, "../src/modules/orders/order-guards.ts"), "utf8"),
-    readFileSync(join(__dirname, "../src/modules/customers/customer-courier.service.ts"), "utf8"),
-    readFileSync(join(__dirname, "../src/modules/payments/payments.service.ts"), "utf8"),
-    readFileSync(join(__dirname, "../src/modules/shifts/shifts.service.ts"), "utf8"),
+    readFileSync(
+      join(__dirname, "../src/modules/orders/order-guards.ts"),
+      "utf8",
+    ),
+    readFileSync(
+      join(__dirname, "../src/modules/customers/customer-courier.service.ts"),
+      "utf8",
+    ),
+    readFileSync(
+      join(__dirname, "../src/modules/payments/payments.service.ts"),
+      "utf8",
+    ),
+    readFileSync(
+      join(__dirname, "../src/modules/shifts/shifts.service.ts"),
+      "utf8",
+    ),
   ];
 
   for (const source of sources.slice(0, 3)) {

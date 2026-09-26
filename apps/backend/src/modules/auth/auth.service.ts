@@ -61,14 +61,14 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
+    const user = this.toAuthenticatedUser(userRecord);
+
     await this.loginThrottle.clear(identifier, clientAddress);
 
     await this.prisma.user.update({
       where: { id: userRecord.id },
       data: { lastLoginAt: new Date() },
     });
-
-    const user = this.toAuthenticatedUser(userRecord);
 
     return {
       user,
@@ -203,6 +203,7 @@ export class AuthService {
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
   }
+
 
   private toAuthenticatedUser(user: UserWithAuthRelations): AuthenticatedUser {
     return {

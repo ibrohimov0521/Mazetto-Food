@@ -26,6 +26,7 @@
     "release:acceptance": "node scripts/release-acceptance.mjs",
     "qa:customer": "node scripts/qa-customer-contrast.mjs",
     "qa:role-matrix": "node scripts/qa-authenticated-role-matrix.mjs",
+    "qa:platform-monitoring": "node scripts/qa-platform-monitoring.mjs",
     "qa:isolated-order-e2e": "node scripts/isolated-order-e2e.mjs",
     "desktop:dev": "pnpm --filter mazetto-desktop dev",
     "desktop:package:dir": "pnpm --filter mazetto-desktop package:dir",

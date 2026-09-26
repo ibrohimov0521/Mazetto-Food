@@ -156,6 +156,9 @@ const envSchema = z.object({
   MEDIA_UPLOAD_URL: optionalText,
   MEDIA_PUBLIC_URL: optionalText,
   CUSTOMER_WEB_PUBLIC_URL: optionalText,
+  BESTTEAM_MONITOR_URL: optionalText,
+  BESTTEAM_INSTANCE_KEY: optionalText,
+  BESTTEAM_INSTANCE_TOKEN: optionalText,
 
   SWAGGER_ENABLED: envBoolean(false),
 });
@@ -190,6 +193,34 @@ export function validateEnvironment(source: NodeJS.ProcessEnv = process.env): Ba
   }
 
   const env = parsed.data;
+
+  const monitorSettings = [
+    env.BESTTEAM_MONITOR_URL,
+    env.BESTTEAM_INSTANCE_KEY,
+    env.BESTTEAM_INSTANCE_TOKEN,
+  ];
+  if (monitorSettings.some(Boolean) && !monitorSettings.every(Boolean)) {
+    throw new Error(
+      "BestTeam monitoring uchun BESTTEAM_MONITOR_URL, BESTTEAM_INSTANCE_KEY va BESTTEAM_INSTANCE_TOKEN birgalikda berilishi kerak.",
+    );
+  }
+  if (env.BESTTEAM_MONITOR_URL) {
+    let monitorUrl: URL;
+    try {
+      monitorUrl = new URL(env.BESTTEAM_MONITOR_URL);
+    } catch {
+      throw new Error("BESTTEAM_MONITOR_URL yaroqli HTTPS manzil bo'lishi kerak.");
+    }
+    if (monitorUrl.protocol !== "https:") {
+      throw new Error("BESTTEAM_MONITOR_URL faqat HTTPS bo'lishi kerak.");
+    }
+    if (!/^[A-Za-z0-9_-]{3,80}$/.test(env.BESTTEAM_INSTANCE_KEY ?? "")) {
+      throw new Error("BESTTEAM_INSTANCE_KEY formati noto'g'ri.");
+    }
+    if ((env.BESTTEAM_INSTANCE_TOKEN ?? "").length < 32) {
+      throw new Error("BESTTEAM_INSTANCE_TOKEN kamida 32 belgidan iborat bo'lishi kerak.");
+    }
+  }
 
   if (env.NODE_ENV === "production") {
     const missing = PRODUCTION_REQUIRED.filter((name) => !env[name]);

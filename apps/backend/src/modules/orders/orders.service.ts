@@ -28,9 +28,9 @@ import {
 } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { buildOrderListWhere } from "./orders-list-filters";
 import { writeAuditLog } from "../audit/audit-write";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
-import { buildOrderSearchWhere } from "../customers/customer-shared";
 import { InventoryService } from "../inventory/inventory.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
@@ -724,7 +724,9 @@ export class OrdersService {
     return order;
   }
 
-  private async notifyTelegramStaffGroupIfNeeded(orderId: string): Promise<void> {
+  private async notifyTelegramStaffGroupIfNeeded(
+    orderId: string,
+  ): Promise<void> {
     if (!this.telegramOrderNotificationService) {
       return;
     }
@@ -743,24 +745,10 @@ export class OrdersService {
 
   async listOrders(query: ListOrdersDto, user: AuthenticatedUser) {
     const branchId = resolveBranchScope(user, query.branchId);
-    const search = query.search?.trim();
-    const createdAt =
-      query.from || query.to
-        ? {
-            ...(query.from ? { gte: new Date(query.from) } : {}),
-            ...(query.to ? { lte: new Date(query.to) } : {}),
-          }
-        : undefined;
+    const where = buildOrderListWhere(query, branchId);
 
     return this.prisma.order.findMany({
-      where: {
-        ...(branchId ? { branchId } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.type ? { type: query.type } : {}),
-        ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
-        ...(createdAt ? { createdAt } : {}),
-        ...(search ? buildOrderSearchWhere(search) : {}),
-      },
+      where,
       orderBy: { createdAt: "desc" },
       skip: query.offset,
       take: query.limit,
@@ -769,8 +757,13 @@ export class OrdersService {
   }
 
   async permanentlyDeleteOrders(ids: string[], user: AuthenticatedUser) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
-    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta buyurtma tanlanishi kerak");
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
+    if (!uniqueIds.length)
+      throw new BadRequestException("Kamida bitta buyurtma tanlanishi kerak");
     const orders = await this.prisma.order.findMany({
       where: { id: { in: uniqueIds } },
       select: {
@@ -779,7 +772,8 @@ export class OrdersService {
         orderNumber: true,
       },
     });
-    if (orders.length !== uniqueIds.length) throw new NotFoundException("Tanlangan buyurtmalarning biri topilmadi");
+    if (orders.length !== uniqueIds.length)
+      throw new NotFoundException("Tanlangan buyurtmalarning biri topilmadi");
     for (const order of orders) resolveBranchScope(user, order.branchId);
 
     await this.prisma.$transaction(async (tx) => {
@@ -789,14 +783,23 @@ export class OrdersService {
           select: { id: true },
         })
       ).map((payment) => payment.id);
-      const events = await tx.orderEvent.findMany({ where: { orderId: { in: uniqueIds } }, select: { id: true } });
-      await tx.outboxEvent.deleteMany({ where: { OR: [
-        { sourceEventId: { in: events.map((event) => event.id) } },
-        { aggregateType: "Order", aggregateId: { in: uniqueIds } },
-      ] } });
+      const events = await tx.orderEvent.findMany({
+        where: { orderId: { in: uniqueIds } },
+        select: { id: true },
+      });
+      await tx.outboxEvent.deleteMany({
+        where: {
+          OR: [
+            { sourceEventId: { in: events.map((event) => event.id) } },
+            { aggregateType: "Order", aggregateId: { in: uniqueIds } },
+          ],
+        },
+      });
       await tx.orderEvent.deleteMany({ where: { orderId: { in: uniqueIds } } });
       if (paymentIds.length) {
-        await tx.paymentRefund.deleteMany({ where: { paymentId: { in: paymentIds } } });
+        await tx.paymentRefund.deleteMany({
+          where: { paymentId: { in: paymentIds } },
+        });
       }
       await tx.revenueRecord.updateMany({
         where: { orderId: { in: uniqueIds } },
@@ -817,7 +820,12 @@ export class OrdersService {
         where: { orderId: { in: uniqueIds } },
       });
       await tx.order.deleteMany({ where: { id: { in: uniqueIds } } });
-      await writeAuditLog(tx, { userId: user.id, action: "ORDERS_BULK_DELETED", entity: "Order", metadata: { ids: uniqueIds, orders } });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "ORDERS_BULK_DELETED",
+        entity: "Order",
+        metadata: { ids: uniqueIds, orders },
+      });
     });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
@@ -1072,7 +1080,9 @@ export class OrdersService {
     context?: OrderMutationContext,
   ) {
     const force = dto.force === true;
-    const employeeId = force ? (user.employeeId ?? null) : requireEmployee(user);
+    const employeeId = force
+      ? (user.employeeId ?? null)
+      : requireEmployee(user);
     const nextStatus = toStoredStatus(dto.status);
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -1266,7 +1276,8 @@ export class OrdersService {
         newState: updated.orderState,
         payload: { fromStatus: order.status, toStatus: nextStatus, force },
         reasonCode:
-          context?.reasonCode ?? (force ? `ADMIN_FORCE_${nextStatus}` : `LEGACY_${nextStatus}`),
+          context?.reasonCode ??
+          (force ? `ADMIN_FORCE_${nextStatus}` : `LEGACY_${nextStatus}`),
         correlationId: context?.correlationId,
         idempotencyKey: context?.idempotencyKey,
       });
@@ -1439,9 +1450,7 @@ export class OrdersService {
     const product = await tx.product.findFirst({
       where: {
         id: dto.productId,
-        ...(options?.requireCanonical
-          ? customerVisibleProductWhere()
-          : {}),
+        ...(options?.requireCanonical ? customerVisibleProductWhere() : {}),
         isAvailable: true,
         OR: [{ branchId }, { branchId: null }],
         ...unavailableProductWhere(branchId),

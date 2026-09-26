@@ -111,61 +111,74 @@ function WaiterFloor() {
     ? `?branchId=${encodeURIComponent(user.branchId)}`
     : "";
 
-  const loadFloor = useCallback(async () => {
-    floorRequest.current?.abort();
-    const controller = new AbortController();
-    floorRequest.current = controller;
-    const version = ++floorVersion.current;
-    setIsRefreshing(true);
-    try {
-      const signal = AbortSignal.any([
-        controller.signal,
-        AbortSignal.timeout(15000),
-      ]);
-      const [nextTables, nextCategories, nextProducts] = await Promise.all([
-        apiFetch<WaiterTable[]>(`/tables${branchQuery}`, {
-          cache: "no-store",
-          signal,
-        }),
-        apiFetch<MenuCategory[]>(`/menu/categories${branchQuery}`, { signal }),
-        apiFetch<MenuProduct[]>(`/menu/products${branchQuery}`, { signal }),
-      ]);
+  const loadFloor = useCallback(
+    async (includeMenu = true) => {
+      floorRequest.current?.abort();
+      const controller = new AbortController();
+      floorRequest.current = controller;
+      const version = ++floorVersion.current;
+      setIsRefreshing(true);
+      try {
+        const signal = AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(15000),
+        ]);
+        const [nextTables, menu] = await Promise.all([
+          apiFetch<WaiterTable[]>(`/tables${branchQuery}`, {
+            cache: "no-store",
+            signal,
+          }),
+          includeMenu
+            ? Promise.all([
+                apiFetch<MenuCategory[]>(`/menu/categories${branchQuery}`, {
+                  signal,
+                }),
+                apiFetch<MenuProduct[]>(`/menu/products${branchQuery}`, {
+                  signal,
+                }),
+              ])
+            : Promise.resolve(null),
+        ]);
 
-      if (version !== floorVersion.current) {
-        return;
-      }
+        if (version !== floorVersion.current) {
+          return;
+        }
 
-      setTables(nextTables);
-      setCategories(nextCategories);
-      setProducts(nextProducts);
-      setLoadError(null);
-      setLastUpdatedAt(new Date());
-    } catch (caught) {
-      if (version !== floorVersion.current) {
-        return;
-      }
+        setTables(nextTables);
+        if (menu) {
+          setCategories(menu[0]);
+          setProducts(menu[1]);
+        }
+        setLoadError(null);
+        setLastUpdatedAt(new Date());
+      } catch (caught) {
+        if (version !== floorVersion.current) {
+          return;
+        }
 
-      if (caught instanceof SessionExpiredError) {
-        void logout();
-        return;
-      }
+        if (caught instanceof SessionExpiredError) {
+          void logout();
+          return;
+        }
 
-      setLoadError(
-        caught instanceof Error
-          ? caught.message
-          : "Zal ma'lumotlarini yuklab bo'lmadi.",
-      );
-    } finally {
-      if (floorRequest.current === controller) {
-        floorRequest.current = null;
-      }
+        setLoadError(
+          caught instanceof Error
+            ? caught.message
+            : "Zal ma'lumotlarini yuklab bo'lmadi.",
+        );
+      } finally {
+        if (floorRequest.current === controller) {
+          floorRequest.current = null;
+        }
 
-      if (version === floorVersion.current) {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        if (version === floorVersion.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
-    }
-  }, [branchQuery, logout]);
+    },
+    [branchQuery, logout],
+  );
 
   /*
    * `GET /tables` har stolda FAQAT eng yangi ochiq buyurtmani qaytaradi
@@ -251,7 +264,7 @@ function WaiterFloor() {
     cursorScope: (user?.id ?? "staff") + ":waiter:" + (user?.branchId ?? "all"),
     onEvent: () => {
       if (actionLock.current) return;
-      void loadFloor();
+      void loadFloor(false);
       const tableId = selectedTableRef.current;
       if (tableId) void loadTableDetail(tableId);
     },
@@ -312,7 +325,7 @@ function WaiterFloor() {
 
   const refreshAfterAction = useCallback(async () => {
     await Promise.all([
-      loadFloor(),
+      loadFloor(false),
       selectedTableId ? loadTableDetail(selectedTableId) : Promise.resolve(),
     ]);
   }, [loadFloor, loadTableDetail, selectedTableId]);
@@ -337,7 +350,8 @@ function WaiterFloor() {
         const result = await request();
         if (isOfflineQueuedResult(result)) {
           setActionError(
-            result.message ?? "Amal navbatga olindi. Internet qaytganda yuboriladi.",
+            result.message ??
+              "Amal navbatga olindi. Internet qaytganda yuboriladi.",
           );
           return true;
         }
@@ -971,4 +985,3 @@ function WaiterFloor() {
     </div>
   );
 }
-

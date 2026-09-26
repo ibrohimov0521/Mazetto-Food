@@ -19,6 +19,7 @@ import type {
   UpdateModifierDto,
   UpdateProductDto,
 } from "./dto/menu-management.dto";
+import { validateProductBundleItems } from "./product-bundle-items";
 
 /*
  * Mahsulot-modifikator bog'lamining guruh sozlamalari.
@@ -59,10 +60,7 @@ export function productModifierSettings(
       "Majburiy qo'shimcha uchun eng kam tanlov kamida 1",
     );
   }
-  if (
-    settings.maxSelect !== null &&
-    settings.minSelect > settings.maxSelect
-  ) {
+  if (settings.maxSelect !== null && settings.minSelect > settings.maxSelect) {
     throw new BadRequestException(
       "Eng ko'p tanlov eng kam tanlovdan kichik bo'la olmaydi",
     );
@@ -95,7 +93,9 @@ export class MenuService {
     return this.prisma.category.findMany({
       where: {
         ...(query.includeInactive === "true" ? {} : { isActive: true }),
-        ...(query.branchId ? { OR: [{ branchId: query.branchId }, { branchId: null }] } : {}),
+        ...(query.branchId
+          ? { OR: [{ branchId: query.branchId }, { branchId: null }] }
+          : {}),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
@@ -122,7 +122,9 @@ export class MenuService {
     const products = await this.prisma.product.findMany({
       where: {
         ...(query.includeInactive === "true" ? {} : { isAvailable: true }),
-        ...(query.branchId ? { OR: [{ branchId: query.branchId }, { branchId: null }] } : {}),
+        ...(query.branchId
+          ? { OR: [{ branchId: query.branchId }, { branchId: null }] }
+          : {}),
         ...this.unavailableProductWhere(query.branchId),
         ...(query.categoryId ? { categoryId: query.categoryId } : {}),
         ...(query.recommended === "true" ? { isRecommended: true } : {}),
@@ -317,7 +319,9 @@ export class MenuService {
     };
   }
 
-  private getCatalogVisibility(code: string): "CANONICAL" | "LEGACY" | "CUSTOM" | "INTERNAL" {
+  private getCatalogVisibility(
+    code: string,
+  ): "CANONICAL" | "LEGACY" | "CUSTOM" | "INTERNAL" {
     if (customerVisibleProductCodeSet.has(code)) {
       return "CANONICAL";
     }
@@ -359,18 +363,16 @@ export class MenuService {
       throw new NotFoundException("Category not found");
     }
     if (dto.parentId !== undefined) {
-      await this.assertValidCategoryParent(
-        id,
-        dto.parentId,
-        category.branchId,
-      );
+      await this.assertValidCategoryParent(id, dto.parentId, category.branchId);
     }
 
     return this.prisma.category.update({
       where: { id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description }
+          : {}),
         ...(dto.image !== undefined ? { imageUrl: dto.image } : {}),
         ...(dto.parentId !== undefined ? { parentId: dto.parentId } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
@@ -411,7 +413,11 @@ export class MenuService {
   }
 
   async permanentlyDeleteCategories(ids: string[]) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
     if (!uniqueIds.length) {
       throw new BadRequestException("Kamida bitta kategoriya tanlanishi kerak");
     }
@@ -421,7 +427,9 @@ export class MenuService {
       select: {
         id: true,
         name: true,
-        _count: { select: { products: true, children: true, promotions: true } },
+        _count: {
+          select: { products: true, children: true, promotions: true },
+        },
       },
     });
     if (categories.length !== uniqueIds.length) {
@@ -452,7 +460,9 @@ export class MenuService {
 
   async createProduct(dto: CreateProductDto) {
     assertUniqueProductModifiers(dto.modifiers);
-    const defaultVariant = dto.variants?.find((variant) => variant.isDefault) ?? dto.variants?.[0];
+    validateProductBundleItems(dto.bundleItems ?? [], dto.isCombo ?? false);
+    const defaultVariant =
+      dto.variants?.find((variant) => variant.isDefault) ?? dto.variants?.[0];
     const defaultVariantIndex = Math.max(
       dto.variants?.findIndex((variant) => variant === defaultVariant) ?? -1,
       0,
@@ -470,8 +480,11 @@ export class MenuService {
           imageUrl: dto.image ?? null,
           preparationTime: dto.preparationTime ?? null,
           sellingPrice,
-          costPrice: defaultVariant?.costPrice ? new Prisma.Decimal(defaultVariant.costPrice) : null,
+          costPrice: defaultVariant?.costPrice
+            ? new Prisma.Decimal(defaultVariant.costPrice)
+            : null,
           isAvailable: true,
+          isCombo: dto.isCombo ?? false,
           isRecommended: dto.isRecommended ?? false,
           sortOrder: dto.sortOrder ?? 0,
         },
@@ -485,7 +498,9 @@ export class MenuService {
             name: variant.name,
             sellingPrice: new Prisma.Decimal(variant.price),
             costPrice:
-              variant.costPrice !== undefined ? new Prisma.Decimal(variant.costPrice) : null,
+              variant.costPrice !== undefined
+                ? new Prisma.Decimal(variant.costPrice)
+                : null,
             isDefault: index === defaultVariantIndex,
             isAvailable: true,
             sortOrder: index,
@@ -505,6 +520,10 @@ export class MenuService {
         });
       }
 
+      if (dto.bundleItems?.length) {
+        await this.syncProductBundleItems(tx, product.id, dto.bundleItems);
+      }
+
       return product;
     });
 
@@ -512,26 +531,53 @@ export class MenuService {
   }
 
   async updateProduct(id: string, dto: UpdateProductDto) {
-    await this.assertProduct(id);
+    const existingProduct = await this.prisma.product.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        isCombo: true,
+        _count: { select: { bundleItems: true } },
+      },
+    });
+    if (!existingProduct) throw new NotFoundException("Product not found");
     assertUniqueProductModifiers(dto.modifiers);
+    const nextIsCombo = dto.isCombo ?? existingProduct.isCombo;
+    if (dto.bundleItems !== undefined) {
+      validateProductBundleItems(dto.bundleItems, nextIsCombo);
+    } else if (
+      dto.isCombo === true &&
+      existingProduct._count.bundleItems === 0
+    ) {
+      validateProductBundleItems([], true);
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
         data: {
-          ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+          ...(dto.categoryId !== undefined
+            ? { categoryId: dto.categoryId }
+            : {}),
           ...(dto.name !== undefined ? { name: dto.name } : {}),
-          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(dto.description !== undefined
+            ? { description: dto.description }
+            : {}),
           ...(dto.image !== undefined ? { imageUrl: dto.image } : {}),
           ...(dto.isActive !== undefined ? { isAvailable: dto.isActive } : {}),
-          ...(dto.isRecommended !== undefined ? { isRecommended: dto.isRecommended } : {}),
-          ...(dto.preparationTime !== undefined ? { preparationTime: dto.preparationTime } : {}),
+          ...(dto.isCombo !== undefined ? { isCombo: dto.isCombo } : {}),
+          ...(dto.isRecommended !== undefined
+            ? { isRecommended: dto.isRecommended }
+            : {}),
+          ...(dto.preparationTime !== undefined
+            ? { preparationTime: dto.preparationTime }
+            : {}),
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
         },
       });
 
       if (dto.variants) {
-        const defaultVariant = dto.variants.find((variant) => variant.isDefault) ?? dto.variants[0];
+        const defaultVariant =
+          dto.variants.find((variant) => variant.isDefault) ?? dto.variants[0];
         const defaultVariantIndex = Math.max(
           dto.variants.findIndex((variant) => variant === defaultVariant),
           0,
@@ -559,7 +605,9 @@ export class MenuService {
                 name: variant.name,
                 sellingPrice: new Prisma.Decimal(variant.price),
                 costPrice:
-                  variant.costPrice !== undefined ? new Prisma.Decimal(variant.costPrice) : null,
+                  variant.costPrice !== undefined
+                    ? new Prisma.Decimal(variant.costPrice)
+                    : null,
                 isDefault: index === defaultVariantIndex,
                 isAvailable: true,
                 sortOrder: index,
@@ -573,7 +621,9 @@ export class MenuService {
                 name: variant.name,
                 sellingPrice: new Prisma.Decimal(variant.price),
                 costPrice:
-                  variant.costPrice !== undefined ? new Prisma.Decimal(variant.costPrice) : null,
+                  variant.costPrice !== undefined
+                    ? new Prisma.Decimal(variant.costPrice)
+                    : null,
                 isDefault: index === defaultVariantIndex,
                 sortOrder: index,
               },
@@ -638,6 +688,13 @@ export class MenuService {
         });
       }
 
+      if (dto.bundleItems !== undefined) {
+        await this.syncProductBundleItems(tx, id, dto.bundleItems);
+      } else if (dto.isCombo === false) {
+        await tx.productBundleItem.deleteMany({
+          where: { bundleProductId: id },
+        });
+      }
     });
 
     return this.getProduct(id);
@@ -683,7 +740,11 @@ export class MenuService {
   }
 
   async permanentlyDeleteProducts(ids: string[]) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
     if (!uniqueIds.length) {
       throw new BadRequestException("Kamida bitta mahsulot tanlanishi kerak");
     }
@@ -702,10 +763,7 @@ export class MenuService {
     return { deleted: true, count: deleted.length, ids: deleted };
   }
 
-  private async deleteProductRows(
-    tx: Prisma.TransactionClient,
-    ids: string[],
-  ) {
+  private async deleteProductRows(tx: Prisma.TransactionClient, ids: string[]) {
     const uniqueIds = [...new Set(ids.filter(Boolean))];
     if (!uniqueIds.length) return;
 
@@ -769,7 +827,9 @@ export class MenuService {
       where: { id },
       data: {
         ...(dto.name === undefined ? {} : { name: dto.name }),
-        ...(dto.price === undefined ? {} : { price: new Prisma.Decimal(dto.price) }),
+        ...(dto.price === undefined
+          ? {}
+          : { price: new Prisma.Decimal(dto.price) }),
         ...(dto.description === undefined
           ? {}
           : { description: dto.description }),
@@ -780,7 +840,10 @@ export class MenuService {
   }
 
   private async assertModifier(id: string): Promise<void> {
-    const modifier = await this.prisma.modifier.findUnique({ where: { id }, select: { id: true } });
+    const modifier = await this.prisma.modifier.findUnique({
+      where: { id },
+      select: { id: true },
+    });
 
     if (!modifier) {
       throw new NotFoundException("Modifier not found");
@@ -809,21 +872,37 @@ export class MenuService {
   }
 
   async permanentlyDeleteModifiers(ids: string[]) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
-    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta qo'shimcha tanlanishi kerak");
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
+    if (!uniqueIds.length)
+      throw new BadRequestException("Kamida bitta qo'shimcha tanlanishi kerak");
     const rows = await this.prisma.modifier.findMany({
       where: { id: { in: uniqueIds } },
-      select: { id: true, name: true, products: { select: { productId: true } } },
+      select: {
+        id: true,
+        name: true,
+        products: { select: { productId: true } },
+      },
     });
-    if (rows.length !== uniqueIds.length) throw new NotFoundException("Modifier not found");
+    if (rows.length !== uniqueIds.length)
+      throw new NotFoundException("Modifier not found");
     const blocked = rows.find((row) => row.products.length);
-    if (blocked) throw new BadRequestException(`Qo'shimcha ${blocked.name} mahsulotga biriktirilgan; avval bog'lamani olib tashlang`);
+    if (blocked)
+      throw new BadRequestException(
+        `Qo'shimcha ${blocked.name} mahsulotga biriktirilgan; avval bog'lamani olib tashlang`,
+      );
     await this.prisma.modifier.deleteMany({ where: { id: { in: uniqueIds } } });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   private async assertCategory(id: string): Promise<void> {
-    const category = await this.prisma.category.findUnique({ where: { id }, select: { id: true } });
+    const category = await this.prisma.category.findUnique({
+      where: { id },
+      select: { id: true },
+    });
 
     if (!category) {
       throw new NotFoundException("Category not found");
@@ -851,9 +930,7 @@ export class MenuService {
       throw new BadRequestException("Ota kategoriya topilmadi");
     }
     if (parent.branchId !== null && parent.branchId !== branchId) {
-      throw new BadRequestException(
-        "Ota kategoriya boshqa filialga tegishli",
-      );
+      throw new BadRequestException("Ota kategoriya boshqa filialga tegishli");
     }
 
     const visited = new Set<string>();
@@ -875,11 +952,88 @@ export class MenuService {
   }
 
   private async assertProduct(id: string): Promise<void> {
-    const product = await this.prisma.product.findUnique({ where: { id }, select: { id: true } });
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true },
+    });
 
     if (!product) {
       throw new NotFoundException("Product not found");
     }
+  }
+
+  private async syncProductBundleItems(
+    tx: Prisma.TransactionClient,
+    bundleProductId: string,
+    items: NonNullable<CreateProductDto["bundleItems"]>,
+  ): Promise<void> {
+    const existing = await tx.productBundleItem.findMany({
+      where: { bundleProductId },
+      select: { id: true, componentProductId: true },
+    });
+    const existingById = new Map(existing.map((item) => [item.id, item]));
+
+    for (const item of items) {
+      if (item.id && !existingById.has(item.id)) {
+        throw new BadRequestException(
+          "Set tarkibidagi qator bu mahsulotga tegishli emas",
+        );
+      }
+    }
+
+    const componentProductIds = items
+      .map((item) => item.componentProductId)
+      .filter((value): value is string => Boolean(value));
+    if (componentProductIds.includes(bundleProductId)) {
+      throw new BadRequestException(
+        "Set o'zini tarkibiy mahsulot qilib ololmaydi",
+      );
+    }
+    if (componentProductIds.length) {
+      const found = await tx.product.findMany({
+        where: { id: { in: [...new Set(componentProductIds)] } },
+        select: { id: true },
+      });
+      if (found.length !== new Set(componentProductIds).size) {
+        throw new BadRequestException(
+          "Set tarkibidagi mahsulotlardan biri topilmadi",
+        );
+      }
+    }
+
+    for (const [index, item] of items.entries()) {
+      const previous = item.id ? existingById.get(item.id) : undefined;
+      const data = {
+        componentCode: item.componentCode.trim().toUpperCase(),
+        componentName: item.componentName.trim(),
+        componentProductId:
+          item.componentProductId !== undefined
+            ? item.componentProductId
+            : (previous?.componentProductId ?? null),
+        quantity: new Prisma.Decimal(item.quantity),
+        unitLabel: item.unitLabel?.trim() || null,
+        sortOrder: item.sortOrder ?? index,
+      };
+
+      if (item.id) {
+        await tx.productBundleItem.update({
+          where: { id: item.id },
+          data,
+        });
+      } else {
+        await tx.productBundleItem.create({
+          data: { bundleProductId, ...data },
+        });
+      }
+    }
+
+    const retainedIds = items.flatMap((item) => (item.id ? [item.id] : []));
+    await tx.productBundleItem.deleteMany({
+      where: {
+        bundleProductId,
+        ...(retainedIds.length ? { id: { notIn: retainedIds } } : {}),
+      },
+    });
   }
 
   private createCode(value: string): string {

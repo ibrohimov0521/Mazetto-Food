@@ -94,35 +94,39 @@ const fixtures = () => {
       { id: "cash1", type: "CASH_SALE", amount: "360000", occurredAt: time },
     ],
   };
-  const tickets = ["NEW", "ACCEPTED", "COOKING", "READY"].map((status, i) => ({
-    id: `t${i}`,
-    ticketNumber: `K${101 + i}`,
-    status,
-    priority: 0,
-    createdAt: new Date(
-      Date.now() - (i === 2 ? 28 : 8 + i) * 60000,
-    ).toISOString(),
-    order: {
-      id: `o${i}`,
-      orderNumber: `000${101 + i}`,
-      displayOrderNumber: `WEB${101 + i}`,
-      source: i === 1 ? "POS" : i === 2 ? "TELEGRAM" : "WEB",
-      type: i === 1 ? "DINE_IN" : i === 2 ? "TAKEAWAY" : "DELIVERY",
-      kitchenComment: i === 0 ? "Piyozsiz tayyorlansin. Sous alohida." : null,
-      branch: { name: "MAZETTO Sergeli" },
-      table: i === 1 ? { number: 4, name: "Stol 4" } : null,
-      items: catalog.products
-        .slice(i, i + (i === 0 ? 5 : 2))
-        .map((p, n) => ({
-          id: `${i}-${n}`,
-          productName: p.name,
-          variantName: "Standart",
-          quantity: String(n === 0 ? 2 : 1),
-          notes: n === 1 && i === 0 ? "Achchiq bo'lmasin" : null,
-          modifierSnapshot: n === 0 ? [{ name: "Pishloq", quantity: "1" }] : [],
-        })),
-    },
-  }));
+  const tickets = ["NEW", "ACCEPTED", "COOKING", "READY"].map((status, i) => {
+    const items = catalog.products
+      .slice(i, i + (i === 0 ? 5 : 2))
+      .map((p, n) => ({
+        id: `${i}-${n}`,
+        productName: p.name,
+        variantName: "Standart",
+        quantity: String(n === 0 ? 2 : 1),
+        notes: n === 1 && i === 0 ? "Achchiq bo'lmasin" : null,
+        modifierSnapshot: n === 0 ? [{ name: "Pishloq", quantity: "1" }] : [],
+      }));
+    return {
+      id: `t${i}`,
+      ticketNumber: `K${101 + i}`,
+      status,
+      priority: 0,
+      createdAt: new Date(
+        Date.now() - (i === 2 ? 28 : 8 + i) * 60000,
+      ).toISOString(),
+      items,
+      order: {
+        id: `o${i}`,
+        orderNumber: `000${101 + i}`,
+        displayOrderNumber: `WEB${101 + i}`,
+        source: i === 1 ? "POS" : i === 2 ? "TELEGRAM" : "WEB",
+        type: i === 1 ? "DINE_IN" : i === 2 ? "TAKEAWAY" : "DELIVERY",
+        kitchenComment: i === 0 ? "Piyozsiz tayyorlansin. Sous alohida." : null,
+        branch: { name: "MAZETTO Sergeli" },
+        table: i === 1 ? { number: 4, name: "Stol 4" } : null,
+        items,
+      },
+    };
+  });
   const orders = ["READY", "PREPARING", "READY"].map((status, i) => ({
     id: `c${i}`,
     status,
@@ -233,13 +237,21 @@ async function setup(width = 1440, height = 900, roles = session) {
         status: 503,
         json: { success: false, error: { message: "Sinov: aloqa uzildi" } },
       });
-    if (req.method() !== "GET")
+    if (req.method() !== "GET" && path !== "/devices/heartbeat")
       state.posts.push({
         path,
         method: req.method(),
         body: req.postDataJSON(),
       });
-    if (path === "/cash-register/courier-shift") return ok({ id: "cs1", shiftNumber: 24, currentCash: "0", status: "OPEN", openedAt: state.shift?.openedAt ?? new Date().toISOString() });
+    if (path === "/devices/heartbeat") return ok({ active: true });
+    if (path === "/cash-register/courier-shift")
+      return ok({
+        id: "cs1",
+        shiftNumber: 24,
+        currentCash: "0",
+        status: "OPEN",
+        openedAt: state.shift?.openedAt ?? new Date().toISOString(),
+      });
     if (path === "/cash-register/shift")
       return state.failShift ? fail() : ok(state.shift);
     if (path === "/cash-register/transfers/receivers") return ok([]);
@@ -273,7 +285,9 @@ async function setup(width = 1440, height = 900, roles = session) {
       return ok(closed);
     }
     if (path === "/kitchen/orders")
-      return state.failKitchen ? fail() : ok(state.tickets);
+      return state.failKitchen
+        ? fail()
+        : ok({ items: state.tickets, hasMore: false, limit: 250 });
     if (path.startsWith("/kitchen/orders/")) {
       const [, , , id, action] = path.split("/");
       const ticket = state.tickets.find((item) => item.id === id);
@@ -310,7 +324,10 @@ async function setup(width = 1440, height = 900, roles = session) {
 }
 async function visit(page, path) {
   await page.goto(base + path, { waitUntil: "networkidle" });
-  await page.locator("header img").evaluate((img) => img.decode());
+  await page
+    .locator("header img")
+    .first()
+    .evaluate((img) => img.decode());
 }
 async function screenshot(page, name) {
   await page.screenshot({ path: `${output}/${name}.png`, fullPage: false });
@@ -344,33 +361,54 @@ async function checkLayout(page, label) {
   assert.deepEqual(bad, [], `${label}: offscreen controls`);
 }
 try {
-  for (const [width, height] of [[320, 780], [1024, 680], [1530, 939]]) {
+  for (const [width, height] of [
+    [320, 780],
+    [1024, 680],
+    [1530, 939],
+  ]) {
     const { context, page, state, errors } = await setup(width, height);
     state.catalog = {
       ...catalog,
       products: Array.from({ length: 73 }, (_, index) => ({
         ...catalog.products[index % catalog.products.length],
         id: "many-" + index,
-        name: "Mahsulot " + index + " - " + catalog.products[index % catalog.products.length].name,
+        name:
+          "Mahsulot " +
+          index +
+          " - " +
+          catalog.products[index % catalog.products.length].name,
       })),
     };
     await visit(page, "/pos");
-    const cards = page.locator("button[aria-label$=\"qo'shish\"]");
+    const cards = page.locator('button[aria-label$="qo\'shish"]');
     assert.equal(await cards.count(), 73);
-    const clipped = await cards.evaluateAll(nodes => nodes.flatMap(card => {
-      const box = card.getBoundingClientRect();
-      const title = card.querySelector("h2").getBoundingClientRect();
-      const price = card.querySelector("p").getBoundingClientRect();
-      const plus = card.querySelector("svg").getBoundingClientRect();
-      return [title, price, plus].some(rect => rect.top < box.top || rect.bottom > box.bottom + 1)
-        ? [{ name: card.getAttribute("aria-label"), height: box.height }] : [];
-    }));
-    assert.deepEqual(clipped, [], "73-product catalog must not clip names, prices or plus icons");
+    const clipped = await cards.evaluateAll((nodes) =>
+      nodes.flatMap((card) => {
+        const box = card.getBoundingClientRect();
+        const title = card.querySelector("h2").getBoundingClientRect();
+        const price = card.querySelector("p").getBoundingClientRect();
+        const plus = card.querySelector("svg").getBoundingClientRect();
+        return [title, price, plus].some(
+          (rect) => rect.top < box.top || rect.bottom > box.bottom + 1,
+        )
+          ? [{ name: card.getAttribute("aria-label"), height: box.height }]
+          : [];
+      }),
+    );
+    assert.deepEqual(
+      clipped,
+      [],
+      "73-product catalog must not clip names, prices or plus icons",
+    );
     await cards.last().scrollIntoViewIfNeeded();
     await screenshot(page, "pos-73-products-" + width);
     await cards.last().click();
     assert.deepEqual(errors, []);
-    results.push({ width, checked: "73 complete product cards, final card scrolls into view and adds" });
+    results.push({
+      width,
+      checked:
+        "73 complete product cards, final card scrolls into view and adds",
+    });
     await context.close();
   }
   for (const [width, height] of [
@@ -394,20 +432,25 @@ try {
           .count(),
         1,
       );
+      const panelNavigation = page.getByRole("navigation", {
+        name: "Ruxsat berilgan panellar",
+      });
+      if (width < 1280 && (await panelNavigation.count()) === 0) {
+        await page.getByRole("button", { name: "Profil menyusi" }).click();
+      }
+      assert.equal(await panelNavigation.count(), 1);
       assert.equal(
-        await page
-          .getByRole("navigation", { name: "Ruxsat berilgan panellar" })
-          .count(),
-        1,
-      );
-      assert.equal(
-        await page
-          .getByRole("navigation", { name: "Ruxsat berilgan panellar" })
-          .getByRole("link")
-          .count(),
+        await panelNavigation.getByRole("link").count(),
         3,
         "One link per staff workspace",
       );
+      const profileMenu = page.getByRole("button", { name: "Profil menyusi" });
+      if (
+        width < 1280 &&
+        (await profileMenu.getAttribute("aria-expanded")) === "true"
+      ) {
+        await profileMenu.click();
+      }
       await screenshot(page, `${path.slice(1)}-${width}`);
       await checkLayout(page, `${path}-${width}`);
       if (path === "/pos") {
@@ -421,6 +464,11 @@ try {
           await page
             .getByRole("button", { name: "Buyurtma", exact: true })
             .click();
+        if (width < 768)
+          await page
+            .getByRole("button", { name: "To'lov", exact: true })
+            .click();
+        else await page.getByRole("button", { name: /Jami/ }).click();
         await page
           .getByRole("spinbutton", { name: "Qabul qilingan naqd pul" })
           .fill("200000");
@@ -441,24 +489,25 @@ try {
   {
     const { context, page, state, errors } = await setup();
     await visit(page, "/kitchen");
-    const first = page
-      .getByRole("article")
-      .filter({
-        has: page.getByRole("heading", { name: "#WEB101", exact: true }),
-      });
-    await first.getByRole("button", { name: "Yana 2 ta mahsulot" }).click();
+    const first = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "#WEB101", exact: true }),
+    });
     await first.getByText("Double chizburger", { exact: false }).waitFor();
     await first
       .getByRole("button", { name: "Qabul qilish", exact: true })
       .click();
     await first
-      .getByRole("button", { name: "Tayyorlash", exact: true })
+      .getByRole("button", { name: "Tayyorlashni boshlash", exact: true })
       .waitFor();
     await first
-      .getByRole("button", { name: "Tayyorlash", exact: true })
+      .getByRole("button", { name: "Tayyorlashni boshlash", exact: true })
       .click();
-    await first.getByRole("button", { name: "Tayyor", exact: true }).waitFor();
-    await first.getByRole("button", { name: "Tayyor", exact: true }).click();
+    await first
+      .getByRole("button", { name: "Tayyor bo'ldi", exact: true })
+      .waitFor();
+    await first
+      .getByRole("button", { name: "Tayyor bo'ldi", exact: true })
+      .click();
     await first
       .getByRole("button", { name: "Topshirish", exact: true })
       .waitFor();
@@ -484,9 +533,17 @@ try {
       .click();
     await page
       .getByRole("dialog")
+      .getByPlaceholder("Masalan: mahsulot qolmagan")
+      .fill("Mahsulot vaqtincha qolmagan");
+    await page
+      .getByRole("dialog")
       .getByRole("button", { name: "Bekor qilish", exact: true })
       .click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
+    assert.equal(
+      state.posts.find((post) => post.path.endsWith("/cancel"))?.body.reason,
+      "Mahsulot vaqtincha qolmagan",
+    );
     await page
       .getByRole("heading", { name: "#WEB102", exact: true })
       .waitFor({ state: "detached" });
@@ -500,7 +557,10 @@ try {
     state.failKitchen = false;
     await page.getByRole("button", { name: "Yangilash", exact: true }).click();
     await page.locator('main [role="alert"]').waitFor({ state: "hidden" });
-    await page.getByRole("link", { name: "Kuryer", exact: true }).click();
+    await page
+      .locator('aside[aria-label="Ish joylari menyusi"]')
+      .getByRole("link", { name: "Kuryer", exact: true })
+      .click();
     await page.getByRole("heading", { name: "Kuryer", level: 1 }).waitFor();
     results.push({
       flow: "Kitchen accept/start/ready/handoff; cancel confirmation; connection recovery; role switch",
@@ -512,34 +572,30 @@ try {
   {
     const { context, page, state, errors } = await setup(390, 844);
     await visit(page, "/courier");
-    const card = page
-      .getByRole("article")
-      .filter({
-        has: page.getByRole("heading", { name: "#WEB201", exact: true }),
-      });
-    const waiting = page
-      .getByRole("article")
-      .filter({
-        has: page.getByRole("heading", { name: "#WEB202", exact: true }),
-      });
+    const card = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "#WEB201", exact: true }),
+    });
+    const waiting = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "#WEB202", exact: true }),
+    });
     assert(
       await waiting
         .getByRole("button", { name: "Oshxonada tayyorlanmoqda" })
         .isDisabled(),
     );
-    const noPoint = page
-      .getByRole("article")
-      .filter({
-        has: page.getByRole("heading", { name: "#WEB203", exact: true }),
-      });
+    const noPoint = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "#WEB203", exact: true }),
+    });
     assert.equal(
-      await noPoint.getByRole("link", { name: "Google Maps" }).count(),
+      await noPoint
+        .getByRole("link", { name: /manzilini xaritada ochish/ })
+        .count(),
       0,
       "Null coordinates must not become 0,0",
     );
     assert.match(
       await card
-        .getByRole("link", { name: "Google Maps" })
+        .getByRole("link", { name: "#WEB201 manzilini xaritada ochish" })
         .getAttribute("href"),
       /41.222%2C69.211/,
     );
@@ -554,12 +610,16 @@ try {
     await page
       .getByRole("textbox", { name: "Buyurtma, mijoz yoki manzil qidirish" })
       .fill("");
-    await card.getByRole("button", { name: "Yo'lga chiqdim", exact: true }).click();
+    await card
+      .getByRole("button", { name: "Yo'lga chiqdim", exact: true })
+      .click();
     await page.getByRole("dialog").waitFor();
     await screenshot(page, "courier-confirmation-mobile");
     await page.keyboard.press("Escape");
     assert.equal(state.posts.length, 0);
-    await card.getByRole("button", { name: "Yo'lga chiqdim", exact: true }).click();
+    await card
+      .getByRole("button", { name: "Yo'lga chiqdim", exact: true })
+      .click();
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Tasdiqlash", exact: true })
@@ -625,6 +685,7 @@ try {
     await receipt
       .getByRole("button", { name: "Double chizburgerni o'chirish" })
       .click();
+    await receipt.getByRole("button", { name: /Jami/ }).click();
     const cash = page.getByRole("spinbutton", {
       name: "Qabul qilingan naqd pul",
     });

@@ -36,3 +36,6 @@ Thumbs.db
 Dockerfile.local
 
 media-source
+.pnpm-store
+**/.pnpm-store
+**/.next-*

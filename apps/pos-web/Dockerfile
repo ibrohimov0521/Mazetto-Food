@@ -13,6 +13,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/backend/package.json ./apps/backend/package.json
 COPY apps/customer-web/package.json ./apps/customer-web/package.json
 COPY apps/pos-web/package.json ./apps/pos-web/package.json
+COPY apps/platform-web/package.json ./apps/platform-web/package.json
 COPY apps/print-agent/package.json ./apps/print-agent/package.json
 COPY apps/telegram-bot/package.json ./apps/telegram-bot/package.json
 

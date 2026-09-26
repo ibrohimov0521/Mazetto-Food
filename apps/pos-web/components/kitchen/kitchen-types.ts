@@ -24,6 +24,12 @@ export type KitchenAction =
   | "complete"
   | "cancel";
 
+export type KitchenQueueResponse = {
+  items: KitchenTicket[];
+  hasMore: boolean;
+  limit: number;
+};
+
 export type KitchenTicket = {
   id: string;
   ticketNumber: string;
