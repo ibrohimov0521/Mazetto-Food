@@ -38,6 +38,8 @@ try {
       currentSites = currentSites.map(item => item.id === "site-1" ? { ...item, ...body } : item);
       return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(currentSites[0])) });
     });
+    await page.route("**/api/v1/platform/sites/site-2", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(second)) }));
+    await page.route("**/api/v1/platform/sites/site-2/events?**", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope([])) }));
     await page.route("**/api/v1/platform/sites/site-1/events?**", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope([{ id: "event-1", siteId: "site-1", code: "KITCHEN_TICKET_CHANGED", branchId: "branch-1", branchName: "Markaziy oshxona", occurredAt: stamp, receivedAt: stamp }])) }));
     await page.route("**/api/v1/platform/events?**", route => {
       const params = new URL(route.request().url()).searchParams;
@@ -66,7 +68,7 @@ try {
         { siteId: "site-2", name: "Yangi Restoran", productCode: "OTHER_FOOD", lastHeartbeatAt: null, stale: true, reports: [] },
       ] })) });
     });
-    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Umumiy holat" }).waitFor();
     const liveStatus = page.locator(".live-label");
     await liveStatus.waitFor();
@@ -85,7 +87,7 @@ try {
     await page.getByRole("dialog").getByRole("button", { name: "Saqlash" }).click();
     await page.getByText("qa-one-time-token").waitFor();
     await page.getByRole("dialog").getByRole("button", { name: "Tayyor" }).click();
-    await page.goto(`${baseUrl}/activity`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/activity`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Hodisalar", exact: true }).waitFor();
     await page.getByText("Sayt ishlamayapti").waitFor();
     await page.screenshot({ path: `/tmp/owner-activity-${viewport.width}.png`, fullPage: true });
@@ -97,7 +99,7 @@ try {
     await page.getByLabel("Restoran bo'yicha filter").selectOption("site-1");
     await page.getByText("Oshxona buyurtmani yangiladi").waitFor();
     assert.equal(await page.getByText("Sayt ishlamayapti").count(), 0);
-    await page.goto(`${baseUrl}/audit`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/audit`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Boshqaruv jurnali" }).waitFor();
     await page.getByText("Restoran monitoringga qo'shildi").waitFor();
     await page.locator(".audit-row").getByText("BestTeam egasi").waitFor();
@@ -105,7 +107,7 @@ try {
     await page.locator(".audit-row").waitFor();
     assert.equal(await page.locator(".audit-row").count(), 1);
     await page.screenshot({ path: `/tmp/owner-audit-${viewport.width}.png`, fullPage: true });
-    await page.goto(`${baseUrl}/reports`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/reports`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Hisobotlar" }).waitFor();
     await page.getByRole("heading", { name: "Kundalik ko'rsatkichlar" }).waitFor();
     assert.equal(await page.locator(".report-day").count(), 14);
@@ -114,28 +116,28 @@ try {
     await page.getByRole("button", { name: "CSV yuklab olish" }).click();
     assert.match((await downloadPromise).suggestedFilename(), /bestteam-hisobot-14-kun\.csv/);
     await page.screenshot({ path: `/tmp/owner-reports-${viewport.width}.png`, fullPage: true });
-    await page.goto(`${baseUrl}/diagnostics`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/diagnostics`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Texnik xatolar" }).waitFor();
     await page.getByText("Markaziy panelga ulanish uzildi").waitFor();
     await page.getByText("Mazetto Food · Markaziy aloqa").waitFor();
     await page.screenshot({ path: `/tmp/owner-diagnostics-${viewport.width}.png`, fullPage: true });
-    await page.goto(`${baseUrl}/restaurants`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/restaurants`, { waitUntil: "domcontentloaded" });
     assert.equal((await page.locator("tbody tr").nth(1).locator("td").nth(5).textContent())?.trim(), "—");
     await page.getByPlaceholder("Nomi yoki loyiha bo'yicha qidirish").fill("Mazetto");
     assert.equal(await page.locator("tbody tr").count(), 1);
     await page.screenshot({ path: `/tmp/owner-restaurants-${viewport.width}.png`, fullPage: true });
-    await page.goto(`${baseUrl}/restaurants/site-1`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/restaurants/site-1`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Oshxonalar" }).waitFor();
     await page.getByText("Markaziy oshxona").first().waitFor();
     await page.getByText("Arxiv tekshirildi").waitFor();
     await page.getByText("Tiklash sinovi hali o'tkazilmagan").waitFor();
     await page.screenshot({ path: `/tmp/owner-detail-${viewport.width}.png`, fullPage: true });
-    await page.goto(`${baseUrl}/restaurants/site-2`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/restaurants/site-2`, { waitUntil: "domcontentloaded" });
     await page.getByText("Agentdan yangi ma'lumot kelmayapti.", { exact: false }).waitFor();
     await page.getByText("Oxirgi holat noma'lum").first().waitFor();
     const detailOverflow = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, ancestors: (() => { const result = []; let element = document.querySelector("table"); while (element) { const rect = element.getBoundingClientRect(); result.push({ tag: element.tagName, className: typeof element.className === "string" ? element.className : "", left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width), overflowX: getComputedStyle(element).overflowX }); element = element.parentElement; } return result; })(), offenders: [...document.querySelectorAll("body *")].filter(element => element.getBoundingClientRect().right > window.innerWidth + 1).slice(0, 8).map(element => ({ tag: element.tagName, className: typeof element.className === "string" ? element.className : "", right: Math.round(element.getBoundingClientRect().right), text: element.textContent?.trim().slice(0, 40) })) }));
     assert.equal(detailOverflow.width > viewport.width + 1, false, `Offline detail overflow at ${viewport.width}px: ${JSON.stringify(detailOverflow)}`);
-    await page.goto(`${baseUrl}/restaurants/site-1`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}/restaurants/site-1`, { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "Sozlamalar" }).click();
     await page.getByRole("dialog").getByLabel("Restoran nomi").fill("Mazetto Food Updated");
     await page.getByRole("dialog").getByRole("button", { name: "Saqlash" }).click();
