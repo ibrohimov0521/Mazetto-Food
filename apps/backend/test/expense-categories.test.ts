@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { ExpensesService } from "../src/modules/expenses/expenses.service";
 import type { PrismaService } from "../src/prisma/prisma.service";
@@ -36,14 +36,16 @@ test("expense category archive preserves historical expense snapshots", async ()
     },
   };
   const prisma = {
-    expenseCategory: { findUnique: async () => category },
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    expenseCategory: { findFirst: async () => category },
     expense: {
       updateMany: async () => {
         calls.push("expense-mutated");
         return { count: 1 };
       },
     },
-    $transaction: async <T>(callback: (client: typeof tx) => Promise<T>) => callback(tx),
+    $transaction: async <T>(callback: (client: typeof tx) => Promise<T>) =>
+      callback(tx),
   } as unknown as PrismaService;
 
   await new ExpensesService(prisma).archiveCategory("category-1", actor);
@@ -52,6 +54,10 @@ test("expense category archive preserves historical expense snapshots", async ()
 
 test("archived expense category cannot be used for a new expense", async () => {
   const prisma = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
     expenseCategory: {
       findUnique: async () => ({ name: "Transport", isActive: false }),
     },
@@ -71,13 +77,12 @@ test("archived expense category cannot be used for a new expense", async () => {
 
 test("branch manager cannot rename another branch expense category", async () => {
   const prisma = {
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     expenseCategory: {
-      findUnique: async () => ({
-        id: "category-2",
-        name: "Transport",
-        branchId: "branch-2",
-        isActive: true,
-      }),
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+        assert.deepEqual(where.branchId, "branch-1");
+        return null;
+      },
     },
   } as unknown as PrismaService;
 
@@ -87,6 +92,6 @@ test("branch manager cannot rename another branch expense category", async () =>
       { name: "Yo'l xarajati" },
       actor,
     ),
-    ForbiddenException,
+    NotFoundException,
   );
 });

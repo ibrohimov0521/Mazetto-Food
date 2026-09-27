@@ -2,39 +2,75 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const receiptDto = readFileSync("src/modules/receipts/dto/list-receipts.dto.ts", "utf8");
-const receiptService = readFileSync("src/modules/receipts/receipts.service.ts", "utf8");
+const receiptDto = readFileSync(
+  "src/modules/receipts/dto/list-receipts.dto.ts",
+  "utf8",
+);
+const receiptService = readFileSync(
+  "src/modules/receipts/receipts.service.ts",
+  "utf8",
+);
 const printAgent = readFileSync("../print-agent/src/main.ts", "utf8");
-const receiptWriter = readFileSync("src/modules/receipts/receipt-writer.ts", "utf8");
+const receiptWriter = readFileSync(
+  "src/modules/receipts/receipt-writer.ts",
+  "utf8",
+);
 const backendDockerfile = readFileSync("Dockerfile", "utf8");
-const printQueueBootstrap = readFileSync("scripts/ensure-print-queue.mjs", "utf8");
+const printQueueBootstrap = readFileSync(
+  "scripts/ensure-print-queue.mjs",
+  "utf8",
+);
 
 test("receipt polling can ask the backend for unprinted receipts only", () => {
   assert.match(receiptDto, /printed\?: boolean/);
-  assert.match(receiptDto, /value === "true" \? true : value === "false" \? false/);
-  assert.match(receiptService, /typeof query\.printed === "boolean" \? \{ printed: query\.printed \}/);
-  assert.match(printAgent, /new URLSearchParams\(\{ limit: "50", printed: "false" \}\)/);
+  assert.match(
+    receiptDto,
+    /value === "true" \? true : value === "false" \? false/,
+  );
+  assert.match(
+    receiptService,
+    /typeof query\.printed === "boolean" \? \{ printed: query\.printed \}/,
+  );
+  assert.match(
+    printAgent,
+    /new URLSearchParams\(\{ limit: "50", printed: "false" \}\)/,
+  );
 });
 
 test("print agent marks a receipt printed only after an adapter succeeds", () => {
-  assert.match(printAgent, /if \(agentConfig\.dryRun\)[\s\S]*?return;[\s\S]*?await sendToPrinter\(agentConfig, receipt\);[\s\S]*?\/receipts\/\$\{encodeURIComponent\(receipt\.id\)\}\/print/);
+  assert.match(
+    printAgent,
+    /if \(agentConfig\.dryRun\)[\s\S]*?return;[\s\S]*?await sendToPrinter\(agentConfig, receipt\);[\s\S]*?\/receipts\/\$\{encodeURIComponent\(receipt\.id\)\}\/print/,
+  );
   assert.match(printAgent, /agentConfig\.mode === "file"/);
   assert.match(printAgent, /agentConfig\.mode === "tcp"/);
-  assert.match(printAgent, /catch \(error\) \{[\s\S]*?console\.error\(`Print failed for/);
+  assert.match(
+    printAgent,
+    /catch \(error\) \{[\s\S]*?console\.error\(`Print failed for/,
+  );
 });
 
 test("durable queue is explicitly enabled and the agent completes only its leased job", () => {
   assert.match(receiptWriter, /MAZETTO_DURABLE_PRINT_JOBS !== "false"/);
   assert.match(receiptWriter, /tx\.printJob\.create/);
-  assert.match(printAgent, /MAZETTO_PRINT_PROTOCOL === "jobs" \? "jobs" : "receipts"/);
+  assert.match(
+    printAgent,
+    /MAZETTO_PRINT_PROTOCOL === "jobs" \? "jobs" : "receipts"/,
+  );
   assert.match(printAgent, /\/receipts\/print-jobs\/claim/);
   assert.match(printAgent, /\/complete/);
   assert.match(printAgent, /leaseToken: job\.leaseToken/);
-  assert.match(printAgent, /Durable print queue is not claimed in dry-run mode/);
+  assert.match(
+    printAgent,
+    /Durable print queue is not claimed in dry-run mode/,
+  );
 });
 
 test("customer and kitchen documents use separate durable print routes", () => {
-  assert.match(receiptWriter, /"RECEIPT" \| "KITCHEN" \| "CANCELLATION" \| "REFUND"/);
+  assert.match(
+    receiptWriter,
+    /"RECEIPT" \| "KITCHEN" \| "CANCELLATION" \| "REFUND"/,
+  );
   assert.match(receiptWriter, /documentType === "KITCHEN"/);
   assert.match(receiptService, /isKitchen/);
   assert.match(receiptService, /OSHXONA BUYURTMASI/);
@@ -54,9 +90,24 @@ test("production startup migrates the print queue and restores old unprinted rec
   assert.match(backendDockerfile, /ensure-print-queue\.mjs/);
   assert.doesNotMatch(backendDockerfile, /prisma:migrate:deploy/);
   assert.match(printQueueBootstrap, /CREATE TABLE IF NOT EXISTS "print_jobs"/);
-  assert.match(printQueueBootstrap, /CREATE TABLE IF NOT EXISTS "print_attempts"/);
-  assert.match(receiptService, /await this\.restoreMissingPrintJobs\(branchId\)/);
-  assert.match(receiptService, /await this\.restoreMissingPrintJobs\(scopedBranchId\)/);
-  assert.match(receiptService, /printed: false,[\s\S]*?printJobs: \{ none: \{\} \}/);
-  assert.match(receiptService, /if \(!existingJob\) await queuePrintJobsForReceipt\(tx, receipt\)/);
+  assert.match(
+    printQueueBootstrap,
+    /CREATE TABLE IF NOT EXISTS "print_attempts"/,
+  );
+  assert.match(
+    receiptService,
+    /await this\.restoreMissingPrintJobs\(tenantId, branchId\)/,
+  );
+  assert.match(
+    receiptService,
+    /await this\.restoreMissingPrintJobs\(tenantId, scopedBranchId\)/,
+  );
+  assert.match(
+    receiptService,
+    /printed: false,[\s\S]*?printJobs: \{ none: \{\} \}/,
+  );
+  assert.match(
+    receiptService,
+    /if \(!existingJob\) await queuePrintJobsForReceipt\(tx, receipt\)/,
+  );
 });

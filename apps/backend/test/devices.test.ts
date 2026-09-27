@@ -13,6 +13,7 @@ const branchManager = {
 test("filial qurilmalari faqat actor filialidan olinadi", async () => {
   let where: unknown;
   const service = new DevicesService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     device: {
       findMany: async (args: { where: unknown }) => {
         where = args.where;
@@ -23,8 +24,8 @@ test("filial qurilmalari faqat actor filialidan olinadi", async () => {
 
   await service.listDevices(undefined, branchManager);
   assert.deepEqual(where, { branchId: "branch-1" });
-  assert.throws(
-    () => service.listDevices("branch-2", branchManager),
+  await assert.rejects(
+    service.listDevices("branch-2", branchManager),
     /Boshqa filialga/,
   );
 });
@@ -46,8 +47,12 @@ test("qurilma matn maydonlari normallashtirib saqlanadi", async () => {
     },
   };
   const service = new DevicesService({
-    branch: { findUnique: async () => ({ id: "branch-1" }) },
-    $transaction: async (callback: (client: typeof tx) => unknown) => callback(tx),
+    branch: {
+      findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    $transaction: async (callback: (client: typeof tx) => unknown) =>
+      callback(tx),
   } as never);
 
   await service.createDevice(
@@ -71,7 +76,10 @@ test("qurilma matn maydonlari normallashtirib saqlanadi", async () => {
 
 test("bo'sh qurilma nomi rad etiladi", async () => {
   const service = new DevicesService({
-    branch: { findUnique: async () => ({ id: "branch-1" }) },
+    branch: {
+      findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
   } as never);
 
   await assert.rejects(
@@ -90,27 +98,25 @@ test("bo'sh qurilma nomi rad etiladi", async () => {
 
 test("boshqa filial qurilmasi tahrirlanmaydi", async () => {
   const service = new DevicesService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     device: {
-      findUnique: async () => ({ id: "device-2", branchId: "branch-2" }),
+      findFirst: async () => null,
     },
   } as never);
 
   await assert.rejects(
     () =>
-      service.updateDevice(
-        "device-2",
-        { name: "Boshqa nom" },
-        branchManager,
-      ),
-    /Boshqa filialga/,
+      service.updateDevice("device-2", { name: "Boshqa nom" }, branchManager),
+    /Device not found/,
   );
 });
 
 test("faol qurilma heartbeatda oxirgi xodim va vaqtni yangilaydi", async () => {
   let updateData: Record<string, unknown> | undefined;
   const service = new DevicesService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     device: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "device-1",
         branchId: "branch-1",
         isActive: true,
@@ -122,11 +128,10 @@ test("faol qurilma heartbeatda oxirgi xodim va vaqtni yangilaydi", async () => {
     },
   } as never);
 
-  const result = await service.heartbeat(
-    " device-1 ",
-    " 0.1.0 ",
-    { ...branchManager, employeeId: "employee-1" },
-  );
+  const result = await service.heartbeat(" device-1 ", " 0.1.0 ", {
+    ...branchManager,
+    employeeId: "employee-1",
+  });
 
   assert.equal(result.deviceId, "device-1");
   assert.equal(result.branchId, "branch-1");
@@ -137,8 +142,9 @@ test("faol qurilma heartbeatda oxirgi xodim va vaqtni yangilaydi", async () => {
 
 test("o'chirilgan qurilma heartbeat qabul qilinmaydi", async () => {
   const service = new DevicesService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     device: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "device-1",
         branchId: "branch-1",
         isActive: false,
@@ -154,6 +160,7 @@ test("o'chirilgan qurilma heartbeat qabul qilinmaydi", async () => {
 
 test("enrollment kodi muddati va hash tekshiruvidan o'tadi", async () => {
   const service = new DevicesService({
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
     device: {
       findFirst: async () => null,
     },
@@ -171,6 +178,7 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
   const code = "ABC123DEF456";
   const codeHash = crypto.createHash("sha256").update(code).digest("hex");
   const service = new DevicesService({
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
     device: {
       findFirst: async () => ({
         id: "device-1",
@@ -182,7 +190,14 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
         enrollmentExpiresAt: new Date(Date.now() + 60_000),
       }),
     },
-    $transaction: async (callback: (client: { device: { updateMany: () => Promise<{ count: number }>; update: (args: { data: Record<string, unknown> }) => Promise<unknown> } }) => Promise<unknown>) =>
+    $transaction: async (
+      callback: (client: {
+        device: {
+          updateMany: () => Promise<{ count: number }>;
+          update: (args: { data: Record<string, unknown> }) => Promise<unknown>;
+        };
+      }) => Promise<unknown>,
+    ) =>
       callback({
         device: {
           updateMany: async () => ({ count: 0 }),

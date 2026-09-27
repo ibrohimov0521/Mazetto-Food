@@ -33,14 +33,16 @@ test("kitchen queue keeps every active branch ticket; history remains today's an
   const history = methodSource(kitchenSource, "listHistory");
 
   assert.match(active, /this\.requireEmployee\(user\)/);
-  assert.match(active, /resolveBranchScope\(user\)/);
+  assert.match(active, /resolveRestaurantScope\(this\.prisma, user\)/);
+  assert.match(active, /tenantId: scope\.tenantId/);
   assert.doesNotMatch(active, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
   assert.match(active, /take: MAX_ACTIVE_KITCHEN_TICKETS \+ 1/);
   assert.match(active, /trimKitchenQueue\(tickets\)/);
 
   assert.doesNotMatch(active, /changedByEmployeeId: employeeId/);
   assert.match(history, /const employeeId = this\.requireEmployee\(user\)/);
-  assert.match(history, /resolveBranchScope\(user\)/);
+  assert.match(history, /resolveRestaurantScope\(this\.prisma, user\)/);
+  assert.match(history, /tenantId: scope\.tenantId/);
   assert.match(history, /const day = this\.todayTashkentRange\(\)/);
   assert.match(history, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
   assert.match(history, /changedByEmployeeId: employeeId/);
@@ -51,7 +53,10 @@ test("employee shift history stays scoped to the open shift and today", () => {
   const method = methodSource(cashSource, "getCurrentShiftOrders");
 
   assert.match(method, /const employeeId = this\.requireEmployee\(user\)/);
-  assert.match(method, /where: \{ employeeId, status: ShiftStatus\.OPEN \}/);
+  assert.match(
+    method,
+    /where: \{[\s\S]*employeeId,[\s\S]*status: ShiftStatus\.OPEN/,
+  );
   assert.doesNotMatch(method, /ShiftType\.CASHIER/);
   assert.match(method, /this\.assertCanViewShift\(user, shift\.employeeId\)/);
   assert.match(method, /const day = this\.todayTashkentRange\(\)/);
@@ -86,7 +91,10 @@ test("cash ownership is unified across POS, courier and payment flows", () => {
 
   const shifts = sources.at(-1) ?? "";
   assert.match(shifts, /type: ShiftType\.CASHIER/);
-  assert.match(shifts, /where: \{ employeeId, status: ShiftStatus\.OPEN \}/);
+  assert.match(
+    shifts,
+    /where: \{[\s\S]*employeeId,[\s\S]*status: ShiftStatus\.OPEN/,
+  );
 });
 
 test("one open employee cash drawer is enforced without touching history", () => {

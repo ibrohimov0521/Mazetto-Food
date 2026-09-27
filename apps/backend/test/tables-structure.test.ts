@@ -20,7 +20,14 @@ const waiter: AuthenticatedUser = {
 
 function createService(prisma: Record<string, unknown>): TablesService {
   return new TablesService(
-    prisma as never,
+    {
+      restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+      branch: {
+        findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
+        findFirst: async () => ({ id: "branch-1" }),
+      },
+      ...prisma,
+    } as never,
     { emitOrderCreated: () => undefined } as never,
   );
 }
@@ -122,8 +129,12 @@ test("buyurtma tarixi bor stol permanent o'chirilmaydi", async () => {
   let deleted = false;
   const service = createService({
     restaurantTable: {
-      findMany: async () => [{ id: "table-1", branchId: "branch-1", _count: { orders: 2 } }],
-      deleteMany: async () => { deleted = true; },
+      findMany: async () => [
+        { id: "table-1", branchId: "branch-1", _count: { orders: 2 } },
+      ],
+      deleteMany: async () => {
+        deleted = true;
+      },
     },
   });
 
@@ -138,20 +149,30 @@ test("bo'sh zal permanent o'chiriladi", async () => {
   let deletedWhere: unknown;
   const service = createService({
     hall: {
-      findMany: async () => [{ id: "hall-1", branchId: "branch-1", _count: { tables: 0 } }],
-      deleteMany: async (args: { where: unknown }) => { deletedWhere = args.where; },
+      findMany: async () => [
+        { id: "hall-1", branchId: "branch-1", _count: { tables: 0 } },
+      ],
+      deleteMany: async (args: { where: unknown }) => {
+        deletedWhere = args.where;
+      },
     },
   });
 
-  const result = await service.permanentlyDeleteHalls(["hall-1"], branchManager);
-  assert.deepEqual(deletedWhere, { id: { in: ["hall-1"] } });
+  const result = await service.permanentlyDeleteHalls(
+    ["hall-1"],
+    branchManager,
+  );
+  assert.deepEqual(deletedWhere, {
+    id: { in: ["hall-1"] },
+    branchId: "branch-1",
+  });
   assert.deepEqual(result, { deleted: true, count: 1, ids: ["hall-1"] });
 });
 
 test("ochiq buyurtmali stol arxivlanmaydi", async () => {
   const service = createService({
     restaurantTable: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "table-1",
         branchId: "branch-1",
         hallId: "hall-1",
@@ -169,7 +190,7 @@ test("ochiq buyurtmali stol arxivlanmaydi", async () => {
 test("ochiq buyurtmali stol qo'lda bo'shatilmaydi", async () => {
   const service = createService({
     restaurantTable: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "table-1",
         branchId: "branch-1",
         hallId: "hall-1",
@@ -179,7 +200,8 @@ test("ochiq buyurtmali stol qo'lda bo'shatilmaydi", async () => {
   });
 
   await assert.rejects(
-    () => service.updateStatus("table-1", { status: "AVAILABLE" }, branchManager),
+    () =>
+      service.updateStatus("table-1", { status: "AVAILABLE" }, branchManager),
     /faqat Band/,
   );
 });
@@ -187,7 +209,7 @@ test("ochiq buyurtmali stol qo'lda bo'shatilmaydi", async () => {
 test("buyurtmasiz stol qo'lda Band holatiga o'tkazilmaydi", async () => {
   const service = createService({
     restaurantTable: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "table-1",
         branchId: "branch-1",
         hallId: "hall-1",
@@ -197,7 +219,8 @@ test("buyurtmasiz stol qo'lda Band holatiga o'tkazilmaydi", async () => {
   });
 
   await assert.rejects(
-    () => service.updateStatus("table-1", { status: "OCCUPIED" }, branchManager),
+    () =>
+      service.updateStatus("table-1", { status: "OCCUPIED" }, branchManager),
     /ochiq buyurtma yaratilganda/,
   );
 });
@@ -206,12 +229,16 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
   let createdData: Record<string, unknown> | undefined;
   const writes: string[] = [];
   const tx = {
+    branch: {
+      findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
     $queryRawUnsafe: async () => [{ id: "table-1" }],
     $executeRaw: async () => 1,
     $queryRaw: async () => [{ sequence: 100 }],
     employee: { findFirst: async () => ({ id: "waiter-1" }) },
     restaurantTable: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "table-1",
         branchId: "branch-1",
         isActive: true,
@@ -223,7 +250,12 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
       findMany: async () => existingOrders,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         createdData = data;
-        return { id: "new-order", version: 1, type: data.type, isSupplemental: data.isSupplemental };
+        return {
+          id: "new-order",
+          version: 1,
+          type: data.type,
+          isSupplemental: data.isSupplemental,
+        };
       },
       findUnique: async () => ({
         id: "new-order",
@@ -239,13 +271,21 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
         return { id: "event-1", createdAt: new Date() };
       },
     },
-    outboxEvent: { create: async () => { writes.push("outbox"); } },
+    outboxEvent: {
+      create: async () => {
+        writes.push("outbox");
+      },
+    },
   };
   const prisma = {
     $transaction: async (callback: (client: typeof tx) => unknown) =>
       callback(tx),
   };
-  return { service: createService(prisma), getCreatedData: () => createdData, writes };
+  return {
+    service: createService(prisma),
+    getCreatedData: () => createdData,
+    writes,
+  };
 }
 
 test("tasdiqlangan order ortidan alohida qo'shimcha order ochiladi", async () => {

@@ -16,7 +16,10 @@ import {
   Prisma,
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import {
+  resolveRestaurantScope,
+  resolveSoleActiveTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -97,11 +100,13 @@ export class KitchenService {
 
   async listOrdersWithOverflow(user: AuthenticatedUser) {
     this.requireEmployee(user);
-    const branchId = resolveBranchScope(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
 
     const where = {
       order: {
-        ...(branchId ? { branchId } : {}),
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
         status: {
           notIn: [
             OrderStatus.SERVED,
@@ -138,7 +143,7 @@ export class KitchenService {
     user: AuthenticatedUser,
   ) {
     const employeeId = this.requireEmployee(user);
-    const branchId = resolveBranchScope(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const day = this.todayTashkentRange();
     const status = this.toKitchenTicketStatus(query.status);
     const search = query.search?.trim();
@@ -147,7 +152,9 @@ export class KitchenService {
       where: {
         ...(status ? { status } : {}),
         order: {
-          ...(branchId ? { branchId } : {}),
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
           createdAt: { gte: day.start, lt: day.end },
           statusHistory: {
             some: {
@@ -312,14 +319,19 @@ export class KitchenService {
 
   async getTicket(id: string, user: AuthenticatedUser) {
     this.requireEmployee(user);
-    const ticket = await this.prisma.kitchenTicket.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const ticket = await this.prisma.kitchenTicket.findFirst({
+      where: {
+        id,
+        order: scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } },
+      },
       include: this.ticketInclude(),
     });
     if (!ticket) {
       throw new NotFoundException("Oshxona chiptasi topilmadi");
     }
-    resolveBranchScope(user, ticket.order.branchId);
     return ticket;
   }
 
@@ -385,8 +397,14 @@ export class KitchenService {
     reason?: string,
     context?: KitchenTicketActionContext,
   ) {
-    const existingTicket = await this.prisma.kitchenTicket.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const existingTicket = await this.prisma.kitchenTicket.findFirst({
+      where: {
+        id,
+        order: scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } },
+      },
       select: { orderId: true },
     });
 
@@ -425,17 +443,22 @@ export class KitchenService {
     action: KitchenStaffAction,
     actor: KitchenTransitionActor,
   ) {
+    const scope = actor.user
+      ? await resolveRestaurantScope(this.prisma, actor.user)
+      : {
+          tenantId: await resolveSoleActiveTenantId(this.prisma),
+          branchId: undefined,
+        };
     const result = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
-
-      const order = await this.findOrderForTransition(tx, orderId);
-
-      if (!order) {
+      const scopedOrder = await this.findOrderForTransition(tx, orderId, scope);
+      if (!scopedOrder) {
         throw new NotFoundException("Order not found");
       }
 
-      if (actor.user) {
-        resolveBranchScope(actor.user, order.branchId);
+      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
+      const order = await this.findOrderForTransition(tx, orderId, scope);
+      if (!order) {
+        throw new NotFoundException("Order not found");
       }
 
       const storedTicket = order.kitchenTickets[0] ?? null;
@@ -473,7 +496,7 @@ export class KitchenService {
         return {
           action,
           changed: false,
-          order: await this.findOrderForTransition(tx, orderId),
+          order: await this.findOrderForTransition(tx, orderId, scope),
           ticket: await this.findTicketById(tx, ticket.id),
         };
       }
@@ -622,7 +645,7 @@ export class KitchenService {
       return {
         action,
         changed: true,
-        order: await this.findOrderForTransition(tx, orderId),
+        order: await this.findOrderForTransition(tx, orderId, scope),
         ticket: await this.findTicketById(tx, ticket.id),
       };
     });
@@ -922,9 +945,15 @@ export class KitchenService {
   private async findOrderForTransition(
     tx: TransactionClient,
     orderId: string,
+    scope: { tenantId: string; branchId?: string | undefined },
   ): Promise<KitchenTransitionOrder | null> {
-    return tx.order.findUnique({
-      where: { id: orderId },
+    return tx.order.findFirst({
+      where: {
+        id: orderId,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: {
         id: true,
         branchId: true,

@@ -306,7 +306,7 @@ function createConcurrentKitchenState() {
   const tx = {
     $queryRaw: async () => [],
     order: {
-      findUnique: async () => ({ ...order, kitchenTickets: [{ ...ticket }] }),
+      findFirst: async () => ({ ...order, kitchenTickets: [{ ...ticket }] }),
       update: async ({ data }: { data: Record<string, unknown> }) => {
         if (data.status) order.status = data.status as OrderStatus;
         if (data.orderState) order.orderState = data.orderState as OrderState;
@@ -345,7 +345,11 @@ function createConcurrentKitchenState() {
   };
   let tail = Promise.resolve();
   const prisma = {
-    kitchenTicket: { findUnique: async () => ({ orderId: order.id }) },
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    kitchenTicket: {
+      findFirst: async () => ({ orderId: order.id }),
+      findUnique: async () => ({ orderId: order.id }),
+    },
     $transaction: <T>(callback: (client: typeof tx) => Promise<T>) => {
       const result = tail.then(() => callback(tx));
       tail = result.then(

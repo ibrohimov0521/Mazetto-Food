@@ -65,12 +65,16 @@ export class CustomersService {
     private readonly settingsService: SettingsService,
   ) {}
 
-  listCategories(branchId?: string) {
+  async listCategories(branchId?: string) {
+    const tenantId =
+      await this.branchesService.resolveCustomerTenantId(branchId);
     return this.prisma.category.findMany({
       where: {
         isActive: true,
         code: { in: [...customerVisibleCategoryCodes] },
-        ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
+        ...(branchId
+          ? { OR: [{ branchId }, { branchId: null }] }
+          : { OR: [{ branchId: null }, { branch: { tenantId } }] }),
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
@@ -88,12 +92,22 @@ export class CustomersService {
     return this.branchesService.listCustomerBranches();
   }
 
-  listProducts(branchId?: string, categoryId?: string) {
+  async listProducts(branchId?: string, categoryId?: string) {
+    const tenantId =
+      await this.branchesService.resolveCustomerTenantId(branchId);
+    const branchScope = branchId
+      ? { OR: [{ branchId }, { branchId: null }] }
+      : { OR: [{ branchId: null }, { branch: { tenantId } }] };
+    const categoryScope = branchId
+      ? { OR: [{ branchId }, { branchId: null }] }
+      : { OR: [{ branchId: null }, { branch: { tenantId } }] };
+
     return this.prisma.product.findMany({
       where: {
         isAvailable: true,
         ...customerVisibleProductWhere(),
-        ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
+        ...branchScope,
+        category: categoryScope,
         ...this.branchesService.getUnavailableProductWhere(branchId),
         ...(categoryId ? { categoryId } : {}),
       },
@@ -102,12 +116,23 @@ export class CustomersService {
     });
   }
 
-  async getProduct(id: string) {
+  async getProduct(id: string, branchId?: string) {
+    const tenantId =
+      await this.branchesService.resolveCustomerTenantId(branchId);
+    const branchScope = branchId
+      ? { OR: [{ branchId }, { branchId: null }] }
+      : { OR: [{ branchId: null }, { branch: { tenantId } }] };
+    const categoryScope = branchId
+      ? { OR: [{ branchId }, { branchId: null }] }
+      : { OR: [{ branchId: null }, { branch: { tenantId } }] };
     const product = await this.prisma.product.findFirst({
       where: {
         id,
         isAvailable: true,
         ...customerVisibleProductWhere(),
+        ...branchScope,
+        category: categoryScope,
+        ...this.branchesService.getUnavailableProductWhere(branchId),
       },
       include: productInclude(),
     });

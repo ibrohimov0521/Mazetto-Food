@@ -12,10 +12,11 @@ import {
   ShiftStatus,
   ShiftType,
 } from "@prisma/client";
+import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import {
-  resolveBranchScope,
-  resolveRequiredBranchScope,
-} from "../../common/auth/access-scope";
+  assertBranchBelongsToActor,
+  resolveRestaurantScope,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { writeAuditLog } from "../audit/audit-write";
@@ -38,11 +39,15 @@ export class ShiftsService {
    *
    * `SHIFT_VIEW_BRANCH` permission'i bilan himoyalangan — `SHIFT_VIEW_OWN`
    * dan farqli, bu butun filial smenalarini ko'rsatadi. Branch scope
-   * `resolveBranchScope` orqali majburlanadi: branch-scoped rol boshqa
+   * `resolveRestaurantScope` orqali tenant va filial bilan majburlanadi: branch-scoped rol boshqa
    * filialni so'rasa `ForbiddenException` qaytadi.
    */
   async listShifts(query: ListShiftsDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+    const scope = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const openedAt =
       query.from || query.to
         ? {
@@ -53,7 +58,9 @@ export class ShiftsService {
 
     const shifts = await this.prisma.shift.findMany({
       where: {
-        ...(branchId ? { branchId } : {}),
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
         ...(query.employeeId ? { employeeId: query.employeeId } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(openedAt ? { openedAt } : {}),
@@ -104,7 +111,7 @@ export class ShiftsService {
             "Faqat ochiq smenadan pul topshiriladi",
           );
         }
-        resolveBranchScope(user, source.branchId);
+        await assertBranchBelongsToActor(tx, user, source.branchId);
         if (sourceShiftId === dto.toShiftId) {
           throw new BadRequestException(
             "Manba va qabul qiluvchi smena bir xil bo'lmasligi kerak",
@@ -245,6 +252,7 @@ export class ShiftsService {
   async openShift(dto: OpenShiftDto, user: AuthenticatedUser) {
     const employeeId = this.resolveTargetEmployee(dto.employeeId, user);
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
 
     if (!employeeId) {
       throw new ForbiddenException(
@@ -363,7 +371,14 @@ export class ShiftsService {
 
             const payments = await tx.payment.findMany({
               where: {
-                status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS, PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED] },
+                status: {
+                  in: [
+                    PaymentStatus.PAID,
+                    PaymentStatus.SUCCESS,
+                    PaymentStatus.REFUNDED,
+                    PaymentStatus.PARTIALLY_REFUNDED,
+                  ],
+                },
                 revenueRecords: { some: { shiftId: id } },
               },
               include: { method: true },
@@ -460,7 +475,7 @@ export class ShiftsService {
               throw new BadRequestException("Shift is already closed");
             }
 
-            resolveBranchScope(user, shift.branchId);
+            await assertBranchBelongsToActor(tx, user, shift.branchId);
 
             const pendingTransfers = await tx.cashTransfer.updateMany({
               where: { fromShiftId: id, status: CashTransferStatus.PENDING },
@@ -536,9 +551,7 @@ export class ShiftsService {
                 employeeId: shift.employeeId,
                 type: CashTransactionType.CLOSING_BALANCE,
                 amount: closingBalance,
-                reason:
-                  dto.reason?.trim() ||
-                  "Admin smenani majburiy yopdi",
+                reason: dto.reason?.trim() || "Admin smenani majburiy yopdi",
                 createdById: user.id,
               },
             });
@@ -608,6 +621,7 @@ export class ShiftsService {
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
+      await assertBranchBelongsToActor(tx, user, shift.branchId);
       this.assertCanOperateShift(user, shift.employeeId);
 
       return tx.cashTransaction.create({
@@ -647,8 +661,15 @@ export class ShiftsService {
       );
     }
 
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, status: ShiftStatus.OPEN },
+      where: {
+        employeeId,
+        status: ShiftStatus.OPEN,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       include: {
         branch: { select: { id: true, code: true, name: true } },
         employee: { select: { id: true, firstName: true, lastName: true } },
@@ -686,11 +707,15 @@ export class ShiftsService {
       );
     }
 
+    const scope = await resolveRestaurantScope(this.prisma, user);
     return this.prisma.$transaction(async (tx) => {
       const shift = await tx.shift.findFirst({
         where: {
           employeeId,
           status: ShiftStatus.OPEN,
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
         },
         orderBy: { openedAt: "desc" },
       });
@@ -699,7 +724,7 @@ export class ShiftsService {
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
-      resolveBranchScope(user, shift.branchId);
+      await assertBranchBelongsToActor(tx, user, shift.branchId);
 
       await tx.$queryRawUnsafe(
         'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
@@ -820,8 +845,14 @@ export class ShiftsService {
   }
 
   async getCashTransferDetail(id: string, user: AuthenticatedUser) {
-    const transfer = await this.prisma.cashTransfer.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const transfer = await this.prisma.cashTransfer.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       include: {
         branch: { select: { id: true, name: true } },
         fromShift: { include: { employee: true } },
@@ -834,7 +865,7 @@ export class ShiftsService {
       throw new NotFoundException("Pul topshiruvi topilmadi");
     }
 
-    resolveBranchScope(user, transfer.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, transfer.branchId);
     this.assertCanInspectShift(user, transfer.fromShift.employeeId);
     return transfer;
   }
@@ -847,17 +878,24 @@ export class ShiftsService {
       );
     }
 
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const sourceShift = await this.prisma.shift.findFirst({
-      where: { employeeId, status: ShiftStatus.OPEN },
+      where: {
+        employeeId,
+        status: ShiftStatus.OPEN,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       orderBy: { openedAt: "desc" },
       select: { branchId: true },
     });
     if (!sourceShift) return [];
 
-    const branchId = resolveBranchScope(user, sourceShift.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, sourceShift.branchId);
     const receiverShifts = await this.prisma.shift.findMany({
       where: {
-        branchId: branchId ?? sourceShift.branchId,
+        branchId: sourceShift.branchId,
         status: ShiftStatus.OPEN,
         employeeId: { not: employeeId },
         employee: {
@@ -901,19 +939,26 @@ export class ShiftsService {
     const employeeId = user.employeeId;
     if (!employeeId)
       throw new ForbiddenException("Employee profile is required");
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const receiverShift = await this.prisma.shift.findFirst({
-      where: { employeeId, status: ShiftStatus.OPEN },
+      where: {
+        employeeId,
+        status: ShiftStatus.OPEN,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       orderBy: { openedAt: "desc" },
       select: { id: true, branchId: true },
     });
     if (!receiverShift) return [];
-    const branchId = resolveBranchScope(user, receiverShift.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, receiverShift.branchId);
     return this.prisma.cashTransfer.findMany({
       where: {
         status: CashTransferStatus.PENDING,
         fromShift: { employeeId: { not: employeeId } },
         OR: [{ toShiftId: receiverShift.id }, { toShiftId: null }],
-        ...(branchId ? { branchId } : {}),
+        branchId: receiverShift.branchId,
       },
       include: {
         fromShift: { include: { employee: true } },
@@ -939,6 +984,7 @@ export class ShiftsService {
         where: {
           employeeId,
           status: ShiftStatus.OPEN,
+          ...(user.branchId ? { branchId: user.branchId } : {}),
         },
         orderBy: { openedAt: "desc" },
       });
@@ -947,6 +993,7 @@ export class ShiftsService {
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, cashierShift.branchId);
+      await assertBranchBelongsToActor(tx, user, cashierShift.branchId);
       await tx.$queryRawUnsafe(
         'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
         cashierShift.id,
@@ -964,8 +1011,8 @@ export class ShiftsService {
         throw new NotFoundException("Cash transfer not found");
       }
 
-      const transfer = await tx.cashTransfer.findUnique({
-        where: { id },
+      const transfer = await tx.cashTransfer.findFirst({
+        where: { id, branchId: cashierShift.branchId },
         include: { fromShift: true },
       });
       if (!transfer) {
@@ -1028,6 +1075,7 @@ export class ShiftsService {
     if (!receiverEmployeeId) {
       throw new ForbiddenException("Employee profile is required");
     }
+    const scope = await resolveRestaurantScope(this.prisma, user);
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
         'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
@@ -1037,8 +1085,13 @@ export class ShiftsService {
         throw new NotFoundException("Cash transfer not found");
       }
 
-      const transfer = await tx.cashTransfer.findUnique({
-        where: { id },
+      const transfer = await tx.cashTransfer.findFirst({
+        where: {
+          id,
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
+        },
         include: { fromShift: true },
       });
       if (!transfer) {
@@ -1048,7 +1101,7 @@ export class ShiftsService {
         throw new BadRequestException("Cash transfer is already processed");
       }
 
-      resolveBranchScope(user, transfer.branchId);
+      await assertBranchBelongsToActor(tx, user, transfer.branchId);
       if (transfer.fromShift.employeeId === receiverEmployeeId) {
         throw new ForbiddenException(
           "O'zingizning topshirig'ingizni rad eta olmaysiz",

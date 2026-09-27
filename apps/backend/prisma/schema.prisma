@@ -270,6 +270,7 @@ model RestaurantTenant {
 
   branches Branch[]
   domains  TenantDomain[]
+  platformSites PlatformSite[]
 
   @@index([status, createdAt])
   @@map("restaurant_tenants")
@@ -469,6 +470,7 @@ model User {
   email          String?   @unique
   phone          String?   @unique
   passwordHash   String?
+  credentialVersion Int    @default(0)
   displayName    String?
   avatarUrl      String?
   isActive       Boolean   @default(true)
@@ -583,6 +585,7 @@ model AuditLog {
 model PlatformSite {
   id                  String    @id @default(cuid())
   siteKey             String    @unique
+  tenantId            String?
   name                String
   productCode         String    @default("MAZETTO_FOOD")
   websiteUrl          String
@@ -605,9 +608,11 @@ model PlatformSite {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  tenant      RestaurantTenant?      @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   events      PlatformSiteEvent[]
   diagnostics PlatformSiteDiagnostic[]
 
+  @@index([tenantId, isActive])
   @@index([isActive, lastHeartbeatAt])
   @@index([websiteStatus, apiStatus])
   @@map("platform_sites")

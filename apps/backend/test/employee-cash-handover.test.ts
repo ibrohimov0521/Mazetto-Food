@@ -64,6 +64,10 @@ function fixture(
       return [{ id: "s1" }];
     },
     employee: { findFirst: async () => ({ id: "receiver" }) },
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "b1" }),
+    },
     shift: {
       findFirst: async ({ where }: { where?: { employeeId?: string } } = {}) =>
         where?.employeeId === "receiver" ? receiverShift : shift,
@@ -104,7 +108,8 @@ function fixture(
       },
     },
     cashTransfer: {
-      findFirst: async () => (options.pending ? transfer : null),
+      findFirst: async ({ where }: { where?: { branchId?: string } } = {}) =>
+        where?.branchId === "b1" || options.pending ? transfer : null,
       findUnique: async () => transfer,
       findUniqueOrThrow: async () => transfer,
       create: async () => transfer,
@@ -113,6 +118,10 @@ function fixture(
     },
   };
   const prisma = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "b1" }),
+    },
     $transaction: async (fn: (value: typeof tx) => unknown) => fn(tx),
   } as unknown as PrismaService;
   return {

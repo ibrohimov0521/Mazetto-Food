@@ -1,8 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { WebSocketGateway, WebSocketServer, type OnGatewayConnection } from "@nestjs/websockets";
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  type OnGatewayConnection,
+} from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
 import { PERMISSIONS } from "../../common/auth/permissions";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import type { AuthenticatedCustomer } from "../../common/types/authenticated-customer";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -31,7 +36,7 @@ export class KitchenGateway implements OnGatewayConnection {
   private readonly server!: Server;
 
   async handleConnection(client: Socket): Promise<void> {
-    const auth = await this.authenticateSocket(client);
+    let auth = await this.authenticateSocket(client);
 
     if (!auth) {
       client.disconnect(true);
@@ -41,9 +46,44 @@ export class KitchenGateway implements OnGatewayConnection {
     client.data.mazettoAuth = auth;
 
     if (auth.kind === "customer") {
-      void client.join(this.customerRoom(auth.customerId));
+      await client.join(this.customerSessionRoom(auth.sessionId));
+      const token = this.extractToken(client);
+      const revalidated = token ? await this.authenticateCustomer(token) : null;
+      if (
+        !revalidated ||
+        revalidated.kind !== "customer" ||
+        revalidated.customerId !== auth.customerId ||
+        revalidated.sessionId !== auth.sessionId ||
+        client.disconnected
+      ) {
+        client.disconnect(true);
+        return;
+      }
+      auth = revalidated;
+      client.data.mazettoAuth = auth;
+      this.disconnectAtAccessTokenExpiry(client, auth.expiresAt);
+      await client.join(this.customerRoom(auth.customerId));
       return;
     }
+
+    if (auth.kind === "staff") {
+      await client.join(this.staffUserRoom(auth.userId));
+      const token = this.extractToken(client);
+      const revalidated = token ? await this.authenticateStaff(token) : null;
+      if (
+        !revalidated ||
+        revalidated.kind !== "staff" ||
+        revalidated.userId !== auth.userId ||
+        client.disconnected
+      ) {
+        client.disconnect(true);
+        return;
+      }
+      auth = revalidated;
+      client.data.mazettoAuth = auth;
+    }
+
+    this.disconnectAtAccessTokenExpiry(client, auth.expiresAt);
 
     if (auth.branchId) {
       void client.join(this.branchRoom(auth.branchId));
@@ -52,6 +92,28 @@ export class KitchenGateway implements OnGatewayConnection {
     if (auth.global) {
       void client.join(this.globalStaffRoom());
     }
+  }
+
+  disconnectStaffUser(userId: string): void {
+    if (!this.server) return;
+    this.server.in(this.staffUserRoom(userId)).disconnectSockets(true);
+  }
+
+  disconnectCustomerSession(sessionId: string): void {
+    if (!this.server) return;
+    this.server.in(this.customerSessionRoom(sessionId)).disconnectSockets(true);
+  }
+
+  private disconnectAtAccessTokenExpiry(
+    client: Socket,
+    expiresAt: number,
+  ): void {
+    const timer = setTimeout(
+      () => client.disconnect(true),
+      Math.max(0, expiresAt - Date.now()),
+    );
+    timer.unref?.();
+    client.once?.("disconnect", () => clearTimeout(timer));
   }
 
   emitOrderCreated(payload: unknown): void {
@@ -70,16 +132,19 @@ export class KitchenGateway implements OnGatewayConnection {
     this.emitSafely("order.status_changed", payload);
   }
 
-  private async authenticateSocket(client: Socket): Promise<RealtimeAuth | null> {
+  private async authenticateSocket(
+    client: Socket,
+  ): Promise<RealtimeAuth | null> {
     const token = this.extractToken(client);
 
     if (!token) {
       return null;
     }
 
-    const tokenType = typeof client.handshake.auth?.tokenType === "string"
-      ? client.handshake.auth.tokenType
-      : undefined;
+    const tokenType =
+      typeof client.handshake.auth?.tokenType === "string"
+        ? client.handshake.auth.tokenType
+        : undefined;
 
     if (tokenType === "customer") {
       return this.authenticateCustomer(token);
@@ -89,7 +154,9 @@ export class KitchenGateway implements OnGatewayConnection {
       return this.authenticateStaff(token);
     }
 
-    return (await this.authenticateStaff(token)) ?? this.authenticateCustomer(token);
+    return (
+      (await this.authenticateStaff(token)) ?? this.authenticateCustomer(token)
+    );
   }
 
   private extractToken(client: Socket): string | null {
@@ -114,24 +181,49 @@ export class KitchenGateway implements OnGatewayConnection {
     return token;
   }
 
-  private async authenticateCustomer(token: string): Promise<RealtimeAuth | null> {
+  private async authenticateCustomer(
+    token: string,
+  ): Promise<RealtimeAuth | null> {
     try {
-      const payload = await this.jwtService.verifyAsync<AuthenticatedCustomer>(token, {
+      const payload = await this.jwtService.verifyAsync<
+        AuthenticatedCustomer & { exp?: number }
+      >(token, {
         secret: getCustomerJwtAccessSecret(),
       });
 
-      if (payload.tokenUse !== "customer_access") {
+      if (
+        payload.tokenUse !== "customer_access" ||
+        typeof payload.sessionId !== "string" ||
+        typeof payload.exp !== "number"
+      ) {
         return null;
       }
 
-      return { kind: "customer", customerId: payload.id };
+      await resolveSoleActiveTenantId(this.prisma);
+      const session = await this.prisma.customerSession.findFirst({
+        where: {
+          id: payload.sessionId,
+          customerId: payload.id,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      if (!session) return null;
+
+      return {
+        kind: "customer",
+        customerId: payload.id,
+        sessionId: payload.sessionId,
+        expiresAt: payload.exp * 1000,
+      };
     } catch {
       return null;
     }
   }
 
   private async authenticateStaff(token: string): Promise<RealtimeAuth | null> {
-    let payload: AuthenticatedUser;
+    let payload: AuthenticatedUser & { exp?: number };
 
     try {
       payload = await this.jwtService.verifyAsync<AuthenticatedUser>(token, {
@@ -141,27 +233,53 @@ export class KitchenGateway implements OnGatewayConnection {
       return null;
     }
 
+    if (typeof payload.exp !== "number") return null;
+
     const user = await this.resolveStaffUser(payload.id);
 
-    if (!user || !this.canReceiveOrderEvents(user)) {
+    if (
+      !user ||
+      (payload.credentialVersion ?? 0) !== (user.credentialVersion ?? 0) ||
+      !this.canReceiveOrderEvents(user)
+    ) {
       return null;
+    }
+
+    const hasPlatformRole = user.roles.some((role) =>
+      role.startsWith("PLATFORM_"),
+    );
+    const global =
+      !hasPlatformRole &&
+      (user.roles.includes("SUPER_ADMIN") ||
+        user.permissions.includes(PERMISSIONS.ALL));
+
+    if (global) {
+      try {
+        await resolveSoleActiveTenantId(this.prisma);
+      } catch {
+        return null;
+      }
     }
 
     return {
       kind: "staff",
       userId: user.id,
-      global: user.roles.includes("SUPER_ADMIN") || user.permissions.includes(PERMISSIONS.ALL),
+      global,
+      expiresAt: payload.exp * 1000,
       ...(user.branchId ? { branchId: user.branchId } : {}),
     };
   }
 
-  private async resolveStaffUser(userId: string): Promise<AuthenticatedUser | null> {
+  private async resolveStaffUser(
+    userId: string,
+  ): Promise<AuthenticatedUser | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         email: true,
         phone: true,
+        credentialVersion: true,
         isActive: true,
         employee: {
           select: {
@@ -196,17 +314,24 @@ export class KitchenGateway implements OnGatewayConnection {
       id: user.id,
       ...(user.email ? { email: user.email } : {}),
       ...(user.phone ? { phone: user.phone } : {}),
+      credentialVersion: user.credentialVersion,
       ...(user.employee?.status === "ACTIVE"
         ? { employeeId: user.employee.id, branchId: user.employee.branchId }
         : {}),
       roles: user.roles.map((userRole) => userRole.role.code),
       permissions: user.roles.flatMap((userRole) =>
-        userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
+        userRole.role.permissions.map(
+          (rolePermission) => rolePermission.permission.code,
+        ),
       ),
     };
   }
 
   private canReceiveOrderEvents(user: AuthenticatedUser): boolean {
+    if (!user.roles.some((role) => !role.startsWith("PLATFORM_"))) {
+      return false;
+    }
+
     return (
       user.permissions.includes(PERMISSIONS.ALL) ||
       user.permissions.includes(PERMISSIONS.KITCHEN_VIEW) ||
@@ -217,11 +342,16 @@ export class KitchenGateway implements OnGatewayConnection {
 
   private emitSafely(event: OrderRealtimeEvent, payload: unknown): void {
     void this.emitScopedOrderEvent(event, payload).catch((error: unknown) => {
-      this.logger.warn(`Skipped ${event}: ${error instanceof Error ? error.message : "unknown realtime error"}`);
+      this.logger.warn(
+        `Skipped ${event}: ${error instanceof Error ? error.message : "unknown realtime error"}`,
+      );
     });
   }
 
-  private async emitScopedOrderEvent(event: OrderRealtimeEvent, payload: unknown): Promise<void> {
+  private async emitScopedOrderEvent(
+    event: OrderRealtimeEvent,
+    payload: unknown,
+  ): Promise<void> {
     const scope = await this.resolveEventScope(payload);
 
     if (!scope.branchId && !scope.customerId) {
@@ -240,15 +370,19 @@ export class KitchenGateway implements OnGatewayConnection {
       rooms.add(this.customerRoom(scope.customerId));
     }
 
-    this.server.to([...rooms]).emit(event, this.toRealtimePayload(payload, scope));
+    this.server
+      .to([...rooms])
+      .emit(event, this.toRealtimePayload(payload, scope));
   }
 
   private async resolveEventScope(payload: unknown): Promise<OrderEventScope> {
-    const fallbackBranchId = this.readString(payload, "branchId") ??
+    const fallbackBranchId =
+      this.readString(payload, "branchId") ??
       this.readString(payload, "order.branchId") ??
       this.readString(payload, "order.branch.id") ??
       this.readString(payload, "ticket.order.branchId");
-    const orderId = this.readString(payload, "order.id") ??
+    const orderId =
+      this.readString(payload, "order.id") ??
       this.readString(payload, "orderId") ??
       this.readString(payload, "ticket.orderId") ??
       this.readString(payload, "ticket.order.id") ??
@@ -258,7 +392,8 @@ export class KitchenGateway implements OnGatewayConnection {
       return this.resolveOrderScope(orderId, fallbackBranchId);
     }
 
-    const ticketId = this.readString(payload, "ticket.id") ?? this.readString(payload, "id");
+    const ticketId =
+      this.readString(payload, "ticket.id") ?? this.readString(payload, "id");
 
     if (ticketId) {
       return this.resolveTicketScope(ticketId, fallbackBranchId);
@@ -267,7 +402,10 @@ export class KitchenGateway implements OnGatewayConnection {
     return { branchId: fallbackBranchId ?? null, customerId: null };
   }
 
-  private async resolveOrderScope(orderId: string, fallbackBranchId?: string): Promise<OrderEventScope> {
+  private async resolveOrderScope(
+    orderId: string,
+    fallbackBranchId?: string,
+  ): Promise<OrderEventScope> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: {
@@ -283,7 +421,10 @@ export class KitchenGateway implements OnGatewayConnection {
     };
   }
 
-  private async resolveTicketScope(ticketId: string, fallbackBranchId?: string): Promise<OrderEventScope> {
+  private async resolveTicketScope(
+    ticketId: string,
+    fallbackBranchId?: string,
+  ): Promise<OrderEventScope> {
     const ticket = await this.prisma.kitchenTicket.findUnique({
       where: { id: ticketId },
       select: {
@@ -306,9 +447,14 @@ export class KitchenGateway implements OnGatewayConnection {
     };
   }
 
-  private toRealtimePayload(payload: unknown, scope: OrderEventScope): OrderRealtimePayload {
+  private toRealtimePayload(
+    payload: unknown,
+    scope: OrderEventScope,
+  ): OrderRealtimePayload {
     const action = this.readString(payload, "action");
-    const status = this.readString(payload, "order.status") ?? this.readString(payload, "status");
+    const status =
+      this.readString(payload, "order.status") ??
+      this.readString(payload, "status");
     const ticketStatus = this.readString(payload, "ticket.status");
 
     return {
@@ -344,8 +490,16 @@ export class KitchenGateway implements OnGatewayConnection {
     return `customer:${customerId}`;
   }
 
+  private customerSessionRoom(sessionId: string): string {
+    return `customer-session:${sessionId}`;
+  }
+
   private branchRoom(branchId: string): string {
     return `branch:${branchId}`;
+  }
+
+  private staffUserRoom(userId: string): string {
+    return `staff-user:${userId}`;
   }
 
   private globalStaffRoom(): string {
@@ -354,8 +508,19 @@ export class KitchenGateway implements OnGatewayConnection {
 }
 
 type RealtimeAuth =
-  | { kind: "customer"; customerId: string }
-  | { kind: "staff"; userId: string; branchId?: string; global: boolean };
+  | {
+      kind: "customer";
+      customerId: string;
+      sessionId: string;
+      expiresAt: number;
+    }
+  | {
+      kind: "staff";
+      userId: string;
+      branchId?: string;
+      global: boolean;
+      expiresAt: number;
+    };
 
 type OrderRealtimeEvent =
   | "order.created"

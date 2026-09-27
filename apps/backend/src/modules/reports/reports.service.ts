@@ -7,7 +7,7 @@ import {
   Prisma,
   ShiftStatus,
 } from "@prisma/client";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ProductReportQueryDto, ReportQueryDto } from "./dto/report-query.dto";
@@ -30,10 +30,14 @@ export class ReportsService {
 
   async getSalesReport(query: ReportQueryDto, user: AuthenticatedUser) {
     const range = resolveReportRange(query);
-    const branchId = resolveBranchScope(user, query.branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const source = query.source;
-    const paymentWhere = this.successfulPaymentWhere(range, branchId, source);
-    const cancelledOrderWhere = this.cancelledOrderWhere(range, branchId, source);
+    const paymentWhere = this.successfulPaymentWhere(range, branchId, source, tenantId);
+    const cancelledOrderWhere = this.cancelledOrderWhere(range, branchId, source, tenantId);
 
     const [payments, cancelledOrders, orderItems, shifts, refunds] = await Promise.all([
       this.prisma.payment.findMany({
@@ -74,6 +78,7 @@ export class ReportsService {
         where: {
           status: OrderItemStatus.ACTIVE,
           order: {
+            branch: { tenantId },
             status: { in: [...successfulOrderStatuses] },
             paymentStatus: { in: [...successfulPaymentStatuses] },
             ...(branchId ? { branchId } : {}),
@@ -99,7 +104,7 @@ export class ReportsService {
         },
       }),
       this.prisma.shift.findMany({
-        where: this.shiftWhere(range, branchId, source),
+        where: this.shiftWhere(range, branchId, source, tenantId),
         select: {
           id: true,
           branchId: true,
@@ -133,6 +138,7 @@ export class ReportsService {
       this.prisma.paymentRefund.findMany({
         where: {
           createdAt: { gte: range.from, lte: range.to },
+          branch: { tenantId },
           ...(branchId ? { branchId } : {}),
           ...(source ? { payment: { order: { source } } } : {}),
         },
@@ -200,12 +206,17 @@ export class ReportsService {
 
   async getProductReport(query: ProductReportQueryDto, user: AuthenticatedUser) {
     const range = resolveReportRange(query);
-    const branchId = resolveBranchScope(user, query.branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const groups = await this.prisma.orderItem.groupBy({
       by: ["productId", "productName"],
       where: {
         status: OrderItemStatus.ACTIVE,
         order: {
+          branch: { tenantId },
           status: { in: [...successfulOrderStatuses] },
           paymentStatus: { in: [...successfulPaymentStatuses] },
           ...(branchId ? { branchId } : {}),
@@ -246,7 +257,11 @@ export class ReportsService {
 
   async getEmployeeReport(query: ReportQueryDto, user: AuthenticatedUser) {
     const range = resolveReportRange(query);
-    const branchId = resolveBranchScope(user, query.branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const branchFilter = branchId ? { branchId } : {};
     const [ordersHandled, salesByEmployee, shifts] = await Promise.all([
       this.prisma.order.groupBy({
@@ -254,6 +269,7 @@ export class ReportsService {
         where: {
           createdAt: { gte: range.from, lte: range.to },
           status: { not: OrderStatus.CANCELLED },
+          branch: { tenantId },
           ...branchFilter,
           createdById: { not: null },
         },
@@ -265,12 +281,16 @@ export class ReportsService {
           status: { in: [...successfulPaymentStatuses] },
           paidAt: { gte: range.from, lte: range.to },
           acceptedById: { not: null },
-          ...(branchId ? { order: { branchId } } : {}),
+          order: {
+            branch: { tenantId },
+            ...(branchId ? { branchId } : {}),
+          },
         },
         _sum: { amount: true },
       }),
       this.prisma.shift.findMany({
         where: {
+          branch: { tenantId },
           openedAt: { gte: range.from, lte: range.to },
           ...branchFilter,
         },
@@ -297,7 +317,10 @@ export class ReportsService {
       ]),
     ];
     const employees = await this.prisma.employee.findMany({
-      where: { id: { in: employeeIds } },
+      where: {
+        id: { in: employeeIds },
+        branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
+      },
       select: {
         id: true,
         employeeCode: true,
@@ -307,11 +330,12 @@ export class ReportsService {
       },
     });
     const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
+    const scopedEmployeeIds = employeeIds.filter((id) => employeeById.has(id));
 
     return {
       period: range,
       branchId: branchId ?? null,
-      employees: employeeIds.map((employeeId) => ({
+      employees: scopedEmployeeIds.map((employeeId) => ({
         employee: employeeById.get(employeeId) ?? null,
         ordersHandled:
           ordersHandled.find((group) => group.createdById === employeeId)?._count._all ?? 0,
@@ -325,9 +349,14 @@ export class ReportsService {
 
   async getExpenseReport(query: ReportQueryDto, user: AuthenticatedUser) {
     const range = resolveReportRange(query);
-    const branchId = resolveBranchScope(user, query.branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const where = {
       expenseDate: { gte: range.from, lte: range.to },
+      branch: { tenantId },
       ...(branchId ? { branchId } : {}),
     } satisfies Prisma.ExpenseWhereInput;
     const [total, categories, expenses] = await Promise.all([
@@ -381,8 +410,14 @@ export class ReportsService {
     const report = await this.getSalesReport(query, user);
     const range = report.period;
     const branchId = report.branchId ?? undefined;
+    const { tenantId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const expenseWhere = {
       expenseDate: { gte: range.from, lte: range.to },
+      branch: { tenantId },
       ...(branchId ? { branchId } : {}),
     } satisfies Prisma.ExpenseWhereInput;
     const expenses = await this.prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true } });
@@ -415,11 +450,13 @@ export class ReportsService {
     range: { from: Date; to: Date },
     branchId: string | undefined,
     source: OrderSource | undefined,
+    tenantId: string,
   ) {
     return {
       status: { in: [...successfulPaymentStatuses] },
       paidAt: { gte: range.from, lte: range.to },
       order: {
+        branch: { tenantId },
         status: { in: [...successfulOrderStatuses] },
         ...(branchId ? { branchId } : {}),
         ...(source ? { source } : {}),
@@ -431,10 +468,12 @@ export class ReportsService {
     range: { from: Date; to: Date },
     branchId: string | undefined,
     source: OrderSource | undefined,
+    tenantId: string,
   ) {
     return {
       createdAt: { gte: range.from, lte: range.to },
       status: OrderStatus.CANCELLED,
+      branch: { tenantId },
       ...(branchId ? { branchId } : {}),
       ...(source ? { source } : {}),
     } satisfies Prisma.OrderWhereInput;
@@ -444,12 +483,14 @@ export class ReportsService {
     range: { from: Date; to: Date },
     branchId: string | undefined,
     source: OrderSource | undefined,
+    tenantId: string,
   ) {
     if (source && source !== OrderSource.POS) {
       return { id: "__no_pos_shift_for_selected_source__" } satisfies Prisma.ShiftWhereInput;
     }
 
     return {
+      branch: { tenantId },
       ...(branchId ? { branchId } : {}),
       openedAt: { lte: range.to },
       OR: [{ closedAt: null }, { closedAt: { gte: range.from } }],

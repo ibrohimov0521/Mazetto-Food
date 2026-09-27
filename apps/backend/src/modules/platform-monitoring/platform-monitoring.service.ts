@@ -15,6 +15,8 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.service";
 import { writeAuditLog } from "../audit/audit-write";
 import { readBackupEvidence } from "../system-health/backup-evidence";
+import { resolveBackendBuildId, resolveBackendBuildVersion } from "./backend-build-version";
+import { summarizeDeviceVersions } from "./device-version-summary";
 import type {
   CreatePlatformSiteDto,
   PlatformHeartbeatDto,
@@ -72,9 +74,22 @@ function publicMonitorUrl(value: string): string {
   }
 }
 
+function monitorAgentStatus(site: {
+  isActive: boolean;
+  lastHeartbeatAt: Date | null;
+  lastHeartbeatStatus: string | null;
+  createdAt: Date;
+}, now = Date.now()) {
+  if (!site.isActive) return "DISABLED";
+  if (!site.lastHeartbeatAt) return now - site.createdAt.getTime() > heartbeatGraceMs ? "OFFLINE" : "WAITING";
+  if (now - site.lastHeartbeatAt.getTime() > heartbeatGraceMs) return "OFFLINE";
+  return site.lastHeartbeatStatus === "healthy" ? "ONLINE" : "DEGRADED";
+}
+
 function siteResponse(site: {
   id: string;
   siteKey: string;
+  tenantId: string | null;
   name: string;
   productCode: string;
   websiteUrl: string;
@@ -96,19 +111,12 @@ function siteResponse(site: {
   createdAt: Date;
   updatedAt: Date;
 }, now = Date.now()) {
-  const agentStatus = !site.isActive
-    ? "DISABLED"
-    : !site.lastHeartbeatAt
-      ? now - site.createdAt.getTime() > heartbeatGraceMs ? "OFFLINE" : "WAITING"
-      : now - site.lastHeartbeatAt.getTime() > heartbeatGraceMs
-        ? "OFFLINE"
-        : site.lastHeartbeatStatus === "healthy"
-          ? "ONLINE"
-          : "DEGRADED";
+  const agentStatus = monitorAgentStatus(site, now);
 
   return {
     id: site.id,
     siteKey: site.siteKey,
+    tenantId: site.tenantId,
     name: site.name,
     productCode: site.productCode,
     websiteUrl: site.websiteUrl,
@@ -154,8 +162,93 @@ export class PlatformMonitoringService {
     return sites.map((site) => siteResponse(site));
   }
 
+  async listTenants() {
+    const tenants = await this.prisma.restaurantTenant.findMany({
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        branches: {
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: { id: true, code: true, name: true, isActive: true, isTemporarilyClosed: true, acceptsOrders: true },
+        },
+        domains: {
+          orderBy: [{ hostname: "asc" }],
+          select: { id: true, hostname: true, status: true, verifiedAt: true },
+        },
+        platformSites: {
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: {
+            id: true, name: true, productCode: true, isActive: true, createdAt: true,
+            lastHeartbeatAt: true, lastHeartbeatStatus: true,
+            websiteStatus: true, websiteCheckedAt: true,
+            apiStatus: true, apiCheckedAt: true,
+          },
+        },
+      },
+    });
+    const branchIds = [...new Set(tenants.flatMap((tenant) => tenant.branches.map((branch) => branch.id)))];
+    const [openOrderGroups, devices] = branchIds.length
+      ? await Promise.all([
+        this.prisma.order.groupBy({
+          by: ["branchId"],
+          where: { branchId: { in: branchIds }, status: { in: [...activeOrderStatuses] } },
+          _count: { _all: true },
+        }),
+        this.prisma.device.findMany({
+          where: { isActive: true, branchId: { in: branchIds } },
+          select: { branchId: true, lastSeenAt: true },
+        }),
+      ])
+      : [[], []];
+    const openOrdersByBranch = new Map(openOrderGroups.map((group) => [group.branchId, group._count._all]));
+    const staleBefore = new Date(Date.now() - onlineDeviceWindowMs);
+    const devicesByBranch = new Map<string, { online: number; offline: number }>();
+    for (const device of devices) {
+      const counts = devicesByBranch.get(device.branchId) ?? { online: 0, offline: 0 };
+      if (device.lastSeenAt && device.lastSeenAt >= staleBefore) counts.online += 1;
+      else counts.offline += 1;
+      devicesByBranch.set(device.branchId, counts);
+    }
+
+    return tenants.map((tenant) => {
+      const acceptingOrdersBranches = tenant.status === "ACTIVE"
+        ? tenant.branches.filter((branch) => branch.isActive && !branch.isTemporarilyClosed && branch.acceptsOrders).length
+        : 0;
+      const activity = tenant.branches.reduce((summary, branch) => {
+        const devices = devicesByBranch.get(branch.id) ?? { online: 0, offline: 0 };
+        return {
+          activeBranches: summary.activeBranches + Number(branch.isActive),
+          acceptingOrdersBranches,
+          openOrders: summary.openOrders + (openOrdersByBranch.get(branch.id) ?? 0),
+          onlineDevices: summary.onlineDevices + devices.online,
+          offlineDevices: summary.offlineDevices + devices.offline,
+        };
+      }, { activeBranches: 0, acceptingOrdersBranches, openOrders: 0, onlineDevices: 0, offlineDevices: 0 });
+      return {
+        ...tenant,
+        platformSites: (tenant.platformSites ?? []).map((site) => ({
+          id: site.id,
+          name: site.name,
+          productCode: site.productCode,
+          isActive: site.isActive,
+          agentStatus: monitorAgentStatus(site),
+          lastHeartbeatAt: site.lastHeartbeatAt?.toISOString() ?? null,
+          website: { status: site.websiteStatus, checkedAt: site.websiteCheckedAt?.toISOString() ?? null },
+          api: { status: site.apiStatus, checkedAt: site.apiCheckedAt?.toISOString() ?? null },
+        })),
+        activity,
+      };
+    });
+  }
+
   async createSite(dto: CreatePlatformSiteDto, actor: AuthenticatedUser) {
     if (!dto.name.trim()) throw new BadRequestException("Restoran nomi kiritilishi shart.");
+    await this.assertTenantExists(dto.tenantId);
     const websiteUrl = publicMonitorUrl(dto.websiteUrl);
     const apiHealthUrl = publicMonitorUrl(dto.apiHealthUrl);
     const token = newAgentToken();
@@ -166,6 +259,7 @@ export class PlatformMonitoringService {
         const created = await tx.platformSite.create({
           data: {
             siteKey,
+            tenantId: dto.tenantId ?? null,
             name: dto.name.trim(),
             productCode: this.normalizeProductCode(dto.productCode),
             websiteUrl,
@@ -181,6 +275,7 @@ export class PlatformMonitoringService {
           metadata: {
             name: created.name,
             productCode: created.productCode,
+            tenantId: created.tenantId,
             websiteUrl: created.websiteUrl,
           },
         });
@@ -201,9 +296,11 @@ export class PlatformMonitoringService {
     if (dto.name !== undefined && !dto.name.trim()) {
       throw new BadRequestException("Restoran nomi bo'sh bo'lmasligi kerak.");
     }
+    await this.assertTenantExists(dto.tenantId);
 
     const data = {
       ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
+      ...(dto.tenantId === undefined ? {} : { tenantId: dto.tenantId }),
       ...(dto.productCode === undefined
         ? {}
         : { productCode: this.normalizeProductCode(dto.productCode) }),
@@ -226,6 +323,7 @@ export class PlatformMonitoringService {
           entityId: id,
           metadata: {
             siteName: result.name,
+            tenantId: result.tenantId,
             changedFields: Object.keys(data),
             previousWebsiteUrl: existing.websiteUrl,
           },
@@ -355,7 +453,7 @@ export class PlatformMonitoringService {
     const pageSize = Math.min(Math.max(limit, 1), 100);
     const where: Prisma.AuditLogWhereInput = {
       action: { startsWith: "PLATFORM_" },
-      entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT"] },
+      entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT", "TENANT_DOMAIN"] },
       ...(normalizedQuery
         ? {
             OR: [
@@ -743,7 +841,7 @@ export class PlatformMonitoringService {
             }),
             this.prisma.device.findMany({
               where: { isActive: true },
-              select: { branchId: true, lastSeenAt: true },
+              select: { branchId: true, type: true, softwareVersion: true, lastSeenAt: true },
             }),
             this.prisma.order.groupBy({
               by: ["branchId"],
@@ -785,6 +883,7 @@ export class PlatformMonitoringService {
           }
         }
         const deviceCounts = new Map<string, { online: number; offline: number; latest: Date | null }>();
+        const deviceVersions = summarizeDeviceVersions(devices, staleBefore);
         for (const device of devices) {
           const counts = deviceCounts.get(device.branchId) ?? { online: 0, offline: 0, latest: null };
           const online = device.lastSeenAt !== null && device.lastSeenAt >= staleBefore;
@@ -812,6 +911,7 @@ export class PlatformMonitoringService {
             onlineDevices: device.online,
             offlineDevices: device.offline,
             lastActivityAt: lastActivity?.toISOString() ?? null,
+            deviceVersions: deviceVersions.get(branch.id) ?? [],
           };
         });
 
@@ -850,8 +950,10 @@ export class PlatformMonitoringService {
 
     const redisClient = this.redis.getClient();
     const redis: "ok" | "degraded" = redisClient?.status === "ready" ? "ok" : "degraded";
+    const buildId = resolveBackendBuildId();
     return {
-      version: "0.1.0",
+      version: resolveBackendBuildVersion(),
+      ...(buildId ? { buildId } : {}),
       status: database === "ok" && redis === "ok" ? "healthy" : "degraded",
       services: { backend: "ok", database, redis },
       totals,
@@ -864,6 +966,12 @@ export class PlatformMonitoringService {
       dailyReports,
       backup,
     };
+  }
+
+  private async assertTenantExists(tenantId: string | null | undefined) {
+    if (!tenantId) return;
+    const tenant = await this.prisma.restaurantTenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+    if (!tenant) throw new NotFoundException("Bog'lanadigan restoran tenanti topilmadi.");
   }
 
   private normalizeProductCode(value: string): string {

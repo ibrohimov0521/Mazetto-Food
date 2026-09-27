@@ -10,6 +10,7 @@ import { PanelSwitcher } from "./panel-switcher";
 import { BranchScopeBadge } from "../admin-shell/branch-scope-badge";
 import { DesktopStatusBadge } from "./desktop-status";
 import { DesktopUpdateBadge } from "./desktop-update";
+import { OwnPasswordDialog } from "./own-password-dialog";
 
 /*
  * Admin header — to'q teal, sticky.
@@ -85,6 +86,7 @@ export function PanelNavbar({
 }) {
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Tashqariga bosish va Escape menyuni yopadi.
@@ -252,6 +254,18 @@ export function PanelNavbar({
               staffMode={Boolean(title)}
             />
             <button
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-text transition hover:bg-mz-surface-sunken"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsPasswordOpen(true);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <Icon className="h-4 w-4" name="shield" />
+              Parolni o'zgartirish
+            </button>
+            <button
               className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-danger transition hover:bg-mz-danger-bg"
               onClick={() => {
                 setIsMenuOpen(false);
@@ -266,6 +280,7 @@ export function PanelNavbar({
           </div>
         ) : null}
       </div>
+      <OwnPasswordDialog isOpen={isPasswordOpen} onClose={() => setIsPasswordOpen(false)} />
     </header>
   );
 }

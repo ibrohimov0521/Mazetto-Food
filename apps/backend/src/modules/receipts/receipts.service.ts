@@ -2,6 +2,10 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
+import {
+  resolveRestaurantScope,
+  resolveRestaurantTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListReceiptsDto } from "./dto/list-receipts.dto";
@@ -20,7 +24,11 @@ export class ReceiptsService {
    * ular faqat bitta chek so'ralganda kerak. Ro'yxat yengil bo'lib qoladi.
    */
   async listReceipts(query: ListReceiptsDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const createdAt =
       query.from || query.to
         ? {
@@ -31,6 +39,7 @@ export class ReceiptsService {
 
     return this.prisma.receipt.findMany({
       where: {
+        branch: { tenantId },
         ...(branchId ? { branchId } : {}),
         ...(query.orderId ? { orderId: query.orderId } : {}),
         ...(typeof query.printed === "boolean" ? { printed: query.printed } : {}),
@@ -64,10 +73,18 @@ export class ReceiptsService {
   }
 
   async listPrintJobs(query: ListPrintJobsDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
-    await this.restoreMissingPrintJobs(branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
+    await this.restoreMissingPrintJobs(tenantId, branchId);
     return this.prisma.printJob.findMany({
-      where: { ...(branchId ? { branchId } : {}), ...(query.status ? { status: query.status } : {}) },
+      where: {
+        branch: { tenantId },
+        ...(branchId ? { branchId } : {}),
+        ...(query.status ? { status: query.status } : {}),
+      },
       orderBy: [{ status: "asc" }, { nextAttemptAt: "asc" }, { createdAt: "asc" }],
       take: query.limit,
       select: {
@@ -89,16 +106,20 @@ export class ReceiptsService {
   }
 
   async deleteReceipts(ids: string[], user: AuthenticatedUser) {
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
     const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
     if (!uniqueIds.length) throw new BadRequestException("Kamida bitta chek tanlanishi kerak");
+    const scope = { branch: { tenantId }, ...(branchId ? { branchId } : {}) };
     const receipts = await this.prisma.receipt.findMany({
-      where: { id: { in: uniqueIds } },
+      where: { id: { in: uniqueIds }, ...scope },
       select: { id: true, branchId: true, receiptNumber: true, documentType: true },
     });
     for (const receipt of receipts) resolveBranchScope(user, receipt.branchId);
     if (receipts.length !== uniqueIds.length) throw new NotFoundException("Tanlangan cheklarning biri topilmadi");
     await this.prisma.$transaction(async (tx) => {
-      await tx.receipt.deleteMany({ where: { id: { in: uniqueIds } } });
+      await tx.receipt.deleteMany({
+        where: { id: { in: uniqueIds }, ...scope },
+      });
       await writeAuditLog(tx, {
         userId: user.id,
         action: "RECEIPTS_BULK_DELETED",
@@ -109,10 +130,11 @@ export class ReceiptsService {
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
-  private async restoreMissingPrintJobs(branchId?: string) {
+  private async restoreMissingPrintJobs(tenantId: string, branchId?: string) {
     const receipts = await this.prisma.receipt.findMany({
       where: {
         printed: false,
+        branch: { tenantId },
         ...(branchId ? { branchId } : {}),
         printJobs: { none: {} },
       },
@@ -133,8 +155,9 @@ export class ReceiptsService {
   }
 
   async getReceipt(id: string, user: AuthenticatedUser) {
-    const receipt = await this.prisma.receipt.findUnique({
-      where: { id },
+    const { tenantId } = await resolveRestaurantScope(this.prisma, user);
+    const receipt = await this.prisma.receipt.findFirst({
+      where: { id, branch: { tenantId } },
       include: {
         branch: true,
         order: {
@@ -160,11 +183,12 @@ export class ReceiptsService {
   }
 
   async getReceiptByOrder(orderId: string, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user);
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
     const receipt = await this.prisma.receipt.findFirst({
       where: {
         orderId,
         documentType: "RECEIPT",
+        branch: { tenantId },
         ...(branchId ? { branchId } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -217,9 +241,13 @@ export class ReceiptsService {
     acceptUnassigned = false,
     deviceId?: string,
   ) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const device = deviceId?.trim()
-      ? await this.prisma.device.findUnique({
-          where: { hardwareId: deviceId.trim() },
+      ? await this.prisma.device.findFirst({
+          where: {
+            hardwareId: deviceId.trim(),
+            branch: { tenantId },
+          },
           select: { branchId: true, isActive: true, enrolledAt: true },
         })
       : null;
@@ -229,9 +257,14 @@ export class ReceiptsService {
     if (device && branchId && branchId !== device.branchId) {
       throw new BadRequestException("Print device belongs to another branch");
     }
-    const scopedBranchId = resolveBranchScope(user, device?.branchId ?? branchId);
+    const scoped = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      device?.branchId ?? branchId,
+    );
+    const scopedBranchId = scoped.branchId;
     if (!scopedBranchId) throw new BadRequestException("Branch is required");
-    await this.restoreMissingPrintJobs(scopedBranchId);
+    await this.restoreMissingPrintJobs(tenantId, scopedBranchId);
     const targetFilters: Prisma.PrintJobWhereInput[] = [];
     if (printerIds.length > 0) targetFilters.push({ printerId: { in: printerIds } });
     if (acceptUnassigned) targetFilters.push({ printerId: null });
@@ -240,6 +273,7 @@ export class ReceiptsService {
     const job = await this.prisma.printJob.findFirst({
       where: {
         branchId: scopedBranchId,
+        branch: { tenantId },
         AND: [
           { OR: targetFilters },
           {
@@ -255,7 +289,14 @@ export class ReceiptsService {
     if (!job) return null;
     const leaseToken = randomUUID();
     const claimed = await this.prisma.printJob.updateMany({
-      where: { id: job.id, status: job.status, ...(job.status === "PENDING" ? { nextAttemptAt: { lte: now } } : { leaseExpiresAt: { lte: now } }) },
+      where: {
+        id: job.id,
+        branch: { tenantId },
+        status: job.status,
+        ...(job.status === "PENDING"
+          ? { nextAttemptAt: { lte: now } }
+          : { leaseExpiresAt: { lte: now } }),
+      },
       data: { status: "PROCESSING", leaseToken, leaseExpiresAt: new Date(now.getTime() + 120_000), attemptCount: { increment: 1 }, lastError: null },
     });
     if (claimed.count !== 1) return null;
@@ -264,7 +305,10 @@ export class ReceiptsService {
   }
 
   async completePrintJob(id: string, leaseToken: string, user: AuthenticatedUser) {
-    const job = await this.prisma.printJob.findUnique({ where: { id } });
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const job = await this.prisma.printJob.findFirst({
+      where: { id, branch: { tenantId } },
+    });
     if (!job) throw new NotFoundException("Print job not found");
     resolveBranchScope(user, job.branchId);
 
@@ -272,7 +316,14 @@ export class ReceiptsService {
     await this.prisma.$transaction(async (tx) => {
       // The lease predicate makes a late agent harmless after another agent has reclaimed the job.
       const completed = await tx.printJob.updateMany({
-        where: { id, branchId: job.branchId, status: "PROCESSING", leaseToken, leaseExpiresAt: { gt: now } },
+        where: {
+          id,
+          branchId: job.branchId,
+          branch: { tenantId },
+          status: "PROCESSING",
+          leaseToken,
+          leaseExpiresAt: { gt: now },
+        },
         data: { status: "PRINTED", printedAt: now, leaseToken: null, leaseExpiresAt: null },
       });
       if (completed.count !== 1) throw new BadRequestException("Print lease is no longer valid");
@@ -298,7 +349,10 @@ export class ReceiptsService {
   }
 
   async failPrintJob(id: string, leaseToken: string, error: string, user: AuthenticatedUser) {
-    const job = await this.prisma.printJob.findUnique({ where: { id } });
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const job = await this.prisma.printJob.findFirst({
+      where: { id, branch: { tenantId } },
+    });
     if (!job) throw new NotFoundException("Print job not found");
     resolveBranchScope(user, job.branchId);
 
@@ -307,7 +361,14 @@ export class ReceiptsService {
     const nextAttemptAt = new Date(now.getTime() + Math.min(300_000, 15_000 * 2 ** Math.max(0, job.attemptCount - 1)));
     await this.prisma.$transaction(async (tx) => {
       const released = await tx.printJob.updateMany({
-        where: { id, branchId: job.branchId, status: "PROCESSING", leaseToken, leaseExpiresAt: { gt: now } },
+        where: {
+          id,
+          branchId: job.branchId,
+          branch: { tenantId },
+          status: "PROCESSING",
+          leaseToken,
+          leaseExpiresAt: { gt: now },
+        },
         data: {
           status: dead ? "DEAD_LETTER" : "PENDING",
           lastError: error.slice(0, 1000),
@@ -326,7 +387,10 @@ export class ReceiptsService {
   }
 
   async retryPrintJob(id: string, user: AuthenticatedUser) {
-    const job = await this.prisma.printJob.findUnique({ where: { id } });
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const job = await this.prisma.printJob.findFirst({
+      where: { id, branch: { tenantId } },
+    });
     if (!job) throw new NotFoundException("Print job not found");
     resolveBranchScope(user, job.branchId);
 
@@ -347,6 +411,7 @@ export class ReceiptsService {
         where: {
           id,
           branchId: job.branchId,
+          branch: { tenantId },
           status: job.status,
           ...(job.status === "PROCESSING"
             ? { leaseExpiresAt: { lte: now } }

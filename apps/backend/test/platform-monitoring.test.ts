@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { IS_PUBLIC_KEY } from "../src/common/decorators/public.decorator";
 import { PERMISSIONS_KEY } from "../src/common/decorators/permissions.decorator";
@@ -69,7 +69,7 @@ test("platform audit is owner-only and queries only bounded control-plane action
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
   await service.listPlatformAudit(500, -4);
   assert.deepEqual(query, {
-    where: { action: { startsWith: "PLATFORM_" }, entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT"] } },
+    where: { action: { startsWith: "PLATFORM_" }, entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT", "TENANT_DOMAIN"] } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     skip: 0,
     take: 101,
@@ -256,6 +256,69 @@ test("invalid monitor URLs produce a client error before writing a site", async 
     }, { id: "owner" } as Parameters<PlatformMonitoringService["createSite"]>[1]),
     BadRequestException,
   );
+});
+
+test("monitor site refuses to link an unknown tenant before writing", async () => {
+  let writes = 0;
+  const prisma = {
+    restaurantTenant: { findUnique: async () => null },
+    $transaction: async () => { writes += 1; },
+  } as unknown as PrismaService;
+  const service = new PlatformMonitoringService(prisma, {} as RedisService);
+
+  await assert.rejects(service.createSite({
+    tenantId: "missing-tenant",
+    name: "QA",
+    productCode: "FAST_FOOD",
+    websiteUrl: "https://restaurant.example",
+    apiHealthUrl: "https://api.restaurant.example/health",
+  }, { id: "owner" } as AuthenticatedUser), NotFoundException);
+  assert.equal(writes, 0);
+});
+
+test("monitor site cannot be reassigned to an unknown tenant", async () => {
+  let writes = 0;
+  const prisma = {
+    platformSite: { findUnique: async () => ({ id: "site-1" }) },
+    restaurantTenant: { findUnique: async () => null },
+    $transaction: async () => { writes += 1; },
+  } as unknown as PrismaService;
+  const service = new PlatformMonitoringService(prisma, {} as RedisService);
+
+  await assert.rejects(service.updateSite("site-1", { tenantId: "missing-tenant" }, { id: "owner" } as AuthenticatedUser), NotFoundException);
+  assert.equal(writes, 0);
+});
+
+test("monitor site can be linked to an existing tenant and records that association", async () => {
+  const now = new Date();
+  const created = {
+    id: "site-1", siteKey: "key-1", tenantId: "tenant-1", name: "Mazetto Food", productCode: "MAZETTO_FOOD",
+    websiteUrl: "https://restaurant.example/", apiHealthUrl: "https://api.restaurant.example/health",
+    isActive: true, lastHeartbeatAt: null, lastHeartbeatStatus: null, lastHeartbeatData: null,
+    websiteStatus: "UNKNOWN", websiteStatusCode: null, websiteLatencyMs: null, websiteCheckedAt: null, websiteError: null,
+    apiStatus: "UNKNOWN", apiStatusCode: null, apiLatencyMs: null, apiCheckedAt: null, apiError: null,
+    createdAt: now, updatedAt: now,
+  };
+  let createInput: Record<string, unknown> | undefined;
+  let auditMetadata: unknown;
+  const tx = {
+    platformSite: { create: async ({ data }: { data: Record<string, unknown> }) => { createInput = data; return created; } },
+    auditLog: { create: async ({ data }: { data: { metadata?: unknown } }) => { auditMetadata = data.metadata; return {}; } },
+  };
+  const prisma = {
+    restaurantTenant: { findUnique: async () => ({ id: "tenant-1" }) },
+    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+  } as unknown as PrismaService;
+  const service = new PlatformMonitoringService(prisma, {} as RedisService);
+
+  const result = await service.createSite({
+    tenantId: "tenant-1", name: "Mazetto Food", productCode: "MAZETTO_FOOD",
+    websiteUrl: "https://restaurant.example", apiHealthUrl: "https://api.restaurant.example/health",
+  }, { id: "owner" } as AuthenticatedUser);
+
+  assert.equal(createInput?.tenantId, "tenant-1");
+  assert.equal(result.site.tenantId, "tenant-1");
+  assert.equal((auditMetadata as { tenantId?: string }).tenantId, "tenant-1");
 });
 
 test("heartbeat rejects a token rotated after the initial lookup", async () => {

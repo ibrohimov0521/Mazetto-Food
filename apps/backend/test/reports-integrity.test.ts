@@ -22,6 +22,9 @@ const globalUser = {
 test("mahsulot hisoboti faqat muvaffaqiyatli to'langan buyurtmalarni oladi", async () => {
   let where: Record<string, unknown> | undefined;
   const service = new ReportsService({
+    restaurantTenant: {
+      findMany: async () => [{ id: "tenant-a" }],
+    },
     orderItem: {
       groupBy: async (args: { where: Record<string, unknown> }) => {
         where = args.where;
@@ -36,6 +39,7 @@ test("mahsulot hisoboti faqat muvaffaqiyatli to'langan buyurtmalarni oladi", asy
   );
 
   assert.equal(where?.status, OrderItemStatus.ACTIVE);
+  assert.deepEqual((where?.order as Record<string, unknown>).branch, { tenantId: "tenant-a" });
   const order = where?.order as {
     status: { in: OrderStatus[] };
     paymentStatus: { in: PaymentStatus[] };

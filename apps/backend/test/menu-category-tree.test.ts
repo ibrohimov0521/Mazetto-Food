@@ -4,7 +4,12 @@ import { BadRequestException } from "@nestjs/common";
 import { MenuService } from "../src/modules/menu/menu.service";
 
 function createService(prisma: Record<string, unknown>): MenuService {
-  return new MenuService(prisma as never);
+  return new MenuService({
+    restaurantTenant: {
+      findMany: async () => [{ id: "tenant-a" }],
+    },
+    ...prisma,
+  } as never);
 }
 
 test("kategoriya o'ziga ota bo'la olmaydi", async () => {

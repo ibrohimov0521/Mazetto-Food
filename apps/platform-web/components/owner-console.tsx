@@ -1,13 +1,13 @@
 "use client";
 
-import { Activity, AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Clipboard, Download, ExternalLink, Globe2, LayoutDashboard, LogOut, Menu, Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, SlidersHorizontal, UtensilsCrossed, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Clipboard, Download, ExternalLink, Globe2, KeyRound, LayoutDashboard, LogOut, Menu, Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, SlidersHorizontal, UtensilsCrossed, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { apiRequest, logout, restoreSession } from "../lib/api";
-import type { AuthSession, GlobalSiteEvent, PlatformAuditEntry, PlatformAuditPage, PlatformDiagnostic, PlatformHealth, PlatformReports, Probe, ProvisionedAgent, Site, SiteEvent } from "../lib/types";
+import { apiRequest, logout, restoreSession, saveSession } from "../lib/api";
+import type { AuthSession, GlobalSiteEvent, PlatformAuditEntry, PlatformAuditPage, PlatformDiagnostic, PlatformHealth, PlatformReports, Probe, ProvisionedAgent, Site, SiteEvent, TenantRegistryEntry } from "../lib/types";
 
-type View = "overview" | "restaurants" | "activity" | "diagnostics" | "audit" | "reports" | "detail";
+type View = "overview" | "restaurants" | "tenants" | "activity" | "diagnostics" | "audit" | "reports" | "detail";
 type Modal = "create" | "edit" | "rotate" | "toggle" | null;
 
 const eventLabels: Record<string, string> = {
@@ -22,6 +22,10 @@ const auditLabels: Record<string, string> = {
   PLATFORM_SITE_UPDATED: "Restoran sozlamalari o'zgartirildi",
   PLATFORM_SITE_TOKEN_ROTATED: "Agent tokeni yangilandi",
   PLATFORM_EVENT_ACKNOWLEDGED: "Alert ko'rib chiqildi",
+  PLATFORM_TENANT_DOMAIN_CREATED: "Restoran domeni qo'shildi",
+  PLATFORM_TENANT_DOMAIN_VERIFIED: "Restoran domeni tasdiqlandi",
+  PLATFORM_TENANT_DOMAIN_CHALLENGE_ROTATED: "Domen DNS kodi yangilandi",
+  PLATFORM_TENANT_DOMAIN_DISABLED: "Restoran domeni o'chirildi",
 };
 
 function auditSummary(entry: PlatformAuditEntry) {
@@ -34,6 +38,7 @@ function auditSummary(entry: PlatformAuditEntry) {
   }
   if (entry.action === "PLATFORM_SITE_TOKEN_ROTATED") return `${String(metadata.siteName || "Restoran")} · agent tokeni almashtirildi`;
   if (entry.action === "PLATFORM_EVENT_ACKNOWLEDGED") return `${String(metadata.siteName || "Restoran")} · hodisa kodi: ${String(metadata.code || "—")}`;
+  if (entry.entity === "TENANT_DOMAIN") return `${String(metadata.hostname || "Domen")} · tenant: ${String(metadata.tenantId || "—")}`;
   return entry.entityId || entry.entity;
 }
 
@@ -41,6 +46,10 @@ function dateLabel(value: string | null | undefined) {
   if (!value) return "Hali yo'q";
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? "Noma'lum" : date.toLocaleString("uz-UZ", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function deviceTypeLabel(type: string) {
+  return ({ POS_TERMINAL: "Kassa", KITCHEN_DISPLAY: "Oshxona ekrani", PRINT_AGENT: "Chop etish agenti", ADMIN_DEVICE: "Admin qurilmasi", OTHER: "Boshqa qurilma", MIXED: "Boshqa versiyalar" } as Record<string, string>)[type] || type;
 }
 
 function downloadReportCsv(reports: PlatformReports) {
@@ -55,6 +64,10 @@ function downloadReportCsv(reports: PlatformReports) {
   link.download = `bestteam-hisobot-${reports.days}-kun.csv`;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function monitoringProbeText(status: Probe["status"]) {
+  return { ONLINE: "Ishlayapti", OFFLINE: "Ulanmagan", UNKNOWN: "Tekshirilmagan" }[status];
 }
 
 function probeText(probe: Probe) {
@@ -104,9 +117,25 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
+  const [tenants, setTenants] = useState<TenantRegistryEntry[]>([]);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [tenantsError, setTenantsError] = useState("");
+  const [domainTenantId, setDomainTenantId] = useState("");
+  const [domainHostname, setDomainHostname] = useState("");
+  const [domainBusy, setDomainBusy] = useState(false);
+  const [domainError, setDomainError] = useState("");
+  const [domainChallenge, setDomainChallenge] = useState<{ tenantId: string; domainId: string; hostname: string; name: string; value: string } | null>(null);
+  const [tenantQuery, setTenantQuery] = useState("");
+  const [tenantStatus, setTenantStatus] = useState<"all" | TenantRegistryEntry["status"]>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [notice, setNotice] = useState("");
   const [modalError, setModalError] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
@@ -116,6 +145,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const [provisioned, setProvisioned] = useState<ProvisionedAgent | null>(null);
   const [name, setName] = useState("");
   const [productCode, setProductCode] = useState("MAZETTO_FOOD");
+  const [tenantId, setTenantId] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [apiHealthUrl, setApiHealthUrl] = useState("");
   const [branchId, setBranchId] = useState("");
@@ -145,12 +175,19 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const [diagnosticsSeverity, setDiagnosticsSeverity] = useState<"all" | "warning" | "error">("all");
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState("");
+  const domainTenant = tenants.find(tenant => tenant.id === domainTenantId);
 
   const selected = useMemo(() => sites.find(site => site.id === siteId), [sites, siteId]);
   const loadSites = useCallback(async () => {
     try { setSites(await apiRequest<Site[]>("/platform/sites")); setError(""); }
     catch (caught) { setError(caught instanceof Error ? caught.message : "Restoranlarni yuklab bo'lmadi."); }
     finally { setLoading(false); }
+  }, []);
+  const loadTenants = useCallback(async () => {
+    setTenantsLoading(true);
+    try { setTenants(await apiRequest<TenantRegistryEntry[]>("/platform/tenants")); setTenantsError(""); }
+    catch (caught) { setTenantsError(caught instanceof Error ? caught.message : "Tenant reyestrini yuklab bo‘lmadi."); }
+    finally { setTenantsLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -166,6 +203,13 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     const timer = window.setInterval(() => { void loadSites(); }, 30_000);
     return () => window.clearInterval(timer);
   }, [session, loadSites]);
+
+  useEffect(() => {
+    if (!session) return;
+    void loadTenants();
+    const timer = window.setInterval(() => { void loadTenants(); }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [session, loadTenants]);
 
   useEffect(() => {
     if (!session) return;
@@ -256,6 +300,17 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     const text = `${site.name} ${site.siteKey} ${site.productCode}`.toLowerCase();
     return text.includes(query.toLowerCase()) && (filter === "all" || siteStatus(site) === filter);
   });
+  const normalizedTenantQuery = tenantQuery.trim().toLocaleLowerCase();
+  const filteredTenants = tenants.filter(tenant => {
+    const text = `${tenant.name} ${tenant.code} ${tenant.domains.map(domain => domain.hostname).join(" ")}`.toLocaleLowerCase();
+    return (!normalizedTenantQuery || text.includes(normalizedTenantQuery))
+      && (tenantStatus === "all" || tenant.status === tenantStatus);
+  });
+  const activeTenantCount = tenants.filter(tenant => tenant.status === "ACTIVE").length;
+  const pendingDomainCount = tenants.reduce((count, tenant) => count + tenant.domains.filter(domain => domain.status === "PENDING").length, 0);
+  const orderReadyBranchCount = tenants.reduce((count, tenant) => count + (tenant.status === "ACTIVE"
+    ? tenant.branches.filter(branch => branch.isActive && !branch.isTemporarilyClosed && branch.acceptsOrders).length
+    : 0), 0);
   const attention = sites.filter(site => siteStatus(site) !== "healthy" && site.isActive);
   const healthy = sites.filter(site => siteStatus(site) === "healthy").length;
   const offline = sites.filter(site => siteStatus(site) === "danger").length;
@@ -274,6 +329,34 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     completedOrderTotal: site.reports.reduce((sum, day) => sum + day.completedOrderTotal, 0),
   })).sort((a, b) => b.completedOrderTotal - a.completedOrderTotal);
   const moneyLabel = (value: number) => `${new Intl.NumberFormat("uz-UZ", { maximumFractionDigits: 0 }).format(value)} so'm`;
+
+  async function changeOwnPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPasswordError("");
+    if (newPassword.length < 12) {
+      setPasswordError("Yangi parol kamida 12 ta belgidan iborat bo'lsin.");
+      return;
+    }
+    if (newPassword !== passwordConfirmation) {
+      setPasswordError("Yangi parollar mos kelmadi.");
+      return;
+    }
+
+    setPasswordBusy(true);
+    try {
+      await apiRequest("/staff/me/password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword, confirmation: passwordConfirmation }),
+      });
+      saveSession(null);
+      router.replace("/login?passwordChanged=1");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      setPasswordError(message === "Current password is invalid" ? "Joriy parol noto'g'ri." : message || "Parolni o'zgartirib bo'lmadi.");
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
 
   async function acknowledgeEvent(event: GlobalSiteEvent) {
     setAcknowledgingId(event.id);
@@ -310,23 +393,24 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
 
   function openCreate() {
     setName(""); setProductCode("MAZETTO_FOOD"); setWebsiteUrl(""); setApiHealthUrl("");
+    setTenantId(""); void loadTenants();
     setProvisioned(null); setModalError(""); setModal("create");
   }
   function openEdit(site: Site) {
-    setName(site.name); setProductCode(site.productCode); setWebsiteUrl(site.websiteUrl); setApiHealthUrl(site.apiHealthUrl); setModalError(""); setModal("edit");
+    setName(site.name); setProductCode(site.productCode); setTenantId(site.tenantId || ""); setWebsiteUrl(site.websiteUrl); setApiHealthUrl(site.apiHealthUrl); setModalError(""); setModal("edit"); void loadTenants();
   }
   async function submitSite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setNotice(""); setModalError("");
     try {
-      const body = JSON.stringify({ name: name.trim(), productCode: productCode.trim(), websiteUrl: websiteUrl.trim(), apiHealthUrl: apiHealthUrl.trim() });
+      const body = JSON.stringify({ name: name.trim(), productCode: productCode.trim(), tenantId: tenantId || null, websiteUrl: websiteUrl.trim(), apiHealthUrl: apiHealthUrl.trim() });
       if (modal === "edit" && selected) {
         await apiRequest(`/platform/sites/${selected.id}`, { method: "PATCH", body });
         setNotice("Restoran ma'lumotlari saqlandi."); setModal(null);
       } else {
         const result = await apiRequest<ProvisionedAgent>("/platform/sites", { method: "POST", body });
-        setProvisioned(result); setNotice("Restoran qo'shildi. Agent tokenini hozir saqlang.");
+        setProvisioned(result); setNotice("Monitoring obyekti qo'shildi. Agent tokenini hozir saqlang.");
       }
-      await loadSites();
+      await Promise.all([loadSites(), loadTenants()]);
     } catch (caught) { setModalError(caught instanceof Error ? caught.message : "Amal bajarilmadi."); }
     finally { setBusy(false); }
   }
@@ -346,33 +430,93 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     finally { setBusy(false); }
   }
 
-  if (!session) return <div className="boot-screen"><span className="brand-mark">B</span><span>Yuklanmoqda...</span></div>;
+  async function submitTenantDomain(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const tenant = domainTenant;
+    if (!tenant) return;
+    setDomainBusy(true); setDomainError(""); setNotice("");
+    try {
+      const result = await apiRequest<{ domain: { id: string; hostname: string }; dnsRecord: { name: string; value: string } }>(`/platform/tenants/${tenant.id}/domains`, { method: "POST", body: JSON.stringify({ hostname: domainHostname.trim() }) });
+      setDomainChallenge({ tenantId: tenant.id, domainId: result.domain.id, hostname: result.domain.hostname, ...result.dnsRecord });
+      setDomainHostname(""); setNotice("TXT tekshiruv kodi yaratildi. Uni DNS'ga qo'ying; kod shu oynada ko'rinadi.");
+      await loadTenants();
+    } catch (caught) { setDomainError(caught instanceof Error ? caught.message : "Domenni qo'shib bo'lmadi."); }
+    finally { setDomainBusy(false); }
+  }
+
+  async function verifyTenantDomain(domainId: string) {
+    const tenant = domainTenant;
+    if (!tenant) return;
+    setDomainBusy(true); setDomainError(""); setNotice("");
+    try {
+      const result = await apiRequest<{ verified: boolean }>(`/platform/tenants/${tenant.id}/domains/${domainId}/verify`, { method: "POST" });
+      await loadTenants();
+      if (result.verified) { setDomainChallenge(null); setNotice("DNS domeni tasdiqlandi. Bu amal sayt routingini yoki restoran holatini o'zgartirmaydi."); }
+      else setDomainError("TXT yozuvi topilmadi yoki kodi mos emas. DNS tarqalishini kutib qayta tekshiring.");
+    } catch (caught) { setDomainError(caught instanceof Error ? caught.message : "DNS tekshiruvi bajarilmadi."); }
+    finally { setDomainBusy(false); }
+  }
+
+  async function rotateTenantDomain(domain: TenantRegistryEntry["domains"][number]) {
+    const tenant = domainTenant;
+    if (!tenant || !window.confirm(`${domain.hostname} uchun DNS tasdiqlash kodini yangilaysizmi? Eski kod darhol bekor bo'ladi.`)) return;
+    setDomainBusy(true); setDomainError(""); setNotice("");
+    try {
+      const result = await apiRequest<{ dnsRecord: { name: string; value: string } }>(`/platform/tenants/${tenant.id}/domains/${domain.id}/rotate-challenge`, { method: "POST" });
+      setDomainChallenge({ tenantId: tenant.id, domainId: domain.id, hostname: domain.hostname, ...result.dnsRecord });
+      setNotice("Yangi TXT kodi yaratildi. DNS'dagi eski kodni almashtiring.");
+      await loadTenants();
+    } catch (caught) { setDomainError(caught instanceof Error ? caught.message : "Yangi TXT kodi yaratilmadi."); }
+    finally { setDomainBusy(false); }
+  }
+
+  async function disableTenantDomain(domain: TenantRegistryEntry["domains"][number]) {
+    const tenant = domainTenant;
+    if (!tenant || !window.confirm(`${domain.hostname} domenini o'chirasizmi? Bu domen yozuvini faolsizlantiradi, tenantni emas.`)) return;
+    setDomainBusy(true); setDomainError(""); setNotice("");
+    try {
+      await apiRequest(`/platform/tenants/${tenant.id}/domains/${domain.id}/disable`, { method: "POST" });
+      if (domainChallenge?.domainId === domain.id) setDomainChallenge(null);
+      setNotice("Domen faolsizlantirildi."); await loadTenants();
+    } catch (caught) { setDomainError(caught instanceof Error ? caught.message : "Domenni o'chirib bo'lmadi."); }
+    finally { setDomainBusy(false); }
+  }
+
+  async function copyDomainChallenge() {
+    if (!domainChallenge) return;
+    try {
+      await navigator.clipboard.writeText(`TXT\nName: ${domainChallenge.name}\nValue: ${domainChallenge.value}`);
+      setNotice("TXT yozuvi nusxalandi.");
+    } catch { setDomainError("Nusxalash uchun brauzer clipboard ruxsati kerak."); }
+  }
+  if (!session) return <div className="boot-screen"><span className="brand-mark"><img src="/best-team-logo.png" alt="" /></span><span>Yuklanmoqda...</span></div>;
 
   return <div className="shell">
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-      <div className="sidebar-head"><Link className="brand" href="/" onClick={() => setMobileNav(false)}><span className="brand-mark">B</span><span>BestTeam <strong>Control</strong></span></Link><button className="icon-button mobile-only" onClick={() => setMobileNav(false)} aria-label="Menyuni yopish"><X size={19} /></button></div>
+      <div className="sidebar-head"><Link className="brand" href="/" onClick={() => setMobileNav(false)}><span className="brand-mark"><img src="/best-team-logo.png" alt="" /></span><span>BestTeam <strong>Control</strong></span></Link><button className="icon-button mobile-only" onClick={() => setMobileNav(false)} aria-label="Menyuni yopish"><X size={19} /></button></div>
       <nav aria-label="Asosiy menyu">
         <p className="nav-caption">BOSHQARUV</p>
         <Link className={`nav-link ${view === "overview" ? "active" : ""}`} href="/" onClick={() => setMobileNav(false)}><LayoutDashboard size={18} />Umumiy holat</Link>
-        <Link className={`nav-link ${view === "restaurants" || view === "detail" ? "active" : ""}`} href="/restaurants" onClick={() => setMobileNav(false)}><UtensilsCrossed size={18} />Restoranlar<span className="nav-count">{sites.length}</span></Link>
+        <Link className={`nav-link ${view === "restaurants" || view === "detail" ? "active" : ""}`} href="/restaurants" onClick={() => setMobileNav(false)}><UtensilsCrossed size={18} />Server monitoringi<span className="nav-count">{sites.length}</span></Link>
+        <Link className={view === "tenants" ? "nav-link active" : "nav-link"} href="/tenants" onClick={() => setMobileNav(false)}><Globe2 size={18} />Tenant reyestri<span className="nav-count">{tenants.length}</span></Link>
         <Link className={`nav-link ${view === "reports" ? "active" : ""}`} href="/reports" onClick={() => setMobileNav(false)}><Activity size={18} />Hisobotlar</Link>
         <Link className={`nav-link ${view === "activity" ? "active" : ""}`} href="/activity" onClick={() => setMobileNav(false)}><Activity size={18} />Hodisalar</Link>
         <Link className={`nav-link ${view === "diagnostics" ? "active" : ""}`} href="/diagnostics" onClick={() => setMobileNav(false)}><AlertTriangle size={18} />Texnik xatolar</Link>
         <Link className={`nav-link ${view === "audit" ? "active" : ""}`} href="/audit" onClick={() => setMobileNav(false)}><Clipboard size={18} />Boshqaruv jurnali</Link>
       </nav>
-      <div className="sidebar-bottom"><div className="owner-avatar">BT</div><div className="owner-copy"><strong>BestTeam egasi</strong><span>{session.user.email || session.user.phone || "Bosh administrator"}</span></div><button className="icon-button" title="Chiqish" aria-label="Chiqish" onClick={async () => { await logout(); router.replace("/login"); }}><LogOut size={18} /></button></div>
+      <div className="sidebar-bottom"><div className="owner-avatar"><img src="/best-team-logo.png" alt="" /></div><div className="owner-copy"><strong>BestTeam egasi</strong><span>{session.user.email || session.user.phone || "Bosh administrator"}</span></div><button className="icon-button" title="Parolni almashtirish" aria-label="Parolni almashtirish" onClick={() => { setPasswordError(""); setPasswordModalOpen(true); }}><KeyRound size={17} /></button><button className="icon-button" title="Chiqish" aria-label="Chiqish" onClick={async () => { await logout(); router.replace("/login"); }}><LogOut size={18} /></button></div>
     </aside>
     {mobileNav && <button className="nav-backdrop" aria-label="Menyuni yopish" onClick={() => setMobileNav(false)} />}
     <main className="main-area">
-      <header className="topbar"><button className="icon-button mobile-only" aria-label="Menyuni ochish" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="breadcrumb">BestTeam <span>/</span> {view === "overview" ? "Umumiy holat" : view === "restaurants" ? "Restoranlar" : view === "activity" ? "Hodisalar" : view === "diagnostics" ? "Texnik xatolar" : view === "audit" ? "Boshqaruv jurnali" : view === "reports" ? "Hisobotlar" : selected?.name || "Restoran"}</div><div className="topbar-actions"><span className="live-label" title={platformHealthError ? platformHealthError : `Ma'lumotlar bazasi: ${platformHealth?.database.status || "tekshirilmoqda"}; Redis: ${platformHealth?.redis || "tekshirilmoqda"}`}><span className="live-dot" style={platformHealthError ? { backgroundColor: "#ce4b4b" } : platformHealth?.redis === "fallback" ? { backgroundColor: "#d69120" } : undefined} />{platformHealthError ? "API uzildi" : !platformHealth ? "API tekshirilmoqda" : platformHealth.redis === "fallback" ? "API onlayn · Redis zaxira" : "API onlayn"}</span><button className="icon-button" title="Yangilash" aria-label="Yangilash" onClick={() => { setLoading(true); void loadSites(); }}><RefreshCw size={18} /></button></div></header>
+      <header className="topbar"><button className="icon-button mobile-only" aria-label="Menyuni ochish" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="breadcrumb">BestTeam <span>/</span> {view === "overview" ? "Umumiy holat" : view === "restaurants" ? "Server monitoringi" : view === "tenants" ? "Tenant reyestri" : view === "activity" ? "Hodisalar" : view === "diagnostics" ? "Texnik xatolar" : view === "audit" ? "Boshqaruv jurnali" : view === "reports" ? "Hisobotlar" : selected?.name || "Restoran"}</div><div className="topbar-actions"><span className="live-label" title={platformHealthError ? platformHealthError : `Ma'lumotlar bazasi: ${platformHealth?.database.status || "tekshirilmoqda"}; Redis: ${platformHealth?.redis || "tekshirilmoqda"}`}><span className="live-dot" style={platformHealthError ? { backgroundColor: "#ce4b4b" } : platformHealth?.redis === "fallback" ? { backgroundColor: "#d69120" } : undefined} />{platformHealthError ? "API uzildi" : !platformHealth ? "API tekshirilmoqda" : platformHealth.redis === "fallback" ? "API onlayn · Redis zaxira" : "API onlayn"}</span><button className="icon-button" title="Yangilash" aria-label="Yangilash" onClick={() => { setLoading(true); void loadSites(); }}><RefreshCw size={18} /></button></div></header>
       <div className="content">
         {notice && <div className="notice" role="status">{notice}<button aria-label="Xabarni yopish" onClick={() => setNotice("")}><X size={16} /></button></div>}
         {error && <div className="alert" role="alert"><AlertTriangle size={18} />{error}<button className="button subtle" onClick={() => void loadSites()}>Qayta urinish</button></div>}
         {view === "overview" && <>
-          <div className="page-heading"><div><p className="eyebrow">BARCHA LOYIHALAR</p><h1>Umumiy holat</h1><p className="muted">Restoranlar va oshxonalarning hozirgi ish holati</p></div><button className="button primary" onClick={openCreate}><Plus size={17} />Restoran qo'shish</button></div>
-          <div className="metrics"><Metric icon={<Globe2 size={20} />} label="Restoranlar" value={sites.length} caption="Ro'yxatdagi obyektlar" /><Metric icon={<ShieldCheck size={20} />} label="Sog'lom" value={healthy} caption="Barcha xizmatlar ishlayapti" tone="healthy" /><Metric icon={<AlertTriangle size={20} />} label="Nosozlik" value={offline} caption="Zudlik bilan tekshirish" tone="danger" /><Metric icon={<UtensilsCrossed size={20} />} label="Oshxona navbati" value={queue} caption="Jami navbatdagi buyurtmalar" tone="warning" /></div>
+          <div className="page-heading"><div><p className="eyebrow">SERVER VA SAYT NAZORATI</p><h1>Umumiy holat</h1><p className="muted">Ulangan sayt, API va agentlarning monitoringi.</p></div><button className="button primary" onClick={openCreate}><Plus size={17} />Monitoringga ulash</button></div>
+          <div className="metrics"><Metric icon={<Globe2 size={20} />} label="Kuzatuvdagi loyihalar" value={sites.length} caption="Monitoring reyestridagi obyektlar" /><Metric icon={<ShieldCheck size={20} />} label="Sog'lom" value={healthy} caption="Barcha xizmatlar ishlayapti" tone="healthy" /><Metric icon={<AlertTriangle size={20} />} label="Nosozlik" value={offline} caption="Zudlik bilan tekshirish" tone="danger" /><Metric icon={<UtensilsCrossed size={20} />} label="Oshxona navbati" value={queue} caption="Jami navbatdagi buyurtmalar" tone="warning" /></div>
           <section className="section"><div className="section-head"><div><h2>E'tibor talab qiladi</h2><p className="muted">Sayt, API yoki server bilan bog'liq holatlar</p></div><Link className="text-link" href="/restaurants">Barchasini ko'rish <ArrowRight size={16} /></Link></div>{loading ? <Skeleton /> : attention.length ? <div className="attention-list">{attention.slice(0, 5).map(site => <Link className="attention-row" href={`/restaurants/${site.id}`} key={site.id}><span className={`attention-icon tone-${siteStatus(site)}`}><AlertTriangle size={19} /></span><span className="attention-name"><strong>{site.name}</strong><small>{site.productCode}</small></span><Status status={siteStatus(site)} label={statusText(siteStatus(site))} /><span className="row-time">{dateLabel(site.lastHeartbeatAt)}</span><ArrowRight size={17} /></Link>)}</div> : <Empty>Hozircha e'tibor talab qiladigan restoran yo'q.</Empty>}</section>
-          <section className="section"><div className="section-head"><div><h2>Restoranlar</h2><p className="muted">Barcha ulangan loyihalarning qisqa ko'rinishi</p></div><Link className="text-link" href="/restaurants">Ro'yxatga o'tish <ArrowRight size={16} /></Link></div><SiteTable sites={sites.slice(0, 6)} loading={loading} /></section>
+          <section className="section"><div className="section-head"><div><h2>Monitoringdagi loyihalar</h2><p className="muted">Sayt, API va agent bo'yicha kuzatilayotgan obyektlar</p></div><Link className="text-link" href="/restaurants">Monitoring ro'yxati <ArrowRight size={16} /></Link></div><SiteTable sites={sites.slice(0, 6)} loading={loading} /></section>
           <section className="section"><div className="section-head"><div><h2>So'nggi hodisalar</h2><p className="muted">Barcha restoranlardan kelgan operatsion yozuvlar</p></div><Link className="text-link" href="/activity">Jurnalni ochish <ArrowRight size={16} /></Link></div>{globalError ? <div className="alert">{globalError}</div> : globalLoading ? <Skeleton /> : <GlobalEvents events={globalEvents.slice(0, 6)} />}</section>
         </>}
         {view === "activity" && <>
@@ -402,8 +546,53 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
             <section className="section"><div className="section-head"><div><h2>Restoranlar kesimida</h2><p className="muted">Davr bo'yicha yig'ma tahlil; yangi heartbeat kelmasa ma'lumot eskirgan deb belgilanadi.</p></div></div>{rankedReportSites.length ? <div className="table-wrap"><table><thead><tr><th>Restoran</th><th>Yopilgan buyurtma</th><th>Bekor</th><th>Buyurtma summasi</th><th>Agent holati</th><th>So'nggi aloqa</th></tr></thead><tbody>{rankedReportSites.map(site => <tr key={site.siteId}><td className="strong-cell">{site.name}<small className="report-product">{site.productCode}</small></td><td>{site.completedOrders}</td><td>{site.cancelledOrders}</td><td>{moneyLabel(site.completedOrderTotal)}</td><td><Status status={site.stale ? "DEGRADED" : site.reports.length ? "ONLINE" : "UNKNOWN"} label={site.stale ? "Ma'lumot eskirgan" : site.reports.length ? "Yangilangan" : "Hisobot yo'q"} /></td><td>{dateLabel(site.lastHeartbeatAt)}</td></tr>)}</tbody></table></div> : <Empty>Restoranlar hali ulanmagan.</Empty>}</section>
           </>}
         </>}
+        {view === "tenants" && <>
+          <div className="page-heading"><div><p className="eyebrow">ASOSIY MA’LUMOTLAR BAZASI</p><h1>Restoran tenantlari</h1><p className="muted">Haqiqiy tenantlar, filiallar, domenlar va kuzatuvga ulangan saytlar.</p></div><button className="button subtle" onClick={() => void loadTenants()} disabled={tenantsLoading}><RefreshCw size={16} />Yangilash</button></div>
+          <div className="alert" role="status"><ShieldCheck size={18} />Yangi tenant ochish va holatini o‘zgartirish bloklangan: mavjud ilovalarda ma’lumotlar izolyatsiyasi hali to‘liq tekshirilmoqda.</div>
+          {tenantsError && <div className="alert" role="alert"><AlertTriangle size={18} />{tenantsError}<button className="button subtle" onClick={() => void loadTenants()}>Qayta urinish</button></div>}
+          <div className="metrics">
+            <Metric icon={<Globe2 size={20} />} label="Restoranlar" value={tenants.length} caption="Haqiqiy tenantlar" />
+            <Metric icon={<ShieldCheck size={20} />} label="Faol" value={activeTenantCount} caption="Faol tenantlar" tone="healthy" />
+            <Metric icon={<AlertTriangle size={20} />} label="Domen tekshiruvi" value={pendingDomainCount} caption="DNS tasdig‘i kutilmoqda" tone="warning" />
+            <Metric icon={<UtensilsCrossed size={20} />} label="Ochiq filiallar" value={orderReadyBranchCount} caption="Faol va buyurtma qabul qilmoqda" />
+          </div>
+          <div className="toolbar"><label className="search"><Search size={18} /><input placeholder="Nomi, kodi yoki domeni bo‘yicha qidirish" value={tenantQuery} onChange={event => setTenantQuery(event.target.value)} /></label><label className="filter-label"><SlidersHorizontal size={17} /><select value={tenantStatus} onChange={event => setTenantStatus(event.target.value as typeof tenantStatus)} aria-label="Tenant holati bo‘yicha filtr"><option value="all">Barcha holatlar</option><option value="ACTIVE">Faol</option><option value="PROVISIONING">Tayyorlanmoqda</option><option value="SUSPENDED">To‘xtatilgan</option><option value="ARCHIVED">Arxivlangan</option></select><ChevronDown size={15} /></label><span className="result-count">{filteredTenants.length} / {tenants.length} ta tenant</span></div>
+          {tenantsLoading && !tenants.length ? <Skeleton /> : tenants.length ? <div className="table-wrap"><table><thead><tr><th>Restoran</th><th>Holat</th><th>Filiallar</th><th>Faollik</th><th>Sayt / API</th><th>Domenlar</th><th>Qo‘shilgan</th></tr></thead><tbody>{filteredTenants.length ? filteredTenants.map(tenant => <tr key={tenant.id}>
+            <td className="strong-cell">{tenant.name}<small className="report-product">{tenant.code}</small></td>
+            <td><Status status={tenant.status === "ACTIVE" ? "ONLINE" : tenant.status === "PROVISIONING" ? "WAITING" : "OFFLINE"} label={{ ACTIVE: "Faol", PROVISIONING: "Tayyorlanmoqda", SUSPENDED: "To‘xtatilgan", ARCHIVED: "Arxivlangan" }[tenant.status]} /></td>
+            <td>{tenant.branches.length}<small className="report-product">{tenant.branches.map(branch => `${branch.name}${branch.isActive ? "" : " (faol emas)"}`).join(", ") || "Filial mavjud emas"}</small></td>
+            <td>{tenant.activity ? <><strong>{tenant.activity.openOrders} ochiq buyurtma</strong><small className="report-product">{tenant.activity.onlineDevices} onlayn / {tenant.activity.offlineDevices} oflayn qurilma</small><small className="report-product">{tenant.activity.acceptingOrdersBranches} filial buyurtma qabul qilmoqda</small></> : <span className="muted">Faollik yuborilmagan</span>}</td>
+            <td>{tenant.platformSites.length ? tenant.platformSites.map(site => <div key={site.id} className="tenant-monitor-site"><Link className="text-link" href={`/restaurants/${site.id}`}>{site.name}<ArrowRight size={14} /></Link><small className="report-product">{site.productCode}</small><div className="tenant-monitor-service"><span>Sayt</span><Status status={site.isActive ? site.website.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.website.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>API</span><Status status={site.isActive ? site.api.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.api.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>Agent</span><Status status={site.agentStatus} label={{ ONLINE: "Ulangan", DEGRADED: "Muammo bor", OFFLINE: "Ulanmagan", WAITING: "Kutilmoqda", DISABLED: "Kuzatuv o‘chiq" }[site.agentStatus]} /></div></div>) : <span className="muted">Monitoring ulanmagan</span>}</td>
+            <td>{tenant.domains.length ? tenant.domains.map(domain => <div key={domain.id} className="service-line"><span>{domain.hostname}</span><Status status={domain.status === "VERIFIED" ? "ONLINE" : domain.status === "PENDING" ? "WAITING" : "OFFLINE"} label={{ VERIFIED: "Tasdiqlangan", PENDING: "Kutilmoqda", DISABLED: "O‘chirilgan" }[domain.status]} /></div>) : "Domen ulanmagan"}<button type="button" className="button subtle tenant-domain-open" onClick={() => { const nextTenantId = domainTenantId === tenant.id ? "" : tenant.id; setDomainTenantId(nextTenantId); setDomainChallenge(current => current?.tenantId === nextTenantId ? current : null); setDomainError(""); setDomainHostname(""); }}>{domainTenantId === tenant.id ? "Yopish" : "Domenlarni boshqarish"}</button></td>
+            <td>{dateLabel(tenant.createdAt)}</td>
+          </tr>) : <tr><td colSpan={7} className="muted">Qidiruvga mos tenant topilmadi.</td></tr>}</tbody></table></div> : <Empty>Tenant yozuvi topilmadi.</Empty>}
+          <p className="muted">Monitoring sayt/API holatini mavjud tenant bilan bog‘laydi. Bu agent yuboradigan buyurtma va filial ko‘rsatkichlarini tenantlar kesimida ajratmaydi.</p>
+          {domainTenant && <section className="section tenant-domain-panel">
+            <div className="section-head"><div><h2>{domainTenant.name} · Domen boshqaruvi</h2><p className="muted">Domenni DNS TXT bilan tasdiqlang. Bu yozuv routing, TLS yoki restoran holatini o‘zgartirmaydi.</p></div></div>
+            {domainError && <div className="alert" role="alert"><AlertTriangle size={17} />{domainError}</div>}
+            <form className="tenant-domain-form form-stack" onSubmit={submitTenantDomain}>
+              <label>Restoran domeni<input value={domainHostname} onChange={event => setDomainHostname(event.target.value)} placeholder="mazettofood.uz" autoCapitalize="none" autoCorrect="off" required /></label>
+              <button className="button primary" type="submit" disabled={domainBusy || !domainHostname.trim()}><Plus size={16} />{domainBusy ? "Ishlanmoqda..." : "Domen qo‘shish"}</button>
+            </form>
+            {domainChallenge?.tenantId === domainTenant.id && <div className="tenant-domain-challenge" role="status">
+              <div><strong>DNS TXT yozuvi · {domainChallenge.hostname}</strong><span>Name: <code>{domainChallenge.name}</code></span><code className="tenant-domain-token">{domainChallenge.value}</code><small>Qiymat faqat shu oynada ko‘rinadi. Uni xavfsiz joyga yozib oling; yo‘qolsa, yangi challenge yarating.</small></div>
+              <button className="button subtle" type="button" onClick={() => void copyDomainChallenge()}><Clipboard size={15} />Nusxalash</button>
+            </div>}
+            {domainTenant.domains.length ? <div className="table-wrap"><table><thead><tr><th>Domen</th><th>Holat</th><th>Tasdiqlangan</th><th>Amallar</th></tr></thead><tbody>{domainTenant.domains.map(domain => <tr key={domain.id}>
+              <td className="strong-cell">{domain.hostname}</td>
+              <td><Status status={domain.status === "VERIFIED" ? "ONLINE" : domain.status === "PENDING" ? "WAITING" : "OFFLINE"} label={{ VERIFIED: "Tasdiqlangan", PENDING: "DNS kutilmoqda", DISABLED: "O‘chirilgan" }[domain.status]} /></td>
+              <td>{dateLabel(domain.verifiedAt)}</td>
+              <td><div className="tenant-domain-actions">
+                {domain.status === "PENDING" && <button className="button subtle" type="button" disabled={domainBusy} onClick={() => void verifyTenantDomain(domain.id)}><Check size={15} />DNS tekshirish</button>}
+                <button className="button subtle" type="button" disabled={domainBusy} onClick={() => void rotateTenantDomain(domain)}>{domain.status === "DISABLED" ? "Qayta ulash" : "TXT kodini yangilash"}</button>
+                {domain.status !== "DISABLED" && <button className="button danger" type="button" disabled={domainBusy} onClick={() => void disableTenantDomain(domain)}>O‘chirish</button>}
+              </div></td>
+            </tr>)}</tbody></table></div> : <Empty>Bu tenantga hali domen biriktirilmagan.</Empty>}
+          </section>}
+        </>}
         {view === "restaurants" && <>
-          <div className="page-heading"><div><p className="eyebrow">LOYIHALAR REYESTRI</p><h1>Restoranlar</h1><p className="muted">Har bir restoran o'z domenida ishlaydi; bu yerda ularning holati kuzatiladi.</p></div><button className="button primary" onClick={openCreate}><Plus size={17} />Restoran qo'shish</button></div>
+
+          <div className="page-heading"><div><p className="eyebrow">SAYT VA SERVER NAZORATI</p><h1>Monitoring xizmatlari</h1><p className="muted">Sayt, API va agent kuzatuvini mavjud tenantga bog‘lang; bu restoran statusi yoki alohida ilovalarini o‘zgartirmaydi.</p></div><button className="button primary" onClick={openCreate}><Plus size={17} />Monitoringga ulash</button></div>
           <div className="toolbar"><label className="search"><Search size={18} /><input placeholder="Nomi yoki loyiha bo'yicha qidirish" value={query} onChange={event => setQuery(event.target.value)} /></label><label className="filter-label"><SlidersHorizontal size={17} /><select value={filter} onChange={event => setFilter(event.target.value)} aria-label="Holat bo'yicha filter"><option value="all">Barcha holatlar</option><option value="healthy">Sog'lom</option><option value="warning">E'tibor kerak</option><option value="danger">Nosozlik</option><option value="neutral">Kuzatuv o'chiq</option></select><ChevronDown size={15} /></label><span className="result-count">{filtered.length} ta restoran</span></div>
           <SiteTable sites={filtered} loading={loading} />
         </>}
@@ -412,16 +601,17 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
           <div className="page-heading detail-heading"><div><p className="eyebrow">{selected.productCode} / {selected.siteKey}</p><h1>{selected.name}</h1><div className="detail-sub"><Status status={siteStatus(selected)} label={statusText(siteStatus(selected))} /><span>So'nggi aloqa: {dateLabel(selected.lastHeartbeatAt)}</span></div></div><div className="heading-actions"><a className="button subtle" href={selected.websiteUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Saytni ochish</a><button className="button subtle" onClick={() => void copyDiagnostics(selected)}><Clipboard size={16} /> Tashxis nusxalash</button><button className="button subtle" onClick={() => openEdit(selected)}><Settings2 size={16} /> Sozlamalar</button></div></div>
           <div className="service-grid"><Service title="Veb-sayt" icon={<Globe2 size={20} />} status={selected.website.status} value={probeText(selected.website)} detail={selected.website.error || `Tekshirildi: ${dateLabel(selected.website.checkedAt)}`} /><Service title="API" icon={<Activity size={20} />} status={selected.api.status} value={probeText(selected.api)} detail={selected.api.error || `Tekshirildi: ${dateLabel(selected.api.checkedAt)}`} /><Service title="Server agenti" icon={<Server size={20} />} status={selected.agentStatus} value={selected.agentStatus === "ONLINE" ? "Ulangan" : selected.agentStatus === "OFFLINE" ? "Ulanmagan" : selected.agentStatus === "WAITING" ? "Kutilmoqda" : selected.agentStatus === "DISABLED" ? "O'chirilgan" : "Nosozlik"} detail={`So'nggi aloqa: ${dateLabel(selected.lastHeartbeatAt)}`} /></div>
           {!hasLiveHeartbeat(selected) && selected.heartbeat && <div className="alert" role="status"><AlertTriangle size={18} />Agentdan yangi ma'lumot kelmayapti. Quyidagi holat {dateLabel(selected.lastHeartbeatAt)} vaqtidagi oxirgi xabardan olingan.</div>}
-          <section className="section"><div className="section-head"><div><h2>Server xizmatlari</h2><p className="muted">Restoran backendidan kelgan oxirgi ma'lumot</p></div><span className="section-meta">Versiya {selected.heartbeat?.version || "noma'lum"}</span></div><div className="service-strip">{(["backend", "database", "redis"] as const).map(key => <div className="service-line" key={key}><span>{key === "backend" ? "Backend" : key === "database" ? "Ma'lumotlar bazasi" : "Redis"}</span><Status status={hasLiveHeartbeat(selected) ? selected.heartbeat?.services[key] || "UNKNOWN" : "UNKNOWN"} label={hasLiveHeartbeat(selected) ? selected.heartbeat?.services[key] || "Noma'lum" : "Oxirgi holat noma'lum"} /></div>)}</div></section>
+          <section className="section"><div className="section-head"><div><h2>Server xizmatlari</h2><p className="muted">Restoran backendidan kelgan oxirgi ma'lumot</p></div><span className="section-meta">Versiya {selected.heartbeat?.version || "noma'lum"}{selected.heartbeat?.buildId ? " · build " + selected.heartbeat.buildId : ""}</span></div><div className="service-strip">{(["backend", "database", "redis"] as const).map(key => <div className="service-line" key={key}><span>{key === "backend" ? "Backend" : key === "database" ? "Ma'lumotlar bazasi" : "Redis"}</span><Status status={hasLiveHeartbeat(selected) ? selected.heartbeat?.services[key] || "UNKNOWN" : "UNKNOWN"} label={hasLiveHeartbeat(selected) ? selected.heartbeat?.services[key] || "Noma'lum" : "Oxirgi holat noma'lum"} /></div>)}</div></section>
           <section className="section"><div className="section-head"><div><h2>Zaxira nusxa holati</h2><p className="muted">Restoran serveridagi arxiv dalili; tiklash sinovi alohida tekshiriladi.</p></div></div>{selected.heartbeat?.backup ? <div className="backup-summary"><Status status={selected.heartbeat.backup.status === "verified" ? "ONLINE" : selected.heartbeat.backup.status === "not_configured" ? "UNKNOWN" : "DEGRADED"} label={{ verified: "Arxiv tekshirildi", stale: "Arxiv eskirgan", unavailable: "Tekshirib bo'lmadi", not_configured: "Sozlanmagan" }[selected.heartbeat.backup.status]} /><span>{selected.heartbeat.backup.verifiedAt ? `Oxirgi tekshiruv: ${dateLabel(selected.heartbeat.backup.verifiedAt)}` : "Tekshirilgan arxiv dalili topilmadi."}</span><span>{selected.heartbeat.backup.bytes ? `${new Intl.NumberFormat("uz-UZ").format(selected.heartbeat.backup.bytes)} bayt · ${selected.heartbeat.backup.archiveEntries ?? 0} tarkib yozuvi` : "Arxiv hajmi noma'lum"}</span><strong>{selected.heartbeat.backup.restoreTested ? "Tiklash sinovi o'tgan" : "Tiklash sinovi hali o'tkazilmagan"}</strong></div> : <Empty>Restoran agentidan backup holati kelmagan. Agent yangilanishi kerak.</Empty>}</section>
-          <section className="section"><div className="section-head"><div><h2>Oshxonalar</h2><p className="muted">Filiallar bo'yicha navbat va qurilmalar</p></div><span className="section-meta">{selected.heartbeat?.kitchens.length || 0} ta filial</span></div>{selected.heartbeat?.kitchens.length ? <div className="table-wrap"><table><thead><tr><th>Filial</th><th>Holat</th><th>Ochiq buyurtma</th><th>Navbat</th><th>Qurilmalar</th><th>So'nggi faollik</th></tr></thead><tbody>{selected.heartbeat.kitchens.map(kitchen => <tr key={kitchen.branchId}><td className="strong-cell">{kitchen.name}</td><td><Status status={kitchen.status} label={kitchen.status === "OPEN" ? "Ochiq" : "Yopiq"} /></td><td>{kitchen.openOrders}</td><td>{kitchen.kitchenQueue}</td><td>{kitchen.onlineDevices} onlayn / {kitchen.offlineDevices} oflayn</td><td>{dateLabel(kitchen.lastActivityAt)}</td></tr>)}</tbody></table></div> : <Empty>Oshxona ma'lumoti hali kelmagan.</Empty>}</section>
+          <section className="section"><div className="section-head"><div><h2>Oshxonalar</h2><p className="muted">So'nggi agent xabaridagi navbat, qurilmalar va mijoz buildlari</p></div><span className="section-meta">{selected.heartbeat?.kitchens.length || 0} ta filial</span></div>{selected.heartbeat?.kitchens.length ? <div className="table-wrap"><table><thead><tr><th>Filial</th><th>Holat</th><th>Ochiq buyurtma</th><th>Navbat</th><th>Qurilmalar</th><th>So'nggi faollik</th></tr></thead><tbody>{selected.heartbeat.kitchens.map(kitchen => <tr key={kitchen.branchId}><td className="strong-cell">{kitchen.name}</td><td><Status status={kitchen.status} label={kitchen.status === "OPEN" ? "Ochiq" : "Yopiq"} /></td><td>{kitchen.openOrders}</td><td>{kitchen.kitchenQueue}</td><td>{kitchen.onlineDevices} onlayn / {kitchen.offlineDevices} oflayn{kitchen.deviceVersions?.length ? <div className="device-version-list"><strong>Qurilma buildlari</strong>{kitchen.deviceVersions.map((item, index) => <span key={index}>{deviceTypeLabel(item.deviceType)} · {item.version}: {item.total} ta ({item.online} onlayn, {item.offline} oflayn)</span>)}</div> : null}</td><td>{dateLabel(kitchen.lastActivityAt)}</td></tr>)}</tbody></table></div> : <Empty>Oshxona ma'lumoti hali kelmagan.</Empty>}</section>
           <section className="section"><div className="section-head"><div><h2>Hodisalar jurnali</h2><p className="muted">Server va filiallarda sodir bo'lgan o'zgarishlar</p></div><label className="filter-label"><select value={branchId} onChange={event => { setEventsLoading(true); setBranchId(event.target.value); }} aria-label="Filialni tanlash"><option value="">Barcha filiallar</option>{selected.heartbeat?.kitchens.map(kitchen => <option value={kitchen.branchId} key={kitchen.branchId}>{kitchen.name}</option>)}</select><ChevronDown size={15} /></label></div>{eventsError ? <div className="alert">{eventsError}</div> : eventsLoading ? <Skeleton /> : events.length ? <div className="events-list">{events.map(event => <div className="event-row" key={event.id}><span className="event-dot" /><span><strong>{eventLabels[event.code] || event.code}</strong><small>{event.branchName || "Butun restoran"}</small><small className="event-recommendation">{eventRecommendation(event.code)}</small></span><time>{dateLabel(event.occurredAt)}</time></div>)}</div> : <Empty>Hodisalar topilmadi.</Empty>}</section>
           <section className="section settings-section"><div className="section-head"><div><h2>Monitoring sozlamalari</h2><p className="muted">Agent tokeni va kuzatuv holati</p></div></div><div className="setting-row"><div><strong>Agent tokenini yangilash</strong><p className="muted">Eski token darhol bekor bo'ladi. Yangi tokenni restoran serveriga kiriting.</p></div><button className="button subtle" onClick={() => { setProvisioned(null); setModalError(""); setModal("rotate"); }}>Yangilash</button></div><div className="setting-row"><div><strong>Kuzatuv</strong><p className="muted">Restoran ro'yxatda qoladi, avtomatik tekshiruvlar to'xtaydi.</p></div><button className="button subtle" onClick={() => { setModalError(""); setModal("toggle"); }}>{selected.isActive ? "To'xtatish" : "Yoqish"}</button></div></section>
         </>}
         {view === "detail" && !selected && !loading && <Empty>Bu restoran topilmadi. <Link href="/restaurants">Ro'yxatga qaytish</Link></Empty>}
       </div>
     </main>
-        {modal && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) { setModal(null); setProvisioned(null); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="modal-title">{modal === "create" ? "Restoran qo'shish" : modal === "edit" ? "Restoranni tahrirlash" : modal === "rotate" ? "Agent tokenini yangilash" : "Kuzatuv holati"}</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => { setModal(null); setProvisioned(null); }}><X size={20} /></button></div>{modalError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{modalError}</div>}{provisioned ? <div className="modal-body"><p className="muted">Token faqat shu oynada ko'rinadi. Uni restoran serveridagi agent sozlamasiga kiriting.</p><label className="token-field">Agent tokeni<code>{provisioned.agentToken}</code></label><button className="button primary full" onClick={async () => { await navigator.clipboard.writeText(provisioned.agentToken); setNotice("Token nusxalandi."); }}><Clipboard size={16} />Nusxalash</button><button className="button subtle full" onClick={() => { setModal(null); setProvisioned(null); }}>Tayyor</button></div> : modal === "create" || modal === "edit" ? <form className="modal-body form-stack" onSubmit={submitSite}><label>Restoran nomi<input value={name} onChange={event => setName(event.target.value)} required minLength={2} /></label><label>Loyiha kodi<input value={productCode} onChange={event => setProductCode(event.target.value)} required placeholder="MAZETTO_FOOD" /></label><label>Sayt manzili<input type="url" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} required placeholder="https://restaurant.uz" /></label><label>API holat manzili<input type="url" value={apiHealthUrl} onChange={event => setApiHealthUrl(event.target.value)} required placeholder="https://api.restaurant.uz/health" /></label><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" type="submit" disabled={busy}><Check size={16} />{busy ? "Saqlanmoqda..." : "Saqlash"}</button></div></form> : <div className="modal-body"><p>{modal === "rotate" ? "Eski agent tokeni darhol ishlamay qoladi. Davom etasizmi?" : selected?.isActive ? "Bu restoran uchun monitoringni to'xtatasizmi?" : "Bu restoran uchun monitoringni yoqasizmi?"}</p><div className="modal-actions"><button className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" onClick={() => void confirmAction()} disabled={busy}>{busy ? "Bajarilmoqda..." : "Tasdiqlash"}</button></div></div>}</div></div>}
+        {modal && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) { setModal(null); setProvisioned(null); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="modal-title">{modal === "create" ? "Monitoring obyektini qo'shish" : modal === "edit" ? "Monitoring obyektini tahrirlash" : modal === "rotate" ? "Agent tokenini yangilash" : "Kuzatuv holati"}</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => { setModal(null); setProvisioned(null); }}><X size={20} /></button></div>{modalError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{modalError}</div>}{provisioned ? <div className="modal-body"><p className="muted">Token faqat shu oynada ko'rinadi. Uni loyiha serveridagi agent sozlamasiga kiriting.</p><label className="token-field">Agent tokeni<code>{provisioned.agentToken}</code></label><button className="button primary full" onClick={async () => { await navigator.clipboard.writeText(provisioned.agentToken); setNotice("Token nusxalandi."); }}><Clipboard size={16} />Nusxalash</button><button className="button subtle full" onClick={() => { setModal(null); setProvisioned(null); }}>Tayyor</button></div> : modal === "create" || modal === "edit" ? <form className="modal-body form-stack" onSubmit={submitSite}><label>Loyiha nomi<input value={name} onChange={event => setName(event.target.value)} required minLength={2} /></label><label>Loyiha kodi<input value={productCode} onChange={event => setProductCode(event.target.value)} required placeholder="MAZETTO_FOOD" /></label><label>Restoran tenanti<select value={tenantId} onChange={event => setTenantId(event.target.value)} disabled={tenantsLoading}><option value="">Tenantga bog‘lanmagan</option>{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name} ({tenant.code})</option>)}</select><small className="report-product">Faqat mavjud tenantga bog‘lanadi; restoran statusi va ilovalari o‘zgarmaydi.</small></label><label>Sayt manzili<input type="url" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} required placeholder="https://restaurant.uz" /></label><label>API holat manzili<input type="url" value={apiHealthUrl} onChange={event => setApiHealthUrl(event.target.value)} required placeholder="https://api.restaurant.uz/health" /></label><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" type="submit" disabled={busy}><Check size={16} />{busy ? "Saqlanmoqda..." : "Saqlash"}</button></div></form> : <div className="modal-body"><p>{modal === "rotate" ? "Eski agent tokeni darhol ishlamay qoladi. Davom etasizmi?" : selected?.isActive ? "Bu monitoring obyekti uchun kuzatuvni to'xtatasizmi?" : "Bu monitoring obyekti uchun kuzatuvni yoqasizmi?"}</p><div className="modal-actions"><button className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" onClick={() => void confirmAction()} disabled={busy}>{busy ? "Bajarilmoqda..." : "Tasdiqlash"}</button></div></div>}</div></div>}
+    {passwordModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !passwordBusy) setPasswordModalOpen(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div className="modal-head"><div><p className="eyebrow">HISOB XAVFSIZLIGI</p><h2 id="password-modal-title">Parolni almashtirish</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => setPasswordModalOpen(false)}><X size={20} /></button></div><form className="modal-body form-stack" onSubmit={changeOwnPassword}><label>Joriy parol<input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required /></label><label>Yangi parol<input type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={12} /></label><label>Yangi parolni takrorlang<input type="password" autoComplete="new-password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} required minLength={12} /></label>{passwordError && <p className="form-error" role="alert">{passwordError}</p>}<p className="muted">Kamida 12 ta belgi ishlating. Saqlangandan so'ng sessiyalar tugaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setPasswordModalOpen(false)}>Bekor qilish</button><button className="button primary" type="submit" disabled={passwordBusy}><KeyRound size={16} />{passwordBusy ? "Saqlanmoqda..." : "Parolni saqlash"}</button></div></form></div></div>}
   </div>;
 }
 

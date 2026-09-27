@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import {
   customerVisibleProductCodeSet,
   isCustomerVisibleProductCode,
@@ -90,6 +91,7 @@ export class MenuService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listCategories(query: ListMenuDto) {
+    await this.assertSingleTenantCatalog();
     return this.prisma.category.findMany({
       where: {
         ...(query.includeInactive === "true" ? {} : { isActive: true }),
@@ -119,6 +121,7 @@ export class MenuService {
   }
 
   async listProducts(query: ListMenuDto) {
+    await this.assertSingleTenantCatalog();
     const products = await this.prisma.product.findMany({
       where: {
         ...(query.includeInactive === "true" ? {} : { isAvailable: true }),
@@ -215,6 +218,7 @@ export class MenuService {
   }
 
   async getProduct(id: string) {
+    await this.assertSingleTenantCatalog();
     const product = await this.prisma.product.findUnique({
       where: { id },
       select: {
@@ -334,6 +338,7 @@ export class MenuService {
   }
 
   async createCategory(dto: CreateCategoryDto) {
+    await this.assertSingleTenantCatalog();
     await this.assertValidCategoryParent(
       null,
       dto.parentId ?? null,
@@ -354,6 +359,7 @@ export class MenuService {
   }
 
   async updateCategory(id: string, dto: UpdateCategoryDto) {
+    await this.assertSingleTenantCatalog();
     const category = await this.prisma.category.findUnique({
       where: { id },
       select: { id: true, branchId: true },
@@ -382,6 +388,7 @@ export class MenuService {
   }
 
   async deleteCategory(id: string) {
+    await this.assertSingleTenantCatalog();
     await this.assertCategory(id);
     const dependencies = await this.prisma.category.findUnique({
       where: { id },
@@ -413,6 +420,7 @@ export class MenuService {
   }
 
   async permanentlyDeleteCategories(ids: string[]) {
+    await this.assertSingleTenantCatalog();
     const uniqueIds = [
       ...new Set(
         (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
@@ -459,6 +467,7 @@ export class MenuService {
   }
 
   async createProduct(dto: CreateProductDto) {
+    await this.assertSingleTenantCatalog();
     assertUniqueProductModifiers(dto.modifiers);
     validateProductBundleItems(dto.bundleItems ?? [], dto.isCombo ?? false);
     const defaultVariant =
@@ -531,6 +540,7 @@ export class MenuService {
   }
 
   async updateProduct(id: string, dto: UpdateProductDto) {
+    await this.assertSingleTenantCatalog();
     const existingProduct = await this.prisma.product.findUnique({
       where: { id },
       select: {
@@ -701,6 +711,7 @@ export class MenuService {
   }
 
   async deleteProduct(id: string) {
+    await this.assertSingleTenantCatalog();
     await this.assertProduct(id);
 
     return this.prisma.product.update({
@@ -710,6 +721,7 @@ export class MenuService {
   }
 
   async permanentlyDeleteProduct(id: string) {
+    await this.assertSingleTenantCatalog();
     const product = await this.prisma.product.findUnique({
       where: { id },
       select: {
@@ -740,6 +752,7 @@ export class MenuService {
   }
 
   async permanentlyDeleteProducts(ids: string[]) {
+    await this.assertSingleTenantCatalog();
     const uniqueIds = [
       ...new Set(
         (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
@@ -810,7 +823,8 @@ export class MenuService {
    * Ilgari faqat YARATISH endpoint'i bor edi, ro'yxat yo'q edi — shuning uchun
    * mahsulot tahrirlashda modifier tanlash imkoniyati qurib bo'lmasdi.
    */
-  listModifiers(includeInactive = false) {
+  async listModifiers(includeInactive = false) {
+    await this.assertSingleTenantCatalog();
     return this.prisma.modifier.findMany({
       where: includeInactive ? {} : { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -821,6 +835,7 @@ export class MenuService {
   }
 
   async updateModifier(id: string, dto: UpdateModifierDto) {
+    await this.assertSingleTenantCatalog();
     await this.assertModifier(id);
 
     return this.prisma.modifier.update({
@@ -839,6 +854,10 @@ export class MenuService {
     });
   }
 
+  private assertSingleTenantCatalog() {
+    return resolveSoleActiveTenantId(this.prisma);
+  }
+
   private async assertModifier(id: string): Promise<void> {
     const modifier = await this.prisma.modifier.findUnique({
       where: { id },
@@ -851,6 +870,7 @@ export class MenuService {
   }
 
   async createModifier(dto: CreateModifierDto) {
+    await this.assertSingleTenantCatalog();
     return this.prisma.modifier.create({
       data: {
         code: this.createCode(dto.name),
@@ -872,6 +892,7 @@ export class MenuService {
   }
 
   async permanentlyDeleteModifiers(ids: string[]) {
+    await this.assertSingleTenantCatalog();
     const uniqueIds = [
       ...new Set(
         (ids ?? []).filter((id) => typeof id === "string" && id.trim()),

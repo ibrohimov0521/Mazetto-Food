@@ -6,10 +6,11 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import {
-  resolveBranchScope,
-  resolveRequiredBranchScope,
-} from "../../common/auth/access-scope";
+  assertBranchBelongsToActor,
+  resolveRestaurantScope,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
@@ -34,8 +35,12 @@ import { writeAuditLog } from "../audit/audit-write";
 export class ExpensesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  listExpenses(query: ListExpensesDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+  async listExpenses(query: ListExpensesDto, user: AuthenticatedUser) {
+    const scope = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const expenseDate =
       query.from || query.to
         ? {
@@ -46,7 +51,9 @@ export class ExpensesService {
 
     return this.prisma.expense.findMany({
       where: {
-        ...(branchId ? { branchId } : {}),
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
         ...(query.shiftId ? { shiftId: query.shiftId } : {}),
         ...(query.category ? { category: query.category } : {}),
         ...(expenseDate ? { expenseDate } : {}),
@@ -70,9 +77,14 @@ export class ExpensesService {
 
   /** Filtr tanlagichi uchun mavjud kategoriyalar. */
   async listCategories(user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const rows = await this.prisma.expenseCategory.findMany({
-      where: { isActive: true, ...(branchId ? { branchId } : {}) },
+      where: {
+        isActive: true,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: { name: true },
       orderBy: { name: "asc" },
     });
@@ -80,10 +92,22 @@ export class ExpensesService {
     return [...new Set(rows.map((row) => row.name))];
   }
 
-  listCategoryRecords(user: AuthenticatedUser, requestedBranchId?: string) {
-    const branchId = resolveBranchScope(user, requestedBranchId);
+  async listCategoryRecords(
+    user: AuthenticatedUser,
+    requestedBranchId?: string,
+  ) {
+    const scope = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      requestedBranchId,
+    );
     return this.prisma.expenseCategory.findMany({
-      where: { isActive: true, ...(branchId ? { branchId } : {}) },
+      where: {
+        isActive: true,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       orderBy: [{ branch: { name: "asc" } }, { name: "asc" }],
       select: {
         id: true,
@@ -96,6 +120,7 @@ export class ExpensesService {
 
   async createCategory(dto: CreateExpenseCategoryDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
     const name = this.categoryName(dto.name);
     const normalizedName = this.normalizedCategoryName(name);
     const existing = await this.prisma.expenseCategory.findUnique({
@@ -103,7 +128,9 @@ export class ExpensesService {
     });
     if (existing) {
       throw new BadRequestException(
-        existing.isActive ? "Expense category already exists" : "Expense category is archived",
+        existing.isActive
+          ? "Expense category already exists"
+          : "Expense category is archived",
       );
     }
     return this.prisma.$transaction(async (tx) => {
@@ -133,7 +160,8 @@ export class ExpensesService {
       where: { branchId: category.branchId, normalizedName, id: { not: id } },
       select: { id: true },
     });
-    if (duplicate) throw new BadRequestException("Expense category already exists");
+    if (duplicate)
+      throw new BadRequestException("Expense category already exists");
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.expenseCategory.update({
         where: { id },
@@ -144,7 +172,11 @@ export class ExpensesService {
         action: "EXPENSE_CATEGORY_UPDATED",
         entity: "ExpenseCategory",
         entityId: id,
-        metadata: { branchId: category.branchId, previousName: category.name, name },
+        metadata: {
+          branchId: category.branchId,
+          previousName: category.name,
+          name,
+        },
       });
       return updated;
     });
@@ -169,18 +201,31 @@ export class ExpensesService {
   }
 
   async permanentlyDeleteCategories(ids: string[], user: AuthenticatedUser) {
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const uniqueIds = [...new Set(ids.filter(Boolean))];
-    if (!uniqueIds.length) throw new BadRequestException("Category IDs are required");
+    if (!uniqueIds.length)
+      throw new BadRequestException("Category IDs are required");
+    const where = {
+      id: { in: uniqueIds },
+      ...(scope.branchId
+        ? { branchId: scope.branchId }
+        : { branch: { tenantId: scope.tenantId } }),
+    };
     const rows = await this.prisma.expenseCategory.findMany({
-      where: { id: { in: uniqueIds } },
+      where,
       select: { id: true, branchId: true },
     });
-    if (rows.length !== uniqueIds.length) throw new NotFoundException("Expense category not found");
-    for (const row of rows) resolveBranchScope(user, row.branchId);
+    if (rows.length !== uniqueIds.length)
+      throw new NotFoundException("Expense category not found");
     await this.prisma.$transaction(async (tx) => {
-      await tx.expenseCategory.deleteMany({ where: { id: { in: uniqueIds } } });
+      await tx.expenseCategory.deleteMany({ where });
       for (const id of uniqueIds) {
-        await writeAuditLog(tx, { userId: user.id, action: "EXPENSE_CATEGORY_DELETED", entity: "ExpenseCategory", entityId: id });
+        await writeAuditLog(tx, {
+          userId: user.id,
+          action: "EXPENSE_CATEGORY_DELETED",
+          entity: "ExpenseCategory",
+          entityId: id,
+        });
       }
     });
     return { deletedCount: uniqueIds.length };
@@ -188,9 +233,12 @@ export class ExpensesService {
 
   async createExpense(dto: CreateExpenseDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
 
     if (!user.employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
     }
 
     /*
@@ -198,8 +246,8 @@ export class ExpensesService {
      * Yopilgan smenaga xarajat qo'shish uning yakuniy hisobini buzadi.
      */
     if (dto.shiftId) {
-      const shift = await this.prisma.shift.findUnique({
-        where: { id: dto.shiftId },
+      const shift = await this.prisma.shift.findFirst({
+        where: { id: dto.shiftId, branchId },
         select: { id: true, branchId: true, status: true },
       });
 
@@ -208,7 +256,9 @@ export class ExpensesService {
       }
 
       if (shift.status !== "OPEN") {
-        throw new BadRequestException("Cannot add an expense to a closed shift");
+        throw new BadRequestException(
+          "Cannot add an expense to a closed shift",
+        );
       }
     }
 
@@ -222,7 +272,9 @@ export class ExpensesService {
       select: { name: true, isActive: true },
     });
     if (!category?.isActive) {
-      throw new BadRequestException("Active expense category not found in this branch");
+      throw new BadRequestException(
+        "Active expense category not found in this branch",
+      );
     }
 
     return this.prisma.expense.create({
@@ -249,7 +301,8 @@ export class ExpensesService {
 
   private categoryName(value: string) {
     const name = value.trim().replace(/\s+/g, " ");
-    if (!name) throw new BadRequestException("Expense category name is required");
+    if (!name)
+      throw new BadRequestException("Expense category name is required");
     return name;
   }
 
@@ -258,12 +311,18 @@ export class ExpensesService {
   }
 
   private async requireActiveCategory(id: string, user: AuthenticatedUser) {
-    const category = await this.prisma.expenseCategory.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const category = await this.prisma.expenseCategory.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: { id: true, name: true, branchId: true, isActive: true },
     });
-    if (!category?.isActive) throw new NotFoundException("Active expense category not found");
-    resolveRequiredBranchScope(user, category.branchId);
+    if (!category?.isActive)
+      throw new NotFoundException("Active expense category not found");
     return category;
   }
 }

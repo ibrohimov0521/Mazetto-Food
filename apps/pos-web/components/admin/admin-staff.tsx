@@ -131,7 +131,6 @@ export function AdminStaffPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("ALL");
   const [branchFilter, setBranchFilter] = useState("ALL");
-  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const canDeleteStaff = hasPermission(user, "STAFF_DELETE");
 
@@ -342,33 +341,6 @@ export function AdminStaffPage() {
         <CardHeader
           actions={
             <>
-              {/*
-                O'Z PAROLINI O'ZGARTIRISH — JOYLASHUVI HAQIDA.
-
-                Bu bo'lim ilgari xodimlar RO'YXATI sahifasining PASTIDA,
-                jadval ostida, uchta parol maydoni bilan ochiq turardi: ya'ni
-                boshqa odamlarni boshqarish ekranida o'zining shaxsiy
-                harakati, va u sahifaning eng asosiy mazmunidan keyin.
-
-                To'g'ri joyi — foydalanuvchi menyusidan ochiladigan PROFIL
-                ekrani. Uni QO'SHA OLMADIM: qobiq ichidagi har bir yo'l
-                `lib/route-access.ts` dagi matritsada e'lon qilinishi shart
-                (aks holda layout `UnknownRoutePanel` chizadi), `lib/*` esa
-                boshqa muhandisning fayli va `components/admin-shell/admin-navbar.tsx`
-                ham tegilmaydigan ro'yxatda. Ikkalasini ham tahrirlash
-                kerak bo'lardi.
-
-                Shuning uchun kelishuv: forma sahifa MAZMUNIDAN CHIQARILIB,
-                modal oynaga ko'chirildi va uni sahifa sarlavhasidagi
-                ikkinchi darajali tugma ochadi. Endi ro'yxat sahifasida
-                o'zga-shaxs va o'z-shaxs harakatlari aralashmaydi, forma esa
-                bir bosishda joyida. Profil route'i qo'shilganda bu tugma
-                shu modalni emas, o'sha ekranni ochishi kerak.
-              */}
-              <Button onClick={() => setIsPasswordOpen(true)} variant="ghost">
-                <Icon className="h-4 w-4" name="shield" />
-                Parolimni o&apos;zgartirish
-              </Button>
               <ButtonLink href="/admin/staff/new" size="lg">
                 <Icon className="h-4 w-4" name="plus" />
                 Yangi xodim
@@ -467,10 +439,6 @@ export function AdminStaffPage() {
         />
       </Card>
 
-      <OwnPasswordModal
-        isOpen={isPasswordOpen}
-        onClose={() => setIsPasswordOpen(false)}
-      />
     </div>
   );
 }
@@ -1627,176 +1595,6 @@ export function AdminStaffEditor({ staffId }: { staffId?: string }) {
   );
 }
 
-/**
- * O'z parolini o'zgartirish — modal forma.
- *
- * `POST /staff/me/password` permission TALAB QILMAYDI (faqat JWT), ya'ni
- * har qanday xodim o'z parolini o'zgartira oladi. Lekin bu modal xodimlar
- * ro'yxatidan ochiladi va u `STAFF_VIEW` ostida — ya'ni kassir bu formaga
- * yetib bora olmaydi. Bu MAVJUD cheklov (ilgari ham shunday edi) va uni
- * to'g'rilash profil route'ini talab qiladi; hisobotda qayd etilgan.
- */
-function OwnPasswordModal({
-  isOpen,
-  onClose,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-}) {
-  const { showToast } = useToast();
-  const formRef = useRef<HTMLFormElement>(null);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const nextErrors: Record<string, string> = {};
-
-    if (currentPassword.length < 8) {
-      nextErrors.currentPassword = "Joriy parolni kiriting.";
-    }
-
-    if (newPassword.length < 8) {
-      nextErrors.newPassword = "Parol kamida 8 belgidan iborat bo'lishi kerak.";
-    }
-
-    if (newPassword && newPassword === currentPassword) {
-      nextErrors.newPassword = "Yangi parol joriy paroldan farq qilishi kerak.";
-    }
-
-    if (newPassword !== confirmation) {
-      nextErrors.confirmation = "Takroriy parol mos kelmadi.";
-    }
-
-    setErrors(nextErrors);
-
-    if (Object.keys(nextErrors).length > 0) {
-      window.requestAnimationFrame(() =>
-        focusFirstInvalidField(formRef.current),
-      );
-      return;
-    }
-
-    setIsSaving(true);
-
-    try {
-      await apiFetch("/staff/me/password", {
-        method: "POST",
-        body: JSON.stringify({ currentPassword, newPassword, confirmation }),
-      });
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmation("");
-      setErrors({});
-      onClose();
-      showToast(
-        "Parolingiz yangilandi. Keyingi kirishda yangi paroldan foydalaning.",
-        "success",
-      );
-    } catch (passwordError) {
-      if (passwordError instanceof SessionExpiredError) {
-        return;
-      }
-
-      showToast(
-        passwordError instanceof Error
-          ? passwordError.message
-          : "Parol o'zgartirilmadi.",
-        "danger",
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  return (
-    <Modal
-      description="Bu faqat SIZNING parolingiz. Boshqa xodim paroli uning kartasidan reset qilinadi."
-      dismissOnBackdrop={false}
-      footer={
-        <>
-          <Button onClick={onClose} variant="ghost">
-            Bekor qilish
-          </Button>
-          <Button
-            form="own-password-form"
-            isLoading={isSaving}
-            size="lg"
-            type="submit"
-          >
-            Parolni yangilash
-          </Button>
-        </>
-      }
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Parolimni o'zgartirish"
-    >
-      <form
-        className="grid gap-3"
-        id="own-password-form"
-        onSubmit={submit}
-        ref={formRef}
-      >
-        <FormField
-          label="Joriy parol"
-          required
-          {...(errors.currentPassword ? { error: errors.currentPassword } : {})}
-        >
-          {(props) => (
-            <TextInput
-              {...props}
-              autoComplete="current-password"
-              required
-              type="password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-            />
-          )}
-        </FormField>
-        <FormField
-          hint="Kamida 8 belgi"
-          label="Yangi parol"
-          required
-          {...(errors.newPassword ? { error: errors.newPassword } : {})}
-        >
-          {(props) => (
-            <TextInput
-              {...props}
-              autoComplete="new-password"
-              minLength={8}
-              required
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-            />
-          )}
-        </FormField>
-        <FormField
-          label="Yangi parolni takrorlang"
-          required
-          {...(errors.confirmation ? { error: errors.confirmation } : {})}
-        >
-          {(props) => (
-            <TextInput
-              {...props}
-              autoComplete="new-password"
-              minLength={8}
-              required
-              type="password"
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-            />
-          )}
-        </FormField>
-      </form>
-    </Modal>
-  );
-}
 
 function needsBranch(
   roleCodes: string[] | string,

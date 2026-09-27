@@ -14,10 +14,11 @@ import {
   TableStatus,
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import {
-  resolveBranchScope,
-  resolveRequiredBranchScope,
-} from "../../common/auth/access-scope";
+  assertBranchBelongsToActor,
+  resolveRestaurantScope,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
@@ -41,12 +42,14 @@ export class TablesService {
   ) {}
 
   async listHalls(branchId: string | undefined, user: AuthenticatedUser) {
-    const scopedBranchId = resolveBranchScope(user, branchId);
+    const scope = await resolveRestaurantScope(this.prisma, user, branchId);
 
     return this.prisma.hall.findMany({
       where: {
         isActive: true,
-        ...(scopedBranchId ? { branchId: scopedBranchId } : {}),
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
       },
       select: {
         id: true,
@@ -63,8 +66,14 @@ export class TablesService {
   }
 
   async getHall(id: string, user: AuthenticatedUser) {
-    const hall = await this.prisma.hall.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const hall = await this.prisma.hall.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       include: {
         branch: {
           select: { id: true, code: true, name: true, isActive: true },
@@ -86,17 +95,18 @@ export class TablesService {
       throw new NotFoundException("Hall not found");
     }
 
-    resolveBranchScope(user, hall.branchId);
     return hall;
   }
 
   async listTables(branchId: string | undefined, user: AuthenticatedUser) {
-    const scopedBranchId = resolveBranchScope(user, branchId);
+    const scope = await resolveRestaurantScope(this.prisma, user, branchId);
 
     return this.prisma.restaurantTable.findMany({
       where: {
         isActive: true,
-        ...(scopedBranchId ? { branchId: scopedBranchId } : {}),
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
       },
       include: {
         hall: true,
@@ -118,8 +128,14 @@ export class TablesService {
   }
 
   async getTable(id: string, user: AuthenticatedUser) {
-    const table = await this.prisma.restaurantTable.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const table = await this.prisma.restaurantTable.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       include: {
         branch: { select: { id: true, name: true } },
         hall: true,
@@ -137,14 +153,12 @@ export class TablesService {
       throw new NotFoundException("Table not found");
     }
 
-    resolveBranchScope(user, table.branchId);
-
     return table;
   }
 
   async createHall(dto: CreateHallDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
-    await this.assertBranch(branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
     const name = dto.name.trim();
 
     return this.prisma.hall.create({
@@ -160,6 +174,7 @@ export class TablesService {
 
   async createTable(dto: CreateTableDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
     const hall = await this.prisma.hall.findFirst({
       where: { id: dto.hallId, branchId, isActive: true },
       select: { id: true },
@@ -298,32 +313,70 @@ export class TablesService {
   }
 
   async permanentlyDeleteHalls(ids: string[], user: AuthenticatedUser) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
-    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta zal tanlanishi kerak");
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
+    if (!uniqueIds.length)
+      throw new BadRequestException("Kamida bitta zal tanlanishi kerak");
+    const where = {
+      id: { in: uniqueIds },
+      ...(scope.branchId
+        ? { branchId: scope.branchId }
+        : { branch: { tenantId: scope.tenantId } }),
+    };
     const halls = await this.prisma.hall.findMany({
-      where: { id: { in: uniqueIds } },
-      select: { id: true, branchId: true, _count: { select: { tables: true } } },
+      where,
+      select: {
+        id: true,
+        branchId: true,
+        _count: { select: { tables: true } },
+      },
     });
-    if (halls.length !== uniqueIds.length) throw new NotFoundException("Tanlangan zallardan biri topilmadi");
-    for (const hall of halls) resolveBranchScope(user, hall.branchId);
+    if (halls.length !== uniqueIds.length)
+      throw new NotFoundException("Tanlangan zallardan biri topilmadi");
     const occupied = halls.find((hall) => hall._count.tables > 0);
-    if (occupied) throw new BadRequestException("Stollari mavjud zalni avval bo'shating yoki arxivlang");
-    await this.prisma.hall.deleteMany({ where: { id: { in: uniqueIds } } });
+    if (occupied)
+      throw new BadRequestException(
+        "Stollari mavjud zalni avval bo'shating yoki arxivlang",
+      );
+    await this.prisma.hall.deleteMany({ where });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   async permanentlyDeleteTables(ids: string[], user: AuthenticatedUser) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
-    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta stol tanlanishi kerak");
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
+    if (!uniqueIds.length)
+      throw new BadRequestException("Kamida bitta stol tanlanishi kerak");
+    const where = {
+      id: { in: uniqueIds },
+      ...(scope.branchId
+        ? { branchId: scope.branchId }
+        : { branch: { tenantId: scope.tenantId } }),
+    };
     const tables = await this.prisma.restaurantTable.findMany({
-      where: { id: { in: uniqueIds } },
-      select: { id: true, branchId: true, _count: { select: { orders: true } } },
+      where,
+      select: {
+        id: true,
+        branchId: true,
+        _count: { select: { orders: true } },
+      },
     });
-    if (tables.length !== uniqueIds.length) throw new NotFoundException("Tanlangan stollardan biri topilmadi");
-    for (const table of tables) resolveBranchScope(user, table.branchId);
+    if (tables.length !== uniqueIds.length)
+      throw new NotFoundException("Tanlangan stollardan biri topilmadi");
     const withHistory = tables.find((table) => table._count.orders > 0);
-    if (withHistory) throw new BadRequestException("Buyurtma tarixi bor stolni o'chirib bo'lmaydi");
-    await this.prisma.restaurantTable.deleteMany({ where: { id: { in: uniqueIds } } });
+    if (withHistory)
+      throw new BadRequestException(
+        "Buyurtma tarixi bor stolni o'chirib bo'lmaydi",
+      );
+    await this.prisma.restaurantTable.deleteMany({ where });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
@@ -333,16 +386,24 @@ export class TablesService {
     user: AuthenticatedUser,
   ) {
     const waiterId = this.requireEmployee(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
 
     const order = await this.prisma.$transaction(async (tx) => {
-      const table = await tx.restaurantTable.findUnique({ where: { id } });
+      const table = await tx.restaurantTable.findFirst({
+        where: {
+          id,
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
+        },
+      });
 
       if (!table?.isActive) {
         throw new NotFoundException("Table not found");
       }
 
       await this.assertEmployeeInBranch(tx, waiterId, table.branchId);
-      resolveBranchScope(user, table.branchId);
+      await assertBranchBelongsToActor(tx, user, table.branchId);
       await tx.$queryRawUnsafe(
         'SELECT "id" FROM "restaurant_tables" WHERE "id" = $1 FOR UPDATE',
         id,
@@ -493,10 +554,14 @@ export class TablesService {
 
   async listWaiterOrders(user: AuthenticatedUser) {
     const waiterId = this.requireEmployee(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
 
     return this.prisma.order.findMany({
       where: {
         waiterId,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
         status: {
           in: activeTableOrderStatuses,
         },
@@ -520,8 +585,14 @@ export class TablesService {
     id: string,
     user: AuthenticatedUser,
   ): Promise<{ id: string; branchId: string; hallId: string | null }> {
-    const table = await this.prisma.restaurantTable.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const table = await this.prisma.restaurantTable.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: { id: true, branchId: true, hallId: true },
     });
 
@@ -529,31 +600,23 @@ export class TablesService {
       throw new NotFoundException("Table not found");
     }
 
-    resolveBranchScope(user, table.branchId);
     return table;
   }
 
   private async assertHall(id: string, user: AuthenticatedUser): Promise<void> {
-    const hall = await this.prisma.hall.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const hall = await this.prisma.hall.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: { id: true, branchId: true },
     });
 
     if (!hall) {
       throw new NotFoundException("Hall not found");
-    }
-
-    resolveBranchScope(user, hall.branchId);
-  }
-
-  private async assertBranch(id: string): Promise<void> {
-    const branch = await this.prisma.branch.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-
-    if (!branch) {
-      throw new NotFoundException("Branch not found");
     }
   }
 

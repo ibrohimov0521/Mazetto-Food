@@ -11,6 +11,8 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { PERMISSIONS } from "../../common/auth/permissions";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
+import { PrismaService } from "../../prisma/prisma.service";
 import { hasPermission } from "../../common/auth/authorization";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { PermissionsAny } from "../../common/decorators/permissions.decorator";
@@ -29,7 +31,10 @@ import {
  */
 @Controller("uploads")
 export class UploadsController {
-  constructor(private readonly minio: MinioService) {}
+  constructor(
+    private readonly minio: MinioService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post("image")
   @PermissionsAny(PERMISSIONS.MENU_EDIT, PERMISSIONS.HOMEPAGE_MANAGE)
@@ -61,6 +66,8 @@ export class UploadsController {
       throw new ForbiddenException("Missing upload permission for this folder");
     }
 
-    return this.minio.uploadImage(file, target as "products" | "categories" | "homepage");
+    return resolveSoleActiveTenantId(this.prisma).then(() =>
+      this.minio.uploadImage(file, target as "products" | "categories" | "homepage"),
+    );
   }
 }

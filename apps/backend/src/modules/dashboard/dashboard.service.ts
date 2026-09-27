@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { OrderStatus, PaymentStatus, Prisma, ShiftStatus } from "@prisma/client";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
 import { PrismaService } from "../../prisma/prisma.service";
 import { endOfDay, startOfDay } from "../reports/report-range";
 
@@ -13,14 +13,21 @@ export class DashboardService {
     const now = new Date();
     const from = startOfDay(now);
     const to = endOfDay(now);
-    const branchId = resolveBranchScope(user, requestedBranchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      requestedBranchId,
+    );
 
     const [revenue, ordersCount, activeShifts] = await Promise.all([
       this.prisma.payment.aggregate({
         where: {
           status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS] },
           paidAt: { gte: from, lte: to },
-          ...(branchId ? { order: { branchId } } : {}),
+          order: {
+            branch: { tenantId },
+            ...(branchId ? { branchId } : {}),
+          },
         },
         _sum: { amount: true },
       }),
@@ -28,12 +35,14 @@ export class DashboardService {
         where: {
           createdAt: { gte: from, lte: to },
           status: { not: OrderStatus.CANCELLED },
+          branch: { tenantId },
           ...(branchId ? { branchId } : {}),
         },
       }),
       this.prisma.shift.count({
         where: {
           status: ShiftStatus.OPEN,
+          branch: { tenantId },
           ...(branchId ? { branchId } : {}),
         },
       }),

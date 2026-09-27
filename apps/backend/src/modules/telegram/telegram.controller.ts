@@ -1,4 +1,6 @@
-import { Body, Controller, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
+import { PrismaService } from "../../prisma/prisma.service";
 import { Public } from "../../common/decorators/public.decorator";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
@@ -24,6 +26,7 @@ export class TelegramController {
   constructor(
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
+    private readonly prisma: PrismaService,
     private readonly telegramStaffService?: TelegramStaffService,
   ) {}
 
@@ -39,6 +42,10 @@ export class TelegramController {
       includeMyId: false,
     })) {
       return { ok: true, handled: true };
+    }
+
+    if (!(await this.hasTenantContext())) {
+      return { ok: true, handled: false };
     }
 
     const customerResult =
@@ -60,6 +67,9 @@ export class TelegramController {
     })) {
       return { ok: true, handled: true };
     }
+    if (!(await this.hasTenantContext())) {
+      return { ok: true, handled: false };
+    }
     return (
       (await this.telegramStaffService?.handleWebhookUpdate(update)) ??
       { ok: true, handled: false }
@@ -70,6 +80,16 @@ export class TelegramController {
 
     if (!expectedSecret || secret !== expectedSecret) {
       throw new UnauthorizedException("Invalid Telegram webhook secret");
+    }
+  }
+
+  private async hasTenantContext(): Promise<boolean> {
+    try {
+      await resolveSoleActiveTenantId(this.prisma);
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException) return false;
+      throw error;
     }
   }
 

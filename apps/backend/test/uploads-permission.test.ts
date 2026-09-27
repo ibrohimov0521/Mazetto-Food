@@ -23,12 +23,17 @@ const menuEditor: AuthenticatedUser = {
 };
 
 function controller() {
-  return new UploadsController({
-    uploadImage: async (
-      _file: Express.Multer.File,
-      target: "products" | "categories" | "homepage",
-    ) => ({ target }),
-  } as never);
+  return new UploadsController(
+    {
+      uploadImage: async (
+        _file: Express.Multer.File,
+        target: "products" | "categories" | "homepage",
+      ) => ({ target }),
+    } as never,
+    {
+      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
+    } as never,
+  );
 }
 
 test("homepage manager can upload homepage media without MENU_EDIT", async () => {

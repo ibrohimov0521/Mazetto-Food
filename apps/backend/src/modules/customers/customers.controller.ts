@@ -140,8 +140,11 @@ export class CustomerPublicController {
 
   @Public()
   @Get("menu/products/:id")
-  getProduct(@Param("id") id: string) {
-    return this.customersService.getProduct(id);
+  getProduct(
+    @Param("id") id: string,
+    @Query("branchId") branchId?: string,
+  ) {
+    return this.customersService.getProduct(id, branchId);
   }
 
   @CustomerAuth()

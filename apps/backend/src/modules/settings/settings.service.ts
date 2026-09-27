@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import { RedisService } from "../../redis/redis.service";
 import {
   affectsCustomerCheckout,
@@ -91,6 +92,7 @@ export class SettingsService {
   }
 
   async updateSetting(key: string, rawValue: string, user: AuthenticatedUser) {
+    await resolveSoleActiveTenantId(this.prisma);
     if (!isKnownSettingKey(key)) {
       // Noma'lum kalitni qabul qilish uni O'QIB bo'lmaydigan qator qilardi:
       // reestrda yo'q kalit hech qachon so'ralmaydi, ya'ni yozuv jimgina
@@ -143,6 +145,7 @@ export class SettingsService {
   }
 
   private async readAll(): Promise<Partial<Record<SettingKey, string>>> {
+    await resolveSoleActiveTenantId(this.prisma);
     const cached = await this.readCache();
 
     if (cached) {

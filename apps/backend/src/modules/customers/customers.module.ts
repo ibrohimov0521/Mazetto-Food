@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PrismaModule } from "../../prisma/prisma.module";
+import { CustomerAuthGuard } from "../../common/guards/customer-auth.guard";
 import { BranchesModule } from "../branches/branches.module";
 import { KitchenModule } from "../kitchen/kitchen.module";
 import { OrdersModule } from "../orders/orders.module";
@@ -28,6 +29,7 @@ import { CustomerAddressesService } from "./customer-addresses.service";
   ],
   controllers: [CustomerPublicController, CustomersAdminController],
   providers: [
+    CustomerAuthGuard,
     CustomersService,
     CustomerAuthService,
     CustomerCourierService,

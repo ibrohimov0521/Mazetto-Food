@@ -113,6 +113,7 @@ function createServices(prisma: PrismaClient) {
     new JwtService(),
     telegramCustomerAuthService,
     createSettingsStub(),
+    { disconnectCustomerSession: () => undefined } as never,
   );
 
   return { telegramCustomerAuthService, customersService };
@@ -392,6 +393,9 @@ async function testWebhookSecurityAndStaffRegression(
   const controller = new TelegramController(
     telegramCustomerAuthService,
     staffService as never,
+    {
+      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
+    } as never,
   );
 
   await assert.rejects(

@@ -4,6 +4,7 @@ export type AuthenticatedUser = {
   id: string;
   email?: string;
   phone?: string;
+  credentialVersion?: number;
   employeeId?: string;
   branchId?: string;
   isGlobalScope?: boolean;

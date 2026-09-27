@@ -36,7 +36,9 @@ test("dead-letter print job manual retryda qayta navbatga tushadi", async () => 
     },
   };
   const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     printJob: {
+      findFirst: async () => job,
       findUnique: async () => job,
     },
     $transaction: async (callback: (client: typeof tx) => Promise<unknown>) =>
@@ -53,8 +55,9 @@ test("dead-letter print job manual retryda qayta navbatga tushadi", async () => 
 
 test("faol lease bilan chop etilayotgan ish qo'lda qayta yuborilmaydi", async () => {
   const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     printJob: {
-      findUnique: async () => ({
+      findFirst: async () => ({
         id: "job-1",
         branchId: "branch-1",
         receiptId: "receipt-1",

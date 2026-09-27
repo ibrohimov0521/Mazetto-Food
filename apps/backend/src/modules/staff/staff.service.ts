@@ -14,11 +14,16 @@ import {
 } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
 import { randomInt } from "node:crypto";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import { isPlatformRoleCode, restaurantUserWhere, resolveBranchScope } from "../../common/auth/access-scope";
+import {
+  resolveRestaurantTenantId,
+  resolveSoleActiveTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { UserAuthCacheService } from "../../common/auth/user-auth-cache.service";
 import { normalizeCustomerPhone } from "../customers/customer-phone";
+import { KitchenGateway } from "../kitchen/kitchen.gateway";
 import type {
   ChangeOwnPasswordDto,
   CreateStaffDto,
@@ -106,6 +111,7 @@ export class StaffService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userAuthCache: UserAuthCacheService,
+    private readonly kitchenGateway?: KitchenGateway,
   ) {}
 
   async listStaff(user: AuthenticatedUser) {
@@ -113,6 +119,7 @@ export class StaffService {
     const staff = await this.prisma.user.findMany({
       where: {
         ...(branchId ? { employee: { branchId } } : {}),
+        ...restaurantUserWhere,
       },
       orderBy: { createdAt: "desc" },
       take: 200,
@@ -124,7 +131,7 @@ export class StaffService {
 
   async getStaff(id: string, user: AuthenticatedUser) {
     const staff = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(user, staff);
+    await this.assertCanManageStaffRecord(user, staff);
 
     return this.toStaffDto(staff);
   }
@@ -190,7 +197,7 @@ export class StaffService {
 
   async updateStaff(id: string, dto: UpdateStaffDto, actor: AuthenticatedUser) {
     const existing = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(actor, existing);
+    await this.assertCanManageStaffRecord(actor, existing);
 
     const normalized = this.normalizeLogin(dto.email, dto.phone);
     const nextEmail =
@@ -272,7 +279,7 @@ export class StaffService {
      * emas — TTL baribir eskirtiradi — lekin bloklangan xodim yarim
      * daqiqa ishlashda davom etishi operatsion jihatdan yomon.
      */
-    await this.userAuthCache.invalidate(id);
+    await this.invalidateUserAccess(id);
     return this.toStaffDto(updated);
   }
 
@@ -282,7 +289,7 @@ export class StaffService {
     actor: AuthenticatedUser,
   ) {
     const existing = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(actor, existing);
+    await this.assertCanManageStaffRecord(actor, existing);
     this.assertNotTerminated(existing, "rolini o'zgartirish");
     const roleCodes = this.resolveRequestedRoleCodes(dto);
     await this.assertCanAssignRoles(actor, roleCodes);
@@ -329,7 +336,7 @@ export class StaffService {
 
     // Rol va holat o'zgarishi eng muhim ikki holat: bloklangan yoki roli
     // tushirilgan xodim kesh eskirguncha ishlashda davom etardi.
-    await this.userAuthCache.invalidate(id);
+    await this.invalidateUserAccess(id);
     return this.toStaffDto(updated);
   }
 
@@ -339,7 +346,7 @@ export class StaffService {
     actor: AuthenticatedUser,
   ) {
     const existing = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(actor, existing);
+    await this.assertCanManageStaffRecord(actor, existing);
     this.assertNotTerminated(existing, "holatini o'zgartirish");
 
     if (!dto.isActive) {
@@ -386,13 +393,13 @@ export class StaffService {
 
     // Rol va holat o'zgarishi eng muhim ikki holat: bloklangan yoki roli
     // tushirilgan xodim kesh eskirguncha ishlashda davom etardi.
-    await this.userAuthCache.invalidate(id);
+    await this.invalidateUserAccess(id);
     return this.toStaffDto(updated);
   }
 
   async deleteStaff(id: string, actor: AuthenticatedUser) {
     const existing = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(actor, existing);
+    await this.assertCanManageStaffRecord(actor, existing);
     if (id === actor.id) {
       throw new BadRequestException(
         "O'zingizning accountingizni o'chira olmaysiz",
@@ -416,7 +423,7 @@ export class StaffService {
       });
       await tx.user.delete({ where: { id } });
     });
-    await this.userAuthCache.invalidate(id);
+    await this.invalidateUserAccess(id);
     return { deleted: true, id };
   }
 
@@ -433,7 +440,7 @@ export class StaffService {
     actor: AuthenticatedUser,
   ) {
     const existing = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(actor, existing);
+    await this.assertCanManageStaffRecord(actor, existing);
     if (id === actor.id) {
       throw new BadRequestException("O'zingizni ishdan bo'shata olmaysiz");
     }
@@ -465,13 +472,13 @@ export class StaffService {
         select: this.staffSelect(),
       });
     });
-    await this.userAuthCache.invalidate(id);
+    await this.invalidateUserAccess(id);
     return this.toStaffDto(updated);
   }
 
   async rehireStaff(id: string, dto: RehireStaffDto, actor: AuthenticatedUser) {
     const existing = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(actor, existing);
+    await this.assertCanManageStaffRecord(actor, existing);
     if (!existing.employee) {
       throw new BadRequestException(
         "Bu account xodim yozuviga biriktirilmagan",
@@ -508,7 +515,7 @@ export class StaffService {
         select: this.staffSelect(),
       });
     });
-    await this.userAuthCache.invalidate(id);
+    await this.invalidateUserAccess(id);
     return this.toStaffDto(updated);
   }
 
@@ -518,7 +525,7 @@ export class StaffService {
     actor: AuthenticatedUser,
   ) {
     const existing = await this.findStaffOrThrow(id);
-    this.assertCanManageStaffRecord(actor, existing);
+    await this.assertCanManageStaffRecord(actor, existing);
 
     if (
       this.hasRole(existing, "SUPER_ADMIN") &&
@@ -534,7 +541,10 @@ export class StaffService {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id },
-        data: { passwordHash },
+        data: {
+          passwordHash,
+          credentialVersion: { increment: 1 },
+        },
       });
       await this.revokeUserSessions(tx, id);
       await this.createAuditLog(tx, actor.id, "STAFF_PASSWORD_RESET", id, {});
@@ -547,13 +557,16 @@ export class StaffService {
      * emas — TTL baribir eskirtiradi — lekin bloklangan xodim yarim
      * daqiqa ishlashda davom etishi operatsion jihatdan yomon.
      */
-    await this.userAuthCache.invalidate(id);
+    await this.invalidateUserAccess(id);
     return { changed: true };
   }
 
   async changeOwnPassword(dto: ChangeOwnPasswordDto, user: AuthenticatedUser) {
     if (dto.newPassword !== dto.confirmation) {
       throw new BadRequestException("Password confirmation does not match");
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException("New password must differ from current password");
     }
 
     const existing = await this.prisma.user.findUnique({
@@ -577,7 +590,10 @@ export class StaffService {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: user.id },
-        data: { passwordHash: await hash(dto.newPassword, 12) },
+        data: {
+          passwordHash: await hash(dto.newPassword, 12),
+          credentialVersion: { increment: 1 },
+        },
       });
       await this.revokeUserSessions(tx, user.id);
       await this.createAuditLog(
@@ -596,7 +612,7 @@ export class StaffService {
      * emas — TTL baribir eskirtiradi — lekin bloklangan xodim yarim
      * daqiqa ishlashda davom etishi operatsion jihatdan yomon.
      */
-    await this.userAuthCache.invalidate(user.id);
+    await this.invalidateUserAccess(user.id);
     return { changed: true };
   }
 
@@ -625,6 +641,7 @@ export class StaffService {
             ...(normalized.email ? { email: normalized.email } : {}),
             ...(normalized.phone ? { phone: normalized.phone } : {}),
             passwordHash,
+            credentialVersion: { increment: 1 },
             ...(input.activate ? { isActive: true } : {}),
           },
         });
@@ -693,7 +710,13 @@ export class StaffService {
       });
     });
 
+    await this.invalidateUserAccess(user.id);
     return this.toStaffDto(user);
+  }
+
+  private async invalidateUserAccess(userId: string): Promise<void> {
+    await this.userAuthCache.invalidate(userId);
+    this.kitchenGateway?.disconnectStaffUser(userId);
   }
 
   private staffSelect() {
@@ -874,6 +897,9 @@ export class StaffService {
     actor: AuthenticatedUser,
     roleCodes: string[],
   ): Promise<void> {
+    if (roleCodes.some(isPlatformRoleCode)) {
+      throw new ForbiddenException("Platform roles are managed through the BestTeam owner console");
+    }
     if (
       roleCodes.includes("SUPER_ADMIN") &&
       !actor.roles.includes("SUPER_ADMIN")
@@ -926,7 +952,7 @@ export class StaffService {
         );
       }
 
-      await this.assertBranchExists(resolvedBranchId);
+      await this.assertBranchExists(resolvedBranchId, actor);
       return resolvedBranchId;
     }
 
@@ -935,7 +961,7 @@ export class StaffService {
     }
 
     resolveBranchScope(actor, branchId);
-    await this.assertBranchExists(branchId);
+    await this.assertBranchExists(branchId, actor);
     return branchId;
   }
 
@@ -960,38 +986,82 @@ export class StaffService {
     return branch.id;
   }
 
-  private async assertBranchExists(branchId: string): Promise<void> {
+  private async assertBranchExists(
+    branchId: string,
+    actor: AuthenticatedUser,
+  ): Promise<void> {
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
-      select: { id: true },
+      select: { id: true, tenantId: true },
     });
 
     if (!branch) {
       throw new NotFoundException("Branch not found");
     }
+
+    const actorTenantId = await this.resolveActorTenantId(actor);
+    if (branch.tenantId !== actorTenantId) {
+      throw new ForbiddenException(
+        "Cannot assign staff to a branch owned by another restaurant",
+      );
+    }
+    resolveBranchScope(actor, branchId);
   }
 
-  private assertCanManageStaffRecord(
+  private resolveActorTenantId(actor: AuthenticatedUser): Promise<string> {
+    return resolveRestaurantTenantId(this.prisma, actor);
+  }
+
+  private requireSingleActiveTenantId(): Promise<string> {
+    return resolveSoleActiveTenantId(this.prisma);
+  }
+
+  private async assertCanManageStaffRecord(
     actor: AuthenticatedUser,
     staff: StaffRecord,
-  ): void {
-    if (actor.roles.includes("SUPER_ADMIN")) {
-      return;
+  ): Promise<void> {
+    if (staff.roles.some(({ role }) => isPlatformRoleCode(role.code))) {
+      throw new ForbiddenException("Platform accounts are managed through the BestTeam owner console");
     }
 
-    if (this.hasRole(staff, "SUPER_ADMIN")) {
+    if (
+      this.hasRole(staff, "SUPER_ADMIN") &&
+      !actor.roles.includes("SUPER_ADMIN")
+    ) {
       throw new ForbiddenException(
         "Only SUPER_ADMIN can manage SUPER_ADMIN accounts",
       );
     }
 
-    if (!staff.employee?.branchId) {
-      throw new ForbiddenException(
-        "Cannot manage global staff from a branch-scoped account",
-      );
+    const actorTenantId = await this.resolveActorTenantId(actor);
+    const targetBranchId = staff.employee?.branchId;
+    if (!targetBranchId) {
+      if (!actor.roles.includes("SUPER_ADMIN")) {
+        throw new ForbiddenException(
+          "Cannot manage global staff from a branch-scoped account",
+        );
+      }
+      if ((await this.requireSingleActiveTenantId()) !== actorTenantId) {
+        throw new ForbiddenException(
+          "Unassigned staff requires a single unambiguous restaurant tenant",
+        );
+      }
+      return;
     }
 
-    resolveBranchScope(actor, staff.employee.branchId);
+    const targetBranch = await this.prisma.branch.findUnique({
+      where: { id: targetBranchId },
+      select: { tenantId: true },
+    });
+    if (!targetBranch) {
+      throw new NotFoundException("Branch not found");
+    }
+    if (targetBranch.tenantId !== actorTenantId) {
+      throw new ForbiddenException(
+        "Cannot manage staff from another restaurant",
+      );
+    }
+    resolveBranchScope(actor, targetBranchId);
   }
 
   private async assertCanRemoveCurrentSuperAdmin(
