@@ -8,6 +8,12 @@ import {
   resolveBranchScope,
   resolveRequiredBranchScope,
 } from "../../common/auth/access-scope";
+import {
+  assertBranchBelongsToActor,
+  resolveRestaurantScope,
+  resolveRestaurantTenantId,
+  resolveSoleActiveTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
@@ -30,12 +36,17 @@ export class InventoryService {
    * Ilgari faqat YARATISH endpoint'i bor edi — shuning uchun admin ekranida
    * foydalanuvchi ombor ID sini qo'lda yozishga majbur edi.
    */
-  listWarehouses(user: AuthenticatedUser, requestedBranchId?: string) {
-    const branchId = resolveBranchScope(user, requestedBranchId);
+  async listWarehouses(user: AuthenticatedUser, requestedBranchId?: string) {
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      requestedBranchId,
+    );
 
     return this.prisma.warehouse.findMany({
       where: {
         isActive: true,
+        branch: { tenantId },
         ...(branchId ? { branchId } : {}),
       },
       orderBy: { name: "asc" },
@@ -48,8 +59,9 @@ export class InventoryService {
     });
   }
 
-  /** Ingredient ro'yxati — ombor harakati formasidagi tanlagich uchun. */
-  listIngredients() {
+  /** Ingredient ro'yxati — tenant-owned catalog migratsiyasigacha single-tenant. */
+  async listIngredients() {
+    await this.assertSingleTenantCatalog();
     return this.prisma.ingredient.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
@@ -64,6 +76,7 @@ export class InventoryService {
   }
 
   async createIngredient(dto: CreateIngredientDto) {
+    await this.assertSingleTenantCatalog();
     return this.prisma.ingredient.create({
       data: {
         name: dto.name,
@@ -76,6 +89,7 @@ export class InventoryService {
 
   async createWarehouse(dto: CreateWarehouseDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
 
     return this.prisma.warehouse.create({
       data: {
@@ -90,6 +104,7 @@ export class InventoryService {
     dto: UpdateIngredientDto,
     user: AuthenticatedUser,
   ) {
+    await this.assertSingleTenantCatalog();
     const ingredient = await this.prisma.ingredient.findUnique({ where: { id } });
     if (!ingredient?.isActive) throw new NotFoundException("Active ingredient not found");
     return this.prisma.$transaction(async (tx) => {
@@ -116,6 +131,7 @@ export class InventoryService {
   }
 
   async archiveIngredient(id: string, user: AuthenticatedUser) {
+    await this.assertSingleTenantCatalog();
     const ingredient = await this.prisma.ingredient.findUnique({
       where: { id },
       include: { _count: { select: { recipeItems: true } } },
@@ -140,6 +156,7 @@ export class InventoryService {
   }
 
   async permanentlyDeleteIngredients(ids: string[], user: AuthenticatedUser) {
+    await this.assertSingleTenantCatalog();
     const uniqueIds = [...new Set(ids.filter(Boolean))];
     if (!uniqueIds.length) throw new BadRequestException("Ingredient IDs are required");
     const rows = await this.prisma.ingredient.findMany({
@@ -205,10 +222,15 @@ export class InventoryService {
   }
 
   async permanentlyDeleteWarehouses(ids: string[], user: AuthenticatedUser) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const branchId = resolveBranchScope(user);
     const uniqueIds = [...new Set(ids.filter(Boolean))];
     if (!uniqueIds.length) throw new BadRequestException("Warehouse IDs are required");
+    const scope = {
+      branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
+    };
     const rows = await this.prisma.warehouse.findMany({
-      where: { id: { in: uniqueIds } },
+      where: { id: { in: uniqueIds }, ...scope },
       select: { id: true, branchId: true, name: true, stock: { select: { id: true } }, stockMovements: { select: { id: true } } },
     });
     if (rows.length !== uniqueIds.length) throw new NotFoundException("Warehouse not found");
@@ -216,7 +238,9 @@ export class InventoryService {
     const blocked = rows.find((row) => row.stock.length || row.stockMovements.length);
     if (blocked) throw new BadRequestException(`Warehouse ${blocked.name} has inventory history and cannot be deleted`);
     await this.prisma.$transaction(async (tx) => {
-      await tx.warehouse.deleteMany({ where: { id: { in: uniqueIds } } });
+      await tx.warehouse.deleteMany({
+        where: { id: { in: uniqueIds }, ...scope },
+      });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, { userId: user.id, action: "WAREHOUSE_DELETED", entity: "Warehouse", entityId: id });
       }
@@ -226,6 +250,8 @@ export class InventoryService {
 
   async getReadiness(user: AuthenticatedUser, requestedBranchId?: string) {
     const branchId = resolveRequiredBranchScope(user, requestedBranchId);
+    await this.assertSingleTenantCatalog();
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
     const [activeWarehouses, recipeVariants, inactiveIngredientReferences] =
       await Promise.all([
         this.prisma.warehouse.count({ where: { branchId, isActive: true } }),
@@ -264,12 +290,17 @@ export class InventoryService {
   }
 
   async createMovement(dto: CreateStockMovementDto, user: AuthenticatedUser) {
+    const tenantId = await this.assertSingleTenantCatalog();
     return this.prisma.$transaction(async (tx) => {
       const ingredient = await tx.ingredient.findFirst({
         where: { id: dto.ingredientId, isActive: true },
       });
       const warehouse = await tx.warehouse.findFirst({
-        where: { id: dto.warehouseId, isActive: true },
+        where: {
+          id: dto.warehouseId,
+          isActive: true,
+          branch: { tenantId },
+        },
       });
 
       if (!ingredient) {
@@ -294,11 +325,18 @@ export class InventoryService {
   }
 
   async getStock(query: InventoryQueryDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+    await this.assertSingleTenantCatalog();
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
 
     const stockRows = await this.prisma.stock.findMany({
       where: {
-        ...(branchId ? { warehouse: { branchId } } : {}),
+        warehouse: {
+          branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
+        },
         ...(query.ingredientId ? { ingredientId: query.ingredientId } : {}),
       },
       include: {
@@ -322,13 +360,20 @@ export class InventoryService {
   }
 
   async getMovements(query: InventoryQueryDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+    await this.assertSingleTenantCatalog();
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const from = query.from ? new Date(query.from) : undefined;
     const to = query.to ? new Date(query.to) : undefined;
 
     return this.prisma.stockMovement.findMany({
       where: {
-        ...(branchId ? { warehouse: { branchId } } : {}),
+        warehouse: {
+          branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
+        },
         ...(query.ingredientId ? { ingredientId: query.ingredientId } : {}),
         ...(query.type ? { type: query.type } : {}),
         ...(from || to
@@ -353,11 +398,18 @@ export class InventoryService {
   }
 
   async getCost(query: InventoryQueryDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+    await this.assertSingleTenantCatalog();
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
 
     const rows = await this.prisma.stock.findMany({
       where: {
-        ...(branchId ? { warehouse: { branchId } } : {}),
+        warehouse: {
+          branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
+        },
         ...(query.ingredientId ? { ingredientId: query.ingredientId } : {}),
       },
       include: { ingredient: true },
@@ -538,9 +590,14 @@ export class InventoryService {
     );
   }
 
+  private assertSingleTenantCatalog() {
+    return resolveSoleActiveTenantId(this.prisma);
+  }
+
   private async requireActiveWarehouse(id: string, user: AuthenticatedUser) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const warehouse = await this.prisma.warehouse.findFirst({
-      where: { id, isActive: true },
+      where: { id, isActive: true, branch: { tenantId } },
       select: { id: true, branchId: true },
     });
     if (!warehouse) throw new NotFoundException("Active warehouse not found");

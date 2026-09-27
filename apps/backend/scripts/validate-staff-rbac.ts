@@ -24,6 +24,9 @@ const posAuth = readSource("apps/pos-web/lib/auth.ts");
 const loginPage = readSource("apps/pos-web/app/login/page.tsx");
 const accessDeniedPage = readSource("apps/pos-web/app/access-denied/page.tsx");
 const adminStaff = readSource("apps/pos-web/components/admin/admin-staff.tsx");
+const ownPasswordDialog = readSource(
+  "apps/pos-web/components/auth/own-password-dialog.tsx",
+);
 const adminReports = readSource(
   "apps/pos-web/components/admin/admin-reports.tsx",
 );
@@ -92,6 +95,7 @@ assert.match(
   staffController,
   /@Permissions\(PERMISSIONS\.STAFF_PASSWORD_RESET\)/,
 );
+assert.match(staffController, /@Post\("me\/password"\)/);
 
 assert.match(staffDto, /MinLength\(8\)/);
 assert.match(staffService, /hash\(dto\.password, 12\)/);
@@ -124,7 +128,7 @@ assertRouteRule(routeAccess, "/admin/staff/:id", "STAFF_UPDATE");
 assertRouteRule(routeAccess, "/admin/reports", "REPORT_SALES_VIEW");
 assert.match(adminStaff, /apiFetch<Staff\[]>\("\/staff"\)/);
 assert.match(adminStaff, /password-reset/);
-assert.match(adminStaff, /\/staff\/me\/password/);
+assert.match(ownPasswordDialog, /apiFetch\("\/staff\/me\/password"/);
 assert.match(adminReports, /\/reports\/sales/);
 assert.match(posPage, /PermissionGuard permission="POS_USE"/);
 assert.doesNotMatch(posPage, /\/admin\/printers/);
@@ -183,10 +187,11 @@ assert.match(authCache, /const TTL_SECONDS = 30/);
 
 // Xodim profilini o'zgartiradigan yoki o'chiradigan har bir yo'l keshni tozalashi kerak.
 assert.equal(
-  (staffService.match(/this\.userAuthCache\.invalidate\(/g) ?? []).length,
-  8,
-  "sakkizta mutatsiya yo'li ham keshni bekor qilishi kerak",
+  (staffService.match(/this\.invalidateUserAccess\(/g) ?? []).length,
+  9,
+  "to'qqiz mutatsiya yo'li ham foydalanuvchi access keshini tozalashi kerak",
 );
+assert.match(staffService, /private async invalidateUserAccess\([\s\S]*this\.userAuthCache\.invalidate\(userId\)/);
 
 console.info("Staff RBAC static validation passed");
 

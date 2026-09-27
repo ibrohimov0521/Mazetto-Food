@@ -15,6 +15,10 @@ import {
 } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
+import {
+  resolveRestaurantScope,
+  resolveRestaurantTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ensureOrderReceipt, ensureRefundReceipt } from "../receipts/receipt-writer";
@@ -54,7 +58,11 @@ export class PaymentsService {
    * yozish uchun, bu esa ko'rish uchun.
    */
   async listPayments(query: ListPaymentsDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const paidAt =
       query.from || query.to
         ? {
@@ -69,7 +77,10 @@ export class PaymentsService {
         ...(query.status ? { status: query.status } : {}),
         ...(query.methodCode ? { methodCode: query.methodCode } : {}),
         ...(paidAt ? { paidAt } : {}),
-        ...(branchId ? { order: { branchId } } : {}),
+        order: {
+          branch: { tenantId },
+          ...(branchId ? { branchId } : {}),
+        },
       },
       orderBy: { createdAt: "desc" },
       skip: query.offset,
@@ -168,9 +179,16 @@ export class PaymentsService {
       reference,
       employeeId,
     );
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
 
     try {
       const execute = async (tx: Prisma.TransactionClient) => {
+          const scopedOrder = await tx.order.findFirst({
+            where: { id: dto.orderId, branch: { tenantId } },
+            select: { id: true },
+          });
+          if (!scopedOrder) throw new NotFoundException("Order not found");
+
           const existingOperation = await tx.paymentOperation.findUnique({
             where: { idempotencyKey: dto.idempotencyKey },
           });
@@ -195,8 +213,8 @@ export class PaymentsService {
           });
 
           await tx.$executeRaw`SELECT id FROM "orders" WHERE id = ${dto.orderId} FOR UPDATE`;
-          const order = await tx.order.findUnique({
-            where: { id: dto.orderId },
+          const order = await tx.order.findFirst({
+            where: { id: dto.orderId, branch: { tenantId } },
             include: { payments: true, receipts: true },
           });
 
@@ -455,6 +473,7 @@ export class PaymentsService {
         return this.resolveExistingOperationByKey(
           dto.idempotencyKey,
           requestHash,
+          tenantId,
         );
       }
 
@@ -471,7 +490,16 @@ export class PaymentsService {
       throw new ForbiddenException("Authenticated user is not linked to an employee");
     }
     const reason = dto.reason.trim();
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
+      const payment = await tx.payment.findFirst({
+        where: { id: paymentId, order: { branch: { tenantId } } },
+        include: { order: true, method: true, refund: true },
+      });
+      if (!payment) throw new NotFoundException("Payment not found");
+      resolveBranchScope(user, payment.order.branchId);
+
       const replay = await tx.paymentRefund.findUnique({
         where: { idempotencyKey: dto.idempotencyKey },
         include: { payment: true },
@@ -482,14 +510,6 @@ export class PaymentsService {
         }
         return replay;
       }
-
-      await tx.$executeRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
-      const payment = await tx.payment.findUnique({
-        where: { id: paymentId },
-        include: { order: true, method: true, refund: true },
-      });
-      if (!payment) throw new NotFoundException("Payment not found");
-      resolveBranchScope(user, payment.order.branchId);
       if (payment.refund || payment.status === PaymentStatus.REFUNDED) {
         throw new BadRequestException("Payment is already refunded");
       }
@@ -720,9 +740,10 @@ export class PaymentsService {
   private async resolveExistingOperationByKey(
     idempotencyKey: string,
     requestHash: string,
+    tenantId: string,
   ) {
-    const operation = await this.prisma.paymentOperation.findUnique({
-      where: { idempotencyKey },
+    const operation = await this.prisma.paymentOperation.findFirst({
+      where: { idempotencyKey, order: { branch: { tenantId } } },
     });
 
     if (!operation) {

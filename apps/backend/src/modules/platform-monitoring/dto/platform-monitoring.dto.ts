@@ -25,6 +25,11 @@ const eventCodes = [
 ] as const;
 
 export class CreatePlatformSiteDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  tenantId?: string | null;
+
   @IsString()
   @MaxLength(120)
   name!: string;
@@ -42,11 +47,22 @@ export class CreatePlatformSiteDto {
   apiHealthUrl!: string;
 }
 
+export class CreateTenantDomainDto {
+  @IsString()
+  @MaxLength(253)
+  hostname!: string;
+}
+
 export class UpdatePlatformSiteDto {
   @IsOptional()
   @IsString()
   @MaxLength(120)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  tenantId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -146,6 +162,37 @@ export class PlatformKitchenSnapshotDto {
   @IsOptional()
   @IsDateString()
   lastActivityAt?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(25)
+  @ValidateNested({ each: true })
+  @Type(() => PlatformDeviceVersionSummaryDto)
+  deviceVersions?: PlatformDeviceVersionSummaryDto[];
+}
+
+export class PlatformDeviceVersionSummaryDto {
+  @IsIn(["POS_TERMINAL", "KITCHEN_DISPLAY", "PRINT_AGENT", "ADMIN_DEVICE", "OTHER", "MIXED"])
+  deviceType!: string;
+
+  @IsString()
+  @MaxLength(80)
+  version!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  total!: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  online!: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  offline!: number;
 }
 
 export class PlatformHeartbeatEventDto {
@@ -239,6 +286,11 @@ export class PlatformHeartbeatDto {
   @IsString()
   @MaxLength(40)
   version!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  buildId?: string;
 
   @IsIn(["healthy", "degraded"])
   status!: "healthy" | "degraded";

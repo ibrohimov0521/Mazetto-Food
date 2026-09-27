@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 
@@ -15,12 +15,24 @@ export class RealtimeService {
     requestedLimit: string | undefined,
     user: AuthenticatedUser,
   ) {
-    const branchId = resolveBranchScope(user, requestedBranchId);
+    const scope = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      requestedBranchId,
+    );
+    const branchIds = scope.branchId
+      ? [scope.branchId]
+      : (
+          await this.prisma.branch.findMany({
+            where: { tenantId: scope.tenantId },
+            select: { id: true },
+          })
+        ).map((branch) => branch.id);
     const decoded = decodeEventCursor(cursor);
     const limit = clampLimit(requestedLimit);
     const events = await this.prisma.outboxEvent.findMany({
       where: {
-        ...(branchId ? { branchId } : {}),
+        branchId: { in: branchIds },
         ...(decoded
           ? {
               OR: [
@@ -53,7 +65,9 @@ export class RealtimeService {
         causationId: event.causationId,
         occurredAt: event.createdAt.toISOString(),
       })),
-      cursor: last ? encodeEventCursor(last.createdAt, last.id) : cursor ?? null,
+      cursor: last
+        ? encodeEventCursor(last.createdAt, last.id)
+        : (cursor ?? null),
       hasMore,
     };
   }
@@ -64,7 +78,9 @@ export function encodeEventCursor(createdAt: Date, id: string): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
-export function decodeEventCursor(value: string | undefined): EventCursor | null {
+export function decodeEventCursor(
+  value: string | undefined,
+): EventCursor | null {
   if (!value) return null;
 
   try {
@@ -79,7 +95,10 @@ export function decodeEventCursor(value: string | undefined): EventCursor | null
     ) {
       throw new Error("invalid cursor");
     }
-    return { createdAt: new Date(decoded.createdAt).toISOString(), id: decoded.id };
+    return {
+      createdAt: new Date(decoded.createdAt).toISOString(),
+      id: decoded.id,
+    };
   } catch {
     throw new BadRequestException("Realtime cursor noto'g'ri.");
   }

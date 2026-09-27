@@ -3,6 +3,7 @@ import type { Request } from "express";
 export type AuthenticatedCustomer = {
   id: string;
   phone: string;
+  sessionId: string;
   tokenUse: "customer_access";
 };
 

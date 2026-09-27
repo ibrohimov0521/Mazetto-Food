@@ -58,6 +58,9 @@ class InMemoryPrisma {
   customers: CustomerRecord[] = [];
   challenges: ChallengeRecord[] = [];
   sessions: SessionRecord[] = [];
+  restaurantTenant = {
+    findMany: async () => [{ id: "tenant-mazetto", status: "ACTIVE" }],
+  };
   private sequence = 0;
 
   customer = {
@@ -349,14 +352,15 @@ function createServices(
   );
   /*
    * Auth `CustomerAuthService` ga ko'chdi (6.6). Konstruktor endi
-   * to'rtta bog'liqlik oladi: baza, JWT, Telegram yetkazish va
-   * sozlamalar.
+   * beshta bog'liqlik oladi: baza, JWT, Telegram yetkazish,
+   * sozlamalar va session socketlarini bekor qilish.
    */
   const customersService = new CustomerAuthService(
     prisma as never,
     new JwtService(),
     telegramCustomerAuthService,
     createSettingsStub(),
+    { disconnectCustomerSession: () => undefined } as never,
   );
 
   return { prisma, telegramCustomerAuthService, customersService };
@@ -397,6 +401,9 @@ async function testOrderingCallbackErrorsDoNotSendAuthError(): Promise<void> {
   const controller = new TelegramController(
     telegramCustomerAuthService,
     { handleWebhook: async () => ({ ok: true, handled: true }) } as never,
+    {
+      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
+    } as never,
   );
 
   const result = await controller.handleWebhook("test-secret", {
@@ -597,6 +604,9 @@ async function testWebhookSecretAndStaffRegression(): Promise<void> {
   const controller = new TelegramController(
     telegramCustomerAuthService,
     staffService as never,
+    {
+      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
+    } as never,
   );
 
   await assert.rejects(
@@ -651,6 +661,9 @@ async function testTemporaryStaffChatIdDiagnostic(): Promise<void> {
   const controller = new TelegramController(
     telegramCustomerAuthService,
     staffService as never,
+    {
+      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
+    } as never,
   );
   const result = await controller.handleWebhook("test-secret", {
     message: {

@@ -4,10 +4,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
+import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import {
-  resolveBranchScope,
-  resolveRequiredBranchScope,
-} from "../../common/auth/access-scope";
+  assertBranchBelongsToActor,
+  resolveRestaurantScope,
+  resolveSoleActiveTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { writeAuditLog } from "../audit/audit-write";
@@ -21,11 +23,13 @@ import type {
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  listDevices(branchId: string | undefined, user: AuthenticatedUser) {
-    const scopedBranchId = resolveBranchScope(user, branchId);
+  async listDevices(branchId: string | undefined, user: AuthenticatedUser) {
+    const scope = await resolveRestaurantScope(this.prisma, user, branchId);
 
     return this.prisma.device.findMany({
-      where: scopedBranchId ? { branchId: scopedBranchId } : {},
+      where: scope.branchId
+        ? { branchId: scope.branchId }
+        : { branch: { tenantId: scope.tenantId } },
       include: {
         branch: { select: { id: true, code: true, name: true } },
         lastEmployee: {
@@ -43,6 +47,7 @@ export class DevicesService {
 
   async createDevice(dto: CreateDeviceDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
     const name = this.normalizeName(dto.name);
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
@@ -92,7 +97,11 @@ export class DevicesService {
         hardwareId: null,
       },
     });
-    return { deviceId: device.id, enrollmentCode, expiresAt: expiresAt.toISOString() };
+    return {
+      deviceId: device.id,
+      enrollmentCode,
+      expiresAt: expiresAt.toISOString(),
+    };
   }
 
   async enroll(dto: EnrollDeviceDto) {
@@ -103,9 +112,11 @@ export class DevicesService {
 
     // The desktop creates its own stable hardware ID. The one-time code chooses
     // the admin-created slot and then binds that slot to this actual computer.
+    const tenantId = await resolveSoleActiveTenantId(this.prisma);
     const device = await this.prisma.device.findFirst({
       where: {
         isActive: true,
+        branch: { tenantId },
         enrollmentCodeHash: hashEnrollmentCode(dto.enrollmentCode),
         enrollmentExpiresAt: { gte: new Date() },
       },
@@ -121,7 +132,11 @@ export class DevicesService {
       // A one-time code explicitly authorizes moving this physical computer
       // to the selected admin device slot; historical records remain intact.
       await tx.device.updateMany({
-        where: { hardwareId: deviceId, id: { not: device.id } },
+        where: {
+          hardwareId: deviceId,
+          id: { not: device.id },
+          branch: { tenantId },
+        },
         data: { hardwareId: null },
       });
       return tx.device.update({
@@ -137,7 +152,13 @@ export class DevicesService {
             ? { softwareVersion: dto.softwareVersion.trim().slice(0, 80) }
             : {}),
         },
-        select: { id: true, branchId: true, name: true, type: true, enrolledAt: true },
+        select: {
+          id: true,
+          branchId: true,
+          name: true,
+          type: true,
+          enrolledAt: true,
+        },
       });
     });
     return { ...updated, deviceToken };
@@ -190,9 +211,7 @@ export class DevicesService {
             ...(dto.softwareVersion === undefined
               ? {}
               : { softwareVersion: dto.softwareVersion }),
-            ...(dto.isActive === undefined
-              ? {}
-              : { isActive: dto.isActive }),
+            ...(dto.isActive === undefined ? {} : { isActive: dto.isActive }),
           },
         },
       });
@@ -222,8 +241,13 @@ export class DevicesService {
   }
 
   async deleteDevices(ids: string[], user: AuthenticatedUser) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
-    if (!uniqueIds.length) throw new BadRequestException("Kamida bitta qurilma tanlanishi kerak");
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
+    if (!uniqueIds.length)
+      throw new BadRequestException("Kamida bitta qurilma tanlanishi kerak");
     for (const id of uniqueIds) await this.deleteDevice(id, user);
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
@@ -233,16 +257,20 @@ export class DevicesService {
     softwareVersion: string | undefined,
     user: AuthenticatedUser,
   ) {
-    const device = await this.prisma.device.findUnique({
-      where: { hardwareId: deviceId.trim() },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const device = await this.prisma.device.findFirst({
+      where: {
+        hardwareId: deviceId.trim(),
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: { id: true, branchId: true, isActive: true },
     });
 
     if (!device) {
       throw new NotFoundException("Device not found");
     }
-
-    resolveBranchScope(user, device.branchId);
 
     if (!device.isActive) {
       throw new BadRequestException("Device is disabled");
@@ -267,12 +295,15 @@ export class DevicesService {
     };
   }
 
-  private async assertDevice(
-    id: string,
-    user: AuthenticatedUser,
-  ) {
-    const device = await this.prisma.device.findUnique({
-      where: { id },
+  private async assertDevice(id: string, user: AuthenticatedUser) {
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const device = await this.prisma.device.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: {
         id: true,
         branchId: true,
@@ -286,7 +317,6 @@ export class DevicesService {
       throw new NotFoundException("Device not found");
     }
 
-    resolveBranchScope(user, device.branchId);
     return device;
   }
 

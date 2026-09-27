@@ -13,8 +13,8 @@
 # O'CHIQ holatda keladi. Yoqish (repo admini, bir marta) — docs/CI_CD.md, 4:
 #   secrets    DOKPLOY_URL, DOKPLOY_API_KEY
 #   variables  AUTO_DEPLOY=true, DOKPLOY_APP_BACKEND, DOKPLOY_APP_CUSTOMER_WEB,
-#              DOKPLOY_APP_POS_WEB (ixtiyoriy: DOKPLOY_APP_MEDIA,
-#              DOKPLOY_APP_TELEGRAM_BOT)
+#              DOKPLOY_APP_POS_WEB, DOKPLOY_APP_PLATFORM_WEB (ixtiyoriy:
+#              DOKPLOY_APP_MEDIA, DOKPLOY_APP_TELEGRAM_BOT)
 # va Dokploy'da shu ilovalarning O'Z "Autodeploy" i o'chiriladi — aks holda
 # ular CI'ni kutmasdan har push'da deploy qiladi.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -129,6 +129,7 @@ jobs:
           DOKPLOY_APP_BACKEND: ${{ vars.DOKPLOY_APP_BACKEND }}
           DOKPLOY_APP_CUSTOMER_WEB: ${{ vars.DOKPLOY_APP_CUSTOMER_WEB }}
           DOKPLOY_APP_POS_WEB: ${{ vars.DOKPLOY_APP_POS_WEB }}
+          DOKPLOY_APP_PLATFORM_WEB: ${{ vars.DOKPLOY_APP_PLATFORM_WEB }}
           DOKPLOY_APP_TELEGRAM_BOT: ${{ vars.DOKPLOY_APP_TELEGRAM_BOT }}
           DOKPLOY_APP_MEDIA: ${{ vars.DOKPLOY_APP_MEDIA }}
           APPS: ${{ steps.gate.outputs.apps }}

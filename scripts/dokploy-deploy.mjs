@@ -21,12 +21,13 @@ import { appendFileSync } from "node:fs";
  * deploy qilinadi.
  */
 
-const ORDER = ["backend", "customer-web", "pos-web", "telegram-bot", "media"];
+const ORDER = ["backend", "customer-web", "pos-web", "platform-web", "telegram-bot", "media"];
 
 const APP_ID_ENV = {
   backend: "DOKPLOY_APP_BACKEND",
   "customer-web": "DOKPLOY_APP_CUSTOMER_WEB",
   "pos-web": "DOKPLOY_APP_POS_WEB",
+  "platform-web": "DOKPLOY_APP_PLATFORM_WEB",
   "telegram-bot": "DOKPLOY_APP_TELEGRAM_BOT",
   media: "DOKPLOY_APP_MEDIA",
 };

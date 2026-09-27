@@ -104,17 +104,22 @@ assert.match(shiftsController, /@Permissions\(PERMISSIONS\.SHIFT_OPEN\)/, "SHIFT
 assert.match(shiftsController, /@Permissions\(PERMISSIONS\.SHIFT_CLOSE\)/, "SHIFT_CLOSE himoyasi yo'qolgan");
 assert.match(receiptsController, /@Permissions\(PERMISSIONS\.RECEIPT_PRINT\)/, "RECEIPT_PRINT himoyasi yo'qolgan");
 
-// 5. Servislar branch scope'ni majburlaydi
-for (const [name, source] of [
-  ["shifts", shiftsService],
-  ["receipts", receiptsService],
-  ["payments", paymentsService],
+// 5. Har bir operatsion ro'yxat tenant va so'ralgan filial doirasida qoladi.
+for (const [name, source, method, branchArgument] of [
+  ["shifts", shiftsService, "listShifts", "query\\.branchId"],
+  ["receipts", receiptsService, "listReceipts", "query\\.branchId"],
+  ["payments", paymentsService, "listPayments", "query\\.branchId"],
+  ["expenses", expensesService, "listExpenses", "query\\.branchId"],
+  ["warehouses", inventoryService, "listWarehouses", "requestedBranchId"],
 ] as const) {
-  assert.match(source, /resolveBranchScope\(user, query\.branchId\)/, `${name} listida branch scope yo'q`);
+  const block = asyncMethodBlock(source, method);
+  assert.match(block, /resolveRestaurantScope\(\s*this\.prisma,\s*user,/, name + " listida tenant scope yo'q");
+  assert.match(block, new RegExp(branchArgument), name + " so'ralgan filialni tekshirmaydi");
+  assert.match(block, /tenantId/, name + " query tenantId bilan cheklanmagan");
 }
 
 // To'lovda branch scope buyurtma orqali qo'llanadi (Payment da branchId yo'q)
-assert.match(paymentsService, /order: \{ branchId \}/, "payments branch scope buyurtma orqali qo'llanmagan");
+assert.match(paymentsService, /order:\s*\{\s*branch:\s*\{\s*tenantId\s*\}/, "payments tenant scope order orqali qo'llanmagan");
 
 // 6. Ro'yxatlar cheklangan — cheksiz so'rov yo'q
 for (const [name, source] of [
@@ -177,7 +182,6 @@ assert.match(
   /@Post\(\)\s*\n\s*@Permissions\(PERMISSIONS\.EXPENSE_CREATE\)/,
   "POST /expenses noto'g'ri himoyalangan",
 );
-assert.match(expensesService, /resolveBranchScope\(user, query\.branchId\)/, "xarajat ro'yxatida branch scope yo'q");
 assert.match(expensesService, /take: query\.limit/, "xarajat ro'yxatida take yo'q");
 assert.match(expensesDto, /@Max\(100\)/, "xarajat DTO da limit chegarasi yo'q");
 
@@ -208,7 +212,6 @@ assert.match(inventoryController, /@Get\("warehouses"\)/, "GET /inventory/wareho
 assert.match(inventoryController, /@Get\("ingredients"\)/, "GET /inventory/ingredients yo'q");
 assert.match(inventoryService, /listWarehouses\(/, "listWarehouses yo'q");
 assert.match(inventoryService, /listIngredients\(/, "listIngredients yo'q");
-assert.match(inventoryService, /resolveBranchScope\(user, requestedBranchId\)/, "ombor ro'yxatida branch scope yo'q");
 
 console.log("validate-operational-listings: OK");
 console.log("  GET /shifts    → SHIFT_VIEW_BRANCH (yangi)");
@@ -217,6 +220,14 @@ console.log("  GET /payments  → PAYMENT_VIEW (yangi)");
 console.log("  GET /audit-logs → AUDIT_VIEW (yangi, faqat SUPER_ADMIN)");
 console.log("  GET/POST /expenses → REPORT_EXPENSES_VIEW / EXPENSE_CREATE (yangi)");
 console.log("  GET /inventory/warehouses, /inventory/ingredients → INVENTORY_VIEW (yangi)");
+
+
+function asyncMethodBlock(source: string, method: string): string {
+  const start = source.indexOf("async " + method + "(");
+  assert.notEqual(start, -1, method + " method missing");
+  const nextMethod = source.indexOf("\n  async ", start + 1);
+  return source.slice(start, nextMethod === -1 ? source.length : nextMethod);
+}
 
 function readSource(path: string): string {
   return readFileSync(join(repoRoot, path), "utf8");

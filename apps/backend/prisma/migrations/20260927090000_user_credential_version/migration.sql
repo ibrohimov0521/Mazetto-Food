@@ -1,0 +1,2 @@
+ALTER TABLE "users"
+ADD COLUMN "credentialVersion" INTEGER NOT NULL DEFAULT 0;

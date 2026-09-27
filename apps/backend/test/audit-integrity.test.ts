@@ -96,6 +96,7 @@ test("sozlama va uning audit izi bitta tranzaksiyada yoziladi", async () => {
   };
   const service = new SettingsService(
     {
+      restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
       $transaction: async (callback: (client: typeof tx) => unknown) => {
         calls.push("begin");
         const result = await callback(tx);

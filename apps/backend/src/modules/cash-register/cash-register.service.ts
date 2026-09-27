@@ -6,6 +6,7 @@ import {
   ShiftStatus,
 } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
+import { resolveRestaurantTenantId } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
@@ -25,8 +26,13 @@ export class CashRegisterService {
 
   async getCurrentShift(user: AuthenticatedUser) {
     const employeeId = this.requireEmployee(user);
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, status: ShiftStatus.OPEN },
+      where: {
+        employeeId,
+        status: ShiftStatus.OPEN,
+        branch: { tenantId },
+      },
       include: {
         branch: true,
         employee: true,
@@ -111,8 +117,9 @@ export class CashRegisterService {
   }
 
   async getTransactions(shiftId: string, user: AuthenticatedUser) {
-    const shift = await this.prisma.shift.findUnique({
-      where: { id: shiftId },
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const shift = await this.prisma.shift.findFirst({
+      where: { id: shiftId, branch: { tenantId } },
       select: { branchId: true, employeeId: true },
     });
 
@@ -145,8 +152,13 @@ export class CashRegisterService {
     user: AuthenticatedUser,
   ) {
     const employeeId = this.requireEmployee(user);
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const shift = await this.prisma.shift.findFirst({
-      where: { employeeId, status: ShiftStatus.OPEN },
+      where: {
+        employeeId,
+        status: ShiftStatus.OPEN,
+        branch: { tenantId },
+      },
       orderBy: { openedAt: "desc" },
       select: { id: true, branchId: true, employeeId: true },
     });
@@ -165,6 +177,7 @@ export class CashRegisterService {
     return this.prisma.order.findMany({
       where: {
         shiftId: shift.id,
+        branch: { tenantId },
         createdAt: { gte: day.start, lt: day.end },
         ...(status ? { status } : {}),
         ...(search

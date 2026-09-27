@@ -6,6 +6,7 @@ import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitche
 import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
 import { kitchenStatusForOrder } from "../kitchen/kitchen-status-sync";
 import { PrismaService } from "../../prisma/prisma.service";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import { NotificationDeadLetterService } from "../notifications/notification-dead-letter.service";
 
 type StaffOrderAction = KitchenStaffAction;
@@ -325,8 +326,9 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     orderId: string,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<StaffOrderForMessage | null> {
-    const order = await client.order.findUnique({
-      where: { id: orderId },
+    const tenantId = await resolveSoleActiveTenantId(client);
+    const order = await client.order.findFirst({
+      where: { id: orderId, branch: { tenantId } },
       include: {
         items: { orderBy: { createdAt: "asc" } },
         customerOrder: {

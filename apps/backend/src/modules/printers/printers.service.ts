@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { resolveBranchScope, resolveRequiredBranchScope } from "../../common/auth/access-scope";
+import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
+import {
+  assertBranchBelongsToActor,
+  resolveRestaurantScope,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { writeAuditLog } from "../audit/audit-write";
@@ -10,10 +14,12 @@ import type { CreatePrinterDto, UpdatePrinterDto } from "./dto/printer.dto";
 export class PrintersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  listPrinters(branchId: string | undefined, user: AuthenticatedUser) {
-    const scopedBranchId = resolveBranchScope(user, branchId);
+  async listPrinters(branchId: string | undefined, user: AuthenticatedUser) {
+    const scope = await resolveRestaurantScope(this.prisma, user, branchId);
     return this.prisma.printer.findMany({
-      where: scopedBranchId ? { branchId: scopedBranchId } : {},
+      where: scope.branchId
+        ? { branchId: scope.branchId }
+        : { branch: { tenantId: scope.tenantId } },
       include: { branch: true },
       orderBy: [{ branchId: "asc" }, { name: "asc" }],
     });
@@ -21,6 +27,7 @@ export class PrintersService {
 
   async createPrinter(dto: CreatePrinterDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
     const metadata = dto.metadata ?? {};
     const printRoles = Array.isArray(metadata.printRoles)
       ? metadata.printRoles
@@ -33,13 +40,21 @@ export class PrintersService {
         name: dto.name,
         type: dto.type,
         status: dto.status ?? "ONLINE",
-        metadata: { protocol: "ESC_POS", ...metadata, printRoles } as Prisma.InputJsonObject,
+        metadata: {
+          protocol: "ESC_POS",
+          ...metadata,
+          printRoles,
+        } as Prisma.InputJsonObject,
       },
       include: { branch: true },
     });
   }
 
-  async updatePrinter(id: string, dto: UpdatePrinterDto, user: AuthenticatedUser) {
+  async updatePrinter(
+    id: string,
+    dto: UpdatePrinterDto,
+    user: AuthenticatedUser,
+  ) {
     const existing = await this.assertPrinter(id, user);
     const { metadata, ...data } = dto;
     return this.prisma.printer.update({
@@ -49,7 +64,11 @@ export class PrintersService {
         ...(metadata
           ? {
               metadata: {
-                ...(typeof existing.metadata === "object" && existing.metadata && !Array.isArray(existing.metadata) ? existing.metadata : {}),
+                ...(typeof existing.metadata === "object" &&
+                existing.metadata &&
+                !Array.isArray(existing.metadata)
+                  ? existing.metadata
+                  : {}),
                 ...metadata,
               } as Prisma.InputJsonObject,
             }
@@ -79,8 +98,13 @@ export class PrintersService {
   }
 
   async deletePrinters(ids: string[], user: AuthenticatedUser) {
-    const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
-    if (!uniqueIds.length) throw new NotFoundException("Kamida bitta printer tanlanishi kerak");
+    const uniqueIds = [
+      ...new Set(
+        (ids ?? []).filter((id) => typeof id === "string" && id.trim()),
+      ),
+    ];
+    if (!uniqueIds.length)
+      throw new NotFoundException("Kamida bitta printer tanlanishi kerak");
     for (const id of uniqueIds) {
       await this.assertPrinter(id, user);
       await this.prisma.printer.delete({ where: { id } });
@@ -92,12 +116,17 @@ export class PrintersService {
     id: string,
     user: AuthenticatedUser,
   ): Promise<{ branchId: string; name: string; metadata: unknown }> {
-    const printer = await this.prisma.printer.findUnique({
-      where: { id },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const printer = await this.prisma.printer.findFirst({
+      where: {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      },
       select: { id: true, branchId: true, name: true, metadata: true },
     });
     if (!printer) throw new NotFoundException("Printer not found");
-    resolveBranchScope(user, printer.branchId);
     return printer;
   }
 }

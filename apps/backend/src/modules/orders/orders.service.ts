@@ -26,6 +26,10 @@ import {
   resolveBranchScope,
   resolveRequiredBranchScope,
 } from "../../common/auth/access-scope";
+import {
+  assertBranchBelongsToActor,
+  resolveRestaurantTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { buildOrderListWhere } from "./orders-list-filters";
@@ -69,7 +73,6 @@ import {
   type ModifierSnapshot,
 } from "./order-rules";
 import {
-  assertBranchExists,
   assertEmployeeInBranch,
   assertOpenCashierShift,
   assertTableInBranch,
@@ -126,7 +129,7 @@ export class OrdersService {
   async listPosCatalog(user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user);
 
-    await assertBranchExists(this.prisma, branchId);
+    await assertBranchBelongsToActor(this.prisma, user, branchId);
 
     const categories = await this.prisma.category.findMany({
       where: {
@@ -295,10 +298,12 @@ export class OrdersService {
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       kitchenTicket = null;
+      let createdCheckout = false;
 
       try {
         const order = await this.prisma.$transaction(
           async (tx) => {
+            await assertBranchBelongsToActor(tx, user, branchId);
             const existingOperation = await tx.paymentOperation.findUnique({
               where: { idempotencyKey },
             });
@@ -311,7 +316,6 @@ export class OrdersService {
               );
             }
 
-            await assertBranchExists(tx, branchId);
             await assertEmployeeInBranch(tx, employeeId, branchId);
             const openShift = await assertOpenCashierShift(
               tx,
@@ -586,7 +590,9 @@ export class OrdersService {
             });
 
             kitchenTicket = confirmed.kitchenTicket;
-            return this.findOrderById(order.id, tx);
+            const createdOrder = await this.findOrderById(order.id, tx);
+            createdCheckout = true;
+            return createdOrder;
           },
           {
             isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -594,13 +600,15 @@ export class OrdersService {
           },
         );
 
-        this.kitchenService.emitOrderCreated(order);
-        this.kitchenService.emitOrderConfirmed(order);
+        if (createdCheckout) {
+          this.kitchenService.emitOrderCreated(order);
+          this.kitchenService.emitOrderConfirmed(order);
 
-        if (kitchenTicket) {
-          this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
+          if (kitchenTicket) {
+            this.kitchenService.emitOrderSentToKitchen(kitchenTicket);
+          }
+          void this.notifyTelegramStaffGroupIfNeeded(order.id);
         }
-        void this.notifyTelegramStaffGroupIfNeeded(order.id);
 
         /*
          * To'lov xulosasi TRANZAKSIYADAN TASHQARIDA hisoblanadi, chunki
@@ -658,7 +666,7 @@ export class OrdersService {
 
     const order = await this.withUniqueConstraintRetry(() =>
       this.prisma.$transaction(async (tx) => {
-        await assertBranchExists(tx, branchId);
+        await assertBranchBelongsToActor(tx, user, branchId);
         await assertEmployeeInBranch(tx, employeeId, branchId);
 
         if (dto.type === OrderType.DINE_IN && !dto.tableId) {
@@ -744,8 +752,15 @@ export class OrdersService {
   }
 
   async listOrders(query: ListOrdersDto, user: AuthenticatedUser) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const branchId = resolveBranchScope(user, query.branchId);
-    const where = buildOrderListWhere(query, branchId);
+    if (query.branchId) {
+      await assertBranchBelongsToActor(this.prisma, user, query.branchId);
+    }
+    const where: Prisma.OrderWhereInput = {
+      ...buildOrderListWhere(query, branchId),
+      branch: { tenantId },
+    };
 
     return this.prisma.order.findMany({
       where,
@@ -764,8 +779,14 @@ export class OrdersService {
     ];
     if (!uniqueIds.length)
       throw new BadRequestException("Kamida bitta buyurtma tanlanishi kerak");
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const branchId = resolveBranchScope(user);
     const orders = await this.prisma.order.findMany({
-      where: { id: { in: uniqueIds } },
+      where: {
+        id: { in: uniqueIds },
+        branch: { tenantId },
+        ...(branchId ? { branchId } : {}),
+      },
       select: {
         id: true,
         branchId: true,
@@ -774,9 +795,22 @@ export class OrdersService {
     });
     if (orders.length !== uniqueIds.length)
       throw new NotFoundException("Tanlangan buyurtmalarning biri topilmadi");
-    for (const order of orders) resolveBranchScope(user, order.branchId);
 
     await this.prisma.$transaction(async (tx) => {
+      const scopedOrders = await tx.order.findMany({
+        where: {
+          id: { in: uniqueIds },
+          branch: { tenantId },
+          ...(branchId ? { branchId } : {}),
+        },
+        select: { id: true },
+      });
+      if (scopedOrders.length !== uniqueIds.length) {
+        throw new NotFoundException(
+          "Tanlangan buyurtmalarning biri topilmadi",
+        );
+      }
+
       const paymentIds = (
         await tx.payment.findMany({
           where: { orderId: { in: uniqueIds } },
@@ -831,14 +865,12 @@ export class OrdersService {
   }
 
   async getOrder(id: string, user: AuthenticatedUser) {
-    const order = await this.findOrderById(id, this.prisma);
-    resolveBranchScope(user, order.branchId);
+    const order = await this.findOrderByIdForActor(id, user, this.prisma);
     return order;
   }
 
   async getTimeline(id: string, user: AuthenticatedUser) {
-    const order = await this.findOrderById(id, this.prisma);
-    resolveBranchScope(user, order.branchId);
+    await this.findOrderByIdForActor(id, user, this.prisma);
 
     return this.prisma.orderEvent.findMany({
       where: { orderId: id },
@@ -1087,15 +1119,15 @@ export class OrdersService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
-      const order = await tx.order.findUnique({ where: { id: orderId } });
+      const order = force
+        ? await this.findOrderByIdForActor(orderId, user, tx)
+        : await tx.order.findUnique({ where: { id: orderId } });
 
       if (!order) {
         throw new NotFoundException("Order not found");
       }
 
-      if (force) {
-        resolveBranchScope(user, order.branchId);
-      } else {
+      if (!force) {
         await assertEmployeeInBranch(tx, employeeId!, order.branchId);
       }
 
@@ -1624,6 +1656,29 @@ export class OrdersService {
       }
     }
   }
+  private async findOrderByIdForActor(
+    id: string,
+    user: AuthenticatedUser,
+    client: TransactionClient | PrismaService,
+  ) {
+    const tenantId = await resolveRestaurantTenantId(client, user);
+    const branchId = resolveBranchScope(user);
+    const order = await client.order.findFirst({
+      where: {
+        id,
+        branch: { tenantId },
+        ...(branchId ? { branchId } : {}),
+      },
+      include: orderInclude(),
+    });
+
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+
+    return order;
+  }
+
 
   private async findOrderById(
     id: string,

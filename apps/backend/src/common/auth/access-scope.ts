@@ -1,7 +1,21 @@
 import { ForbiddenException } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../types/authenticated-user";
 
 const globalReportRoles = new Set(["SUPER_ADMIN", "ACCOUNTANT"]);
+export type RestaurantRoleScope = { code: string; isBranchScoped: boolean };
+
+export function isPlatformRoleCode(code: string): boolean {
+  return code.startsWith("PLATFORM_");
+}
+
+export const restaurantUserWhere: Prisma.UserWhereInput = {
+  roles: { none: { role: { code: { startsWith: "PLATFORM_" } } } },
+};
+
+export function hasRestaurantGlobalScope(roles: readonly RestaurantRoleScope[]): boolean {
+  return roles.some((role) => !role.isBranchScoped && !isPlatformRoleCode(role.code));
+}
 
 export function resolveBranchScope(
   user: AuthenticatedUser,

@@ -14,8 +14,10 @@ import {
   getCustomerJwtRefreshSecret,
 } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import { SettingsService } from "../settings/settings.service";
 import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
+import { KitchenGateway } from "../kitchen/kitchen.gateway";
 import { normalizeCustomerPhone } from "./customer-phone";
 import type {
   CustomerLogoutDto,
@@ -43,6 +45,7 @@ type TransactionClient = Prisma.TransactionClient;
 type CustomerAccessPayload = {
   id: string;
   phone: string;
+  sessionId: string;
   tokenUse: "customer_access";
 };
 
@@ -60,9 +63,11 @@ export class CustomerAuthService {
     private readonly jwtService: JwtService,
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly settingsService: SettingsService,
+    private readonly kitchenGateway: KitchenGateway,
   ) {}
 
   async requestCode(dto: CustomerRequestCodeDto) {
+    await resolveSoleActiveTenantId(this.prisma);
     const phone = normalizeCustomerPhone(dto.phone);
     const ttlMinutes = await this.settingsService.getInt(
       "customer_code_ttl_minutes",
@@ -102,6 +107,7 @@ export class CustomerAuthService {
   }
 
   async verifyCode(dto: CustomerVerifyCodeDto) {
+    await resolveSoleActiveTenantId(this.prisma);
     const phone = normalizeCustomerPhone(dto.phone);
     const now = new Date();
     const challenge = await this.prisma.customerVerificationChallenge.findFirst(
@@ -167,6 +173,7 @@ export class CustomerAuthService {
   }
 
   async refresh(dto: CustomerRefreshDto) {
+    await resolveSoleActiveTenantId(this.prisma);
     const refreshToken = dto.refreshToken;
     if (!refreshToken) throw new UnauthorizedException("Refresh token is required");
     const payload = await this.verifyCustomerRefreshToken(refreshToken);
@@ -222,6 +229,7 @@ export class CustomerAuthService {
         },
         data: { revokedAt: new Date() },
       });
+      this.kitchenGateway.disconnectCustomerSession(payload.sessionId);
       return { revoked: true };
     } catch {
       return { revoked: false };
@@ -247,6 +255,7 @@ export class CustomerAuthService {
     const accessPayload: CustomerAccessPayload = {
       id: customer.id,
       phone: customer.phone,
+      sessionId,
       tokenUse: "customer_access",
     };
     const refreshPayload: CustomerRefreshPayload = {

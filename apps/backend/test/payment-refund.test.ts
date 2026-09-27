@@ -46,6 +46,7 @@ function fixture(methodCode = "CASH") {
       },
     },
     payment: {
+      findFirst: async () => payment,
       findUnique: async () => payment,
       update: async ({ data }: { data: { status: PaymentStatus } }) => {
         calls.push(`payment:${data.status}`);
@@ -101,6 +102,9 @@ function fixture(methodCode = "CASH") {
     },
   };
   const prisma = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+    },
     $transaction: async <T>(callback: (client: typeof tx) => Promise<T>) =>
       callback(tx),
   } as unknown as PrismaService;

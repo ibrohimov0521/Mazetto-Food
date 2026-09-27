@@ -7,6 +7,11 @@ import {
 } from "@nestjs/common";
 import { BranchDayOfWeek, Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
+import {
+  assertBranchBelongsToActor,
+  resolveRestaurantTenantId,
+  resolveSoleActiveTenantId,
+} from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { writeAuditLog } from "../audit/audit-write";
@@ -22,10 +27,11 @@ export class BranchesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listBranches(user: AuthenticatedUser) {
+    const tenantId = await this.resolveTenantId(user);
     const branchId = resolveBranchScope(user);
 
     const branches = await this.prisma.branch.findMany({
-      where: branchId ? { id: branchId } : {},
+      where: { tenantId, ...(branchId ? { id: branchId } : {}) },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         workingHours: { orderBy: { dayOfWeek: "asc" } },
@@ -44,10 +50,11 @@ export class BranchesService {
   }
 
   async getBranch(id: string, user: AuthenticatedUser) {
+    const tenantId = await this.resolveTenantId(user);
     resolveBranchScope(user, id);
 
-    const branch = await this.prisma.branch.findUnique({
-      where: { id },
+    const branch = await this.prisma.branch.findFirst({
+      where: { id, tenantId },
       include: {
         workingHours: { orderBy: { dayOfWeek: "asc" } },
         _count: {
@@ -70,22 +77,24 @@ export class BranchesService {
 
   async createBranch(dto: CreateBranchDto, user: AuthenticatedUser) {
     this.assertGlobalBranchManagement(user);
+    const tenantId = await this.resolveTenantId(user);
 
     const data = this.branchCreateData(dto);
     await this.assertCodeAvailable(data.code);
 
     return this.prisma.branch.create({
-      data,
+      data: { ...data, tenant: { connect: { id: tenantId } } },
       include: { workingHours: true },
     });
   }
 
   async permanentlyDeleteBranches(ids: string[], user: AuthenticatedUser) {
     this.assertGlobalBranchManagement(user);
+    const tenantId = await this.resolveTenantId(user);
     const uniqueIds = [...new Set(ids.filter(Boolean))];
     if (!uniqueIds.length) throw new BadRequestException("Branch IDs are required");
     const rows = await this.prisma.branch.findMany({
-      where: { id: { in: uniqueIds } },
+      where: { id: { in: uniqueIds }, tenantId },
       select: {
         id: true,
         name: true,
@@ -123,7 +132,7 @@ export class BranchesService {
     const blocked = rows.find((row) => Object.values(row._count).some((value) => value > 0));
     if (blocked) throw new BadRequestException(`Filial ${blocked.name} tarix yoki bog'langan obyektlarga ega; o'chirish uchun avval ularni ko'chiring`);
     await this.prisma.$transaction(async (tx) => {
-      await tx.branch.deleteMany({ where: { id: { in: uniqueIds } } });
+      await tx.branch.deleteMany({ where: { id: { in: uniqueIds }, tenantId } });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, { userId: user.id, action: "BRANCH_DELETED", entity: "Branch", entityId: id });
       }
@@ -136,8 +145,7 @@ export class BranchesService {
     dto: UpdateBranchDto,
     user: AuthenticatedUser,
   ) {
-    resolveBranchScope(user, id);
-    await this.assertBranch(id);
+    await this.assertBranch(id, user);
 
     const data = this.branchUpdateData(dto);
 
@@ -166,13 +174,11 @@ export class BranchesService {
   ): Promise<void> {
     const duplicate = await this.prisma.branch.findFirst({
       where: { code, ...(excludeId ? { id: { not: excludeId } } : {}) },
-      select: { id: true, name: true },
+      select: { id: true },
     });
 
     if (duplicate) {
-      throw new ConflictException(
-        `Branch code "${code}" is already used by ${duplicate.name}`,
-      );
+      throw new ConflictException("Branch code is already in use");
     }
   }
 
@@ -181,8 +187,7 @@ export class BranchesService {
     hours: BranchWorkingHourDto[],
     user: AuthenticatedUser,
   ) {
-    resolveBranchScope(user, id);
-    await this.assertBranch(id);
+    await this.assertBranch(id, user);
 
     return this.prisma.$transaction(async (tx) => {
       for (const hour of hours) {
@@ -226,8 +231,7 @@ export class BranchesService {
     dto: SetProductBranchAvailabilityDto,
     user: AuthenticatedUser,
   ) {
-    resolveBranchScope(user, id);
-    await this.assertBranch(id);
+    await this.assertBranch(id, user);
     const product = await this.prisma.product.findFirst({
       where: {
         id: dto.productId,
@@ -261,8 +265,9 @@ export class BranchesService {
   }
 
   async listCustomerBranches() {
+    const tenantId = await this.requireSingleActiveTenantId();
     const branches = await this.prisma.branch.findMany({
-      where: { isActive: true },
+      where: { isActive: true, tenantId },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: { workingHours: { orderBy: { dayOfWeek: "asc" } } },
     });
@@ -270,12 +275,27 @@ export class BranchesService {
     return branches.map((branch) => this.toCustomerBranch(branch));
   }
 
+  async resolveCustomerTenantId(branchId?: string): Promise<string> {
+    const tenantId = await this.requireSingleActiveTenantId();
+    if (branchId) {
+      const branch = await this.prisma.branch.findFirst({
+        where: { id: branchId, isActive: true, tenantId },
+        select: { id: true },
+      });
+      if (!branch) {
+        throw new NotFoundException("Branch not found");
+      }
+    }
+    return tenantId;
+  }
+
   async assertCustomerBranchAcceptsOrder(
     branchId: string,
     type: "DELIVERY" | "PICKUP",
   ) {
+    const tenantId = await this.requireSingleActiveTenantId();
     const branch = await this.prisma.branch.findFirst({
-      where: { id: branchId, isActive: true },
+      where: { id: branchId, isActive: true, tenantId },
       include: { workingHours: true },
     });
 
@@ -493,15 +513,16 @@ export class BranchesService {
     }
   }
 
-  private async assertBranch(id: string): Promise<void> {
-    const branch = await this.prisma.branch.findUnique({
-      where: { id },
-      select: { id: true },
-    });
+  private assertBranch(id: string, user: AuthenticatedUser): Promise<string> {
+    return assertBranchBelongsToActor(this.prisma, user, id);
+  }
 
-    if (!branch) {
-      throw new NotFoundException("Branch not found");
-    }
+  private resolveTenantId(user: AuthenticatedUser): Promise<string> {
+    return resolveRestaurantTenantId(this.prisma, user);
+  }
+
+  private requireSingleActiveTenantId(): Promise<string> {
+    return resolveSoleActiveTenantId(this.prisma);
   }
 
   private assertGlobalBranchManagement(user: AuthenticatedUser): void {

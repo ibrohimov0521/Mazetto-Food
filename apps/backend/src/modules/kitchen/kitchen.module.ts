@@ -10,6 +10,6 @@ import { KitchenService } from "./kitchen.service";
   imports: [JwtModule.register({}), PrismaModule],
   controllers: [KitchenController],
   providers: [KitchenActionService, KitchenGateway, KitchenService],
-  exports: [KitchenService],
+  exports: [KitchenService, KitchenGateway],
 })
 export class KitchenModule {}

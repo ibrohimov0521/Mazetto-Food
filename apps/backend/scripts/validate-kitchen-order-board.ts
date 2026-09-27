@@ -38,8 +38,10 @@ assert.match(
 );
 assert.match(
   kitchenService,
-  /resolveBranchScope\(actor\.user, order\.branchId\)/,
+  /actor\.user\s*\?\s*await resolveRestaurantScope\(this\.prisma,\s*actor\.user\)/,
 );
+assert.match(kitchenService, /resolveSoleActiveTenantId\(this\.prisma\)/);
+assert.match(kitchenService, /branch: \{ tenantId: scope\.tenantId \}/);
 assert.match(kitchenService, /action === "cancel"/);
 
 assert.match(kitchenController, /@Patch\("orders\/:id\/cancel"\)/);

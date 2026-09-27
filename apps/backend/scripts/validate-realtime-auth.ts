@@ -13,8 +13,8 @@ const staffRealtimeHook = readSource("apps/pos-web/lib/use-staff-realtime.ts");
 const adminKitchenMonitor = readSource("apps/pos-web/components/admin/admin-kitchen-monitor.tsx");
 const realtimePayloadBlock = sourceBetween(
   gateway,
-  "  private toRealtimePayload(payload: unknown, scope: OrderEventScope): OrderRealtimePayload {",
-  "  private readString(value: unknown, path: string): string | undefined {",
+  "  private toRealtimePayload(",
+  "  private readString(",
 );
 
 // WebSocket CORS va HTTP CORS bitta manbadan oziqlanadi (PHASE 6 H12).
@@ -36,21 +36,22 @@ assert.match(corsConfig, /https:\/\/pos\.mazettofood\.uz/);
 // ko'rinib, aslida hamma so'rovni buzardi.
 assert.match(corsConfig, /cannot be '\*' while credentials are enabled/);
 
-assert.match(gateway, /private async authenticateSocket\(client: Socket\): Promise<RealtimeAuth \| null>/);
+assert.match(gateway, /private async authenticateSocket\(\s*client: Socket,\s*\): Promise<RealtimeAuth \| null>/);
 assert.match(gateway, /client\.disconnect\(true\)/);
 assert.match(gateway, /getCustomerJwtAccessSecret\(\)/);
 assert.match(gateway, /getJwtAccessSecret\(\)/);
 assert.match(gateway, /payload\.tokenUse !== "customer_access"/);
 
-assert.match(gateway, /void client\.join\(this\.customerRoom\(auth\.customerId\)\)/);
+assert.match(gateway, /await client\.join\(this\.customerSessionRoom\(auth\.sessionId\)\)/);
+assert.match(gateway, /await client\.join\(this\.customerRoom\(auth\.customerId\)\)/);
 assert.match(gateway, /void client\.join\(this\.branchRoom\(auth\.branchId\)\)/);
 assert.match(gateway, /void client\.join\(this\.globalStaffRoom\(\)\)/);
-assert.match(gateway, /this\.server\.to\(\[...rooms\]\)\.emit\(event, this\.toRealtimePayload\(payload, scope\)\)/);
+assert.match(gateway, /this\.server\s*\.to\(\[\.\.\.rooms\]\)\s*\.emit\(event,\s*this\.toRealtimePayload\(payload,\s*scope\)\)/);
 assert.doesNotMatch(gateway, /this\.server\.emit\(event, payload\)/);
 assert.doesNotMatch(gateway, /\.emit\(event,\s*payload\)/);
 
 assert.match(gateway, /customerOrder: \{ select: \{ customerId: true \} \}/);
-assert.match(gateway, /private toRealtimePayload\(payload: unknown, scope: OrderEventScope\): OrderRealtimePayload/);
+assert.match(gateway, /private toRealtimePayload\(\s*payload: unknown,\s*scope: OrderEventScope,\s*\): OrderRealtimePayload/);
 assert.doesNotMatch(realtimePayloadBlock, /phone/);
 assert.doesNotMatch(realtimePayloadBlock, /deliveryAddress/);
 assert.doesNotMatch(realtimePayloadBlock, /\.\.\.payload/);

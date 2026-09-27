@@ -93,6 +93,10 @@ export class CustomerOrderEngineService {
           ? deliveryAddressText(deliveryLocation)
           : dto.address?.trim()
         : undefined;
+    await this.branchesService.assertCustomerBranchAcceptsOrder(
+      dto.branchId,
+      dto.type,
+    );
     const requestHash = this.hashCheckoutRequest(dto);
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
@@ -117,11 +121,6 @@ export class CustomerOrderEngineService {
     }
 
     try {
-      await this.branchesService.assertCustomerBranchAcceptsOrder(
-        dto.branchId,
-        dto.type,
-      );
-
       if (dto.type === OnlineOrderTypeDto.DELIVERY && !deliveryAddress) {
         throw new BadRequestException("Delivery address is required");
       }
@@ -560,6 +559,7 @@ export class CustomerOrderEngineService {
         isAvailable: true,
         ...customerVisibleProductWhere(),
         OR: [{ branchId }, { branchId: null }],
+        category: { OR: [{ branchId }, { branchId: null }] },
         ...this.branchesService.getUnavailableProductWhere(branchId),
       },
       include: { variants: true },

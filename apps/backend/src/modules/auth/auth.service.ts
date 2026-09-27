@@ -3,6 +3,7 @@ import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { hasRestaurantGlobalScope } from "../../common/auth/access-scope";
 import {
   getJwtAccessExpiresIn,
   getJwtAccessSecret,
@@ -18,6 +19,7 @@ type UserWithAuthRelations = {
   id: string;
   email: string | null;
   phone: string | null;
+  credentialVersion: number;
   employee: { id: string; branchId: string } | null;
   roles: {
     role: {
@@ -210,10 +212,9 @@ export class AuthService {
       id: user.id,
       ...(user.email ? { email: user.email } : {}),
       ...(user.phone ? { phone: user.phone } : {}),
+      credentialVersion: user.credentialVersion,
       ...(user.employee ? { employeeId: user.employee.id, branchId: user.employee.branchId } : {}),
-      isGlobalScope: user.roles.some(
-        (userRole) => !userRole.role.isBranchScoped,
-      ),
+      isGlobalScope: hasRestaurantGlobalScope(user.roles.map(({ role }) => role)),
       roles: user.roles.map((userRole) => userRole.role.code),
       permissions: user.roles.flatMap((userRole) =>
         userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),

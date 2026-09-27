@@ -44,46 +44,50 @@ This checklist is for the next controlled production release. It is documentatio
    - Changes reach `main` only through a PR whose `verify` check is green; direct pushes are blocked by branch protection.
    - Avoid committing untracked QA screenshots, temporary DB files, `.env`, or secrets.
 
-4. Backend deploy
-   - Deploy backend image built from the approved commit.
-   - Runtime must provide real `DATABASE_URL`.
-   - Run production migrations with `pnpm --dir apps/backend run prisma:migrate:deploy` or equivalent `prisma migrate deploy`.
+4. Apply production migrations before deploying any application
+   - Keep the currently deployed backend running while applying additive migrations.
+   - Copy only the pending migration directories from the approved commit into the running backend container, then run `prisma migrate status`, `prisma migrate deploy`, and `prisma migrate status` again. See the exact commands in `docs/CI_CD.md`.
    - Do not run `prisma:migrate:dev` on production.
+   - Deploy the backend image only after the new migrations are confirmed applied. The credential-version migration is read by the new authentication code.
 
 5. Customer-web deploy if changed
    - Build with the existing production public build arguments.
    - Required public values include API and media base URLs.
 
-6. Media volume population
+6. BestTeam owner panel deploy if changed
+   - After migrations and backend deploy, dispatch the `platform-web` phase with `migrations_applied=true`.
+   - Verify `https://admin.mazetto.uz/login` returns HTTP 200 in the read-only smoke.
+
+7. Media volume population
    - Use the prepared media copy script only during an approved release.
    - Target production path: `/var/lib/docker/volumes/mazetto-media/_data`.
    - Copy only approved existing files from the manifest.
    - Do not fabricate unresolved assets.
 
-7. Media service validation
+8. Media service validation
    - Confirm media service is running.
    - Confirm `/healthz` returns success.
    - Confirm representative category/product files return HTTP 200 after population.
    - Confirm known unresolved assets remain documented rather than falsely marked complete.
 
-8. Telegram webhook health check
+9. Telegram webhook health check
    - Verify webhook info only.
    - Do not reset or change the webhook unless the release prompt explicitly requires it.
 
-9. Public route health
-   - Run `pnpm release:smoke` (or GitHub Actions → Production smoke). It is read-only and covers backend health with database, customer-web pages, the customer menu/home APIs from step 10, pos-web and media health, and protected endpoints that must return 401 without a token. Representative media file URLs still need the manual check below.
+10. Public route health
+   - Run `pnpm release:smoke` (or GitHub Actions → Production smoke). It is read-only and covers backend health with database, customer-web pages, the customer menu/home APIs from step 11, pos-web, owner login, and media health, and protected endpoints that must return 401 without a token. Representative media file URLs still need the manual check below.
    - Backend health.
    - Customer web home.
    - Customer menu.
    - Media representative URLs.
 
-10. API smoke
+11. API smoke
     - Customer branches.
     - Customer menu categories.
     - Customer menu products.
     - Customer home data.
 
-11. Telegram UX smoke
+12. Telegram UX smoke
     - Verify `/start`.
     - Verify main menu edits in place.
     - Verify Lavash family appears once.
@@ -92,7 +96,7 @@ This checklist is for the next controlled production release. It is documentatio
     - Verify branch location button.
     - Avoid creating duplicate production orders unless a controlled order proof is explicitly approved.
 
-12. Mark the release
+13. Mark the release
     - Move the `production` tag to the released commit: `git tag -f production <sha> && git push -f origin production`.
     - Automatic deploys and `pnpm release:gate` (without `--since`) compare against this tag. If it is left behind, the next automatic deploy sees already-applied migrations as new and stops.
 

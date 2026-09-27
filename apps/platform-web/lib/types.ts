@@ -25,10 +25,12 @@ export type Kitchen = {
   onlineDevices: number;
   offlineDevices: number;
   lastActivityAt: string | null;
+  deviceVersions?: Array<{ deviceType: string; version: string; total: number; online: number; offline: number }>;
 };
 
 export type Heartbeat = {
   version: string;
+  buildId?: string;
   status: "healthy" | "degraded";
   services: { backend: string; database: string; redis: string };
   totals: {
@@ -53,6 +55,7 @@ export type Heartbeat = {
 export type Site = {
   id: string;
   siteKey: string;
+  tenantId: string | null;
   name: string;
   productCode: string;
   websiteUrl: string;
@@ -131,3 +134,44 @@ export type PlatformReports = {
 export type PlatformHealth = { service: string; status: string; database: { status: string }; redis: "connected" | "fallback" };
 
 export type ProvisionedAgent = { site: Site; agentToken: string };
+
+
+export type TenantRegistryEntry = {
+  id: string;
+  code: string;
+  name: string;
+  status: "PROVISIONING" | "ACTIVE" | "SUSPENDED" | "ARCHIVED";
+  createdAt: string;
+  updatedAt: string;
+  branches: Array<{
+    id: string;
+    code: string;
+    name: string;
+    isActive: boolean;
+    isTemporarilyClosed: boolean;
+    acceptsOrders: boolean;
+  }>;
+  activity?: {
+    activeBranches: number;
+    acceptingOrdersBranches: number;
+    openOrders: number;
+    onlineDevices: number;
+    offlineDevices: number;
+  };
+  platformSites: Array<{
+    id: string;
+    name: string;
+    productCode: string;
+    isActive: boolean;
+    agentStatus: Site["agentStatus"];
+    lastHeartbeatAt: string | null;
+    website: { status: Probe["status"]; checkedAt: string | null };
+    api: { status: Probe["status"]; checkedAt: string | null };
+  }>;
+  domains: Array<{
+    id: string;
+    hostname: string;
+    status: "PENDING" | "VERIFIED" | "DISABLED";
+    verifiedAt: string | null;
+  }>;
+};

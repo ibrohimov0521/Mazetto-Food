@@ -16,11 +16,13 @@ import { Public } from "../../common/decorators/public.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
+  CreateTenantDomainDto,
   CreatePlatformSiteDto,
   PlatformHeartbeatDto,
   UpdatePlatformSiteDto,
 } from "./dto/platform-monitoring.dto";
 import { PlatformMonitoringService } from "./platform-monitoring.service";
+import { TenantDomainService } from "./tenant-domain.service";
 
 @Controller("platform/sites")
 @Roles("PLATFORM_OWNER")
@@ -67,6 +69,58 @@ export class PlatformMonitoringController {
     return this.monitoring.listEvents(id, limit, branchId);
   }
 }
+
+@Controller("platform/tenants")
+@Roles("PLATFORM_OWNER")
+@Permissions(PERMISSIONS.SYSTEM_HEALTH_VIEW)
+export class PlatformTenantsController {
+  constructor(
+    private readonly monitoring: PlatformMonitoringService,
+    private readonly domains: TenantDomainService,
+  ) {}
+
+  @Get()
+  listTenants() {
+    return this.monitoring.listTenants();
+  }
+
+  @Post(":tenantId/domains")
+  createDomain(
+    @Param("tenantId") tenantId: string,
+    @Body() dto: CreateTenantDomainDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.domains.create(tenantId, dto, user);
+  }
+
+  @Post(":tenantId/domains/:domainId/verify")
+  verifyDomain(
+    @Param("tenantId") tenantId: string,
+    @Param("domainId") domainId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.domains.verify(tenantId, domainId, user);
+  }
+
+  @Post(":tenantId/domains/:domainId/rotate-challenge")
+  rotateDomainChallenge(
+    @Param("tenantId") tenantId: string,
+    @Param("domainId") domainId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.domains.rotateChallenge(tenantId, domainId, user);
+  }
+
+  @Post(":tenantId/domains/:domainId/disable")
+  disableDomain(
+    @Param("tenantId") tenantId: string,
+    @Param("domainId") domainId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.domains.disable(tenantId, domainId, user);
+  }
+}
+
 
 @Controller("platform/events")
 @Roles("PLATFORM_OWNER")

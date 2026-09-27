@@ -14,3 +14,34 @@
 .backup-summary{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:15px 17px;background:#fff;border:1px solid #e1e9e9;border-radius:7px;color:#61777b;font-size:11px}.backup-summary strong{color:#455d62}.event-recommendation{color:#627c81!important;white-space:normal!important;max-width:680px;line-height:1.4}
 @media(max-width:760px){.backup-summary{align-items:flex-start;flex-direction:column;gap:8px}.event-recommendation{max-width:100%}.heading-actions{flex-wrap:wrap}}
 .event-dot.tone-danger{background:#ce4b4b}.event-dot.tone-warning{background:#d69120}
+/* BestTeam owner-console brand layer */
+:root{color-scheme:light;--bt-ink:#142d49;--bt-muted:#607b98;--bt-blue:#3578d4;--bt-blue-dark:#215fae;--bt-blue-soft:#e8f2ff;--bt-border:#d7e5f5}
+html{min-height:100%;background:#eaf2fb}body{min-height:100vh;color:var(--bt-ink);background:transparent}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(rgba(238,246,255,.78),rgba(233,243,255,.86)),url('/bestteam-background.webp') center center/cover no-repeat;pointer-events:none}
+.shell{background:transparent}.sidebar,.topbar,.metric,.attention-list,.table-wrap,.service-item,.service-strip,.events-list,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton,.modal,.login-panel{background:rgba(255,255,255,.96);border-color:var(--bt-border)}
+.sidebar-head,.sidebar-bottom,.topbar,.attention-row,.event-row,.global-event,.audit-row,.service-line,.setting-row{border-color:#e2ebf6}
+.brand-mark{width:34px;height:34px;overflow:hidden;background:#fff;border:1px solid #dbe7f5;border-radius:7px}.brand-mark img{width:100%;height:100%;object-fit:cover;display:block}.owner-avatar{overflow:hidden;background:#fff;border:1px solid var(--bt-border)}.owner-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.brand,.login-brand,.breadcrumb,.page-heading h1,.section-head h2,.table-link strong,.strong-cell,.metric strong,.service-item strong,.event-row strong,.global-event-copy strong,.audit-copy strong{color:var(--bt-ink)}
+.nav-link{color:#526f8e}.nav-link:hover,.icon-button:hover{background:#edf5ff;color:var(--bt-blue-dark)}.nav-link.active{background:var(--bt-blue-soft);color:var(--bt-blue-dark)}.eyebrow,.text-link,.back-link,.service-icon,.audit-icon{color:var(--bt-blue-dark)}.metric-icon{background:var(--bt-blue-soft);color:var(--bt-blue-dark)}
+.button{border-color:#cbdced;color:#294b70;background:#fff}.button:hover{background:#f0f6ff}.button.primary{border-color:var(--bt-blue);background:var(--bt-blue);color:#fff}.button.primary:hover{border-color:var(--bt-blue-dark);background:var(--bt-blue-dark)}
+.service-strip,.segmented{background:#f4f8fe}.segmented button[aria-pressed="true"]{color:var(--bt-blue-dark)}.report-bar{background:var(--bt-blue)}.form-stack input:focus{border-color:var(--bt-blue);box-shadow:0 0 0 3px #3578d422}.login-page{background:transparent}
+/* Keep the supplied background visible and crop the logo's empty canvas in its frame. */
+body{position:relative;isolation:isolate}
+body::before{z-index:-1;background:linear-gradient(rgba(238,246,255,.42),rgba(233,243,255,.56)),url('/bestteam-background.webp') center center/cover no-repeat}
+.brand-mark img,.owner-avatar img{transform:scale(2);transform-origin:center}
+
+.device-version-list{display:grid;gap:4px;margin-top:7px;min-width:160px;font-size:10px;line-height:1.4;color:#607b98}.device-version-list strong{font-size:10px;color:#142d49}.device-version-list span{white-space:normal}
+.tenant-monitor-site{display:grid;gap:5px;min-width:175px}.tenant-monitor-service{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#61758b;font-size:10px}.tenant-monitor-service .status{flex:none}
+.tenant-domain-panel{margin-bottom:28px}
+.tenant-domain-form{grid-template-columns:minmax(220px,1fr) auto;align-items:end;max-width:700px;margin:14px 0 20px}
+.tenant-domain-form button{height:39px}
+.tenant-domain-open{margin-top:5px;white-space:nowrap;padding:0 8px;min-height:29px;font-size:10px}
+.tenant-domain-actions{display:flex;flex-wrap:wrap;gap:6px;min-width:220px}
+.tenant-domain-actions .button{min-height:30px;padding:0 8px;font-size:10px}
+.tenant-domain-challenge{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px;margin:14px 0;background:#f4f8fe;border:1px solid var(--bt-border);border-radius:6px}
+.tenant-domain-challenge>div{display:grid;gap:7px;min-width:0}
+.tenant-domain-challenge code{overflow-wrap:anywhere;color:var(--bt-ink)}
+.tenant-domain-token{display:block;padding:9px;background:#fff;border:1px solid var(--bt-border);border-radius:4px}
+.tenant-domain-challenge small,.tenant-domain-challenge span{font-size:11px;color:var(--bt-muted);line-height:1.45}
+.button.danger{border-color:#f0c7c3;color:#a8443c;background:#fff7f6}
+@media(max-width:760px){.tenant-domain-form{grid-template-columns:1fr}.tenant-domain-challenge{flex-direction:column}.tenant-domain-actions{min-width:0}}

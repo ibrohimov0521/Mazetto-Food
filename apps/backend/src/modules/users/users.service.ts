@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import { restaurantUserWhere, resolveBranchScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 
@@ -12,6 +12,7 @@ export class UsersService {
 
     return this.prisma.user.findMany({
       where: {
+        ...restaurantUserWhere,
         ...(branchId ? { employee: { branchId } } : {}),
       },
       orderBy: { createdAt: "desc" },

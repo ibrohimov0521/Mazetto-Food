@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { KitchenTicketStatus, OrderStatus } from "@prisma/client";
 import { orderStatusLabel } from "../../common/utils/order-status-label";
+import { hasRestaurantGlobalScope } from "../../common/auth/access-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CustomerCourierService } from "../customers/customer-courier.service";
@@ -772,9 +773,7 @@ export class TelegramStaffService implements OnModuleInit {
     const user: AuthenticatedUser = {
       id: staffUser.id,
       ...(employee ? { employeeId: employee.id, branchId: employee.branchId } : {}),
-      isGlobalScope: staffUser.roles.some(
-        (item) => !item.role.isBranchScoped,
-      ),
+      isGlobalScope: hasRestaurantGlobalScope(staffUser.roles.map(({ role }) => role)),
       roles,
       permissions,
     };

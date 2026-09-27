@@ -9,6 +9,7 @@ import { JwtService } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
 import { timingSafeEqual } from "node:crypto";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
+import { hasRestaurantGlobalScope } from "../auth/access-scope";
 import type { AuthenticatedRequest, AuthenticatedUser } from "../types/authenticated-user";
 import { getJwtAccessSecret } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -45,7 +46,11 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync<AuthenticatedUser>(token, {
         secret: getJwtAccessSecret(),
       });
-      request.user = await this.resolveCurrentUser(payload.id);
+      const currentUser = await this.resolveCurrentUser(payload.id);
+      if ((payload.credentialVersion ?? 0) !== (currentUser.credentialVersion ?? 0)) {
+        throw new UnauthorizedException("Credentials changed; sign in again");
+      }
+      request.user = currentUser;
       await this.assertDesktopDeviceEnrollment(request);
       return true;
     } catch (error) {
@@ -152,6 +157,7 @@ export class JwtAuthGuard implements CanActivate {
         id: true,
         email: true,
         phone: true,
+        credentialVersion: true,
         isActive: true,
         employee: {
           select: {
@@ -190,17 +196,15 @@ export class JwtAuthGuard implements CanActivate {
     if (!user?.isActive) {
       throw new UnauthorizedException("User is not active");
     }
-
     const resolved: AuthenticatedUser = {
       id: user.id,
       ...(user.email ? { email: user.email } : {}),
       ...(user.phone ? { phone: user.phone } : {}),
+      credentialVersion: user.credentialVersion,
       ...(user.employee?.status === "ACTIVE"
         ? { employeeId: user.employee.id, branchId: user.employee.branchId }
         : {}),
-      isGlobalScope: user.roles.some(
-        (userRole) => !userRole.role.isBranchScoped,
-      ),
+      isGlobalScope: hasRestaurantGlobalScope(user.roles.map(({ role }) => role)),
       roles: user.roles.map((userRole) => userRole.role.code),
       permissions: user.roles.flatMap((userRole) =>
         userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
