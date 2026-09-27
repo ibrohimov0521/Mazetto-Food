@@ -17,7 +17,7 @@
 /* BestTeam owner-console brand layer */
 :root{color-scheme:light;--bt-ink:#142d49;--bt-muted:#607b98;--bt-blue:#3578d4;--bt-blue-dark:#215fae;--bt-blue-soft:#e8f2ff;--bt-border:#d7e5f5}
 html{min-height:100%;background:#eaf2fb}body{min-height:100vh;color:var(--bt-ink);background:transparent}
-body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(rgba(238,246,255,.78),rgba(233,243,255,.86)),url('/bestteam-background.png') center center/cover no-repeat;pointer-events:none}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(rgba(238,246,255,.78),rgba(233,243,255,.86)),url('/bestteam-background.webp') center center/cover no-repeat;pointer-events:none}
 .shell{background:transparent}.sidebar,.topbar,.metric,.attention-list,.table-wrap,.service-item,.service-strip,.events-list,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton,.modal,.login-panel{background:rgba(255,255,255,.96);border-color:var(--bt-border)}
 .sidebar-head,.sidebar-bottom,.topbar,.attention-row,.event-row,.global-event,.audit-row,.service-line,.setting-row{border-color:#e2ebf6}
 .brand-mark{width:34px;height:34px;overflow:hidden;background:#fff;border:1px solid #dbe7f5;border-radius:7px}.brand-mark img{width:100%;height:100%;object-fit:cover;display:block}.owner-avatar{overflow:hidden;background:#fff;border:1px solid var(--bt-border)}.owner-avatar img{width:100%;height:100%;object-fit:cover;display:block}
@@ -27,7 +27,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 .service-strip,.segmented{background:#f4f8fe}.segmented button[aria-pressed="true"]{color:var(--bt-blue-dark)}.report-bar{background:var(--bt-blue)}.form-stack input:focus{border-color:var(--bt-blue);box-shadow:0 0 0 3px #3578d422}.login-page{background:transparent}
 /* Keep the supplied background visible and crop the logo's empty canvas in its frame. */
 body{position:relative;isolation:isolate}
-body::before{z-index:-1;background:linear-gradient(rgba(238,246,255,.42),rgba(233,243,255,.56)),url('/bestteam-background.png') center center/cover no-repeat}
+body::before{z-index:-1;background:linear-gradient(rgba(238,246,255,.42),rgba(233,243,255,.56)),url('/bestteam-background.webp') center center/cover no-repeat}
 .brand-mark img,.owner-avatar img{transform:scale(2);transform-origin:center}
 
 .device-version-list{display:grid;gap:4px;margin-top:7px;min-width:160px;font-size:10px;line-height:1.4;color:#607b98}.device-version-list strong{font-size:10px;color:#142d49}.device-version-list span{white-space:normal}

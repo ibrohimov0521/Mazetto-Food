@@ -58,6 +58,9 @@ class InMemoryPrisma {
   customers: CustomerRecord[] = [];
   challenges: ChallengeRecord[] = [];
   sessions: SessionRecord[] = [];
+  restaurantTenant = {
+    findMany: async () => [{ id: "tenant-mazetto", status: "ACTIVE" }],
+  };
   private sequence = 0;
 
   customer = {

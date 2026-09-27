@@ -203,15 +203,27 @@ pnpm release:gate <sha>
 - `production` tegidan beri qaysi ilovalar o'zgargani va yangi migratsiyalar
   ro'yxatini chiqaradi. Boshqa nuqta bilan solishtirish: `--since <sha>`.
 
-**Migratsiya — production konteynerida** (backup olingandan keyin,
-`MAZETTO_RELEASE_READINESS_CHECKLIST.md` 2-qadam):
+**Production migratsiyasi backend deploy'dan OLDIN** (backup olingandan keyin,
+`MAZETTO_RELEASE_READINESS_CHECKLIST.md` 2-qadam). Tasdiqlangan commit
+checkout qilingan holda repo ildizida bajaring; pending papkalarni avval hozirgi backend konteyneriga ko'chiring:
 
 ```bash
 B=$(docker ps --format '{{.Names}}' | grep -m1 mazetto-food-backend)
+MIGRATIONS="20260927090000_user_credential_version 20260927130000_platform_site_tenant_link"
+for M in $MIGRATIONS; do
+  docker cp "apps/backend/prisma/migrations/$M" "$B:/app/apps/backend/prisma/migrations/"
+done
 docker exec -w /app/apps/backend "$B" ./node_modules/.bin/prisma migrate status
 docker exec -w /app/apps/backend "$B" ./node_modules/.bin/prisma migrate deploy
+docker exec -w /app/apps/backend "$B" ./node_modules/.bin/prisma migrate status
 ```
 
+Keyingi relizlarda `MIGRATIONS` qiymatini `release:gate` chiqargan pending
+papkalar ro'yxati bilan almashtiring. Migration ro'yxati tasdiqlangan commitga
+mos bo'lishi shart. Har uch buyruq muvaffaqiyatli tugamaguncha backend yoki
+boshqa ilovani deploy qilmang. So'ng manual migration release workflow'ida
+`migrations_applied=true` belgilab, avval backendni, keyin qolgan o'zgargan
+ilovalarni navbat bilan deploy qiling.
 Prisma `node_modules/.bin` dan to'g'ridan-to'g'ri chaqiriladi va sozlamani
 `prisma.config.ts` dan oladi. O'sha config ATAYLAB o'zi-yetarli: image'ga faqat
 `dist` ko'chiriladi, `src` yo'q, shuning uchun u `src/` dan hech narsa import

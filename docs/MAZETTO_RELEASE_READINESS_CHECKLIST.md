@@ -44,18 +44,18 @@ This checklist is for the next controlled production release. It is documentatio
    - Changes reach `main` only through a PR whose `verify` check is green; direct pushes are blocked by branch protection.
    - Avoid committing untracked QA screenshots, temporary DB files, `.env`, or secrets.
 
-4. Backend deploy
-   - Deploy backend image built from the approved commit.
-   - Runtime must provide real `DATABASE_URL`.
-   - Run production migrations with `pnpm --dir apps/backend run prisma:migrate:deploy` or equivalent `prisma migrate deploy`.
+4. Apply production migrations before deploying any application
+   - Keep the currently deployed backend running while applying additive migrations.
+   - Copy only the pending migration directories from the approved commit into the running backend container, then run `prisma migrate status`, `prisma migrate deploy`, and `prisma migrate status` again. See the exact commands in `docs/CI_CD.md`.
    - Do not run `prisma:migrate:dev` on production.
+   - Deploy the backend image only after the new migrations are confirmed applied. The credential-version migration is read by the new authentication code.
 
 5. Customer-web deploy if changed
    - Build with the existing production public build arguments.
    - Required public values include API and media base URLs.
 
 6. BestTeam owner panel deploy if changed
-   - After backend migrations, dispatch the `platform-web` phase with `migrations_applied=true`.
+   - After migrations and backend deploy, dispatch the `platform-web` phase with `migrations_applied=true`.
    - Verify `https://admin.mazetto.uz/login` returns HTTP 200 in the read-only smoke.
 
 7. Media volume population

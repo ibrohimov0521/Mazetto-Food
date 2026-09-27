@@ -27,7 +27,7 @@ export default function LoginPage() {
   }
 
   return <main className="login-page">
-    <div className="login-brand"><span className="brand-mark"><img src="/best-team-logo.png" alt="" /></span><span>BestTeam <strong>Control</strong></span></div>
+    <div className="login-brand"><span className="brand-mark"><img src="/best-team-logo.webp" alt="" /></span><span>BestTeam <strong>Control</strong></span></div>
     <section className="login-panel" aria-labelledby="login-title">
       <div className="login-icon"><ShieldCheck size={25} /></div>
       <p className="eyebrow">XUSUSI BOSHQARUV</p>

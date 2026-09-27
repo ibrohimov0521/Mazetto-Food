@@ -489,11 +489,11 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
       setNotice("TXT yozuvi nusxalandi.");
     } catch { setDomainError("Nusxalash uchun brauzer clipboard ruxsati kerak."); }
   }
-  if (!session) return <div className="boot-screen"><span className="brand-mark"><img src="/best-team-logo.png" alt="" /></span><span>Yuklanmoqda...</span></div>;
+  if (!session) return <div className="boot-screen"><span className="brand-mark"><img src="/best-team-logo.webp" alt="" /></span><span>Yuklanmoqda...</span></div>;
 
   return <div className="shell">
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
-      <div className="sidebar-head"><Link className="brand" href="/" onClick={() => setMobileNav(false)}><span className="brand-mark"><img src="/best-team-logo.png" alt="" /></span><span>BestTeam <strong>Control</strong></span></Link><button className="icon-button mobile-only" onClick={() => setMobileNav(false)} aria-label="Menyuni yopish"><X size={19} /></button></div>
+      <div className="sidebar-head"><Link className="brand" href="/" onClick={() => setMobileNav(false)}><span className="brand-mark"><img src="/best-team-logo.webp" alt="" /></span><span>BestTeam <strong>Control</strong></span></Link><button className="icon-button mobile-only" onClick={() => setMobileNav(false)} aria-label="Menyuni yopish"><X size={19} /></button></div>
       <nav aria-label="Asosiy menyu">
         <p className="nav-caption">BOSHQARUV</p>
         <Link className={`nav-link ${view === "overview" ? "active" : ""}`} href="/" onClick={() => setMobileNav(false)}><LayoutDashboard size={18} />Umumiy holat</Link>
@@ -504,7 +504,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
         <Link className={`nav-link ${view === "diagnostics" ? "active" : ""}`} href="/diagnostics" onClick={() => setMobileNav(false)}><AlertTriangle size={18} />Texnik xatolar</Link>
         <Link className={`nav-link ${view === "audit" ? "active" : ""}`} href="/audit" onClick={() => setMobileNav(false)}><Clipboard size={18} />Boshqaruv jurnali</Link>
       </nav>
-      <div className="sidebar-bottom"><div className="owner-avatar"><img src="/best-team-logo.png" alt="" /></div><div className="owner-copy"><strong>BestTeam egasi</strong><span>{session.user.email || session.user.phone || "Bosh administrator"}</span></div><button className="icon-button" title="Parolni almashtirish" aria-label="Parolni almashtirish" onClick={() => { setPasswordError(""); setPasswordModalOpen(true); }}><KeyRound size={17} /></button><button className="icon-button" title="Chiqish" aria-label="Chiqish" onClick={async () => { await logout(); router.replace("/login"); }}><LogOut size={18} /></button></div>
+      <div className="sidebar-bottom"><div className="owner-avatar"><img src="/best-team-logo.webp" alt="" /></div><div className="owner-copy"><strong>BestTeam egasi</strong><span>{session.user.email || session.user.phone || "Bosh administrator"}</span></div><button className="icon-button" title="Parolni almashtirish" aria-label="Parolni almashtirish" onClick={() => { setPasswordError(""); setPasswordModalOpen(true); }}><KeyRound size={17} /></button><button className="icon-button" title="Chiqish" aria-label="Chiqish" onClick={async () => { await logout(); router.replace("/login"); }}><LogOut size={18} /></button></div>
     </aside>
     {mobileNav && <button className="nav-backdrop" aria-label="Menyuni yopish" onClick={() => setMobileNav(false)} />}
     <main className="main-area">

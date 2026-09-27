@@ -143,7 +143,7 @@ function describeChanges(base, sha, label) {
     }
 
     console.log(
-      "       Avval production backup, keyin `prisma migrate deploy`\n" +
+      "       Avval production backup, hozirgi backend konteynerida migrationni qo'llang, so'ng backendni deploy qiling.\n" +
         "       (docs/MAZETTO_RELEASE_READINESS_CHECKLIST.md).",
     );
   }

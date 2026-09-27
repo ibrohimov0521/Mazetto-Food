@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       phase:
-        description: Deploy backend first; migrate production; then deploy each changed service
+        description: Apply migrations first, then deploy backend and each changed service
         required: true
         type: choice
         options:
@@ -23,7 +23,7 @@ on:
         required: true
         type: string
       migrations_applied:
-        description: Confirm production prisma migrate deploy completed (required after backend)
+        description: Confirm production prisma migrate deploy completed before any app deployment
         required: true
         type: boolean
         default: false
@@ -77,9 +77,7 @@ jobs:
           [[ -n "$SINCE" && -n "$MIGRATIONS" ]] || { echo 'This workflow is only for migration releases'; exit 1; }
           [[ " $(git ls-remote origin refs/heads/main | cut -f1) " == " $SHA " ]] || { echo 'main moved; release stopped'; exit 1; }
           [[ " $APPS " == *" $PHASE "* ]] || { echo "No $PHASE change in release gate"; exit 1; }
-          if [[ "$PHASE" != backend && "$MIGRATIONS_APPLIED" != true ]]; then
-            echo 'Apply production migrations before deploying dependent services'; exit 1
-          fi
+          [[ "$MIGRATIONS_APPLIED" == true ]] || { echo 'Apply and verify production migrations before deploying any service'; exit 1; }
           printf '### Manual release %s\n\n- Phase: %s\n- Backup supplied by operator: %s\n- Migrations: %s\n' "$SHA" "$PHASE" "$BACKUP_PATH" "$MIGRATIONS" >> "$GITHUB_STEP_SUMMARY"
           echo 'The workflow records the backup path but cannot independently verify the remote archive.'
 
@@ -107,7 +105,7 @@ jobs:
       - name: Next step
         run: |
           if [[ "$PHASE" == backend ]]; then
-            echo 'Backend deployed. Run production prisma migrate deploy now; then dispatch each changed app (including platform-web) with migrations_applied=true. Run the read-only smoke after the last web app.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Backend deployed after the confirmed migration. Dispatch each remaining changed app (including platform-web) with migrations_applied=true. Run the read-only smoke after the last web app.' >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'Selected service deployed. Verify the release manually, then move the production tag to the release SHA.' >> "$GITHUB_STEP_SUMMARY"
           fi

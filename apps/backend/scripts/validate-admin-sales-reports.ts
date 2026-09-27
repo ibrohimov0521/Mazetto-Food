@@ -42,7 +42,11 @@ assert.match(service, /shiftBreakdown/);
 assert.match(service, /topProducts/);
 assert.match(service, /categorySales/);
 assert.match(service, /timeSeries/);
-assert.match(service, /resolveBranchScope\(user, query\.branchId\)/);
+assert.match(
+  service,
+  /resolveRestaurantScope\(\s*this\.prisma,\s*user,\s*query\.branchId,\s*\)/,
+);
+assert.match(service, /branch: \{ tenantId \}/);
 assert.match(service, /refundHandling/);
 assert.match(service, /paymentRefund\.findMany/);
 assert.match(service, /supported: true/);
