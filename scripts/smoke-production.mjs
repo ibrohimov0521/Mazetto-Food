@@ -19,6 +19,7 @@
 const api = process.env.MAZETTO_API_URL ?? "https://api.mazettofood.uz/api/v1";
 const web = process.env.MAZETTO_WEB_URL ?? "https://mazettofood.uz";
 const pos = process.env.MAZETTO_POS_URL ?? "https://pos.mazettofood.uz";
+const platform = process.env.MAZETTO_PLATFORM_URL ?? "https://admin.mazetto.uz";
 const media = process.env.MAZETTO_MEDIA_URL ?? "https://media.mazettofood.uz";
 
 /*
@@ -97,6 +98,7 @@ const checks = [
   ),
   { name: "pos-web health", url: `${pos}/api/health`, status: [200] },
   { name: "pos-web /login", url: `${pos}/login`, status: [200] },
+  { name: "BestTeam owner login", url: `${platform}/login`, status: [200] },
   /*
    * Yangi admin sahifasi. 404 qaytarsa pos-web `main` dan ORQADA qolgan —
    * backend yangilanib, web yangilanmagan holatni ko'rsatadi.

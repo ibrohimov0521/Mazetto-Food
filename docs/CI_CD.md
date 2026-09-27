@@ -118,7 +118,7 @@ tugagach ishga tushadi:
    - `production` tegi yo'q;
    - `main` bu orada oldinga ketgan → o'sha commit o'z CI'sidan keyin keladi.
 4. O'zgargan ilovalar Dokploy API orqali **navbat bilan** deploy qilinadi:
-   backend → customer-web → pos-web → telegram-bot → media. Har biri tugashi
+   backend → customer-web → pos-web → platform-web → telegram-bot → media. Har biri tugashi
    kutiladi. Har biridan oldin `main` hamon shu commit'da ekani qayta
    tekshiriladi, chunki Dokploy aniq commit'ni emas, branch uchini yig'adi.
 5. `release:smoke` — konteyner ko'tarilishini kutib, 4 urinishgacha.
@@ -139,7 +139,7 @@ qilmaydi.
 **1. Dokploy'da**
 
 - Settings → Profile → API/CLI → API kalit yarating.
-- backend, customer-web, pos-web (kerak bo'lsa media, telegram-bot) ilovalarida
+- backend, customer-web, pos-web, platform-web (kerak bo'lsa media, telegram-bot) ilovalarida
   **Autodeploy'ni o'chiring.** Aks holda Dokploy CI'ni kutmasdan har push'da
   o'zi deploy qiladi va bu darvoza ma'nosiz bo'ladi.
 - Ilova ID'larini oling:
@@ -158,6 +158,7 @@ qilmaydi.
 | `DOKPLOY_APP_BACKEND`      | variable | backend `applicationId` — **majburiy**                               |
 | `DOKPLOY_APP_CUSTOMER_WEB` | variable | customer-web `applicationId`                                         |
 | `DOKPLOY_APP_POS_WEB`      | variable | pos-web `applicationId`                                              |
+| `DOKPLOY_APP_PLATFORM_WEB` | variable | BestTeam owner `platform-web` `applicationId`                         |
 | `DOKPLOY_APP_MEDIA`        | variable | ixtiyoriy                                                            |
 | `DOKPLOY_APP_TELEGRAM_BOT` | variable | ixtiyoriy                                                            |
 | `AUTO_DEPLOY`              | variable | `true` — yoqadi; o'chirish uchun o'chiring yoki boshqa qiymat bering |
@@ -225,7 +226,7 @@ pnpm release:smoke
 
 Faqat GET — buyurtma yaratmaydi, hech narsani o'zgartirmaydi. Backend health va
 baza, ochiq menyu API'lari, tokensiz yopiq qolishi kerak bo'lgan endpointlar
-(401), customer-web sahifalari, pos-web va media. Xuddi shuni GitHub'dan ham
+(401), customer-web sahifalari, pos-web, `admin.mazetto.uz/login` va media. Xuddi shuni GitHub'dan ham
 yurgizish mumkin: Actions → **Production smoke** → Run workflow — natija tarixda
 qoladi va tashqi tarmoqdan tekshirilgan bo'ladi.
 

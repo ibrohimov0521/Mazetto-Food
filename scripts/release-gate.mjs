@@ -106,6 +106,7 @@ function describeChanges(base, sha, label) {
 
   const apps = [
     "backend",
+    "platform-web",
     "customer-web",
     "pos-web",
     "telegram-bot",
