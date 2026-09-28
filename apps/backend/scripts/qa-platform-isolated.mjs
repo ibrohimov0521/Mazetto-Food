@@ -43,6 +43,7 @@ const port = await new Promise((resolve, reject) => {
 const env = {
   ...process.env,
   NODE_ENV: "test",
+  CUSTOMER_TENANT_MIGRATION_QA: "1",
   DATABASE_URL: url.toString(),
   BESTTEAM_OWNER_BOOTSTRAP: "1",
   BACKEND_PORT: String(port),
@@ -99,6 +100,7 @@ try {
   docker("exec", container, "createdb", "-U", user, database);
   created = true;
   run("./node_modules/.bin/prisma", ["migrate", "deploy"]);
+  run(process.execPath, ["--import", "tsx", "scripts/validate-customer-tenant-migration-db.ts"], 60_000);
   run(process.execPath, ["--import", "tsx", "scripts/bootstrap-platform-owner.ts"]);
 
   let staffRefreshToken = "";

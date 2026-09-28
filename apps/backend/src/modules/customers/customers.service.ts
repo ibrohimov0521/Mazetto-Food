@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { OrderStatus, Prisma } from "@prisma/client";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {} from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -65,9 +65,8 @@ export class CustomersService {
     private readonly settingsService: SettingsService,
   ) {}
 
-  async listCategories(branchId?: string) {
-    const tenantId =
-      await this.branchesService.resolveCustomerTenantId(branchId);
+  async listCategories(branchId: string | undefined, tenantId: string) {
+    await this.branchesService.resolveCustomerTenantId(branchId, tenantId);
     return this.prisma.category.findMany({
       where: {
         isActive: true,
@@ -88,13 +87,16 @@ export class CustomersService {
     });
   }
 
-  listBranches() {
-    return this.branchesService.listCustomerBranches();
+  listBranches(tenantId: string) {
+    return this.branchesService.listCustomerBranches(tenantId);
   }
 
-  async listProducts(branchId?: string, categoryId?: string) {
-    const tenantId =
-      await this.branchesService.resolveCustomerTenantId(branchId);
+  async listProducts(
+    branchId: string | undefined,
+    categoryId: string | undefined,
+    tenantId: string,
+  ) {
+    await this.branchesService.resolveCustomerTenantId(branchId, tenantId);
     const branchScope = branchId
       ? { OR: [{ branchId }, { branchId: null }] }
       : { OR: [{ branchId: null }, { branch: { tenantId } }] };
@@ -116,9 +118,12 @@ export class CustomersService {
     });
   }
 
-  async getProduct(id: string, branchId?: string) {
-    const tenantId =
-      await this.branchesService.resolveCustomerTenantId(branchId);
+  async getProduct(
+    id: string,
+    branchId: string | undefined,
+    tenantId: string,
+  ) {
+    await this.branchesService.resolveCustomerTenantId(branchId, tenantId);
     const branchScope = branchId
       ? { OR: [{ branchId }, { branchId: null }] }
       : { OR: [{ branchId: null }, { branch: { tenantId } }] };
@@ -371,11 +376,14 @@ export class CustomersService {
     return withDerivedCustomerOrderStatus(cancelled);
   }
 
-  listCustomers(query: ListCustomersDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user);
+  async listCustomers(query: ListCustomersDto, user: AuthenticatedUser) {
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
 
     return this.prisma.customer.findMany({
-      where: branchId ? { customerOrders: { some: { branchId } } } : {},
+      where: {
+        tenantId,
+        ...(branchId ? { customerOrders: { some: { branchId } } } : {}),
+      },
       orderBy: { createdAt: "desc" },
       skip: query.offset,
       take: query.limit,
@@ -389,10 +397,11 @@ export class CustomersService {
     const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
     if (!uniqueIds.length) throw new BadRequestException("Kamida bitta mijoz tanlanishi kerak");
 
-    const branchId = resolveBranchScope(user);
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
     const customers = await this.prisma.customer.findMany({
       where: {
         id: { in: uniqueIds },
+        tenantId,
         ...(branchId ? { customerOrders: { some: { branchId } } } : {}),
       },
       select: {
@@ -412,12 +421,18 @@ export class CustomersService {
       );
     }
 
-    await this.prisma.customer.deleteMany({ where: { id: { in: uniqueIds } } });
+    await this.prisma.customer.deleteMany({
+      where: { id: { in: uniqueIds }, tenantId },
+    });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   async listOnlineOrders(query: ListOnlineOrdersDto, user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user, query.branchId);
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     /*
      * HOLAT va QIDIRUV endi HAQIQATAN ishlaydi.
      *
@@ -438,7 +453,7 @@ export class CustomersService {
 
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
-        ...(branchId ? { branchId } : {}),
+        branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
         ...(orderFilters.length ? { order: { AND: orderFilters } } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -457,11 +472,14 @@ export class CustomersService {
   }
 
   async getCustomerStats(user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user);
-    const customerWhere = branchId
-      ? { customerOrders: { some: { branchId } } }
-      : {};
-    const orderWhere = branchId ? { branchId } : {};
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
+    const customerWhere = {
+      tenantId,
+      ...(branchId ? { customerOrders: { some: { branchId } } } : {}),
+    };
+    const orderWhere = {
+      branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
+    };
     const [customers, orders, bonus] = await Promise.all([
       this.prisma.customer.count({ where: customerWhere }),
       this.prisma.customerOrder.count({ where: orderWhere }),

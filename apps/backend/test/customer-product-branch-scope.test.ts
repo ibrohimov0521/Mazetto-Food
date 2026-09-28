@@ -29,9 +29,13 @@ function createService() {
       },
     },
     branchesService: {
-      resolveCustomerTenantId: async (branchId?: string) => {
+      resolveCustomerTenantId: async (
+        branchId: string | undefined,
+        tenantId: string,
+      ) => {
+        assert.equal(tenantId, "tenant-a");
         tenantScopeCalls.push(branchId);
-        return "tenant-a";
+        return tenantId;
       },
       getUnavailableProductWhere: (branchId?: string) => {
         availabilityScopeCalls.push(branchId);
@@ -64,7 +68,7 @@ test("customer product detail respects the selected branch and its availability"
   const { service, getProductDetailWhere, availabilityScopeCalls, tenantScopeCalls } =
     createService();
 
-  await service.getProduct("product-1", "branch-1");
+  await service.getProduct("product-1", "branch-1", "tenant-a");
 
   assert.deepEqual(getProductDetailWhere()?.OR, [
     { branchId: "branch-1" },
@@ -88,7 +92,7 @@ test("customer product detail respects the selected branch and its availability"
 test("customer product detail without a branch stays within the sole tenant", async () => {
   const { service, getProductDetailWhere, tenantScopeCalls } = createService();
 
-  await service.getProduct("product-1");
+  await service.getProduct("product-1", undefined, "tenant-a");
 
   const tenantBranchScope = {
     OR: [{ branchId: null }, { branch: { tenantId: "tenant-a" } }],
@@ -101,7 +105,7 @@ test("customer product detail without a branch stays within the sole tenant", as
 test("customer category listing scopes branchless requests to the sole tenant", async () => {
   const { service, getCategoryWhere } = createService();
 
-  await service.listCategories();
+  await service.listCategories(undefined, "tenant-a");
 
   assert.deepEqual(getCategoryWhere()?.OR, [
     { branchId: null },
@@ -112,7 +116,7 @@ test("customer category listing scopes branchless requests to the sole tenant", 
 test("customer product listing scopes products and categories to the sole tenant", async () => {
   const { service, getProductListWhere } = createService();
 
-  await service.listProducts();
+  await service.listProducts(undefined, undefined, "tenant-a");
 
   const expectedScope = {
     OR: [{ branchId: null }, { branch: { tenantId: "tenant-a" } }],

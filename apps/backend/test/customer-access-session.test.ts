@@ -11,6 +11,11 @@ import type { PrismaService } from "../src/prisma/prisma.service";
 function makeRequestContext() {
   const request = {
     headers: { authorization: "Bearer customer-token" },
+    tenantContext: {
+      kind: "TRUSTED",
+      hostname: "restaurant-a.test",
+      tenantId: "tenant-a",
+    },
     customer: undefined,
   } as unknown as CustomerAuthenticatedRequest;
   return {
@@ -26,6 +31,7 @@ function makeCustomerGuard(active: boolean, activeTenantIds = ["tenant-a"]) {
     verifyAsync: async () => ({
       id: "customer-1",
       phone: "+998901234567",
+      tenantId: "tenant-a",
       sessionId: "session-1",
       tokenUse: "customer_access",
       exp: Math.floor(Date.now() / 1000) + 60,
@@ -36,7 +42,13 @@ function makeCustomerGuard(active: boolean, activeTenantIds = ["tenant-a"]) {
       findMany: async () => activeTenantIds.map((id) => ({ id })),
     },
     customerSession: {
-      findFirst: async () => (active ? { id: "session-1" } : null),
+      findFirst: async () =>
+        active
+          ? {
+              id: "session-1",
+              customer: { id: "customer-1", phone: "+998901234567" },
+            }
+          : null,
     },
   } as unknown as PrismaService;
   const Guard = CustomerAuthGuard as unknown as new (

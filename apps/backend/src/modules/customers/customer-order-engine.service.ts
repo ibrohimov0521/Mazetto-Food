@@ -93,11 +93,6 @@ export class CustomerOrderEngineService {
           ? deliveryAddressText(deliveryLocation)
           : dto.address?.trim()
         : undefined;
-    await this.branchesService.assertCustomerBranchAcceptsOrder(
-      dto.branchId,
-      dto.type,
-    );
-    const requestHash = this.hashCheckoutRequest(dto);
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
     });
@@ -105,6 +100,13 @@ export class CustomerOrderEngineService {
     if (!customer) {
       throw new NotFoundException("Customer not found");
     }
+
+    await this.branchesService.assertCustomerBranchAcceptsOrder(
+      dto.branchId,
+      dto.type,
+      customer.tenantId,
+    );
+    const requestHash = this.hashCheckoutRequest(dto);
 
     this.assertCustomerPaymentMethodSupported(dto.paymentMethod);
 
@@ -310,7 +312,7 @@ export class CustomerOrderEngineService {
   async quoteCheckout(customerId: string, dto: CustomerCheckoutQuoteDto) {
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
-      select: { id: true },
+      select: { id: true, tenantId: true },
     });
 
     if (!customer) {
@@ -320,6 +322,7 @@ export class CustomerOrderEngineService {
     await this.branchesService.assertCustomerBranchAcceptsOrder(
       dto.branchId,
       dto.type,
+      customer.tenantId,
     );
 
     const deliveryLocation =

@@ -122,6 +122,7 @@ async function createFixture(prisma: PrismaService): Promise<StaffLifecycleFixtu
   const customerChatId = `916${runId.slice(-7)}`;
   const customer = await prisma.customer.create({
     data: {
+      tenantId: branch.tenantId,
       name: "Step 16 Telegram Customer",
       phone: `+99816${runId.slice(-7)}`,
       telegramUserId: `816${runId.slice(-7)}`,

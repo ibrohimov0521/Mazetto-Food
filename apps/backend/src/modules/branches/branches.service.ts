@@ -10,7 +10,6 @@ import { resolveBranchScope } from "../../common/auth/access-scope";
 import {
   assertBranchBelongsToActor,
   resolveRestaurantTenantId,
-  resolveSoleActiveTenantId,
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -264,8 +263,8 @@ export class BranchesService {
     });
   }
 
-  async listCustomerBranches() {
-    const tenantId = await this.requireSingleActiveTenantId();
+  async listCustomerBranches(tenantId: string) {
+    await this.assertActiveCustomerTenant(tenantId);
     const branches = await this.prisma.branch.findMany({
       where: { isActive: true, tenantId },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -275,8 +274,11 @@ export class BranchesService {
     return branches.map((branch) => this.toCustomerBranch(branch));
   }
 
-  async resolveCustomerTenantId(branchId?: string): Promise<string> {
-    const tenantId = await this.requireSingleActiveTenantId();
+  async resolveCustomerTenantId(
+    branchId: string | undefined,
+    tenantId: string,
+  ): Promise<string> {
+    await this.assertActiveCustomerTenant(tenantId);
     if (branchId) {
       const branch = await this.prisma.branch.findFirst({
         where: { id: branchId, isActive: true, tenantId },
@@ -292,8 +294,9 @@ export class BranchesService {
   async assertCustomerBranchAcceptsOrder(
     branchId: string,
     type: "DELIVERY" | "PICKUP",
+    tenantId: string,
   ) {
-    const tenantId = await this.requireSingleActiveTenantId();
+    await this.assertActiveCustomerTenant(tenantId);
     const branch = await this.prisma.branch.findFirst({
       where: { id: branchId, isActive: true, tenantId },
       include: { workingHours: true },
@@ -521,8 +524,12 @@ export class BranchesService {
     return resolveRestaurantTenantId(this.prisma, user);
   }
 
-  private requireSingleActiveTenantId(): Promise<string> {
-    return resolveSoleActiveTenantId(this.prisma);
+  private async assertActiveCustomerTenant(tenantId: string): Promise<void> {
+    const tenant = await this.prisma.restaurantTenant.findFirst({
+      where: { id: tenantId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!tenant) throw new NotFoundException("Restaurant not found");
   }
 
   private assertGlobalBranchManagement(user: AuthenticatedUser): void {

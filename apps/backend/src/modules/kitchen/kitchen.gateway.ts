@@ -204,10 +204,13 @@ export class KitchenGateway implements OnGatewayConnection {
       const tenantContext = await this.tenantRequestContext
         .resolve(rawHost)
         .catch(() => null);
-      if (!tenantContext || tenantContext.kind === "BLOCKED") return null;
+      if (!tenantContext || tenantContext.kind !== "TRUSTED") return null;
 
       const payload = await this.jwtService.verifyAsync<
-        AuthenticatedCustomer & { exp?: number }
+        Omit<AuthenticatedCustomer, "tenantId"> & {
+          tenantId?: string;
+          exp?: number;
+        }
       >(token, {
         secret: getCustomerJwtAccessSecret(),
       });
@@ -215,16 +218,17 @@ export class KitchenGateway implements OnGatewayConnection {
       if (
         payload.tokenUse !== "customer_access" ||
         typeof payload.sessionId !== "string" ||
-        typeof payload.exp !== "number"
+        typeof payload.exp !== "number" ||
+        (payload.tenantId && payload.tenantId !== tenantContext.tenantId)
       ) {
         return null;
       }
 
-      await resolveSoleActiveTenantId(this.prisma);
       const session = await this.prisma.customerSession.findFirst({
         where: {
           id: payload.sessionId,
           customerId: payload.id,
+          customer: { is: { tenantId: tenantContext.tenantId } },
           revokedAt: null,
           expiresAt: { gt: new Date() },
         },

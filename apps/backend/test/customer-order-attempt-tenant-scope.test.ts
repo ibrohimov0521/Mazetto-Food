@@ -35,5 +35,5 @@ test("customer checkout validates the branch before reserving or replaying an id
     } as never),
     NotFoundException,
   );
-  assert.deepEqual(touched, []);
+  assert.deepEqual(touched, ["customer"]);
 });

@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { getCustomerJwtAccessSecret } from "../../config/auth.config";
-import { resolveSoleActiveTenantId } from "../auth/tenant-scope";
+import { requireTrustedTenantId } from "../tenant/require-trusted-tenant";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { AuthenticatedCustomer, CustomerAuthenticatedRequest } from "../types/authenticated-customer";
 
@@ -33,14 +33,32 @@ export class CustomerAuthGuard implements CanActivate {
         throw new UnauthorizedException("Customer session is required");
       }
 
-      await resolveSoleActiveTenantId(this.prisma);
+      const tenantId = requireTrustedTenantId(request.tenantContext);
+      if (customer.tenantId && customer.tenantId !== tenantId) {
+        throw new UnauthorizedException("Customer token belongs to another restaurant");
+      }
       const session = await this.prisma.customerSession.findFirst({
-        where: { id: customer.sessionId, customerId: customer.id, revokedAt: null, expiresAt: { gt: new Date() } },
-        select: { id: true },
+        where: {
+          id: customer.sessionId,
+          customerId: customer.id,
+          customer: { is: { tenantId } },
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        select: {
+          id: true,
+          customer: { select: { id: true, phone: true } },
+        },
       });
 
       if (!session) throw new UnauthorizedException("Customer session is revoked or expired");
-      request.customer = customer;
+      request.customer = {
+        id: session.customer.id,
+        phone: session.customer.phone,
+        tenantId,
+        sessionId: customer.sessionId,
+        tokenUse: "customer_access",
+      };
       return true;
     } catch {
       throw new UnauthorizedException("Invalid or expired customer token");

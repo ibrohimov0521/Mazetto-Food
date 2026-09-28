@@ -276,10 +276,12 @@ model RestaurantTenant {
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
-  branches      Branch[]
-  domains       TenantDomain[]
-  platformSites PlatformSite[]
-  memberships   TenantMembership[]
+  branches                       Branch[]
+  domains                        TenantDomain[]
+  platformSites                  PlatformSite[]
+  memberships                    TenantMembership[]
+  customers                      Customer[]
+  customerVerificationChallenges CustomerVerificationChallenge[]
 
   @@index([status, createdAt])
   @@map("restaurant_tenants")
@@ -338,17 +340,19 @@ model ProductBranchAvailability {
 
 model Customer {
   id               String    @id @default(cuid())
+  tenantId         String
   name             String
-  phone            String    @unique
-  email            String?   @unique
+  phone            String
+  email            String?
   passwordHash     String?
-  telegramUserId   String?   @unique
+  telegramUserId   String?
   telegramChatId   String?
   telegramLinkedAt DateTime?
   bonusBalance     Decimal   @default(0) @db.Decimal(12, 2)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  tenant           RestaurantTenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   carts            Cart[]
   favorites        CustomerFavorite[]
   customerOrders   CustomerOrder[]
@@ -358,8 +362,12 @@ model Customer {
   challenges       CustomerVerificationChallenge[]
   checkoutSessions TelegramCheckoutSession[]
 
+  @@unique([tenantId, phone])
+  @@unique([tenantId, email])
+  @@unique([tenantId, telegramUserId])
   @@index([telegramChatId])
   @@index([createdAt])
+  @@index([tenantId, createdAt])
   @@map("customers")
 }
 
@@ -403,6 +411,7 @@ model TelegramCheckoutSession {
 
 model CustomerVerificationChallenge {
   id         String    @id @default(cuid())
+  tenantId   String
   customerId String?
   phone      String
   codeHash   String
@@ -412,10 +421,11 @@ model CustomerVerificationChallenge {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  tenant   RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  @@index([phone, createdAt])
-  @@index([phone, consumedAt, expiresAt])
+  @@index([tenantId, phone, createdAt])
+  @@index([tenantId, phone, consumedAt, expiresAt])
   @@index([customerId])
   @@map("customer_verification_challenges")
 }

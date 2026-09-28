@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import { SettingsService } from "../settings/settings.service";
 import { normalizeCustomerPhone } from "../customers/customer-phone";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
@@ -82,6 +83,7 @@ export class TelegramCustomerAuthService {
   ) {}
 
   async deliverVerificationCode(params: {
+    tenantId: string;
     phone: string;
     code: string;
   }): Promise<VerificationDelivery> {
@@ -95,7 +97,9 @@ export class TelegramCustomerAuthService {
     }
 
     const customer = await this.prisma.customer.findUnique({
-      where: { phone: params.phone },
+      where: {
+        tenantId_phone: { tenantId: params.tenantId, phone: params.phone },
+      },
       select: { telegramChatId: true },
     });
 
@@ -118,6 +122,7 @@ export class TelegramCustomerAuthService {
   }
 
   async handleWebhookUpdate(update: unknown) {
+    const tenantId = await resolveSoleActiveTenantId(this.prisma);
     const telegramUpdate = this.toTelegramUpdate(update);
     const callback = telegramUpdate.callback_query;
     const message = telegramUpdate.message;
@@ -139,7 +144,7 @@ export class TelegramCustomerAuthService {
       }
 
       if (message.contact) {
-        await this.handleContactMessage(message);
+        await this.handleContactMessage(message, tenantId);
         return { ok: true, handled: true };
       }
 
@@ -225,7 +230,10 @@ export class TelegramCustomerAuthService {
     return { ok: true, handled: false };
   }
 
-  private async handleContactMessage(message: TelegramMessage): Promise<void> {
+  private async handleContactMessage(
+    message: TelegramMessage,
+    tenantId: string,
+  ): Promise<void> {
     const ttlMinutes = await this.settingsService.getInt(
       "customer_code_ttl_minutes",
     );
@@ -248,9 +256,9 @@ export class TelegramCustomerAuthService {
     const now = new Date();
 
     const { challenge } = await this.prisma.$transaction(async (tx) => {
-      await this.assertCanCreateChallenge(tx, phone);
+      await this.assertCanCreateChallenge(tx, tenantId, phone);
       const linkedToOtherPhone = await tx.customer.findFirst({
-        where: { telegramUserId: fromId, phone: { not: phone } },
+        where: { tenantId, telegramUserId: fromId, phone: { not: phone } },
         select: { phone: true },
       });
 
@@ -261,7 +269,7 @@ export class TelegramCustomerAuthService {
       }
 
       const customer = await tx.customer.upsert({
-        where: { phone },
+        where: { tenantId_phone: { tenantId, phone } },
         update: {
           name: displayName,
           telegramUserId: fromId,
@@ -269,6 +277,7 @@ export class TelegramCustomerAuthService {
           telegramLinkedAt: now,
         },
         create: {
+          tenantId,
           name: displayName,
           phone,
           telegramUserId: fromId,
@@ -278,10 +287,11 @@ export class TelegramCustomerAuthService {
         select: { id: true, phone: true },
       });
 
-      await this.expireActiveChallenges(tx, customer.phone);
+      await this.expireActiveChallenges(tx, tenantId, customer.phone);
       const code = this.generateVerificationCode();
       const challenge = await tx.customerVerificationChallenge.create({
         data: {
+          tenantId,
           customerId: customer.id,
           phone: customer.phone,
           codeHash: await bcrypt.hash(code, 12),
@@ -307,10 +317,16 @@ export class TelegramCustomerAuthService {
       return;
     }
 
+    const tenantId = await resolveSoleActiveTenantId(this.prisma);
     const fromId = message.from?.id ? String(message.from.id) : undefined;
     const linkedCustomer = fromId
       ? await this.prisma.customer.findUnique({
-          where: { telegramUserId: fromId },
+          where: {
+            tenantId_telegramUserId: {
+              tenantId,
+              telegramUserId: fromId,
+            },
+          },
           select: { name: true },
         })
       : null;
@@ -553,13 +569,19 @@ export class TelegramCustomerAuthService {
     });
   }
 
-  private findLinkedCustomer(telegramUserId: number | string | undefined) {
+  private async findLinkedCustomer(telegramUserId: number | string | undefined) {
     if (telegramUserId === undefined || telegramUserId === null) {
       return null;
     }
 
+    const tenantId = await resolveSoleActiveTenantId(this.prisma);
     return this.prisma.customer.findUnique({
-      where: { telegramUserId: String(telegramUserId) },
+      where: {
+        tenantId_telegramUserId: {
+          tenantId,
+          telegramUserId: String(telegramUserId),
+        },
+      },
       select: {
         id: true,
         name: true,
@@ -677,6 +699,7 @@ export class TelegramCustomerAuthService {
 
   private async assertCanCreateChallenge(
     tx: Prisma.TransactionClient,
+    tenantId: string,
     phone: string,
   ): Promise<void> {
     const [windowSeconds, requestLimit] = await Promise.all([
@@ -685,6 +708,7 @@ export class TelegramCustomerAuthService {
     ]);
     const recentRequests = await tx.customerVerificationChallenge.count({
       where: {
+        tenantId,
         phone,
         createdAt: {
           gte: new Date(Date.now() - windowSeconds * 1000),
@@ -701,12 +725,14 @@ export class TelegramCustomerAuthService {
 
   private async expireActiveChallenges(
     tx: Prisma.TransactionClient,
+    tenantId: string,
     phone: string,
   ): Promise<void> {
     const now = new Date();
 
     await tx.customerVerificationChallenge.updateMany({
       where: {
+        tenantId,
         phone,
         consumedAt: null,
         expiresAt: { gt: now },

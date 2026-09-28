@@ -28,6 +28,7 @@ type SentTelegramPayload = {
 
 const databaseUrl = process.env.DATABASE_URL;
 const sentTelegramPayloads: SentTelegramPayload[] = [];
+let testTenantId = "";
 const testPhones = [
   "+998990007001",
   "+998990007002",
@@ -63,6 +64,12 @@ async function run(): Promise<void> {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
   try {
+    const tenant = await prisma.restaurantTenant.findFirst({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!tenant) throw new Error("An active tenant is required for DB-backed auth validation");
+    testTenantId = tenant.id;
     await cleanup(prisma);
     const services = createServices(prisma);
 
@@ -108,19 +115,32 @@ function createServices(prisma: PrismaClient) {
     createSettingsStub(),
   );
   // Auth `CustomerAuthService` ga ko'chdi (6.6).
-  const customersService = new CustomerAuthService(
+  const customerAuth = new CustomerAuthService(
     prisma as never,
     new JwtService(),
     telegramCustomerAuthService,
     createSettingsStub(),
     { disconnectCustomerSession: () => undefined } as never,
   );
+  const customersService = {
+    requestCode: (dto: Parameters<CustomerAuthService["requestCode"]>[0]) =>
+      customerAuth.requestCode(dto, testTenantId),
+    verifyCode: (dto: Parameters<CustomerAuthService["verifyCode"]>[0]) =>
+      customerAuth.verifyCode(dto, testTenantId),
+  };
 
   return { telegramCustomerAuthService, customersService };
 }
 
+type CustomerAuthHarness = {
+  requestCode: (dto: Parameters<CustomerAuthService["requestCode"]>[0]) =>
+    ReturnType<CustomerAuthService["requestCode"]>;
+  verifyCode: (dto: Parameters<CustomerAuthService["verifyCode"]>[0]) =>
+    ReturnType<CustomerAuthService["verifyCode"]>;
+};
+
 async function testUnlinkedChallenge(
-  customersService: CustomerAuthService,
+  customersService: CustomerAuthHarness,
 ): Promise<void> {
   const result = await customersService.requestCode({ phone: "998990007001" });
   assert.equal(result.challenge.phone, "+998990007001");
@@ -146,7 +166,9 @@ async function testSelfContactLink(
   });
 
   const customer = await prisma.customer.findUniqueOrThrow({
-    where: { phone: "+998990007002" },
+    where: {
+      tenantId_phone: { tenantId: testTenantId, phone: "+998990007002" },
+    },
   });
   assert.equal(customer.telegramUserId, "97002");
   assert.equal(customer.telegramChatId, "87002");
@@ -154,7 +176,7 @@ async function testSelfContactLink(
   assert.match(latestCode(), /^\d{6}$/);
   assert.equal(
     await prisma.customerVerificationChallenge.count({
-      where: { phone: "+998990007002", consumedAt: null },
+      where: { tenantId: testTenantId, phone: "+998990007002", consumedAt: null },
     }),
     1,
   );
@@ -162,7 +184,7 @@ async function testSelfContactLink(
 
 async function testEquivalentPhoneFormatting(
   telegramCustomerAuthService: TelegramCustomerAuthService,
-  customersService: CustomerAuthService,
+  customersService: CustomerAuthHarness,
   prisma: PrismaClient,
 ): Promise<void> {
   sentTelegramPayloads.length = 0;
@@ -272,6 +294,7 @@ async function testTelegramUniqueness(
   assert.equal(
     await prisma.customer.count({
       where: {
+        tenantId: testTenantId,
         telegramUserId: "97002",
         phone: { not: "+998990007002" },
       },
@@ -284,6 +307,7 @@ async function testTelegramUniqueness(
     () =>
       prisma.customer.create({
         data: {
+          tenantId: testTenantId,
           name: "Duplicate Telegram",
           phone: "+998990007003",
           telegramUserId: "97002",
@@ -294,7 +318,7 @@ async function testTelegramUniqueness(
 }
 
 async function testLinkedRequestResendAndVerify(
-  customersService: CustomerAuthService,
+  customersService: CustomerAuthHarness,
   prisma: PrismaClient,
 ): Promise<void> {
   sentTelegramPayloads.length = 0;
@@ -320,7 +344,7 @@ async function testLinkedRequestResendAndVerify(
   assert.ok(auth.tokens.refreshToken);
   assert.equal(
     await prisma.customerVerificationChallenge.count({
-      where: { phone: "+998990007002", consumedAt: null },
+      where: { tenantId: testTenantId, phone: "+998990007002", consumedAt: null },
     }),
     0,
   );
@@ -332,11 +356,12 @@ async function testLinkedRequestResendAndVerify(
 }
 
 async function testExpiredAndAttemptLimit(
-  customersService: CustomerAuthService,
+  customersService: CustomerAuthHarness,
   prisma: PrismaClient,
 ): Promise<void> {
   await prisma.customerVerificationChallenge.create({
     data: {
+      tenantId: testTenantId,
       phone: "+998990007004",
       codeHash: await bcrypt.hash("123456", 12),
       expiresAt: new Date(Date.now() - 1000),
@@ -349,6 +374,7 @@ async function testExpiredAndAttemptLimit(
 
   await prisma.customerVerificationChallenge.create({
     data: {
+      tenantId: testTenantId,
       phone: "+998990007005",
       codeHash: await bcrypt.hash("654321", 12),
       expiresAt: new Date(Date.now() + 600000),
@@ -369,7 +395,7 @@ async function testExpiredAndAttemptLimit(
 }
 
 async function testRequestCodeRateLimit(
-  customersService: CustomerAuthService,
+  customersService: CustomerAuthHarness,
 ): Promise<void> {
   await customersService.requestCode({ phone: "+998990007006" });
   await customersService.requestCode({ phone: "+998990007006" });
@@ -464,10 +490,11 @@ async function cleanup(prisma: PrismaClient): Promise<void> {
     where: { customer: { phone: { in: testPhones } } },
   });
   await prisma.customerVerificationChallenge.deleteMany({
-    where: { phone: { in: testPhones } },
+    where: { tenantId: testTenantId, phone: { in: testPhones } },
   });
   await prisma.customer.deleteMany({
     where: {
+      tenantId: testTenantId,
       OR: [
         { phone: { in: testPhones } },
         { telegramUserId: { in: ["97002", "97007"] } },

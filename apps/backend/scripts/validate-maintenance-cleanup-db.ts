@@ -51,6 +51,11 @@ async function main(): Promise<void> {
   const scheduler = new MaintenanceScheduler(prisma);
   const past = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const future = new Date(Date.now() + 60 * 60 * 1000);
+  const tenant = await prisma.restaurantTenant.findFirst({
+    where: { status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!tenant) throw new Error("An active tenant is required for the DB smoke");
 
   try {
     const before = {
@@ -62,11 +67,11 @@ async function main(): Promise<void> {
 
     // --- Fixture: eskirgan va yangi challenge --------------------------
     const expired = await prisma.customerVerificationChallenge.create({
-      data: { phone: `+99890${runId.slice(-7)}`, codeHash: "x", expiresAt: past },
+      data: { tenantId: tenant.id, phone: `+99890${runId.slice(-7)}`, codeHash: "x", expiresAt: past },
       select: { id: true },
     });
     const active = await prisma.customerVerificationChallenge.create({
-      data: { phone: `+99891${runId.slice(-7)}`, codeHash: "x", expiresAt: future },
+      data: { tenantId: tenant.id, phone: `+99891${runId.slice(-7)}`, codeHash: "x", expiresAt: future },
       select: { id: true },
     });
 
@@ -133,9 +138,9 @@ async function main(): Promise<void> {
 
     // --- Fixture: buyurtma urinishlari ---------------------------------
     const customer = await prisma.customer.upsert({
-      where: { phone: `+998900000001` },
+      where: { tenantId_phone: { tenantId: tenant.id, phone: `+998900000001` } },
       update: {},
-      create: { name: "QA Maintenance Customer", phone: `+998900000001` },
+      create: { tenantId: tenant.id, name: "QA Maintenance Customer", phone: `+998900000001` },
       select: { id: true },
     });
 

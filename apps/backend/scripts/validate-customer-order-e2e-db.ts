@@ -431,6 +431,7 @@ async function createFixture(prisma: PrismaService) {
   const set = await findCatalogProduct(prisma, "SET_CHEESEBURGER");
   const webCustomer = await prisma.customer.create({
     data: {
+      tenantId: branch.tenantId,
       name: "Step 8 Web Customer",
       phone: `+9980${phoneSuffix}01`,
     },
@@ -439,6 +440,7 @@ async function createFixture(prisma: PrismaService) {
   const telegramChatId = `88${phoneSuffix}03`;
   const telegramCustomer = await prisma.customer.create({
     data: {
+      tenantId: branch.tenantId,
       name: "Step 8 Telegram Customer",
       phone: `+9980${phoneSuffix}02`,
       telegramUserId,
@@ -448,6 +450,7 @@ async function createFixture(prisma: PrismaService) {
   });
   const otherCustomer = await prisma.customer.create({
     data: {
+      tenantId: branch.tenantId,
       name: "Step 8 Other Customer",
       phone: `+9980${phoneSuffix}03`,
     },
