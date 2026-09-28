@@ -1,9 +1,6 @@
 import { resolveTxt } from "node:dns/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { isIP } from "node:net";
-import { domainToASCII } from "node:url";
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -11,24 +8,13 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { normalizeTenantHostname } from "../../common/tenant/tenant-hostname";
+export { normalizeTenantHostname } from "../../common/tenant/tenant-hostname";
 import { PrismaService } from "../../prisma/prisma.service";
 import { writeAuditLog } from "../audit/audit-write";
 import type { CreateTenantDomainDto } from "./dto/platform-monitoring.dto";
 
 const recordPrefix = "bestteam-domain-verification=";
-
-export function normalizeTenantHostname(input: string): string {
-  const value = input.trim().replace(/\.$/, "");
-  const hostname = domainToASCII(value).toLowerCase();
-  const labels = hostname.split(".");
-  if (
-    !hostname || hostname.length > 230 || isIP(hostname) || labels.length < 2 ||
-    labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
-  ) {
-    throw new BadRequestException("Ommaviy va yaroqli domen nomini kiriting.");
-  }
-  return hostname;
-}
 
 function challengeName(hostname: string): string {
   return `_bestteam-verify.${hostname}`;

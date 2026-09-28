@@ -175,3 +175,28 @@ export type TenantRegistryEntry = {
     verifiedAt: string | null;
   }>;
 };
+
+
+export type TenantMembershipRole = {
+  role: { id: string; code: string; name: string; isBranchScoped: boolean };
+};
+
+export type TenantMembership = {
+  id: string;
+  tenantId: string;
+  userId: string;
+  branchId: string | null;
+  status: "ACTIVE" | "SUSPENDED";
+  createdAt: string;
+  updatedAt: string;
+  user: { id: string; displayName: string | null; email: string | null; phone: string | null; isActive: boolean };
+  branch: { id: string; code: string; name: string } | null;
+  roles: TenantMembershipRole[];
+};
+
+export type TenantRoleOption = {
+  id: string;
+  code: string;
+  name: string;
+  isBranchScoped: boolean;
+};

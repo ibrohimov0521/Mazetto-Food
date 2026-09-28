@@ -36,6 +36,7 @@ test("device and printer lists are constrained to the active tenant", async () =
 
 test("device enrollment only rebinds hardware within the active tenant", async () => {
   let enrollmentFilter: Record<string, unknown> | undefined;
+  let claimFilter: Record<string, unknown> | undefined;
   let unbindFilter: Record<string, unknown> | undefined;
   const service = new DevicesService({
     restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
@@ -49,6 +50,10 @@ test("device enrollment only rebinds hardware within the active tenant", async (
       callback({
         device: {
           updateMany: async (args: { where: Record<string, unknown> }) => {
+            if (Object.hasOwn(args.where, "enrollmentCodeHash")) {
+              claimFilter = args.where;
+              return { count: 1 };
+            }
             unbindFilter = args.where;
             return { count: 0 };
           },
@@ -65,5 +70,6 @@ test("device enrollment only rebinds hardware within the active tenant", async (
 
   await service.enroll({ deviceId: "hardware-a", enrollmentCode: "ABC123" });
   assert.deepEqual(enrollmentFilter?.branch, { tenantId: "tenant-a" });
+  assert.deepEqual(claimFilter?.branch, { tenantId: "tenant-a" });
   assert.deepEqual(unbindFilter?.branch, { tenantId: "tenant-a" });
 });

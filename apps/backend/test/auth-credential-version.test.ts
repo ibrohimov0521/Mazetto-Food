@@ -22,10 +22,12 @@ function createGuard(
         ({
           id: "user-1",
           credentialVersion: cachedVersion,
-          roles: ["CASHIER"],
+          roles: ["PLATFORM_OWNER"],
           permissions: ["POS_USE"],
         }) satisfies AuthenticatedUser,
     } as never,
+    { resolve: async () => ({ kind: "UNREGISTERED" }) } as never,
+    {} as never,
   );
   const context = {
     getHandler: () => ({}),

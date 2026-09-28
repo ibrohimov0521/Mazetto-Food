@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { PERMISSIONS } from "../../common/auth/permissions";
-import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
+import { resolveRestaurantTenantId } from "../../common/auth/tenant-scope";
 import { PrismaService } from "../../prisma/prisma.service";
 import { hasPermission } from "../../common/auth/authorization";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -52,8 +52,8 @@ export class UploadsController {
       }),
     )
     file: Express.Multer.File,
-    @Query("folder") folder?: string,
-    @CurrentUser() user?: AuthenticatedUser,
+    @Query("folder") folder: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     const target = folder || "products";
     if (!(["products", "categories", "homepage"] as const).includes(target as never)) {
@@ -66,8 +66,8 @@ export class UploadsController {
       throw new ForbiddenException("Missing upload permission for this folder");
     }
 
-    return resolveSoleActiveTenantId(this.prisma).then(() =>
-      this.minio.uploadImage(file, target as "products" | "categories" | "homepage"),
+    return resolveRestaurantTenantId(this.prisma, user).then((tenantId) =>
+      this.minio.uploadImage(file, target as "products" | "categories" | "homepage", tenantId),
     );
   }
 }

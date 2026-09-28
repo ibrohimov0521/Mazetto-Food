@@ -218,18 +218,20 @@ export class ReceiptsService {
 
 
   async reprintReceipt(id: string, user: AuthenticatedUser) {
-    const receipt = await this.prisma.receipt.findUnique({
-      where: { id },
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
+    const scope = { branch: { tenantId }, ...(branchId ? { branchId } : {}) };
+    const receipt = await this.prisma.receipt.findFirst({
+      where: { id, ...scope },
       select: { id: true, branchId: true, content: true },
     });
     if (!receipt) throw new NotFoundException("Receipt not found");
-    resolveBranchScope(user, receipt.branchId);
     await this.prisma.$transaction(async (tx) => {
-      await queuePrintJobsForReceipt(tx, receipt);
-      await tx.receipt.update({
-        where: { id: receipt.id },
+      const updated = await tx.receipt.updateMany({
+        where: { id: receipt.id, branchId: receipt.branchId, ...scope },
         data: { printed: false, printedAt: null },
       });
+      if (updated.count !== 1) throw new NotFoundException("Receipt not found");
+      await queuePrintJobsForReceipt(tx, receipt);
     });
     return this.getReceipt(id, user);
   }

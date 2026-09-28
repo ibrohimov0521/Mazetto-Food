@@ -3,7 +3,11 @@ import test from "node:test";
 import type { JwtService } from "@nestjs/jwt";
 import type { Socket } from "socket.io";
 import { PERMISSIONS } from "../src/common/auth/permissions";
-import { KitchenGateway } from "../src/modules/kitchen/kitchen.gateway";
+import type {
+  TestMembershipAuth,
+  TestTenantContext,
+} from "./kitchen-gateway-test-factory";
+import { createKitchenGatewayForTest } from "./kitchen-gateway-test-factory";
 import type { PrismaService } from "../src/prisma/prisma.service";
 
 function makeGateway(
@@ -11,6 +15,8 @@ function makeGateway(
   credentialVersion: number | number[],
   role = "KITCHEN",
   activeTenantIds = ["tenant-a"],
+  tenantContext?: TestTenantContext,
+  membershipAuth?: TestMembershipAuth,
 ) {
   const versions = Array.isArray(credentialVersion)
     ? credentialVersion
@@ -18,6 +24,8 @@ function makeGateway(
   let versionRead = 0;
   const jwt = {
     verifyAsync: async () => ({
+      tenantId: "tenant-a",
+      membershipId: "membership-a",
       ...payload,
       exp: Math.floor(Date.now() / 1000) + 60,
     }),
@@ -26,34 +34,36 @@ function makeGateway(
     restaurantTenant: {
       findMany: async () => activeTenantIds.map((id) => ({ id })),
     },
-    user: {
-      findUnique: async () => ({
-        id: "user-1",
-        credentialVersion:
-          versions[Math.min(versionRead++, versions.length - 1)],
-        isActive: true,
-        employee: { id: "employee-1", branchId: "branch-1", status: "ACTIVE" },
-        roles: [
-          {
-            role: {
-              code: role,
-              permissions: [{ permission: { code: PERMISSIONS.KITCHEN_VIEW } }],
-            },
-          },
-        ],
-      }),
-    },
   } as unknown as PrismaService;
-  return new KitchenGateway(jwt, prisma);
+  const resolvedMembershipAuth: TestMembershipAuth = membershipAuth ?? {
+    resolve: async (userId, tenantId, id) => ({
+      id: userId,
+      credentialVersion:
+        versions[Math.min(versionRead++, versions.length - 1)] ?? 0,
+      tenantId,
+      membershipId: id ?? "membership-a",
+      employeeId: "employee-1",
+      branchId: "branch-1",
+      isGlobalScope: role === "SUPER_ADMIN",
+      roles: [role],
+      permissions: [PERMISSIONS.KITCHEN_VIEW],
+    }),
+  };
+  return createKitchenGatewayForTest(
+    jwt,
+    prisma,
+    tenantContext,
+    resolvedMembershipAuth,
+  );
 }
 
-function makeSocket() {
+function makeSocket(host = "mazetto-a.test") {
   let disconnected = false;
   const joined: string[] = [];
   const client = {
     handshake: {
       auth: { token: "access-token", tokenType: "staff" },
-      headers: {},
+      headers: { host },
     },
     data: {},
     disconnect: () => {
@@ -85,7 +95,7 @@ test("kitchen websocket rechecks credentials after joining the revocation room",
   assert.equal(socket.wasDisconnected(), true);
 });
 
-test("legacy version-zero staff tokens remain accepted until credentials change", async () => {
+test("tenant-bound version-zero staff tokens are accepted on their verified host", async () => {
   const gateway = makeGateway({ id: "user-1" }, 0);
   const socket = makeSocket();
 
@@ -93,6 +103,66 @@ test("legacy version-zero staff tokens remain accepted until credentials change"
 
   assert.equal(socket.wasDisconnected(), false);
   assert.ok(socket.joined.includes("branch:branch-1"));
+});
+
+test("unregistered hosts reject legacy unbound staff tokens", async () => {
+  const tenantContext: TestTenantContext = {
+    resolve: async () => ({ kind: "UNREGISTERED", hostname: "old.example" }),
+  };
+  const gateway = makeGateway(
+    { id: "user-1", tenantId: undefined, membershipId: undefined },
+    0,
+    "KITCHEN",
+    ["tenant-a"],
+    tenantContext,
+  );
+  const socket = makeSocket("old.example");
+
+  await gateway.handleConnection(socket.client);
+
+  assert.equal(socket.wasDisconnected(), true);
+  assert.deepEqual(socket.joined, []);
+});
+
+test("a tenant token cannot be replayed through another restaurant hostname", async () => {
+  const tenantContext: TestTenantContext = {
+    resolve: async () => ({
+      kind: "TRUSTED",
+      hostname: "restaurant-b.example",
+      tenantId: "tenant-b",
+    }),
+  };
+  const gateway = makeGateway(
+    { id: "user-1", credentialVersion: 0 },
+    0,
+    "KITCHEN",
+    ["tenant-a", "tenant-b"],
+    tenantContext,
+  );
+  const socket = makeSocket("restaurant-b.example");
+
+  await gateway.handleConnection(socket.client);
+
+  assert.equal(socket.wasDisconnected(), true);
+  assert.deepEqual(socket.joined, []);
+});
+
+test("inactive tenant memberships cannot join restaurant realtime rooms", async () => {
+  const membershipAuth: TestMembershipAuth = { resolve: async () => null };
+  const gateway = makeGateway(
+    { id: "user-1", credentialVersion: 0 },
+    0,
+    "KITCHEN",
+    ["tenant-a"],
+    undefined,
+    membershipAuth,
+  );
+  const socket = makeSocket();
+
+  await gateway.handleConnection(socket.client);
+
+  assert.equal(socket.wasDisconnected(), true);
+  assert.deepEqual(socket.joined, []);
 });
 
 test("global restaurant sockets fail closed when multiple tenants are active", async () => {

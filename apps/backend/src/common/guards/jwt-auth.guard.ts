@@ -9,12 +9,20 @@ import { JwtService } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
 import { timingSafeEqual } from "node:crypto";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
-import { hasRestaurantGlobalScope } from "../auth/access-scope";
-import type { AuthenticatedRequest, AuthenticatedUser } from "../types/authenticated-user";
+import {
+  hasOnlyPlatformRoles,
+  hasRestaurantGlobalScope,
+} from "../auth/access-scope";
+import type {
+  AuthenticatedRequest,
+  AuthenticatedUser,
+} from "../types/authenticated-user";
 import { getJwtAccessSecret } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { UserAuthCacheService } from "../auth/user-auth-cache.service";
 import { hashDeviceToken } from "../../modules/devices/devices.service";
+import { TenantRequestContextService } from "../tenant/tenant-request-context.service";
+import { TenantMembershipAuthService } from "../../modules/auth/tenant-membership-auth.service";
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -23,19 +31,28 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
     private readonly userAuthCache: UserAuthCacheService,
+    private readonly tenantRequestContext: TenantRequestContextService,
+    private readonly tenantMembershipAuth: TenantMembershipAuthService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const tenantContext = await this.tenantRequestContext.resolve(
+      request.headers.host,
+    );
+    request.tenantContext = tenantContext;
+    if (tenantContext.kind === "BLOCKED") {
+      throw new ForbiddenException(
+        "Bu domen faol va tasdiqlangan restoranga tegishli emas.",
+      );
+    }
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
+    if (isPublic) return true;
 
-    if (isPublic) {
-      return true;
-    }
-
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const token = this.extractBearerToken(request);
 
     if (!token) {
@@ -43,12 +60,53 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync<AuthenticatedUser>(token, {
-        secret: getJwtAccessSecret(),
-      });
-      const currentUser = await this.resolveCurrentUser(payload.id);
-      if ((payload.credentialVersion ?? 0) !== (currentUser.credentialVersion ?? 0)) {
+      const payload = await this.jwtService.verifyAsync<AuthenticatedUser>(
+        token,
+        {
+          secret: getJwtAccessSecret(),
+        },
+      );
+      const hasTenantBinding = Boolean(
+        payload.tenantId && payload.membershipId,
+      );
+      if (Boolean(payload.tenantId) !== Boolean(payload.membershipId)) {
+        throw new ForbiddenException("Tenant-bound token noto'g'ri.");
+      }
+      if (tenantContext.kind === "TRUSTED") {
+        if (!hasTenantBinding || tenantContext.tenantId !== payload.tenantId) {
+          throw new ForbiddenException(
+            "Bu sessiya boshqa restoran yoki domen uchun berilgan.",
+          );
+        }
+      } else if (hasTenantBinding) {
+        throw new ForbiddenException(
+          "Restoran domeni tasdiqlanmagan yoki boshqa domen orqali murojaat qilindi.",
+        );
+      }
+      const currentUser = hasTenantBinding
+        ? await this.tenantMembershipAuth.resolve(
+            payload.id,
+            payload.tenantId!,
+            payload.membershipId!,
+          )
+        : await this.resolveCurrentUser(payload.id);
+      if (!currentUser)
+        throw new UnauthorizedException(
+          "Tenant membership is no longer active",
+        );
+      if (
+        (payload.credentialVersion ?? 0) !==
+        (currentUser.credentialVersion ?? 0)
+      ) {
         throw new UnauthorizedException("Credentials changed; sign in again");
+      }
+      if (
+        tenantContext.kind === "UNREGISTERED" &&
+        !hasOnlyPlatformRoles(currentUser.roles)
+      ) {
+        throw new ForbiddenException(
+          "Restoran xodimlari faqat tasdiqlangan restoran domenidan kirishi mumkin.",
+        );
       }
       request.user = currentUser;
       await this.assertDesktopDeviceEnrollment(request);
@@ -115,7 +173,9 @@ export class JwtAuthGuard implements CanActivate {
     }
   }
 
-  private extractBearerToken(request: AuthenticatedRequest): string | undefined {
+  private extractBearerToken(
+    request: AuthenticatedRequest,
+  ): string | undefined {
     const authorization = request.headers.authorization;
 
     if (!authorization) {
@@ -204,10 +264,14 @@ export class JwtAuthGuard implements CanActivate {
       ...(user.employee?.status === "ACTIVE"
         ? { employeeId: user.employee.id, branchId: user.employee.branchId }
         : {}),
-      isGlobalScope: hasRestaurantGlobalScope(user.roles.map(({ role }) => role)),
+      isGlobalScope: hasRestaurantGlobalScope(
+        user.roles.map(({ role }) => role),
+      ),
       roles: user.roles.map((userRole) => userRole.role.code),
       permissions: user.roles.flatMap((userRole) =>
-        userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
+        userRole.role.permissions.map(
+          (rolePermission) => rolePermission.permission.code,
+        ),
       ),
     };
 

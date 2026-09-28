@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ForbiddenException } from "@nestjs/common";
+import { PERMISSIONS } from "../src/common/auth/permissions";
 import { UploadsController } from "../src/modules/uploads/uploads.controller";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 
@@ -12,14 +13,20 @@ const file = {
 
 const homepageManager: AuthenticatedUser = {
   id: "homepage-user",
+  tenantId: "tenant-mazetto",
+  membershipId: "membership-homepage",
+  isGlobalScope: true,
   roles: ["HOMEPAGE_MANAGER"],
-  permissions: ["HOMEPAGE_MANAGE"],
+  permissions: [PERMISSIONS.HOMEPAGE_MANAGE],
 };
 
 const menuEditor: AuthenticatedUser = {
   id: "menu-user",
+  tenantId: "tenant-mazetto",
+  membershipId: "membership-menu",
+  isGlobalScope: true,
   roles: ["MENU_EDITOR"],
-  permissions: ["MENU_EDIT"],
+  permissions: [PERMISSIONS.MENU_EDIT],
 };
 
 function controller() {
@@ -28,17 +35,18 @@ function controller() {
       uploadImage: async (
         _file: Express.Multer.File,
         target: "products" | "categories" | "homepage",
-      ) => ({ target }),
+        tenantId: string,
+      ) => ({ target, tenantId }),
     } as never,
     {
-      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
+      restaurantTenant: { findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }) },
     } as never,
   );
 }
 
 test("homepage manager can upload homepage media without MENU_EDIT", async () => {
   const result = await controller().uploadImage(file, "homepage", homepageManager);
-  assert.deepEqual(result, { target: "homepage" });
+  assert.deepEqual(result, { target: "homepage", tenantId: "tenant-mazetto" });
 });
 
 test("homepage upload rejects a menu-only editor", async () => {
@@ -50,7 +58,7 @@ test("homepage upload rejects a menu-only editor", async () => {
 
 test("menu editor can upload catalog media but not homepage media", async () => {
   const result = await controller().uploadImage(file, "products", menuEditor);
-  assert.deepEqual(result, { target: "products" });
+  assert.deepEqual(result, { target: "products", tenantId: "tenant-mazetto" });
   assert.throws(
     () => controller().uploadImage(file, "categories", homepageManager),
     ForbiddenException,

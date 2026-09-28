@@ -8,6 +8,8 @@ import { RedisService } from "../src/redis/redis.service";
 import { RedisCacheService } from "../src/cache/redis-cache.service";
 import { StaffService } from "../src/modules/staff/staff.service";
 import { UserAuthCacheService } from "../src/common/auth/user-auth-cache.service";
+import { TenantMembershipAuthService } from "../src/modules/auth/tenant-membership-auth.service";
+import { TenantRequestContextService } from "../src/common/tenant/tenant-request-context.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
@@ -33,6 +35,8 @@ async function main(): Promise<void> {
       prisma,
       new JwtService(),
       new LoginThrottleService(new RedisService()),
+      new TenantMembershipAuthService(prisma),
+      new TenantRequestContextService(prisma),
     );
     const runId = Date.now().toString();
     const branch = await createBranch(prisma, `STAFF_GATE_${runId}`, "Staff Gate Branch");

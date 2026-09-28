@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { JwtService } from "@nestjs/jwt";
 import type { Socket } from "socket.io";
-import { KitchenGateway } from "../src/modules/kitchen/kitchen.gateway";
+import { createKitchenGatewayForTest } from "./kitchen-gateway-test-factory";
 import type { PrismaService } from "../src/prisma/prisma.service";
 
 function makeCustomerJwt(): JwtService {
@@ -17,11 +17,19 @@ function makeCustomerJwt(): JwtService {
   } as unknown as JwtService;
 }
 
-function makeCustomerSocket(disconnected: () => void, joined: string[]): Socket {
+function makeCustomerSocket(
+  disconnected: () => void,
+  joined: string[],
+): Socket {
   return {
-    handshake: { auth: { token: "customer-token", tokenType: "customer" }, headers: {} },
+    handshake: {
+      auth: { token: "customer-token", tokenType: "customer" },
+      headers: {},
+    },
     data: {},
-    join: async (room: string) => { joined.push(room); },
+    join: async (room: string) => {
+      joined.push(room);
+    },
     disconnect: disconnected,
   } as unknown as Socket;
 }
@@ -36,9 +44,13 @@ test("customer websocket revalidates its session after joining the revoke room",
       findFirst: async () => (++reads === 1 ? { id: "session-1" } : null),
     },
   } as unknown as PrismaService;
-  const gateway = new KitchenGateway(makeCustomerJwt(), prisma);
+  const gateway = createKitchenGatewayForTest(makeCustomerJwt(), prisma);
 
-  await gateway.handleConnection(makeCustomerSocket(() => { disconnected = true; }, joined));
+  await gateway.handleConnection(
+    makeCustomerSocket(() => {
+      disconnected = true;
+    }, joined),
+  );
 
   assert.equal(disconnected, true);
   assert.ok(joined.includes("customer-session:session-1"));
@@ -46,7 +58,10 @@ test("customer websocket revalidates its session after joining the revoke room",
 });
 
 test("logout disconnects websockets in the revoked customer-session room", () => {
-  const gateway = new KitchenGateway({} as JwtService, {} as PrismaService);
+  const gateway = createKitchenGatewayForTest(
+    {} as JwtService,
+    {} as PrismaService,
+  );
   const calls: Array<{ room: string; close: boolean }> = [];
   Object.defineProperty(gateway, "server", {
     value: {
@@ -58,5 +73,7 @@ test("logout disconnects websockets in the revoked customer-session room", () =>
 
   gateway.disconnectCustomerSession("session-1");
 
-  assert.deepEqual(calls, [{ room: "customer-session:session-1", close: true }]);
+  assert.deepEqual(calls, [
+    { room: "customer-session:session-1", close: true },
+  ]);
 });

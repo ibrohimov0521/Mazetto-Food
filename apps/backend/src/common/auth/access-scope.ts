@@ -13,8 +13,12 @@ export const restaurantUserWhere: Prisma.UserWhereInput = {
   roles: { none: { role: { code: { startsWith: "PLATFORM_" } } } },
 };
 
-export function hasRestaurantGlobalScope(roles: readonly RestaurantRoleScope[]): boolean {
-  return roles.some((role) => !role.isBranchScoped && !isPlatformRoleCode(role.code));
+export function hasRestaurantGlobalScope(
+  roles: readonly RestaurantRoleScope[],
+): boolean {
+  return roles.some(
+    (role) => !role.isBranchScoped && !isPlatformRoleCode(role.code),
+  );
 }
 
 export function resolveBranchScope(
@@ -30,7 +34,9 @@ export function resolveBranchScope(
   }
 
   if (!user.branchId) {
-    throw new ForbiddenException("Foydalanuvchi hech qanday filialga biriktirilmagan");
+    throw new ForbiddenException(
+      "Foydalanuvchi hech qanday filialga biriktirilmagan",
+    );
   }
 
   if (requestedBranchId && requestedBranchId !== user.branchId) {
@@ -51,4 +57,8 @@ export function resolveRequiredBranchScope(
   }
 
   return branchId;
+}
+
+export function hasOnlyPlatformRoles(roles: readonly string[]): boolean {
+  return roles.length > 0 && roles.every(isPlatformRoleCode);
 }

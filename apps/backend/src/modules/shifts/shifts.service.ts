@@ -621,8 +621,37 @@ export class ShiftsService {
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
-      await assertBranchBelongsToActor(tx, user, shift.branchId);
+      const tenantId = await assertBranchBelongsToActor(tx, user, shift.branchId);
       this.assertCanOperateShift(user, shift.employeeId);
+
+      if (dto.orderId) {
+        const order = await tx.order.findFirst({
+          where: {
+            id: dto.orderId,
+            branchId: shift.branchId,
+            branch: { tenantId },
+          },
+          select: { id: true },
+        });
+        if (!order) throw new NotFoundException("Order not found");
+      }
+
+      let paymentOrderId: string | undefined;
+      if (dto.paymentId) {
+        const payment = await tx.payment.findFirst({
+          where: {
+            id: dto.paymentId,
+            order: { branchId: shift.branchId, branch: { tenantId } },
+          },
+          select: { orderId: true },
+        });
+        if (!payment) throw new NotFoundException("Payment not found");
+        paymentOrderId = payment.orderId;
+      }
+
+      if (dto.orderId && paymentOrderId && dto.orderId !== paymentOrderId) {
+        throw new BadRequestException("Payment does not belong to order");
+      }
 
       return tx.cashTransaction.create({
         data: {
