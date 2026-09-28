@@ -11,6 +11,7 @@ import {
   type PrintableReceipt,
   type SystemPrinterTarget,
 } from "./print-worker.js";
+import { printableReceiptHtml, windowsPrintPageSize } from "./receipt-renderer.js";
 import { resolveDesktopUpdateFeed } from "./update-feed.js";
 
 const require = createRequire(import.meta.url);
@@ -482,10 +483,11 @@ function setupPrinterControls(): void {
   );
   ipcMain.handle(
     "desktop:printer:test-system",
-    async (_event, input: { name?: unknown; role?: unknown }) => {
+    async (_event, input: { name?: unknown; role?: unknown; paperWidthMm?: unknown }) => {
       const name = typeof input?.name === "string" ? input.name.trim() : "";
       if (!name) throw new Error("Windows printerini tanlang");
       const role = typeof input?.role === "string" ? input.role : "RECEIPT";
+      const paperWidthMm = input?.paperWidthMm === 58 || input?.paperWidthMm === 210 ? input.paperWidthMm : 80;
       await silentPrintReceipt(name, {
         receiptNumber: "TEST",
         documentType: role,
@@ -500,7 +502,7 @@ function setupPrinterControls(): void {
           total: "1000",
           dateTime: new Date().toISOString(),
         },
-      });
+      }, paperWidthMm);
       return { ok: true };
     },
   );
@@ -635,23 +637,26 @@ function normalizeSystemPrinterTargets(value: unknown): SystemPrinterTarget[] {
     const roles = Array.isArray(record.roles)
       ? [...new Set(record.roles.filter((role): role is string => typeof role === "string" && validRoles.has(role)))]
       : [];
-    return roles.length > 0 ? [{ name, displayName, roles }] : [];
+    const paperWidthMm = record.paperWidthMm === 58 || record.paperWidthMm === 210 ? record.paperWidthMm : 80;
+    return roles.length > 0 ? [{ name, displayName, roles, paperWidthMm }] : [];
   });
 }
 
 async function silentPrintReceipt(
   deviceName: string,
   receipt: PrintableReceipt,
+  selectedPaperWidthMm = 80,
 ): Promise<void> {
+  const godexLabelPrinter = /\bgodex\b/i.test(deviceName);
+  const paperWidthMm = godexLabelPrinter ? 90 : selectedPaperWidthMm === 58 || selectedPaperWidthMm === 210 ? selectedPaperWidthMm : 80;
   const window = new BrowserWindow({
     show: false,
-    width: 420,
+    width: paperWidthMm === 210 ? 900 : 420,
     height: 800,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   try {
-    const godexLabelPrinter = /\bgodex\b/i.test(deviceName);
-    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, godexLabelPrinter))}`);
+    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, godexLabelPrinter, paperWidthMm))}`);
     // Hidden oynada `loadURL` tugashi sahifa birinchi marta chizilganini
     // kafolatlamaydi. Godex kabi Windows drayverlari shu onda print qilinsa
     // bo'sh sahifa berishi mumkin, shuning uchun ikki frame kutamiz.
@@ -668,8 +673,8 @@ async function silentPrintReceipt(
           // Godex G500 Windows'da 90x80 mm etiketka sifatida ishlaydi.
           // Unga uzun 80 mm chek varag'ini yuborish drayverda bo'sh label
           // chiqarishiga olib keladi. Qolgan printerlarda foydalanuvchi
-          // tanlagan drayver formatini o'zgartirmaymiz.
-          ...(godexLabelPrinter ? { pageSize: { width: 90_000, height: 80_000 } } : {}),
+          // A4 yoki Godex o'lchami aniq so'raladi; rulonli format drayverdan olinadi.
+          ...windowsPrintPageSize(godexLabelPrinter, paperWidthMm),
           margins: { marginType: "none" },
         },
         (success, failureReason) =>
@@ -679,44 +684,6 @@ async function silentPrintReceipt(
   } finally {
     window.destroy();
   }
-}
-
-function printableReceiptHtml(receipt: PrintableReceipt, godexLabelPrinter = false): string {
-  const content = receipt.content ?? {};
-  const documentType = String(content.documentType ?? receipt.documentType ?? "RECEIPT");
-  const kitchen = documentType === "KITCHEN";
-  const cancelled = documentType === "CANCELLATION";
-  const refunded = documentType.startsWith("REFUND");
-  const items = Array.isArray(content.items) ? content.items : [];
-  const payments = Array.isArray(content.payments) ? content.payments : [];
-  const itemRows = items.map((value) => {
-    const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
-    const name = escapeHtml(String(item.name ?? item.productName ?? "Mahsulot"));
-    const variant = item.variant ?? item.variantName;
-    const notes = item.notes ? `<small>Izoh: ${escapeHtml(String(item.notes))}</small>` : "";
-    const rawModifiers = item.modifiers ?? item.modifierSnapshot;
-    const modifiers = Array.isArray(rawModifiers)
-      ? rawModifiers.map((modifier: unknown) => {
-          const record = modifier && typeof modifier === "object" ? modifier as Record<string, unknown> : {};
-          return `<small>+ ${escapeHtml(String(record.name ?? record.modifierName ?? modifier))}</small>`;
-        }).join("")
-      : "";
-    return `<li><div><b>${escapeHtml(String(item.quantity ?? 1))}x ${name}${variant ? ` (${escapeHtml(String(variant))})` : ""}</b>${modifiers}${notes}</div>${kitchen ? "" : `<strong>${escapeHtml(String(item.total ?? item.totalPrice ?? ""))}</strong>`}</li>`;
-  }).join("");
-  const paymentRows = payments.map((value) => {
-    const payment = value && typeof value === "object" ? value as Record<string, unknown> : {};
-    return `<li><span>${escapeHtml(String(payment.method ?? "To'lov"))}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
-  }).join("");
-  const heading = cancelled ? "BUYURTMA BEKOR QILINDI" : refunded ? "TO'LOV QAYTARILDI" : kitchen ? "OSHXONA BUYURTMASI" : "MIJOZ CHEKI";
-  const pageStyle = godexLabelPrinter ? "@page{size:90mm 80mm;margin:0}" : "@page{margin:2mm}";
-  const bodyWidth = godexLabelPrinter ? "86mm" : "76mm";
-  return `<!doctype html><html><head><meta charset="utf-8"><style>${pageStyle}*{box-sizing:border-box}body{width:${bodyWidth};max-width:calc(100% - 4mm);margin:0 auto;font-family:Arial,sans-serif;color:#000;font-size:12px}header{text-align:center;border-bottom:2px dashed #000;padding:4mm 0 3mm}h1{font-size:${kitchen ? "24px" : "18px"};margin:0 0 2mm}h2{font-size:${kitchen ? "28px" : "15px"};margin:0}ul{list-style:none;padding:0;margin:2mm 0;border-bottom:1px dashed #000}li{display:flex;justify-content:space-between;gap:3mm;padding:2mm 0;border-top:1px dotted #777}small{display:block;font-weight:400;margin:1mm 0 0 4mm}.total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-top:3mm}.meta{display:flex;justify-content:space-between;margin-top:2mm}.alert{font-weight:800;font-size:17px;margin-top:2mm}.footer{text-align:center;margin-top:4mm}</style></head><body><header><h1>MAZETTO FOOD</h1><div>${escapeHtml(String(content.branchName ?? ""))}</div><div class="${cancelled || refunded ? "alert" : ""}">${heading}</div><h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2></header><div class="meta"><span>${escapeHtml(String(content.orderType ?? ""))}</span><span>${escapeHtml(String(content.dateTime ?? ""))}</span></div>${cancelled && content.cancellationReason ? `<p class="alert">Sabab: ${escapeHtml(String(content.cancellationReason))}</p>` : ""}<ul>${itemRows}</ul>${kitchen ? "" : `<ul>${paymentRows}</ul><div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total ?? ""))}</span></div>`}${content.orderNotes ? `<p><b>Izoh:</b> ${escapeHtml(String(content.orderNotes))}</p>` : ""}<p class="footer">${kitchen ? "Tayyorlash uchun" : "Xaridingiz uchun rahmat!"}</p></body></html>`;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
-  })[character] ?? character);
 }
 
 function setupSupportControls(): void {

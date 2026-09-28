@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, Printer, RefreshCw, X } from "lucide-react";
 import { apiFetch } from "../../lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Modal } from "../admin-ui/modal";
@@ -86,6 +86,7 @@ type SelectedSystemPrinter = {
   name: string;
   displayName: string;
   roles: string[];
+  paperWidthMm: 58 | 80 | 210;
 };
 
 const printRoleOptions = [
@@ -111,6 +112,7 @@ export function DesktopStatusBadge() {
   const [printerStatus, setPrinterStatus] = useState<PrinterStatus | null>(null);
   const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
   const [selectedSystemPrinters, setSelectedSystemPrinters] = useState<SelectedSystemPrinter[]>([]);
+  const printerSettingsDirty = useRef(false);
   const [supportBusy, setSupportBusy] = useState(false);
 
   useEffect(() => {
@@ -160,7 +162,12 @@ export function DesktopStatusBadge() {
         setPrinterStatus(settings);
         setPrinterHost(settings.host ?? "");
         setPrinterPort(String(settings.port));
-        setSelectedSystemPrinters(settings.systemPrinters ?? []);
+        if (!printerSettingsDirty.current) {
+          setSelectedSystemPrinters((settings.systemPrinters ?? []).map((printer) => ({
+            ...printer,
+            paperWidthMm: printer.paperWidthMm ?? 80,
+          })));
+        }
       } catch {
         // Desktop status polling retries automatically.
       }
@@ -239,15 +246,26 @@ export function DesktopStatusBadge() {
   }
 
   function toggleSystemPrinter(printer: SystemPrinter): void {
+    printerSettingsDirty.current = true;
     setSelectedSystemPrinters((current) => {
       const exists = current.some((entry) => entry.name === printer.name);
       return exists
         ? current.filter((entry) => entry.name !== printer.name)
-        : [...current, { name: printer.name, displayName: printer.displayName, roles: ["RECEIPT"] }];
+        : [...current, { name: printer.name, displayName: printer.displayName, roles: ["RECEIPT"], paperWidthMm: 80 }];
     });
   }
 
+  function setSystemPrinterPaperWidth(printerName: string, value: string): void {
+    const paperWidthMm = Number(value);
+    if (paperWidthMm !== 58 && paperWidthMm !== 80 && paperWidthMm !== 210) return;
+    printerSettingsDirty.current = true;
+    setSelectedSystemPrinters((current) => current.map((printer) =>
+      printer.name === printerName ? { ...printer, paperWidthMm } : printer,
+    ));
+  }
+
   function togglePrinterRole(printerName: string, role: string): void {
+    printerSettingsDirty.current = true;
     setSelectedSystemPrinters((current) => current.map((entry) => {
       if (entry.name !== printerName) return entry;
       const roles = entry.roles.includes(role)
@@ -264,11 +282,13 @@ export function DesktopStatusBadge() {
     try {
       const settings = await window.mazettoDesktop.printer.saveSystem({ printers: selectedSystemPrinters });
       setPrinterStatus(settings);
+      printerSettingsDirty.current = false;
       if (test) {
         for (const printer of selectedSystemPrinters) {
           await window.mazettoDesktop.printer.testSystem({
             name: printer.name,
             role: printer.roles[0] ?? "RECEIPT",
+            paperWidthMm: printer.paperWidthMm,
           });
         }
       }
@@ -457,13 +477,27 @@ export function DesktopStatusBadge() {
                       </span>
                     </label>
                     {selected ? (
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-2 border-t border-mz-border pt-2">
-                        {printRoleOptions.map((role) => (
-                          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-mz-text" key={role.value}>
-                            <input checked={selected.roles.includes(role.value)} className="h-3.5 w-3.5 accent-mz-primary" onChange={() => togglePrinterRole(printer.name, role.value)} type="checkbox" />
-                            {role.label}
-                          </label>
-                        ))}
+                      <div className="mt-2 grid gap-3 border-t border-mz-border pt-2 sm:grid-cols-[minmax(0,1fr)_140px]">
+                        <div className="flex flex-wrap gap-x-3 gap-y-2">
+                          {printRoleOptions.map((role) => (
+                            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-mz-text" key={role.value}>
+                              <input checked={selected.roles.includes(role.value)} className="h-3.5 w-3.5 accent-mz-primary" onChange={() => togglePrinterRole(printer.name, role.value)} type="checkbox" />
+                              {role.label}
+                            </label>
+                          ))}
+                        </div>
+                        <label className="grid gap-1 text-[11px] font-medium text-mz-text">
+                          Qog'oz formati
+                          <select
+                            className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-2 text-xs"
+                            onChange={(event) => setSystemPrinterPaperWidth(printer.name, event.target.value)}
+                            value={selected.paperWidthMm}
+                          >
+                            <option value={58}>58 mm</option>
+                            <option value={80}>80 mm</option>
+                            <option value={210}>A4</option>
+                          </select>
+                        </label>
                       </div>
                     ) : null}
                   </div>
@@ -472,6 +506,7 @@ export function DesktopStatusBadge() {
                 <p className="rounded-mz-control border border-dashed border-mz-border p-3 text-center text-[12px] text-mz-text-muted">Windows printer topilmadi.</p>
               )}
             </div>
+            <p className="mt-3 text-[11px] text-mz-text-muted">Chek satr kengligini tanlang; Windows drayverida ham shu qog'oz o'lchami sozlangan bo'lishi kerak.</p>
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <Button isLoading={printerBusy} onClick={() => void loadSystemPrinters()} size="sm" variant="ghost">Qayta qidirish</Button>
               <Button disabled={!selectedSystemPrinters.length} isLoading={printerBusy} onClick={() => void saveSystemPrinters(true)} size="sm" variant="ghost">Test cheki</Button>

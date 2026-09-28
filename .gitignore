@@ -14,6 +14,8 @@ build/
 coverage/
 .qa-screenshots/
 test-results/
+playwright-report/
+**/playwright-report/
 tmp/
 
 .env

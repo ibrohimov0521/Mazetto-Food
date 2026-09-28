@@ -1,7 +1,7 @@
 import { Socket } from "node:net";
 import type { LocalPrintJob } from "./store.js";
 
-type PrinterMetadata = { host?: unknown; port?: unknown; printRoles?: unknown };
+type PrinterMetadata = { host?: unknown; port?: unknown; printRoles?: unknown; paperWidthMm?: unknown };
 type PrinterConfig = {
   id: string;
   name?: string;
@@ -21,6 +21,7 @@ export type SystemPrinterTarget = {
   name: string;
   displayName: string;
   roles: string[];
+  paperWidthMm?: 58 | 80 | 210;
 };
 
 export type PrinterConnectionResult = ManagedPrinter & {
@@ -64,7 +65,7 @@ export type DesktopPrintWorkerOptions = {
   deviceId: string;
   deviceToken?: string | null;
   systemPrinters?: SystemPrinterTarget[];
-  printSystem?: (deviceName: string, receipt: PrintableReceipt) => Promise<void>;
+  printSystem?: (deviceName: string, receipt: PrintableReceipt, paperWidthMm?: number) => Promise<void>;
   localQueue?: LocalPrintQueue;
   fetchImpl?: typeof fetch;
   socketImpl?: (host: string, port: number, payload?: Buffer) => Promise<void>;
@@ -186,18 +187,28 @@ export class DesktopPrintWorker {
         const host = typeof metadata.host === "string" && metadata.host.trim()
           ? metadata.host.trim()
           : null;
-        const systemTargets = this.systemPrinters.filter((printer) => printer.roles.includes(route));
+        const paperWidthMm = printerPaperWidth(metadata.paperWidthMm);
+        const systemTargets = selectSystemPrinterTargets(job, route, this.systemPrinters);
+        if (paperWidthMm === 210 && (host || (!(systemTargets.length > 0 && this.printSystem) && this.printerHost))) {
+          throw new Error("A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning");
+        }
         if (host) {
           const port = typeof metadata.port === "number" && Number.isInteger(metadata.port)
             ? metadata.port
             : this.printerPort;
-          await this.send(receipt.escpos?.commands ?? [], host, port);
+          const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
+          const commands = printable.escpos?.commands ?? [];
+          if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
+          await this.send(commands, host, port, paperWidthMm);
         } else if (systemTargets.length > 0 && this.printSystem) {
           for (const target of systemTargets) {
-            await this.printSystem(target.name, receipt);
+            await this.printSystem(target.name, receipt, target.paperWidthMm || paperWidthMm);
           }
-        } else if (this.printerHost) {
-          await this.send(receipt.escpos?.commands ?? [], this.printerHost, this.printerPort);
+        } else if (this.printerHost && !job.printer) {
+          const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
+          const commands = printable.escpos?.commands ?? [];
+          if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
+          await this.send(commands, this.printerHost, this.printerPort, paperWidthMm);
         } else {
           throw new Error(`${route} uchun lokal printer tanlanmagan`);
         }
@@ -250,7 +261,7 @@ export class DesktopPrintWorker {
         documentType: job.documentType,
         content,
       };
-      for (const target of targets) await this.printSystem(target.name, receipt);
+      for (const target of targets) await this.printSystem(target.name, receipt, target.paperWidthMm);
       this.localQueue.complete(job.id);
     } catch (error) {
       this.localQueue.fail(job.id, message(error));
@@ -330,26 +341,29 @@ export class DesktopPrintWorker {
     return body && typeof body === "object" && "data" in body ? body.data : body as T;
   }
 
-  private async send(commands: Array<Record<string, unknown>>, host: string, port: number): Promise<void> {
-    const payload = Buffer.concat([Buffer.from("\x1b@", "binary"), ...commands.map((command) => this.encodeCommand(command))]);
+  private async send(commands: Array<Record<string, unknown>>, host: string, port: number, paperWidthMm: number): Promise<void> {
+    const columns = paperWidthMm === 58 ? 32 : 48;
+    const payload = Buffer.concat([Buffer.from("\x1b@", "binary"), ...commands.map((command) => this.encodeCommand(command, columns))]);
     await this.openSocket(host, port, payload);
   }
 
-  private encodeCommand(command: Record<string, unknown>): Buffer {
+  private encodeCommand(command: Record<string, unknown>, columns: number): Buffer {
     const type = String(command.type ?? "");
     if (type === "align") return Buffer.from([0x1b, 0x61, command.value === "center" ? 1 : command.value === "right" ? 2 : 0]);
     if (type === "bold") return Buffer.from([0x1b, 0x45, command.value ? 1 : 0]);
-    if (type === "line") return Buffer.from("------------------------------------------\n", "utf8");
+    if (type === "line") return Buffer.from("-".repeat(columns) + "\n", "utf8");
     if (type === "cut") return Buffer.from([0x1d, 0x56, 0x00]);
     if (type === "item") {
-      const lines = [`${String(command.quantity ?? "")}x ${String(command.name ?? "")}  ${String(command.total ?? "")}`];
-      if (command.notes) lines.push(`  Izoh: ${String(command.notes)}`);
-      for (const modifier of modifierNames(command.modifiers)) lines.push(`  + ${modifier}`);
-      return Buffer.from(`${lines.join("\n")}\n`, "utf8");
+      const lines = wrapEscPosText(String(command.quantity ?? "") + "x " + String(command.name ?? ""), columns);
+      const total = String(command.total ?? "").trim();
+      if (total) lines.push(...wrapEscPosPair(lines.pop() ?? "", total, columns));
+      if (command.notes) lines.push(...wrapEscPosText("Izoh: " + String(command.notes), columns, "  "));
+      for (const modifier of modifierNames(command.modifiers)) lines.push(...wrapEscPosText("+ " + modifier, columns, "  "));
+      return Buffer.from(lines.join("\n") + "\n", "utf8");
     }
-    if (type === "payment") return Buffer.from(`${String(command.method ?? "To'lov")}: ${String(command.amount ?? "")}\n`, "utf8");
-    if (type === "total") return Buffer.from(`JAMI: ${String(command.value ?? "")}\n`, "utf8");
-    return Buffer.from(`${String(command.value ?? "")}\n`, "utf8");
+    if (type === "payment") return Buffer.from(wrapEscPosPair(String(command.method ?? "To'lov"), String(command.amount ?? ""), columns).join("\n") + "\n", "utf8");
+    if (type === "total") return Buffer.from(wrapEscPosPair("JAMI", String(command.value ?? ""), columns).join("\n") + "\n", "utf8");
+    return Buffer.from(wrapEscPosText(String(command.value ?? ""), columns).join("\n") + "\n", "utf8");
   }
 
   private async openSocket(host: string, port: number, payload: Buffer | undefined): Promise<void> {
@@ -365,6 +379,59 @@ export class DesktopPrintWorker {
       });
     });
   }
+}
+
+function printerPaperWidth(value: unknown): 58 | 80 | 210 {
+  return value === 58 || value === 80 || value === 210 ? value : 80;
+}
+
+function selectSystemPrinterTargets(job: PrintJob, route: string, printers: SystemPrinterTarget[]): SystemPrinterTarget[] {
+  const targets = printers.filter((printer) => printer.roles.includes(route));
+  if (!job.printer || targets.length <= 1) return targets;
+
+  const expectedName = job.printer.name.trim().toLocaleLowerCase();
+  const matches = targets.filter((target) =>
+    [target.name, target.displayName].some((name) => name.trim().toLocaleLowerCase() === expectedName),
+  );
+  if (matches.length === 1) return matches;
+  if (matches.length > 1) {
+    throw new Error(`"${job.printer.name}" nomiga bir nechta Windows printer mos keldi; printer nomlarini yagona qiling`);
+  }
+  throw new Error(`"${job.printer.name}" printeri uchun Windows queue topilmadi; bir xil yo'nalishdagi Windows printer nomini moslang`);
+}
+
+function wrapEscPosPair(left: string, right: string, columns: number): string[] {
+  const leftLines = wrapEscPosText(left, columns);
+  const finalLine = leftLines.pop() ?? "";
+  if (finalLine.length + right.length + 1 <= columns) {
+    leftLines.push(finalLine + " ".repeat(columns - finalLine.length - right.length) + right);
+  } else {
+    leftLines.push(finalLine, ...wrapEscPosText(right, columns).map((line) => line.padStart(columns)));
+  }
+  return leftLines;
+}
+
+function wrapEscPosText(value: string, columns: number, continuationIndent = ""): string[] {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const wordWidth = Math.max(1, columns - continuationIndent.length);
+    const parts = word.length > wordWidth
+      ? Array.from({ length: Math.ceil(word.length / wordWidth) }, (_, index) => word.slice(index * wordWidth, (index + 1) * wordWidth))
+      : [word];
+    for (const part of parts) {
+      const candidate = line ? line + " " + part : (lines.length > 0 ? continuationIndent : "") + part;
+      if (candidate.length <= columns) line = candidate;
+      else {
+        if (line) lines.push(line);
+        line = continuationIndent + part;
+      }
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 function receiptRoute(receipt: PrintableReceipt): string {

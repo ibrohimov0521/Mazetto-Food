@@ -4,7 +4,7 @@ import test from "node:test";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 
 test("offline receipt and kitchen documents print through selected Windows drivers", async () => {
-  const printed: Array<{ name: string; type: string }> = [];
+  const printed: Array<{ name: string; type: string; paperWidthMm?: number }> = [];
   const completed: string[] = [];
   const jobs = [
     { id: "local-1", logicalKey: "order-1:RECEIPT", branchId: "branch-1", documentType: "RECEIPT", payloadJson: JSON.stringify({ documentType: "RECEIPT", orderId: "order-1" }), attempts: 0 },
@@ -16,11 +16,11 @@ test("offline receipt and kitchen documents print through selected Windows drive
     agentId: "desktop-device-1",
     deviceId: "device-1",
     systemPrinters: [
-      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] },
-      { name: "Windows Kitchen", displayName: "Windows Kitchen", roles: ["KITCHEN"] },
+      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"], paperWidthMm: 58 },
+      { name: "Windows Kitchen", displayName: "Windows Kitchen", roles: ["KITCHEN"], paperWidthMm: 210 },
     ],
-    printSystem: async (name, receipt) => {
-      printed.push({ name, type: receipt.documentType ?? "" });
+    printSystem: async (name, receipt, paperWidthMm) => {
+      printed.push({ name, type: receipt.documentType ?? "", paperWidthMm });
     },
     localQueue: {
       claim: (types) => {
@@ -37,12 +37,142 @@ test("offline receipt and kitchen documents print through selected Windows drive
   await worker.tick();
 
   assert.deepEqual(printed, [
-    { name: "Windows POS", type: "RECEIPT" },
-    { name: "Windows Kitchen", type: "KITCHEN" },
+    { name: "Windows POS", type: "RECEIPT", paperWidthMm: 58 },
+    { name: "Windows Kitchen", type: "KITCHEN", paperWidthMm: 210 },
   ]);
   assert.deepEqual(completed, ["local-1", "local-2"]);
 });
 
+test("assigned server printer jobs print only to the matching Windows queue", async () => {
+  let claimed = false;
+  let completed = 0;
+  const printed: string[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "queue-1", displayName: "Kassa 1", roles: ["RECEIPT"] },
+      { name: "queue-2", displayName: "Kassa 2", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (name) => { printed.push(name); },
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([
+        { id: "printer-1", name: "Kassa 1", isActive: true, status: "ONLINE", metadata: { printRoles: ["RECEIPT"] } },
+      ]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-1",
+          receiptId: "receipt-1",
+          leaseToken: "lease-1",
+          receipt: { receiptNumber: "RCPT-1", documentType: "RECEIPT", orderId: "order-1" },
+          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
+          printer: { id: "printer-1", name: "Kassa 1", metadata: {} },
+        });
+      }
+      if (url.endsWith("/complete")) { completed += 1; return jsonResponse({}); }
+      throw new Error("Unexpected request: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.deepEqual(printed, ["queue-1"]);
+  assert.equal(completed, 1);
+});
+
+test("ambiguous Windows printer mapping fails instead of printing duplicate copies", async () => {
+  let claimed = false;
+  let printed = 0;
+  let failure = "";
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "queue-1", displayName: "Kassa 1", roles: ["RECEIPT"] },
+      { name: "queue-2", displayName: "Kassa 2", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => { printed += 1; },
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([
+        { id: "printer-1", name: "Kassa server", isActive: true, status: "ONLINE", metadata: { printRoles: ["RECEIPT"] } },
+      ]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-1",
+          receiptId: "receipt-1",
+          leaseToken: "lease-1",
+          receipt: { receiptNumber: "RCPT-1", documentType: "RECEIPT", orderId: "order-1" },
+          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
+          printer: { id: "printer-1", name: "Kassa server", metadata: {} },
+        });
+      }
+      if (url.endsWith("/fail")) {
+        failure = (JSON.parse(String(init?.body)) as { error: string }).error;
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected request: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(printed, 0);
+  assert.match(failure, /Windows queue topilmadi/);
+});
+
+test("server-assigned Windows job never falls through to the generic TCP printer", async () => {
+  let claimed = false;
+  let socketWrites = 0;
+  let failure = "";
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: "10.0.0.5",
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([
+        { id: "printer-1", name: "Kassa", isActive: true, status: "ONLINE", metadata: { printRoles: ["RECEIPT"] } },
+      ]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-1",
+          receiptId: "receipt-1",
+          leaseToken: "lease-1",
+          receipt: { receiptNumber: "RCPT-1", documentType: "RECEIPT", orderId: "order-1" },
+          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
+          printer: { id: "printer-1", name: "Kassa", metadata: {} },
+        });
+      }
+      if (url.endsWith("/fail")) {
+        failure = (JSON.parse(String(init?.body)) as { error: string }).error;
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected request: " + url);
+    },
+    socketImpl: async () => { socketWrites += 1; },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(socketWrites, 0);
+  assert.match(failure, /lokal printer tanlanmagan/);
+});
 test("server replay is completed without duplicate paper when local document already printed", async () => {
   let completed = 0;
   let physicalPrints = 0;
@@ -163,7 +293,50 @@ test("all managed printer connections are tested independently", async () => {
   ]);
 });
 
+test("A4 paper cannot fall through to the default TCP printer", async () => {
+  let claimed = false;
+  let failure = "";
+  let socketWrites = 0;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: "10.0.0.5",
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    deviceToken: "device-secret",
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) {
+        return jsonResponse([{ id: "printer-1", name: "A4", status: "ONLINE", metadata: { paperWidthMm: 210 } }]);
+      }
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-a4",
+          receiptId: "receipt-a4",
+          leaseToken: "lease-a4",
+          receipt: { receiptNumber: "RCPT-A4", documentType: "RECEIPT", orderId: "order-1" },
+          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
+          printer: { id: "printer-1", name: "A4", metadata: { paperWidthMm: 210 } },
+        });
+      }
+      if (url.endsWith("/fail")) {
+        failure = (JSON.parse(String(init?.body)) as { error: string }).error;
+        return jsonResponse({ id: "job-a4", status: "FAILED" });
+      }
+      throw new Error("Unexpected request: " + url);
+    },
+    socketImpl: async () => { socketWrites += 1; },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(socketWrites, 0);
+  assert.match(failure, /A4 format/);
+});
 test("virtual ESC/POS printer receives cancellation once and job completes", async () => {
+
   const chunks: Buffer[] = [];
   const server = createServer((socket) => {
     socket.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
@@ -172,6 +345,7 @@ test("virtual ESC/POS printer receives cancellation once and job completes", asy
   const address = server.address();
   assert.ok(address && typeof address === "object");
   let claimed = false;
+  let receiptRequests = 0;
   let completed = 0;
   const worker = new DesktopPrintWorker({
     apiUrl: "https://api.example.test/api/v1",
@@ -182,19 +356,21 @@ test("virtual ESC/POS printer receives cancellation once and job completes", asy
     fetchImpl: async (input) => {
       const url = String(input);
       if (url.endsWith("/printers")) {
-        return jsonResponse([{ id: "printer-1", name: "Kassa", status: "ONLINE", metadata: { host: "127.0.0.1", port: address.port } }]);
+        return jsonResponse([{ id: "printer-1", name: "Kassa", status: "ONLINE", metadata: { host: "127.0.0.1", port: address.port, paperWidthMm: 58 } }]);
       }
       if (url.endsWith("/print-jobs/claim")) {
         if (claimed) return jsonResponse(null);
         claimed = true;
-        return jsonResponse({ id: "job-1", receiptId: "receipt-1", leaseToken: "lease-1", printer: { id: "printer-1", name: "Kassa", metadata: { host: "127.0.0.1", port: address.port } } });
+        return jsonResponse({ id: "job-1", receiptId: "receipt-1", leaseToken: "lease-1", receipt: { receiptNumber: "CANCEL-1", documentType: "CANCELLATION", orderId: "order-1" }, payload: { documentType: "CANCELLATION", orderNumber: "42", items: [{ name: "Achchiq katta lavash qo'shimcha pishloq", quantity: "1", total: "39000" }] }, printer: { id: "printer-1", name: "Kassa", metadata: { host: "127.0.0.1", port: address.port, paperWidthMm: 58 } } });
       }
       if (url.endsWith("/receipts/receipt-1")) {
+        receiptRequests += 1;
         return jsonResponse({ receiptNumber: "CANCEL-1", escpos: { commands: [
           { type: "align", value: "center" },
           { type: "bold", value: true },
           { type: "text", value: "BUYURTMA BEKOR QILINDI" },
-          { type: "item", quantity: "1", name: "Achchiq katta lavash qo'shimcha pishloq", total: "39000" },
+          { type: "item", quantity: "1", name: "Achchiq katta lavash qo'shimcha pishloq", notes: "z".repeat(35), total: "39000" },
+          { type: "line" },
           { type: "cut" },
         ] } });
       }
@@ -219,9 +395,13 @@ test("virtual ESC/POS printer receives cancellation once and job completes", asy
 
   const payload = Buffer.concat(chunks);
   assert.equal(completed, 1);
+  assert.equal(receiptRequests, 1);
   assert.deepEqual([...payload.subarray(0, 2)], [0x1b, 0x40]);
   assert.match(payload.toString("utf8"), /BUYURTMA BEKOR QILINDI/);
-  assert.match(payload.toString("utf8"), /Achchiq katta lavash/);
+  assert.match(payload.toString("utf8"), /1x Achchiq katta lavash\nqo'shimcha pishloq/);
+  assert.ok(payload.includes(Buffer.from("  " + "z".repeat(30) + "\n  " + "z".repeat(5) + "\n", "utf8")));
+  assert.ok(payload.includes(Buffer.from("-".repeat(32) + "\n", "utf8")));
+  assert.ok(!payload.includes(Buffer.from("-".repeat(48) + "\n", "utf8")));
   assert.deepEqual([...payload.subarray(-3)], [0x1d, 0x56, 0x00]);
 });
 

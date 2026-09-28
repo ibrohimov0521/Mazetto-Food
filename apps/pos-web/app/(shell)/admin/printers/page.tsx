@@ -76,7 +76,7 @@ type Printer = {
   type: PrinterType;
   status: PrinterStatus;
   isActive: boolean;
-  metadata?: { host?: string; port?: number; printRoles?: string[] } | null;
+  metadata?: { host?: string; port?: number; printRoles?: string[]; paperWidthMm?: number } | null;
   branch?: { id: string; name: string } | null;
 };
 
@@ -97,10 +97,16 @@ const printerTypes: PrinterType[] = [
 ];
 
 const printerStatuses: PrinterStatus[] = ["ONLINE", "OFFLINE", "ERROR"];
-const printRoles = ["RECEIPT", "CANCELLATION", "KITCHEN", "BAR"] as const;
-const printRoleLabels: Record<(typeof printRoles)[number], string> = { RECEIPT: "Sotuv cheki", CANCELLATION: "Bekor qilish cheki", KITCHEN: "Oshxona", BAR: "Bar" };
+const printRoles = ["RECEIPT", "CANCELLATION", "REFUND", "KITCHEN", "BAR"] as const;
+const printRoleLabels: Record<(typeof printRoles)[number], string> = { RECEIPT: "Sotuv cheki", CANCELLATION: "Bekor qilish cheki", REFUND: "Pul qaytarish cheki", KITCHEN: "Oshxona", BAR: "Bar (alohida chek yo'q)" };
 
 /** Qizil FAQAT nosozlik uchun (DESIGN_RULES). */
+function paperWidthLabel(value?: number): string {
+  if (value === 58) return "58 mm";
+  if (value === 210) return "A4";
+  return "80 mm";
+}
+
 function statusTone(status: PrinterStatus): BadgeTone {
   if (status === "ERROR") {
     return "danger";
@@ -145,6 +151,7 @@ type EditorState = {
   isActive: boolean;
   host: string;
   port: string;
+  paperWidthMm: string;
   printRoles: string[];
 };
 
@@ -158,8 +165,29 @@ function emptyEditor(branchId: string): EditorState {
     isActive: true,
     host: "",
     port: "9100",
+    paperWidthMm: "80",
     printRoles: ["RECEIPT", "CANCELLATION"],
   };
+}
+function configuredPrintRoles(printer: Printer): string[] {
+  const roles = printer.metadata?.printRoles ?? [];
+  if (roles.length > 0) return roles;
+  return printer.type === "THERMAL" || printer.type === "RECEIPT"
+    ? ["RECEIPT", "KITCHEN", "REFUND"]
+    : [];
+}
+
+function duplicatePrinterRoutes(editor: EditorState, printers: Printer[]) {
+  return printRoles.filter((role) =>
+    editor.printRoles.includes(role) &&
+      printers.some((printer) =>
+        printer.id !== editor.id &&
+          printer.branchId === editor.branchId &&
+          printer.isActive &&
+          printer.status === "ONLINE" &&
+          configuredPrintRoles(printer).includes(role),
+      ),
+  );
 }
 
 function PrintersConsole() {
@@ -212,6 +240,7 @@ function PrintersConsole() {
 
   const branches = branchesResource.data ?? [];
   const printers = printersResource.data ?? [];
+  const duplicateRoutes = editor?.isActive && editor.status === "ONLINE" ? duplicatePrinterRoutes(editor, printers) : [];
 
   const branchName = useMemo(() => {
     const map = new Map(branches.map((branch) => [branch.id, branch.name]));
@@ -236,6 +265,7 @@ function PrintersConsole() {
       isActive: printer.isActive,
       host: printer.metadata?.host ?? "",
       port: String(printer.metadata?.port ?? 9100),
+      paperWidthMm: String(printer.metadata?.paperWidthMm ?? 80),
       printRoles: printer.metadata?.printRoles ?? [],
     });
   }
@@ -247,6 +277,12 @@ function PrintersConsole() {
       next.name = "Printer nomi kiritilishi shart.";
     } else if (state.name.trim().length > 120) {
       next.name = "Nom 120 belgidan oshmasligi kerak.";
+    }
+    const paperWidthMm = Number(state.paperWidthMm);
+    if (![58, 80, 210].includes(paperWidthMm)) {
+      next.paperWidthMm = "58 mm, 80 mm yoki A4 formatni tanlang.";
+    } else if (state.host.trim() && paperWidthMm === 210) {
+      next.paperWidthMm = "A4 format faqat Windows drayveri orqali ishlaydi.";
     }
     const port = Number(state.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -288,7 +324,7 @@ function PrintersConsole() {
             type: editor.type,
             status: editor.status,
             isActive: editor.isActive,
-            metadata: { protocol: "ESC_POS", host: editor.host.trim() || undefined, port: Number(editor.port), printRoles: editor.printRoles },
+            metadata: { protocol: "ESC_POS", host: editor.host.trim() || undefined, port: Number(editor.port), paperWidthMm: Number(editor.paperWidthMm), printRoles: editor.printRoles },
           }),
         });
         showToast("Printer ma'lumotlari saqlandi.", "success");
@@ -300,7 +336,7 @@ function PrintersConsole() {
             name: editor.name.trim(),
             type: editor.type,
             status: editor.status,
-            metadata: { protocol: "ESC_POS", host: editor.host.trim() || undefined, port: Number(editor.port), printRoles: editor.printRoles },
+            metadata: { protocol: "ESC_POS", host: editor.host.trim() || undefined, port: Number(editor.port), paperWidthMm: Number(editor.paperWidthMm), printRoles: editor.printRoles },
           }),
         });
         showToast("Printer qo'shildi.", "success");
@@ -428,6 +464,11 @@ function PrintersConsole() {
       key: "branch",
       header: "Filial",
       render: (printer) => branchName(printer),
+    },
+    {
+      key: "paper",
+      header: "Qog'oz",
+      render: (printer) => paperWidthLabel(printer.metadata?.paperWidthMm),
     },
     {
       key: "routing",
@@ -651,26 +692,6 @@ function PrintersConsole() {
               )}
             </FormField>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
-              <FormField hint="Windows drayveri ishlatilsa bo'sh qoldiring" label="IP manzil (ixtiyoriy)">
-                {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
-              </FormField>
-              <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>
-                {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
-              </FormField>
-            </div>
-            <div className="rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
-              <p className="text-sm font-semibold text-mz-text">Chop yo&apos;nalishlari</p>
-              <p className="mt-1 text-[12px] text-mz-text-muted">Bir printerga bir nechta turdagi hujjatni tanlash mumkin.</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {printRoles.map((role) => (
-                  <label className="flex items-center gap-2 text-sm text-mz-text" key={role}>
-                    <input checked={editor.printRoles.includes(role)} onChange={(event) => setEditor({ ...editor, printRoles: event.target.checked ? [...editor.printRoles, role] : editor.printRoles.filter((item) => item !== role) })} type="checkbox" />
-                    {printRoleLabels[role]}
-                  </label>
-                ))}
-              </div>
-            </div>
             {editor.id ? (
               /*
                * Filialni KO'CHIRISH mumkin emas: `UpdatePrinterDto` da
@@ -783,12 +804,21 @@ function PrintersConsole() {
               )}
             </FormField>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+            <div className="grid gap-3 sm:grid-cols-[1fr_140px_160px]">
               <FormField hint="Windows drayveri ishlatilsa bo'sh qoldiring" label="IP manzil (ixtiyoriy)">
                 {(props) => <TextInput {...props} onChange={(event) => setEditor({ ...editor, host: event.target.value })} placeholder="192.168.1.20" value={editor.host} />}
               </FormField>
               <FormField {...(errors.port ? { error: errors.port } : {})} hint="Odatda 9100" label="Port" required>
                 {(props) => <TextInput {...props} inputMode="numeric" onChange={(event) => setEditor({ ...editor, port: event.target.value })} value={editor.port} />}
+              </FormField>
+              <FormField {...(errors.paperWidthMm ? { error: errors.paperWidthMm } : {})} hint="Qog'oz kengligi Windows drayveridagi sozlama bilan mos bo'lsin" label="Qog'oz formati" required>
+                {(props) => (
+                  <Select {...props} onChange={(event) => setEditor({ ...editor, paperWidthMm: event.target.value })} value={editor.paperWidthMm}>
+                    <option value="58">58 mm</option>
+                    <option value="80">80 mm</option>
+                    <option disabled={Boolean(editor.host.trim())} value="210">A4 (Windows)</option>
+                  </Select>
+                )}
               </FormField>
             </div>
             <div className="rounded-mz-control border border-mz-border bg-mz-surface-sunken p-3">
@@ -797,11 +827,16 @@ function PrintersConsole() {
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {printRoles.map((role) => (
                   <label className="flex items-center gap-2 text-sm text-mz-text" key={role}>
-                    <input checked={editor.printRoles.includes(role)} onChange={(event) => setEditor({ ...editor, printRoles: event.target.checked ? [...editor.printRoles, role] : editor.printRoles.filter((item) => item !== role) })} type="checkbox" />
+                    <input checked={editor.printRoles.includes(role)} disabled={role === "BAR"} onChange={(event) => setEditor({ ...editor, printRoles: event.target.checked ? [...editor.printRoles, role] : editor.printRoles.filter((item) => item !== role) })} type="checkbox" />
                     {printRoleLabels[role]}
                   </label>
                 ))}
               </div>
+              {duplicateRoutes.length > 0 ? (
+                <p className="mt-3 rounded-mz-control border border-amber-300 bg-amber-50 p-2 text-[12px] text-amber-900">
+                  Shu yo'nalishlar boshqa faol printerlarga ham biriktirilgan: {duplicateRoutes.map((role) => printRoleLabels[role]).join(", ")}. Har printer alohida nusxa oladi.
+                </p>
+              ) : null}
             </div>
             {editor.id ? (
               <Toggle
