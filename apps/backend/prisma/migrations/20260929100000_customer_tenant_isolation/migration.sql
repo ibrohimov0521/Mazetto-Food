@@ -1,3 +1,4 @@
+BEGIN;
 DO $$
 DECLARE
   active_tenant_count INTEGER;
@@ -84,3 +85,5 @@ ALTER TABLE "customer_verification_challenges"
   ADD CONSTRAINT "customer_verification_challenges_tenantId_fkey"
   FOREIGN KEY ("tenantId") REFERENCES "restaurant_tenants"("id")
   ON DELETE CASCADE ON UPDATE CASCADE;
+
+COMMIT;

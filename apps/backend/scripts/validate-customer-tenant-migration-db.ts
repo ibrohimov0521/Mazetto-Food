@@ -123,6 +123,7 @@ async function assertNoCustomerTenantColumn(schema: string): Promise<void> {
 async function assertRejectedScenario(scenario: Scenario, expectedError: RegExp): Promise<void> {
   const schema = await createLegacySchema(scenario);
   await assert.rejects(client.query(migrationSql), expectedError);
+  await client.query("ROLLBACK");
   await assertNoCustomerTenantColumn(schema);
 }
 
