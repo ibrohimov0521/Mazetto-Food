@@ -23,6 +23,19 @@ type Receipt = {
   printed: boolean;
   printedAt?: string | null;
   createdAt: string;
+  content?: {
+    branchName?: string;
+    cancellationReason?: string | null;
+    refundReason?: string | null;
+    displayOrderNumber?: string | null;
+    orderNumber?: string;
+    dateTime?: string;
+    orderType?: string;
+    orderNotes?: string | null;
+    total?: string;
+    items?: { name?: string; variant?: string | null; quantity?: string | number; total?: string; notes?: string | null; modifiers?: unknown }[];
+    payments?: { method?: string; amount?: string }[];
+  };
   branch: { name: string; address?: string | null; phone?: string | null };
   order: {
     orderNumber: string;
@@ -62,6 +75,8 @@ function ReceiptPreview({ id }: { id: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMarking, setIsMarking] = useState(false);
+  const [printNotice, setPrintNotice] = useState<string | null>(null);
+  const [isWaitingForPrint, setIsWaitingForPrint] = useState(false);
   const markLock = useRef(false);
 
   const describe = useCallback(
@@ -99,35 +114,68 @@ function ReceiptPreview({ id }: { id: string }) {
     void load();
   }, [load]);
 
-  /*
-   * Brauzer chop etishi. Fizik printer (print-agent) integratsiyasi
-   * KEYINGI BOSQICHGA qoldirilgan — shuning uchun bu tugma faqat
-   * brauzer dialogini ochadi va so'ng chekni "chop etilgan" deb
-   * belgilaydi. Belgilash muvaffaqiyatsiz bo'lsa chop etish bekor
-   * bo'lmaydi, faqat xato ko'rsatiladi.
-   */
-  async function printAndMark() {
-    if (markLock.current) {
-      return;
-    }
-
+  useEffect(() => {
+    if (!isWaitingForPrint || !receipt || receipt.printed) return;
+    let active = true;
+    let attempts = 0;
+    let timer: number | undefined;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const latest = await apiFetch<Receipt>("/receipts/" + encodeURIComponent(id), {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!active) return;
+        setReceipt(latest);
+        if (latest.printed) {
+          setPrintNotice("Chek printer navbatiga muvaffaqiyatli uzatildi.");
+          setIsWaitingForPrint(false);
+          return;
+        }
+      } catch (caught) {
+        if (caught instanceof SessionExpiredError) {
+          setError(describe(caught, "Chek holati tekshirilmayapti."));
+          setIsWaitingForPrint(false);
+          return;
+        }
+      }
+      if (attempts >= 15) {
+        setPrintNotice("Chek printerga yuborilgani hozircha tasdiqlanmadi. Printer navbatini tekshiring.");
+        setIsWaitingForPrint(false);
+        return;
+      }
+      timer = window.setTimeout(() => void poll(), 2000);
+    };
+    timer = window.setTimeout(() => void poll(), 1200);
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [describe, id, isWaitingForPrint, receipt?.printed]);
+  async function queueReprint() {
+    if (markLock.current) return;
     markLock.current = true;
     setIsMarking(true);
     setError(null);
     try {
-      window.print();
-      setReceipt(
-        await apiFetch<Receipt>(`/receipts/${id}/print`, {
-          method: "PATCH",
-          signal: AbortSignal.timeout(12000),
-        }),
-      );
+      const queued = await apiFetch<Receipt>("/receipts/" + id + "/reprint", {
+        method: "POST",
+        signal: AbortSignal.timeout(12000),
+      });
+      setReceipt(queued);
+      setIsWaitingForPrint(true);
+      setPrintNotice("Chek navbatga qabul qilindi; printer tasdig'i kutilmoqda.");
     } catch (caught) {
-      setError(describe(caught, "Chek holati saqlanmadi."));
+      setError(describe(caught, "Chek printer navbatiga yuborilmadi."));
     } finally {
       markLock.current = false;
       setIsMarking(false);
     }
+  }
+
+  function printInBrowser() {
+    window.print();
   }
 
   const isKitchen = receipt?.documentType === "KITCHEN";
@@ -140,6 +188,47 @@ function ReceiptPreview({ id }: { id: string }) {
       : isRefund
         ? "TO'LOV QAYTARILDI"
         : "MIJOZ CHEKI";
+  const reason = isCancellation
+    ? receipt?.content?.cancellationReason
+    : isRefund
+      ? receipt?.content?.refundReason
+      : null;
+  const receiptItems = receipt
+    ? receipt.content?.items !== undefined
+      ? receipt.content.items.map((item, index) => ({
+          id: "snapshot-" + index,
+          name: item.name ?? "Mahsulot",
+          variant: item.variant,
+          quantity: String(item.quantity ?? 1),
+          total: item.total ?? "",
+          notes: item.notes,
+          modifiers: item.modifiers,
+        }))
+      : receipt.order.items.map((item) => ({
+          id: item.id,
+          name: item.productName,
+          variant: item.variantName,
+          quantity: item.quantity,
+          total: item.totalPrice,
+          notes: item.notes,
+          modifiers: item.modifierSnapshot,
+        }))
+    : [];
+  const receiptPayments = receipt
+    ? receipt.content?.payments !== undefined
+      ? receipt.content.payments.map((payment, index) => ({
+          id: "snapshot-payment-" + index,
+          methodCode: payment.method ?? "",
+          methodName: "",
+          amount: payment.amount ?? "",
+        }))
+      : receipt.order.payments.map((payment) => ({
+          id: payment.id,
+          methodCode: payment.methodCode ?? payment.method?.code ?? "",
+          methodName: payment.method?.name ?? "",
+          amount: payment.amount,
+        }))
+    : [];
 
   return (
     <StaffShell
@@ -180,7 +269,7 @@ function ReceiptPreview({ id }: { id: string }) {
               <div className={styles.receiptBrand}>
                 <strong>MAZETTO FOOD</strong>
                 <b>{documentTitle}</b>
-                <span>{receipt.branch.name}</span>
+                <span>{receipt.content?.branchName ?? receipt.branch.name}</span>
                 {receipt.branch.address ? (
                   <span>{receipt.branch.address}</span>
                 ) : null}
@@ -198,38 +287,39 @@ function ReceiptPreview({ id }: { id: string }) {
                   <span>Buyurtma</span>
                   <b>
                     #
-                    {receipt.order.displayOrderNumber ??
+                    {receipt.content?.displayOrderNumber ??
+                      receipt.content?.orderNumber ??
+                      receipt.order.displayOrderNumber ??
                       receipt.order.orderNumber}
                   </b>
                 </div>
+                {receipt.content?.orderType ? <div className={styles.receiptRow}><span>Turi</span><b>{receipt.content.orderType}</b></div> : null}
                 <div className={styles.receiptRow}>
                   <span>Sana</span>
-                  <b>{formatDateTime(receipt.createdAt)}</b>
+                  <b>{receipt.content?.dateTime ?? formatDateTime(receipt.createdAt)}</b>
                 </div>
               </div>
+              {reason ? <p className={styles.receiptReason}><b>Sabab:</b> {reason}</p> : null}
               <div className={styles.receiptDivider} />
               <ul className={styles.receiptItems}>
-                {receipt.order.items.map((item) => (
+                {receiptItems.map((item) => (
                   <li className={styles.receiptRow} key={item.id}>
                     <span>
-                      {formatQuantity(item.quantity)} × {item.productName}
-                      {item.variantName ? ` (${item.variantName})` : ""}
+                      {formatQuantity(item.quantity)} × {item.name}
+                      {item.variant ? ` (${item.variant})` : ""}
                       {item.notes ? <small className="block">Izoh: {item.notes}</small> : null}
-                      {modifierNames(item.modifierSnapshot).map((modifier) => <small className="block" key={modifier}>+ {modifier}</small>)}
+                      {modifierNames(item.modifiers).map((modifier) => <small className="block" key={modifier}>+ {modifier}</small>)}
                     </span>
-                    {!isKitchen ? <b>{formatMoney(item.totalPrice)}</b> : null}
+                    {!isKitchen ? <b>{formatMoney(item.total)}</b> : null}
                   </li>
                 ))}
               </ul>
               <div className={styles.receiptDivider} />
               {!isKitchen ? <div className={styles.receiptMeta}>
-                {receipt.order.payments.map((payment) => (
+                {receiptPayments.map((payment) => (
                   <div className={styles.receiptRow} key={payment.id}>
                     <span>
-                      {payment.method?.name ??
-                        paymentMethodLabel(
-                          payment.methodCode ?? payment.method?.code ?? "",
-                        )}
+                      {payment.methodName || paymentMethodLabel(payment.methodCode)}
                     </span>
                     <b>{formatMoney(payment.amount)}</b>
                   </div>
@@ -237,8 +327,9 @@ function ReceiptPreview({ id }: { id: string }) {
               </div> : null}
               {!isKitchen ? <div className={styles.receiptTotal}>
                 <span>Jami</span>
-                <strong>{formatMoney(receipt.total)}</strong>
+                <strong>{formatMoney(receipt.content?.total ?? receipt.total)}</strong>
               </div> : null}
+              {receipt.content?.orderNotes ? <p className={styles.receiptOrderNotes}><b>Izoh:</b> {receipt.content.orderNotes}</p> : null}
               <p className={styles.receiptFooter}>{isKitchen ? "Tayyorlash uchun" : "Xaridingiz uchun rahmat!"}</p>
             </article>
 
@@ -255,15 +346,20 @@ function ReceiptPreview({ id }: { id: string }) {
                   {formatDateTime(receipt.printedAt)}
                 </p>
               ) : null}
+              {printNotice ? <p className={styles.note} role="status">{printNotice}</p> : null}
               <div className={styles.receiptActions}>
                 <button
                   className={`${styles.primary} ${styles.full}`}
-                  disabled={isMarking}
-                  onClick={() => void printAndMark()}
+                  disabled={isMarking || isWaitingForPrint}
+                  onClick={() => void queueReprint()}
                   type="button"
                 >
                   <Printer size={19} aria-hidden="true" />
-                  {isMarking ? "Chop etilmoqda..." : "Chop etish"}
+                  {isMarking ? "Navbatga yuborilmoqda..." : isWaitingForPrint ? "Printer javobi kutilmoqda..." : "Printerga yuborish"}
+                </button>
+                <button className={styles.button + " " + styles.full} onClick={printInBrowser} type="button">
+                  <Printer size={18} aria-hidden="true" />
+                  Brauzerda chop etish
                 </button>
                 <Link className={`${styles.button} ${styles.full}`} href="/pos">
                   <Check size={18} aria-hidden="true" />
@@ -271,8 +367,7 @@ function ReceiptPreview({ id }: { id: string }) {
                 </Link>
               </div>
               <p className={styles.note}>
-                Desktop ilovada tanlangan printerlar buyurtma turiga qarab
-                avtomatik chop etadi. Bu tugma qo'lda qayta chop etish uchun.
+                Printerga yuborilgan chek navbat va qurilma javobi bilan belgilanadi. Brauzer chop etishi tizimda tasdiqlanmaydi.
               </p>
             </aside>
           </div>
