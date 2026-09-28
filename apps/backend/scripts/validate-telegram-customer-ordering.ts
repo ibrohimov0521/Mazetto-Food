@@ -432,9 +432,23 @@ class InMemoryPrisma {
   private sequence = 0;
   private transactionQueue = Promise.resolve();
 
+  restaurantTenant = {
+    findMany: async () => [{ id: "tenant-a" }],
+  };
+
   customer = {
-    findUnique: async ({ where }: { where: { telegramUserId?: string } }) =>
-      where.telegramUserId === "tg_1" ? customer : null,
+    findUnique: async ({
+      where,
+    }: {
+      where: {
+        telegramUserId?: string;
+        tenantId_telegramUserId?: { tenantId: string; telegramUserId: string };
+      };
+    }) => {
+      const telegramUserId =
+        where.tenantId_telegramUserId?.telegramUserId ?? where.telegramUserId;
+      return telegramUserId === "tg_1" ? customer : null;
+    },
   };
 
   category = {

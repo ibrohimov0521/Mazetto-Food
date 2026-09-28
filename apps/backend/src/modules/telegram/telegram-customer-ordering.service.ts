@@ -1293,24 +1293,14 @@ export class TelegramCustomerOrderingService {
   }
 
   private async findLinkedCustomer(telegramUserId: number | string | undefined) {
-    if (telegramUserId === undefined || telegramUserId === null) {
-      return null;
-    }
+    if (telegramUserId === undefined || telegramUserId === null) return null;
 
     const tenantId = await resolveSoleActiveTenantId(this.prisma);
     return this.prisma.customer.findUnique({
       where: {
-        tenantId_telegramUserId: {
-          tenantId,
-          telegramUserId: String(telegramUserId),
-        },
+        tenantId_telegramUserId: { tenantId, telegramUserId: String(telegramUserId) },
       },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        bonusBalance: true,
-      },
+      select: { id: true, name: true, phone: true, bonusBalance: true },
     });
   }
 

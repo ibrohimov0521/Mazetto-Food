@@ -74,7 +74,7 @@ for (const source of [customerService, telegramCustomerAuth]) {
   assert.match(source, /settingsService\.getInt\(/);
 }
 
-assert.match(customerService, /await this\.assertCanRequestCode\(tx, phone\)/);
+assert.match(customerService, /await this\.assertCanRequestCode\(tx, tenantId, phone\)/);
 assert.match(
   customerService,
   /this\.settingsService\.getInt\(\s*"customer_code_request_window_seconds"/s,
