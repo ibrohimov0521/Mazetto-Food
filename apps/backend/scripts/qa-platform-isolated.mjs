@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import net from "node:net";
+import { Buffer } from "node:buffer";
+import http from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, URL } from "node:url";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
-import { JwtService } from "@nestjs/jwt";
 import { hash } from "bcryptjs";
 import { Pool } from "pg";
 import { chromium } from "playwright";
@@ -58,16 +60,41 @@ function run(command, args, timeout = 180_000) {
   }
 }
 
-async function request(base, path, init) {
-  const response = await fetch(`${base}${path}`, { ...init, signal: globalThis.AbortSignal.timeout(8000) });
-  const body = await response.json();
-  return { status: response.status, body };
+async function request(base, path, init = {}) {
+  const requestedHost = init.headers?.host ?? init.headers?.Host;
+  if (!requestedHost) {
+    const response = await fetch(`${base}${path}`, { ...init, signal: globalThis.AbortSignal.timeout(8000) });
+    const body = await response.json();
+    return { status: response.status, body };
+  }
+
+  const url = new URL(`${base}${path}`);
+  return new Promise((resolve, reject) => {
+    const req = http.request(url, {
+      method: init.method ?? "GET",
+      headers: { ...init.headers, host: requestedHost },
+    }, response => {
+      const chunks = [];
+      response.on("data", chunk => chunks.push(chunk));
+      response.on("end", () => {
+        try {
+          resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    req.setTimeout(8000, () => req.destroy(new Error("QA request timed out")));
+    req.on("error", reject);
+    req.end(init.body);
+  });
 }
 
 let server;
 let webServer;
 let browser;
 let created = false;
+let tenantHost = "";
 try {
   docker("exec", container, "createdb", "-U", user, database);
   created = true;
@@ -75,6 +102,7 @@ try {
   run(process.execPath, ["--import", "tsx", "scripts/bootstrap-platform-owner.ts"]);
 
   let staffRefreshToken = "";
+  const staffPassword = "qa-staff-password";
   const pool = new Pool({ connectionString: env.DATABASE_URL });
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
@@ -91,21 +119,45 @@ try {
     });
     assert.equal(domain.status, "PENDING", "A new domain must not route before verification.");
     await prisma.tenantDomain.delete({ where: { id: domain.id } });
+    tenantHost = "qa-restaurant-" + tenantSuffix + ".example.test";
+    await prisma.tenantDomain.create({
+      data: { hostname: tenantHost, tenantId: tenant.id, status: "VERIFIED", verifiedAt: new Date() },
+    });
     const role = await prisma.role.create({ data: { code: "SUPER_ADMIN", name: "QA restaurant owner" } });
     const staff = await prisma.user.create({ data: {
-      email: "qa-staff@bestteam.invalid", passwordHash: await hash("qa-staff-password", 12), isActive: true,
+      email: "qa-staff@bestteam.invalid", passwordHash: await hash(staffPassword, 12), isActive: true,
     } });
     await prisma.userRole.create({ data: { userId: staff.id, roleId: role.id } });
-    const session = await prisma.session.create({ data: {
-      userId: staff.id, refreshTokenHash: "pending", expiresAt: new Date(Date.now() + 3_600_000),
+    const backfillBranch = await prisma.branch.create({ data: {
+      code: "BACKFILL" + tenantSuffix, name: "Membership backfill QA branch",
     } });
-    staffRefreshToken = await new JwtService().signAsync(
-      { id: staff.id, sessionId: session.id, tokenUse: "refresh" },
-      { secret: refreshSecret, expiresIn: 3600 },
+    const backfillEmployee = await prisma.employee.create({ data: {
+      branchId: backfillBranch.id,
+      employeeCode: "BACKFILL" + tenantSuffix,
+      firstName: "Legacy",
+      userId: staff.id,
+    } });
+    const migrationSql = readFileSync(new URL("../prisma/migrations/20260928090000_tenant_memberships/migration.sql", import.meta.url), "utf8");
+    const cteStart = migrationSql.indexOf("WITH eligible_membership_candidates AS (");
+    const insertStart = migrationSql.indexOf('\nINSERT INTO "tenant_memberships"', cteStart);
+    assert.ok(cteStart >= 0 && insertStart > cteStart, "Membership migration backfill CTE must be available for QA.");
+    const legacyMemberships = await prisma.$queryRawUnsafe(
+      `${migrationSql.slice(cteStart, insertStart)}
+SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantId" = $1 AND "userId" = $2`,
+      tenant.id,
+      staff.id,
     );
-    await prisma.session.update({
-      where: { id: session.id }, data: { refreshTokenHash: await hash(staffRefreshToken, 12) },
+    assert.equal(legacyMemberships.length, 1, "A legacy employee and role must yield one membership candidate.");
+    assert.equal(legacyMemberships[0].branchId, backfillEmployee.branchId, "The backfill must retain the employee branch.");
+    const staffMembership = await prisma.tenantMembership.create({ data: {
+      tenantId: tenant.id, userId: staff.id, status: "ACTIVE",
+    } });
+    await prisma.tenantMembershipRole.create({
+      data: { membershipId: staffMembership.id, roleId: role.id },
     });
+    await prisma.user.create({ data: {
+      email: "qa-member@bestteam.invalid", passwordHash: await hash("qa-member-password", 12), isActive: true,
+    } });
   } finally {
     await prisma.$disconnect();
     await pool.end();
@@ -132,19 +184,30 @@ try {
 
   const anonymous = await request(base, "/platform/sites");
   assert.equal(anonymous.status, 401);
-  const staffLogin = await request(base, "/auth/login", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier: "qa-staff@bestteam.invalid", password: "qa-staff-password" }),
+  const unknownHostLogin = await request(base, "/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json", host: "unknown.example.test" },
+    body: JSON.stringify({ identifier: "qa-staff@bestteam.invalid", password: staffPassword }),
   });
-  assert.equal(staffLogin.status, 201, "Restaurant admins still authenticate on the shared API.");
+  assert.equal(unknownHostLogin.status, 403, "Restaurant accounts must not use unknown-host login.");
+  const staffLogin = await request(base, "/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json", host: tenantHost },
+    body: JSON.stringify({ identifier: "qa-staff@bestteam.invalid", password: staffPassword }),
+  });
+  assert.equal(staffLogin.status, 201, "Restaurant login requires a verified host and active membership.");
   const restaurantAdminToken = staffLogin.body.data.tokens.accessToken;
-  const restaurantOwnerAccess = await request(base, "/platform/sites", { headers: { Authorization: `Bearer ${restaurantAdminToken}` } });
+  staffRefreshToken = staffLogin.body.data.tokens.refreshToken;
+  const restaurantOwnerAccess = await request(base, "/platform/sites", { headers: { Authorization: "Bearer " + restaurantAdminToken, host: tenantHost } });
   assert.equal(restaurantOwnerAccess.status, 403, "Restaurant SUPER_ADMIN must not access BestTeam owner routes.");
-  const staffRefresh = await request(base, "/auth/refresh", {
-    method: "POST", headers: { "Content-Type": "application/json" },
+  const unknownHostRefresh = await request(base, "/auth/refresh", {
+    method: "POST", headers: { "Content-Type": "application/json", host: "unknown.example.test" },
     body: JSON.stringify({ refreshToken: staffRefreshToken }),
   });
-  assert.equal(staffRefresh.status, 201);
+  assert.equal(unknownHostRefresh.status, 403, "Tenant refresh is denied on an unknown host.");
+  const staffRefresh = await request(base, "/auth/refresh", {
+    method: "POST", headers: { "Content-Type": "application/json", host: tenantHost },
+    body: JSON.stringify({ refreshToken: staffRefreshToken }),
+  });
+  assert.equal(staffRefresh.status, 201, JSON.stringify(staffRefresh.body.error));
   const signedIn = await request(base, "/auth/login", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ identifier: ownerEmail, password: ownerPassword }),
@@ -158,6 +221,108 @@ try {
   });
   assert.equal(invalidSite.status, 400);
   const suffix = randomBytes(4).toString("hex");
+  const deniedTenantCreate = await request(base, "/platform/tenants", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${restaurantAdminToken}` },
+    body: JSON.stringify({ code: `QA_${suffix}`, name: "Unauthorized tenant" }),
+  });
+  assert.equal(deniedTenantCreate.status, 403, "Restaurant admins must not provision tenants.");
+  const createdTenant = await request(base, "/platform/tenants", {
+    method: "POST", headers: authorized,
+    body: JSON.stringify({ code: `QA_${suffix}`, name: "QA provisioning tenant" }),
+  });
+  assert.equal(createdTenant.status, 201, JSON.stringify(createdTenant.body.error));
+  assert.equal(createdTenant.body.data.status, "PROVISIONING");
+  const tenantRegistry = await request(base, "/platform/tenants", { headers: authorized });
+  const provisionedTenant = tenantRegistry.body.data.find((tenant) => tenant.id === createdTenant.body.data.id);
+  assert.equal(provisionedTenant?.status, "PROVISIONING");
+  assert.equal(tenantRegistry.body.data.filter((tenant) => tenant.status === "ACTIVE").length, 1,
+    "Provisioning must not disturb the existing restaurant activation.");
+  const createdBranch = await request(base, `/platform/tenants/${createdTenant.body.data.id}/branches`, {
+    method: "POST", headers: authorized,
+    body: JSON.stringify({ code: `QA_${suffix}_MAIN`, name: "QA main branch", address: "Test address" }),
+  });
+  assert.equal(createdBranch.status, 201, JSON.stringify(createdBranch.body.error));
+  assert.equal(createdBranch.body.data.tenantId, createdTenant.body.data.id);
+  assert.equal(createdBranch.body.data.isActive, false, "New branches must not accept work before onboarding finishes.");
+  const provisionedMembership = await request(base, `/platform/tenants/${createdTenant.body.data.id}/memberships`, {
+    method: "POST", headers: authorized,
+    body: JSON.stringify({ identifier: "qa-staff@bestteam.invalid", roleCodes: ["SUPER_ADMIN"] }),
+  });
+  assert.equal(provisionedMembership.status, 201, JSON.stringify(provisionedMembership.body.error));
+  assert.equal(provisionedMembership.body.data.status, "ACTIVE");
+  assert.equal(provisionedMembership.body.data.roles[0].role.code, "SUPER_ADMIN");
+  const provisionedMembers = await request(base, `/platform/tenants/${createdTenant.body.data.id}/memberships`, { headers: authorized });
+  assert.equal(provisionedMembers.body.data.length, 1);
+
+  const activeTenant = tenantRegistry.body.data.find((tenant) => tenant.status === "ACTIVE");
+  assert.ok(activeTenant, "The pre-existing active restaurant must remain present.");
+  const membershipHost = `qa-auth-${suffix}.example.test`;
+  const membershipPool = new Pool({ connectionString: env.DATABASE_URL });
+  const membershipPrisma = new PrismaClient({ adapter: new PrismaPg(membershipPool) });
+  try {
+    await membershipPrisma.tenantDomain.create({
+      data: { hostname: membershipHost, tenantId: activeTenant.id, status: "VERIFIED", verifiedAt: new Date() },
+    });
+  } finally {
+    await membershipPrisma.$disconnect();
+    await membershipPool.end();
+  }
+  const activeMembership = await request(base, `/platform/tenants/${activeTenant.id}/memberships`, {
+    method: "POST", headers: authorized,
+    body: JSON.stringify({ identifier: "qa-member@bestteam.invalid", roleCodes: ["SUPER_ADMIN"] }),
+  });
+  assert.equal(activeMembership.status, 201, JSON.stringify(activeMembership.body.error));
+  const invalidPlatformRole = await request(base, `/platform/tenants/${activeTenant.id}/memberships/${activeMembership.body.data.id}/roles`, {
+    method: "PATCH", headers: authorized,
+    body: JSON.stringify({ roleCodes: ["PLATFORM_OWNER"] }),
+  });
+  assert.equal(invalidPlatformRole.status, 400, "Platform-only roles must never become restaurant membership roles.");
+  const ownerTenantLogin = await request(base, "/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json", host: membershipHost },
+    body: JSON.stringify({ identifier: ownerEmail, password: ownerPassword }),
+  });
+  assert.equal(ownerTenantLogin.status, 401, "An account without restaurant membership cannot log in on its tenant domain.");
+  const scopedLogin = await request(base, "/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json", host: membershipHost },
+    body: JSON.stringify({ identifier: "qa-member@bestteam.invalid", password: "qa-member-password" }),
+  });
+  assert.equal(scopedLogin.status, 201, JSON.stringify(scopedLogin.body.error));
+  const scopedUser = scopedLogin.body.data.user;
+  assert.equal(scopedUser.tenantId, activeTenant.id);
+  assert.equal(scopedUser.membershipId, activeMembership.body.data.id);
+  const scopedAccessToken = scopedLogin.body.data.tokens.accessToken;
+  const scopedRefreshToken = scopedLogin.body.data.tokens.refreshToken;
+  const scopedMe = await request(base, "/auth/me", { headers: { Authorization: `Bearer ${scopedAccessToken}`, host: membershipHost } });
+  assert.equal(scopedMe.status, 200);
+  assert.equal(scopedMe.body.data.tenantId, activeTenant.id);
+  const replayedToken = await request(base, "/auth/me", { headers: { Authorization: `Bearer ${scopedAccessToken}` } });
+  assert.equal(replayedToken.status, 403, "Tenant tokens must not be replayable on an unregistered host.");
+  const wrongHostRefresh = await request(base, "/auth/refresh", {
+    method: "POST", headers: { "Content-Type": "application/json", host: "other.example.test" },
+    body: JSON.stringify({ refreshToken: scopedRefreshToken }),
+  });
+  assert.equal(wrongHostRefresh.status, 403);
+  const refreshedScoped = await request(base, "/auth/refresh", {
+    method: "POST", headers: { "Content-Type": "application/json", host: membershipHost },
+    body: JSON.stringify({ refreshToken: scopedRefreshToken }),
+  });
+  assert.equal(refreshedScoped.status, 201, JSON.stringify(refreshedScoped.body.error));
+  assert.equal(refreshedScoped.body.data.user.tenantId, activeTenant.id);
+  const suspendMembership = await request(base, `/platform/tenants/${activeTenant.id}/memberships/${activeMembership.body.data.id}/status`, {
+    method: "PATCH", headers: authorized, body: JSON.stringify({ status: "SUSPENDED" }),
+  });
+  assert.equal(suspendMembership.status, 200);
+  const suspendedToken = await request(base, "/auth/me", {
+    headers: { Authorization: `Bearer ${refreshedScoped.body.data.tokens.accessToken}`, host: membershipHost },
+  });
+  assert.equal(suspendedToken.status, 401, "Suspending membership revokes access immediately.");
+  assert.equal(tenantRegistry.body.data.filter((tenant) => tenant.status === "ACTIVE").length, 1,
+    "Adding memberships must not activate another restaurant.");
+  const activeTenantBranch = await request(base, `/platform/tenants/${activeTenant.id}/branches`, {
+    method: "POST", headers: authorized,
+    body: JSON.stringify({ code: `QA_${suffix}_ACTIVE`, name: "Must be rejected" }),
+  });
+  assert.equal(activeTenantBranch.status, 409, "Platform onboarding must not mutate an existing active restaurant.");
   const createdSite = await request(base, "/platform/sites", {
     method: "POST", headers: authorized,
     body: JSON.stringify({ name: "QA Restaurant", productCode: "FAST_FOOD", websiteUrl: `https://example.com/qa-${suffix}`, apiHealthUrl: `https://example.com/qa-${suffix}/health` }),
@@ -288,8 +453,8 @@ try {
   await page.getByText("Arxiv tekshirildi").waitFor();
   await page.getByText("Tiklash sinovi hali o'tkazilmagan").waitFor();
   await page.getByRole("link", { name: "Umumiy holat" }).click();
-  await page.getByRole("button", { name: "Restoran qo'shish" }).click();
-  await page.getByRole("dialog").getByLabel("Restoran nomi").fill("QA From Browser");
+  await page.getByRole("button", { name: "Monitoringga ulash" }).click();
+  await page.getByRole("dialog").getByLabel("Loyiha nomi").fill("QA From Browser");
   await page.getByRole("dialog").getByLabel("Loyiha kodi").fill("FAST_FOOD");
   await page.getByRole("dialog").getByLabel("Sayt manzili").fill("http://localhost");
   await page.getByRole("dialog").getByLabel("API holat manzili").fill(`https://example.com/browser-${suffix}/health`);
@@ -300,7 +465,7 @@ try {
   await page.locator(".token-field").waitFor({ timeout: 15_000 });
   const afterBrowser = await request(base, "/platform/sites", { headers: authorized });
   assert.ok(afterBrowser.body.data.some(item => item.name === "QA From Browser"));
-  console.log("Shared-backend owner API QA passed: migrations, bootstrap, role isolation, registry, heartbeat, diagnostics, reports, activity, acknowledgement, audit.");
+  console.log("Shared-backend QA passed: migrations, platform bootstrap, tenant-bound login/refresh, unknown-host denial, membership onboarding, role isolation, monitoring, reports, activity, audit.");
   console.log("Owner web end-to-end QA passed: real login, reports, diagnostics, backup evidence, and site registration through the Next.js proxy.");
 } finally {
   if (browser) await browser.close();

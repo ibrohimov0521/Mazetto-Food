@@ -19,7 +19,7 @@ export class AuthController {
   @Public()
   @Post("login")
   async login(@Body() dto: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<AuthResponse> {
-    const result = await this.authService.login(dto, resolveClientAddress(request));
+    const result = await this.authService.login(dto, resolveClientAddress(request), request.headers.host);
     setRefreshCookie(response, STAFF_REFRESH_COOKIE, result.tokens.refreshToken, STAFF_COOKIE_PATH, Number(process.env.JWT_REFRESH_EXPIRES_IN_SECONDS ?? 604800));
     return result;
   }
@@ -29,7 +29,7 @@ export class AuthController {
   async refresh(@Body() dto: RefreshTokenDto, @Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<AuthResponse> {
     const token = readRefreshToken(request, dto.refreshToken, STAFF_REFRESH_COOKIE);
     if (!token) throw new UnauthorizedException("Refresh token is required");
-    const result = await this.authService.refresh(token);
+    const result = await this.authService.refresh(token, request.headers.host);
     setRefreshCookie(response, STAFF_REFRESH_COOKIE, result.tokens.refreshToken, STAFF_COOKIE_PATH, Number(process.env.JWT_REFRESH_EXPIRES_IN_SECONDS ?? 604800));
     return result;
   }

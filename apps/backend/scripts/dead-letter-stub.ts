@@ -19,12 +19,14 @@ export function createDeadLetterStub(): NotificationDeadLetterService & {
   const stub = {
     entries,
     record: async (input: {
+      tenantId: string;
       kind: string;
       orderId: string;
       error: unknown;
       attempts: number;
     }) => {
       const entry: DeadLetter = {
+        tenantId: input.tenantId,
         messageId: `stub-${entries.length + 1}`,
         kind: input.kind,
         orderId: input.orderId,
@@ -38,9 +40,9 @@ export function createDeadLetterStub(): NotificationDeadLetterService & {
       entries.unshift(entry);
       return entry;
     },
-    list: async (limit = 50) => entries.slice(0, limit),
-    take: async (messageId: string) => {
-      const index = entries.findIndex((row) => row.messageId === messageId);
+    list: async (tenantId: string, limit = 50) => entries.filter((row) => row.tenantId === tenantId).slice(0, limit),
+    take: async (tenantId: string, messageId: string) => {
+      const index = entries.findIndex((row) => row.tenantId === tenantId && row.messageId === messageId);
       if (index === -1) return null;
       return entries.splice(index, 1)[0] ?? null;
     },

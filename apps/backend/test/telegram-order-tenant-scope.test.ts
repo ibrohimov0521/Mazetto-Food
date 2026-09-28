@@ -13,7 +13,7 @@ function makeService(activeTenantIds: string[], orderRead: (query: unknown) => v
     {} as never,
   );
   return service as unknown as {
-    findOrderForMessage(orderId: string): Promise<unknown>;
+    findOrderForMessage(orderId: string, client?: unknown, expectedTenantId?: string): Promise<unknown>;
     onModuleDestroy(): void;
   };
 }
@@ -23,6 +23,17 @@ test("Telegram order notification refuses an ambiguous tenant before reading an 
   const service = makeService(["tenant-a", "tenant-b"], () => { orderReads += 1; });
   try {
     await assert.rejects(service.findOrderForMessage("order-a"), ForbiddenException);
+    assert.equal(orderReads, 0);
+  } finally {
+    service.onModuleDestroy();
+  }
+});
+
+test("Telegram order notification rejects an expected tenant that is not the active tenant", async () => {
+  let orderReads = 0;
+  const service = makeService(["tenant-a"], () => { orderReads += 1; });
+  try {
+    await assert.rejects(service.findOrderForMessage("order-b", undefined, "tenant-b"), ForbiddenException);
     assert.equal(orderReads, 0);
   } finally {
     service.onModuleDestroy();

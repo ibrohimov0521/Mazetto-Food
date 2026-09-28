@@ -4,7 +4,7 @@ import { UnauthorizedException } from "@nestjs/common";
 import type { JwtService } from "@nestjs/jwt";
 import type { Socket } from "socket.io";
 import { CustomerAuthGuard } from "../src/common/guards/customer-auth.guard";
-import { KitchenGateway } from "../src/modules/kitchen/kitchen.gateway";
+import { createKitchenGatewayForTest } from "./kitchen-gateway-test-factory";
 import type { PrismaService } from "../src/prisma/prisma.service";
 
 const activeTenants = [{ id: "tenant-a" }, { id: "tenant-b" }];
@@ -23,25 +23,41 @@ test("customer REST and WebSocket access both fail closed with two active tenant
   const prisma = {
     restaurantTenant: { findMany: async () => activeTenants },
     customerSession: {
-      findFirst: async () => { sessionReads += 1; return { id: "session-a" }; },
+      findFirst: async () => {
+        sessionReads += 1;
+        return { id: "session-a" };
+      },
     },
   } as unknown as PrismaService;
   const request = { headers: { authorization: "Bearer customer-token" } };
   const context = { switchToHttp: () => ({ getRequest: () => request }) };
-  const guard = new (CustomerAuthGuard as unknown as new (jwt: JwtService, prisma: PrismaService) => CustomerAuthGuard)(jwt, prisma);
+  const guard = new (CustomerAuthGuard as unknown as new (
+    jwt: JwtService,
+    prisma: PrismaService,
+  ) => CustomerAuthGuard)(jwt, prisma);
 
-  await assert.rejects(guard.canActivate(context as never), UnauthorizedException);
+  await assert.rejects(
+    guard.canActivate(context as never),
+    UnauthorizedException,
+  );
   assert.equal(sessionReads, 0);
 
   let disconnected = false;
   const joined: string[] = [];
   const socket = {
-    handshake: { auth: { token: "customer-token", tokenType: "customer" }, headers: {} },
+    handshake: {
+      auth: { token: "customer-token", tokenType: "customer" },
+      headers: {},
+    },
     data: {},
-    join: async (room: string) => { joined.push(room); },
-    disconnect: () => { disconnected = true; },
+    join: async (room: string) => {
+      joined.push(room);
+    },
+    disconnect: () => {
+      disconnected = true;
+    },
   } as unknown as Socket;
-  await new KitchenGateway(jwt, prisma).handleConnection(socket);
+  await createKitchenGatewayForTest(jwt, prisma).handleConnection(socket);
 
   assert.equal(disconnected, true);
   assert.deepEqual(joined, []);

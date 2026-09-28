@@ -19,6 +19,12 @@ enum TenantDomainStatus {
   DISABLED
 }
 
+enum TenantMembershipStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
 enum EmployeeStatus {
   ACTIVE
   INACTIVE
@@ -227,7 +233,8 @@ model Branch {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  tenant                   RestaurantTenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant                   RestaurantTenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  memberships              TenantMembership[]
   categories               Category[]
   cashTransactions         CashTransaction[]
   cashTransfers            CashTransfer[]
@@ -260,6 +267,7 @@ model Branch {
   @@index([sortOrder])
   @@map("branches")
 }
+
 model RestaurantTenant {
   id        String                 @id @default(cuid())
   code      String                 @unique
@@ -268,30 +276,30 @@ model RestaurantTenant {
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
-  branches Branch[]
-  domains  TenantDomain[]
+  branches      Branch[]
+  domains       TenantDomain[]
   platformSites PlatformSite[]
+  memberships   TenantMembership[]
 
   @@index([status, createdAt])
   @@map("restaurant_tenants")
 }
 
 model TenantDomain {
-  id                    String            @id @default(cuid())
-  hostname              String            @unique
+  id                    String             @id @default(cuid())
+  hostname              String             @unique
   tenantId              String
   status                TenantDomainStatus @default(PENDING)
-  verificationTokenHash String?           @unique
+  verificationTokenHash String?            @unique
   verifiedAt            DateTime?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status])
   @@map("tenant_domains")
 }
-
 
 model BranchWorkingHour {
   id        String          @id @default(cuid())
@@ -466,33 +474,35 @@ model CartItem {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  email          String?   @unique
-  phone          String?   @unique
-  passwordHash   String?
-  credentialVersion Int    @default(0)
-  displayName    String?
-  avatarUrl      String?
-  isActive       Boolean   @default(true)
-  telegramUserId String?   @unique
-  lastLoginAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  email             String?   @unique
+  phone             String?   @unique
+  passwordHash      String?
+  credentialVersion Int       @default(0)
+  displayName       String?
+  avatarUrl         String?
+  isActive          Boolean   @default(true)
+  telegramUserId    String?   @unique
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  auditLogs                  AuditLog[]
-  employee                   Employee?
-  priceChanges               PriceHistory[]       @relation("PriceHistoryChangedBy")
-  roles                      UserRole[]
-  sessions                   Session[]
-  paymentOperations          PaymentOperation[]
-  createdPayments            Payment[]            @relation("PaymentCreatedBy")
-  createdRefunds             PaymentRefund[]      @relation("PaymentRefundCreatedBy")
-  createdCashEvents          CashTransaction[]    @relation("CashTransactionCreatedBy")
-  statusChanges              OrderStatusHistory[] @relation("OrderStatusChangedBy")
-  stockMovements             StockMovement[]
-  assignedUserRoles          UserRole[]           @relation("UserRoleAssignedBy")
-  settingsUpdated            Setting[]            @relation("SettingUpdatedBy")
-  acknowledgedPlatformEvents PlatformSiteEvent[]  @relation("PlatformEventAcknowledgedBy")
+  auditLogs                     AuditLog[]
+  employee                      Employee?
+  priceChanges                  PriceHistory[]         @relation("PriceHistoryChangedBy")
+  roles                         UserRole[]
+  sessions                      Session[]
+  tenantMemberships             TenantMembership[]
+  paymentOperations             PaymentOperation[]
+  createdPayments               Payment[]              @relation("PaymentCreatedBy")
+  createdRefunds                PaymentRefund[]        @relation("PaymentRefundCreatedBy")
+  createdCashEvents             CashTransaction[]      @relation("CashTransactionCreatedBy")
+  statusChanges                 OrderStatusHistory[]   @relation("OrderStatusChangedBy")
+  stockMovements                StockMovement[]
+  assignedUserRoles             UserRole[]             @relation("UserRoleAssignedBy")
+  assignedTenantMembershipRoles TenantMembershipRole[] @relation("TenantMembershipRoleAssignedBy")
+  settingsUpdated               Setting[]              @relation("SettingUpdatedBy")
+  acknowledgedPlatformEvents    PlatformSiteEvent[]    @relation("PlatformEventAcknowledgedBy")
 
   @@index([isActive])
   @@index([createdAt])
@@ -510,8 +520,9 @@ model Role {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  permissions RolePermission[]
-  users       UserRole[]
+  permissions       RolePermission[]
+  users             UserRole[]
+  tenantMemberships TenantMembershipRole[]
 
   @@index([isActive])
   @@map("roles")
@@ -557,6 +568,44 @@ model UserRole {
   @@index([roleId])
   @@index([assignedById])
   @@map("user_roles")
+}
+
+model TenantMembership {
+  id        String                 @id @default(cuid())
+  tenantId  String
+  userId    String
+  branchId  String?
+  status    TenantMembershipStatus @default(PENDING)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  tenant   RestaurantTenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch   Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  roles    TenantMembershipRole[]
+  sessions Session[]
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, status])
+  @@index([userId, status])
+  @@index([branchId])
+  @@map("tenant_memberships")
+}
+
+model TenantMembershipRole {
+  membershipId String
+  roleId       String
+  assignedById String?
+  assignedAt   DateTime @default(now())
+
+  membership TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       Role             @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy User?            @relation("TenantMembershipRoleAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([membershipId, roleId])
+  @@index([roleId])
+  @@index([assignedById])
+  @@map("tenant_membership_roles")
 }
 
 model AuditLog {
@@ -608,7 +657,7 @@ model PlatformSite {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  tenant      RestaurantTenant?      @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  tenant      RestaurantTenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   events      PlatformSiteEvent[]
   diagnostics PlatformSiteDiagnostic[]
 
@@ -687,15 +736,18 @@ model IdempotencyRequest {
 model Session {
   id               String    @id @default(cuid())
   userId           String
+  membershipId     String?
   refreshTokenHash String
   expiresAt        DateTime
   revokedAt        DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership TenantMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([membershipId])
   @@index([expiresAt])
   @@index([revokedAt])
   @@map("sessions")

@@ -11,6 +11,12 @@ const site = {
   heartbeat: { version: "1.0.0", status: "healthy", services: { backend: "ok", database: "ok", redis: "ok" }, totals: { branchCount: 1, openOrders: 5, kitchenQueue: 3, onlineDevices: 2, offlineDevices: 0, deadPrintJobs: 0 }, backup: { status: "verified", verifiedAt: stamp, bytes: 4096, archiveEntries: 18, restoreTested: false }, kitchens: [{ branchId: "branch-1", name: "Markaziy oshxona", status: "OPEN", openOrders: 5, kitchenQueue: 3, onlineDevices: 2, offlineDevices: 0, lastActivityAt: stamp }] },
 };
 const second = { ...site, id: "site-2", siteKey: "second", name: "Yangi Restoran", productCode: "OTHER_FOOD", website: probe("OFFLINE"), agentStatus: "OFFLINE" };
+const tenant = {
+  id: "tenant-1", code: "MAZETTO_FOOD", name: "Mazetto Food", status: "ACTIVE", createdAt: stamp, updatedAt: stamp,
+  branches: [{ id: "branch-1", code: "central", name: "Markaziy filial", isActive: true, isTemporarilyClosed: false, acceptsOrders: true }],
+  activity: { activeBranches: 1, acceptingOrdersBranches: 1, openOrders: 5, onlineDevices: 2, offlineDevices: 0 },
+  platformSites: [], domains: [],
+};
 const envelope = (data) => ({ success: true, data });
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : { channel: "chrome" }) });
 
@@ -18,7 +24,14 @@ try {
   for (const viewport of [{ width: 1600, height: 900 }, { width: 768, height: 900 }, { width: 360, height: 800 }]) {
     const page = await browser.newPage({ viewport });
     const errors = [];
+    page.on("dialog", dialog => dialog.accept());
     let currentSites = [site, second];
+    let currentTenants = [tenant];
+    const membershipRoleOptions = [
+      { id: "role-admin", code: "RESTAURANT_ADMIN", name: "Restoran administratori", isBranchScoped: false },
+      { id: "role-cashier", code: "CASHIER", name: "Kassir", isBranchScoped: true },
+    ];
+    const membershipsByTenant = new Map();
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript(() => sessionStorage.setItem("bestteam.owner.session", JSON.stringify({ user: { id: "owner-1", email: "owner@bestteam.uz", roles: ["PLATFORM_OWNER"], permissions: ["*"] }, accessToken: "qa" })));
     await page.route("**/api/v1/auth/me", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope({ id: "owner-1", email: "owner@bestteam.uz", roles: ["PLATFORM_OWNER"], permissions: ["*"] })) }));
@@ -31,6 +44,47 @@ try {
         return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope({ site: created, agentToken: "qa-one-time-token" })) });
       }
       return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(currentSites)) });
+    });
+    await page.route("**/api/v1/platform/tenants", route => {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON();
+        const created = {
+          ...tenant, id: "tenant-new", code: body.code, name: body.name,
+          status: "PROVISIONING", branches: [], domains: [], platformSites: [],
+          activity: { activeBranches: 0, acceptingOrdersBranches: 0, openOrders: 0, onlineDevices: 0, offlineDevices: 0 },
+        };
+        currentTenants = [...currentTenants, created];
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(created)) });
+      }
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(currentTenants)) });
+    });
+    await page.route("**/api/v1/platform/tenants/*/membership-role-options", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(membershipRoleOptions)) }));
+    await page.route("**/api/v1/platform/tenants/*/memberships**", route => {
+      const request = route.request();
+      const segments = new URL(request.url()).pathname.split("/");
+      const tenantId = segments[5];
+      const current = membershipsByTenant.get(tenantId) || [];
+      if (request.method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(current)) });
+      const body = request.postDataJSON();
+      if (request.method() === "POST") {
+        const tenantEntry = currentTenants.find(item => item.id === tenantId);
+        const created = { id: `member-${tenantId}`, tenantId, userId: "user-qa", branchId: body.branchId || null, status: "ACTIVE", createdAt: stamp, updatedAt: stamp, user: { id: "user-qa", displayName: "QA Manager", email: body.identifier, phone: null, isActive: true }, branch: tenantEntry?.branches.find(item => item.id === body.branchId) || null, roles: body.roleCodes.map(code => ({ role: membershipRoleOptions.find(role => role.code === code) })) };
+        membershipsByTenant.set(tenantId, [...current, created]);
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(created)) });
+      }
+      const membershipId = segments.at(-2);
+      const updated = current.map(item => item.id !== membershipId ? item : request.url().endsWith("/status")
+        ? { ...item, status: body.status, updatedAt: stamp }
+        : { ...item, branchId: body.branchId || item.branchId, branch: currentTenants.find(tenantItem => tenantItem.id === tenantId)?.branches.find(branch => branch.id === (body.branchId || item.branchId)) || null, roles: body.roleCodes.map(code => ({ role: membershipRoleOptions.find(role => role.code === code) })), updatedAt: stamp });
+      membershipsByTenant.set(tenantId, updated);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(updated.find(item => item.id === membershipId))) });
+    });
+    await page.route("**/api/v1/platform/tenants/*/branches", route => {
+      const body = route.request().postDataJSON();
+      const tenantId = new URL(route.request().url()).pathname.split("/").at(-2);
+      const created = { id: "branch-new", tenantId, code: body.code, name: body.name, address: body.address ?? null, phone: body.phone ?? null, isActive: false, isTemporarilyClosed: false, acceptsOrders: false };
+      currentTenants = currentTenants.map(item => item.id === tenantId ? { ...item, branches: [...item.branches, created] } : item);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope(created)) });
     });
     await page.route("**/api/v1/platform/sites/site-1/rotate-token", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(envelope({ siteKey: "mz_demo", agentToken: "qa-rotated-token" })) }));
     await page.route("**/api/v1/platform/sites/site-1", route => {
@@ -70,6 +124,15 @@ try {
     });
     await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Umumiy holat" }).waitFor();
+    for (const asset of ["best-team-logo.webp", "bestteam-background.webp"]) {
+      assert.equal((await page.request.get(new URL("/" + asset, baseUrl).toString())).status(), 200, asset + " must be served");
+    }
+    const background = await page.locator("body").evaluate(element => {
+      const style = getComputedStyle(element, "::before");
+      return { position: style.position, image: style.backgroundImage };
+    });
+    assert.equal(background.position, "fixed", "BestTeam background must stay fixed while scrolling");
+    assert.ok(background.image.includes("bestteam-background.webp"));
     const liveStatus = page.locator(".live-label");
     await liveStatus.waitFor();
     assert.match(await liveStatus.getAttribute("title"), /Ma'lumotlar bazasi: ok; Redis: fallback/);
@@ -78,9 +141,95 @@ try {
     await page.getByRole("heading", { name: "So'nggi hodisalar" }).waitFor();
     assert.equal(await page.locator(".metric strong").first().textContent(), "2");
     assert.equal(await page.locator(".metric strong").last().textContent(), "3", "Offline queue must not count as live.");
+    for (const item of [
+      { label: /Kuzatuvdagi loyihalar/, filter: null, count: "2 ta restoran" },
+      { label: /Sog'lom/, filter: "healthy", count: "1 ta restoran" },
+      { label: /Nosozlik/, filter: "danger", count: "1 ta restoran" },
+      { label: /Oshxona navbati/, filter: "queue", count: "1 ta restoran" },
+    ]) {
+      await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+      await page.getByRole("heading", { name: "Umumiy holat" }).waitFor();
+      await page.locator(".metrics").getByRole("link", { name: item.label }).click();
+      await page.waitForURL(url => url.pathname === "/restaurants" && (url.searchParams.get("filter") || null) === item.filter);
+      await page.getByText(item.count, { exact: true }).waitFor();
+    }
+    currentSites = [site, {
+      ...second,
+      website: probe("ONLINE"), api: probe("ONLINE"), agentStatus: "DEGRADED",
+      heartbeat: { ...site.heartbeat, status: "degraded", services: { backend: "ok", database: "error", redis: "degraded" } },
+    }];
+    await page.goto(`${baseUrl}/restaurants?filter=warning#site-list`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Monitoring xizmatlari" }).waitFor();
+    const degradedSiteRow = page.getByRole("row").filter({ hasText: "Yangi Restoran" });
+    await degradedSiteRow.locator(".status-warning").getByText("E'tibor kerak").waitFor();
+    assert.equal(await page.locator("tbody tr").count(), 1, "degraded heartbeat must be included in the warning filter");
+    await page.goto(`${baseUrl}/restaurants/site-2`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Yangi Restoran" }).waitFor();
+    const databaseStatus = page.locator(".service-strip .service-line").filter({ hasText: "Ma'lumotlar bazasi" });
+    const redisStatus = page.locator(".service-strip .service-line").filter({ hasText: "Redis" });
+    await databaseStatus.locator(".status-danger").getByText("error").waitFor();
+    await redisStatus.locator(".status-warning").getByText("degraded").waitFor();
+    currentSites = [site, second];
+    await page.goto(baseUrl + "/tenants", { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Restoran tenantlari" }).waitFor();
+    await page.getByRole("link", { name: /Restoranlar/ }).click();
+    await page.waitForURL(url => url.pathname === "/tenants" && url.hash === "#tenant-list");
+    await page.getByText("Mazetto Food").first().waitFor();
+    await page.getByRole("button", { name: "Yangi restoran" }).click();
+    const tenantDialog = page.getByRole("dialog");
+    await tenantDialog.getByLabel("Restoran nomi").fill("QA Restoran");
+    await tenantDialog.getByLabel("Restoran kodi").fill("QA_RESTAURANT");
+    await tenantDialog.getByRole("button", { name: "Restoran yaratish" }).click();
+    await tenantDialog.waitFor({ state: "hidden" });
+    const provisionedRow = page.getByRole("row").filter({ hasText: "QA_RESTAURANT" });
+    await provisionedRow.getByText("Tayyorlanmoqda").waitFor();
+    await provisionedRow.getByRole("button", { name: "Filial qo'shish" }).click();
+    const branchDialog = page.getByRole("dialog");
+    await branchDialog.getByRole("heading", { name: "Birinchi filial" }).waitFor();
+    await branchDialog.getByLabel("Filial nomi").fill("QA main branch");
+    await branchDialog.getByLabel("Filial kodi").fill("QA_MAIN");
+    await branchDialog.getByLabel("Manzil").fill("Test address");
+    await branchDialog.getByLabel("Telefon").fill("+998901234567");
+    await branchDialog.getByRole("button", { name: "Filial yaratish" }).click();
+    await branchDialog.waitFor({ state: "hidden" });
+    await provisionedRow.getByText("QA main branch").waitFor();
+    await page.getByLabel(/Tenant holati/).selectOption("PROVISIONING");
+    assert.equal(await page.locator("tbody tr").count(), 1, "The provisioning filter must show only the new tenant.");
+    await provisionedRow.getByRole("button", { name: "Bosqichlar" }).click();
+    const onboarding = page.locator(".tenant-onboarding-panel");
+    await onboarding.getByRole("heading", { name: "QA Restoran · onboarding" }).waitFor();
+    await onboarding.getByText("1 ta filial ro'yxatda; yangi filial savdo yoqilmagan holatda.").waitFor();
+    await onboarding.getByText("Tasdiqlangan domen topilmadi; TXT tekshiruvi hali o'tmagan.").waitFor();
+    await onboarding.getByText("Sayt va API monitoringi hali tenantga ulanmagan.").waitFor();
+    await onboarding.getByText("A/B tenant izolyatsiyasi va trusted-domain routing yakunlanmagan. Faollashtirish mavjud emas.").waitFor();
+    await onboarding.getByRole("button", { name: "A'zolarni boshqarish" }).click();
+    const membershipPanel = page.locator(".tenant-membership-panel");
+    await membershipPanel.getByRole("heading", { name: "QA Restoran · xodimlar va a'zoliklar" }).waitFor();
+    const addMembershipForm = membershipPanel.locator(".tenant-membership-create");
+    await addMembershipForm.getByLabel("Login, email yoki telefon").fill("manager@example.uz");
+    await addMembershipForm.getByRole("checkbox", { name: /Restoran administratori/ }).check();
+    assert.equal(await addMembershipForm.getByRole("checkbox", { name: /Platform owner/ }).count(), 0, "platform roles must not be assignable to a restaurant member");
+    await addMembershipForm.getByRole("button", { name: "A'zoni biriktirish" }).click();
+    const membershipRow = membershipPanel.locator("tbody tr").filter({ hasText: "manager@example.uz" });
+    await membershipRow.getByText("Restoran administratori").waitFor();
+    await membershipRow.getByRole("button", { name: "Rollar" }).click();
+    const membershipEditForm = membershipPanel.locator(".tenant-membership-edit");
+    await membershipEditForm.getByRole("checkbox", { name: /Restoran administratori/ }).uncheck();
+    await membershipEditForm.getByRole("checkbox", { name: /Kassir/ }).check();
+    await membershipEditForm.locator("select").selectOption("branch-new");
+    await membershipEditForm.getByRole("button", { name: "Rollarni saqlash" }).click();
+    await membershipRow.getByText("Kassir").waitFor();
+    await membershipRow.getByText("QA main branch").waitFor();
+    await membershipRow.getByRole("button", { name: "To'xtatish" }).click();
+    await membershipRow.getByText("To'xtatilgan").waitFor();
+    await membershipRow.getByRole("button", { name: "Faollashtirish" }).click();
+    await membershipRow.getByText("Faol", { exact: true }).waitFor();
+    await page.screenshot({ path: `/tmp/owner-tenants-${viewport.width}.png`, fullPage: true });
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Umumiy holat" }).waitFor();
     await page.screenshot({ path: `/tmp/owner-overview-${viewport.width}.png`, fullPage: true });
-    await page.getByRole("button", { name: "Restoran qo'shish" }).click();
-    await page.getByRole("dialog").getByLabel("Restoran nomi").fill("Yangi filial");
+    await page.getByRole("button", { name: "Monitoringga ulash" }).click();
+    await page.getByRole("dialog").getByLabel("Loyiha nomi").fill("Yangi filial");
     await page.getByRole("dialog").getByLabel("Loyiha kodi").fill("NEW_FOOD");
     await page.getByRole("dialog").getByLabel("Sayt manzili").fill("https://new.example");
     await page.getByRole("dialog").getByLabel("API holat manzili").fill("https://api.new.example/health");
@@ -120,6 +269,16 @@ try {
     await page.getByRole("heading", { name: "Texnik xatolar" }).waitFor();
     await page.getByText("Markaziy panelga ulanish uzildi").waitFor();
     await page.getByText("Mazetto Food · Markaziy aloqa").waitFor();
+    await page.getByPlaceholder("Xato kodi, restoran yoki xizmat bo'yicha qidirish").fill("CONTROL_PLANE_UNREACHABLE");
+    await page.getByText("CONTROL_PLANE_UNREACHABLE", { exact: true }).waitFor();
+    await page.getByLabel("Xizmat bo'yicha filtr").selectOption("backend");
+    await page.getByText("Filtrlarga mos diagnostika topilmadi.", { exact: true }).waitFor();
+    await page.getByLabel("Xizmat bo'yicha filtr").selectOption("control_plane");
+    await page.getByText("1 / 1 ta yozuv", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Filtrlarni tozalash" }).click();
+    assert.equal(await page.getByPlaceholder("Xato kodi, restoran yoki xizmat bo'yicha qidirish").inputValue(), "");
+    await page.getByRole("button", { name: "Diagnostikani qayta yuklash" }).click();
+    await page.getByText("1 / 1 ta yozuv", { exact: true }).waitFor();
     await page.screenshot({ path: `/tmp/owner-diagnostics-${viewport.width}.png`, fullPage: true });
     await page.goto(`${baseUrl}/restaurants`, { waitUntil: "domcontentloaded" });
     assert.equal((await page.locator("tbody tr").nth(1).locator("td").nth(5).textContent())?.trim(), "—");
@@ -139,7 +298,7 @@ try {
     assert.equal(detailOverflow.width > viewport.width + 1, false, `Offline detail overflow at ${viewport.width}px: ${JSON.stringify(detailOverflow)}`);
     await page.goto(`${baseUrl}/restaurants/site-1`, { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "Sozlamalar" }).click();
-    await page.getByRole("dialog").getByLabel("Restoran nomi").fill("Mazetto Food Updated");
+    await page.getByRole("dialog").getByLabel("Loyiha nomi").fill("Mazetto Food Updated");
     await page.getByRole("dialog").getByRole("button", { name: "Saqlash" }).click();
     await page.getByRole("heading", { name: "Mazetto Food Updated" }).waitFor();
     await page.locator(".settings-section").getByRole("button", { name: "Yangilash" }).click();

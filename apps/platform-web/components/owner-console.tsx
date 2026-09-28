@@ -3,9 +3,9 @@
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Clipboard, Download, ExternalLink, Globe2, KeyRound, LayoutDashboard, LogOut, Menu, Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, SlidersHorizontal, UtensilsCrossed, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { apiRequest, logout, restoreSession, saveSession } from "../lib/api";
-import type { AuthSession, GlobalSiteEvent, PlatformAuditEntry, PlatformAuditPage, PlatformDiagnostic, PlatformHealth, PlatformReports, Probe, ProvisionedAgent, Site, SiteEvent, TenantRegistryEntry } from "../lib/types";
+import type { AuthSession, GlobalSiteEvent, PlatformAuditEntry, PlatformAuditPage, PlatformDiagnostic, PlatformHealth, PlatformReports, Probe, ProvisionedAgent, Site, SiteEvent, TenantMembership, TenantRegistryEntry, TenantRoleOption } from "../lib/types";
 
 type View = "overview" | "restaurants" | "tenants" | "activity" | "diagnostics" | "audit" | "reports" | "detail";
 type Modal = "create" | "edit" | "rotate" | "toggle" | null;
@@ -107,11 +107,19 @@ function statusText(status: ReturnType<typeof siteStatus>) {
 }
 
 function Status({ status, label }: { status: string; label?: string }) {
-  const tone = ["ONLINE", "OPEN", "healthy", "ok"].includes(status) ? "healthy" : ["OFFLINE", "danger", "down", "error"].includes(status) ? "danger" : ["UNKNOWN", "WAITING", "DEGRADED", "warning"].includes(status) ? "warning" : "neutral";
+  const tone = ["ONLINE", "OPEN", "healthy", "ok"].includes(status) ? "healthy" : ["OFFLINE", "danger", "down", "error"].includes(status) ? "danger" : ["UNKNOWN", "WAITING", "DEGRADED", "degraded", "warning"].includes(status) ? "warning" : "neutral";
   return <span className={`status status-${tone}`}><span className="status-dot" />{label || status}</span>;
 }
 
 function Empty({ children }: { children: ReactNode }) { return <div className="empty"><CircleHelp size={22} /><span>{children}</span></div>; }
+function needsBranchRole(codes: string[], roles: TenantRoleOption[]) {
+  return roles.some(role => role.isBranchScoped && codes.includes(role.code));
+}
+
+function RolePicker({ idPrefix, roles, selectedCodes, onChange }: { idPrefix: string; roles: TenantRoleOption[]; selectedCodes: string[]; onChange: (codes: string[]) => void }) {
+  return <fieldset className="tenant-role-picker"><legend>Restoran rollari</legend>{roles.length ? roles.map(role => <label className="tenant-role-option" key={role.id} htmlFor={`${idPrefix}-${role.code}`}><input id={`${idPrefix}-${role.code}`} type="checkbox" checked={selectedCodes.includes(role.code)} onChange={event => onChange(event.target.checked ? [...selectedCodes, role.code] : selectedCodes.filter(code => code !== role.code))} /><span><strong>{role.name}</strong><small>{role.isBranchScoped ? "Filial roli" : "Restoran darajasidagi rol"}</small></span></label>) : <small className="muted">Biriktirish mumkin bo'lgan faol rol topilmadi.</small>}</fieldset>;
+}
+
 
 export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) {
   const router = useRouter();
@@ -120,7 +128,33 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const [tenants, setTenants] = useState<TenantRegistryEntry[]>([]);
   const [tenantsLoading, setTenantsLoading] = useState(false);
   const [tenantsError, setTenantsError] = useState("");
+  const [tenantCreateOpen, setTenantCreateOpen] = useState(false);
+  const [tenantCreateCode, setTenantCreateCode] = useState("");
+  const [tenantCreateName, setTenantCreateName] = useState("");
+  const [tenantCreateBusy, setTenantCreateBusy] = useState(false);
+  const [tenantCreateError, setTenantCreateError] = useState("");
+  const [membershipTenantId, setMembershipTenantId] = useState("");
+  const [tenantMemberships, setTenantMemberships] = useState<TenantMembership[]>([]);
+  const [tenantRoleOptions, setTenantRoleOptions] = useState<TenantRoleOption[]>([]);
+  const [membershipsLoading, setMembershipsLoading] = useState(false);
+  const [membershipBusy, setMembershipBusy] = useState("");
+  const [membershipError, setMembershipError] = useState("");
+  const [membershipIdentifier, setMembershipIdentifier] = useState("");
+  const [membershipRoleCodes, setMembershipRoleCodes] = useState<string[]>([]);
+  const [membershipBranchId, setMembershipBranchId] = useState("");
+  const [editingMembershipId, setEditingMembershipId] = useState("");
+  const [editingRoleCodes, setEditingRoleCodes] = useState<string[]>([]);
+  const [editingBranchId, setEditingBranchId] = useState("");
+  const membershipRequest = useRef(0);
+  const [branchCreateTenantId, setBranchCreateTenantId] = useState("");
+  const [branchCreateCode, setBranchCreateCode] = useState("");
+  const [branchCreateName, setBranchCreateName] = useState("");
+  const [branchCreateAddress, setBranchCreateAddress] = useState("");
+  const [branchCreatePhone, setBranchCreatePhone] = useState("");
+  const [branchCreateBusy, setBranchCreateBusy] = useState(false);
+  const [branchCreateError, setBranchCreateError] = useState("");
   const [domainTenantId, setDomainTenantId] = useState("");
+  const [setupTenantId, setSetupTenantId] = useState("");
   const [domainHostname, setDomainHostname] = useState("");
   const [domainBusy, setDomainBusy] = useState(false);
   const [domainError, setDomainError] = useState("");
@@ -173,9 +207,26 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const [diagnostics, setDiagnostics] = useState<PlatformDiagnostic[]>([]);
   const [diagnosticsSiteId, setDiagnosticsSiteId] = useState("");
   const [diagnosticsSeverity, setDiagnosticsSeverity] = useState<"all" | "warning" | "error">("all");
+  const [diagnosticsService, setDiagnosticsService] = useState<"all" | PlatformDiagnostic["service"]>("all");
+  const [diagnosticsQuery, setDiagnosticsQuery] = useState("");
+  const [diagnosticsRefresh, setDiagnosticsRefresh] = useState(0);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const domainTenant = tenants.find(tenant => tenant.id === domainTenantId);
+  const setupTenant = tenants.find(tenant => tenant.id === setupTenantId);
+  const membershipTenant = tenants.find(tenant => tenant.id === membershipTenantId);
+  const editingMembership = tenantMemberships.find(membership => membership.id === editingMembershipId);
+  const setupVerifiedDomains = setupTenant?.domains.filter(domain => domain.status === "VERIFIED").length || 0;
+  const setupMonitoringHealthy = Boolean(setupTenant?.platformSites.length) && setupTenant!.platformSites.every(site =>
+    site.isActive && site.website.status === "ONLINE" && site.api.status === "ONLINE" && site.agentStatus === "ONLINE",
+  );
+
+  useEffect(() => {
+    if (view !== "restaurants") return;
+    const requested = new URLSearchParams(window.location.search).get("filter") || "";
+    const allowed = ["all", "healthy", "warning", "danger", "neutral", "queue"];
+    setFilter(allowed.includes(requested) ? requested : "all");
+  }, [view]);
 
   const selected = useMemo(() => sites.find(site => site.id === siteId), [sites, siteId]);
   const loadSites = useCallback(async () => {
@@ -189,6 +240,109 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     catch (caught) { setTenantsError(caught instanceof Error ? caught.message : "Tenant reyestrini yuklab bo‘lmadi."); }
     finally { setTenantsLoading(false); }
   }, []);
+  const loadTenantMemberships = useCallback(async (tenantId: string) => {
+    const requestId = ++membershipRequest.current;
+    setMembershipsLoading(true);
+    setMembershipError("");
+    try {
+      const encodedTenantId = encodeURIComponent(tenantId);
+      const [members, roles] = await Promise.all([
+        apiRequest<TenantMembership[]>(`/platform/tenants/${encodedTenantId}/memberships`),
+        apiRequest<TenantRoleOption[]>(`/platform/tenants/${encodedTenantId}/membership-role-options`),
+      ]);
+      if (requestId === membershipRequest.current) {
+        setTenantMemberships(members);
+        setTenantRoleOptions(roles);
+      }
+    } catch (caught) {
+      if (requestId === membershipRequest.current) {
+        setMembershipError(caught instanceof Error ? caught.message : "Restoran a'zolarini yuklab bo'lmadi.");
+      }
+    } finally {
+      if (requestId === membershipRequest.current) setMembershipsLoading(false);
+    }
+  }, []);
+
+  function toggleTenantMemberships(tenantId: string) {
+    if (membershipTenantId === tenantId) {
+      membershipRequest.current += 1;
+      setMembershipTenantId("");
+      setTenantMemberships([]);
+      setTenantRoleOptions([]);
+      setMembershipError("");
+      setEditingMembershipId("");
+      return;
+    }
+    setMembershipTenantId(tenantId);
+    setTenantMemberships([]);
+    setTenantRoleOptions([]);
+    setMembershipIdentifier("");
+    setMembershipRoleCodes([]);
+    setMembershipBranchId("");
+    setEditingMembershipId("");
+    void loadTenantMemberships(tenantId);
+  }
+
+  async function submitTenantMembership(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!membershipTenant || !membershipRoleCodes.length) return;
+    setMembershipBusy("create");
+    setMembershipError("");
+    try {
+      await apiRequest<TenantMembership>(`/platform/tenants/${encodeURIComponent(membershipTenant.id)}/memberships`, {
+        method: "POST",
+        body: JSON.stringify({ identifier: membershipIdentifier.trim(), branchId: membershipBranchId || undefined, roleCodes: membershipRoleCodes }),
+      });
+      setMembershipIdentifier("");
+      setMembershipRoleCodes([]);
+      setMembershipBranchId("");
+      setNotice(`${membershipTenant.name} restoraniga a'zo biriktirildi.`);
+      await loadTenantMemberships(membershipTenant.id);
+    } catch (caught) {
+      setMembershipError(caught instanceof Error ? caught.message : "A'zolikni yaratib bo'lmadi.");
+    } finally {
+      setMembershipBusy("");
+    }
+  }
+
+  async function updateTenantMembershipStatus(membership: TenantMembership) {
+    if (!membershipTenant || !window.confirm(`${membership.user.displayName || membership.user.email || membership.user.phone || "Foydalanuvchi"} a'zoligini ${membership.status === "ACTIVE" ? "to'xtatasizmi" : "qayta faollashtirasizmi"}?`)) return;
+    const nextStatus = membership.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+    setMembershipBusy(membership.id);
+    setMembershipError("");
+    try {
+      await apiRequest(`/platform/tenants/${encodeURIComponent(membershipTenant.id)}/memberships/${encodeURIComponent(membership.id)}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      await loadTenantMemberships(membershipTenant.id);
+      setNotice(nextStatus === "SUSPENDED" ? "Restoran a'zoligi to'xtatildi." : "Restoran a'zoligi faollashtirildi.");
+    } catch (caught) {
+      setMembershipError(caught instanceof Error ? caught.message : "A'zolik holatini o'zgartirib bo'lmadi.");
+    } finally {
+      setMembershipBusy("");
+    }
+  }
+
+  async function submitTenantMembershipRoles(event: FormEvent<HTMLFormElement>, membership: TenantMembership) {
+    event.preventDefault();
+    if (!membershipTenant || !editingRoleCodes.length) return;
+    setMembershipBusy(membership.id);
+    setMembershipError("");
+    try {
+      await apiRequest<TenantMembership>(`/platform/tenants/${encodeURIComponent(membershipTenant.id)}/memberships/${encodeURIComponent(membership.id)}/roles`, {
+        method: "PATCH",
+        body: JSON.stringify({ roleCodes: editingRoleCodes, branchId: editingBranchId || undefined }),
+      });
+      setEditingMembershipId("");
+      await loadTenantMemberships(membershipTenant.id);
+      setNotice("Restoran a'zosining rollari yangilandi.");
+    } catch (caught) {
+      setMembershipError(caught instanceof Error ? caught.message : "A'zolik rollarini o'zgartirib bo'lmadi.");
+    } finally {
+      setMembershipBusy("");
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -285,7 +439,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     void load();
     const timer = window.setInterval(() => { void load(); }, 30_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [session, view, diagnosticsSiteId, diagnosticsSeverity]);
+  }, [session, view, diagnosticsSiteId, diagnosticsSeverity, diagnosticsRefresh]);
 
   useEffect(() => {
     if (!selected) return;
@@ -298,8 +452,20 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
 
   const filtered = sites.filter(site => {
     const text = `${site.name} ${site.siteKey} ${site.productCode}`.toLowerCase();
-    return text.includes(query.toLowerCase()) && (filter === "all" || siteStatus(site) === filter);
+    const matchesFilter = filter === "all" || (filter === "queue"
+      ? hasLiveHeartbeat(site) && (site.heartbeat?.totals.kitchenQueue ?? 0) > 0
+      : siteStatus(site) === filter);
+    return text.includes(query.toLowerCase()) && matchesFilter;
   });
+
+  const normalizedDiagnosticsQuery = diagnosticsQuery.trim().toLocaleLowerCase();
+  const filteredDiagnostics = diagnostics.filter(item => {
+    const text = `${item.site.name} ${item.site.productCode} ${item.code} ${item.service}`.toLocaleLowerCase();
+    return (!normalizedDiagnosticsQuery || text.includes(normalizedDiagnosticsQuery))
+      && (diagnosticsService === "all" || item.service === diagnosticsService);
+  });
+  const hasDiagnosticsFilters = Boolean(normalizedDiagnosticsQuery || diagnosticsSiteId
+    || diagnosticsSeverity !== "all" || diagnosticsService !== "all");
   const normalizedTenantQuery = tenantQuery.trim().toLocaleLowerCase();
   const filteredTenants = tenants.filter(tenant => {
     const text = `${tenant.name} ${tenant.code} ${tenant.domains.map(domain => domain.hostname).join(" ")}`.toLocaleLowerCase();
@@ -430,6 +596,61 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     finally { setBusy(false); }
   }
 
+  async function submitTenantCreation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTenantCreateBusy(true);
+    setTenantCreateError("");
+    setNotice("");
+    try {
+      await apiRequest("/platform/tenants", {
+        method: "POST",
+        body: JSON.stringify({
+          code: tenantCreateCode.trim(),
+          name: tenantCreateName.trim(),
+        }),
+      });
+      setTenantCreateOpen(false);
+      setTenantCreateCode("");
+      setTenantCreateName("");
+      setNotice("Restoran tayyorlash holatida yaratildi. Uni ACTIVE qilish hali mavjud emas.");
+      await loadTenants();
+    } catch (caught) {
+      setTenantCreateError(caught instanceof Error ? caught.message : "Restoran yaratilmadi.");
+    } finally {
+      setTenantCreateBusy(false);
+    }
+  }
+
+  async function submitTenantBranchCreation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const tenant = tenants.find(item => item.id === branchCreateTenantId);
+    if (!tenant || tenant.status !== "PROVISIONING") {
+      setBranchCreateError("Filialni faqat tayyorlanayotgan restoranga qo'shish mumkin.");
+      return;
+    }
+    setBranchCreateBusy(true);
+    setBranchCreateError("");
+    setNotice("");
+    try {
+      await apiRequest(`/platform/tenants/${encodeURIComponent(tenant.id)}/branches`, {
+        method: "POST",
+        body: JSON.stringify({
+          code: branchCreateCode.trim(),
+          name: branchCreateName.trim(),
+          address: branchCreateAddress.trim() || undefined,
+          phone: branchCreatePhone.trim() || undefined,
+        }),
+      });
+      setBranchCreateTenantId("");
+      setNotice(`"${tenant.name}" uchun filial tayyorlandi. U faolsiz va buyurtma qabul qilmaydi.`);
+      await loadTenants();
+    } catch (caught) {
+      setBranchCreateError(caught instanceof Error ? caught.message : "Filial yaratilmadi.");
+    } finally {
+      setBranchCreateBusy(false);
+    }
+  }
+
   async function submitTenantDomain(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const tenant = domainTenant;
@@ -514,7 +735,12 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
         {error && <div className="alert" role="alert"><AlertTriangle size={18} />{error}<button className="button subtle" onClick={() => void loadSites()}>Qayta urinish</button></div>}
         {view === "overview" && <>
           <div className="page-heading"><div><p className="eyebrow">SERVER VA SAYT NAZORATI</p><h1>Umumiy holat</h1><p className="muted">Ulangan sayt, API va agentlarning monitoringi.</p></div><button className="button primary" onClick={openCreate}><Plus size={17} />Monitoringga ulash</button></div>
-          <div className="metrics"><Metric icon={<Globe2 size={20} />} label="Kuzatuvdagi loyihalar" value={sites.length} caption="Monitoring reyestridagi obyektlar" /><Metric icon={<ShieldCheck size={20} />} label="Sog'lom" value={healthy} caption="Barcha xizmatlar ishlayapti" tone="healthy" /><Metric icon={<AlertTriangle size={20} />} label="Nosozlik" value={offline} caption="Zudlik bilan tekshirish" tone="danger" /><Metric icon={<UtensilsCrossed size={20} />} label="Oshxona navbati" value={queue} caption="Jami navbatdagi buyurtmalar" tone="warning" /></div>
+          <div className="metrics">
+            <Metric icon={<Globe2 size={20} />} label="Kuzatuvdagi loyihalar" value={sites.length} caption="Monitoring reyestridagi obyektlar" href="/restaurants#site-list" />
+            <Metric icon={<ShieldCheck size={20} />} label="Sog'lom" value={healthy} caption="Barcha xizmatlar ishlayapti" tone="healthy" href="/restaurants?filter=healthy#site-list" />
+            <Metric icon={<AlertTriangle size={20} />} label="Nosozlik" value={offline} caption="Zudlik bilan tekshirish" tone="danger" href="/restaurants?filter=danger#site-list" />
+            <Metric icon={<UtensilsCrossed size={20} />} label="Oshxona navbati" value={queue} caption="Jami navbatdagi buyurtmalar" tone="warning" href="/restaurants?filter=queue#site-list" />
+          </div>
           <section className="section"><div className="section-head"><div><h2>E'tibor talab qiladi</h2><p className="muted">Sayt, API yoki server bilan bog'liq holatlar</p></div><Link className="text-link" href="/restaurants">Barchasini ko'rish <ArrowRight size={16} /></Link></div>{loading ? <Skeleton /> : attention.length ? <div className="attention-list">{attention.slice(0, 5).map(site => <Link className="attention-row" href={`/restaurants/${site.id}`} key={site.id}><span className={`attention-icon tone-${siteStatus(site)}`}><AlertTriangle size={19} /></span><span className="attention-name"><strong>{site.name}</strong><small>{site.productCode}</small></span><Status status={siteStatus(site)} label={statusText(siteStatus(site))} /><span className="row-time">{dateLabel(site.lastHeartbeatAt)}</span><ArrowRight size={17} /></Link>)}</div> : <Empty>Hozircha e'tibor talab qiladigan restoran yo'q.</Empty>}</section>
           <section className="section"><div className="section-head"><div><h2>Monitoringdagi loyihalar</h2><p className="muted">Sayt, API va agent bo'yicha kuzatilayotgan obyektlar</p></div><Link className="text-link" href="/restaurants">Monitoring ro'yxati <ArrowRight size={16} /></Link></div><SiteTable sites={sites.slice(0, 6)} loading={loading} /></section>
           <section className="section"><div className="section-head"><div><h2>So'nggi hodisalar</h2><p className="muted">Barcha restoranlardan kelgan operatsion yozuvlar</p></div><Link className="text-link" href="/activity">Jurnalni ochish <ArrowRight size={16} /></Link></div>{globalError ? <div className="alert">{globalError}</div> : globalLoading ? <Skeleton /> : <GlobalEvents events={globalEvents.slice(0, 6)} />}</section>
@@ -525,9 +751,22 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
           {globalError ? <div className="alert">{globalError}</div> : globalLoading ? <Skeleton /> : <GlobalEvents events={visibleGlobalEvents} emptyText={eventFilter === "open" ? "Ochiq hodisalar topilmadi." : "Hodisalar hali qayd etilmagan."} onAcknowledge={event => void acknowledgeEvent(event)} acknowledgingId={acknowledgingId} />}
         </>}
         {view === "diagnostics" && <>
-          <div className="page-heading"><div><p className="eyebrow">30 KUNLIK TEXNIK JURNAL</p><h1>Texnik xatolar</h1><p className="muted">Faqat oldindan belgilangan texnik xato kodlari saqlanadi. Xom log va maxfiy ma'lumotlar uzatilmaydi.</p></div></div>
-          <div className="toolbar"><label className="filter-label"><SlidersHorizontal size={17} /><select value={diagnosticsSiteId} onChange={event => setDiagnosticsSiteId(event.target.value)} aria-label="Restoran bo'yicha filtr"><option value="">Barcha restoranlar</option>{sites.map(site => <option value={site.id} key={site.id}>{site.name}</option>)}</select><ChevronDown size={15} /></label><label className="filter-label"><select value={diagnosticsSeverity} onChange={event => setDiagnosticsSeverity(event.target.value as typeof diagnosticsSeverity)} aria-label="Xato darajasi"><option value="all">Barcha darajalar</option><option value="error">Xatolar</option><option value="warning">Ogohlantirishlar</option></select><ChevronDown size={15} /></label><span className="result-count">{diagnostics.length} ta yozuv</span></div>
-          {diagnosticsError ? <div className="alert">{diagnosticsError}</div> : diagnosticsLoading ? <Skeleton /> : diagnostics.length ? <div className="events-list">{diagnostics.map(item => <div className="event-row" key={item.id}><span className={`event-dot ${item.severity === "error" ? "tone-danger" : "tone-warning"}`} /><span><strong>{item.code === "LOCAL_HEARTBEAT_BUILD_FAILED" ? "Restoran holatini yig'ishda xato" : item.code === "CONTROL_PLANE_REJECTED_HEARTBEAT" ? "Markaziy panel heartbeatni qabul qilmadi" : "Markaziy panelga ulanish uzildi"}</strong><small>{item.site.name} · {item.service === "control_plane" ? "Markaziy aloqa" : item.service === "backend" ? "Restoran backendi" : item.service === "database" ? "Ma'lumotlar bazasi" : "Redis"}</small><small>{item.severity === "error" ? "Xato" : "Ogohlantirish"} · Qabul qilindi: {dateLabel(item.receivedAt)}</small></span><time>{dateLabel(item.occurredAt)}</time></div>)}</div> : <Empty>So'nggi 30 kunda texnik xato qayd etilmagan.</Empty>}
+          <div className="page-heading">
+            <div><p className="eyebrow">30 KUNLIK TEXNIK JURNAL</p><h1>Texnik xatolar</h1><p className="muted">Faqat oldindan belgilangan xato kodlari saqlanadi; xom log va maxfiy ma'lumotlar uzatilmaydi.</p></div>
+            <button className="button subtle" aria-label="Diagnostikani qayta yuklash" title="Diagnostikani qayta yuklash" onClick={() => setDiagnosticsRefresh(value => value + 1)} disabled={diagnosticsLoading}><RefreshCw size={16} />Yangilash</button>
+          </div>
+          <div className="toolbar">
+            <label className="search diagnostic-search"><Search size={18} /><input value={diagnosticsQuery} onChange={event => setDiagnosticsQuery(event.target.value)} placeholder="Xato kodi, restoran yoki xizmat bo'yicha qidirish" /></label>
+            <label className="filter-label"><SlidersHorizontal size={17} /><select value={diagnosticsSiteId} onChange={event => setDiagnosticsSiteId(event.target.value)} aria-label="Restoran bo'yicha filtr"><option value="">Barcha restoranlar</option>{sites.map(site => <option value={site.id} key={site.id}>{site.name}</option>)}</select><ChevronDown size={15} /></label>
+            <label className="filter-label"><select value={diagnosticsSeverity} onChange={event => setDiagnosticsSeverity(event.target.value as typeof diagnosticsSeverity)} aria-label="Xato darajasi"><option value="all">Barcha darajalar</option><option value="error">Xatolar</option><option value="warning">Ogohlantirishlar</option></select><ChevronDown size={15} /></label>
+            <label className="filter-label"><select value={diagnosticsService} onChange={event => setDiagnosticsService(event.target.value as typeof diagnosticsService)} aria-label="Xizmat bo'yicha filtr"><option value="all">Barcha xizmatlar</option><option value="control_plane">Markaziy aloqa</option><option value="backend">Restoran backendi</option><option value="database">Ma'lumotlar bazasi</option><option value="redis">Redis</option></select><ChevronDown size={15} /></label>
+            <span className="result-count">{filteredDiagnostics.length} / {diagnostics.length} ta yozuv</span>
+            {hasDiagnosticsFilters && <button className="button subtle" onClick={() => { setDiagnosticsQuery(""); setDiagnosticsSiteId(""); setDiagnosticsSeverity("all"); setDiagnosticsService("all"); }}><X size={15} />Filtrlarni tozalash</button>}
+          </div>
+          {diagnosticsError ? <div className="alert" role="alert"><AlertTriangle size={18} />{diagnosticsError}<button className="button subtle" onClick={() => setDiagnosticsRefresh(value => value + 1)}>Qayta urinish</button></div>
+            : diagnosticsLoading ? <Skeleton />
+              : filteredDiagnostics.length ? <div className="events-list">{filteredDiagnostics.map(item => <div className="event-row" key={item.id}><span className={`event-dot ${item.severity === "error" ? "tone-danger" : "tone-warning"}`} /><span><strong>{item.code === "LOCAL_HEARTBEAT_BUILD_FAILED" ? "Restoran holatini yig'ishda xato" : item.code === "CONTROL_PLANE_REJECTED_HEARTBEAT" ? "Markaziy panel heartbeatni qabul qilmadi" : "Markaziy panelga ulanish uzildi"}</strong><small>{item.site.name} · {item.service === "control_plane" ? "Markaziy aloqa" : item.service === "backend" ? "Restoran backendi" : item.service === "database" ? "Ma'lumotlar bazasi" : "Redis"}</small><small className="diagnostic-code">{item.code}</small><small>{item.severity === "error" ? "Xato" : "Ogohlantirish"} · Qabul qilindi: {dateLabel(item.receivedAt)}</small></span><time>{dateLabel(item.occurredAt)}</time></div>)}</div>
+              : <Empty>{hasDiagnosticsFilters ? "Filtrlarga mos diagnostika topilmadi." : "So'nggi 30 kunda texnik xato qayd etilmagan."}</Empty>}
         </>}
         {view === "audit" && <>
           <div className="page-heading"><div><p className="eyebrow">EGASI AMALLARI</p><h1>Boshqaruv jurnali</h1><p className="muted">Restoran sozlamalari va alertlar bo'yicha bajarilgan amallar.</p></div></div>
@@ -547,25 +786,60 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
           </>}
         </>}
         {view === "tenants" && <>
-          <div className="page-heading"><div><p className="eyebrow">ASOSIY MA’LUMOTLAR BAZASI</p><h1>Restoran tenantlari</h1><p className="muted">Haqiqiy tenantlar, filiallar, domenlar va kuzatuvga ulangan saytlar.</p></div><button className="button subtle" onClick={() => void loadTenants()} disabled={tenantsLoading}><RefreshCw size={16} />Yangilash</button></div>
-          <div className="alert" role="status"><ShieldCheck size={18} />Yangi tenant ochish va holatini o‘zgartirish bloklangan: mavjud ilovalarda ma’lumotlar izolyatsiyasi hali to‘liq tekshirilmoqda.</div>
+          <div className="page-heading"><div><p className="eyebrow">ASOSIY MA’LUMOTLAR BAZASI</p><h1>Restoran tenantlari</h1><p className="muted">Haqiqiy tenantlar, filiallar, domenlar va kuzatuvga ulangan saytlar.</p></div><div className="heading-actions"><button className="button primary" onClick={() => { setTenantCreateError(""); setTenantCreateOpen(true); }}><Plus size={16} />Yangi restoran</button><button className="button subtle" onClick={() => void loadTenants()} disabled={tenantsLoading}><RefreshCw size={16} />Yangilash</button></div></div>
+          <div className="alert" role="status"><ShieldCheck size={18} />Yangi restoran faqat tayyorlash holatida ochiladi. Ikkinchi restoran ishga tushirilmaydi, tenant izolyatsiyasi va ulanishlari tekshiruvdan o‘tmaguncha.</div>
           {tenantsError && <div className="alert" role="alert"><AlertTriangle size={18} />{tenantsError}<button className="button subtle" onClick={() => void loadTenants()}>Qayta urinish</button></div>}
           <div className="metrics">
-            <Metric icon={<Globe2 size={20} />} label="Restoranlar" value={tenants.length} caption="Haqiqiy tenantlar" />
-            <Metric icon={<ShieldCheck size={20} />} label="Faol" value={activeTenantCount} caption="Faol tenantlar" tone="healthy" />
-            <Metric icon={<AlertTriangle size={20} />} label="Domen tekshiruvi" value={pendingDomainCount} caption="DNS tasdig‘i kutilmoqda" tone="warning" />
-            <Metric icon={<UtensilsCrossed size={20} />} label="Ochiq filiallar" value={orderReadyBranchCount} caption="Faol va buyurtma qabul qilmoqda" />
+            <Metric icon={<Globe2 size={20} />} label="Restoranlar" value={tenants.length} caption="Haqiqiy tenantlar" href="#tenant-list" />
+            <Metric icon={<ShieldCheck size={20} />} label="Faol" value={activeTenantCount} caption="Faol tenantlar" tone="healthy" href="#tenant-list" />
+            <Metric icon={<AlertTriangle size={20} />} label="Domen tekshiruvi" value={pendingDomainCount} caption="DNS tasdig‘i kutilmoqda" tone="warning" href="#tenant-list" />
+            <Metric icon={<UtensilsCrossed size={20} />} label="Ochiq filiallar" value={orderReadyBranchCount} caption="Faol va buyurtma qabul qilmoqda" href="#tenant-list" />
           </div>
+          <span id="tenant-list" />
           <div className="toolbar"><label className="search"><Search size={18} /><input placeholder="Nomi, kodi yoki domeni bo‘yicha qidirish" value={tenantQuery} onChange={event => setTenantQuery(event.target.value)} /></label><label className="filter-label"><SlidersHorizontal size={17} /><select value={tenantStatus} onChange={event => setTenantStatus(event.target.value as typeof tenantStatus)} aria-label="Tenant holati bo‘yicha filtr"><option value="all">Barcha holatlar</option><option value="ACTIVE">Faol</option><option value="PROVISIONING">Tayyorlanmoqda</option><option value="SUSPENDED">To‘xtatilgan</option><option value="ARCHIVED">Arxivlangan</option></select><ChevronDown size={15} /></label><span className="result-count">{filteredTenants.length} / {tenants.length} ta tenant</span></div>
-          {tenantsLoading && !tenants.length ? <Skeleton /> : tenants.length ? <div className="table-wrap"><table><thead><tr><th>Restoran</th><th>Holat</th><th>Filiallar</th><th>Faollik</th><th>Sayt / API</th><th>Domenlar</th><th>Qo‘shilgan</th></tr></thead><tbody>{filteredTenants.length ? filteredTenants.map(tenant => <tr key={tenant.id}>
+          {tenantsLoading && !tenants.length ? <Skeleton /> : tenants.length ? <div className="table-wrap"><table><thead><tr><th>Restoran</th><th>Holat</th><th>Filiallar</th><th>Faollik</th><th>Sayt / API</th><th>Domenlar</th><th>Qo‘shilgan</th><th>Onboarding</th></tr></thead><tbody>{filteredTenants.length ? filteredTenants.map(tenant => <tr key={tenant.id}>
             <td className="strong-cell">{tenant.name}<small className="report-product">{tenant.code}</small></td>
             <td><Status status={tenant.status === "ACTIVE" ? "ONLINE" : tenant.status === "PROVISIONING" ? "WAITING" : "OFFLINE"} label={{ ACTIVE: "Faol", PROVISIONING: "Tayyorlanmoqda", SUSPENDED: "To‘xtatilgan", ARCHIVED: "Arxivlangan" }[tenant.status]} /></td>
-            <td>{tenant.branches.length}<small className="report-product">{tenant.branches.map(branch => `${branch.name}${branch.isActive ? "" : " (faol emas)"}`).join(", ") || "Filial mavjud emas"}</small></td>
+            <td>{tenant.branches.length}<small className="report-product">{tenant.branches.map(branch => `${branch.name}${branch.isActive ? "" : " (faol emas)"}`).join(", ") || "Filial mavjud emas"}</small>{tenant.status === "PROVISIONING" && <button type="button" className="button subtle tenant-domain-open" onClick={() => { setBranchCreateTenantId(tenant.id); setBranchCreateCode(""); setBranchCreateName(""); setBranchCreateAddress(""); setBranchCreatePhone(""); setBranchCreateError(""); }}>Filial qo'shish</button>}</td>
             <td>{tenant.activity ? <><strong>{tenant.activity.openOrders} ochiq buyurtma</strong><small className="report-product">{tenant.activity.onlineDevices} onlayn / {tenant.activity.offlineDevices} oflayn qurilma</small><small className="report-product">{tenant.activity.acceptingOrdersBranches} filial buyurtma qabul qilmoqda</small></> : <span className="muted">Faollik yuborilmagan</span>}</td>
             <td>{tenant.platformSites.length ? tenant.platformSites.map(site => <div key={site.id} className="tenant-monitor-site"><Link className="text-link" href={`/restaurants/${site.id}`}>{site.name}<ArrowRight size={14} /></Link><small className="report-product">{site.productCode}</small><div className="tenant-monitor-service"><span>Sayt</span><Status status={site.isActive ? site.website.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.website.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>API</span><Status status={site.isActive ? site.api.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.api.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>Agent</span><Status status={site.agentStatus} label={{ ONLINE: "Ulangan", DEGRADED: "Muammo bor", OFFLINE: "Ulanmagan", WAITING: "Kutilmoqda", DISABLED: "Kuzatuv o‘chiq" }[site.agentStatus]} /></div></div>) : <span className="muted">Monitoring ulanmagan</span>}</td>
             <td>{tenant.domains.length ? tenant.domains.map(domain => <div key={domain.id} className="service-line"><span>{domain.hostname}</span><Status status={domain.status === "VERIFIED" ? "ONLINE" : domain.status === "PENDING" ? "WAITING" : "OFFLINE"} label={{ VERIFIED: "Tasdiqlangan", PENDING: "Kutilmoqda", DISABLED: "O‘chirilgan" }[domain.status]} /></div>) : "Domen ulanmagan"}<button type="button" className="button subtle tenant-domain-open" onClick={() => { const nextTenantId = domainTenantId === tenant.id ? "" : tenant.id; setDomainTenantId(nextTenantId); setDomainChallenge(current => current?.tenantId === nextTenantId ? current : null); setDomainError(""); setDomainHostname(""); }}>{domainTenantId === tenant.id ? "Yopish" : "Domenlarni boshqarish"}</button></td>
-            <td>{dateLabel(tenant.createdAt)}</td>
-          </tr>) : <tr><td colSpan={7} className="muted">Qidiruvga mos tenant topilmadi.</td></tr>}</tbody></table></div> : <Empty>Tenant yozuvi topilmadi.</Empty>}
+            <td>{dateLabel(tenant.createdAt)}</td><td><button type="button" className="button subtle tenant-domain-open" aria-expanded={setupTenantId === tenant.id} onClick={() => setSetupTenantId(current => current === tenant.id ? "" : tenant.id)}>Bosqichlar</button></td>
+          </tr>) : <tr><td colSpan={8} className="muted">Qidiruvga mos tenant topilmadi.</td></tr>}</tbody></table></div> : <Empty>Tenant yozuvi topilmadi.</Empty>}
+          {setupTenant && <section className="section tenant-onboarding-panel">
+            <div className="section-head"><div><h2>{setupTenant.name} · onboarding</h2><p className="muted">Har bir qadam haqiqiy reyestr holatidan hisoblanadi. Tayyor bo'lmagan integratsiya yashirilmaydi.</p></div><button className="icon-button" type="button" aria-label="Onboardingni yopish" onClick={() => setSetupTenantId("")}><X size={18} /></button></div>
+            <div className="tenant-setup-steps">
+              <div className="tenant-setup-row"><span className="tenant-setup-icon"><ShieldCheck size={16} /></span><div><strong>Foydalanuvchi a'zoliklari</strong><p>Restoran xodimlarini biriktiring, rollarini va kirish holatini boshqaring.</p></div><button className="button subtle" type="button" aria-expanded={membershipTenantId === setupTenant.id} onClick={() => toggleTenantMemberships(setupTenant.id)}>{membershipTenantId === setupTenant.id ? "A'zolarni yopish" : "A'zolarni boshqarish"}</button></div>
+              <div className="tenant-setup-row"><span className={setupTenant.branches.length ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupTenant.branches.length ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Birinchi filial</strong><p>{setupTenant.branches.length ? `${setupTenant.branches.length} ta filial ro'yxatda; yangi filial savdo yoqilmagan holatda.` : "Filial hali qo'shilmagan."}</p></div>{setupTenant.status === "PROVISIONING" && <button className="button subtle" type="button" onClick={() => { setBranchCreateTenantId(setupTenant.id); setBranchCreateCode(""); setBranchCreateName(""); setBranchCreateAddress(""); setBranchCreatePhone(""); setBranchCreateError(""); }}>Filial qo'shish</button>}</div>
+              <div className="tenant-setup-row"><span className={setupVerifiedDomains ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupVerifiedDomains ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Domen egaligi</strong><p>{setupVerifiedDomains ? `${setupVerifiedDomains} ta domen DNS TXT orqali tasdiqlangan.` : "Tasdiqlangan domen topilmadi; TXT tekshiruvi hali o'tmagan."}</p></div><button className="button subtle" type="button" onClick={() => { setDomainTenantId(setupTenant.id); setDomainError(""); setDomainHostname(""); setDomainChallenge(current => current?.tenantId === setupTenant.id ? current : null); }}>Domenlarni boshqarish</button></div>
+              <div className="tenant-setup-row"><span className={setupTenant.platformSites.length ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupTenant.platformSites.length ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Monitoringga ulash</strong><p>{setupTenant.platformSites.length ? `${setupTenant.platformSites.length} ta sayt/API monitoring yozuvi bog'langan.` : "Sayt va API monitoringi hali tenantga ulanmagan."}</p></div><Link className="button subtle" href="/restaurants">Restoran monitoringi</Link></div>
+              <div className="tenant-setup-row"><span className={setupMonitoringHealthy ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupMonitoringHealthy ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Ulanishlar sog'lom</strong><p>{setupMonitoringHealthy ? "Sayt, API va monitoring agenti onlayn." : "Sayt, API va agentning barchasi onlayn ekanligi hali tasdiqlanmagan."}</p></div></div>
+              <div className="tenant-setup-row"><span className="tenant-setup-icon blocked"><ShieldCheck size={16} /></span><div><strong>Tenant xavfsizlik darvozasi</strong><p>{setupTenant.status === "ACTIVE" ? "Mavjud aktiv restoran ishlashda davom etadi; yangi tenantlarni faollashtirish A/B izolyatsiya testi o'tmaguncha yopiq." : "A/B tenant izolyatsiyasi va trusted-domain routing yakunlanmagan. Faollashtirish mavjud emas."}</p></div><Status status="WAITING" label="Faollashtirish yopiq" /></div>
+            </div>
+          </section>}
+          {membershipTenant && <section className="section tenant-membership-panel">
+            <div className="section-head"><div><h2>{membershipTenant.name} · xodimlar va a'zoliklar</h2><p className="muted">Restoran bo'yicha alohida kirish, rol va a'zolik holati.</p></div><button type="button" className="icon-button" aria-label="A'zolik boshqaruvini yopish" onClick={() => toggleTenantMemberships(membershipTenant.id)}><X size={18} /></button></div>
+            <p className="muted">Faqat mavjud faol foydalanuvchi hisobini login, email yoki telefon orqali biriktiradi. Bu yerda yangi hisob yoki parol yaratilmaydi; filial roli uchun foydalanuvchi tanlangan filialning faol xodimi bo'lishi kerak.</p>
+            {membershipError && <div className="alert" role="alert"><AlertTriangle size={17} />{membershipError}<button type="button" className="button subtle" onClick={() => void loadTenantMemberships(membershipTenant.id)}>Qayta urinish</button></div>}
+            <form className="tenant-membership-create" onSubmit={submitTenantMembership}>
+              <label>Login, email yoki telefon<input value={membershipIdentifier} onChange={event => setMembershipIdentifier(event.target.value)} autoCapitalize="none" autoCorrect="off" required maxLength={254} placeholder="xodim@example.uz yoki +998..." /></label>
+              <RolePicker idPrefix="new-tenant-member" roles={tenantRoleOptions} selectedCodes={membershipRoleCodes} onChange={setMembershipRoleCodes} />
+              {needsBranchRole(membershipRoleCodes, tenantRoleOptions) && <label>Filial<select value={membershipBranchId} onChange={event => setMembershipBranchId(event.target.value)} required><option value="">Filialni tanlang</option>{membershipTenant.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}{branch.isActive ? "" : " · faol emas"}</option>)}</select></label>}
+              <button className="button primary" type="submit" disabled={membershipBusy !== "" || !membershipRoleCodes.length || !["PROVISIONING", "ACTIVE"].includes(membershipTenant.status) || (needsBranchRole(membershipRoleCodes, tenantRoleOptions) && !membershipBranchId)}><Plus size={16} />{membershipBusy === "create" ? "Biriktirilmoqda..." : "A'zoni biriktirish"}</button>
+            </form>
+            {membershipsLoading ? <Skeleton /> : tenantMemberships.length ? <div className="table-wrap"><table><thead><tr><th>Foydalanuvchi</th><th>Filial</th><th>Rollar</th><th>Holat</th><th>Amallar</th></tr></thead><tbody>{tenantMemberships.map(membership => <tr key={membership.id}>
+              <td className="strong-cell">{membership.user.displayName || membership.user.email || membership.user.phone || membership.user.id}<small className="report-product">{membership.user.email || membership.user.phone || membership.user.id}</small></td>
+              <td>{membership.branch?.name || "Restoran bo'yicha"}</td><td>{membership.roles.map(item => item.role.name).join(", ") || "Rol berilmagan"}</td>
+              <td><Status status={membership.status === "ACTIVE" && membership.user.isActive ? "ONLINE" : "OFFLINE"} label={!membership.user.isActive ? "Hisob o'chirilgan" : membership.status === "ACTIVE" ? "Faol" : "To'xtatilgan"} /></td>
+              <td><div className="tenant-membership-actions"><button type="button" className="button subtle" onClick={() => { setEditingMembershipId(current => current === membership.id ? "" : membership.id); setEditingRoleCodes(membership.roles.map(item => item.role.code)); setEditingBranchId(membership.branchId || ""); }} aria-expanded={editingMembershipId === membership.id}>Rollar</button><button type="button" className={membership.status === "ACTIVE" ? "button danger" : "button subtle"} disabled={membershipBusy !== ""} onClick={() => void updateTenantMembershipStatus(membership)}>{membershipBusy === membership.id ? "Saqlanmoqda..." : membership.status === "ACTIVE" ? "To'xtatish" : "Faollashtirish"}</button></div></td>
+            </tr>)}</tbody></table></div> : <Empty>Bu restoranga hali a'zo biriktirilmagan.</Empty>}
+            {editingMembership && <form className="tenant-membership-edit" onSubmit={event => void submitTenantMembershipRoles(event, editingMembership)}>
+              <div><strong>{editingMembership.user.displayName || editingMembership.user.email || editingMembership.user.phone}</strong><p className="muted">Restoran rollarini almashtiring. Yangi ruxsatlar keyingi so'rovdan kuchga kiradi.</p></div>
+              <RolePicker idPrefix={`edit-tenant-member-${editingMembership.id}`} roles={tenantRoleOptions} selectedCodes={editingRoleCodes} onChange={setEditingRoleCodes} />
+              {needsBranchRole(editingRoleCodes, tenantRoleOptions) && <label>Filial<select value={editingBranchId} onChange={event => setEditingBranchId(event.target.value)} required><option value="">Filialni tanlang</option>{membershipTenant.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}{branch.isActive ? "" : " · faol emas"}</option>)}</select></label>}
+              <div className="tenant-membership-actions"><button type="button" className="button subtle" onClick={() => setEditingMembershipId("")}>Bekor qilish</button><button className="button primary" type="submit" disabled={membershipBusy !== "" || !editingRoleCodes.length || (needsBranchRole(editingRoleCodes, tenantRoleOptions) && !editingBranchId)}><Check size={16} />{membershipBusy === editingMembership.id ? "Saqlanmoqda..." : "Rollarni saqlash"}</button></div>
+            </form>}
+          </section>}
           <p className="muted">Monitoring sayt/API holatini mavjud tenant bilan bog‘laydi. Bu agent yuboradigan buyurtma va filial ko‘rsatkichlarini tenantlar kesimida ajratmaydi.</p>
           {domainTenant && <section className="section tenant-domain-panel">
             <div className="section-head"><div><h2>{domainTenant.name} · Domen boshqaruvi</h2><p className="muted">Domenni DNS TXT bilan tasdiqlang. Bu yozuv routing, TLS yoki restoran holatini o‘zgartirmaydi.</p></div></div>
@@ -593,7 +867,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
         {view === "restaurants" && <>
 
           <div className="page-heading"><div><p className="eyebrow">SAYT VA SERVER NAZORATI</p><h1>Monitoring xizmatlari</h1><p className="muted">Sayt, API va agent kuzatuvini mavjud tenantga bog‘lang; bu restoran statusi yoki alohida ilovalarini o‘zgartirmaydi.</p></div><button className="button primary" onClick={openCreate}><Plus size={17} />Monitoringga ulash</button></div>
-          <div className="toolbar"><label className="search"><Search size={18} /><input placeholder="Nomi yoki loyiha bo'yicha qidirish" value={query} onChange={event => setQuery(event.target.value)} /></label><label className="filter-label"><SlidersHorizontal size={17} /><select value={filter} onChange={event => setFilter(event.target.value)} aria-label="Holat bo'yicha filter"><option value="all">Barcha holatlar</option><option value="healthy">Sog'lom</option><option value="warning">E'tibor kerak</option><option value="danger">Nosozlik</option><option value="neutral">Kuzatuv o'chiq</option></select><ChevronDown size={15} /></label><span className="result-count">{filtered.length} ta restoran</span></div>
+          <div className="toolbar" id="site-list"><label className="search"><Search size={18} /><input placeholder="Nomi yoki loyiha bo'yicha qidirish" value={query} onChange={event => setQuery(event.target.value)} /></label><label className="filter-label"><SlidersHorizontal size={17} /><select value={filter} onChange={event => setFilter(event.target.value)} aria-label="Holat bo'yicha filter"><option value="all">Barcha holatlar</option><option value="healthy">Sog'lom</option><option value="warning">E'tibor kerak</option><option value="danger">Nosozlik</option><option value="neutral">Kuzatuv o'chiq</option><option value="queue">Oshxona navbati bor</option></select><ChevronDown size={15} /></label><span className="result-count">{filtered.length} ta restoran</span></div>
           <SiteTable sites={filtered} loading={loading} />
         </>}
         {view === "detail" && selected && <>
@@ -610,12 +884,18 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
         {view === "detail" && !selected && !loading && <Empty>Bu restoran topilmadi. <Link href="/restaurants">Ro'yxatga qaytish</Link></Empty>}
       </div>
     </main>
-        {modal && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) { setModal(null); setProvisioned(null); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="modal-title">{modal === "create" ? "Monitoring obyektini qo'shish" : modal === "edit" ? "Monitoring obyektini tahrirlash" : modal === "rotate" ? "Agent tokenini yangilash" : "Kuzatuv holati"}</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => { setModal(null); setProvisioned(null); }}><X size={20} /></button></div>{modalError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{modalError}</div>}{provisioned ? <div className="modal-body"><p className="muted">Token faqat shu oynada ko'rinadi. Uni loyiha serveridagi agent sozlamasiga kiriting.</p><label className="token-field">Agent tokeni<code>{provisioned.agentToken}</code></label><button className="button primary full" onClick={async () => { await navigator.clipboard.writeText(provisioned.agentToken); setNotice("Token nusxalandi."); }}><Clipboard size={16} />Nusxalash</button><button className="button subtle full" onClick={() => { setModal(null); setProvisioned(null); }}>Tayyor</button></div> : modal === "create" || modal === "edit" ? <form className="modal-body form-stack" onSubmit={submitSite}><label>Loyiha nomi<input value={name} onChange={event => setName(event.target.value)} required minLength={2} /></label><label>Loyiha kodi<input value={productCode} onChange={event => setProductCode(event.target.value)} required placeholder="MAZETTO_FOOD" /></label><label>Restoran tenanti<select value={tenantId} onChange={event => setTenantId(event.target.value)} disabled={tenantsLoading}><option value="">Tenantga bog‘lanmagan</option>{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name} ({tenant.code})</option>)}</select><small className="report-product">Faqat mavjud tenantga bog‘lanadi; restoran statusi va ilovalari o‘zgarmaydi.</small></label><label>Sayt manzili<input type="url" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} required placeholder="https://restaurant.uz" /></label><label>API holat manzili<input type="url" value={apiHealthUrl} onChange={event => setApiHealthUrl(event.target.value)} required placeholder="https://api.restaurant.uz/health" /></label><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" type="submit" disabled={busy}><Check size={16} />{busy ? "Saqlanmoqda..." : "Saqlash"}</button></div></form> : <div className="modal-body"><p>{modal === "rotate" ? "Eski agent tokeni darhol ishlamay qoladi. Davom etasizmi?" : selected?.isActive ? "Bu monitoring obyekti uchun kuzatuvni to'xtatasizmi?" : "Bu monitoring obyekti uchun kuzatuvni yoqasizmi?"}</p><div className="modal-actions"><button className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" onClick={() => void confirmAction()} disabled={busy}>{busy ? "Bajarilmoqda..." : "Tasdiqlash"}</button></div></div>}</div></div>}
+        {branchCreateTenantId && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !branchCreateBusy) setBranchCreateTenantId(""); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="branch-create-title"><div className="modal-head"><div><p className="eyebrow">RESTORAN ONBOARDING</p><h2 id="branch-create-title">Birinchi filial</h2></div><button type="button" className="icon-button" aria-label="Yopish" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}><X size={20} /></button></div>{branchCreateError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{branchCreateError}</div>}<form className="modal-body form-stack" onSubmit={submitTenantBranchCreation}><label>Filial nomi<input autoFocus value={branchCreateName} onChange={event => setBranchCreateName(event.target.value)} required minLength={2} maxLength={120} /></label><label>Filial kodi<input value={branchCreateCode} onChange={event => setBranchCreateCode(event.target.value)} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="NORTH_MAIN" autoCapitalize="characters" autoCorrect="off" /></label><label>Manzil<input value={branchCreateAddress} onChange={event => setBranchCreateAddress(event.target.value)} maxLength={240} /></label><label>Telefon<input type="tel" value={branchCreatePhone} onChange={event => setBranchCreatePhone(event.target.value)} maxLength={40} /></label><p className="muted">Filial hozircha faolsiz yaratiladi. Tenant, domen, printer va integratsiyalar tekshirilmaguncha buyurtmalar qabul qilinmaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={branchCreateBusy || !branchCreateCode.trim() || !branchCreateName.trim()}><Plus size={16} />{branchCreateBusy ? "Yaratilmoqda..." : "Filial yaratish"}</button></div></form></div></div>}
+        {tenantCreateOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !tenantCreateBusy) setTenantCreateOpen(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="tenant-create-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="tenant-create-title">Yangi restoran</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => setTenantCreateOpen(false)} disabled={tenantCreateBusy}><X size={20} /></button></div>{tenantCreateError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{tenantCreateError}</div>}<form className="modal-body form-stack" onSubmit={submitTenantCreation}><label>Restoran nomi<input autoFocus value={tenantCreateName} onChange={event => setTenantCreateName(event.target.value)} required minLength={2} maxLength={120} /></label><label>Restoran kodi<input value={tenantCreateCode} onChange={event => setTenantCreateCode(event.target.value)} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="MAZETTO_NORTH" autoCapitalize="characters" autoCorrect="off" /></label><p className="muted">Yaratilgach restoran “Tayyorlanmoqda” holatida qoladi. Domen, filial va integratsiyalar tekshirilmaguncha buyurtmalar yoqilmaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setTenantCreateOpen(false)} disabled={tenantCreateBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={tenantCreateBusy || !tenantCreateCode.trim() || !tenantCreateName.trim()}><Plus size={16} />{tenantCreateBusy ? "Yaratilmoqda..." : "Restoran yaratish"}</button></div></form></div></div>}
+    {modal && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) { setModal(null); setProvisioned(null); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="modal-title">{modal === "create" ? "Monitoring obyektini qo'shish" : modal === "edit" ? "Monitoring obyektini tahrirlash" : modal === "rotate" ? "Agent tokenini yangilash" : "Kuzatuv holati"}</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => { setModal(null); setProvisioned(null); }}><X size={20} /></button></div>{modalError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{modalError}</div>}{provisioned ? <div className="modal-body"><p className="muted">Token faqat shu oynada ko'rinadi. Uni loyiha serveridagi agent sozlamasiga kiriting.</p><label className="token-field">Agent tokeni<code>{provisioned.agentToken}</code></label><button className="button primary full" onClick={async () => { await navigator.clipboard.writeText(provisioned.agentToken); setNotice("Token nusxalandi."); }}><Clipboard size={16} />Nusxalash</button><button className="button subtle full" onClick={() => { setModal(null); setProvisioned(null); }}>Tayyor</button></div> : modal === "create" || modal === "edit" ? <form className="modal-body form-stack" onSubmit={submitSite}><label>Loyiha nomi<input value={name} onChange={event => setName(event.target.value)} required minLength={2} /></label><label>Loyiha kodi<input value={productCode} onChange={event => setProductCode(event.target.value)} required placeholder="MAZETTO_FOOD" /></label><label>Restoran tenanti<select value={tenantId} onChange={event => setTenantId(event.target.value)} disabled={tenantsLoading}><option value="">Tenantga bog‘lanmagan</option>{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name} ({tenant.code})</option>)}</select><small className="report-product">Faqat mavjud tenantga bog‘lanadi; restoran statusi va ilovalari o‘zgarmaydi.</small></label><label>Sayt manzili<input type="url" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} required placeholder="https://restaurant.uz" /></label><label>API holat manzili<input type="url" value={apiHealthUrl} onChange={event => setApiHealthUrl(event.target.value)} required placeholder="https://api.restaurant.uz/health" /></label><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" type="submit" disabled={busy}><Check size={16} />{busy ? "Saqlanmoqda..." : "Saqlash"}</button></div></form> : <div className="modal-body"><p>{modal === "rotate" ? "Eski agent tokeni darhol ishlamay qoladi. Davom etasizmi?" : selected?.isActive ? "Bu monitoring obyekti uchun kuzatuvni to'xtatasizmi?" : "Bu monitoring obyekti uchun kuzatuvni yoqasizmi?"}</p><div className="modal-actions"><button className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" onClick={() => void confirmAction()} disabled={busy}>{busy ? "Bajarilmoqda..." : "Tasdiqlash"}</button></div></div>}</div></div>}
     {passwordModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !passwordBusy) setPasswordModalOpen(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div className="modal-head"><div><p className="eyebrow">HISOB XAVFSIZLIGI</p><h2 id="password-modal-title">Parolni almashtirish</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => setPasswordModalOpen(false)}><X size={20} /></button></div><form className="modal-body form-stack" onSubmit={changeOwnPassword}><label>Joriy parol<input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required /></label><label>Yangi parol<input type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={12} /></label><label>Yangi parolni takrorlang<input type="password" autoComplete="new-password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} required minLength={12} /></label>{passwordError && <p className="form-error" role="alert">{passwordError}</p>}<p className="muted">Kamida 12 ta belgi ishlating. Saqlangandan so'ng sessiyalar tugaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setPasswordModalOpen(false)}>Bekor qilish</button><button className="button primary" type="submit" disabled={passwordBusy}><KeyRound size={16} />{passwordBusy ? "Saqlanmoqda..." : "Parolni saqlash"}</button></div></form></div></div>}
   </div>;
 }
 
-function Metric({ icon, label, value, caption, tone = "normal" }: { icon: ReactNode; label: string; value: number | string; caption: string; tone?: string }) { return <div className="metric"><div className={`metric-icon tone-${tone}`}>{icon}</div><div><span className="metric-label">{label}</span><strong className={typeof value === "string" ? "metric-value-long" : undefined}>{value}</strong><small>{caption}</small></div></div>; }
+function Metric({ icon, label, value, caption, tone = "normal", href }: { icon: ReactNode; label: string; value: number | string; caption: string; tone?: string; href?: string }) {
+  const content = <><span className={"metric-icon tone-" + tone}>{icon}</span><span className="metric-copy"><span className="metric-label">{label}</span><strong className={typeof value === "string" ? "metric-value-long" : undefined}>{value}</strong><small>{caption}</small></span></>;
+  if (!href) return <div className="metric">{content}</div>;
+  return <Link className="metric metric-link" href={href} aria-label={label + ": " + value + ". " + caption + ". Tafsilotlarni ochish"}>{content}<span className="metric-open" aria-hidden="true"><ArrowRight size={16} /></span></Link>;
+}
 function Service({ title, icon, status, value, detail }: { title: string; icon: ReactNode; status: string; value: string; detail: string }) { return <div className="service-item"><div className="service-top"><span className="service-icon">{icon}</span><Status status={status} label={status === "ONLINE" ? "Onlayn" : status === "OFFLINE" ? "Oflayn" : status === "UNKNOWN" ? "Noma'lum" : status === "WAITING" ? "Kutilmoqda" : status === "DEGRADED" ? "Nosozlik" : status === "DISABLED" ? "O'chirilgan" : status} /></div><h3>{title}</h3><strong>{value}</strong><small>{detail}</small></div>; }
 function Skeleton() { return <div className="skeleton" aria-label="Yuklanmoqda"><span /><span /><span /></div>; }
 function GlobalEvents({ events, onAcknowledge, acknowledgingId = "", emptyText = "Hodisalar hali qayd etilmagan." }: { events: GlobalSiteEvent[]; onAcknowledge?: (event: GlobalSiteEvent) => void; acknowledgingId?: string; emptyText?: string }) {

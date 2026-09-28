@@ -12,7 +12,7 @@ function withoutRedis(): NotificationDeadLetterService {
 
 test("yuborilmagan bildirishnoma yozib olinadi", async () => {
   const service = withoutRedis();
-  const entry = await service.record({
+  const entry = await service.record({ tenantId: "tenant-a",
     kind: "staff_new_order",
     orderId: "order-1",
     error: new Error("Telegram 502"),
@@ -25,7 +25,7 @@ test("yuborilmagan bildirishnoma yozib olinadi", async () => {
   assert.equal(entry.attempts, 3);
   assert.ok(entry.messageId, "messageId bo'lishi shart");
 
-  const listed = await service.list();
+  const listed = await service.list("tenant-a");
   assert.equal(listed.length, 1);
   assert.equal(listed[0]?.messageId, entry.messageId);
 });
@@ -38,7 +38,7 @@ test("har yozuvda o'ziga xos messageId", async () => {
   const service = withoutRedis();
   const ids = new Set<string>();
   for (let i = 0; i < 20; i += 1) {
-    const entry = await service.record({
+    const entry = await service.record({ tenantId: "tenant-a",
       kind: "staff_new_order",
       orderId: `order-${i}`,
       error: "xato",
@@ -51,10 +51,10 @@ test("har yozuvda o'ziga xos messageId", async () => {
 
 test("eng yangisi ro'yxat boshida", async () => {
   const service = withoutRedis();
-  await service.record({ kind: "k", orderId: "eski", error: "x", attempts: 1 });
-  await service.record({ kind: "k", orderId: "yangi", error: "x", attempts: 1 });
+  await service.record({ tenantId: "tenant-a", kind: "k", orderId: "eski", error: "x", attempts: 1 });
+  await service.record({ tenantId: "tenant-a", kind: "k", orderId: "yangi", error: "x", attempts: 1 });
 
-  const listed = await service.list();
+  const listed = await service.list("tenant-a");
   assert.equal(listed[0]?.orderId, "yangi");
 });
 
@@ -65,14 +65,14 @@ test("ro'yxat chegaralangan — xotira to'lib ketmaydi", async () => {
    */
   const service = withoutRedis();
   for (let i = 0; i < 600; i += 1) {
-    await service.record({
+    await service.record({ tenantId: "tenant-a",
       kind: "k",
       orderId: `order-${i}`,
       error: "x",
       attempts: 1,
     });
   }
-  const listed = await service.list(500);
+  const listed = await service.list("tenant-a", 500);
   assert.equal(listed.length, 500);
   // Chegara eng ESKISINI tashlaydi, eng yangisini emas.
   assert.equal(listed[0]?.orderId, "order-599");
@@ -80,32 +80,32 @@ test("ro'yxat chegaralangan — xotira to'lib ketmaydi", async () => {
 
 test("take yozuvni olib tashlaydi va ikkinchi marta null qaytaradi", async () => {
   const service = withoutRedis();
-  const entry = await service.record({
+  const entry = await service.record({ tenantId: "tenant-a",
     kind: "staff_new_order",
     orderId: "order-1",
     error: "x",
     attempts: 3,
   });
 
-  assert.equal((await service.take(entry.messageId))?.orderId, "order-1");
-  assert.equal(await service.take(entry.messageId), null);
-  assert.equal((await service.list()).length, 0);
+  assert.equal((await service.take("tenant-a", entry.messageId))?.orderId, "order-1");
+  assert.equal(await service.take("tenant-a", entry.messageId), null);
+  assert.equal((await service.list("tenant-a")).length, 0);
 });
 
 test("noma'lum messageId null beradi", async () => {
   const service = withoutRedis();
-  assert.equal(await service.take("yo'q-bunday-id"), null);
+  assert.equal(await service.take("tenant-a", "yo'q-bunday-id"), null);
 });
 
 test("list chegarasi qiymatni xavfsiz oraliqqa siqadi", async () => {
   const service = withoutRedis();
-  await service.record({ kind: "k", orderId: "a", error: "x", attempts: 1 });
+  await service.record({ tenantId: "tenant-a", kind: "k", orderId: "a", error: "x", attempts: 1 });
 
   // Nol yoki manfiy chegara bo'sh natija bermasligi kerak.
-  assert.equal((await service.list(0)).length, 1);
-  assert.equal((await service.list(-5)).length, 1);
+  assert.equal((await service.list("tenant-a", 0)).length, 1);
+  assert.equal((await service.list("tenant-a", -5)).length, 1);
   // Juda katta so'rov ham chegaradan oshmaydi.
-  assert.ok((await service.list(10_000)).length <= 500);
+  assert.ok((await service.list("tenant-a", 10_000)).length <= 500);
 });
 
 test("Error bo'lmagan xato ham satrga aylanadi", async () => {
@@ -115,11 +115,51 @@ test("Error bo'lmagan xato ham satrga aylanadi", async () => {
    * ikkinchi xato tug'dirardi.
    */
   const service = withoutRedis();
-  const entry = await service.record({
+  const entry = await service.record({ tenantId: "tenant-a",
     kind: "k",
     orderId: "a",
     error: { status: 502 },
     attempts: 1,
   });
   assert.equal(typeof entry.error, "string");
+});
+
+test("Redis dead letters use isolated tenant keys", async () => {
+  const lists = new Map<string, string[]>();
+  const client = {
+    pipeline() {
+      const operations: (() => void)[] = [];
+      return {
+        lpush(key: string, value: string) {
+          operations.push(() => { const rows = lists.get(key) ?? []; rows.unshift(value); lists.set(key, rows); });
+          return this;
+        },
+        ltrim(key: string, start: number, end: number) {
+          operations.push(() => lists.set(key, (lists.get(key) ?? []).slice(start, end + 1)));
+          return this;
+        },
+        async exec() { operations.forEach((operation) => operation()); return []; },
+      };
+    },
+    async lrange(key: string, start: number, end: number) {
+      return (lists.get(key) ?? []).slice(start, end + 1);
+    },
+    async lrem(key: string, count: number, value: string) {
+      const rows = lists.get(key) ?? [];
+      let removed = 0;
+      for (let index = rows.length - 1; index >= 0 && removed < count; index -= 1) {
+        if (rows[index] === value) { rows.splice(index, 1); removed += 1; }
+      }
+      lists.set(key, rows);
+      return removed;
+    },
+  };
+  const service = new NotificationDeadLetterService({ getClient: () => client } as never);
+  const entryA = await service.record({ tenantId: "tenant-a", kind: "staff_new_order", orderId: "order-a", error: "x", attempts: 1 });
+  const entryB = await service.record({ tenantId: "tenant-b", kind: "staff_new_order", orderId: "order-b", error: "x", attempts: 1 });
+  assert.deepEqual([...lists.keys()].sort(), ["notify:dead:tenant-a", "notify:dead:tenant-b"]);
+  assert.equal((await service.list("tenant-a"))[0]?.messageId, entryA.messageId);
+  assert.equal((await service.list("tenant-b"))[0]?.messageId, entryB.messageId);
+  assert.equal(await service.take("tenant-b", entryA.messageId), null);
+  assert.equal((await service.take("tenant-a", entryA.messageId))?.tenantId, "tenant-a");
 });

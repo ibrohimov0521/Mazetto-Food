@@ -136,14 +136,23 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     return this.enqueueMessage(orderId, () => this.sendNewOrder(orderId));
   }
 
-  private async sendNewOrder(orderId: string): Promise<void> {
+  private async sendNewOrder(orderId: string, expectedTenantId?: string): Promise<void> {
+    let tenantId: string | null = null;
     if (!this.isConfigured()) {
       this.logger.warn("Telegram order notifications are disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_STAFF_CHAT_ID is missing");
       return;
     }
 
     try {
-      const order = await this.findOrderForMessage(orderId);
+      tenantId = await this.resolveOrderTenantId(orderId);
+      if (!tenantId) {
+        this.logger.warn(`Telegram notification skipped: order ${orderId} has no tenant branch`);
+        return;
+      }
+      if (expectedTenantId && expectedTenantId !== tenantId) {
+        throw new ForbiddenException("Notification order does not belong to the requested tenant");
+      }
+      const order = await this.findOrderForMessage(orderId, this.prisma, tenantId);
 
       if (!order) {
         this.logger.warn(`Telegram notification skipped: order ${orderId} was not found`);
@@ -165,7 +174,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
        * ENG MUHIM YO'QOTISH: yangi buyurtma xabari yetib bormasa, oshxona
        * buyurtma haqda umuman bilmaydi. Ilgari bu yerda faqat log qolardi.
        */
-      await this.deadLetters.record({
+      if (tenantId) await this.deadLetters.record({
+        tenantId,
         kind: "staff_new_order",
         orderId,
         error,
@@ -181,8 +191,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
    * urinish ham yiqilsa, u ko'rinib turishi kerak. Aks holda "qayta
    * yuborish" tugmasi muammoni yashirib qo'yardi.
    */
-  async retryDeadLetter(messageId: string): Promise<boolean> {
-    const entries = await this.deadLetters.list(500);
+  async retryDeadLetter(tenantId: string, messageId: string): Promise<boolean> {
+    const entries = await this.deadLetters.list(tenantId, 500);
     const entry = entries.find((row) => row.messageId === messageId);
 
     if (!entry) {
@@ -200,8 +210,12 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       return false;
     }
 
+    const activeTenantId = await resolveSoleActiveTenantId(this.prisma);
+    if (activeTenantId !== tenantId) {
+      throw new ForbiddenException("Telegram qayta yuborish tenantiga mos kelmadi");
+    }
     await this.enqueueMessage(entry.orderId, () =>
-      this.sendNewOrder(entry.orderId),
+      this.sendNewOrder(entry.orderId, tenantId),
     );
 
     /*
@@ -210,7 +224,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
      * eskisi olib tashlanadi: agar yana yiqilgan bo'lsa, o'rniga yangi
      * yozuv paydo bo'lgan.
      */
-    await this.deadLetters.take(messageId);
+    await this.deadLetters.take(tenantId, messageId);
     return true;
   }
 
@@ -223,8 +237,11 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       return;
     }
 
+    let tenantId: string | null = null;
     try {
-      const order = await this.findOrderForMessage(event.orderId);
+      tenantId = await this.resolveOrderTenantId(event.orderId);
+      if (!tenantId) return;
+      const order = await this.findOrderForMessage(event.orderId, this.prisma, tenantId);
 
       if (!order || !order.staffTelegramMessageId) {
         return;
@@ -245,7 +262,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      await this.deadLetters.record({
+      if (tenantId) await this.deadLetters.record({
+        tenantId,
         kind: "staff_status_refresh",
         orderId: event.orderId,
         error,
@@ -322,11 +340,24 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     };
   }
 
+  private async resolveOrderTenantId(orderId: string): Promise<string | null> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { branch: { select: { tenantId: true } } },
+    });
+    return order?.branch.tenantId ?? null;
+  }
+
   private async findOrderForMessage(
     orderId: string,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
+    expectedTenantId?: string,
   ): Promise<StaffOrderForMessage | null> {
-    const tenantId = await resolveSoleActiveTenantId(client);
+    const activeTenantId = await resolveSoleActiveTenantId(client);
+    if (expectedTenantId && expectedTenantId !== activeTenantId) {
+      throw new ForbiddenException("Telegram notification tenant context is ambiguous");
+    }
+    const tenantId = expectedTenantId ?? activeTenantId;
     const order = await client.order.findFirst({
       where: { id: orderId, branch: { tenantId } },
       include: {

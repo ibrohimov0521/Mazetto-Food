@@ -66,7 +66,7 @@ assert.match(
 );
 assert.match(
   service,
-  /\.ltrim\(REDIS_KEY, 0, MAX_ENTRIES - 1\)/,
+  /\.ltrim\(REDIS_KEY_PREFIX \+ input\.tenantId, 0, MAX_ENTRIES - 1\)/,
   "Redis ro'yxati LTRIM bilan chegaralanmayapti.",
 );
 /*
@@ -86,19 +86,19 @@ assert.match(
  */
 assert.match(
   service,
-  /\.lrem\(REDIS_KEY, 1, row\)/,
+  /\.lrem\(key, 1, row\)/,
   "O'chirish satr bo'yicha emas — noto'g'ri yozuv o'chishi mumkin.",
 );
 
 // Redis yo'q bo'lsa ham yo'qotish ko'rinishi kerak.
 assert.match(
   service,
-  /private readonly fallback: DeadLetter\[\]/,
+  /private readonly fallback = new Map<string, DeadLetter\[\]>\(\)/,
   "Redis yo'q holatida zaxira ro'yxat yo'q.",
 );
 assert.match(
   service,
-  /this\.fallback\.length = MAX_ENTRIES/,
+  /entries\.length = MAX_ENTRIES/,
   "Zaxira ro'yxat chegaralanmagan.",
 );
 

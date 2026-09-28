@@ -25,9 +25,10 @@ import { RedisService } from "../../redis/redis.service";
 
 /** Redis ro'yxati cheksiz o'smasin. */
 const MAX_ENTRIES = 500;
-const REDIS_KEY = "notify:dead";
+const REDIS_KEY_PREFIX = "notify:dead:";
 
 export type DeadLetter = {
+  tenantId: string;
   /** Idempotency kaliti: qayta yuborishda takror xabar chiqmasligi uchun. */
   messageId: string;
   kind: string;
@@ -44,17 +45,22 @@ export class NotificationDeadLetterService {
    * Redis yo'q bo'lganda ham yo'qotish KO'RINSIN. Chegaralangan: Redis
    * uzoq vaqt tushib turganda xotira to'lib ketmasligi kerak.
    */
-  private readonly fallback: DeadLetter[] = [];
+  private readonly fallback = new Map<string, DeadLetter[]>();
 
   constructor(private readonly redis: RedisService) {}
 
   async record(input: {
+    tenantId: string;
     kind: string;
     orderId: string;
     error: unknown;
     attempts: number;
   }): Promise<DeadLetter> {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(input.tenantId)) {
+      throw new Error("Notification tenant scope is invalid");
+    }
     const entry: DeadLetter = {
+      tenantId: input.tenantId,
       messageId: randomUUID(),
       kind: input.kind,
       orderId: input.orderId,
@@ -77,8 +83,8 @@ export class NotificationDeadLetterService {
          */
         await client
           .pipeline()
-          .lpush(REDIS_KEY, JSON.stringify(entry))
-          .ltrim(REDIS_KEY, 0, MAX_ENTRIES - 1)
+          .lpush(REDIS_KEY_PREFIX + input.tenantId, JSON.stringify(entry))
+          .ltrim(REDIS_KEY_PREFIX + input.tenantId, 0, MAX_ENTRIES - 1)
           .exec();
         return entry;
       } catch (error) {
@@ -90,23 +96,25 @@ export class NotificationDeadLetterService {
       }
     }
 
-    this.fallback.unshift(entry);
-    if (this.fallback.length > MAX_ENTRIES) {
-      this.fallback.length = MAX_ENTRIES;
+    const entries = this.fallbackEntries(input.tenantId);
+    entries.unshift(entry);
+    if (entries.length > MAX_ENTRIES) {
+      entries.length = MAX_ENTRIES;
     }
     return entry;
   }
 
-  async list(limit = 50): Promise<DeadLetter[]> {
+  async list(tenantId: string, limit = 50): Promise<DeadLetter[]> {
     const safeLimit = Math.min(Math.max(limit, 1), MAX_ENTRIES);
+    const key = REDIS_KEY_PREFIX + tenantId;
     const client = this.redis.getClient();
 
     if (client) {
       try {
-        const rows = await client.lrange(REDIS_KEY, 0, safeLimit - 1);
+        const rows = await client.lrange(key, 0, safeLimit - 1);
         return rows
           .map((row) => this.parse(row))
-          .filter((row): row is DeadLetter => row !== null);
+          .filter((row): row is DeadLetter => row !== null && row.tenantId === tenantId);
       } catch (error) {
         this.logger.warn(
           `O'lik xatlarni o'qib bo'lmadi: ${
@@ -116,28 +124,29 @@ export class NotificationDeadLetterService {
       }
     }
 
-    return this.fallback.slice(0, safeLimit);
+    return this.fallbackEntries(tenantId).slice(0, safeLimit);
   }
 
   /**
    * Yozuvni ro'yxatdan olib tashlaydi va qaytaradi.
    * Qayta yuborish MUVAFFAQIYATLI bo'lgandagina chaqiriladi.
    */
-  async take(messageId: string): Promise<DeadLetter | null> {
+  async take(tenantId: string, messageId: string): Promise<DeadLetter | null> {
+    const key = REDIS_KEY_PREFIX + tenantId;
     const client = this.redis.getClient();
 
     if (client) {
       try {
-        const rows = await client.lrange(REDIS_KEY, 0, MAX_ENTRIES - 1);
+        const rows = await client.lrange(key, 0, MAX_ENTRIES - 1);
         for (const row of rows) {
           const entry = this.parse(row);
-          if (entry?.messageId === messageId) {
+          if (entry?.tenantId === tenantId && entry.messageId === messageId) {
             /*
              * `LREM` aynan shu SATRNI o'chiradi, indeks bo'yicha emas:
              * o'qish va o'chirish orasida ro'yxatga yangi yozuv qo'shilsa,
              * indeks siljib, boshqa yozuv o'chib ketardi.
              */
-            await client.lrem(REDIS_KEY, 1, row);
+            await client.lrem(key, 1, row);
             return entry;
           }
         }
@@ -151,11 +160,19 @@ export class NotificationDeadLetterService {
       }
     }
 
-    const index = this.fallback.findIndex(
-      (entry) => entry.messageId === messageId,
-    );
+    const entries = this.fallbackEntries(tenantId);
+    const index = entries.findIndex((entry) => entry.messageId === messageId);
     if (index === -1) return null;
-    return this.fallback.splice(index, 1)[0] ?? null;
+    return entries.splice(index, 1)[0] ?? null;
+  }
+
+  private fallbackEntries(tenantId: string): DeadLetter[] {
+    let entries = this.fallback.get(tenantId);
+    if (!entries) {
+      entries = [];
+      this.fallback.set(tenantId, entries);
+    }
+    return entries;
   }
 
   private parse(row: string): DeadLetter | null {

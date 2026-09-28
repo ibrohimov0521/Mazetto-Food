@@ -180,6 +180,7 @@ export class StaffService {
         dto.isActive,
         telegramUserId,
       );
+      await this.syncTenantMembershipRoles(tx, created.id, roles, branchId, actor.id);
       await this.createAuditLog(tx, actor.id, "STAFF_CREATED", created.id, {
         roleCodes,
         branchId,
@@ -322,6 +323,7 @@ export class StaffService {
         existing.displayName ?? existing.email ?? existing.phone ?? "Staff",
         existing.isActive,
       );
+      await this.syncTenantMembershipRoles(tx, id, roles, branchId, actor.id);
       await this.revokeUserSessions(tx, id);
       await this.createAuditLog(tx, actor.id, "STAFF_ROLE_CHANGED", id, {
         roleCodes,
@@ -659,6 +661,7 @@ export class StaffService {
           input.name,
           input.activate ? true : existing.isActive,
         );
+        await this.syncTenantMembershipRoles(tx, existing.id, [role], branchId, existing.id);
         await this.revokeUserSessions(tx, existing.id);
         await this.createAuditLog(
           tx,
@@ -694,6 +697,7 @@ export class StaffService {
         },
       });
       await this.syncEmployee(tx, created.id, branchId, input.name, true);
+      await this.syncTenantMembershipRoles(tx, created.id, [role], branchId, created.id);
       await this.createAuditLog(
         tx,
         created.id,
@@ -712,6 +716,56 @@ export class StaffService {
 
     await this.invalidateUserAccess(user.id);
     return this.toStaffDto(user);
+  }
+
+  private async syncTenantMembershipRoles(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    roles: { id: string; code: string }[],
+    branchId: string | null,
+    assignedById: string,
+  ): Promise<void> {
+    if (roles.some((role) => isPlatformRoleCode(role.code))) {
+      throw new ForbiddenException("Platform roles cannot be assigned to restaurant memberships");
+    }
+
+    const branch = branchId
+      ? await tx.branch.findUnique({
+          where: { id: branchId },
+          select: { tenantId: true },
+        })
+      : null;
+    if (branchId && !branch) throw new NotFoundException("Branch not found");
+    const tenantId = branch?.tenantId ?? await resolveSoleActiveTenantId(tx);
+
+    let membership = await tx.tenantMembership.findUnique({
+      where: { tenantId_userId: { tenantId, userId } },
+      select: { id: true },
+    });
+    if (!membership) {
+      membership = await tx.tenantMembership.create({
+        data: { tenantId, userId, branchId, status: "ACTIVE" },
+        select: { id: true },
+      });
+    } else {
+      await tx.tenantMembership.update({
+        where: { id: membership.id },
+        data: { branchId },
+      });
+    }
+
+    await tx.tenantMembershipRole.deleteMany({
+      where: { membershipId: membership.id },
+    });
+    if (roles.length) {
+      await tx.tenantMembershipRole.createMany({
+        data: roles.map((role) => ({
+          membershipId: membership!.id,
+          roleId: role.id,
+          assignedById,
+        })),
+      });
+    }
   }
 
   private async invalidateUserAccess(userId: string): Promise<void> {

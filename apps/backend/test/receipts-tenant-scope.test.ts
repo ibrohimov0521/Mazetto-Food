@@ -76,3 +76,61 @@ test("foreign receipt detail and bulk delete preflight return not found", async 
   });
   assert.equal(transactionStarted, false);
 });
+
+test("foreign receipt cannot be reprinted by a global actor", async () => {
+  let receiptWhere: unknown;
+  let transactionStarted = false;
+  const service = new ReceiptsService({
+    ...activeTenant,
+    receipt: {
+      findUnique: async () => ({ id: "receipt-b", branchId: "branch-b", content: null }),
+      findFirst: async (args: { where: unknown }) => {
+        receiptWhere = args.where;
+        return null;
+      },
+    },
+    $transaction: async (callback: (tx: object) => Promise<unknown>) => {
+      transactionStarted = true;
+      return callback({
+        printer: { findMany: async () => [] },
+        printJob: { create: async () => ({ id: "print-job-b" }) },
+        receipt: { update: async () => ({ id: "receipt-b" }) },
+      });
+    },
+  } as never);
+
+  await assert.rejects(service.reprintReceipt("receipt-b", owner), /Receipt not found/);
+  assert.deepEqual(receiptWhere, {
+    id: "receipt-b",
+    branch: { tenantId: "tenant-a" },
+  });
+  assert.equal(transactionStarted, false);
+});
+test("reprint aborts before queueing if the tenant-scoped receipt update loses its scope", async () => {
+  let receiptLookup: unknown;
+  let updateWhere: unknown;
+  let printerLookup = false;
+  const service = new ReceiptsService({
+    ...activeTenant,
+    receipt: {
+      findFirst: async (args: { where: unknown }) => {
+        receiptLookup = args.where;
+        return { id: "receipt-a", branchId: "branch-a", content: null };
+      },
+    },
+    $transaction: async (callback: (tx: object) => Promise<unknown>) => callback({
+      receipt: {
+        updateMany: async (args: { where: unknown }) => {
+          updateWhere = args.where;
+          return { count: 0 };
+        },
+      },
+      printer: { findMany: async () => { printerLookup = true; return []; } },
+    }),
+  } as never);
+
+  await assert.rejects(service.reprintReceipt("receipt-a", owner), /Receipt not found/);
+  assert.deepEqual(receiptLookup, { id: "receipt-a", branch: { tenantId: "tenant-a" } });
+  assert.deepEqual(updateWhere, { id: "receipt-a", branchId: "branch-a", branch: { tenantId: "tenant-a" } });
+  assert.equal(printerLookup, false);
+});

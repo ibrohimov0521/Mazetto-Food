@@ -1,9 +1,18 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
-import { hasRestaurantGlobalScope } from "../../common/auth/access-scope";
+import {
+  hasOnlyPlatformRoles,
+  hasRestaurantGlobalScope,
+} from "../../common/auth/access-scope";
+import { TenantRequestContextService } from "../../common/tenant/tenant-request-context.service";
+import { TenantMembershipAuthService } from "./tenant-membership-auth.service";
 import {
   getJwtAccessExpiresIn,
   getJwtAccessSecret,
@@ -11,7 +20,11 @@ import {
   getJwtRefreshSecret,
 } from "../../config/auth.config";
 import { normalizeCustomerPhone } from "../customers/customer-phone";
-import type { AuthResponse, AuthTokens, RefreshTokenPayload } from "./auth.types";
+import type {
+  AuthResponse,
+  AuthTokens,
+  RefreshTokenPayload,
+} from "./auth.types";
 import type { LoginDto } from "./dto/login.dto";
 import { LoginThrottleService } from "./login-throttle.service";
 
@@ -20,7 +33,11 @@ type UserWithAuthRelations = {
   email: string | null;
   phone: string | null;
   credentialVersion: number;
-  employee: { id: string; branchId: string } | null;
+  employee: {
+    id: string;
+    branchId: string;
+    branch: { tenantId: string };
+  } | null;
   roles: {
     role: {
       code: string;
@@ -36,9 +53,21 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly loginThrottle: LoginThrottleService,
+    private readonly tenantMembershipAuth: TenantMembershipAuthService,
+    private readonly tenantRequestContext: TenantRequestContextService,
   ) {}
 
-  async login(dto: LoginDto, clientAddress = "unknown"): Promise<AuthResponse> {
+  async login(
+    dto: LoginDto,
+    clientAddress = "unknown",
+    rawHost?: string,
+  ): Promise<AuthResponse> {
+    const tenantContext = await this.tenantRequestContext.resolve(rawHost);
+    if (tenantContext.kind === "BLOCKED") {
+      throw new ForbiddenException(
+        "Bu domen faol va tasdiqlangan restoranga tegishli emas.",
+      );
+    }
     const identifier = this.normalizeIdentifier(dto.identifier);
 
     await this.loginThrottle.assertAllowed(identifier, clientAddress);
@@ -56,15 +85,36 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const passwordMatches = await compare(dto.password, userRecord.passwordHash);
+    const passwordMatches = await compare(
+      dto.password,
+      userRecord.passwordHash,
+    );
 
     if (!passwordMatches) {
       await this.loginThrottle.registerFailure(identifier, clientAddress);
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const user = this.toAuthenticatedUser(userRecord);
+    const user =
+      tenantContext.kind === "TRUSTED"
+        ? await this.tenantMembershipAuth.resolve(
+            userRecord.id,
+            tenantContext.tenantId,
+          )
+        : this.toAuthenticatedUser(userRecord);
+    if (!user) {
+      await this.loginThrottle.registerFailure(identifier, clientAddress);
+      throw new UnauthorizedException("Invalid credentials");
+    }
 
+    if (
+      tenantContext.kind === "UNREGISTERED" &&
+      !hasOnlyPlatformRoles(user.roles)
+    ) {
+      throw new ForbiddenException(
+        "Restoran xodimlari faqat tasdiqlangan restoran domenidan kirishi mumkin.",
+      );
+    }
     await this.loginThrottle.clear(identifier, clientAddress);
 
     await this.prisma.user.update({
@@ -78,7 +128,13 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string): Promise<AuthResponse> {
+  async refresh(refreshToken: string, rawHost?: string): Promise<AuthResponse> {
+    const tenantContext = await this.tenantRequestContext.resolve(rawHost);
+    if (tenantContext.kind === "BLOCKED") {
+      throw new ForbiddenException(
+        "Bu domen faol va tasdiqlangan restoranga tegishli emas.",
+      );
+    }
     const payload = await this.verifyRefreshToken(refreshToken);
     const session = await this.prisma.session.findFirst({
       where: {
@@ -91,6 +147,26 @@ export class AuthService {
 
     if (!session) {
       throw new UnauthorizedException("Invalid or expired refresh token");
+    }
+
+    const hasTenantBinding = Boolean(payload.tenantId && payload.membershipId);
+    if (Boolean(payload.tenantId) !== Boolean(payload.membershipId)) {
+      throw new UnauthorizedException("Invalid tenant-bound refresh token");
+    }
+    if (hasTenantBinding) {
+      if (
+        tenantContext.kind !== "TRUSTED" ||
+        tenantContext.tenantId !== payload.tenantId ||
+        session.membershipId !== payload.membershipId
+      ) {
+        throw new ForbiddenException(
+          "Refresh token boshqa restoran yoki domen uchun berilgan.",
+        );
+      }
+    } else if (tenantContext.kind === "TRUSTED" || session.membershipId) {
+      throw new ForbiddenException(
+        "Bu domen uchun qayta kirish talab qilinadi.",
+      );
     }
 
     const tokenMatches = await compare(refreshToken, session.refreshTokenHash);
@@ -112,7 +188,23 @@ export class AuthService {
       throw new UnauthorizedException("User is not active");
     }
 
-    const user = this.toAuthenticatedUser(userRecord);
+    const user = hasTenantBinding
+      ? await this.tenantMembershipAuth.resolve(
+          userRecord.id,
+          payload.tenantId!,
+          payload.membershipId!,
+        )
+      : this.toAuthenticatedUser(userRecord);
+    if (!user)
+      throw new UnauthorizedException("Tenant membership is no longer active");
+    if (
+      tenantContext.kind === "UNREGISTERED" &&
+      !hasOnlyPlatformRoles(user.roles)
+    ) {
+      throw new ForbiddenException(
+        "Restoran xodimlari faqat tasdiqlangan restoran domenidan kirishi mumkin.",
+      );
+    }
 
     return {
       user,
@@ -151,6 +243,7 @@ export class AuthService {
         await this.prisma.session.create({
           data: {
             userId: user.id,
+            membershipId: user.membershipId ?? null,
             refreshTokenHash: "pending",
             expiresAt: this.getRefreshExpiresAt(),
           },
@@ -177,6 +270,7 @@ export class AuthService {
     await this.prisma.session.update({
       where: { id: sessionId },
       data: {
+        membershipId: user.membershipId ?? null,
         refreshTokenHash: await hash(refreshToken, 12),
         expiresAt: this.getRefreshExpiresAt(),
         revokedAt: null,
@@ -190,11 +284,16 @@ export class AuthService {
     };
   }
 
-  private async verifyRefreshToken(refreshToken: string): Promise<RefreshTokenPayload> {
+  private async verifyRefreshToken(
+    refreshToken: string,
+  ): Promise<RefreshTokenPayload> {
     try {
-      const payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(refreshToken, {
-        secret: getJwtRefreshSecret(),
-      });
+      const payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
+        refreshToken,
+        {
+          secret: getJwtRefreshSecret(),
+        },
+      );
 
       if (payload.tokenUse !== "refresh") {
         throw new UnauthorizedException("Invalid refresh token");
@@ -206,25 +305,36 @@ export class AuthService {
     }
   }
 
-
   private toAuthenticatedUser(user: UserWithAuthRelations): AuthenticatedUser {
     return {
       id: user.id,
       ...(user.email ? { email: user.email } : {}),
       ...(user.phone ? { phone: user.phone } : {}),
       credentialVersion: user.credentialVersion,
-      ...(user.employee ? { employeeId: user.employee.id, branchId: user.employee.branchId } : {}),
-      isGlobalScope: hasRestaurantGlobalScope(user.roles.map(({ role }) => role)),
+      ...(user.employee
+        ? { employeeId: user.employee.id, branchId: user.employee.branchId }
+        : {}),
+      isGlobalScope: hasRestaurantGlobalScope(
+        user.roles.map(({ role }) => role),
+      ),
       roles: user.roles.map((userRole) => userRole.role.code),
       permissions: user.roles.flatMap((userRole) =>
-        userRole.role.permissions.map((rolePermission) => rolePermission.permission.code),
+        userRole.role.permissions.map(
+          (rolePermission) => rolePermission.permission.code,
+        ),
       ),
     };
   }
 
   private userAuthInclude() {
     return {
-      employee: true,
+      employee: {
+        select: {
+          id: true,
+          branchId: true,
+          branch: { select: { tenantId: true } },
+        },
+      },
       roles: {
         where: {
           role: {
@@ -264,4 +374,3 @@ export class AuthService {
     return new Date(Date.now() + getJwtRefreshExpiresIn() * 1000);
   }
 }
-

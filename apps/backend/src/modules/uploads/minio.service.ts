@@ -121,13 +121,17 @@ export class MinioService implements OnModuleInit {
   async uploadImage(
     file: { buffer: Buffer; mimetype: string; size: number },
     folder: string,
+    tenantId: string,
   ): Promise<{ url: string; objectName: string }> {
     const extension = EXTENSION_BY_MIME[file.mimetype];
     if (!extension) {
       throw new ServiceUnavailableException("Qo'llab-quvvatlanmaydigan rasm turi");
     }
 
-    const objectName = folder + "/" + randomUUID() + "." + extension;
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(tenantId)) {
+      throw new ServiceUnavailableException("Tenant media scope is invalid");
+    }
+    const objectName = "tenants/" + tenantId + "/" + folder + "/" + randomUUID() + "." + extension;
 
     if (this.client) {
       try {

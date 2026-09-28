@@ -29,6 +29,31 @@ export async function resolveRestaurantTenantId(
   database: TenantScopeDatabase,
   actor: AuthenticatedUser,
 ): Promise<string> {
+  if (Boolean(actor.tenantId) !== Boolean(actor.membershipId)) {
+    throw new ForbiddenException("Tenant membership context is incomplete");
+  }
+
+  if (actor.tenantId) {
+    const tenant = await database.restaurantTenant.findFirst({
+      where: { id: actor.tenantId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!tenant) {
+      throw new ForbiddenException("Authenticated tenant is not active");
+    }
+    if (actor.branchId) {
+      const branch = await database.branch.findFirst({
+        where: { id: actor.branchId, tenantId: tenant.id },
+        select: { id: true },
+      });
+      if (!branch) {
+        throw new ForbiddenException("Actor branch does not belong to the authenticated tenant");
+      }
+    }
+    resolveBranchScope(actor);
+    return tenant.id;
+  }
+
   if (actor.branchId) {
     const branch = await database.branch.findUnique({
       where: { id: actor.branchId },

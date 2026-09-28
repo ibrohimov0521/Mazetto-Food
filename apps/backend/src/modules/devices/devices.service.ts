@@ -129,6 +129,32 @@ export class DevicesService {
     const enrolledAt = new Date();
     const deviceToken = randomBytes(32).toString("base64url");
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Consume the short-lived code with a compare-and-set so parallel
+      // enrollment requests cannot both receive valid device credentials.
+      const claimed = await tx.device.updateMany({
+        where: {
+          id: device.id,
+          isActive: true,
+          branch: { tenantId },
+          enrollmentCodeHash: hashEnrollmentCode(dto.enrollmentCode),
+          enrollmentExpiresAt: { gte: enrolledAt },
+          enrolledAt: null,
+        },
+        data: {
+          deviceAuthTokenHash: hashDeviceToken(deviceToken),
+          enrolledAt,
+          enrollmentCodeHash: null,
+          enrollmentExpiresAt: null,
+          lastSeenAt: enrolledAt,
+          ...(dto.softwareVersion?.trim()
+            ? { softwareVersion: dto.softwareVersion.trim().slice(0, 80) }
+            : {}),
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException("Enrollment code is invalid or expired");
+      }
+
       // A one-time code explicitly authorizes moving this physical computer
       // to the selected admin device slot; historical records remain intact.
       await tx.device.updateMany({
@@ -141,17 +167,7 @@ export class DevicesService {
       });
       return tx.device.update({
         where: { id: device.id },
-        data: {
-          hardwareId: deviceId,
-          deviceAuthTokenHash: hashDeviceToken(deviceToken),
-          enrolledAt,
-          enrollmentCodeHash: null,
-          enrollmentExpiresAt: null,
-          lastSeenAt: enrolledAt,
-          ...(dto.softwareVersion?.trim()
-            ? { softwareVersion: dto.softwareVersion.trim().slice(0, 80) }
-            : {}),
-        },
+        data: { hardwareId: deviceId },
         select: {
           id: true,
           branchId: true,

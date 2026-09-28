@@ -19,7 +19,13 @@ function createGuard(options: {
   } | null;
 }) {
   return new JwtAuthGuard(
-    { verifyAsync: async () => ({ id: options.user.id }) } as never,
+    {
+      verifyAsync: async () => ({
+        id: options.user.id,
+        tenantId: "tenant-a",
+        membershipId: "membership-a",
+      }),
+    } as never,
     { getAllAndOverride: () => false } as never,
     {
       device: {
@@ -27,6 +33,20 @@ function createGuard(options: {
       },
     } as never,
     { read: async () => options.user, write: async () => undefined } as never,
+    {
+      resolve: async () => ({
+        kind: "TRUSTED",
+        hostname: "mazetto-a.test",
+        tenantId: "tenant-a",
+      }),
+    } as never,
+    {
+      resolve: async (
+        userId: string,
+        tenantId: string,
+        membershipId: string,
+      ) => ({ ...options.user, id: userId, tenantId, membershipId }),
+    } as never,
   );
 }
 
@@ -39,9 +59,7 @@ function context(input: {
     path: input.path ?? "/api/v1/orders",
     headers: {
       authorization: "Bearer valid-token",
-      ...(input.deviceId
-        ? { "x-mazetto-device-id": input.deviceId }
-        : {}),
+      ...(input.deviceId ? { "x-mazetto-device-id": input.deviceId } : {}),
       ...(input.deviceToken
         ? { "x-mazetto-device-token": input.deviceToken }
         : {}),

@@ -8,6 +8,7 @@ import {
 import type { Server, Socket } from "socket.io";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
+import { TenantRequestContextService } from "../../common/tenant/tenant-request-context.service";
 import type { AuthenticatedCustomer } from "../../common/types/authenticated-customer";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -16,6 +17,7 @@ import {
 } from "../../config/auth.config";
 import { resolveAllowedOrigins } from "../../config/cors.config";
 import { PrismaService } from "../../prisma/prisma.service";
+import { TenantMembershipAuthService } from "../auth/tenant-membership-auth.service";
 
 @Injectable()
 @WebSocketGateway({
@@ -30,6 +32,8 @@ export class KitchenGateway implements OnGatewayConnection {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly tenantRequestContext: TenantRequestContextService,
+    private readonly tenantMembershipAuth: TenantMembershipAuthService,
   ) {}
 
   @WebSocketServer()
@@ -48,7 +52,9 @@ export class KitchenGateway implements OnGatewayConnection {
     if (auth.kind === "customer") {
       await client.join(this.customerSessionRoom(auth.sessionId));
       const token = this.extractToken(client);
-      const revalidated = token ? await this.authenticateCustomer(token) : null;
+      const revalidated = token
+        ? await this.authenticateCustomer(token, this.socketHost(client))
+        : null;
       if (
         !revalidated ||
         revalidated.kind !== "customer" ||
@@ -69,7 +75,9 @@ export class KitchenGateway implements OnGatewayConnection {
     if (auth.kind === "staff") {
       await client.join(this.staffUserRoom(auth.userId));
       const token = this.extractToken(client);
-      const revalidated = token ? await this.authenticateStaff(token) : null;
+      const revalidated = token
+        ? await this.authenticateStaff(token, this.socketHost(client))
+        : null;
       if (
         !revalidated ||
         revalidated.kind !== "staff" ||
@@ -136,6 +144,7 @@ export class KitchenGateway implements OnGatewayConnection {
     client: Socket,
   ): Promise<RealtimeAuth | null> {
     const token = this.extractToken(client);
+    const rawHost = this.socketHost(client);
 
     if (!token) {
       return null;
@@ -147,16 +156,22 @@ export class KitchenGateway implements OnGatewayConnection {
         : undefined;
 
     if (tokenType === "customer") {
-      return this.authenticateCustomer(token);
+      return this.authenticateCustomer(token, rawHost);
     }
 
     if (tokenType === "staff") {
-      return this.authenticateStaff(token);
+      return this.authenticateStaff(token, rawHost);
     }
 
     return (
-      (await this.authenticateStaff(token)) ?? this.authenticateCustomer(token)
+      (await this.authenticateStaff(token, rawHost)) ??
+      this.authenticateCustomer(token, rawHost)
     );
+  }
+
+  private socketHost(client: Socket): string | undefined {
+    const host = client.handshake.headers.host;
+    return typeof host === "string" ? host : undefined;
   }
 
   private extractToken(client: Socket): string | null {
@@ -183,8 +198,14 @@ export class KitchenGateway implements OnGatewayConnection {
 
   private async authenticateCustomer(
     token: string,
+    rawHost?: string,
   ): Promise<RealtimeAuth | null> {
     try {
+      const tenantContext = await this.tenantRequestContext
+        .resolve(rawHost)
+        .catch(() => null);
+      if (!tenantContext || tenantContext.kind === "BLOCKED") return null;
+
       const payload = await this.jwtService.verifyAsync<
         AuthenticatedCustomer & { exp?: number }
       >(token, {
@@ -222,9 +243,16 @@ export class KitchenGateway implements OnGatewayConnection {
     }
   }
 
-  private async authenticateStaff(token: string): Promise<RealtimeAuth | null> {
-    let payload: AuthenticatedUser & { exp?: number };
+  private async authenticateStaff(
+    token: string,
+    rawHost?: string,
+  ): Promise<RealtimeAuth | null> {
+    const tenantContext = await this.tenantRequestContext
+      .resolve(rawHost)
+      .catch(() => null);
+    if (!tenantContext || tenantContext.kind !== "TRUSTED") return null;
 
+    let payload: AuthenticatedUser & { exp?: number };
     try {
       payload = await this.jwtService.verifyAsync<AuthenticatedUser>(token, {
         secret: getJwtAccessSecret(),
@@ -234,8 +262,24 @@ export class KitchenGateway implements OnGatewayConnection {
     }
 
     if (typeof payload.exp !== "number") return null;
+    if (
+      !payload.tenantId ||
+      !payload.membershipId ||
+      tenantContext.tenantId !== payload.tenantId
+    ) {
+      return null;
+    }
 
-    const user = await this.resolveStaffUser(payload.id);
+    let user: AuthenticatedUser | null;
+    try {
+      user = await this.tenantMembershipAuth.resolve(
+        payload.id,
+        payload.tenantId,
+        payload.membershipId,
+      );
+    } catch {
+      return null;
+    }
 
     if (
       !user ||
@@ -245,13 +289,7 @@ export class KitchenGateway implements OnGatewayConnection {
       return null;
     }
 
-    const hasPlatformRole = user.roles.some((role) =>
-      role.startsWith("PLATFORM_"),
-    );
-    const global =
-      !hasPlatformRole &&
-      (user.roles.includes("SUPER_ADMIN") ||
-        user.permissions.includes(PERMISSIONS.ALL));
+    const global = Boolean(user.isGlobalScope);
 
     if (global) {
       try {
@@ -267,63 +305,6 @@ export class KitchenGateway implements OnGatewayConnection {
       global,
       expiresAt: payload.exp * 1000,
       ...(user.branchId ? { branchId: user.branchId } : {}),
-    };
-  }
-
-  private async resolveStaffUser(
-    userId: string,
-  ): Promise<AuthenticatedUser | null> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        phone: true,
-        credentialVersion: true,
-        isActive: true,
-        employee: {
-          select: {
-            id: true,
-            branchId: true,
-            status: true,
-          },
-        },
-        roles: {
-          where: { role: { isActive: true } },
-          select: {
-            role: {
-              select: {
-                code: true,
-                permissions: {
-                  select: {
-                    permission: { select: { code: true } },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!user?.isActive) {
-      return null;
-    }
-
-    return {
-      id: user.id,
-      ...(user.email ? { email: user.email } : {}),
-      ...(user.phone ? { phone: user.phone } : {}),
-      credentialVersion: user.credentialVersion,
-      ...(user.employee?.status === "ACTIVE"
-        ? { employeeId: user.employee.id, branchId: user.employee.branchId }
-        : {}),
-      roles: user.roles.map((userRole) => userRole.role.code),
-      permissions: user.roles.flatMap((userRole) =>
-        userRole.role.permissions.map(
-          (rolePermission) => rolePermission.permission.code,
-        ),
-      ),
     };
   }
 
