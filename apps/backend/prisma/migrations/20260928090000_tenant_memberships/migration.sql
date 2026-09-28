@@ -53,19 +53,27 @@ ALTER TABLE "sessions"
   ADD CONSTRAINT "sessions_membershipId_fkey"
   FOREIGN KEY ("membershipId") REFERENCES "tenant_memberships"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
-WITH eligible_memberships AS (
+WITH eligible_membership_candidates AS (
     SELECT DISTINCT b."tenantId", e."userId", b."id" AS "branchId"
     FROM "employees" e
     JOIN "branches" b ON b."id" = e."branchId"
     JOIN "restaurant_tenants" t ON t."id" = b."tenantId"
     WHERE e."userId" IS NOT NULL AND t."status" = 'ACTIVE'
-    UNION
+    UNION ALL
     SELECT DISTINCT t."id", ur."userId", NULL::TEXT AS "branchId"
     FROM "user_roles" ur
     JOIN "roles" r ON r."id" = ur."roleId"
     JOIN "restaurant_tenants" t ON t."status" = 'ACTIVE'
     WHERE LEFT(r."code", 9) <> 'PLATFORM_'
       AND (SELECT COUNT(*) FROM "restaurant_tenants" active_tenant WHERE active_tenant."status" = 'ACTIVE') = 1
+),
+eligible_memberships AS (
+    SELECT
+        "tenantId",
+        "userId",
+        MIN("branchId") FILTER (WHERE "branchId" IS NOT NULL) AS "branchId"
+    FROM eligible_membership_candidates
+    GROUP BY "tenantId", "userId"
 )
 INSERT INTO "tenant_memberships" ("id", "tenantId", "userId", "branchId", "status", "createdAt", "updatedAt")
 SELECT
