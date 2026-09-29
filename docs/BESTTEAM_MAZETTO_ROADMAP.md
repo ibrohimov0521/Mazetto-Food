@@ -215,8 +215,10 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 ## 17. Release smoke ishonchliligi (2026-09-29)
 
 - Release smoke qayta urinish bug'i tuzatildi: har so'rovga yangidan timeout signal beriladi; vaqtinchalik ulanish va HTTP xatolarida 3 martagacha progressiv kutish bilan qayta urinadi. Regression testlar timeout retry, vaqtinchalik HTTP javoblari va caller abortini tekshiradi.
-- Media katalog smoke'i parallel so'rovlarini kamaytirgandan keyin production read-only smoke 24/24 o'tdi; barcha 78 katalog rasmi ham javob berdi.
-- Production backup /mnt/storage/backups/mazetto/postgres/mazetto-20260929-153404157.dump ajratilgan vaqtinchalik Postgres'ga tiklandi. Ikki pending migration clone'da qo'llanib, keyin backup qayta tiklanganda schema/data va migration holati boshlang'ichiga tengligi tasdiqlandi.
-- Bu mashq production migration yoki production restore emas: production database va servislar o'zgarmagan, ikkinchi restoran PROVISIONING holatida.
-- Hali alohida staging app/API/DB stack yo'q. Durable queue/worker, restaurant bot mapping, media/realtime va export oqimlarining staging A/B dalillari talab qilinadi.
-- PR #104 ochiq; ushbu smoke tuzatishi push qilingach hosted verify qayta o'tishi shart. Production reliz uchun main branch'dagi CI, yangi backup, production migration, backend va zarur app deploylari, so'ng post-release smoke talab qilinadi.
+- Full CI: 7 workspace package typecheck/lint/test/build o'tdi; backend 455/455, retry regressiya testlari 3/3, operatsion validatorlar 33/33. Main commit e6cfa40 uchun GitHub verify yashil.
+- Fresh production backup /mnt/storage/backups/mazetto/postgres/mazetto-20260929-163512751.dump (411283 bayt) yaratilib, pg_restore --list bilan tekshirildi. Alohida vaqtinchalik Postgres'da backup restore, ikki migration deploy va original holatga restore mashqi oldin o'tgan.
+- Production'da customer tenant isolation va tenant settings migrationlari qo'llandi; backend deploy muvaffaqiyatli. Joriy backend schema 53/53 migration up-to-date.
+- Release gate backend'ni yagona o'zgargan ilova deb topdi. Post-deploy read-only smoke 24/24, barcha 78 media rasmi bilan o'tdi. Asosiy jadval sonlari backup rehearsal bilan mos; 1 ACTIVE tenant, ikkinchisi PROVISIONING.
+- Telegram customer bot tekshirildi. Staff bot webhook'ning oxirgi saqlangan xatosi 2026-09-22 22:20 UTC dagi HTTP 500, pending_update_count=0; webhook o'zgartirilmadi. Staff Telegram UX uchun real foydalanuvchi bilan qo'lda tasdiq hali kerak.
+- Production tag e6cfa40'ga ko'chirildi; PR #104 merge qilingan.
+- Hali alohida staging app/API/DB stack yo'q. Keyingi bosqich: ajratilgan staging muhitini tayyorlash, tenant A/B queue/worker, bot mapping, media/realtime, device/export oqimlarini tekshirish va rollback mashqi. Shu dalillarsiz ikkinchi restoran faollashtirilmaydi.
