@@ -849,7 +849,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
               <button className="button primary" type="submit" disabled={domainBusy || !domainHostname.trim()}><Plus size={16} />{domainBusy ? "Ishlanmoqda..." : "Domen qo‘shish"}</button>
             </form>
             {domainChallenge?.tenantId === domainTenant.id && <div className="tenant-domain-challenge" role="status">
-              <div><strong>DNS TXT yozuvi · {domainChallenge.hostname}</strong><span>Name: <code>{domainChallenge.name}</code></span><code className="tenant-domain-token">{domainChallenge.value}</code><small>Qiymat faqat shu oynada ko‘rinadi. Uni xavfsiz joyga yozib oling; yo‘qolsa, yangi challenge yarating.</small></div>
+              <div><strong>DNS TXT yozuvi · {domainChallenge.hostname}</strong><span>Name: <code>{domainChallenge.name}</code></span><code className="tenant-domain-token">{domainChallenge.value}</code><small>Domen sizga tegishli ekanini tasdiqlash kodi. U trafikni o‘zi yo‘naltirmaydi.</small><small>Cloudflare’da {domainChallenge.hostname} zonasini oching → DNS → Add record. Type: TXT, Name: yuqoridagi Name, Content: kod. Saqlang, DNS tarqalgach “DNS tekshirish”ni bosing. Bu kod Dokploy’ga kiritilmaydi.</small><small>Qiymat faqat shu oynada ko‘rinadi. Yo‘qolsa, yangi TXT kodi yarating.</small></div>
               <button className="button subtle" type="button" onClick={() => void copyDomainChallenge()}><Clipboard size={15} />Nusxalash</button>
             </div>}
             {domainTenant.domains.length ? <div className="table-wrap"><table><thead><tr><th>Domen</th><th>Holat</th><th>Tasdiqlangan</th><th>Amallar</th></tr></thead><tbody>{domainTenant.domains.map(domain => <tr key={domain.id}>
