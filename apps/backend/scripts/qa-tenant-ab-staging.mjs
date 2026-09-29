@@ -52,7 +52,7 @@ async function request(
   path,
   { host, method = "GET", body, headers = {} } = {},
 ) {
-  const url = new URL(path, API_BASE);
+  const url = new URL(path.replace(/^\/+/, ""), API_BASE + "/");
   const requestHeaders = { ...headers };
   if (body !== undefined) requestHeaders["Content-Type"] = "application/json";
 
