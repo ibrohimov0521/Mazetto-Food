@@ -141,6 +141,34 @@ async function assertRejectedScenario(scenario: Scenario, expectedError: RegExp)
   await assertNoCustomerTenantColumn(schema);
 }
 
+async function assertSettingsMigrationFailsClosed(
+  secondTenantActive: boolean,
+  zeroActiveTenants = false,
+): Promise<void> {
+  const schema = await createLegacySchema({ secondTenantActive });
+  if (zeroActiveTenants) {
+    await client.query("UPDATE restaurant_tenants SET status = 'PROVISIONING'");
+  }
+
+  const expectedCount = zeroActiveTenants ? 0 : 2;
+  await assert.rejects(
+    client.query(settingsMigrationSql),
+    new RegExp(`requires exactly one ACTIVE restaurant; found ${expectedCount}`),
+  );
+  await client.query("ROLLBACK");
+
+  const tenantColumn = await client.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema = $1 AND table_name = 'settings' AND column_name = 'tenantId'`,
+    [schema],
+  );
+  assert.equal(tenantColumn.rowCount, 0, "Rejected settings migration must leave the legacy schema intact");
+  const settings = await client.query('SELECT key, value, "isPublic" FROM settings ORDER BY key');
+  assert.deepEqual(settings.rows, [
+    { key: "customer_delivery_fee", value: "2300", isPublic: true },
+  ], "Rejected settings migration must preserve existing settings");
+}
+
 try {
   await createLegacySchema({});
   await client.query(migrationSql);
@@ -209,9 +237,11 @@ try {
     { mismatchedChallengePhone: true },
     /challenge phone does not match its linked customer/,
   );
+  await assertSettingsMigrationFailsClosed(true);
+  await assertSettingsMigrationFailsClosed(false, true);
 
   console.log(
-    "Customer tenant migration QA passed: legacy backfill, tenant-local identity uniqueness, foreign keys, and all fail-closed preflight gates.",
+    "Customer and settings tenant migration QA passed: legacy backfill, tenant-local identity uniqueness, foreign keys, and all fail-closed preflight gates.",
   );
 } finally {
   await client.query("SET search_path TO public").catch(() => undefined);
