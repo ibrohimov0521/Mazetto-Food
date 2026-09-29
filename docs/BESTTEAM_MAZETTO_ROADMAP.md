@@ -211,3 +211,12 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Server inventory'da production servislar va doimiy `mazetto-dev-postgres` bor, lekin alohida staging app/API/DB aniqlanmadi. Dev bazasi staging o'rnida ishlatilmaydi.
 - Bu kod va disposable local DB QA; production migration qo'llanmagan va ikkinchi restoran faollashtirilmagan. PR #104 hosted verify hali merge'dan oldin yashil bo'lishi shart.
 - Keyingi release bosqichi: alohida staging stack tayyorlash, productionga o'xshash ma'lumot bilan settings/customer backfill, backup/restore va rollback mashqi, domenlar bo'yicha login smoke-test. Shu darvozalar va release tasdig'isiz production migrate/deploy qilinmaydi; A/B auditda qolgan queue/worker, alohida Telegram bot, media/realtime va export oqimlari ham tekshiriladi.
+
+## 17. Release smoke ishonchliligi (2026-09-29)
+
+- Release smoke qayta urinish bug'i tuzatildi: har so'rovga yangidan timeout signal beriladi; vaqtinchalik ulanish va HTTP xatolarida 3 martagacha progressiv kutish bilan qayta urinadi. Regression testlar timeout retry, vaqtinchalik HTTP javoblari va caller abortini tekshiradi.
+- Media katalog smoke'i parallel so'rovlarini kamaytirgandan keyin production read-only smoke 24/24 o'tdi; barcha 78 katalog rasmi ham javob berdi.
+- Production backup /mnt/storage/backups/mazetto/postgres/mazetto-20260929-153404157.dump ajratilgan vaqtinchalik Postgres'ga tiklandi. Ikki pending migration clone'da qo'llanib, keyin backup qayta tiklanganda schema/data va migration holati boshlang'ichiga tengligi tasdiqlandi.
+- Bu mashq production migration yoki production restore emas: production database va servislar o'zgarmagan, ikkinchi restoran PROVISIONING holatida.
+- Hali alohida staging app/API/DB stack yo'q. Durable queue/worker, restaurant bot mapping, media/realtime va export oqimlarining staging A/B dalillari talab qilinadi.
+- PR #104 ochiq; ushbu smoke tuzatishi push qilingach hosted verify qayta o'tishi shart. Production reliz uchun main branch'dagi CI, yangi backup, production migration, backend va zarur app deploylari, so'ng post-release smoke talab qilinadi.

@@ -15,7 +15,7 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "staff:bootstrap": "tsx scripts/bootstrap-staff-admin.ts",
     "platform:bootstrap-owner": "tsx scripts/bootstrap-platform-owner.ts",
-    "test": "node --test --import tsx test/*.test.ts",
+    "test": "node --test --import tsx test/*.test.ts && node --test ../../scripts/http-with-transient-retry.test.mjs",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit"
   },
   "dependencies": {
