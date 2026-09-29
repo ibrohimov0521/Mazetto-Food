@@ -71,6 +71,7 @@ export class CustomerAuthService {
     const phone = normalizeCustomerPhone(dto.phone);
     const ttlMinutes = await this.settingsService.getInt(
       "customer_code_ttl_minutes",
+      tenantId,
     );
     const code = this.generateVerificationCode();
     const codeHash = await bcrypt.hash(code, 12);
@@ -129,6 +130,7 @@ export class CustomerAuthService {
 
     const attemptLimit = await this.settingsService.getInt(
       "customer_code_attempt_limit",
+      tenantId,
     );
 
     if (challenge.attempts >= attemptLimit) {
@@ -311,8 +313,8 @@ export class CustomerAuthService {
     phone: string,
   ): Promise<void> {
     const [windowSeconds, requestLimit] = await Promise.all([
-      this.settingsService.getInt("customer_code_request_window_seconds"),
-      this.settingsService.getInt("customer_code_request_limit"),
+      this.settingsService.getInt("customer_code_request_window_seconds", tenantId),
+      this.settingsService.getInt("customer_code_request_limit", tenantId),
     ]);
     const recentRequests = await tx.customerVerificationChallenge.count({
       where: {

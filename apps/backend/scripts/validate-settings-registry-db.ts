@@ -3,6 +3,7 @@ import { BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { RedisService } from "../src/redis/redis.service";
 import { SettingsService } from "../src/modules/settings/settings.service";
+import { resolveSoleActiveTenantId } from "../src/common/auth/tenant-scope";
 import {
   isKnownSettingKey,
   settingKeys,
@@ -83,20 +84,24 @@ async function main(): Promise<void> {
   const settings = new SettingsService(prisma, redis);
   const actor = await prisma.user.findFirst({ select: { id: true } });
   assert.ok(actor, "test uchun kamida bitta foydalanuvchi kerak");
+  const tenantId = await resolveSoleActiveTenantId(prisma);
+  const settingsActor = {
+    id: actor.id,
+    tenantId,
+    membershipId: "settings-registry-smoke",
+    roles: ["SUPER_ADMIN"],
+    permissions: ["*"],
+  };
 
   try {
     // Saqlanmagan kalit reestr default'ini beradi.
-    await prisma.setting.deleteMany({ where: { key: "customer_code_ttl_minutes" } });
-    assert.equal(await settings.getInt("customer_code_ttl_minutes"), 10);
+    await prisma.setting.deleteMany({ where: { tenantId, key: "customer_code_ttl_minutes" } });
+    assert.equal(await settings.getInt("customer_code_ttl_minutes", tenantId), 10);
 
     // Yozilgandan keyin YANGI qiymat qaytadi — ya'ni kesh bekor qilingan.
-    await settings.updateSetting("customer_code_ttl_minutes", "25", {
-      id: actor.id,
-      roles: ["SUPER_ADMIN"],
-      permissions: ["*"],
-    });
+    await settings.updateSetting("customer_code_ttl_minutes", "25", settingsActor);
     assert.equal(
-      await settings.getInt("customer_code_ttl_minutes"),
+      await settings.getInt("customer_code_ttl_minutes", tenantId),
       25,
       "yozishdan keyin kesh bekor qilinishi shart",
     );
@@ -105,27 +110,23 @@ async function main(): Promise<void> {
     // so'ralmaydi, ya'ni yozuv jimgina ta'sirsiz qolardi.
     await assert.rejects(
       () =>
-        settings.updateSetting("made_up_key", "1", {
-          id: actor.id,
-          roles: ["SUPER_ADMIN"],
-          permissions: ["*"],
-        }),
+        settings.updateSetting("made_up_key", "1", settingsActor),
       /Noma'lum sozlama kaliti/,
     );
 
     // Ochiq sozlamalar mijoz tomoniga to'g'ri shaklda chiqadi.
-    const publicSettings = await settings.getPublicSettings();
+    const publicSettings = await settings.getPublicSettings(tenantId);
     assert.deepEqual(publicSettings["customerPaymentMethods"], ["CASH"]);
     assert.equal(publicSettings["customerDeliveryEnabled"], false);
 
     // Ro'yxatda HAR e'lon qilingan kalit bor — saqlanmaganlari ham.
-    const listed = await settings.listSettings();
+    const listed = await settings.listSettings(settingsActor);
     assert.equal(listed.length, settingKeys.length);
 
     console.log("Settings registry validation passed");
     console.log(`  reestr: ${settingKeys.length} ta kalit`);
   } finally {
-    await prisma.setting.deleteMany({ where: { key: "customer_code_ttl_minutes" } });
+    await prisma.setting.deleteMany({ where: { tenantId, key: "customer_code_ttl_minutes" } });
     await prisma.$disconnect();
     // Redis ulanishi ochiq qolsa jarayon tugamaydi — skript osilib qoladi.
     await redis.onModuleDestroy();

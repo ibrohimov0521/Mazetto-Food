@@ -44,6 +44,9 @@ const env = {
   ...process.env,
   NODE_ENV: "test",
   CUSTOMER_TENANT_MIGRATION_QA: "1",
+  MAZETTO_SETTINGS_DB_SMOKE: "1",
+  REDIS_URL: "redis://127.0.0.1:1",
+  REDIS_PORT: "1",
   DATABASE_URL: url.toString(),
   BESTTEAM_OWNER_BOOTSTRAP: "1",
   BACKEND_PORT: String(port),
@@ -54,8 +57,8 @@ const env = {
   BESTTEAM_OWNER_PASSWORD: ownerPassword,
 };
 
-function run(command, args, timeout = 180_000) {
-  const result = spawnSync(command, args, { cwd: backendDir, env, encoding: "utf8", timeout, maxBuffer: 10_000_000 });
+function run(command, args, timeout = 180_000, childEnv = env) {
+  const result = spawnSync(command, args, { cwd: backendDir, env: childEnv, encoding: "utf8", timeout, maxBuffer: 10_000_000 });
   if (result.status !== 0) {
     throw new Error(`${command} failed (${result.status}):\n${(result.stderr || result.stdout || "").slice(-4000)}`);
   }
@@ -96,12 +99,16 @@ let webServer;
 let browser;
 let created = false;
 let tenantHost = "";
+let tenantAId = "";
+let tenantBId = "";
+let tenantBBranchId = "";
 try {
   docker("exec", container, "createdb", "-U", user, database);
   created = true;
   run("./node_modules/.bin/prisma", ["migrate", "deploy"]);
   run(process.execPath, ["--import", "tsx", "scripts/validate-customer-tenant-migration-db.ts"], 60_000);
   run(process.execPath, ["--import", "tsx", "scripts/bootstrap-platform-owner.ts"]);
+  run(process.execPath, ["--import", "tsx", "scripts/validate-settings-registry-db.ts"], 60_000, { ...env, REDIS_URL: "", REDIS_PORT: "" });
 
   let staffRefreshToken = "";
   const staffPassword = "qa-staff-password";
@@ -110,6 +117,7 @@ try {
   try {
     const tenant = await prisma.restaurantTenant.findUnique({ where: { code: "MAZETTO_FOOD" } });
     assert.equal(tenant?.status, "ACTIVE", "The initial Mazetto tenant must exist after migration.");
+    tenantAId = tenant.id;
     const tenantSuffix = randomBytes(4).toString("hex");
     const branch = await prisma.branch.create({
       data: { code: "TENANTQA" + tenantSuffix, name: "Tenant registry QA branch" },
@@ -166,6 +174,7 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
   }
 
   let logs = "";
+  run("./node_modules/.bin/nest", ["build"], 180_000);
   server = spawn(process.execPath, ["dist/main.js"], { cwd: backendDir, env, stdio: ["ignore", "pipe", "pipe"] });
   server.stdout.on("data", chunk => { logs = (logs + chunk).slice(-5000); });
   server.stderr.on("data", chunk => { logs = (logs + chunk).slice(-5000); });
@@ -234,6 +243,7 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
   });
   assert.equal(createdTenant.status, 201, JSON.stringify(createdTenant.body.error));
   assert.equal(createdTenant.body.data.status, "PROVISIONING");
+  tenantBId = createdTenant.body.data.id;
   const tenantRegistry = await request(base, "/platform/tenants", { headers: authorized });
   const provisionedTenant = tenantRegistry.body.data.find((tenant) => tenant.id === createdTenant.body.data.id);
   assert.equal(provisionedTenant?.status, "PROVISIONING");
@@ -246,6 +256,7 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
   assert.equal(createdBranch.status, 201, JSON.stringify(createdBranch.body.error));
   assert.equal(createdBranch.body.data.tenantId, createdTenant.body.data.id);
   assert.equal(createdBranch.body.data.isActive, false, "New branches must not accept work before onboarding finishes.");
+  tenantBBranchId = createdBranch.body.data.id;
   const provisionedMembership = await request(base, `/platform/tenants/${createdTenant.body.data.id}/memberships`, {
     method: "POST", headers: authorized,
     body: JSON.stringify({ identifier: "qa-staff@bestteam.invalid", roleCodes: ["SUPER_ADMIN"] }),
@@ -467,6 +478,89 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
   await page.locator(".token-field").waitFor({ timeout: 15_000 });
   const afterBrowser = await request(base, "/platform/sites", { headers: authorized });
   assert.ok(afterBrowser.body.data.some(item => item.name === "QA From Browser"));
+
+  const tenantBHost = `qa-restaurant-b-${suffix}.example.test`;
+  const sharedPhone = "+998901234567";
+  const codeA = "135791";
+  const codeB = "246802";
+  const qaPool = new Pool({ connectionString: env.DATABASE_URL });
+  const qaPrisma = new PrismaClient({ adapter: new PrismaPg(qaPool) });
+  try {
+    await qaPrisma.restaurantTenant.update({ where: { id: tenantBId }, data: { status: "ACTIVE" } });
+    await qaPrisma.branch.updateMany({ where: { tenantId: tenantAId }, data: { isActive: false } });
+    const tenantABranch = await qaPrisma.branch.create({
+      data: { code: `QAA_${suffix}`, tenantId: tenantAId, name: "QA tenant A branch" },
+    });
+    await qaPrisma.branch.update({ where: { id: tenantBBranchId }, data: { isActive: true } });
+    await qaPrisma.tenantDomain.create({
+      data: { hostname: tenantBHost, tenantId: tenantBId, status: "VERIFIED", verifiedAt: new Date() },
+    });
+    await qaPrisma.setting.createMany({ data: [
+      { tenantId: tenantAId, key: "customer_delivery_fee", value: "1100", isPublic: true },
+      { tenantId: tenantBId, key: "customer_delivery_fee", value: "2200", isPublic: true },
+    ] });
+    const expiresAt = new Date(Date.now() + 5 * 60_000);
+    await qaPrisma.customerVerificationChallenge.createMany({ data: [
+      { tenantId: tenantAId, phone: sharedPhone, codeHash: await hash(codeA, 4), expiresAt },
+      { tenantId: tenantBId, phone: sharedPhone, codeHash: await hash(codeB, 4), expiresAt },
+    ] });
+
+    const branchesA = await request(base, "/customer/branches", { headers: { host: tenantHost } });
+    const branchesB = await request(base, "/customer/branches", { headers: { host: tenantBHost } });
+    assert.equal(branchesA.status, 200, JSON.stringify(branchesA.body.error));
+    assert.equal(branchesB.status, 200, JSON.stringify(branchesB.body.error));
+    assert.deepEqual(branchesA.body.data.map(branch => branch.id), [tenantABranch.id]);
+    assert.deepEqual(branchesB.body.data.map(branch => branch.id), [tenantBBranchId]);
+    const publicSettingsA = await request(base, "/settings/public", { headers: { host: tenantHost } });
+    const publicSettingsB = await request(base, "/settings/public", { headers: { host: tenantBHost } });
+    assert.equal(publicSettingsA.status, 200, JSON.stringify(publicSettingsA.body.error));
+    assert.equal(publicSettingsB.status, 200, JSON.stringify(publicSettingsB.body.error));
+    assert.equal(publicSettingsA.body.data.customerDeliveryFee, 1100);
+    assert.equal(publicSettingsB.body.data.customerDeliveryFee, 2200);
+
+    const verify = (host, code, name) => request(base, "/customer/auth/verify-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", host },
+      body: JSON.stringify({ phone: sharedPhone, code, name }),
+    });
+    const crossTenantCode = await verify(tenantHost, codeB, "Wrong tenant");
+    assert.equal(crossTenantCode.status, 401, "Tenant B's OTP must not authenticate on tenant A's host.");
+    const customerAResponse = await verify(tenantHost, codeA, "Tenant A customer");
+    const customerBResponse = await verify(tenantBHost, codeB, "Tenant B customer");
+    assert.equal(customerAResponse.status, 201, JSON.stringify(customerAResponse.body.error));
+    assert.equal(customerBResponse.status, 201, JSON.stringify(customerBResponse.body.error));
+    const customerA = customerAResponse.body.data;
+    const customerB = customerBResponse.body.data;
+    assert.equal(customerA.customer.tenantId, tenantAId);
+    assert.equal(customerB.customer.tenantId, tenantBId);
+    assert.notEqual(customerA.customer.id, customerB.customer.id);
+
+    const customerMe = (host, accessToken) => request(base, "/customer/auth/me", {
+      headers: { host, Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal((await customerMe(tenantBHost, customerA.tokens.accessToken)).status, 401,
+      "Tenant A's access token must not authenticate on tenant B's host.");
+    assert.equal((await customerMe(tenantHost, customerB.tokens.accessToken)).status, 401,
+      "Tenant B's access token must not authenticate on tenant A's host.");
+
+    const refresh = (host, refreshToken) => request(base, "/customer/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", host },
+      body: JSON.stringify({ refreshToken }),
+    });
+    assert.equal((await refresh(tenantBHost, customerA.tokens.refreshToken)).status, 401,
+      "Tenant A's refresh token must not rotate on tenant B's host.");
+    assert.equal((await refresh(tenantHost, customerB.tokens.refreshToken)).status, 401,
+      "Tenant B's refresh token must not rotate on tenant A's host.");
+    const refreshedB = await refresh(tenantBHost, customerB.tokens.refreshToken);
+    assert.equal(refreshedB.status, 201, JSON.stringify(refreshedB.body.error));
+    assert.equal(refreshedB.body.data.customer.tenantId, tenantBId);
+    console.log("Staging A/B proof passed: verified domains isolate branches, same-phone OTP identities, access tokens, and refresh tokens.");
+  } finally {
+    await qaPrisma.$disconnect();
+    await qaPool.end();
+  }
+
   console.log("Shared-backend QA passed: migrations, platform bootstrap, tenant-bound login/refresh, unknown-host denial, membership onboarding, role isolation, monitoring, reports, activity, audit.");
   console.log("Owner web end-to-end QA passed: real login, reports, diagnostics, backup evidence, and site registration through the Next.js proxy.");
 } finally {

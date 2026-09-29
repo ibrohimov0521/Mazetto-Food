@@ -28,6 +28,10 @@ const migrationSql = readFileSync(
   new URL("../prisma/migrations/20260929100000_customer_tenant_isolation/migration.sql", import.meta.url),
   "utf8",
 );
+const settingsMigrationSql = readFileSync(
+  new URL("../prisma/migrations/20260929110000_tenant_scoped_settings/migration.sql", import.meta.url),
+  "utf8",
+);
 const pool = new Pool({ connectionString: databaseUrl });
 const client = await pool.connect();
 const schemas: string[] = [];
@@ -42,6 +46,13 @@ async function createLegacySchema(scenario: Scenario): Promise<string> {
       id TEXT PRIMARY KEY,
       status TEXT NOT NULL
     );
+    CREATE TABLE settings (
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      "isPublic" BOOLEAN NOT NULL DEFAULT false,
+      CONSTRAINT settings_pkey PRIMARY KEY (key)
+    );
+    CREATE INDEX "settings_isPublic_idx" ON settings("isPublic");
     CREATE TABLE branches (
       id TEXT PRIMARY KEY,
       "tenantId" TEXT NOT NULL REFERENCES restaurant_tenants(id)
@@ -82,6 +93,9 @@ async function createLegacySchema(scenario: Scenario): Promise<string> {
   await client.query(
     "INSERT INTO restaurant_tenants (id, status) VALUES ('tenant-a', 'ACTIVE'), ('tenant-b', $1)",
     [scenario.secondTenantActive ? "ACTIVE" : "PROVISIONING"],
+  );
+  await client.query(
+    `INSERT INTO settings (key, value, "isPublic") VALUES ('customer_delivery_fee', '2300', true)`,
   );
   await client.query(
     'INSERT INTO branches (id, "tenantId") VALUES (\'branch-a\', \'tenant-a\'), (\'branch-b\', \'tenant-b\')',
@@ -130,6 +144,7 @@ async function assertRejectedScenario(scenario: Scenario, expectedError: RegExp)
 try {
   await createLegacySchema({});
   await client.query(migrationSql);
+  await client.query(settingsMigrationSql);
 
   const customers = await client.query(
     'SELECT id, "tenantId" FROM customers ORDER BY id',
@@ -145,6 +160,23 @@ try {
     { id: "challenge-linked", tenantId: "tenant-a" },
     { id: "challenge-orphan", tenantId: "tenant-a" },
   ]);
+  const settingsBackfill = await client.query(
+    'SELECT "tenantId", key, value FROM settings ORDER BY key',
+  );
+  assert.deepEqual(settingsBackfill.rows, [
+    { tenantId: "tenant-a", key: "customer_delivery_fee", value: "2300" },
+  ]);
+  await client.query(
+    `INSERT INTO settings ("tenantId", key, value) VALUES ('tenant-b', 'customer_delivery_fee', '3000')`,
+  );
+  await assert.rejects(
+    client.query(`INSERT INTO settings ("tenantId", key, value) VALUES ('tenant-a', 'customer_delivery_fee', '4000')`),
+    /duplicate key/,
+  );
+  await assert.rejects(
+    client.query(`INSERT INTO settings ("tenantId", key, value) VALUES ('tenant-missing', 'customer_delivery_fee', '5000')`),
+    /foreign key constraint/,
+  );
 
   await client.query(
     `INSERT INTO customers (id, "tenantId", phone, email, "telegramUserId")

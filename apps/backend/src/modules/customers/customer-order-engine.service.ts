@@ -129,6 +129,7 @@ export class CustomerOrderEngineService {
 
       // Tranzaksiyadan OLDIN: sozlama o'qishi kesh yoki bazaga borishi mumkin.
       const deliveryFee = await this.resolveDeliveryFee(
+        customer.tenantId,
         dto.type,
         dto.branchId,
         deliveryLocation,
@@ -330,6 +331,7 @@ export class CustomerOrderEngineService {
         ? normalizeDeliveryLocation(dto.deliveryLocation)
         : undefined;
     const deliveryFee = await this.resolveDeliveryFee(
+      customer.tenantId,
       dto.type,
       dto.branchId,
       deliveryLocation,
@@ -714,6 +716,7 @@ export class CustomerOrderEngineService {
    * bazaga boradi.
    */
   private async resolveDeliveryFee(
+    tenantId: string,
     type: OnlineOrderTypeDto,
     branchId: string,
     deliveryLocation?: { latitude: number; longitude: number },
@@ -723,7 +726,7 @@ export class CustomerOrderEngineService {
     }
 
     const flatFee = new Prisma.Decimal(
-      await this.settings.getInt("customer_delivery_fee"),
+      await this.settings.getInt("customer_delivery_fee", tenantId),
     );
 
     if (!deliveryLocation) {
@@ -751,6 +754,7 @@ export class CustomerOrderEngineService {
 
     const freeRadiusMeters = await this.settings.getInt(
       "customer_free_delivery_radius_meters",
+      tenantId,
     );
 
     return distanceKm * 1000 <= freeRadiusMeters

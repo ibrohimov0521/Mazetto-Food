@@ -236,6 +236,7 @@ export class TelegramCustomerAuthService {
   ): Promise<void> {
     const ttlMinutes = await this.settingsService.getInt(
       "customer_code_ttl_minutes",
+      tenantId,
     );
     const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
     const fromId = this.requiredTelegramId(message.from?.id, "user id");
@@ -703,8 +704,8 @@ export class TelegramCustomerAuthService {
     phone: string,
   ): Promise<void> {
     const [windowSeconds, requestLimit] = await Promise.all([
-      this.settingsService.getInt("customer_code_request_window_seconds"),
-      this.settingsService.getInt("customer_code_request_limit"),
+      this.settingsService.getInt("customer_code_request_window_seconds", tenantId),
+      this.settingsService.getInt("customer_code_request_limit", tenantId),
     ]);
     const recentRequests = await tx.customerVerificationChallenge.count({
       where: {

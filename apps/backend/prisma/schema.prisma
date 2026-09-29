@@ -282,6 +282,7 @@ model RestaurantTenant {
   memberships                    TenantMembership[]
   customers                      Customer[]
   customerVerificationChallenges CustomerVerificationChallenge[]
+  settings                       Setting[]
 
   @@index([status, createdAt])
   @@map("restaurant_tenants")
@@ -1983,7 +1984,8 @@ model RevenueRecord {
 /// e'lon qilinadi: yozishda tekshiriladi va normallashtiriladi, o'qishda
 /// esa faqat reestrda e'lon qilingan kalitlar qabul qilinadi.
 model Setting {
-  key         String   @id
+  tenantId    String
+  key         String
   value       String
   /// Sozlama mijoz tomoniga oshkor qilinadimi. `false` — faqat admin.
   isPublic    Boolean  @default(false)
@@ -1992,8 +1994,10 @@ model Setting {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  updatedBy User? @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedBy User?            @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  tenant    RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([isPublic])
+  @@id([tenantId, key])
+  @@index([tenantId, isPublic])
   @@map("settings")
 }
