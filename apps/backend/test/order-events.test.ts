@@ -198,6 +198,7 @@ test("cancel writes order state, version, history, event and outbox in one trans
     },
     employee: { findFirst: async () => ({ id: "employee-1" }) },
     kitchenTicket: { updateMany: async () => { writes.push("ticket"); } },
+    orderItem: { findMany: async () => [] },
     orderStatusHistory: { create: async () => { writes.push("history"); } },
     orderEvent: {
       create: async ({ data }: { data: { aggregateVersion: number; previousState: OrderState } }) => {

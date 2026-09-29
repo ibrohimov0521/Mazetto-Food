@@ -36,6 +36,10 @@ import { buildOrderListWhere } from "./orders-list-filters";
 import { writeAuditLog } from "../audit/audit-write";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
 import { InventoryService } from "../inventory/inventory.service";
+import {
+  restoreUnstartedOrderItemStock,
+  restoreUnstartedOrderStock,
+} from "./order-stock-cancellation";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { CreateOrderDto } from "./dto/create-order.dto";
@@ -1030,6 +1034,15 @@ export class OrdersService {
       );
       const isCancelling = dto.status === OrderItemStatus.CANCELLED;
 
+      if (isCancelling && item.stockDeductedAt) {
+        await restoreUnstartedOrderItemStock(tx, this.inventoryService, {
+          orderId,
+          orderItemId: item.id,
+          actorId: user.id,
+          reason: dto.cancellationReason ?? "Mahsulot bekor qilindi",
+        });
+      }
+
       const data: Prisma.OrderItemUncheckedUpdateInput = {
         totalPrice,
       };
@@ -1239,6 +1252,14 @@ export class OrdersService {
         throw new BadRequestException(
           "Order must be confirmed before moving to preparation or service states",
         );
+      }
+
+      if (nextStatus === OrderStatus.CANCELLED) {
+        await restoreUnstartedOrderStock(tx, this.inventoryService, {
+          orderId,
+          actorId: user.id,
+          reason: dto.reason ?? "Buyurtma bekor qilindi",
+        });
       }
 
       const data: Prisma.OrderUpdateInput = {

@@ -1,9 +1,12 @@
 import { JwtService } from "@nestjs/jwt";
 import {
   CustomerOrderType,
+  KitchenTicketStatus,
+  OrderItemStatus,
   OrderSource,
   OrderStatus,
   Prisma,
+  StockMovementType,
 } from "@prisma/client";
 import * as assert from "node:assert/strict";
 import { BranchesService } from "../src/modules/branches/branches.service";
@@ -16,6 +19,8 @@ import {
 import { InventoryService } from "../src/modules/inventory/inventory.service";
 import { KitchenService } from "../src/modules/kitchen/kitchen.service";
 import { OrdersService } from "../src/modules/orders/orders.service";
+import { PosOrderStatus } from "../src/modules/orders/dto/order-status.dto";
+import { ORDER_EVENTS } from "../src/modules/orders/order-events";
 import { PaymentsService } from "../src/modules/payments/payments.service";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
@@ -62,6 +67,7 @@ async function main(): Promise<void> {
     const services = createServices(prisma);
     const fixture = await createFixture(prisma);
     const initialCounts = await orderGraphCounts(prisma);
+    await proveCancellationStockBehavior(prisma, services.ordersService, services.orderEngine, fixture);
 
     const webOrder = await createWebOrder(services.orderEngine, fixture);
     await proveOrderGraph(prisma, webOrder.customerOrder.id, {
@@ -280,7 +286,7 @@ function createServices(prisma: PrismaService) {
 
   const paymentsService = new PaymentsService(prisma);
 
-  return { customersService, orderEngine, paymentsService, telegramOrdering };
+  return { customersService, orderEngine, ordersService, paymentsService, telegramOrdering };
 }
 
 async function createFixture(prisma: PrismaService) {
@@ -458,6 +464,7 @@ async function createFixture(prisma: PrismaService) {
 
   return {
     branch,
+    warehouse,
     burger,
     configurable,
     expectedConfigurableTotal,
@@ -579,13 +586,127 @@ async function proveOrderCashStockPrint(
   );
 }
 
+async function proveCancellationStockBehavior(
+  prisma: PrismaService,
+  ordersService: OrdersService,
+  orderEngine: CustomerOrderEngineService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  const recipe = await prisma.recipe.findUniqueOrThrow({
+    where: { variantId: fixture.variant.id },
+    include: { items: true },
+  });
+  const ingredientIds = recipe.items.map((item) => item.ingredientId);
+  const readStock = async () =>
+    (
+      await prisma.stock.findMany({
+        where: {
+          warehouseId: fixture.warehouse.id,
+          ingredientId: { in: ingredientIds },
+        },
+        orderBy: { ingredientId: "asc" },
+        select: { ingredientId: true, quantity: true },
+      })
+    ).map((row) => [row.ingredientId, row.quantity.toFixed(3)] as const);
+  const actor = {
+    id: fixture.staffUser.id,
+    employeeId: fixture.employee.id,
+    branchId: fixture.branch.id,
+    roles: ["CASHIER"],
+    permissions: ["ORDER_UPDATE"],
+  };
+
+  const unstartedStock = await readStock();
+  const unstartedOrder = await createWebOrder(
+    orderEngine,
+    fixture,
+    "cancel-before-kitchen",
+  );
+  const unstarted = await prisma.order.findUniqueOrThrow({
+    where: { id: unstartedOrder.customerOrder.orderId },
+    include: { items: true, kitchenTickets: true },
+  });
+  assert.equal(unstarted.kitchenTickets[0]?.status, KitchenTicketStatus.NEW);
+  const deductedStock = await readStock();
+  assert.notDeepEqual(deductedStock, unstartedStock);
+
+  const cancelledItem = unstarted.items[0]!;
+  await ordersService.updateItem(
+    unstarted.id,
+    cancelledItem.id,
+    {
+      status: OrderItemStatus.CANCELLED,
+      cancellationReason: "Isolated stock restore proof",
+    },
+    actor,
+    {
+      expectedVersion: unstarted.version,
+      eventType: ORDER_EVENTS.ITEM_CANCELLED,
+      correlationId: "isolated-stock-cancel-item",
+      idempotencyKey: "isolated-stock-cancel-item",
+    },
+  );
+  assert.deepEqual(await readStock(), unstartedStock);
+  const [itemDeductions, itemRestorations] = await Promise.all([
+    prisma.stockMovement.count({
+      where: {
+        orderItemId: cancelledItem.id,
+        sourceType: "ORDER_ITEM_RECIPE",
+        type: StockMovementType.OUT,
+      },
+    }),
+    prisma.stockMovement.count({
+      where: {
+        orderItemId: cancelledItem.id,
+        sourceType: "ORDER_ITEM_RECIPE_RESTOCK",
+        type: StockMovementType.IN,
+      },
+    }),
+  ]);
+  assert.ok(itemDeductions > 0);
+  assert.equal(itemRestorations, itemDeductions);
+
+  const startedOrderDraft = await createWebOrder(
+    orderEngine,
+    fixture,
+    "cancel-after-kitchen-accept",
+  );
+  const started = await prisma.order.findUniqueOrThrow({
+    where: { id: startedOrderDraft.customerOrder.orderId },
+    include: { kitchenTickets: true },
+  });
+  const ticket = started.kitchenTickets[0];
+  assert.ok(ticket);
+  const stockAfterStartedDeduction = await readStock();
+  await prisma.kitchenTicket.update({
+    where: { id: ticket.id },
+    data: { status: KitchenTicketStatus.ACCEPTED },
+  });
+
+  await ordersService.updateStatus(
+    started.id,
+    { status: PosOrderStatus.CANCELLED, reason: "Isolated started-order proof" },
+    actor,
+  );
+  assert.deepEqual(await readStock(), stockAfterStartedDeduction);
+  assert.equal(
+    await prisma.stockMovement.count({
+      where: {
+        sourceId: started.id,
+        sourceType: "ORDER_ITEM_RECIPE_RESTOCK",
+      },
+    }),
+    0,
+  );
+}
 async function createWebOrder(
   orderEngine: CustomerOrderEngineService,
   fixture: Awaited<ReturnType<typeof createFixture>>,
+  suffix = "main",
 ) {
   const dto = {
     branchId: fixture.branch.id,
-    idempotencyKey: `step8-web-idempotency-key-${fixture.runId}`,
+    idempotencyKey: `step8-web-idempotency-key-${suffix}-${fixture.runId}`,
     name: fixture.webCustomer.name,
     type: OnlineOrderTypeDto.PICKUP,
     paymentMethod: OnlinePaymentMethodDto.CASH,
