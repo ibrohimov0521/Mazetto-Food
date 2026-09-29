@@ -43,6 +43,7 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder --chown=nextjs:nodejs /app/apps/platform-web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/platform-web/public ./apps/platform-web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/platform-web/.next/static ./apps/platform-web/.next/static
 
 USER nextjs
