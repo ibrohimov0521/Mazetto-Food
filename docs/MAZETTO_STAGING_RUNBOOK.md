@@ -24,7 +24,7 @@ Boshlang'ich DB'da 53 migration qo'llangan, 1 baseline ACTIVE tenant va 0 filial
 
 apps/backend/scripts/qa-tenant-ab-staging.mjs faqat staging API containerida, ichki loopback API manziliga qarshi ishlaydi:
 
-docker exec -e MAZETTO_STAGING_AB_QA=1 <staging-api-container> node /app/apps/backend/scripts/qa-tenant-ab-staging.mjs
+    docker exec -e MAZETTO_STAGING_AB_QA=1 <staging-api-container> node /app/apps/backend/scripts/qa-tenant-ab-staging.mjs
 
 Harness production rejimini, aniq staging DB host/name'ini, 127.0.0.1 API manzilini va fixture boshlanishidagi bo'sh DB holatini tekshirmasa ishni boshlamaydi. Tenant domenlari .invalid; email/telefon/OTP sintetik. Telegram, SMS va tashqi webhook yuborilmaydi. Sinov vaqtida staging'da vaqtinchalik B tenant ACTIVE qilinadi; production tenant holatiga ta'sir qilmaydi. Fixture faqat o'zi yaratgan identifikatorlar bilan tozalanadi va yakunda baseline sonlar qayta tekshiriladi.
 
@@ -91,6 +91,12 @@ Haqiqiy printer, to'lov yoki Telegram tashqi xizmatiga staging'dan side effect y
 3. Restore qilingan DB'da migration status, A/B asosiy jadval sonlari, login/domain smoke va object prefixlarini tekshir.
 4. Rollback/forward-fix yo'lini bajargach, test resurslarini xavfsiz tugat; production volume yoki secret'lariga tegma.
 5. Restore/rollback natijasi qayd etilmaguncha production migration yoki ikkinchi tenant activation yo'q.
+
+## Telegram retry va dead-letter mock sinovi (2026-09-30)
+
+apps/backend/test/telegram-notification-retry.test.ts fake fetch javoblari bilan tashqi tarmoqqa chiqmasdan Telegram order bildirishnomasining uch martalik 503 retry'sini, A tenant dead-letter yozuvining B ro'yxatidan ajralishini va tenant konteksti noaniq bo'lsa retry bloklanishini tekshiradi. Kontekst aniq bo'lgach mock muvaffaqiyatli javob beradi va eski dead-letter olib tashlanadi.
+
+Bu test alohida durable queue/worker, real Telegram webhook/token, staging bot delivery yoki order boshidan POS/KDS/courier regression isbotlamaydi. Shu sababli release gate'dagi queue/worker va bot mock bandi hozircha ochiq qoladi.
 
 ## Release darvozasi
 
