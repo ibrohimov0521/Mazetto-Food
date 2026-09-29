@@ -17,6 +17,10 @@ import {
   type PendingOutboxCommand,
 } from "./store.js";
 
+const KNOWN_OFFLINE_ERROR = new Error(
+  "Desktop upstream is already marked offline",
+);
+
 export type DesktopGatewayOptions = {
   host?: string;
   port?: number;
@@ -24,6 +28,7 @@ export type DesktopGatewayOptions = {
   store: DesktopStore;
   fetchImpl?: typeof fetch;
   probeIntervalMs?: number;
+  requestTimeoutMs?: number;
   onAuthorization?: (authorization: string) => void;
   getDeviceToken?: () => string | null;
 };
@@ -40,6 +45,7 @@ export type DesktopGatewayStatus = {
   conflictCommands: number;
   deadLetterCommands: number;
   pendingPrintJobs: number;
+  deadLetterPrintJobs: number;
 };
 
 export class DesktopGateway {
@@ -49,10 +55,16 @@ export class DesktopGateway {
   private readonly store: DesktopStore;
   private readonly fetchImpl: typeof fetch;
   private readonly probeIntervalMs: number;
-  private readonly onAuthorization: ((authorization: string) => void) | undefined;
+  private readonly requestTimeoutMs: number;
+  private readonly onAuthorization:
+    | ((authorization: string) => void)
+    | undefined;
   private readonly getDeviceToken: () => string | null;
   private server: Server | null = null;
   private probeTimer: NodeJS.Timeout | null = null;
+  private probeRetryTimer: NodeJS.Timeout | null = null;
+  private probing = false;
+  private lastProbeStartedAt = 0;
   private startedAt = new Date().toISOString();
   private lastOnlineAt: string | null = null;
   private lastError: string | null = null;
@@ -67,6 +79,7 @@ export class DesktopGateway {
     this.store = options.store;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.probeIntervalMs = options.probeIntervalMs ?? 15_000;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 5_000;
     this.onAuthorization = options.onAuthorization;
     this.getDeviceToken = options.getDeviceToken ?? (() => null);
   }
@@ -103,6 +116,10 @@ export class DesktopGateway {
     if (this.probeTimer) {
       clearInterval(this.probeTimer);
       this.probeTimer = null;
+    }
+    if (this.probeRetryTimer) {
+      clearTimeout(this.probeRetryTimer);
+      this.probeRetryTimer = null;
     }
     if (!server) {
       return;
@@ -149,7 +166,10 @@ export class DesktopGateway {
       return;
     }
 
-    if (url.pathname.startsWith("/desktop/outbox")) {
+    if (
+      url.pathname.startsWith("/desktop/outbox") ||
+      url.pathname.startsWith("/desktop/prints")
+    ) {
       await this.handleDesktopOutbox(request, response, url);
       return;
     }
@@ -173,9 +193,19 @@ export class DesktopGateway {
     }
     const cacheKey = DesktopStore.cacheKey(targetUrl, authScope);
     const body =
-      method === "GET" || method === "HEAD" ? undefined : await readBody(request);
+      method === "GET" || method === "HEAD"
+        ? undefined
+        : await readBody(request);
 
     try {
+      // A failed probe/request already opened the circuit. Do not make every
+      // cashier action wait for another 10-second upstream timeout; the health
+      // probe is responsible for reopening it after connectivity returns.
+      if (this.mode === "offline") {
+        void this.probeUpstream();
+        throw KNOWN_OFFLINE_ERROR;
+      }
+
       const upstream = await this.fetchImpl(targetUrl, {
         method,
         headers: proxyHeaders(
@@ -184,7 +214,7 @@ export class DesktopGateway {
           this.getDeviceToken(),
         ),
         ...(body ? { body } : {}),
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
       });
       const responseBody = await upstream.text();
       const contentType =
@@ -194,7 +224,11 @@ export class DesktopGateway {
       this.mode = "online";
       this.lastOnlineAt = new Date().toISOString();
       this.lastError = null;
-      if (method === "POST" && url.pathname === "/api/v1/pos/orders" && upstream.ok) {
+      if (
+        method === "POST" &&
+        url.pathname === "/api/v1/pos/orders" &&
+        upstream.ok
+      ) {
         rememberOnlinePosSequence(this.store, responseBody);
       }
       if (authorization) {
@@ -219,7 +253,9 @@ export class DesktopGateway {
       }
 
       const optimistic =
-        method === "GET" && upstream.ok && contentType.includes("application/json")
+        method === "GET" &&
+        upstream.ok &&
+        contentType.includes("application/json")
           ? applyOptimisticProjection(
               responseBody,
               targetUrl,
@@ -235,24 +271,30 @@ export class DesktopGateway {
       });
       response.end(optimistic?.body ?? responseBody);
     } catch (error) {
-      this.markOffline(error);
+      if (error !== KNOWN_OFFLINE_ERROR) {
+        this.markOffline(error);
+      }
       const cached =
         method === "GET" && !isRealtimeCatchUp
           ? this.store.getCachedResponse(cacheKey)
           : null;
       if (cached) {
-        const optimistic =
-          applyOptimisticProjection(
-            cached.body,
-            targetUrl,
-            this.store.listActiveMutations(authScope),
-          );
+        const optimistic = applyOptimisticProjection(
+          cached.body,
+          targetUrl,
+          this.store.listActiveMutations(authScope),
+        );
         response.writeHead(cached.status, {
           "Content-Type": cached.contentType,
-          "X-Mazetto-Desktop": optimistic ? "offline-optimistic" : "offline-cache",
+          "X-Mazetto-Desktop": optimistic
+            ? "offline-optimistic"
+            : "offline-cache",
           "X-Mazetto-Cached-At": cached.cachedAt,
           ...(optimistic
-            ? { "X-Mazetto-Optimistic-Commands": optimistic.commandIds.join(",") }
+            ? {
+                "X-Mazetto-Optimistic-Commands":
+                  optimistic.commandIds.join(","),
+              }
             : {}),
         });
         response.end(optimistic?.body ?? cached.body);
@@ -260,7 +302,12 @@ export class DesktopGateway {
       }
 
       const commandDefinition = resolveOfflineCommand(method, url.pathname);
-      if (authorization && body && commandDefinition) {
+      const isPaymentCommand =
+        commandDefinition?.commandType === "pos.order.create" ||
+        commandDefinition?.commandType === "payment.process";
+      const offlinePaymentAllowed =
+        !isPaymentCommand || isOfflineCashPayment(body);
+      if (authorization && body && commandDefinition && offlinePaymentAllowed) {
         const queued = this.queueMutation({
           authorization,
           authScope,
@@ -290,9 +337,11 @@ export class DesktopGateway {
         error: {
           code: "DESKTOP_OFFLINE",
           message:
-            method === "GET"
-              ? "Internet yo'q va bu ma'lumot hali qurilmada saqlanmagan."
-              : "Bu amal hozircha internet ulanishini talab qiladi.",
+            isPaymentCommand && !offlinePaymentAllowed
+              ? "Oflayn rejimda faqat naqd to'lov saqlanadi. Boshqa to'lov usuli uchun internet kerak."
+              : method === "GET"
+                ? "Internet yo'q va bu ma'lumot hali qurilmada saqlanmagan."
+                : "Bu amal hozircha internet ulanishini talab qiladi.",
         },
       });
     }
@@ -318,7 +367,11 @@ export class DesktopGateway {
     const localAggregateId = createsLocalAggregate(input.definition.commandType)
       ? `local-${randomUUID()}`
       : null;
-    if (input.definition.commandType === "pos.order.create" && localAggregateId && parsedBody) {
+    if (
+      input.definition.commandType === "pos.order.create" &&
+      localAggregateId &&
+      parsedBody
+    ) {
       const offlineDisplayOrderSequence = nextOfflineDisplayOrderSequence(
         this.store,
         input.authScope,
@@ -328,7 +381,9 @@ export class DesktopGateway {
         offlineDisplayOrderSequence,
       };
     }
-    const bodyText = parsedBody ? JSON.stringify(parsedBody) : Buffer.from(input.body).toString("utf8");
+    const bodyText = parsedBody
+      ? JSON.stringify(parsedBody)
+      : Buffer.from(input.body).toString("utf8");
     const baseVersion = numberField(parsedBody, "expectedVersion");
     const offlineOrderSnapshot =
       input.definition.commandType === "pos.order.create" && localAggregateId
@@ -563,12 +618,40 @@ export class DesktopGateway {
         data: {
           summary: this.status(),
           commands: this.store.listOutbox(limit),
+          printJobs: this.store.listLocalPrintJobs(limit),
         },
       });
       return;
     }
 
-    const compareMatch = url.pathname.match(/^\/desktop\/outbox\/([^/]+)\/compare$/);
+    const retryPrintMatch = url.pathname.match(
+      /^\/desktop\/prints\/([^/]+)\/retry$/,
+    );
+    if (retryPrintMatch && method === "POST") {
+      const id = decodeURIComponent(retryPrintMatch[1] ?? "");
+      if (!this.store.retryLocalPrintJob(id)) {
+        this.sendJson(response, 409, {
+          ok: false,
+          error: {
+            message: "Chek qayta yuborilmaydi. Navbat holatini yangilang.",
+          },
+        });
+        return;
+      }
+      this.sendJson(response, 200, {
+        ok: true,
+        data: {
+          summary: this.status(),
+          commands: this.store.listOutbox(),
+          printJobs: this.store.listLocalPrintJobs(),
+        },
+      });
+      return;
+    }
+
+    const compareMatch = url.pathname.match(
+      /^\/desktop\/outbox\/([^/]+)\/compare$/,
+    );
     if (compareMatch && method === "GET") {
       await this.handleOutboxComparison(
         request,
@@ -578,7 +661,9 @@ export class DesktopGateway {
       return;
     }
 
-    const match = url.pathname.match(/^\/desktop\/outbox\/([^/]+)\/(retry|cancel)$/);
+    const match = url.pathname.match(
+      /^\/desktop\/outbox\/([^/]+)\/(retry|cancel)$/,
+    );
     if (!match || method !== "POST") {
       this.sendJson(response, 404, {
         ok: false,
@@ -654,7 +739,9 @@ export class DesktopGateway {
     if (!targetUrl || !resourcePath) {
       this.sendJson(response, 422, {
         ok: false,
-        error: { message: "Bu amal uchun server holatini taqqoslab bo'lmaydi." },
+        error: {
+          message: "Bu amal uchun server holatini taqqoslab bo'lmaydi.",
+        },
       });
       return;
     }
@@ -715,8 +802,10 @@ export class DesktopGateway {
           comparison: {
             resourcePath,
             expectedVersion:
-              numberField(parseJsonObject(localBody ?? ""), "expectedVersion") ??
-              command.baseVersion,
+              numberField(
+                parseJsonObject(localBody ?? ""),
+                "expectedVersion",
+              ) ?? command.baseVersion,
             server: {
               status: upstream.status,
               contentType:
@@ -733,7 +822,8 @@ export class DesktopGateway {
         ok: false,
         error: {
           code: "CONFLICT_COMPARE_OFFLINE",
-          message: "Server holatini hozir olib bo'lmadi. Internetni tekshirib qayta urinib ko'ring.",
+          message:
+            "Server holatini hozir olib bo'lmadi. Internetni tekshirib qayta urinib ko'ring.",
         },
       });
     }
@@ -745,6 +835,21 @@ export class DesktopGateway {
   }
 
   private async probeUpstream(): Promise<void> {
+    if (this.probing) return;
+    const now = Date.now();
+    const retryIn = 1_000 - (now - this.lastProbeStartedAt);
+    if (retryIn > 0) {
+      if (this.mode === "offline" && !this.probeRetryTimer) {
+        this.probeRetryTimer = setTimeout(() => {
+          this.probeRetryTimer = null;
+          if (this.mode === "offline") void this.probeUpstream();
+        }, retryIn);
+        this.probeRetryTimer.unref();
+      }
+      return;
+    }
+    this.probing = true;
+    this.lastProbeStartedAt = now;
     try {
       const response = await this.fetchImpl(`${this.upstreamApiUrl}/health`, {
         headers: { Accept: "application/json" },
@@ -762,6 +867,8 @@ export class DesktopGateway {
       }
     } catch (error) {
       this.markOffline(error);
+    } finally {
+      this.probing = false;
     }
   }
 
@@ -807,7 +914,9 @@ export class DesktopGateway {
 }
 
 function createsLocalAggregate(commandType: string): boolean {
-  return commandType === "pos.order.create" || commandType === "table.order.create";
+  return (
+    commandType === "pos.order.create" || commandType === "table.order.create"
+  );
 }
 
 function extractServerId(source: string): string | null {
@@ -884,8 +993,14 @@ function applyOptimisticProjection(
         projected = order;
         applied.push(command.id);
       } else {
-        const tableId = commandPath.match(/^\/api\/v1\/tables\/([^/]+)\/orders$/)?.[1];
-        if (tableId && pathname === "/api/v1/tables" && patchTableProjection(projected, tableId, order)) {
+        const tableId = commandPath.match(
+          /^\/api\/v1\/tables\/([^/]+)\/orders$/,
+        )?.[1];
+        if (
+          tableId &&
+          pathname === "/api/v1/tables" &&
+          patchTableProjection(projected, tableId, order)
+        ) {
           applied.push(command.id);
         }
       }
@@ -896,14 +1011,26 @@ function applyOptimisticProjection(
       continue;
     }
 
-    const statusMatch = commandPath.match(/^\/api\/v1\/orders\/([^/]+)\/status$/);
+    const statusMatch = commandPath.match(
+      /^\/api\/v1\/orders\/([^/]+)\/status$/,
+    );
     const nextStatus = stringField(commandBody, "status");
-    if (statusMatch?.[1] && nextStatus && pathname === "/api/v1/orders" && patchOrderProjection(projected, statusMatch[1], { status: nextStatus, pendingSync: true })) {
+    if (
+      statusMatch?.[1] &&
+      nextStatus &&
+      pathname === "/api/v1/orders" &&
+      patchOrderProjection(projected, statusMatch[1], {
+        status: nextStatus,
+        pendingSync: true,
+      })
+    ) {
       applied.push(command.id);
     }
   }
 
-  return applied.length ? { body: JSON.stringify(projected), commandIds: applied } : null;
+  return applied.length
+    ? { body: JSON.stringify(projected), commandIds: applied }
+    : null;
 }
 
 function optimisticOrder(
@@ -930,9 +1057,13 @@ function optimisticOrder(
   };
 }
 
-function prependProjection(projected: unknown, item: Record<string, unknown>): boolean {
+function prependProjection(
+  projected: unknown,
+  item: Record<string, unknown>,
+): boolean {
   if (Array.isArray(projected)) {
-    if (projected.some((value) => isRecord(value) && value.id === item.id)) return false;
+    if (projected.some((value) => isRecord(value) && value.id === item.id))
+      return false;
     projected.unshift(item);
     return true;
   }
@@ -940,7 +1071,8 @@ function prependProjection(projected: unknown, item: Record<string, unknown>): b
   for (const key of ["data", "orders", "items"]) {
     const collection = projected[key];
     if (Array.isArray(collection)) {
-      if (collection.some((value) => isRecord(value) && value.id === item.id)) return false;
+      if (collection.some((value) => isRecord(value) && value.id === item.id))
+        return false;
       collection.unshift(item);
       return true;
     }
@@ -959,7 +1091,11 @@ function patchOrderProjection(
   return true;
 }
 
-function patchTableProjection(projected: unknown, tableId: string, order: Record<string, unknown>): boolean {
+function patchTableProjection(
+  projected: unknown,
+  tableId: string,
+  order: Record<string, unknown>,
+): boolean {
   const table = findRecordById(projected, tableId);
   if (!table) return false;
   const orders = Array.isArray(table.orders) ? table.orders : [];
@@ -972,7 +1108,10 @@ function patchTableProjection(projected: unknown, tableId: string, order: Record
   return true;
 }
 
-function findRecordById(value: unknown, id: string): Record<string, unknown> | null {
+function findRecordById(
+  value: unknown,
+  id: string,
+): Record<string, unknown> | null {
   if (Array.isArray(value)) {
     for (const child of value) {
       const found = findRecordById(child, id);
@@ -1029,8 +1168,11 @@ function queuedResponseData(
   );
   const total = paymentTotal(parsedBody);
   const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
-  const offlineNumber = offlinePosInternalOrderNumber(command.aggregateId ?? command.id);
-  const displayNumber = numberField(parsedBody, "offlineDisplayOrderSequence") ?? 101;
+  const offlineNumber = offlinePosInternalOrderNumber(
+    command.aggregateId ?? command.id,
+  );
+  const displayNumber =
+    numberField(parsedBody, "offlineDisplayOrderSequence") ?? 101;
   const base = {
     offlineQueued: true,
     queued: true,
@@ -1061,7 +1203,10 @@ function queuedResponseData(
     return {
       ...base,
       order: {
-        id: stringField(parsedBody, "orderId") ?? command.aggregateId ?? command.id,
+        id:
+          stringField(parsedBody, "orderId") ??
+          command.aggregateId ??
+          command.id,
         orderNumber: offlineNumber,
         displayOrderNumber: offlineNumber,
         paymentStatus: "PENDING_SYNC",
@@ -1116,7 +1261,10 @@ function aggregateFromPath(pathname: string): {
   type: string;
   id: string | null;
 } {
-  const parts = pathname.replace(/^\/api\/v1\/?/, "").split("/").filter(Boolean);
+  const parts = pathname
+    .replace(/^\/api\/v1\/?/, "")
+    .split("/")
+    .filter(Boolean);
   return {
     type: parts[0] ?? "unknown",
     id: parts.find((part) => looksLikeId(part)) ?? null,
@@ -1124,7 +1272,10 @@ function aggregateFromPath(pathname: string): {
 }
 
 function looksLikeId(value: string): boolean {
-  return /^[a-z0-9_-]{8,}$/i.test(value) && !/^(orders|items|status|actions)$/.test(value);
+  return (
+    /^[a-z0-9_-]{8,}$/i.test(value) &&
+    !/^(orders|items|status|actions)$/.test(value)
+  );
 }
 
 function parseJsonObject(source: string): Record<string, unknown> | null {
@@ -1154,6 +1305,31 @@ function numberField(
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function isOfflineCashPayment(body: ArrayBuffer | undefined): boolean {
+  if (!body) return false;
+  const source = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const payments = source?.payments;
+  return (
+    Array.isArray(payments) &&
+    payments.length > 0 &&
+    payments.every((value) => {
+      if (
+        !isRecord(value) ||
+        stringField(value, "paymentMethodCode") !== "CASH"
+      ) {
+        return false;
+      }
+      const amount =
+        typeof value.amount === "number"
+          ? value.amount
+          : typeof value.amount === "string"
+            ? Number(value.amount)
+            : Number.NaN;
+      return Number.isFinite(amount) && amount > 0;
+    })
+  );
+}
+
 function paymentTotal(source: Record<string, unknown> | null): number {
   const payments = source?.payments;
   if (!Array.isArray(payments)) {
@@ -1165,7 +1341,13 @@ function paymentTotal(source: Record<string, unknown> | null): number {
       return sum;
     }
     const amount = (payment as { amount?: unknown }).amount;
-    return sum + (typeof amount === "number" && Number.isFinite(amount) ? amount : 0);
+    const normalized =
+      typeof amount === "number"
+        ? amount
+        : typeof amount === "string"
+          ? Number(amount)
+          : Number.NaN;
+    return sum + (Number.isFinite(normalized) ? normalized : 0);
   }, 0);
 }
 
@@ -1182,9 +1364,15 @@ function paymentMethods(
       return [];
     }
     const record = payment as { amount?: unknown; paymentMethodCode?: unknown };
-    return typeof record.paymentMethodCode === "string" &&
+    const amount =
       typeof record.amount === "number"
-      ? [{ code: record.paymentMethodCode, amount: String(record.amount) }]
+        ? record.amount
+        : typeof record.amount === "string"
+          ? Number(record.amount)
+          : Number.NaN;
+    return typeof record.paymentMethodCode === "string" &&
+      Number.isFinite(amount)
+      ? [{ code: record.paymentMethodCode, amount: String(amount) }]
       : [];
   });
 }
@@ -1219,7 +1407,10 @@ function cachedCatalog(
   store: DesktopStore,
   authScope: string,
 ): Record<string, unknown> | null {
-  const cached = store.getLatestCachedResponse(authScope, "/api/v1/pos/catalog");
+  const cached = store.getLatestCachedResponse(
+    authScope,
+    "/api/v1/pos/catalog",
+  );
   if (!cached) return null;
   const parsed = parseJsonObject(cached.body);
   return recordField(parsed, "data") ?? parsed;
@@ -1363,7 +1554,10 @@ function offlinePosInternalOrderNumber(localOrderId: string): string {
   const now = new Date();
   const date = now.toISOString().slice(0, 10).replaceAll("-", "");
   const time = now.toISOString().slice(11, 19).replaceAll(":", "");
-  const suffix = localOrderId.replace(/[^a-f0-9]/gi, "").slice(-8).toUpperCase();
+  const suffix = localOrderId
+    .replace(/[^a-f0-9]/gi, "")
+    .slice(-8)
+    .toUpperCase();
   return `POS-${date}-${time}-${suffix}`;
 }
 
@@ -1374,7 +1568,10 @@ function nextOfflineDisplayOrderSequence(
   const today = tashkentDateKey(new Date());
   const settingKey = `pos-sequence:${today}`;
   const savedSequence = Number(store.getSetting(settingKey) ?? 100);
-  const cachedOrders = store.getLatestCachedResponse(authScope, "/api/v1/orders");
+  const cachedOrders = store.getLatestCachedResponse(
+    authScope,
+    "/api/v1/orders",
+  );
   const cachedSequence = cachedOrders
     ? maxPosDisplaySequence(parseJsonValue(cachedOrders.body), today)
     : 100;
@@ -1383,7 +1580,10 @@ function nextOfflineDisplayOrderSequence(
   return nextSequence;
 }
 
-function rememberOnlinePosSequence(store: DesktopStore, responseBody: string): void {
+function rememberOnlinePosSequence(
+  store: DesktopStore,
+  responseBody: string,
+): void {
   const response = parseJsonObject(responseBody);
   const data = recordField(response, "data") ?? response;
   const order = recordField(data, "order") ?? data;
@@ -1393,7 +1593,8 @@ function rememberOnlinePosSequence(store: DesktopStore, responseBody: string): v
     ? displayOrderDate.slice(0, 10)
     : tashkentDateKey(new Date(stringField(order, "createdAt") ?? Date.now()));
   const numberFromLabel = Number(stringField(order, "displayOrderNumber") ?? 0);
-  const sequence = numberField(order, "displayOrderSequence") ?? numberFromLabel;
+  const sequence =
+    numberField(order, "displayOrderSequence") ?? numberFromLabel;
   if (!Number.isInteger(sequence) || sequence < 101) return;
   const key = `pos-sequence:${dateKey}`;
   const saved = Number(store.getSetting(key) ?? 100);
@@ -1410,10 +1611,11 @@ function maxPosDisplaySequence(value: unknown, dateKey: string): number {
   if (!isRecord(value)) return 100;
   const source = stringField(value, "source");
   const displayDate = stringField(value, "displayOrderDate")?.slice(0, 10);
-  const isPosOrder = source === "POS" && (!displayDate || displayDate === dateKey);
+  const isPosOrder =
+    source === "POS" && (!displayDate || displayDate === dateKey);
   const ownSequence: number = isPosOrder
-    ? numberField(value, "displayOrderSequence") ??
-      Number(stringField(value, "displayOrderNumber") ?? 0)
+    ? (numberField(value, "displayOrderSequence") ??
+      Number(stringField(value, "displayOrderNumber") ?? 0))
     : 100;
   return Object.values(value).reduce<number>(
     (max, child) => Math.max(max, maxPosDisplaySequence(child, dateKey)),
@@ -1428,7 +1630,8 @@ function tashkentDateKey(value: Date): string {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(value);
-  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+  const part = (type: string) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
@@ -1454,9 +1657,11 @@ function buildOfflineCancellationDocument(
   aggregateId: string | null,
 ): Record<string, unknown> | null {
   const isOrderCancellation =
-    (commandType === "order.status.update" && stringField(body, "status") === "CANCELLED") ||
+    (commandType === "order.status.update" &&
+      stringField(body, "status") === "CANCELLED") ||
     (commandType === "order.action" && pathname.endsWith("/actions/cancel"));
-  const isKitchenCancellation = commandType === "kitchen.action" && pathname.endsWith("/cancel");
+  const isKitchenCancellation =
+    commandType === "kitchen.action" && pathname.endsWith("/cancel");
   if (!isOrderCancellation && !isKitchenCancellation) return null;
 
   const cached = store.getLatestCachedResponse(
@@ -1466,9 +1671,8 @@ function buildOfflineCancellationDocument(
   const parsed = cached ? parseJsonValue(cached.body) : null;
   const data = isRecord(parsed) && "data" in parsed ? parsed.data : parsed;
   const entity = aggregateId ? findRecordById(data, aggregateId) : null;
-  const order = isKitchenCancellation && entity
-    ? recordField(entity, "order")
-    : entity;
+  const order =
+    isKitchenCancellation && entity ? recordField(entity, "order") : entity;
   if (!order || typeof order.id !== "string") return null;
 
   return {
@@ -1477,7 +1681,8 @@ function buildOfflineCancellationDocument(
     statusLabel: "BUYURTMA BEKOR QILINDI",
     cancellationReason:
       stringField(body, "reason") ?? "Buyurtma offline holatda bekor qilindi",
-    branchName: stringField(recordField(order, "branch"), "name") ?? "MAZETTO FOOD",
+    branchName:
+      stringField(recordField(order, "branch"), "name") ?? "MAZETTO FOOD",
     orderId: order.id,
     orderNumber: order.orderNumber,
     displayOrderNumber: order.displayOrderNumber,

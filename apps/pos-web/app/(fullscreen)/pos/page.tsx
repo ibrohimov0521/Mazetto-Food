@@ -94,6 +94,8 @@ type StoredCartLine = {
 };
 type OrderType = "TAKEAWAY" | "DINE_IN";
 type PosOrderResult = {
+  offlineQueued?: boolean;
+  message?: string;
   order: {
     id?: string;
     orderNumber: string;
@@ -1057,12 +1059,22 @@ function PosTerminal() {
       */}
       {success && (
         <StaffDialog
-          title="Buyurtma qabul qilindi"
+          title={
+            success.offlineQueued
+              ? "Buyurtma qurilmada saqlandi"
+              : "Buyurtma qabul qilindi"
+          }
           onClose={() => setSuccess(null)}
         >
           <p className={styles.ticketNumber}>
             #{success.order.displayOrderNumber ?? success.order.orderNumber}
           </p>
+          {success.offlineQueued ? (
+            <div className={styles.pendingSync} role="status">
+              Internet ulanmagani sababli buyurtma va chek qurilmadagi navbatga
+              saqlandi. Serverga internet tiklangach avtomatik yuboriladi.
+            </div>
+          ) : null}
           <div className={styles.change} role="status">
             <span>Qaytim</span>
             <strong>{money(success.payment.change)}</strong>
@@ -1072,11 +1084,16 @@ function PosTerminal() {
             <strong>{money(success.order.total)}</strong>
           </div>
           <div className={styles.dialogActions}>
-            {success.order.receipts?.find((receipt) => receipt.documentType === "RECEIPT" || !receipt.documentType)?.id ? (
+            {success.order.receipts?.find(
+              (receipt) =>
+                receipt.documentType === "RECEIPT" || !receipt.documentType,
+            )?.id ? (
               <button
                 className={styles.button}
                 onClick={() =>
-                  router.push(`/pos/receipt/${success.order.receipts!.find((receipt) => receipt.documentType === "RECEIPT" || !receipt.documentType)!.id}`)
+                  router.push(
+                    `/pos/receipt/${success.order.receipts!.find((receipt) => receipt.documentType === "RECEIPT" || !receipt.documentType)!.id}`,
+                  )
                 }
                 type="button"
               >

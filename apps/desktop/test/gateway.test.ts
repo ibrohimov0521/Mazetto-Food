@@ -71,7 +71,8 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-1", "branch-1");
-  const sent: { url: string; idempotencyKey: string | null; body: string }[] = [];
+  const sent: { url: string; idempotencyKey: string | null; body: string }[] =
+    [];
   let online = false;
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
@@ -130,13 +131,136 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
       `http://127.0.0.1:${gatewayPort}/api/v1/branches`,
       { headers: { Authorization: authorization } },
     );
-    assert.equal(onlineRequest.status, 200);
+    assert.equal(onlineRequest.status, 503);
+    await waitFor(() => gateway.status().mode === "online");
+    const recoveredRequest = await fetch(
+      "http://127.0.0.1:" + gatewayPort + "/api/v1/branches",
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(recoveredRequest.status, 200);
 
-    await waitFor(() => store.summary().pendingCommands === 0);
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+    );
     assert.equal(sent.length, 1);
     assert.equal(sent[0]?.url, "https://api.example.test/api/v1/pos/orders");
     assert.equal(sent[0]?.idempotencyKey, "sale-key-1");
     assert.match(sent[0]?.body ?? "", /sale-key-1/);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway bounds slow upstream requests and queues the POS sale", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-timeout", "branch-1");
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    requestTimeoutMs: 35,
+    fetchImpl: async (input, init) => {
+      if (String(input).endsWith("/health")) {
+        return jsonResponse({ ok: true });
+      }
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal?.addEventListener(
+          "abort",
+          () => reject(signal.reason ?? new Error("timeout")),
+          { once: true },
+        );
+      });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const startedAt = Date.now();
+    const sale = await fetch(
+      "http://127.0.0.1:" + gatewayPort + "/api/v1/pos/orders",
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idempotencyKey: "bounded-timeout-sale",
+          payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+        }),
+      },
+    );
+    assert.ok(Date.now() - startedAt < 1_000);
+    assert.equal(sale.status, 202);
+    assert.equal(store.summary().pendingCommands, 1);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway queues only cash payments while offline", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-offline-payment", "branch-1");
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      throw new Error("offline");
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const endpoint =
+      "http://127.0.0.1:" + gatewayPort + "/api/v1/payments/process";
+    const headers = {
+      Authorization: authorization,
+      "Content-Type": "application/json",
+    };
+    const rejected = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        idempotencyKey: "offline-card-payment",
+        payments: [{ paymentMethodCode: "UZCARD", amount: 42_000 }],
+      }),
+    });
+    assert.equal(rejected.status, 503);
+    assert.match((await rejected.json()).error.message, /faqat naqd/);
+    assert.equal(store.summary().pendingCommands, 0);
+
+    const queued = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        orderId: "order-1",
+        idempotencyKey: "offline-cash-payment",
+        payments: [{ paymentMethodCode: "CASH", amount: 42_000 }],
+      }),
+    });
+    assert.equal(queued.status, 202);
+    const payload = await queued.json();
+    assert.equal(payload.data.offlineQueued, true);
+    assert.equal(payload.data.order.paymentStatus, "PENDING_SYNC");
+    assert.equal(payload.data.order.receipts.length, 0);
+    assert.equal(store.summary().pendingCommands, 1);
   } finally {
     await gateway.stop();
     store.close();
@@ -191,10 +315,131 @@ test("gateway flushes queued mutations from the reconnect health probe", async (
     assert.equal(store.summary().pendingCommands, 1);
 
     online = true;
-    await waitFor(() => store.summary().pendingCommands === 0, 1_000);
-    assert.deepEqual(sent, [
-      "POST https://api.example.test/api/v1/pos/orders",
-    ]);
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+      2_500,
+    );
+    assert.deepEqual(sent, ["POST https://api.example.test/api/v1/pos/orders"]);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway exposes and retries failed local printer jobs", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  store.enqueueLocalPrintJob({
+    logicalKey: "local-order:RECEIPT",
+    branchId: "branch-1",
+    documentType: "RECEIPT",
+    payload: { orderNumber: "OFF-101" },
+  });
+  let printJob = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    printJob = store.claimLocalPrintJob(["RECEIPT"]);
+    assert.ok(printJob);
+    store.failLocalPrintJob(printJob.id, "Printer offline");
+  }
+  assert.equal(store.summary().deadLetterPrintJobs, 1);
+
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      throw new Error("offline");
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const base = "http://127.0.0.1:" + gatewayPort + "/desktop";
+    const listed = await fetch(base + "/outbox");
+    const queue = await listed.json();
+    assert.equal(queue.data.printJobs[0].state, "dead_letter");
+    assert.equal(queue.data.printJobs[0].lastError, "Printer offline");
+
+    const retried = await fetch(base + "/prints/" + printJob.id + "/retry", {
+      method: "POST",
+    });
+    assert.equal(retried.status, 200);
+    const updated = await retried.json();
+    assert.equal(updated.data.printJobs[0].state, "pending");
+    assert.equal(updated.data.summary.pendingPrintJobs, 1);
+    assert.equal(updated.data.summary.deadLetterPrintJobs, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway fast-fails to local cache and outbox while offline, then replays once", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-fast-offline", "branch-1");
+  let online = true;
+  let orderRequests = 0;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (!online) throw new Error("offline");
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/pos/orders")) {
+        orderRequests += 1;
+        return jsonResponse({ order: { id: "server-order-1" } });
+      }
+      if (url.endsWith("/orders")) return jsonResponse([]);
+      return jsonResponse({ ok: true });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const baseUrl = "http://127.0.0.1:" + gatewayPort + "/api/v1";
+    const headers = { Authorization: authorization };
+    const initial = await fetch(baseUrl + "/orders", { headers });
+    assert.equal(initial.status, 200);
+
+    online = false;
+    const firstOfflineRead = await fetch(baseUrl + "/orders", { headers });
+    assert.equal(firstOfflineRead.status, 200);
+    await waitFor(() => gateway.status().mode === "offline");
+
+    const requestsBeforeFastPath = orderRequests;
+    const cachedRead = await fetch(baseUrl + "/orders", { headers });
+    assert.equal(cachedRead.headers.get("x-mazetto-desktop"), "offline-cache");
+    assert.equal(orderRequests, requestsBeforeFastPath);
+
+    const queuedSale = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: "fast-offline-sale",
+        payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+      }),
+    });
+    assert.equal(queuedSale.status, 202);
+    assert.equal(orderRequests, requestsBeforeFastPath);
+    assert.equal(store.summary().pendingCommands, 1);
+
+    online = true;
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+    );
+    assert.equal(orderRequests, 1);
   } finally {
     await gateway.stop();
     store.close();
@@ -234,7 +479,9 @@ test("gateway exposes and manages the desktop outbox", async () => {
     );
     assert.equal(sale.status, 202);
 
-    const outbox = await fetch(`http://127.0.0.1:${gatewayPort}/desktop/outbox`);
+    const outbox = await fetch(
+      `http://127.0.0.1:${gatewayPort}/desktop/outbox`,
+    );
     assert.equal(outbox.status, 200);
     const outboxPayload = (await outbox.json()) as {
       data: { commands: Array<{ id: string; payload: { pathname?: string } }> };
@@ -311,7 +558,8 @@ test("gateway sends server version conflicts to the conflict inbox", async () =>
       commandType: "kitchen.action",
       method: "POST",
       pathname: "/api/v1/kitchen/orders/ticket-1/ready",
-      targetUrl: "https://api.example.test/api/v1/kitchen/orders/ticket-1/ready",
+      targetUrl:
+        "https://api.example.test/api/v1/kitchen/orders/ticket-1/ready",
       headers: { "idempotency-key": "conflict-key" },
       body: JSON.stringify({ expectedVersion: 2 }),
     },
@@ -373,11 +621,20 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
       }
       if (init?.method === "POST" && url.endsWith("/pos/orders")) {
         sent.push(`${init.method} ${url}`);
-        return jsonResponse({ success: true, data: { order: { id: "server-order-1" } } });
+        return jsonResponse({
+          success: true,
+          data: { order: { id: "server-order-1" } },
+        });
       }
-      if (init?.method === "POST" && url.endsWith("/orders/server-order-1/status")) {
+      if (
+        init?.method === "POST" &&
+        url.endsWith("/orders/server-order-1/status")
+      ) {
         sent.push(`${init.method} ${url}`);
-        return jsonResponse({ success: true, data: { order: { id: "server-order-1" } } });
+        return jsonResponse({
+          success: true,
+          data: { order: { id: "server-order-1" } },
+        });
       }
       return jsonResponse({ success: true, data: [] });
     },
@@ -385,20 +642,34 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
 
   try {
     const gatewayPort = await gateway.start();
-    const sale = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`, {
-      method: "POST",
-      headers: { Authorization: authorization, "Content-Type": "application/json" },
-      body: JSON.stringify({ idempotencyKey: "dependency-sale", payments: [] }),
-    });
+    const sale = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idempotencyKey: "dependency-sale",
+          payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+        }),
+      },
+    );
     assert.equal(sale.status, 202);
-    const salePayload = (await sale.json()) as { data: { order: { id: string } } };
+    const salePayload = (await sale.json()) as {
+      data: { order: { id: string } };
+    };
     assert.match(salePayload.data.order.id, /^local-/);
 
     const dependent = await fetch(
       `http://127.0.0.1:${gatewayPort}/api/v1/orders/${salePayload.data.order.id}/status`,
       {
         method: "POST",
-        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ status: "ACCEPTED", expectedVersion: 0 }),
       },
     );
@@ -406,11 +677,24 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
     assert.equal(store.summary().pendingCommands, 2);
 
     online = true;
-    const refresh = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/branches`, {
-      headers: { Authorization: authorization },
-    });
-    assert.equal(refresh.status, 200);
-    await waitFor(() => store.summary().pendingCommands === 0);
+    const refresh = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/branches`,
+      {
+        headers: { Authorization: authorization },
+      },
+    );
+    assert.equal(refresh.status, 503);
+    await waitFor(() => gateway.status().mode === "online");
+    const recovered = await fetch(
+      "http://127.0.0.1:" + gatewayPort + "/api/v1/branches",
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(recovered.status, 200);
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+    );
     assert.deepEqual(sent, [
       "POST https://api.example.test/api/v1/pos/orders",
       "POST https://api.example.test/api/v1/orders/server-order-1/status",
@@ -480,7 +764,8 @@ test("gateway compares a conflicted command with the current server resource", a
       commandType: "kitchen.action",
       method: "POST",
       pathname: "/api/v1/kitchen/orders/ticket-1/ready",
-      targetUrl: "https://api.example.test/api/v1/kitchen/orders/ticket-1/ready",
+      targetUrl:
+        "https://api.example.test/api/v1/kitchen/orders/ticket-1/ready",
       headers: { "idempotency-key": "compare-key" },
       body: JSON.stringify({ expectedVersion: 2, status: "READY" }),
     },
@@ -497,7 +782,10 @@ test("gateway compares a conflicted command with the current server resource", a
         return jsonResponse({ success: true, data: { ok: true } });
       }
       assert.equal(init?.method, "GET");
-      assert.equal(url, "https://api.example.test/api/v1/kitchen/orders/ticket-1");
+      assert.equal(
+        url,
+        "https://api.example.test/api/v1/kitchen/orders/ticket-1",
+      );
       return jsonResponse({
         success: true,
         data: { id: "ticket-1", version: 3, status: "COOKING" },
@@ -522,7 +810,10 @@ test("gateway compares a conflicted command with the current server resource", a
         };
       };
     };
-    assert.equal(payload.data.comparison.resourcePath, "/api/v1/kitchen/orders/ticket-1");
+    assert.equal(
+      payload.data.comparison.resourcePath,
+      "/api/v1/kitchen/orders/ticket-1",
+    );
     assert.equal(payload.data.comparison.expectedVersion, 2);
     assert.equal(payload.data.comparison.server.status, 200);
     assert.deepEqual(payload.data.command.payload.body, {
@@ -565,34 +856,48 @@ test("gateway projects pending POS orders into cached order reads and compensate
 
   try {
     const gatewayPort = await gateway.start();
-    const initial = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/orders`, {
-      headers: { Authorization: authorization },
-    });
+    const initial = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/orders`,
+      {
+        headers: { Authorization: authorization },
+      },
+    );
     assert.equal(initial.status, 200);
     assert.deepEqual(await initial.json(), []);
 
     online = false;
-    const sale = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`, {
-      method: "POST",
-      headers: {
-        Authorization: authorization,
-        "Content-Type": "application/json",
+    const sale = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idempotencyKey: "projection-sale",
+          items: [{ productId: "product-1", quantity: 1 }],
+          payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+        }),
       },
-      body: JSON.stringify({
-        idempotencyKey: "projection-sale",
-        items: [{ productId: "product-1", quantity: 1 }],
-        payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
-      }),
-    });
+    );
     assert.equal(sale.status, 202);
     const salePayload = (await sale.json()) as { data: { commandId: string } };
 
-    const projected = await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/orders`, {
-      headers: { Authorization: authorization },
-    });
+    const projected = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/orders`,
+      {
+        headers: { Authorization: authorization },
+      },
+    );
     assert.equal(projected.status, 200);
-    assert.equal(projected.headers.get("x-mazetto-desktop"), "offline-optimistic");
-    const projectedOrders = (await projected.json()) as Array<Record<string, unknown>>;
+    assert.equal(
+      projected.headers.get("x-mazetto-desktop"),
+      "offline-optimistic",
+    );
+    const projectedOrders = (await projected.json()) as Array<
+      Record<string, unknown>
+    >;
     assert.equal(projectedOrders.length, 1);
     assert.equal(projectedOrders[0]?.pendingSync, true);
     assert.equal(projectedOrders[0]?.commandId, salePayload.data.commandId);

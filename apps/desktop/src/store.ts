@@ -23,6 +23,7 @@ export type DesktopStoreSummary = {
   conflictCommands: number;
   deadLetterCommands: number;
   pendingPrintJobs: number;
+  deadLetterPrintJobs: number;
 };
 
 export type OutboxCommandInput = {
@@ -81,6 +82,15 @@ export type LocalPrintJob = {
   documentType: string;
   payloadJson: string;
   attempts: number;
+};
+
+export type LocalPrintQueueItem = {
+  id: string;
+  documentType: string;
+  state: string;
+  attempts: number;
+  createdAt: string;
+  lastError: string | null;
 };
 
 export class DesktopStore {
@@ -159,7 +169,10 @@ export class DesktopStore {
     return row ? { ...row } : null;
   }
 
-  getLatestCachedResponse(authScope: string, pathname: string): CachedResponse | null {
+  getLatestCachedResponse(
+    authScope: string,
+    pathname: string,
+  ): CachedResponse | null {
     const row = this.database
       .prepare(
         `SELECT cache_key AS cacheKey, request_url AS requestUrl,
@@ -183,35 +196,40 @@ export class DesktopStore {
     const now = new Date().toISOString();
     const payloadJson = JSON.stringify(input.payload);
     const payloadHash = createHash("sha256").update(payloadJson).digest("hex");
-    this.database.prepare(
-      `INSERT INTO print_jobs (
+    this.database
+      .prepare(
+        `INSERT INTO print_jobs (
          id, logical_key, branch_id, printer_id, document_type,
          payload_json, payload_hash, state, created_at
        ) VALUES (?, ?, ?, 'system:auto', ?, ?, ?, 'pending', ?)
        ON CONFLICT(logical_key) DO NOTHING`,
-    ).run(
-      randomUUID(),
-      input.logicalKey,
-      input.branchId,
-      input.documentType,
-      payloadJson,
-      payloadHash,
-      now,
-    );
+      )
+      .run(
+        randomUUID(),
+        input.logicalKey,
+        input.branchId,
+        input.documentType,
+        payloadJson,
+        payloadHash,
+        now,
+      );
   }
 
   claimLocalPrintJob(documentTypes: string[]): LocalPrintJob | null {
     if (documentTypes.length === 0) return null;
     const now = new Date().toISOString();
-    this.database.prepare(
-      `UPDATE print_jobs
+    this.database
+      .prepare(
+        `UPDATE print_jobs
        SET state = 'retry', lease_token = NULL, lease_expires_at = NULL
        WHERE state IN ('leased', 'printing')
          AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
-    ).run(now);
+      )
+      .run(now);
     const placeholders = documentTypes.map(() => "?").join(", ");
-    const row = this.database.prepare(
-      `SELECT id, logical_key AS logicalKey, branch_id AS branchId,
+    const row = this.database
+      .prepare(
+        `SELECT id, logical_key AS logicalKey, branch_id AS branchId,
               document_type AS documentType, payload_json AS payloadJson,
               attempts
        FROM print_jobs
@@ -219,51 +237,88 @@ export class DesktopStore {
          AND document_type IN (${placeholders})
        ORDER BY created_at ASC
        LIMIT 1`,
-    ).get(...documentTypes) as LocalPrintJob | undefined;
+      )
+      .get(...documentTypes) as LocalPrintJob | undefined;
     if (!row) return null;
     const leaseToken = randomUUID();
     const leaseExpiresAt = new Date(Date.now() + 60_000).toISOString();
-    const result = this.database.prepare(
-      `UPDATE print_jobs
+    const result = this.database
+      .prepare(
+        `UPDATE print_jobs
        SET state = 'leased', lease_token = ?, lease_expires_at = ?,
            attempts = attempts + 1
        WHERE id = ? AND state IN ('pending', 'retry')`,
-    ).run(leaseToken, leaseExpiresAt, row.id);
-    return Number(result.changes) > 0 ? { ...row, attempts: row.attempts + 1 } : null;
+      )
+      .run(leaseToken, leaseExpiresAt, row.id);
+    return Number(result.changes) > 0
+      ? { ...row, attempts: row.attempts + 1 }
+      : null;
   }
 
   completeLocalPrintJob(id: string): void {
-    this.database.prepare(
-      `UPDATE print_jobs
+    this.database
+      .prepare(
+        `UPDATE print_jobs
        SET state = 'printed', printed_at = ?, lease_token = NULL,
            lease_expires_at = NULL, last_error = NULL
        WHERE id = ?`,
-    ).run(new Date().toISOString(), id);
+      )
+      .run(new Date().toISOString(), id);
+  }
+
+  listLocalPrintJobs(limit = 50): LocalPrintQueueItem[] {
+    const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+    const rows = this.database
+      .prepare(
+        "SELECT id, document_type AS documentType, state, attempts, created_at AS createdAt, last_error AS lastError " +
+          "FROM print_jobs WHERE printer_id = 'system:auto' AND state <> 'printed' " +
+          "ORDER BY created_at DESC LIMIT ?",
+      )
+      .all(boundedLimit);
+    return rows as LocalPrintQueueItem[];
+  }
+
+  retryLocalPrintJob(id: string): boolean {
+    const result = this.database
+      .prepare(
+        "UPDATE print_jobs SET state = 'pending', attempts = 0, " +
+          "lease_token = NULL, lease_expires_at = NULL, last_error = NULL " +
+          "WHERE id = ? AND printer_id = 'system:auto' AND state = 'dead_letter'",
+      )
+      .run(id);
+    return Number(result.changes) > 0;
   }
 
   failLocalPrintJob(id: string, error: string): void {
-    const row = this.database.prepare(
-      `SELECT attempts FROM print_jobs WHERE id = ?`,
-    ).get(id) as { attempts: number | bigint } | undefined;
+    const row = this.database
+      .prepare(`SELECT attempts FROM print_jobs WHERE id = ?`)
+      .get(id) as { attempts: number | bigint } | undefined;
     const attempts = Number(row?.attempts ?? 1);
-    this.database.prepare(
-      `UPDATE print_jobs
+    this.database
+      .prepare(
+        `UPDATE print_jobs
        SET state = ?, lease_token = NULL, lease_expires_at = NULL,
            last_error = ?
        WHERE id = ?`,
-    ).run(attempts >= 5 ? "dead_letter" : "retry", error, id);
+      )
+      .run(attempts >= 5 ? "dead_letter" : "retry", error, id);
   }
 
-  wasLocalDocumentPrinted(serverOrderId: string, documentType: string): boolean {
-    const row = this.database.prepare(
-      `SELECT 1
+  wasLocalDocumentPrinted(
+    serverOrderId: string,
+    documentType: string,
+  ): boolean {
+    const row = this.database
+      .prepare(
+        `SELECT 1
        FROM print_jobs job
        LEFT JOIN local_id_map map
          ON job.logical_key = map.local_id || ':' || ?
        WHERE job.state = 'printed'
          AND (map.server_id = ? OR job.logical_key = ?)
        LIMIT 1`,
-    ).get(documentType, serverOrderId, `${serverOrderId}:${documentType}`);
+      )
+      .get(documentType, serverOrderId, `${serverOrderId}:${documentType}`);
     return Boolean(row);
   }
 
@@ -300,19 +355,21 @@ export class DesktopStore {
         now,
       );
 
-    return this.getOutboxCommandByIdempotencyKey(input.idempotencyKey) ?? {
-      id,
-      idempotencyKey: input.idempotencyKey,
-      commandType: input.commandType,
-      aggregateType: input.aggregateType,
-      aggregateId: input.aggregateId ?? null,
-      baseVersion: input.baseVersion ?? null,
-      actorId: input.actorId,
-      branchId: input.branchId,
-      authScope: input.authScope,
-      payloadJson,
-      attempts: 0,
-    };
+    return (
+      this.getOutboxCommandByIdempotencyKey(input.idempotencyKey) ?? {
+        id,
+        idempotencyKey: input.idempotencyKey,
+        commandType: input.commandType,
+        aggregateType: input.aggregateType,
+        aggregateId: input.aggregateId ?? null,
+        baseVersion: input.baseVersion ?? null,
+        actorId: input.actorId,
+        branchId: input.branchId,
+        authScope: input.authScope,
+        payloadJson,
+        attempts: 0,
+      }
+    );
   }
 
   dueMutations(authScope: string, limit = 25): PendingOutboxCommand[] {
@@ -339,7 +396,11 @@ export class DesktopStore {
       LIMIT ?
     `,
       )
-      .all(authScope, new Date().toISOString(), limit) as PendingOutboxCommand[];
+      .all(
+        authScope,
+        new Date().toISOString(),
+        limit,
+      ) as PendingOutboxCommand[];
 
     return rows.map((row) => ({ ...row }));
   }
@@ -530,7 +591,10 @@ export class DesktopStore {
     const cachedResponses = this.count("api_cache");
     const pendingCommands = this.count("mutation_outbox", "state = 'pending'");
     const sendingCommands = this.count("mutation_outbox", "state = 'sending'");
-    const conflictCommands = this.count("mutation_outbox", "state = 'conflict'");
+    const conflictCommands = this.count(
+      "mutation_outbox",
+      "state = 'conflict'",
+    );
     const deadLetterCommands = this.count(
       "mutation_outbox",
       "state = 'dead_letter'",
@@ -538,6 +602,10 @@ export class DesktopStore {
     const pendingPrintJobs = this.count(
       "print_jobs",
       "state IN ('pending', 'leased', 'retry')",
+    );
+    const deadLetterPrintJobs = this.count(
+      "print_jobs",
+      "printer_id = 'system:auto' AND state = 'dead_letter'",
     );
 
     return {
@@ -548,6 +616,7 @@ export class DesktopStore {
       conflictCommands,
       deadLetterCommands,
       pendingPrintJobs,
+      deadLetterPrintJobs,
     };
   }
 
@@ -574,7 +643,11 @@ export class DesktopStore {
   }
 
   setSetting(key: string, value: string): void {
-    this.database.prepare(`INSERT INTO desktop_meta (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(`setting:${key}`, value, new Date().toISOString());
+    this.database
+      .prepare(
+        `INSERT INTO desktop_meta (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(`setting:${key}`, value, new Date().toISOString());
   }
 
   saveLocalIdMapping(input: {
@@ -643,9 +716,7 @@ export class DesktopStore {
     ).toISOString();
 
     this.database
-      .prepare(
-        `DELETE FROM api_cache WHERE auth_scope = ? AND cached_at < ?`,
-      )
+      .prepare(`DELETE FROM api_cache WHERE auth_scope = ? AND cached_at < ?`)
       .run(authScope, cutoff);
 
     this.database
@@ -810,15 +881,21 @@ export class DesktopStore {
     `);
   }
 
-  private ensureColumn(table: string, column: string, definition: string): void {
-    const rows = this.database
-      .prepare(`PRAGMA table_info(${table})`)
-      .all() as { name: string }[];
+  private ensureColumn(
+    table: string,
+    column: string,
+    definition: string,
+  ): void {
+    const rows = this.database.prepare(`PRAGMA table_info(${table})`).all() as {
+      name: string;
+    }[];
     if (rows.some((row) => row.name === column)) {
       return;
     }
 
-    this.database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    this.database.exec(
+      `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`,
+    );
   }
 
   private recoverInterruptedMutations(): void {
@@ -850,7 +927,8 @@ function summarizeOutboxPayload(source: string): OutboxQueueItem["payload"] {
 
     if (typeof parsed.method === "string") payload.method = parsed.method;
     if (typeof parsed.pathname === "string") payload.pathname = parsed.pathname;
-    if (typeof parsed.targetUrl === "string") payload.targetUrl = parsed.targetUrl;
+    if (typeof parsed.targetUrl === "string")
+      payload.targetUrl = parsed.targetUrl;
     if (typeof parsed.queuedAt === "string") payload.queuedAt = parsed.queuedAt;
     if (typeof parsed.localAggregateId === "string") {
       payload.localAggregateId = parsed.localAggregateId;

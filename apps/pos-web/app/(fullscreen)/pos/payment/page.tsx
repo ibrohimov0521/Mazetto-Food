@@ -31,7 +31,11 @@ import {
   paymentMethodLabel,
   type PaymentMethodCode,
 } from "../../../../components/payment/payment-methods";
-import { apiFetch, SessionExpiredError } from "../../../../lib/api";
+import {
+  apiFetch,
+  isOfflineQueuedResult,
+  SessionExpiredError,
+} from "../../../../lib/api";
 import { useStaffRealtime } from "../../../../lib/use-staff-realtime";
 import { Pagination } from "../../../../components/admin-ui/pagination";
 import {
@@ -74,6 +78,7 @@ type Completion = {
   paid: number;
   change: number;
   receiptId: string | null;
+  offlineQueued: boolean;
 };
 
 const createPaymentKey = () =>
@@ -390,12 +395,16 @@ function PaymentTerminal() {
       const latestReceipt = [...receipts].sort((left, right) =>
         right.createdAt.localeCompare(left.createdAt),
       )[0];
+      const offlineQueued = isOfflineQueuedResult(result);
       setConfirmOpen(false);
       setCompletion({
         orderLabel,
         paid: payloadTotal,
         change: cash.change,
-        receiptId: latestReceipt?.id ?? (await findReceiptId(order.id)),
+        offlineQueued,
+        receiptId:
+          latestReceipt?.id ??
+          (offlineQueued ? null : await findReceiptId(order.id)),
       });
       setTenders([{ code: "CASH", amount: "" }]);
       setCashReceived("");
@@ -786,10 +795,31 @@ function PaymentTerminal() {
       ) : null}
 
       {completion ? (
-        <StaffDialog title="To'lov qabul qilindi" onClose={resetForNextOrder}>
-          <div className={styles.success} role="status">
-            #{completion.orderLabel} uchun {formatMoney(completion.paid)} qabul
-            qilindi.
+        <StaffDialog
+          title={
+            completion.offlineQueued
+              ? "To'lov qurilmada saqlandi"
+              : "To'lov qabul qilindi"
+          }
+          onClose={resetForNextOrder}
+        >
+          <div
+            className={
+              completion.offlineQueued ? styles.pendingSync : styles.success
+            }
+            role="status"
+          >
+            {completion.offlineQueued
+              ? "#" +
+                completion.orderLabel +
+                " uchun " +
+                formatMoney(completion.paid) +
+                " naqd to'lov serverga yuborilishi kutilmoqda. Internet qaytgach avtomatik sinxronlanadi; yakuniy chek shundan keyin mavjud bo'ladi."
+              : "#" +
+                completion.orderLabel +
+                " uchun " +
+                formatMoney(completion.paid) +
+                " qabul qilindi."}
           </div>
           <div className={styles.payDialogChange}>
             <span>Qaytim</span>
