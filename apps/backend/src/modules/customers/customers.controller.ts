@@ -12,7 +12,7 @@ import {
   Res,
   UnauthorizedException,
 } from "@nestjs/common";
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   ListCustomerOrdersDto,
@@ -27,7 +27,8 @@ import { CustomerAuth } from "../../common/decorators/customer-auth.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
-import type { AuthenticatedCustomer } from "../../common/types/authenticated-customer";
+import type { AuthenticatedCustomer, CustomerAuthenticatedRequest } from "../../common/types/authenticated-customer";
+import { requireTrustedTenantId } from "../../common/tenant/require-trusted-tenant";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
   CustomerCheckoutQuoteDto,
@@ -81,34 +82,63 @@ export class CustomerPublicController {
 
   @Public()
   @Post("auth/request-code")
-  requestCode(@Body() dto: CustomerRequestCodeDto) {
-    return this.customerAuth.requestCode(dto);
+  requestCode(
+    @Body() dto: CustomerRequestCodeDto,
+    @Req() request: CustomerAuthenticatedRequest,
+  ) {
+    return this.customerAuth.requestCode(
+      dto,
+      requireTrustedTenantId(request.tenantContext),
+    );
   }
 
   @Public()
   @Post("auth/verify-code")
-  async verifyCode(@Body() dto: CustomerVerifyCodeDto, @Res({ passthrough: true }) response: Response) {
-    const result = await this.customerAuth.verifyCode(dto);
+  async verifyCode(
+    @Body() dto: CustomerVerifyCodeDto,
+    @Req() request: CustomerAuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.customerAuth.verifyCode(
+      dto,
+      requireTrustedTenantId(request.tenantContext),
+    );
     setRefreshCookie(response, CUSTOMER_REFRESH_COOKIE, result.tokens.refreshToken, CUSTOMER_COOKIE_PATH, Number(process.env.CUSTOMER_JWT_REFRESH_EXPIRES_IN_SECONDS ?? 604800));
     return result;
   }
 
   @Public()
   @Post("auth/refresh")
-  async refresh(@Body() dto: CustomerRefreshDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+  async refresh(
+    @Body() dto: CustomerRefreshDto,
+    @Req() request: CustomerAuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     const refreshToken = readRefreshToken(request, dto.refreshToken, CUSTOMER_REFRESH_COOKIE);
     if (!refreshToken) throw new UnauthorizedException("Refresh token is required");
-    const result = await this.customerAuth.refresh({ refreshToken });
+    const result = await this.customerAuth.refresh(
+      { refreshToken },
+      requireTrustedTenantId(request.tenantContext),
+    );
     setRefreshCookie(response, CUSTOMER_REFRESH_COOKIE, result.tokens.refreshToken, CUSTOMER_COOKIE_PATH, Number(process.env.CUSTOMER_JWT_REFRESH_EXPIRES_IN_SECONDS ?? 604800));
     return result;
   }
 
   @Public()
   @Post("auth/logout")
-  logout(@Body() dto: CustomerLogoutDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+  logout(
+    @Body() dto: CustomerLogoutDto,
+    @Req() request: CustomerAuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     const refreshToken = readRefreshToken(request, dto.refreshToken, CUSTOMER_REFRESH_COOKIE);
     clearRefreshCookie(response, CUSTOMER_REFRESH_COOKIE, CUSTOMER_COOKIE_PATH);
-    return refreshToken ? this.customerAuth.logout({ refreshToken }) : { revoked: false };
+    return refreshToken
+      ? this.customerAuth.logout(
+          { refreshToken },
+          requireTrustedTenantId(request.tenantContext),
+        )
+      : { revoked: false };
   }
 
   @CustomerAuth()
@@ -119,32 +149,50 @@ export class CustomerPublicController {
 
   @Public()
   @Get("menu/categories")
-  listCategories(@Query("branchId") branchId?: string) {
-    return this.customersService.listCategories(branchId);
+  listCategories(
+    @Query("branchId") branchId: string | undefined,
+    @Req() request: CustomerAuthenticatedRequest,
+  ) {
+    return this.customersService.listCategories(
+      branchId,
+      requireTrustedTenantId(request.tenantContext),
+    );
   }
 
   @Public()
   @Get("branches")
-  listBranches() {
-    return this.customersService.listBranches();
+  listBranches(@Req() request: CustomerAuthenticatedRequest) {
+    return this.customersService.listBranches(
+      requireTrustedTenantId(request.tenantContext),
+    );
   }
 
   @Public()
   @Get("menu/products")
   listProducts(
-    @Query("branchId") branchId?: string,
-    @Query("categoryId") categoryId?: string,
+    @Query("branchId") branchId: string | undefined,
+    @Query("categoryId") categoryId: string | undefined,
+    @Req() request: CustomerAuthenticatedRequest,
   ) {
-    return this.customersService.listProducts(branchId, categoryId);
+    return this.customersService.listProducts(
+      branchId,
+      categoryId,
+      requireTrustedTenantId(request.tenantContext),
+    );
   }
 
   @Public()
   @Get("menu/products/:id")
   getProduct(
     @Param("id") id: string,
-    @Query("branchId") branchId?: string,
+    @Query("branchId") branchId: string | undefined,
+    @Req() request: CustomerAuthenticatedRequest,
   ) {
-    return this.customersService.getProduct(id, branchId);
+    return this.customersService.getProduct(
+      id,
+      branchId,
+      requireTrustedTenantId(request.tenantContext),
+    );
   }
 
   @CustomerAuth()

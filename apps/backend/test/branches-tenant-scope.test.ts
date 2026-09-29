@@ -127,7 +127,7 @@ test("branch-scoped users cannot read another branch in their tenant", async () 
   await assert.rejects(service.getBranch("branch-a2", manager), /Boshqa filialga/);
   assert.equal(branchLookupCount, 1);
 });
-test("customer branch list is restricted to the sole active restaurant", async () => {
+test("customer branch list is restricted to the trusted tenant", async () => {
   let where: unknown;
   const service = new BranchesService({
     branch: {
@@ -137,15 +137,15 @@ test("customer branch list is restricted to the sole active restaurant", async (
       },
     },
     restaurantTenant: {
-      findMany: async () => [{ id: "tenant-a" }],
+      findFirst: async () => ({ id: "tenant-a" }),
     },
   } as never);
 
-  await service.listCustomerBranches();
+  await service.listCustomerBranches("tenant-a");
   assert.deepEqual(where, { isActive: true, tenantId: "tenant-a" });
 });
 
-test("customer branch list fails closed when tenant selection is ambiguous", async () => {
+test("customer branch list fails closed when the trusted tenant is inactive", async () => {
   let branchQueryCount = 0;
   const service = new BranchesService({
     branch: {
@@ -155,15 +155,18 @@ test("customer branch list fails closed when tenant selection is ambiguous", asy
       },
     },
     restaurantTenant: {
-      findMany: async () => [{ id: "tenant-a" }, { id: "tenant-b" }],
+      findFirst: async () => null,
     },
   } as never);
 
-  await assert.rejects(service.listCustomerBranches(), /Tenant context is required/);
+  await assert.rejects(
+    service.listCustomerBranches("tenant-a"),
+    /Restaurant not found/,
+  );
   assert.equal(branchQueryCount, 0);
 });
 
-test("customer order branch validation includes the sole active tenant", async () => {
+test("customer order branch validation includes the trusted tenant", async () => {
   let where: unknown;
   const service = new BranchesService({
     branch: {
@@ -173,12 +176,12 @@ test("customer order branch validation includes the sole active tenant", async (
       },
     },
     restaurantTenant: {
-      findMany: async () => [{ id: "tenant-a" }],
+      findFirst: async () => ({ id: "tenant-a" }),
     },
   } as never);
 
   await assert.rejects(
-    service.assertCustomerBranchAcceptsOrder("branch-b", "PICKUP"),
+    service.assertCustomerBranchAcceptsOrder("branch-b", "PICKUP", "tenant-a"),
     /Branch not found/,
   );
   assert.deepEqual(where, {
@@ -188,7 +191,7 @@ test("customer order branch validation includes the sole active tenant", async (
   });
 });
 
-test("customer order validation rejects ambiguous active tenants before branch lookup", async () => {
+test("customer order validation rejects an inactive tenant before branch lookup", async () => {
   let branchQueryCount = 0;
   const service = new BranchesService({
     branch: {
@@ -198,13 +201,13 @@ test("customer order validation rejects ambiguous active tenants before branch l
       },
     },
     restaurantTenant: {
-      findMany: async () => [{ id: "tenant-a" }, { id: "tenant-b" }],
+      findFirst: async () => null,
     },
   } as never);
 
   await assert.rejects(
-    service.assertCustomerBranchAcceptsOrder("branch-b", "PICKUP"),
-    /Tenant context is required/,
+    service.assertCustomerBranchAcceptsOrder("branch-b", "PICKUP", "tenant-a"),
+    /Restaurant not found/,
   );
   assert.equal(branchQueryCount, 0);
 });
@@ -243,12 +246,12 @@ test("catalog branch IDs are verified against the active tenant", async () => {
       },
     },
     restaurantTenant: {
-      findMany: async () => [{ id: "tenant-a" }],
+      findFirst: async () => ({ id: "tenant-a" }),
     },
   } as never);
 
   await assert.rejects(
-    service.resolveCustomerTenantId("branch-b"),
+    service.resolveCustomerTenantId("branch-b", "tenant-a"),
     /Branch not found/,
   );
   assert.deepEqual(where, {

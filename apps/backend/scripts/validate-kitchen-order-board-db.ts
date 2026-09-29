@@ -95,6 +95,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   });
   const customer = await prisma.customer.create({
     data: {
+      tenantId: branch.tenantId,
       name: "Kitchen Gate Customer",
       phone: `+99888${runId.slice(-7)}`,
       telegramUserId: `88${runId.slice(-7)}`,

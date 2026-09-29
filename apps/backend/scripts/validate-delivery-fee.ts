@@ -34,14 +34,14 @@ assert.match(
 );
 assert.match(
   settingsService,
-  /customerDeliveryFee: await this\.getInt\("customer_delivery_fee"\)/,
+  /customerDeliveryFee: await this\.getInt\("customer_delivery_fee", tenantId\)/,
   "Ochiq sozlamalar javobida narx yo'q.",
 );
 
 // --- Server yagona manba ---
 assert.match(
   engine,
-  /this\.settings\.getInt\("customer_delivery_fee"\)/,
+  /this\.settings\.getInt\("customer_delivery_fee", tenantId\)/,
   "Narx sozlamadan o'qilmayapti — kodda qattiq yozilgan bo'lishi mumkin.",
 );
 assert.match(

@@ -9,6 +9,8 @@ import { SettingsService } from "../src/modules/settings/settings.service";
 
 const actor = {
   id: "super-admin",
+  tenantId: "tenant-a",
+  membershipId: "membership-a",
   roles: ["SUPER_ADMIN"],
   permissions: ["*"],
   isGlobalScope: true,
@@ -96,7 +98,7 @@ test("sozlama va uning audit izi bitta tranzaksiyada yoziladi", async () => {
   };
   const service = new SettingsService(
     {
-      restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+      restaurantTenant: { findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }) },
       $transaction: async (callback: (client: typeof tx) => unknown) => {
         calls.push("begin");
         const result = await callback(tx);

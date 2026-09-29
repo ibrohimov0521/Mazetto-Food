@@ -11,6 +11,7 @@ import { createDeadLetterStub } from "./dead-letter-stub";
 
 type CustomerRecord = {
   id: string;
+  tenantId: string;
   name: string;
   phone: string;
   email: string | null;
@@ -25,6 +26,7 @@ type CustomerRecord = {
 
 type ChallengeRecord = {
   id: string;
+  tenantId: string;
   customerId: string | null;
   phone: string;
   codeHash: string;
@@ -64,23 +66,49 @@ class InMemoryPrisma {
   private sequence = 0;
 
   customer = {
-    findUnique: async ({ where, select }: { where: Partial<CustomerRecord>; select?: Record<string, boolean> }) => {
-      const record =
-        where.phone !== undefined
-          ? this.customers.find((customer) => customer.phone === where.phone)
+    findUnique: async ({
+      where,
+      select,
+    }: {
+      where: {
+        id?: string;
+        tenantId_phone?: { tenantId: string; phone: string };
+        tenantId_telegramUserId?: { tenantId: string; telegramUserId: string };
+      };
+      select?: Record<string, boolean>;
+    }) => {
+      const record = where.tenantId_phone
+        ? this.customers.find(
+            (customer) =>
+              customer.tenantId === where.tenantId_phone?.tenantId &&
+              customer.phone === where.tenantId_phone.phone,
+          )
+        : where.tenantId_telegramUserId
+          ? this.customers.find(
+              (customer) =>
+                customer.tenantId === where.tenantId_telegramUserId?.tenantId &&
+                customer.telegramUserId === where.tenantId_telegramUserId.telegramUserId,
+            )
           : this.customers.find((customer) => customer.id === where.id);
       return this.select(record ?? null, select);
     },
-    findFirst: async ({ where, select }: { where: { telegramUserId?: string; phone?: { not: string } }; select?: Record<string, boolean> }) => {
+    findFirst: async ({
+      where,
+      select,
+    }: {
+      where: { tenantId?: string; telegramUserId?: string; phone?: { not: string } };
+      select?: Record<string, boolean>;
+    }) => {
       const record = this.customers.find((customer) => {
+        if (where.tenantId !== undefined && customer.tenantId !== where.tenantId) {
+          return false;
+        }
         if (where.telegramUserId !== undefined && customer.telegramUserId !== where.telegramUserId) {
           return false;
         }
-
         if (where.phone?.not !== undefined && customer.phone === where.phone.not) {
           return false;
         }
-
         return true;
       });
       return this.select(record ?? null, select);
@@ -91,46 +119,55 @@ class InMemoryPrisma {
       create,
       select,
     }: {
-      where: { phone: string };
+      where: { tenantId_phone: { tenantId: string; phone: string } };
       update: Partial<CustomerRecord>;
-      create: Pick<CustomerRecord, "name" | "phone"> & Partial<CustomerRecord>;
+      create: Pick<CustomerRecord, "tenantId" | "name" | "phone"> & Partial<CustomerRecord>;
       select?: Record<string, boolean>;
     }) => {
-      let record = this.customers.find((customer) => customer.phone === where.phone);
-
+      let record = this.customers.find(
+        (customer) =>
+          customer.tenantId === where.tenantId_phone.tenantId &&
+          customer.phone === where.tenantId_phone.phone,
+      );
       if (record) {
         const conflictingTelegramUserId =
           update.telegramUserId &&
           this.customers.find(
             (customer) =>
               customer.id !== record?.id &&
+              customer.tenantId === where.tenantId_phone.tenantId &&
               customer.telegramUserId === update.telegramUserId,
           );
-
         if (conflictingTelegramUserId) {
-          throw new Error("Unique constraint failed on telegramUserId");
+          throw new Error("Unique constraint failed on tenant telegramUserId");
         }
-
         record = { ...record, ...update, updatedAt: new Date() };
         this.customers = this.customers.map((customer) =>
           customer.id === record?.id ? record as CustomerRecord : customer,
         );
       } else {
-        if (this.customers.some((customer) => customer.phone === create.phone)) {
-          throw new Error("Unique constraint failed on phone");
+        if (
+          this.customers.some(
+            (customer) =>
+              customer.tenantId === create.tenantId &&
+              customer.phone === create.phone,
+          )
+        ) {
+          throw new Error("Unique constraint failed on tenant phone");
         }
-
         if (
           create.telegramUserId &&
           this.customers.some(
-            (customer) => customer.telegramUserId === create.telegramUserId,
+            (customer) =>
+              customer.tenantId === create.tenantId &&
+              customer.telegramUserId === create.telegramUserId,
           )
         ) {
-          throw new Error("Unique constraint failed on telegramUserId");
+          throw new Error("Unique constraint failed on tenant telegramUserId");
         }
-
         record = {
           id: this.id("customer"),
+          tenantId: create.tenantId,
           name: create.name,
           phone: create.phone,
           email: create.email ?? null,
@@ -144,15 +181,15 @@ class InMemoryPrisma {
         };
         this.customers.push(record);
       }
-
       return this.select(record, select);
     },
   };
 
   customerVerificationChallenge = {
-    count: async ({ where }: { where: { phone: string; createdAt?: { gte: Date } } }) =>
+    count: async ({ where }: { where: { tenantId: string; phone: string; createdAt?: { gte: Date } } }) =>
       this.challenges.filter(
         (challenge) =>
+          challenge.tenantId === where.tenantId &&
           challenge.phone === where.phone &&
           (!where.createdAt?.gte || challenge.createdAt >= where.createdAt.gte),
       ).length,
@@ -161,6 +198,7 @@ class InMemoryPrisma {
       select,
     }: {
       data: {
+        tenantId: string;
         customerId: string | null;
         phone: string;
         codeHash: string;
@@ -170,6 +208,7 @@ class InMemoryPrisma {
     }) => {
       const record: ChallengeRecord = {
         id: this.id("challenge"),
+        tenantId: data.tenantId,
         customerId: data.customerId,
         phone: data.phone,
         codeHash: data.codeHash,
@@ -186,7 +225,7 @@ class InMemoryPrisma {
       where,
       orderBy,
     }: {
-      where: { phone: string; consumedAt: null; expiresAt: { gt: Date } };
+      where: { tenantId: string; phone: string; consumedAt: null; expiresAt: { gt: Date } };
       orderBy: { createdAt: "desc" };
     }) => {
       void orderBy;
@@ -194,6 +233,7 @@ class InMemoryPrisma {
         this.challenges
           .filter(
             (challenge) =>
+              challenge.tenantId === where.tenantId &&
               challenge.phone === where.phone &&
               challenge.consumedAt === where.consumedAt &&
               challenge.expiresAt > where.expiresAt.gt,
@@ -218,12 +258,13 @@ class InMemoryPrisma {
       where,
       data,
     }: {
-      where: { phone: string; consumedAt: null; expiresAt: { gt: Date } };
+      where: { tenantId: string; phone: string; consumedAt: null; expiresAt: { gt: Date } };
       data: { consumedAt: Date };
     }) => {
       let count = 0;
       for (const challenge of this.challenges) {
         if (
+          challenge.tenantId === where.tenantId &&
           challenge.phone === where.phone &&
           challenge.consumedAt === where.consumedAt &&
           challenge.expiresAt > where.expiresAt.gt
@@ -355,13 +396,19 @@ function createServices(
    * beshta bog'liqlik oladi: baza, JWT, Telegram yetkazish,
    * sozlamalar va session socketlarini bekor qilish.
    */
-  const customersService = new CustomerAuthService(
+  const customerAuth = new CustomerAuthService(
     prisma as never,
     new JwtService(),
     telegramCustomerAuthService,
     createSettingsStub(),
     { disconnectCustomerSession: () => undefined } as never,
   );
+  const customersService = {
+    requestCode: (dto: Parameters<CustomerAuthService["requestCode"]>[0]) =>
+      customerAuth.requestCode(dto, "tenant-mazetto"),
+    verifyCode: (dto: Parameters<CustomerAuthService["verifyCode"]>[0]) =>
+      customerAuth.verifyCode(dto, "tenant-mazetto"),
+  };
 
   return { prisma, telegramCustomerAuthService, customersService };
 }
@@ -541,6 +588,7 @@ async function testCodeRotationReuseExpiryAndAttempts(): Promise<void> {
   const expiredCodeHash = await bcrypt.hash("123456", 12);
   await prisma.customerVerificationChallenge.create({
     data: {
+      tenantId: "tenant-mazetto",
       customerId: prisma.customers[0]?.id ?? null,
       phone: "+998901112277",
       codeHash: expiredCodeHash,
@@ -555,6 +603,7 @@ async function testCodeRotationReuseExpiryAndAttempts(): Promise<void> {
   const attemptsCodeHash = await bcrypt.hash("654321", 12);
   await prisma.customerVerificationChallenge.create({
     data: {
+      tenantId: "tenant-mazetto",
       customerId: prisma.customers[0]?.id ?? null,
       phone: "+998901112288",
       codeHash: attemptsCodeHash,

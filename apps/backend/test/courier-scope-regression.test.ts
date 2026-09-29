@@ -70,9 +70,17 @@ test("courier orders expose only the unpaid balance, including partial payments"
         },
       })),
     },
+    restaurantTenant: {
+      findFirst: async () => ({ id: "tenant-a" }),
+    },
+    branch: {
+      findFirst: async () => ({ id: "branch-1" }),
+    },
   } as unknown as PrismaService;
   const user: AuthenticatedUser = {
     id: "courier-user",
+    tenantId: "tenant-a",
+    membershipId: "membership-a",
     employeeId: "courier-employee",
     branchId: "branch-1",
     roles: ["COURIER"],

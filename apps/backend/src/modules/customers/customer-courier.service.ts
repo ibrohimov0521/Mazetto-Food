@@ -10,7 +10,7 @@ import {
   Prisma,
   ShiftStatus,
 } from "@prisma/client";
-import { resolveBranchScope } from "../../common/auth/access-scope";
+import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentsService } from "../payments/payments.service";
@@ -62,7 +62,7 @@ export class CustomerCourierService {
     user: AuthenticatedUser,
   ) {
     const employeeId = requireEmployee(user);
-    const branchId = resolveBranchScope(user, query.branchId);
+    const scope = await resolveRestaurantScope(this.prisma, user, query.branchId);
     const day = todayTashkentRange();
     const status = toOrderStatus(query.status);
     const search = query.search?.trim();
@@ -77,7 +77,7 @@ export class CustomerCourierService {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
         type: "DELIVERY",
-        ...(branchId ? { branchId } : {}),
+        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
         order: {
           createdAt: { gte: day.start, lt: day.end },
           status: status ?? {
@@ -171,7 +171,7 @@ export class CustomerCourierService {
     user: AuthenticatedUser,
   ) {
     const employeeId = requireEmployee(user);
-    const branchId = resolveBranchScope(user, query.branchId);
+    const scope = await resolveRestaurantScope(this.prisma, user, query.branchId);
     const day = todayTashkentRange();
     const status = toOrderStatus(query.status);
     const search = query.search?.trim();
@@ -179,7 +179,7 @@ export class CustomerCourierService {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
         type: "DELIVERY",
-        ...(branchId ? { branchId } : {}),
+        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
         order: {
           servedById: employeeId,
           createdAt: { gte: day.start, lt: day.end },
@@ -254,13 +254,13 @@ export class CustomerCourierService {
     user: AuthenticatedUser,
   ) {
     const employeeId = requireEmployee(user);
-    const scopedBranchId = resolveBranchScope(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const nextStatus = dto.status as OrderStatus;
 
     const customerOrder = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id WHERE c.id = ${customerOrderId} FOR UPDATE OF o`;
-      const existing = await tx.customerOrder.findUnique({
-        where: { id: customerOrderId },
+      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id JOIN "branches" b ON b.id = c."branchId" WHERE c.id = ${customerOrderId} AND b."tenantId" = ${scope.tenantId} FOR UPDATE OF o`;
+      const existing = await tx.customerOrder.findFirst({
+        where: { id: customerOrderId, branch: { tenantId: scope.tenantId } },
         include: { order: { include: { payments: true } } },
       });
 
@@ -274,7 +274,7 @@ export class CustomerCourierService {
         );
       }
 
-      if (scopedBranchId && existing.branchId !== scopedBranchId) {
+      if (scope.branchId && existing.branchId !== scope.branchId) {
         throw new ForbiddenException("Cannot access another branch");
       }
 
@@ -453,13 +453,13 @@ export class CustomerCourierService {
   }
 
   async listCouriers(user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
     const day = todayTashkentRange();
 
     const couriers = await this.prisma.employee.findMany({
       where: {
         status: "ACTIVE",
-        ...(branchId ? { branchId } : {}),
+        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
         user: { roles: { some: { role: { code: "COURIER" } } } },
       },
       select: {
@@ -489,6 +489,7 @@ export class CustomerCourierService {
           servedById: { in: courierIds },
           type: "DELIVERY",
           status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+          branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
         },
         _count: { _all: true },
       }),
@@ -500,6 +501,7 @@ export class CustomerCourierService {
           status: OrderStatus.COMPLETED,
           // "Bugun" Toshkent bo'yicha — UTC yarim tunda hisob nolga tushmasin.
           updatedAt: { gte: day.start, lt: day.end },
+          branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
         },
         _count: { _all: true },
       }),
@@ -532,12 +534,12 @@ export class CustomerCourierService {
    */
 
   async listActiveDeliveries(user: AuthenticatedUser) {
-    const branchId = resolveBranchScope(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
 
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
         type: "DELIVERY",
-        ...(branchId ? { branchId } : {}),
+        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
         order: {
           status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
         },
@@ -585,7 +587,7 @@ export class CustomerCourierService {
     employeeId: string | null,
     user: AuthenticatedUser,
   ) {
-    const scopedBranchId = resolveBranchScope(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
 
     return this.prisma.$transaction(async (tx) => {
       /*
@@ -593,10 +595,10 @@ export class CustomerCourierService {
        * bo'lishi mumkin (`updateCourierOrderStatus` ham shu qulfni oladi).
        * Qulfsiz ikkalasi ham muvaffaqiyatli tugab, oxirgi yozuv yutardi.
        */
-      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id WHERE c.id = ${customerOrderId} FOR UPDATE OF o`;
+      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id JOIN "branches" b ON b.id = c."branchId" WHERE c.id = ${customerOrderId} AND b."tenantId" = ${scope.tenantId} FOR UPDATE OF o`;
 
-      const existing = await tx.customerOrder.findUnique({
-        where: { id: customerOrderId },
+      const existing = await tx.customerOrder.findFirst({
+        where: { id: customerOrderId, branch: { tenantId: scope.tenantId } },
         include: { order: { select: { id: true, status: true } } },
       });
 
@@ -608,7 +610,7 @@ export class CustomerCourierService {
           "Faqat yetkazish buyurtmasini kuryerga biriktirish mumkin.",
         );
       }
-      if (scopedBranchId && existing.branchId !== scopedBranchId) {
+      if (scope.branchId && existing.branchId !== scope.branchId) {
         throw new ForbiddenException("Cannot access another branch");
       }
       if (

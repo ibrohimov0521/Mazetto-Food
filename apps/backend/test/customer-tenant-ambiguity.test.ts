@@ -18,7 +18,7 @@ const jwt = {
   }),
 } as unknown as JwtService;
 
-test("customer REST and WebSocket access both fail closed with two active tenants", async () => {
+test("customer REST and WebSocket access fail closed on an unregistered host", async () => {
   let sessionReads = 0;
   const prisma = {
     restaurantTenant: { findMany: async () => activeTenants },
@@ -29,7 +29,10 @@ test("customer REST and WebSocket access both fail closed with two active tenant
       },
     },
   } as unknown as PrismaService;
-  const request = { headers: { authorization: "Bearer customer-token" } };
+  const request = {
+    headers: { authorization: "Bearer customer-token" },
+    tenantContext: { kind: "UNREGISTERED", hostname: "unknown.test" },
+  };
   const context = { switchToHttp: () => ({ getRequest: () => request }) };
   const guard = new (CustomerAuthGuard as unknown as new (
     jwt: JwtService,
@@ -57,7 +60,9 @@ test("customer REST and WebSocket access both fail closed with two active tenant
       disconnected = true;
     },
   } as unknown as Socket;
-  await createKitchenGatewayForTest(jwt, prisma).handleConnection(socket);
+  await createKitchenGatewayForTest(jwt, prisma, {
+    resolve: async () => ({ kind: "UNREGISTERED", hostname: "unknown.test" }),
+  }).handleConnection(socket);
 
   assert.equal(disconnected, true);
   assert.deepEqual(joined, []);

@@ -39,7 +39,7 @@ async function main() {
     const product = await prisma.product.findFirst({ where: { code: "CLASSIC_LAVASH" } }) ?? await prisma.product.create({ data: { code: "CLASSIC_LAVASH", categoryId: category.id, name: "QA item", sellingPrice: 10000, isAvailable: true } });
     await prisma.paymentMethod.create({ data: { branchId: branch.id, code: "CASH", name: "Cash", isActive: true } });
     await prisma.paymentMethod.create({ data: { branchId: branch.id, code: "CARD", name: "Card", isActive: true } });
-    const customer = await prisma.customer.create({ data: { phone: "qa-cash-" + id, name: "QA customer" } });
+    const customer = await prisma.customer.create({ data: { tenantId: branch.tenantId, phone: "qa-cash-" + id, name: "QA customer" } });
     const shifts = new ShiftsService(prisma);
     const cash = new CashRegisterService(prisma, shifts);
     const kitchen = new KitchenService(prisma, { emitOrderCreated() {}, emitOrderConfirmed() {}, emitOrderSentToKitchen() {}, emitOrderStatusChanged() {} } as never);

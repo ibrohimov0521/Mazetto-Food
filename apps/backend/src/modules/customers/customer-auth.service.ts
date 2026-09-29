@@ -14,7 +14,6 @@ import {
   getCustomerJwtRefreshSecret,
 } from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
-import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import { SettingsService } from "../settings/settings.service";
 import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
 import { KitchenGateway } from "../kitchen/kitchen.gateway";
@@ -45,6 +44,7 @@ type TransactionClient = Prisma.TransactionClient;
 type CustomerAccessPayload = {
   id: string;
   phone: string;
+  tenantId: string;
   sessionId: string;
   tokenUse: "customer_access";
 };
@@ -52,6 +52,7 @@ type CustomerAccessPayload = {
 type CustomerRefreshPayload = {
   id: string;
   phone: string;
+  tenantId?: string;
   sessionId: string;
   tokenUse: "customer_refresh";
 };
@@ -66,25 +67,26 @@ export class CustomerAuthService {
     private readonly kitchenGateway: KitchenGateway,
   ) {}
 
-  async requestCode(dto: CustomerRequestCodeDto) {
-    await resolveSoleActiveTenantId(this.prisma);
+  async requestCode(dto: CustomerRequestCodeDto, tenantId: string) {
     const phone = normalizeCustomerPhone(dto.phone);
     const ttlMinutes = await this.settingsService.getInt(
       "customer_code_ttl_minutes",
+      tenantId,
     );
     const code = this.generateVerificationCode();
     const codeHash = await bcrypt.hash(code, 12);
     const challenge = await this.prisma.$transaction(async (tx) => {
-      await this.assertCanRequestCode(tx, phone);
+      await this.assertCanRequestCode(tx, tenantId, phone);
       const existingCustomer = await tx.customer.findUnique({
-        where: { phone },
+        where: { tenantId_phone: { tenantId, phone } },
         select: { id: true },
       });
 
-      await this.expireActiveCustomerChallenges(tx, phone);
+      await this.expireActiveCustomerChallenges(tx, tenantId, phone);
 
       return tx.customerVerificationChallenge.create({
         data: {
+          tenantId,
           customerId: existingCustomer?.id ?? null,
           phone,
           codeHash,
@@ -96,6 +98,7 @@ export class CustomerAuthService {
 
     const delivery =
       await this.telegramCustomerAuthService.deliverVerificationCode({
+        tenantId,
         phone,
         code,
       });
@@ -106,13 +109,13 @@ export class CustomerAuthService {
     };
   }
 
-  async verifyCode(dto: CustomerVerifyCodeDto) {
-    await resolveSoleActiveTenantId(this.prisma);
+  async verifyCode(dto: CustomerVerifyCodeDto, tenantId: string) {
     const phone = normalizeCustomerPhone(dto.phone);
     const now = new Date();
     const challenge = await this.prisma.customerVerificationChallenge.findFirst(
       {
         where: {
+          tenantId,
           phone,
           consumedAt: null,
           expiresAt: { gt: now },
@@ -127,6 +130,7 @@ export class CustomerAuthService {
 
     const attemptLimit = await this.settingsService.getInt(
       "customer_code_attempt_limit",
+      tenantId,
     );
 
     if (challenge.attempts >= attemptLimit) {
@@ -148,11 +152,12 @@ export class CustomerAuthService {
     }
 
     const customer = await this.prisma.customer.upsert({
-      where: { phone },
+      where: { tenantId_phone: { tenantId, phone } },
       update: {
         ...(dto.name ? { name: dto.name } : {}),
       },
       create: {
+        tenantId,
         name: dto.name ?? phone,
         phone,
       },
@@ -172,15 +177,18 @@ export class CustomerAuthService {
     };
   }
 
-  async refresh(dto: CustomerRefreshDto) {
-    await resolveSoleActiveTenantId(this.prisma);
+  async refresh(dto: CustomerRefreshDto, tenantId: string) {
     const refreshToken = dto.refreshToken;
     if (!refreshToken) throw new UnauthorizedException("Refresh token is required");
     const payload = await this.verifyCustomerRefreshToken(refreshToken);
+    if (payload.tenantId && payload.tenantId !== tenantId) {
+      throw new UnauthorizedException("Refresh token belongs to another restaurant");
+    }
     const session = await this.prisma.customerSession.findFirst({
       where: {
         id: payload.sessionId,
         customerId: payload.id,
+        customer: { is: { tenantId } },
         revokedAt: null,
         expiresAt: { gt: new Date() },
       },
@@ -203,8 +211,8 @@ export class CustomerAuthService {
       throw new UnauthorizedException("Invalid refresh token");
     }
 
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: payload.id },
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: payload.id, tenantId },
     });
 
     if (!customer) {
@@ -217,27 +225,33 @@ export class CustomerAuthService {
     };
   }
 
-  async logout(dto: CustomerLogoutDto) {
+  async logout(dto: CustomerLogoutDto, tenantId: string) {
     try {
       if (!dto.refreshToken) return { revoked: false };
       const payload = await this.verifyCustomerRefreshToken(dto.refreshToken);
-      await this.prisma.customerSession.updateMany({
+      if (payload.tenantId && payload.tenantId !== tenantId) {
+        return { revoked: false };
+      }
+      const result = await this.prisma.customerSession.updateMany({
         where: {
           id: payload.sessionId,
           customerId: payload.id,
+          customer: { is: { tenantId } },
           revokedAt: null,
         },
         data: { revokedAt: new Date() },
       });
-      this.kitchenGateway.disconnectCustomerSession(payload.sessionId);
-      return { revoked: true };
+      if (result.count > 0) {
+        this.kitchenGateway.disconnectCustomerSession(payload.sessionId);
+      }
+      return { revoked: result.count > 0 };
     } catch {
       return { revoked: false };
     }
   }
 
   private async issueCustomerTokens(
-    customer: { id: string; phone: string },
+    customer: { id: string; phone: string; tenantId: string },
     existingSessionId?: string,
   ) {
     const sessionId =
@@ -255,12 +269,14 @@ export class CustomerAuthService {
     const accessPayload: CustomerAccessPayload = {
       id: customer.id,
       phone: customer.phone,
+      tenantId: customer.tenantId,
       sessionId,
       tokenUse: "customer_access",
     };
     const refreshPayload: CustomerRefreshPayload = {
       id: customer.id,
       phone: customer.phone,
+      tenantId: customer.tenantId,
       sessionId,
       tokenUse: "customer_refresh",
     };
@@ -293,14 +309,16 @@ export class CustomerAuthService {
 
   private async assertCanRequestCode(
     tx: TransactionClient,
+    tenantId: string,
     phone: string,
   ): Promise<void> {
     const [windowSeconds, requestLimit] = await Promise.all([
-      this.settingsService.getInt("customer_code_request_window_seconds"),
-      this.settingsService.getInt("customer_code_request_limit"),
+      this.settingsService.getInt("customer_code_request_window_seconds", tenantId),
+      this.settingsService.getInt("customer_code_request_limit", tenantId),
     ]);
     const recentRequests = await tx.customerVerificationChallenge.count({
       where: {
+        tenantId,
         phone,
         createdAt: {
           gte: new Date(Date.now() - windowSeconds * 1000),
@@ -317,12 +335,14 @@ export class CustomerAuthService {
 
   private async expireActiveCustomerChallenges(
     tx: TransactionClient,
+    tenantId: string,
     phone: string,
   ): Promise<void> {
     const now = new Date();
 
     await tx.customerVerificationChallenge.updateMany({
       where: {
+        tenantId,
         phone,
         consumedAt: null,
         expiresAt: { gt: now },

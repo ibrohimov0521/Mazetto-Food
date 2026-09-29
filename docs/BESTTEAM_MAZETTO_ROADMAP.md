@@ -191,3 +191,32 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Tekshiruv: backend 444/444; backend typecheck, lint, build, dead-letter static validator va isolated API/web QA o'tdi.
 - Yangi uploadlar tenants/{tenantId}/... MinIO prefiksiga yoziladi va notification dead-letter Redis/fallback ro'yxatlari tenant bo'yicha bo'lingan. Avvalgi MinIO root obyektlari joyida qoladi; eski global notify:dead yozuvlari tenantga tegishliligi isbotlanmaguncha import qilinmaydi va ularni stagingda order branch-tenant join orqali tasniflash/backfill qilish kerak. Hali customer session/token/cart/order ownership, customer realtime, durable queue/worker, restoranlarga alohida Telegram token/chat/webhook mapping, cache/device/export A/B testlari; haqiqiy staging migration/backfill, domen smoke-test va backup restore/rollback mashqi qolgan. Faol xodimga invite/account yaratish yo'q; Employee modeli hanuz bitta userga bitta employee yozuvini cheklaydi.
 - Ikkinchi restoran hanuz PROVISIONING holatida qoladi. Production migration, push, deploy, DNS/Dokploy va tenant activation bajarilmadi; staging release gate to'liq o'tmaguncha bular bajarilmaydi.
+## 15. Customer tenant identity va admin doirasi (2026-09-29)
+
+- Customer va OTP verification yozuvlariga tenant owner qo'shildi; global phone/email/Telegram identity unique cheklovlari tenant-scoped cheklovlarga almashtirildi. Backfill migration bir nechta ACTIVE tenant, tenantlararo aralash order tarixi yoki mos kelmaydigan challenge topilsa avvaldan to'xtaydi.
+- Customer login/OTP/refresh/logout, legacy session guard, public catalog/checkout, customer websocket va Telegram customer oqimlari tenant context bilan bog'landi. Customer admin ro'yxat/statistika/bulk delete, kuryer dashboard/aggregates va assignment/status mutation'lari ham tenant predicate bilan himoyalandi.
+- Migration uchun faqat disposable QA bazasida legacy schema backfill, tenant A/B unique/FK va fail-closed preflight sinovlari qo'shildi.
+- Tekshiruv: backend suite 452/452; backend source/scripts typecheck, lint, Nest production build, Prisma schema validation, 52 migration checksum va isolated platform API/web QA o'tdi.
+- Tenant-isolation branch'i push qilindi va [PR #104](https://github.com/ibrohimov0521/Mazetto-Food/pull/104) ochiq. Birinchi hosted CI uchta eskirgan static validator/QA fixture talabini aniqladi; ular tuzatildi va local ops validator 33/33 o'tdi. Eng yangi commit uchun GitHub `verify` qayta o'tishi merge oldidan shart. Deploy hali bajarilmadi: migrationli reliz `main` dagi yashil CI, mustaqil tekshirilgan production PostgreSQL backup, qo'lda `migrate deploy` va release smoke talab qiladi.
+- Ikkinchi restoran faollashtirilmaydi. Keyingi bosqich: haqiqiy staging bazasida A/B backfill/domain/login, async worker/navbat, alohida Telegram bot/webhook, media va realtime izolyatsiyasi, hamda backup restore/rollback mashqini isbotlash. Umumiy/global bot ko'p ACTIVE tenantda hozircha fail-closed qoladi.
+
+## 16. Tenant sozlamalari va A/B release checkpoint (2026-09-29)
+
+- Setting endi (tenantId, key) bo'yicha ajratiladi; har bir qator faol tenantga FK bilan bog'langan. Mavjud global sozlamalarni yagona faol Mazetto tenantiga ko'chiruvchi 20260929110000_tenant_scoped_settings migration'i faqat aniq bitta ACTIVE tenant bo'lganda ishlaydi.
+- Settings API, mijozga ochiq sozlamalar, OTP va Telegram auth, hamda checkout tarif/masofa hisoblashlari request yoki customer tenant kontekstidan foydalanadi. Redis kesh kaliti ham tenant bo'yicha ajratilgan.
+- Disposable QA migration backfill/FK/unique shartlarini, settings registry DB smoke'ini, A/B verified-host so'rovlarida filial va har xil delivery tariflarini, bir xil telefon uchun ajratilgan OTP/customer/tokenlarni tekshirdi.
+- Tekshiruv: Prisma schema valid; focused settings/audit testlari 5/5; to'liq CI'da 7/7 paket typecheck, lint, test va build, hamda 33/33 operatsion validator o'tdi. Izolyatsiyalangan API/owner-web/A-B QA ham o'tdi.
+- A/B admin write sinovi ham qo'shildi: tenant B admini verified B hostida sozlamani yangilaydi; tenant A tokeni B sozlamasini o'zgartira olmaydi; qayta o'qishda A qiymati saqlanib, B qiymati yangilangani tasdiqlanadi. `qa:platform-isolated` qayta o'tdi.
+- Settings migration guard testi 0 yoki 2 ACTIVE tenantda migratsiyani rad etib, schema va legacy qiymatlarni o'zgarishsiz saqlashini disposable DB'da isbotlaydi.
+- Server inventory'da production servislar va doimiy `mazetto-dev-postgres` bor, lekin alohida staging app/API/DB aniqlanmadi. Dev bazasi staging o'rnida ishlatilmaydi.
+- Bu kod va disposable local DB QA; production migration qo'llanmagan va ikkinchi restoran faollashtirilmagan. PR #104 hosted verify hali merge'dan oldin yashil bo'lishi shart.
+- Keyingi release bosqichi: alohida staging stack tayyorlash, productionga o'xshash ma'lumot bilan settings/customer backfill, backup/restore va rollback mashqi, domenlar bo'yicha login smoke-test. Shu darvozalar va release tasdig'isiz production migrate/deploy qilinmaydi; A/B auditda qolgan queue/worker, alohida Telegram bot, media/realtime va export oqimlari ham tekshiriladi.
+
+## 17. Release smoke ishonchliligi (2026-09-29)
+
+- Release smoke qayta urinish bug'i tuzatildi: har so'rovga yangidan timeout signal beriladi; vaqtinchalik ulanish va HTTP xatolarida 3 martagacha progressiv kutish bilan qayta urinadi. Regression testlar timeout retry, vaqtinchalik HTTP javoblari va caller abortini tekshiradi.
+- Media katalog smoke'i parallel so'rovlarini kamaytirgandan keyin production read-only smoke 24/24 o'tdi; barcha 78 katalog rasmi ham javob berdi.
+- Production backup /mnt/storage/backups/mazetto/postgres/mazetto-20260929-153404157.dump ajratilgan vaqtinchalik Postgres'ga tiklandi. Ikki pending migration clone'da qo'llanib, keyin backup qayta tiklanganda schema/data va migration holati boshlang'ichiga tengligi tasdiqlandi.
+- Bu mashq production migration yoki production restore emas: production database va servislar o'zgarmagan, ikkinchi restoran PROVISIONING holatida.
+- Hali alohida staging app/API/DB stack yo'q. Durable queue/worker, restaurant bot mapping, media/realtime va export oqimlarining staging A/B dalillari talab qilinadi.
+- PR #104 ochiq; ushbu smoke tuzatishi push qilingach hosted verify qayta o'tishi shart. Production reliz uchun main branch'dagi CI, yangi backup, production migration, backend va zarur app deploylari, so'ng post-release smoke talab qilinadi.

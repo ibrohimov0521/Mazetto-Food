@@ -16,37 +16,13 @@
  * Dizayn, mobil layout, Telegram va printer baribir qo'lda tekshiriladi.
  */
 
+import { fetchWithTransientRetry } from "./http-with-transient-retry.mjs";
+
 const api = process.env.MAZETTO_API_URL ?? "https://api.mazettofood.uz/api/v1";
 const web = process.env.MAZETTO_WEB_URL ?? "https://mazettofood.uz";
 const pos = process.env.MAZETTO_POS_URL ?? "https://pos.mazettofood.uz";
 const platform = process.env.MAZETTO_PLATFORM_URL ?? "https://admin.mazetto.uz";
 const media = process.env.MAZETTO_MEDIA_URL ?? "https://media.mazettofood.uz";
-
-const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429, 502, 503, 504]);
-
-async function fetchWithTransientRetry(url, options) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetch(url, options);
-      if (
-        attempt === 0 &&
-        TRANSIENT_HTTP_STATUSES.has(response.status)
-      ) {
-        await response.body?.cancel();
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        continue;
-      }
-      return response;
-    } catch (error) {
-      if (attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw new Error(`request failed after retry: ${url}`);
-}
 
 /*
  * { name, url, status, body? }
@@ -140,8 +116,7 @@ const checks = [
     custom: async () => {
       const response = await fetchWithTransientRetry(`${api}/customer/menu/products`, {
         headers: { "User-Agent": "mazetto-release-smoke" },
-        signal: AbortSignal.timeout(30000),
-      });
+      }, { timeoutMs: 30000 });
       if (!response.ok) return `${response.status}, katalog olinmadi`;
 
       const payload = await response.json();
@@ -167,8 +142,7 @@ const checks = [
             const imageResponse = await fetchWithTransientRetry(imageUrl, {
               method: "HEAD",
               redirect: "manual",
-              signal: AbortSignal.timeout(30000),
-            });
+            }, { timeoutMs: 30000 });
             if (imageResponse.status !== 200) {
               failures[index] =
                 `${product?.name ?? "noma'lum"}: HTTP ${imageResponse.status}`;
@@ -182,7 +156,7 @@ const checks = [
       };
       await Promise.all(
         Array.from(
-          { length: Math.min(3, products.length) },
+          { length: Math.min(2, products.length) },
           () => checkNextProduct(),
         ),
       );
@@ -209,8 +183,7 @@ async function run(check) {
       headers: { "User-Agent": "mazetto-release-smoke" },
       // Yo'naltirish ham xato: masalan /orders login'ga otib yuborsa, 200 emas.
       redirect: "manual",
-      signal: AbortSignal.timeout(15000),
-    });
+    }, { timeoutMs: 15000 });
     const text = await response.text();
 
     if (!check.status.includes(response.status)) {
@@ -235,7 +208,9 @@ for (const check of checks) {
   if (problem === null) {
     console.log(`  OK   ${check.name}`);
   } else {
-    console.log(`  FAIL ${check.name} — ${problem}\n       ${check.url}`);
+    console.log(
+      `  FAIL ${check.name} — ${problem}\n       ${check.url ?? "rasm URL ro'yxati"}`,
+    );
     failed += 1;
   }
 }

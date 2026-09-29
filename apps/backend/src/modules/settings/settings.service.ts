@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
-import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
+import { resolveRestaurantTenantId } from "../../common/auth/tenant-scope";
 import { RedisService } from "../../redis/redis.service";
 import {
   affectsCustomerCheckout,
@@ -31,7 +31,7 @@ import { writeAuditLog } from "../audit/audit-write";
  * bazaga qo'lda yozilgan holatlar uchun oxirgi himoya.
  */
 
-const CACHE_KEY = "settings:all";
+const cacheKey = (tenantId: string) => `settings:${tenantId}:all`;
 const CACHE_TTL_SECONDS = 60;
 
 @Injectable()
@@ -45,16 +45,16 @@ export class SettingsService {
 
   // --- Tipli o'qish ------------------------------------------------------
 
-  async getInt(key: SettingKey): Promise<number> {
-    return parseIntSetting(key, await this.readRaw(key));
+  async getInt(key: SettingKey, tenantId: string): Promise<number> {
+    return parseIntSetting(key, await this.readRaw(key, tenantId));
   }
 
-  async getBool(key: SettingKey): Promise<boolean> {
-    return parseBoolSetting(key, await this.readRaw(key));
+  async getBool(key: SettingKey, tenantId: string): Promise<boolean> {
+    return parseBoolSetting(key, await this.readRaw(key, tenantId));
   }
 
-  async getCsv(key: SettingKey): Promise<string[]> {
-    return parseCsvSetting(key, await this.readRaw(key));
+  async getCsv(key: SettingKey, tenantId: string): Promise<string[]> {
+    return parseCsvSetting(key, await this.readRaw(key, tenantId));
   }
 
   // --- Admin ekrani ------------------------------------------------------
@@ -68,8 +68,9 @@ export class SettingsService {
    * yozish reestr yechayotgan drift muammosini qaytarardi — bu safar
    * backend bilan UI orasida.
    */
-  async listSettings() {
-    const stored = await this.readAll();
+  async listSettings(user: AuthenticatedUser) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const stored = await this.readAll(tenantId);
 
     return settingKeys.map((key) => ({
       key,
@@ -83,16 +84,16 @@ export class SettingsService {
   }
 
   /** Mijoz tomoniga oshkor qilinadigan qism. */
-  async getPublicSettings(): Promise<Record<string, unknown>> {
+  async getPublicSettings(tenantId: string): Promise<Record<string, unknown>> {
     return {
-      customerPaymentMethods: await this.getCsv("customer_payment_methods"),
-      customerDeliveryEnabled: await this.getBool("customer_delivery_enabled"),
-      customerDeliveryFee: await this.getInt("customer_delivery_fee"),
+      customerPaymentMethods: await this.getCsv("customer_payment_methods", tenantId),
+      customerDeliveryEnabled: await this.getBool("customer_delivery_enabled", tenantId),
+      customerDeliveryFee: await this.getInt("customer_delivery_fee", tenantId),
     };
   }
 
   async updateSetting(key: string, rawValue: string, user: AuthenticatedUser) {
-    await resolveSoleActiveTenantId(this.prisma);
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     if (!isKnownSettingKey(key)) {
       // Noma'lum kalitni qabul qilish uni O'QIB bo'lmaydigan qator qilardi:
       // reestrda yo'q kalit hech qachon so'ralmaydi, ya'ni yozuv jimgina
@@ -104,13 +105,14 @@ export class SettingsService {
 
     const saved = await this.prisma.$transaction(async (tx) => {
       const previous = await tx.setting.findUnique({
-        where: { key },
+        where: { tenantId_key: { tenantId, key } },
         select: { value: true },
       });
       const updated = await tx.setting.upsert({
-        where: { key },
+        where: { tenantId_key: { tenantId, key } },
         update: { value, updatedById: user.id },
         create: {
+          tenantId,
           key,
           value,
           isPublic: isPublicSettingKey(key),
@@ -132,27 +134,27 @@ export class SettingsService {
       return updated;
     });
 
-    await this.invalidateCache();
+    await this.invalidateCache(tenantId);
 
     return saved;
   }
 
   // --- Ichki qismlar -----------------------------------------------------
 
-  private async readRaw(key: SettingKey): Promise<string | undefined> {
-    const all = await this.readAll();
+  private async readRaw(key: SettingKey, tenantId: string): Promise<string | undefined> {
+    const all = await this.readAll(tenantId);
     return all[key];
   }
 
-  private async readAll(): Promise<Partial<Record<SettingKey, string>>> {
-    await resolveSoleActiveTenantId(this.prisma);
-    const cached = await this.readCache();
+  private async readAll(tenantId: string): Promise<Partial<Record<SettingKey, string>>> {
+    const cached = await this.readCache(tenantId);
 
     if (cached) {
       return cached;
     }
 
     const rows = await this.prisma.setting.findMany({
+      where: { tenantId },
       select: { key: true, value: true },
     });
 
@@ -167,12 +169,12 @@ export class SettingsService {
       }
     }
 
-    await this.writeCache(map);
+    await this.writeCache(tenantId, map);
 
     return map;
   }
 
-  private async readCache(): Promise<Partial<Record<SettingKey, string>> | null> {
+  private async readCache(tenantId: string): Promise<Partial<Record<SettingKey, string>> | null> {
     const client = this.redis.getClient();
 
     if (!client) {
@@ -180,7 +182,7 @@ export class SettingsService {
     }
 
     try {
-      const raw = await client.get(CACHE_KEY);
+      const raw = await client.get(cacheKey(tenantId));
       return raw ? (JSON.parse(raw) as Partial<Record<SettingKey, string>>) : null;
     } catch {
       // Kesh o'qilmadi — bazaga boramiz. Sozlama o'qishi Redis tufayli
@@ -189,7 +191,7 @@ export class SettingsService {
     }
   }
 
-  private async writeCache(map: Partial<Record<SettingKey, string>>): Promise<void> {
+  private async writeCache(tenantId: string, map: Partial<Record<SettingKey, string>>): Promise<void> {
     const client = this.redis.getClient();
 
     if (!client) {
@@ -197,13 +199,13 @@ export class SettingsService {
     }
 
     try {
-      await client.set(CACHE_KEY, JSON.stringify(map), "EX", CACHE_TTL_SECONDS);
+      await client.set(cacheKey(tenantId), JSON.stringify(map), "EX", CACHE_TTL_SECONDS);
     } catch {
       // e'tiborsiz — kesh ixtiyoriy
     }
   }
 
-  private async invalidateCache(): Promise<void> {
+  private async invalidateCache(tenantId: string): Promise<void> {
     const client = this.redis.getClient();
 
     if (!client) {
@@ -211,7 +213,7 @@ export class SettingsService {
     }
 
     try {
-      await client.del(CACHE_KEY);
+      await client.del(cacheKey(tenantId));
     } catch {
       this.logger.warn("Sozlama keshi bekor qilinmadi — TTL bilan eskiradi");
     }

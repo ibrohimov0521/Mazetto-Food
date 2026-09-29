@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Param, Patch } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Req } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
+import type { AuthenticatedRequest } from "../../common/types/authenticated-user";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { requireTrustedTenantId } from "../../common/tenant/require-trusted-tenant";
 import { UpdateSettingDto } from "./dto/update-setting.dto";
 import { SettingsService } from "./settings.service";
 
@@ -21,8 +23,10 @@ export class SettingsController {
    */
   @Public()
   @Get("public")
-  getPublicSettings() {
-    return this.settingsService.getPublicSettings();
+  getPublicSettings(@Req() request: AuthenticatedRequest) {
+    return this.settingsService.getPublicSettings(
+      requireTrustedTenantId(request.tenantContext),
+    );
   }
 
   /*
@@ -34,8 +38,8 @@ export class SettingsController {
   @Get()
   @Roles("SUPER_ADMIN")
   @Permissions(PERMISSIONS.SETTING_MANAGE)
-  listSettings() {
-    return this.settingsService.listSettings();
+  listSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.settingsService.listSettings(user);
   }
 
   @Patch(":key")

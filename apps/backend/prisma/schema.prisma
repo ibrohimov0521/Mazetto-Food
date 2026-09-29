@@ -276,10 +276,13 @@ model RestaurantTenant {
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
-  branches      Branch[]
-  domains       TenantDomain[]
-  platformSites PlatformSite[]
-  memberships   TenantMembership[]
+  branches                       Branch[]
+  domains                        TenantDomain[]
+  platformSites                  PlatformSite[]
+  memberships                    TenantMembership[]
+  customers                      Customer[]
+  customerVerificationChallenges CustomerVerificationChallenge[]
+  settings                       Setting[]
 
   @@index([status, createdAt])
   @@map("restaurant_tenants")
@@ -338,17 +341,19 @@ model ProductBranchAvailability {
 
 model Customer {
   id               String    @id @default(cuid())
+  tenantId         String
   name             String
-  phone            String    @unique
-  email            String?   @unique
+  phone            String
+  email            String?
   passwordHash     String?
-  telegramUserId   String?   @unique
+  telegramUserId   String?
   telegramChatId   String?
   telegramLinkedAt DateTime?
   bonusBalance     Decimal   @default(0) @db.Decimal(12, 2)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  tenant           RestaurantTenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   carts            Cart[]
   favorites        CustomerFavorite[]
   customerOrders   CustomerOrder[]
@@ -358,8 +363,12 @@ model Customer {
   challenges       CustomerVerificationChallenge[]
   checkoutSessions TelegramCheckoutSession[]
 
+  @@unique([tenantId, phone])
+  @@unique([tenantId, email])
+  @@unique([tenantId, telegramUserId])
   @@index([telegramChatId])
   @@index([createdAt])
+  @@index([tenantId, createdAt])
   @@map("customers")
 }
 
@@ -403,6 +412,7 @@ model TelegramCheckoutSession {
 
 model CustomerVerificationChallenge {
   id         String    @id @default(cuid())
+  tenantId   String
   customerId String?
   phone      String
   codeHash   String
@@ -412,10 +422,11 @@ model CustomerVerificationChallenge {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  tenant   RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  @@index([phone, createdAt])
-  @@index([phone, consumedAt, expiresAt])
+  @@index([tenantId, phone, createdAt])
+  @@index([tenantId, phone, consumedAt, expiresAt])
   @@index([customerId])
   @@map("customer_verification_challenges")
 }
@@ -1973,7 +1984,8 @@ model RevenueRecord {
 /// e'lon qilinadi: yozishda tekshiriladi va normallashtiriladi, o'qishda
 /// esa faqat reestrda e'lon qilingan kalitlar qabul qilinadi.
 model Setting {
-  key         String   @id
+  tenantId    String
+  key         String
   value       String
   /// Sozlama mijoz tomoniga oshkor qilinadimi. `false` — faqat admin.
   isPublic    Boolean  @default(false)
@@ -1982,8 +1994,10 @@ model Setting {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  updatedBy User? @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedBy User?            @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  tenant    RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([isPublic])
+  @@id([tenantId, key])
+  @@index([tenantId, isPublic])
   @@map("settings")
 }
