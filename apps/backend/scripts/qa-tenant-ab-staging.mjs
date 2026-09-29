@@ -7,11 +7,14 @@ import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { Pool } from "pg";
 import { URL } from "node:url";
+import * as Minio from "minio";
 
 const EXPECTED_DATABASE_HOST = "postgres-input-wireless-sensor-gioz9i";
 const { AbortSignal } = globalThis;
 
 const EXPECTED_DATABASE_NAME = "mazetto_staging";
+const EXPECTED_MEDIA_HOST = "mazetto-staging-minio";
+const EXPECTED_MEDIA_BUCKET = "mazetto-staging";
 const API_BASE = "http://127.0.0.1:4000/api/v1";
 const DELIVERY_SETTING = "customer_delivery_fee";
 const SHARED_PHONE = "+998901234567";
@@ -48,19 +51,53 @@ function requireStagingTarget() {
   return databaseUrl;
 }
 
+function requireStagingMedia() {
+  assert.equal(
+    process.env.MINIO_ENDPOINT,
+    EXPECTED_MEDIA_HOST,
+    "Refusing a non-staging media endpoint.",
+  );
+  assert.equal(
+    process.env.MINIO_BUCKET,
+    EXPECTED_MEDIA_BUCKET,
+    "Refusing a non-staging media bucket.",
+  );
+  const accessKey = process.env.MINIO_ROOT_USER;
+  const secretKey = process.env.MINIO_ROOT_PASSWORD;
+  assert.ok(accessKey && secretKey, "Staging media credentials are required.");
+  return new Minio.Client({
+    endPoint: EXPECTED_MEDIA_HOST,
+    port: Number(process.env.MINIO_PORT ?? 9000),
+    useSSL: process.env.MINIO_USE_SSL?.trim().toLowerCase() === "true",
+    accessKey,
+    secretKey,
+  });
+}
+
 async function request(
   path,
   { host, method = "GET", body, headers = {} } = {},
 ) {
   const url = new URL(path.replace(/^\/+/, ""), API_BASE + "/");
   const requestHeaders = { ...headers };
-  if (body !== undefined) requestHeaders["Content-Type"] = "application/json";
+  const payload =
+    body === undefined
+      ? undefined
+      : Buffer.isBuffer(body)
+        ? body
+        : JSON.stringify(body);
+  if (body !== undefined && !Buffer.isBuffer(body)) {
+    requestHeaders["Content-Type"] = "application/json";
+  }
+  if (Buffer.isBuffer(payload) && !requestHeaders["Content-Length"]) {
+    requestHeaders["Content-Length"] = String(payload.length);
+  }
 
   if (!host) {
     const response = await fetch(url, {
       method,
       headers: requestHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: payload,
       signal: AbortSignal.timeout(8000),
     });
     return { status: response.status, body: await response.json() };
@@ -89,12 +126,13 @@ async function request(
       req.destroy(new Error("The staging API request timed out.")),
     );
     req.on("error", reject);
-    req.end(body === undefined ? undefined : JSON.stringify(body));
+    req.end(payload);
   });
 }
 
 async function main() {
   const databaseUrl = requireStagingTarget();
+  const mediaClient = requireStagingMedia();
   const suffix = randomBytes(5).toString("hex");
   const tenantAHost = `qa-a-${suffix}.invalid`;
   const tenantBHost = `qa-b-${suffix}.invalid`;
@@ -112,6 +150,8 @@ async function main() {
     roleId: null,
     permissionId: null,
     membershipIds: [],
+    mediaObjects: [],
+    uploadPermissionId: null,
   };
   let cleanupFailure = null;
   let guardPassed = false;
@@ -240,6 +280,13 @@ async function main() {
     fixture.permissionId = permission.id;
     await prisma.rolePermission.create({
       data: { roleId: role.id, permissionId: permission.id },
+    });
+    const uploadPermission = await prisma.permission.create({
+      data: { code: "MENU_EDIT", name: "Disposable staging media upload" },
+    });
+    fixture.uploadPermissionId = uploadPermission.id;
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionId: uploadPermission.id },
     });
 
     const user = await prisma.user.create({
@@ -398,6 +445,75 @@ async function main() {
       "Tenant A must not mutate tenant B settings.",
     );
 
+    const boundary = "----MazettoStagingQA" + suffix;
+    const imageBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+      "base64",
+    );
+    const multipartBody = Buffer.concat([
+      Buffer.from(
+        "--" +
+          boundary +
+          "\r\n" +
+          'Content-Disposition: form-data; name="file"; filename="qa.png"\r\n' +
+          "Content-Type: image/png\r\n\r\n",
+      ),
+      imageBytes,
+      Buffer.from("\r\n--" + boundary + "--\r\n"),
+    ]);
+    const uploadImage = (host, token) =>
+      request("/uploads/image?folder=products", {
+        host,
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + token,
+          "Content-Type": "multipart/form-data; boundary=" + boundary,
+          "Content-Length": String(multipartBody.length),
+        },
+        body: multipartBody,
+      });
+    const crossUpload = await uploadImage(
+      tenantAHost,
+      loginB.body.data.tokens.accessToken,
+    );
+    assert.ok(
+      [401, 403].includes(crossUpload.status),
+      "Tenant B staff token must not upload through tenant A host.",
+    );
+    const uploadA = await uploadImage(
+      tenantAHost,
+      loginA.body.data.tokens.accessToken,
+    );
+    assert.equal(uploadA.status, 201, "Tenant A image upload should succeed.");
+    const mediaObjectA = uploadA.body.data.objectName;
+    fixture.mediaObjects.push({
+      tenantId: tenantA.id,
+      objectName: mediaObjectA,
+    });
+    const uploadB = await uploadImage(
+      tenantBHost,
+      loginB.body.data.tokens.accessToken,
+    );
+    assert.equal(uploadB.status, 201, "Tenant B image upload should succeed.");
+    const mediaObjectB = uploadB.body.data.objectName;
+    fixture.mediaObjects.push({
+      tenantId: tenantB.id,
+      objectName: mediaObjectB,
+    });
+    assert.ok(
+      mediaObjectA.startsWith("tenants/" + tenantA.id + "/products/"),
+      "Tenant A upload must use the A storage prefix.",
+    );
+    assert.ok(
+      mediaObjectB.startsWith("tenants/" + tenantB.id + "/products/"),
+      "Tenant B upload must use the B storage prefix.",
+    );
+    assert.notEqual(mediaObjectA, mediaObjectB);
+    await Promise.all([
+      mediaClient.statObject(EXPECTED_MEDIA_BUCKET, mediaObjectA),
+      mediaClient.statObject(EXPECTED_MEDIA_BUCKET, mediaObjectB),
+    ]);
+
     const writeB = await request(`/settings/${DELIVERY_SETTING}`, {
       host: tenantBHost,
       method: "PATCH",
@@ -476,12 +592,50 @@ async function main() {
     assert.equal(refreshedB.body.data.customer.tenantId, tenantB.id);
 
     console.log(
-      "Staging A/B HTTP proof passed: host/domain fail-closed, branch and settings isolation, staff membership/tokens, OTP/customer sessions.",
+      "Staging A/B proof passed: host/domain, branch/settings/auth, OTP/customer sessions, and tenant-prefixed media uploads.",
     );
   } catch (error) {
     failure = error;
   } finally {
     if (guardPassed) {
+      for (const mediaObject of fixture.mediaObjects) {
+        const safePrefix = "tenants/" + mediaObject.tenantId + "/products/";
+        if (
+          typeof mediaObject.objectName !== "string" ||
+          !mediaObject.objectName.startsWith(safePrefix) ||
+          mediaObject.objectName.split("/").length !== 4
+        ) {
+          cleanupFailure = new Error(
+            "Staging media cleanup refused an object outside the synthetic tenant prefix.",
+          );
+          continue;
+        }
+        try {
+          await mediaClient.removeObject(
+            EXPECTED_MEDIA_BUCKET,
+            mediaObject.objectName,
+          );
+          let removed = false;
+          try {
+            await mediaClient.statObject(
+              EXPECTED_MEDIA_BUCKET,
+              mediaObject.objectName,
+            );
+          } catch (error) {
+            const code = error && typeof error === "object" ? error.code : null;
+            removed = ["NoSuchKey", "NotFound", "NoSuchObject"].includes(code);
+          }
+          if (!removed) {
+            cleanupFailure = new Error(
+              "Staging media cleanup could not verify removal of a synthetic object.",
+            );
+          }
+        } catch {
+          cleanupFailure = new Error(
+            "Staging media fixture cleanup failed; inspect only the recorded synthetic object prefixes.",
+          );
+        }
+      }
       try {
         const tenantIds = [fixture.tenantAId, fixture.tenantBId].filter(
           Boolean,
@@ -519,6 +673,10 @@ async function main() {
         if (fixture.permissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.permissionId },
+          });
+        if (fixture.uploadPermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.uploadPermissionId },
           });
         if (fixture.tenantBId) {
           await prisma.restaurantTenant.deleteMany({
