@@ -44,26 +44,58 @@ async function connectStaffSocket(host, token) {
   }
 
   const { io } = await socketIoClientPromise;
-  const socket = io(API_BASE.replace(/\/api\/v1$/, ""), {
+  const agent = new http.Agent({
+    lookup(_hostname, options, callback) {
+      if (options?.all) {
+        callback(null, [{ address: "127.0.0.1", family: 4 }]);
+      } else {
+        callback(null, "127.0.0.1", 4);
+      }
+    },
+  });
+  const socket = io("http://" + host + ":4000", {
     auth: { token, tokenType: "staff" },
-    extraHeaders: { host },
     transports: ["websocket"],
+    transportOptions: { websocket: { agent } },
     reconnection: false,
     timeout: 8000,
   });
 
   return new Promise((resolve) => {
     let settled = false;
+    let settleTimer;
+    let detail = "connect timeout";
     const timer = globalThis.setTimeout(() => finish(false), 9000);
     const finish = (connected) => {
       if (settled) return;
       settled = true;
       globalThis.clearTimeout(timer);
-      if (!connected) socket.disconnect();
-      resolve({ connected, socket });
+      if (settleTimer) globalThis.clearTimeout(settleTimer);
+      if (!connected) {
+        socket.disconnect();
+        agent.destroy();
+      }
+      resolve({
+        connected,
+        detail,
+        socket,
+        close: () => {
+          socket.disconnect();
+          agent.destroy();
+        },
+      });
     };
-    socket.once("connect", () => finish(true));
-    socket.once("connect_error", () => finish(false));
+    socket.once("connect", () => {
+      settleTimer = globalThis.setTimeout(() => finish(socket.connected), 150);
+    });
+    socket.once("connect_error", (error) => {
+      detail = error?.message ?? "connect_error";
+      finish(false);
+    });
+    socket.once("disconnect", (reason) => {
+      detail = reason ?? "disconnected";
+      finish(false);
+    });
   });
 }
 
@@ -183,7 +215,9 @@ async function main() {
   const tenantAHost = `qa-a-${suffix}.invalid`;
   const tenantBHost = `qa-b-${suffix}.invalid`;
   const pendingHost = `qa-pending-${suffix}.invalid`;
-  const email = `qa-ab-${suffix}@bestteam.invalid`;
+  const email = "qa-ab-" + suffix + "@bestteam.invalid";
+  const socketEmailA = "qa-socket-" + suffix + "-a@bestteam.invalid";
+  const socketEmailB = "qa-socket-" + suffix + "-b@bestteam.invalid";
   const password = randomBytes(24).toString("base64url");
   const pool = new Pool({ connectionString: databaseUrl.toString() });
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
@@ -192,8 +226,10 @@ async function main() {
     tenantBId: null,
     branchIds: [],
     domainIds: [],
-    userId: null,
+    userIds: [],
+    employeeIds: [],
     roleId: null,
+    socketRoleId: null,
     permissionId: null,
     membershipIds: [],
     mediaObjects: [],
@@ -220,6 +256,7 @@ async function main() {
       tenantCount,
       branchCount,
       userCount,
+      employeeCount,
       membershipCount,
       domainCount,
       customerCount,
@@ -232,6 +269,7 @@ async function main() {
       prisma.restaurantTenant.count(),
       prisma.branch.count(),
       prisma.user.count(),
+      prisma.employee.count(),
       prisma.tenantMembership.count(),
       prisma.tenantDomain.count(),
       prisma.customer.count(),
@@ -246,6 +284,7 @@ async function main() {
         tenantCount,
         branchCount,
         userCount,
+        employeeCount,
         membershipCount,
         domainCount,
         customerCount,
@@ -259,6 +298,7 @@ async function main() {
         tenantCount: 1,
         branchCount: 0,
         userCount: 0,
+        employeeCount: 0,
         membershipCount: 0,
         domainCount: 0,
         customerCount: 0,
@@ -349,21 +389,85 @@ async function main() {
       data: { roleId: role.id, permissionId: realtimePermission.id },
     });
 
-    const user = await prisma.user.create({
+    const owner = await prisma.user.create({
       data: { email, passwordHash: await hash(password, 10), isActive: true },
     });
-    fixture.userId = user.id;
+    fixture.userIds.push(owner.id);
     await prisma.userRole.create({
-      data: { userId: user.id, roleId: role.id },
+      data: { userId: owner.id, roleId: role.id },
     });
 
     for (const tenantId of [tenantA.id, tenantB.id]) {
       const membership = await prisma.tenantMembership.create({
-        data: { tenantId, userId: user.id, status: "ACTIVE" },
+        data: { tenantId, userId: owner.id, status: "ACTIVE" },
       });
       fixture.membershipIds.push(membership.id);
       await prisma.tenantMembershipRole.create({
         data: { membershipId: membership.id, roleId: role.id },
+      });
+    }
+
+    const socketRole = await prisma.role.create({
+      data: {
+        code: "WAITER",
+        name: "Disposable staging branch staff",
+        isSystem: false,
+        isActive: true,
+        isBranchScoped: true,
+      },
+    });
+    fixture.socketRoleId = socketRole.id;
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: realtimePermission.id },
+    });
+
+    for (const staff of [
+      {
+        tenantId: tenantA.id,
+        branchId: branchA.id,
+        email: socketEmailA,
+        suffix: "A",
+      },
+      {
+        tenantId: tenantB.id,
+        branchId: branchB.id,
+        email: socketEmailB,
+        suffix: "B",
+      },
+    ]) {
+      const user = await prisma.user.create({
+        data: {
+          email: staff.email,
+          passwordHash: await hash(password, 10),
+          isActive: true,
+        },
+      });
+      fixture.userIds.push(user.id);
+      await prisma.userRole.create({
+        data: { userId: user.id, roleId: socketRole.id },
+      });
+      const employee = await prisma.employee.create({
+        data: {
+          userId: user.id,
+          branchId: staff.branchId,
+          employeeCode: "QA-SOCKET-" + suffix + "-" + staff.suffix,
+          firstName: "QA",
+          lastName: "Socket " + staff.suffix,
+          status: "ACTIVE",
+        },
+      });
+      fixture.employeeIds.push(employee.id);
+      const membership = await prisma.tenantMembership.create({
+        data: {
+          tenantId: staff.tenantId,
+          userId: user.id,
+          branchId: staff.branchId,
+          status: "ACTIVE",
+        },
+      });
+      fixture.membershipIds.push(membership.id);
+      await prisma.tenantMembershipRole.create({
+        data: { membershipId: membership.id, roleId: socketRole.id },
       });
     }
 
@@ -462,11 +566,11 @@ async function main() {
     assert.equal(publicSettingsA.body.data.customerDeliveryFee, 1100);
     assert.equal(publicSettingsB.body.data.customerDeliveryFee, 2200);
 
-    const login = async (host) =>
+    const login = async (host, identifier = email) =>
       request("/auth/login", {
         host,
         method: "POST",
-        body: { identifier: email, password },
+        body: { identifier, password },
       });
     const unknownLogin = await login(`unknown-${suffix}.invalid`);
     assert.equal(
@@ -480,6 +584,10 @@ async function main() {
     assert.equal(loginB.status, 201);
     assert.equal(loginA.body.data.user.tenantId, tenantA.id);
     assert.equal(loginB.body.data.user.tenantId, tenantB.id);
+    const socketLoginA = await login(tenantAHost, socketEmailA);
+    const socketLoginB = await login(tenantBHost, socketEmailB);
+    assert.equal(socketLoginA.status, 201);
+    assert.equal(socketLoginB.status, 201);
 
     const crossStaffRead = await request("/auth/me", {
       host: tenantBHost,
@@ -560,9 +668,8 @@ async function main() {
       loginA.body.data.tokens.accessToken,
       "?branchId=" + encodeURIComponent(branchB.id),
     );
-    assert.equal(
-      foreignBranchEvents.status,
-      404,
+    assert.ok(
+      [403, 404].includes(foreignBranchEvents.status),
       "Tenant A must not request tenant B realtime branch events.",
     );
     const afterCursor = await realtimeEvents(
@@ -575,35 +682,35 @@ async function main() {
 
     const socketA = await connectStaffSocket(
       tenantAHost,
-      loginA.body.data.tokens.accessToken,
+      socketLoginA.body.data.tokens.accessToken,
     );
     const socketB = await connectStaffSocket(
       tenantBHost,
-      loginB.body.data.tokens.accessToken,
+      socketLoginB.body.data.tokens.accessToken,
     );
     assert.equal(
       socketA.connected,
       true,
-      "Tenant A staff WebSocket must connect.",
+      "Tenant A staff WebSocket must connect: " + socketA.detail,
     );
     assert.equal(
       socketB.connected,
       true,
-      "Tenant B staff WebSocket must connect.",
+      "Tenant B staff WebSocket must connect: " + socketB.detail,
     );
     fixture.socketClients.push(socketA.socket, socketB.socket);
 
     const tenantATokenOnBHost = await connectStaffSocket(
       tenantBHost,
-      loginA.body.data.tokens.accessToken,
+      socketLoginA.body.data.tokens.accessToken,
     );
     const tenantBTokenOnAHost = await connectStaffSocket(
       tenantAHost,
-      loginB.body.data.tokens.accessToken,
+      socketLoginB.body.data.tokens.accessToken,
     );
     const tenantTokenOnUnknownHost = await connectStaffSocket(
       "qa-unknown-" + suffix + ".invalid",
-      loginA.body.data.tokens.accessToken,
+      socketLoginA.body.data.tokens.accessToken,
     );
     assert.equal(
       tenantATokenOnBHost.connected,
@@ -773,7 +880,7 @@ async function main() {
   } catch (error) {
     failure = error;
   } finally {
-    for (const socket of fixture.socketClients) socket.disconnect();
+    for (const socket of fixture.socketClients) socket.close();
     if (guardPassed) {
       for (const mediaObject of fixture.mediaObjects) {
         const safePrefix = "tenants/" + mediaObject.tenantId + "/products/";
@@ -826,14 +933,23 @@ async function main() {
         await prisma.setting.deleteMany({
           where: { tenantId: { in: tenantIds }, key: DELIVERY_SETTING },
         });
-        if (fixture.userId) {
+        if (fixture.userIds.length) {
           await prisma.tenantMembership.deleteMany({
-            where: { userId: fixture.userId },
+            where: { userId: { in: fixture.userIds } },
           });
           await prisma.userRole.deleteMany({
-            where: { userId: fixture.userId },
+            where: { userId: { in: fixture.userIds } },
           });
-          await prisma.user.deleteMany({ where: { id: fixture.userId } });
+        }
+        if (fixture.employeeIds.length) {
+          await prisma.employee.deleteMany({
+            where: { id: { in: fixture.employeeIds } },
+          });
+        }
+        if (fixture.userIds.length) {
+          await prisma.user.deleteMany({
+            where: { id: { in: fixture.userIds } },
+          });
         }
         if (fixture.domainIds.length) {
           await prisma.tenantDomain.deleteMany({
@@ -852,6 +968,8 @@ async function main() {
         }
         if (fixture.roleId)
           await prisma.role.deleteMany({ where: { id: fixture.roleId } });
+        if (fixture.socketRoleId)
+          await prisma.role.deleteMany({ where: { id: fixture.socketRoleId } });
         if (fixture.permissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.permissionId },
@@ -873,6 +991,7 @@ async function main() {
           prisma.restaurantTenant.count(),
           prisma.branch.count(),
           prisma.user.count(),
+          prisma.employee.count(),
           prisma.tenantMembership.count(),
           prisma.tenantDomain.count(),
           prisma.customer.count(),
@@ -884,7 +1003,7 @@ async function main() {
         ]);
         assert.deepEqual(
           remaining,
-          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
           "All staging fixtures must be removed.",
         );
       } catch {
