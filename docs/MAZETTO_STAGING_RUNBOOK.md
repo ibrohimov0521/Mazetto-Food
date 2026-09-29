@@ -98,6 +98,14 @@ apps/backend/test/telegram-notification-retry.test.ts fake fetch javoblari bilan
 
 Bu test alohida durable queue/worker, real Telegram webhook/token, staging bot delivery yoki order boshidan POS/KDS/courier regression isbotlamaydi. Shu sababli release gate'dagi queue/worker va bot mock bandi hozircha ochiq qoladi.
 
+## Tenant media A/B smoke (2026-09-30)
+
+Staging A/B harness media tekshiruvini ham bajaradi. U faqat MINIO_ENDPOINT=mazetto-staging-minio va MINIO_BUCKET=mazetto-staging bo'lganda davom etadi; credential qiymatlarini chiqarmaydi. Authenticated A/B staff tokenlari bilan haqiqiy /uploads/image endpointiga bitta sintetik PNG yuboriladi, B tokenining A hostida uploadi rad etilishi shart, object keylar tenant prefiksiga mos bo'lishi va staging bucketda statObject bilan topilishi tekshiriladi.
+
+    docker exec -e MAZETTO_STAGING_AB_QA=1 <staging-api-container> node /app/apps/backend/scripts/qa-tenant-ab-staging.mjs
+
+2026-09-30 live staging natijasi o'tdi. Harness faqat o'zi qaytargan A/B object keylarini o'chirib, har birining yo'qligini qayta tekshiradi; DB fixture cleanup ham bir ACTIVE baseline tenant va qolgan fixture jadvallarida 0 qatorni tasdiqladi. Bu private staging sinovi, production media, bucket yoki biznes rasmlariga tegilmagan.
+
 ## Release darvozasi
 
 - [x] Alohida Dokploy staging project/environment va DB/Redis/media resurslari.

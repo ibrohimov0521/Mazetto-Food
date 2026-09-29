@@ -248,3 +248,10 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Yangi test Telegram notification oqimini fake fetch bilan tashqi tarmoqqa chiqarmasdan tekshiradi: vaqtinchalik HTTP 503 uchun 3 urinish, tenant A dead-letter yozuvining B ro'yxatidan ajralishi, ikki ACTIVE tenantli ambiguous kontekstda retry rad etilishi va tenant yagona bo'lgach muvaffaqiyatli qayta yuborish.
 - Tekshiruv: backend suite 456/456, backend src typecheck, scripts/tests strict typecheck, yangi test lint o'tdi. Mazetto Food production o'zgarmadi.
 - Durable worker/queue va restaurant-specific Telegram credentials/webhooklar implementatsiya yoki production sinovdan o'tkazilmadi; release gate ochiq. Keyingi xavfsiz ish: tenant-prefixed media uploadni private staging object store'da real A/B bilan sinash, so'ng customer/staff realtime va printer/receipt regression darvozalariga o'tish.
+
+## 21. Tenant-prefixed media A/B live proof (2026-09-30)
+
+- PR #117 merged as 7a07e82; only the separate staging API was redeployed. Health returned 200, PostgreSQL ok, Redis connected.
+- The guarded live harness used the actual authenticated upload endpoint for synthetic A/B images, denied the B token on A's host, verified both storage keys under their own tenant prefixes and confirmed both objects in the exact private staging bucket.
+- Cleanup removed only the two recorded fixture objects and verified absence; database cleanup returned to 1 ACTIVE baseline tenant and zero fixture rows. Production media and Mazetto Food services remain unchanged.
+- Remaining next gate: customer/staff realtime cross-tenant event and reconnect tests, followed by cache/device/export/report and end-to-end restaurant workflow regression. The broader media/realtime release gate stays open until all its remaining areas pass.
