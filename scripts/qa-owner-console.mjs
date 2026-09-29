@@ -227,6 +227,8 @@ try {
     await page.screenshot({ path: `/tmp/owner-tenants-${viewport.width}.png`, fullPage: true });
     await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Umumiy holat" }).waitFor();
+    const overviewOverflow = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, offenders: [...document.querySelectorAll("body *")].filter(element => element.getBoundingClientRect().right > window.innerWidth + 1).slice(0, 12).map(element => ({ tag: element.tagName, className: typeof element.className === "string" ? element.className : "", right: Math.round(element.getBoundingClientRect().right), text: element.textContent?.trim().slice(0, 40) })) }));
+    assert.equal(overviewOverflow.width > viewport.width + 1, false, `Overview horizontal overflow at ${viewport.width}px: ${JSON.stringify(overviewOverflow)}`);
     await page.screenshot({ path: `/tmp/owner-overview-${viewport.width}.png`, fullPage: true });
     await page.getByRole("button", { name: "Monitoringga ulash" }).click();
     await page.getByRole("dialog").getByLabel("Loyiha nomi").fill("Yangi filial");
