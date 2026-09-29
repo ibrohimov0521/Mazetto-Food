@@ -222,3 +222,15 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Telegram customer bot tekshirildi. Staff bot webhook'ning oxirgi saqlangan xatosi 2026-09-22 22:20 UTC dagi HTTP 500, pending_update_count=0; webhook o'zgartirilmadi. Staff Telegram UX uchun real foydalanuvchi bilan qo'lda tasdiq hali kerak.
 - Production tag e6cfa40'ga ko'chirildi; PR #104 merge qilingan.
 - Hali alohida staging app/API/DB stack yo'q. Keyingi bosqich: ajratilgan staging muhitini tayyorlash, tenant A/B queue/worker, bot mapping, media/realtime, device/export oqimlarini tekshirish va rollback mashqi. Shu dalillarsiz ikkinchi restoran faollashtirilmaydi.
+## 18. Ajratilgan staging muhiti (2026-09-29)
+
+- Yuqoridagi 17-bo'limdagi “staging yo'q” holati bu bo'lim bilan yangilandi. Dokploy'da production'dan alohida `Mazetto Staging / staging` loyiha-muhiti yaratildi. Alohida PostgreSQL, Redis, backend API va S3-compatible media ombori ishlayapti.
+- Staging media uchun SeaweedFS 4.47 ishlatilmoqda: staging'da MinIO image registry'dan tortilmadi. Bu faqat test ombori; Mazetto Food production media servisi va sozlamalari o'zgartirilmagan.
+- Staging backend alohida, tashqi domen/route ochilmagan va production bot/monitoring tokenlari yoki production ma'lumotlari berilmagan. Staging kalitlari va saqlash credential'lari faqat Dokploy staging environment'da turadi.
+- Staging bazasiga 53/53 migration qo'llandi. Boshlang'ich holat: migration baseline'dagi 1 ACTIVE tenant, 0 filial, 0 user, 0 customer va 0 membership; production'dan ma'lumot ko'chirilmagan.
+- 2026-09-29 tekshiruvi: ichki `/api/v1/health` 200, PostgreSQL OK, Redis ulangan, S3 SDK orqali `mazetto-staging` bucket mavjud. API 1/1 ishlayapti.
+- Bu infratuzilma smoke-testidir, tenant A/B izolyatsiyasining dalili emas. Sintetik tenant A/B, membership, verified test host, login va endpoint bo'yicha rad etish/ajratuvchi testlar hali bajarilishi kerak.
+- Keyingi navbat: staging-only sintetik fixture va test harness; REST/auth/domain A/B; async worker/navbat va idempotency; Telegram adapter mock (haqiqiy token/webhook'siz); media prefiks, customer/staff realtime, cache, device hamda export/report; so'ng backup restore va rollback mashqi.
+- Dokploy staging ilovasi GitHub `main` branch'ini kuzatadi. Har bir staging deploy oldidan kutilgan commit SHA va faqat staging resurslariga target qilinganini tasdiqlash kerak.
+- Production migration/deploy, DNS o'zgarishi va ikkinchi restoran faollashtirilishi bu bosqichda bajarilmadi. Barcha A/B, restore/rollback va Mazetto Food regression darvozalari o'tmaguncha ikkinchi tenant `PROVISIONING` holatida qoladi.
+- Operatsion tartib va check-list: [MAZETTO_STAGING_RUNBOOK.md](MAZETTO_STAGING_RUNBOOK.md).
