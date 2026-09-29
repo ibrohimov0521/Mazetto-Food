@@ -134,6 +134,12 @@ try {
       data: { hostname: tenantHost, tenantId: tenant.id, status: "VERIFIED", verifiedAt: new Date() },
     });
     const role = await prisma.role.create({ data: { code: "SUPER_ADMIN", name: "QA restaurant owner" } });
+    const allPermissions = await prisma.permission.upsert({
+      where: { code: "*" },
+      update: {},
+      create: { code: "*", name: "All permissions" },
+    });
+    await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: allPermissions.id } });
     const staff = await prisma.user.create({ data: {
       email: "qa-staff@bestteam.invalid", passwordHash: await hash(staffPassword, 12), isActive: true,
     } });
@@ -517,6 +523,28 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
     assert.equal(publicSettingsB.status, 200, JSON.stringify(publicSettingsB.body.error));
     assert.equal(publicSettingsA.body.data.customerDeliveryFee, 1100);
     assert.equal(publicSettingsB.body.data.customerDeliveryFee, 2200);
+
+    const updateTenantSetting = (host, token, value) => request(base, "/settings/customer_delivery_fee", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", host, Authorization: "Bearer " + token },
+      body: JSON.stringify({ value: String(value) }),
+    });
+    const crossTenantSettingUpdate = await updateTenantSetting(tenantBHost, restaurantAdminToken, 2600);
+    assert.ok([401, 403].includes(crossTenantSettingUpdate.status),
+      "Tenant A's staff token must not update tenant B's settings.");
+    const staffLoginB = await request(base, "/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", host: tenantBHost },
+      body: JSON.stringify({ identifier: "qa-staff@bestteam.invalid", password: staffPassword }),
+    });
+    assert.equal(staffLoginB.status, 201, JSON.stringify(staffLoginB.body.error));
+    assert.equal(staffLoginB.body.data.user.tenantId, tenantBId);
+    const settingsUpdateB = await updateTenantSetting(tenantBHost, staffLoginB.body.data.tokens.accessToken, 2500);
+    assert.equal(settingsUpdateB.status, 200, JSON.stringify(settingsUpdateB.body.error));
+    const settingsAfterWriteA = await request(base, "/settings/public", { headers: { host: tenantHost } });
+    const settingsAfterWriteB = await request(base, "/settings/public", { headers: { host: tenantBHost } });
+    assert.equal(settingsAfterWriteA.body.data.customerDeliveryFee, 1100);
+    assert.equal(settingsAfterWriteB.body.data.customerDeliveryFee, 2500);
 
     const verify = (host, code, name) => request(base, "/customer/auth/verify-code", {
       method: "POST",
