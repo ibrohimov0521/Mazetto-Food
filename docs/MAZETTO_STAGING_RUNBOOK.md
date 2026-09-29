@@ -111,8 +111,10 @@ Staging A/B harness media tekshiruvini ham bajaradi. U faqat MINIO_ENDPOINT=maze
 - [x] Alohida Dokploy staging project/environment va DB/Redis/media resurslari.
 - [x] Staging migration 53/53 va API/PostgreSQL/Redis/S3 infrastructure smoke.
 - [x] Sintetik A/B fixture va HTTP/auth/domain fail-closed testlar (staging live smoke, 2026-09-30; PR #113/#114).
-- [ ] Queue/worker, retry/idempotency va bot mock testlari.
-- [ ] Media, customer/staff realtime, cache, device, audit/export/report A/B testlari.
+- [x] Fake transport bilan Telegram retry/dead-letter tenant isolation testi (unit/mock).
+- [ ] Durable queue/worker, idempotency va restoranlarga alohida Telegram bot/webhook mapping.
+- [x] Tenant-prefixed media upload va staff WebSocket auth A/B smoke (staging only; 2026-09-30).
+- [ ] Customer WebSocket/revocation, actual staff event delivery/reconnect, cache/device/audit/export/report A/B tests.
 - [ ] Mazetto Food order/POS/KDS/courier regression va screenshot baseline.
 - [ ] Staging backup restore hamda rollback mashqi.
 - [ ] Har bir production API domain uchun alohida login/refresh smoke va owner tasdig'i.
@@ -124,4 +126,11 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - PR #119 tightened Kitchen Gateway scope: branch/customer rooms now come only from persisted order/ticket ownership; unresolved records fail closed. Unit tests cover forged payload branch IDs and deleted order records.
 - The guarded live staging harness verifies A/B outbox catch-up, foreign-branch denial, and cursor pagination; the post-run staging DB returns to its baseline.
 - PR #119 (1f970bb) was merged after hosted CI passed; only the isolated staging API was redeployed. Health returned 200, PostgreSQL was ok, Redis was connected, and the live A/B harness passed.
-- These checks do not yet prove actual WebSocket event delivery/reconnect, cache/device/export/report isolation, full POS/KDS/courier workflows, or restore/rollback. Keep those release gates closed.
+- Staff WebSocket authentication on each tenant host and cross-host/unknown-host rejection are now proven separately by the following live A/B smoke. Actual event delivery/reconnect, customer socket revocation, cache/device/export/report isolation, full POS/KDS/courier workflows, and restore/rollback remain open.
+
+## Staff WebSocket authentication A/B (2026-09-30)
+
+- The staging-only harness now creates separate synthetic owner accounts and branch-scoped staff/Employee records for tenants A and B. This preserves the existing owner settings/media tests while exercising real Socket.IO handshakes for actual branch staff.
+- Each staff account connected on its own verified synthetic host. A token on B's host, B token on A's host, and a tenant token on an unknown host all failed to remain connected. The client maps only the synthetic hostname to 127.0.0.1; no public DNS or egress is used.
+- The harness waited for the server's post-connect authorization/disconnect decision, then closed successful sockets before deleting fixtures. Live run passed on the isolated staging API; fixture cleanup returned the database to its baseline and removed test media objects.
+- This proves staff socket host/membership authentication, not actual order event delivery/reconnect or customer socket revocation. Those remain release gates.
