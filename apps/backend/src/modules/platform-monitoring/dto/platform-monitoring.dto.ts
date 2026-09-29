@@ -254,6 +254,15 @@ export class PlatformBackupSummaryDto {
   @Min(0)
   archiveEntries?: number | null;
 
+  @IsOptional()
+  @IsString()
+  @Matches(/^mazetto-[A-Za-z0-9-]+\.dump$/)
+  archiveName?: string | null;
+
+  @IsOptional()
+  @IsIn(["pg_restore_list"])
+  verification?: "pg_restore_list" | null;
+
   @IsBoolean()
   restoreTested!: boolean;
 }
