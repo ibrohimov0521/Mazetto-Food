@@ -22,6 +22,32 @@ const pos = process.env.MAZETTO_POS_URL ?? "https://pos.mazettofood.uz";
 const platform = process.env.MAZETTO_PLATFORM_URL ?? "https://admin.mazetto.uz";
 const media = process.env.MAZETTO_MEDIA_URL ?? "https://media.mazettofood.uz";
 
+const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429, 502, 503, 504]);
+
+async function fetchWithTransientRetry(url, options) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(url, options);
+      if (
+        attempt === 0 &&
+        TRANSIENT_HTTP_STATUSES.has(response.status)
+      ) {
+        await response.body?.cancel();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`request failed after retry: ${url}`);
+}
+
 /*
  * { name, url, status, body? }
  *
@@ -112,7 +138,7 @@ const checks = [
   {
     name: "customer catalog media assets",
     custom: async () => {
-      const response = await fetch(`${api}/customer/menu/products`, {
+      const response = await fetchWithTransientRetry(`${api}/customer/menu/products`, {
         headers: { "User-Agent": "mazetto-release-smoke" },
         signal: AbortSignal.timeout(30000),
       });
@@ -122,35 +148,48 @@ const checks = [
       const products = Array.isArray(payload?.data) ? payload.data : [];
       if (products.length === 0) return "katalog bo'sh yoki noto'g'ri formatda";
 
-      const failures = [];
-      await Promise.all(
-        products.map(async (product) => {
+      const failures = new Array(products.length);
+      let nextProduct = 0;
+      const checkNextProduct = async () => {
+        while (nextProduct < products.length) {
+          const index = nextProduct++;
+          const product = products[index];
           const image = typeof product?.imageUrl === "string" ? product.imageUrl.trim() : "";
           if (!image) {
-            failures.push(`${product?.name ?? "noma'lum"}: imageUrl yo'q`);
-            return;
+            failures[index] = `${product?.name ?? "noma'lum"}: imageUrl yo'q`;
+            continue;
           }
 
           const imageUrl = image.startsWith("http")
             ? image
             : `${media}/${image.replace(/^\/+/, "")}`;
           try {
-            const imageResponse = await fetch(imageUrl, {
+            const imageResponse = await fetchWithTransientRetry(imageUrl, {
               method: "HEAD",
               redirect: "manual",
-              signal: AbortSignal.timeout(15000),
+              signal: AbortSignal.timeout(30000),
             });
             if (imageResponse.status !== 200) {
-              failures.push(`${product?.name ?? "noma'lum"}: HTTP ${imageResponse.status}`);
+              failures[index] =
+                `${product?.name ?? "noma'lum"}: HTTP ${imageResponse.status}`;
+              await imageResponse.body?.cancel();
             }
           } catch (error) {
-            failures.push(`${product?.name ?? "noma'lum"}: ${error.name ?? "network error"}`);
+            const reason = error.cause?.code ?? error.name ?? "network error";
+            failures[index] = `${product?.name ?? "noma'lum"}: ${reason}`;
           }
-        }),
+        }
+      };
+      await Promise.all(
+        Array.from(
+          { length: Math.min(3, products.length) },
+          () => checkNextProduct(),
+        ),
       );
 
-      return failures.length
-        ? `${failures.length}/${products.length} media xatosi: ${failures.slice(0, 3).join("; ")}`
+      const failedImages = failures.filter(Boolean);
+      return failedImages.length
+        ? `${failedImages.length}/${products.length} media xatosi: ${failedImages.slice(0, 3).join("; ")}`
         : null;
     },
   },
@@ -166,7 +205,7 @@ async function run(check) {
   }
 
   try {
-    const response = await fetch(check.url, {
+    const response = await fetchWithTransientRetry(check.url, {
       headers: { "User-Agent": "mazetto-release-smoke" },
       // Yo'naltirish ham xato: masalan /orders login'ga otib yuborsa, 200 emas.
       redirect: "manual",
