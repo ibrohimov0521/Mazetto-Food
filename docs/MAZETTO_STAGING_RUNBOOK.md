@@ -20,6 +20,16 @@ Staging API health tekshiruvi: `/api/v1/health` 200 qaytarishi, PostgreSQL `ok` 
 
 Boshlang'ich DB'da 53 migration qo'llangan, 1 baseline ACTIVE tenant va 0 filial/user/customer/membership bor. Bu A/B biznes oqimlari ishlashini anglatmaydi.
 
+## Staging A/B smoke natijasi (2026-09-30)
+
+apps/backend/scripts/qa-tenant-ab-staging.mjs faqat staging API containerida, ichki loopback API manziliga qarshi ishlaydi:
+
+docker exec -e MAZETTO_STAGING_AB_QA=1 <staging-api-container> node /app/apps/backend/scripts/qa-tenant-ab-staging.mjs
+
+Harness production rejimini, aniq staging DB host/name'ini, 127.0.0.1 API manzilini va fixture boshlanishidagi bo'sh DB holatini tekshirmasa ishni boshlamaydi. Tenant domenlari .invalid; email/telefon/OTP sintetik. Telegram, SMS va tashqi webhook yuborilmaydi. Sinov vaqtida staging'da vaqtinchalik B tenant ACTIVE qilinadi; production tenant holatiga ta'sir qilmaydi. Fixture faqat o'zi yaratgan identifikatorlar bilan tozalanadi va yakunda baseline sonlar qayta tekshiriladi.
+
+2026-09-30 live staging natijasi: verified/pending/unknown host fail-closed; A/B branch va public settings ajratilishi; staff membership/login/access token hamda cross-tenant settings write denial; bir xil telefon uchun tenant-scoped OTP/customer identity/session/access/refresh tekshiruvlari o'tdi. Cleanup'dan keyin DB baseline'ga qaytdi: 1 ACTIVE tenant, 0 branch/user/membership/domain/customer/challenge/setting/role/permission fixture; migration 53/53, health 200, Redis ulangan, staging S3 bucket mavjud.
+
 ## Ajratish qoidalari
 
 1. Production DB, Redis, media, bot tokenlari, monitoring tokenlari va mijoz ma'lumotlarini staging'ga ulama yoki ko'chirma.
@@ -86,7 +96,7 @@ Haqiqiy printer, to'lov yoki Telegram tashqi xizmatiga staging'dan side effect y
 
 - [x] Alohida Dokploy staging project/environment va DB/Redis/media resurslari.
 - [x] Staging migration 53/53 va API/PostgreSQL/Redis/S3 infrastructure smoke.
-- [ ] Sintetik A/B fixture va HTTP/auth/domain fail-closed testlar.
+- [x] Sintetik A/B fixture va HTTP/auth/domain fail-closed testlar (staging live smoke, 2026-09-30; PR #113/#114).
 - [ ] Queue/worker, retry/idempotency va bot mock testlari.
 - [ ] Media, customer/staff realtime, cache, device, audit/export/report A/B testlari.
 - [ ] Mazetto Food order/POS/KDS/courier regression va screenshot baseline.

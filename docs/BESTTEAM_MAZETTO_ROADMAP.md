@@ -234,3 +234,11 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Dokploy staging ilovasi GitHub `main` branch'ini kuzatadi. Har bir staging deploy oldidan kutilgan commit SHA va faqat staging resurslariga target qilinganini tasdiqlash kerak.
 - Production migration/deploy, DNS o'zgarishi va ikkinchi restoran faollashtirilishi bu bosqichda bajarilmadi. Barcha A/B, restore/rollback va Mazetto Food regression darvozalari o'tmaguncha ikkinchi tenant `PROVISIONING` holatida qoladi.
 - Operatsion tartib va check-list: [MAZETTO_STAGING_RUNBOOK.md](MAZETTO_STAGING_RUNBOOK.md).
+
+## 19. Staging A/B core isolation smoke (2026-09-30)
+
+- Staging-only A/B harness apps/backend/scripts/qa-tenant-ab-staging.mjs PR #113 va helper URL tuzatishi PR #114 orqali main'ga merge qilindi. Joriy staging app 06d6fc5 commitida qayta deploy qilindi.
+- Live staging smoke verified/pending/unknown host denial, tenant A/B filial va public setting scope, staff membership/login/access token, cross-tenant admin setting mutation denial, bir xil telefon uchun OTP/customer/session/access/refresh ajratilishini tekshirdi. Sintetik .invalid host va ma'lumotlargina ishlatildi; tashqi SMS/Telegram jo'natilmadi.
+- Cleanup'dan so'ng staging DB baseline tiklandi: 1 ACTIVE baseline tenant, 0 fixture branch/user/membership/domain/customer/challenge/setting/role/permission; 53/53 migration, API health 200, Redis ulangan, S3 bucket mavjud. Test va natijani qayta bajarish tartibi [runbook'da](MAZETTO_STAGING_RUNBOOK.md).
+- Bu faqat staging proof: temporary B tenant production'da yaratilmagan yoki faollashtirilmagan. Mazetto Food production va uning servislari o'zgarmadi.
+- Keyingi bosqich: queue/worker retry va idempotency, notification/Telegram mock, media tenant-prefiks hamda customer/staff realtime isolation testlarini implementatsiyadan oldin kod yo'llari bo'yicha inventarizatsiya qilib, faqat staging fixture'da tekshirish. Shu hamda qolgan release gates o'tmaguncha production deploy/migration va ikkinchi tenant activation taqiqlangan.
