@@ -404,6 +404,13 @@
   background: #edf9f1;
   color: #216843;
 }
+.pendingSync {
+  padding: 12px 14px;
+  border: 1px solid #edcf85;
+  border-radius: 8px;
+  background: #fff8e5;
+  color: #73520b;
+}
 .empty {
   display: grid;
   justify-items: center;

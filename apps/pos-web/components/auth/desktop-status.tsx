@@ -17,6 +17,7 @@ type DesktopStatus = {
   conflictCommands?: number;
   deadLetterCommands?: number;
   pendingPrintJobs: number;
+  deadLetterPrintJobs?: number;
 };
 
 type OutboxCommand = {
@@ -37,9 +38,19 @@ type OutboxCommand = {
   };
 };
 
+type LocalPrintJob = {
+  id: string;
+  documentType: string;
+  state: string;
+  attempts: number;
+  createdAt: string;
+  lastError: string | null;
+};
+
 type OutboxPayload = {
   summary: DesktopStatus;
   commands: OutboxCommand[];
+  printJobs?: LocalPrintJob[];
 };
 
 type ConflictComparison = {
@@ -103,6 +114,7 @@ export function DesktopStatusBadge() {
   const [outbox, setOutbox] = useState<OutboxPayload | null>(null);
   const [outboxError, setOutboxError] = useState("");
   const [busyCommandId, setBusyCommandId] = useState<string | null>(null);
+  const [busyPrintId, setBusyPrintId] = useState<string | null>(null);
   const [comparison, setComparison] = useState<{ commandId: string; data: ConflictComparison } | null>(null);
   const [comparisonBusyId, setComparisonBusyId] = useState<string | null>(null);
   const [printerHost, setPrinterHost] = useState("");
@@ -325,6 +337,7 @@ export function DesktopStatusBadge() {
   const pending = status?.pendingCommands ?? 0;
   const sending = status?.sendingCommands ?? 0;
   const blocked = (status?.conflictCommands ?? 0) + (status?.deadLetterCommands ?? 0);
+  const failedPrintJobs = outbox?.printJobs?.filter((job) => job.state === "dead_letter") ?? [];
   const Icon =
     mode === "online" ? Cloud : mode === "offline" ? CloudOff : RefreshCw;
   const title = status
@@ -344,6 +357,24 @@ export function DesktopStatusBadge() {
     }
   }
 
+  async function retryPrintJob(jobId: string): Promise<void> {
+    setBusyPrintId(jobId);
+    setOutboxError("");
+    try {
+      const payload = await desktopFetch<OutboxPayload>(
+        "/desktop/prints/" + encodeURIComponent(jobId) + "/retry",
+        { method: "POST" },
+      );
+      setOutbox(payload);
+      setStatus(payload.summary);
+    } catch (caught) {
+      setOutboxError(
+        caught instanceof Error ? caught.message : "Chek qayta yuborilmadi.",
+      );
+    } finally {
+      setBusyPrintId(null);
+    }
+  }
   async function mutateCommand(
     commandId: string,
     action: "retry" | "cancel",
@@ -533,6 +564,40 @@ export function DesktopStatusBadge() {
             <QueueStat label="Cheklar" value={status?.pendingPrintJobs ?? 0} />
           </div>
 
+          {failedPrintJobs.length ? (
+            <div className="grid gap-2 rounded-mz-card border border-mz-danger-accent bg-mz-danger-bg p-3">
+              <p className="text-sm font-semibold text-mz-danger">
+                Qayta chop etish kerak
+              </p>
+              {failedPrintJobs.map((job) => (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-mz-control border border-mz-border bg-mz-surface p-3"
+                  key={job.id}
+                >
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-mz-text">
+                      {job.documentType === "KITCHEN"
+                        ? "Oshxona nusxasi"
+                        : job.documentType === "RECEIPT"
+                          ? "Mijoz cheki"
+                          : job.documentType}
+                    </p>
+                    <p className="mt-1 text-[12px] text-mz-danger">
+                      {job.lastError || "Printer javob bermadi."}
+                    </p>
+                  </div>
+                  <Button
+                    disabled={busyPrintId === job.id}
+                    isLoading={busyPrintId === job.id}
+                    onClick={() => void retryPrintJob(job.id)}
+                    size="sm"
+                  >
+                    Qayta chop etish
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {outbox?.commands.length ? (
             <div className="grid max-h-80 gap-2 overflow-y-auto pr-1">
               {outbox.commands.map((command) => (

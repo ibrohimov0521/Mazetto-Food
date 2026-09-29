@@ -183,3 +183,12 @@ the typed command registry, dependency mapping between locally-created IDs and
 server IDs, optimistic projections for every panel, full conflict comparison
 and server-side compensation rules. The shell also contains the safe update
 lifecycle, but it remains inactive until an HTTPS feed is provisioned.
+
+## Offline reliability checkpoint (2026-09-30)
+
+- Desktop offline gateway opens its circuit after a failed request and serves cached reads or local queued writes without repeating a long upstream wait. The maximum upstream request wait is five seconds.
+- POS sale/payment completion now distinguishes locally queued work from server-confirmed work. Offline payment processing accepts positive CASH tenders only; non-cash methods remain online-only. A final server receipt link is not shown before synchronization.
+- The local printer queue supports multiple Windows-installed printers, role routing and paper widths, plus direct ESC/POS network printers. Failed local print jobs are visible in Desktop controls and can be retried after the printer is fixed.
+- Verification for this checkpoint: Desktop tests, POS typecheck/build and printer routing/failure recovery tests. Windows release packaging runs on the repository's Windows GitHub Actions runner after merge.
+- This is not a claim of 100% offline operation. Cached reads require prior authorized synchronization; customer browser ordering and unsupported/configuration/security actions still require the server. Only Windows-driver-compatible printers and supported ESC/POS network devices are covered; physical validation is still needed for the restaurant's exact models.
+- Remaining Desktop phases D2-D6, physical printer/power-loss drills, signed staged updates and rollback remain release gates.

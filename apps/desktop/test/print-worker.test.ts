@@ -4,11 +4,32 @@ import test from "node:test";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 
 test("offline receipt and kitchen documents print through selected Windows drivers", async () => {
-  const printed: Array<{ name: string; type: string; paperWidthMm?: number }> = [];
+  const printed: Array<{ name: string; type: string; paperWidthMm?: number }> =
+    [];
   const completed: string[] = [];
   const jobs = [
-    { id: "local-1", logicalKey: "order-1:RECEIPT", branchId: "branch-1", documentType: "RECEIPT", payloadJson: JSON.stringify({ documentType: "RECEIPT", orderId: "order-1" }), attempts: 0 },
-    { id: "local-2", logicalKey: "order-1:KITCHEN", branchId: "branch-1", documentType: "KITCHEN", payloadJson: JSON.stringify({ documentType: "KITCHEN", orderId: "order-1" }), attempts: 0 },
+    {
+      id: "local-1",
+      logicalKey: "order-1:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payloadJson: JSON.stringify({
+        documentType: "RECEIPT",
+        orderId: "order-1",
+      }),
+      attempts: 0,
+    },
+    {
+      id: "local-2",
+      logicalKey: "order-1:KITCHEN",
+      branchId: "branch-1",
+      documentType: "KITCHEN",
+      payloadJson: JSON.stringify({
+        documentType: "KITCHEN",
+        orderId: "order-1",
+      }),
+      attempts: 0,
+    },
   ];
   const worker = new DesktopPrintWorker({
     apiUrl: "https://api.example.test/api/v1",
@@ -16,8 +37,18 @@ test("offline receipt and kitchen documents print through selected Windows drive
     agentId: "desktop-device-1",
     deviceId: "device-1",
     systemPrinters: [
-      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"], paperWidthMm: 58 },
-      { name: "Windows Kitchen", displayName: "Windows Kitchen", roles: ["KITCHEN"], paperWidthMm: 210 },
+      {
+        name: "Windows POS",
+        displayName: "Windows POS",
+        roles: ["RECEIPT"],
+        paperWidthMm: 58,
+      },
+      {
+        name: "Windows Kitchen",
+        displayName: "Windows Kitchen",
+        roles: ["KITCHEN"],
+        paperWidthMm: 210,
+      },
     ],
     printSystem: async (name, receipt, paperWidthMm) => {
       printed.push({ name, type: receipt.documentType ?? "", paperWidthMm });
@@ -43,6 +74,74 @@ test("offline receipt and kitchen documents print through selected Windows drive
   assert.deepEqual(completed, ["local-1", "local-2"]);
 });
 
+test("offline print queue routes documents across multiple configured system printers", async () => {
+  const printed: string[] = [];
+  const jobs = [
+    {
+      id: "receipt-job",
+      logicalKey: "order-2:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payloadJson: JSON.stringify({ orderId: "order-2" }),
+      attempts: 0,
+    },
+    {
+      id: "kitchen-job",
+      logicalKey: "order-2:KITCHEN",
+      branchId: "branch-1",
+      documentType: "KITCHEN",
+      payloadJson: JSON.stringify({ orderId: "order-2" }),
+      attempts: 0,
+    },
+  ];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      {
+        name: "Till A",
+        displayName: "Till A",
+        roles: ["RECEIPT"],
+        paperWidthMm: 58,
+      },
+      {
+        name: "Till B",
+        displayName: "Till B",
+        roles: ["RECEIPT"],
+        paperWidthMm: 80,
+      },
+      {
+        name: "Kitchen 1",
+        displayName: "Kitchen 1",
+        roles: ["KITCHEN"],
+        paperWidthMm: 210,
+      },
+    ],
+    printSystem: async (name, receipt) => {
+      printed.push(name + ":" + receipt.documentType);
+    },
+    localQueue: {
+      claim: (types) => {
+        const index = jobs.findIndex((job) => types.includes(job.documentType));
+        return index < 0 ? null : jobs.splice(index, 1)[0]!;
+      },
+      complete: () => undefined,
+      fail: (_id, error) => assert.fail(error),
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+
+  assert.deepEqual(printed, [
+    "Till A:RECEIPT",
+    "Till B:RECEIPT",
+    "Kitchen 1:KITCHEN",
+  ]);
+});
+
 test("assigned server printer jobs print only to the matching Windows queue", async () => {
   let claimed = false;
   let completed = 0;
@@ -56,12 +155,21 @@ test("assigned server printer jobs print only to the matching Windows queue", as
       { name: "queue-1", displayName: "Kassa 1", roles: ["RECEIPT"] },
       { name: "queue-2", displayName: "Kassa 2", roles: ["RECEIPT"] },
     ],
-    printSystem: async (name) => { printed.push(name); },
+    printSystem: async (name) => {
+      printed.push(name);
+    },
     fetchImpl: async (input) => {
       const url = String(input);
-      if (url.endsWith("/printers")) return jsonResponse([
-        { id: "printer-1", name: "Kassa 1", isActive: true, status: "ONLINE", metadata: { printRoles: ["RECEIPT"] } },
-      ]);
+      if (url.endsWith("/printers"))
+        return jsonResponse([
+          {
+            id: "printer-1",
+            name: "Kassa 1",
+            isActive: true,
+            status: "ONLINE",
+            metadata: { printRoles: ["RECEIPT"] },
+          },
+        ]);
       if (url.endsWith("/print-jobs/claim")) {
         if (claimed) return jsonResponse(null);
         claimed = true;
@@ -69,12 +177,23 @@ test("assigned server printer jobs print only to the matching Windows queue", as
           id: "job-1",
           receiptId: "receipt-1",
           leaseToken: "lease-1",
-          receipt: { receiptNumber: "RCPT-1", documentType: "RECEIPT", orderId: "order-1" },
-          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
+          receipt: {
+            receiptNumber: "RCPT-1",
+            documentType: "RECEIPT",
+            orderId: "order-1",
+          },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "42",
+            items: [{ name: "Lavash" }],
+          },
           printer: { id: "printer-1", name: "Kassa 1", metadata: {} },
         });
       }
-      if (url.endsWith("/complete")) { completed += 1; return jsonResponse({}); }
+      if (url.endsWith("/complete")) {
+        completed += 1;
+        return jsonResponse({});
+      }
       throw new Error("Unexpected request: " + url);
     },
   });
@@ -99,12 +218,21 @@ test("ambiguous Windows printer mapping fails instead of printing duplicate copi
       { name: "queue-1", displayName: "Kassa 1", roles: ["RECEIPT"] },
       { name: "queue-2", displayName: "Kassa 2", roles: ["RECEIPT"] },
     ],
-    printSystem: async () => { printed += 1; },
+    printSystem: async () => {
+      printed += 1;
+    },
     fetchImpl: async (input, init) => {
       const url = String(input);
-      if (url.endsWith("/printers")) return jsonResponse([
-        { id: "printer-1", name: "Kassa server", isActive: true, status: "ONLINE", metadata: { printRoles: ["RECEIPT"] } },
-      ]);
+      if (url.endsWith("/printers"))
+        return jsonResponse([
+          {
+            id: "printer-1",
+            name: "Kassa server",
+            isActive: true,
+            status: "ONLINE",
+            metadata: { printRoles: ["RECEIPT"] },
+          },
+        ]);
       if (url.endsWith("/print-jobs/claim")) {
         if (claimed) return jsonResponse(null);
         claimed = true;
@@ -112,8 +240,16 @@ test("ambiguous Windows printer mapping fails instead of printing duplicate copi
           id: "job-1",
           receiptId: "receipt-1",
           leaseToken: "lease-1",
-          receipt: { receiptNumber: "RCPT-1", documentType: "RECEIPT", orderId: "order-1" },
-          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
+          receipt: {
+            receiptNumber: "RCPT-1",
+            documentType: "RECEIPT",
+            orderId: "order-1",
+          },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "42",
+            items: [{ name: "Lavash" }],
+          },
           printer: { id: "printer-1", name: "Kassa server", metadata: {} },
         });
       }
@@ -143,9 +279,16 @@ test("server-assigned Windows job never falls through to the generic TCP printer
     deviceId: "device-1",
     fetchImpl: async (input, init) => {
       const url = String(input);
-      if (url.endsWith("/printers")) return jsonResponse([
-        { id: "printer-1", name: "Kassa", isActive: true, status: "ONLINE", metadata: { printRoles: ["RECEIPT"] } },
-      ]);
+      if (url.endsWith("/printers"))
+        return jsonResponse([
+          {
+            id: "printer-1",
+            name: "Kassa",
+            isActive: true,
+            status: "ONLINE",
+            metadata: { printRoles: ["RECEIPT"] },
+          },
+        ]);
       if (url.endsWith("/print-jobs/claim")) {
         if (claimed) return jsonResponse(null);
         claimed = true;
@@ -153,8 +296,16 @@ test("server-assigned Windows job never falls through to the generic TCP printer
           id: "job-1",
           receiptId: "receipt-1",
           leaseToken: "lease-1",
-          receipt: { receiptNumber: "RCPT-1", documentType: "RECEIPT", orderId: "order-1" },
-          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
+          receipt: {
+            receiptNumber: "RCPT-1",
+            documentType: "RECEIPT",
+            orderId: "order-1",
+          },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "42",
+            items: [{ name: "Lavash" }],
+          },
           printer: { id: "printer-1", name: "Kassa", metadata: {} },
         });
       }
@@ -164,7 +315,9 @@ test("server-assigned Windows job never falls through to the generic TCP printer
       }
       throw new Error("Unexpected request: " + url);
     },
-    socketImpl: async () => { socketWrites += 1; },
+    socketImpl: async () => {
+      socketWrites += 1;
+    },
   });
   worker.setAuthorization("Bearer test-token");
 
@@ -181,20 +334,39 @@ test("server replay is completed without duplicate paper when local document alr
     printerHost: null,
     agentId: "desktop-device-1",
     deviceId: "device-1",
-    systemPrinters: [{ name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] }],
-    printSystem: async () => { physicalPrints += 1; },
+    systemPrinters: [
+      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      physicalPrints += 1;
+    },
     localQueue: {
       claim: () => null,
       complete: () => undefined,
       fail: () => undefined,
-      wasPrinted: (orderId, type) => orderId === "server-order-1" && type === "RECEIPT",
+      wasPrinted: (orderId, type) =>
+        orderId === "server-order-1" && type === "RECEIPT",
     },
     fetchImpl: async (input) => {
       const url = String(input);
       if (url.endsWith("/printers")) return jsonResponse([]);
-      if (url.endsWith("/print-jobs/claim")) return jsonResponse({ id: "job-1", receiptId: "receipt-1", leaseToken: "lease-1", printer: null });
-      if (url.endsWith("/receipts/receipt-1")) return jsonResponse({ orderId: "server-order-1", documentType: "RECEIPT", content: { documentType: "RECEIPT" } });
-      if (url.endsWith("/complete")) { completed += 1; return jsonResponse({}); }
+      if (url.endsWith("/print-jobs/claim"))
+        return jsonResponse({
+          id: "job-1",
+          receiptId: "receipt-1",
+          leaseToken: "lease-1",
+          printer: null,
+        });
+      if (url.endsWith("/receipts/receipt-1"))
+        return jsonResponse({
+          orderId: "server-order-1",
+          documentType: "RECEIPT",
+          content: { documentType: "RECEIPT" },
+        });
+      if (url.endsWith("/complete")) {
+        completed += 1;
+        return jsonResponse({});
+      }
       throw new Error(`Unexpected request: ${url}`);
     },
   });
@@ -234,9 +406,24 @@ test("print worker claims only jobs for ready managed printers", async () => {
     const url = String(input);
     if (url.endsWith("/printers")) {
       return jsonResponse([
-        { id: "printer-ready", isActive: true, status: "ONLINE", metadata: { host: "10.0.0.5", port: 9100 } },
-        { id: "printer-offline", isActive: true, status: "OFFLINE", metadata: { host: "10.0.0.6", port: 9100 } },
-        { id: "printer-no-host", isActive: true, status: "ONLINE", metadata: {} },
+        {
+          id: "printer-ready",
+          isActive: true,
+          status: "ONLINE",
+          metadata: { host: "10.0.0.5", port: 9100 },
+        },
+        {
+          id: "printer-offline",
+          isActive: true,
+          status: "OFFLINE",
+          metadata: { host: "10.0.0.6", port: 9100 },
+        },
+        {
+          id: "printer-no-host",
+          isActive: true,
+          status: "ONLINE",
+          metadata: {},
+        },
       ]);
     }
     requestBodies.push(JSON.parse(String(init?.body)));
@@ -274,8 +461,18 @@ test("all managed printer connections are tested independently", async () => {
     deviceToken: "device-secret",
     fetchImpl: async () =>
       jsonResponse([
-        { id: "receipt", name: "Kassa", status: "ONLINE", metadata: { host: "10.0.0.5", port: 9100 } },
-        { id: "kitchen", name: "Oshxona", status: "ONLINE", metadata: { host: "10.0.0.6", port: 9101 } },
+        {
+          id: "receipt",
+          name: "Kassa",
+          status: "ONLINE",
+          metadata: { host: "10.0.0.5", port: 9100 },
+        },
+        {
+          id: "kitchen",
+          name: "Oshxona",
+          status: "ONLINE",
+          metadata: { host: "10.0.0.6", port: 9101 },
+        },
       ]),
     socketImpl: async (host, port) => {
       connected.push(`${host}:${port}`);
@@ -287,10 +484,13 @@ test("all managed printer connections are tested independently", async () => {
   const results = await worker.testManagedConnections();
 
   assert.deepEqual(connected, ["10.0.0.5:9100", "10.0.0.6:9101"]);
-  assert.deepEqual(results.map(({ name, ok }) => ({ name, ok })), [
-    { name: "Kassa", ok: true },
-    { name: "Oshxona", ok: false },
-  ]);
+  assert.deepEqual(
+    results.map(({ name, ok }) => ({ name, ok })),
+    [
+      { name: "Kassa", ok: true },
+      { name: "Oshxona", ok: false },
+    ],
+  );
 });
 
 test("A4 paper cannot fall through to the default TCP printer", async () => {
@@ -306,7 +506,14 @@ test("A4 paper cannot fall through to the default TCP printer", async () => {
     fetchImpl: async (input, init) => {
       const url = String(input);
       if (url.endsWith("/printers")) {
-        return jsonResponse([{ id: "printer-1", name: "A4", status: "ONLINE", metadata: { paperWidthMm: 210 } }]);
+        return jsonResponse([
+          {
+            id: "printer-1",
+            name: "A4",
+            status: "ONLINE",
+            metadata: { paperWidthMm: 210 },
+          },
+        ]);
       }
       if (url.endsWith("/print-jobs/claim")) {
         if (claimed) return jsonResponse(null);
@@ -315,9 +522,21 @@ test("A4 paper cannot fall through to the default TCP printer", async () => {
           id: "job-a4",
           receiptId: "receipt-a4",
           leaseToken: "lease-a4",
-          receipt: { receiptNumber: "RCPT-A4", documentType: "RECEIPT", orderId: "order-1" },
-          payload: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash" }] },
-          printer: { id: "printer-1", name: "A4", metadata: { paperWidthMm: 210 } },
+          receipt: {
+            receiptNumber: "RCPT-A4",
+            documentType: "RECEIPT",
+            orderId: "order-1",
+          },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "42",
+            items: [{ name: "Lavash" }],
+          },
+          printer: {
+            id: "printer-1",
+            name: "A4",
+            metadata: { paperWidthMm: 210 },
+          },
         });
       }
       if (url.endsWith("/fail")) {
@@ -326,7 +545,9 @@ test("A4 paper cannot fall through to the default TCP printer", async () => {
       }
       throw new Error("Unexpected request: " + url);
     },
-    socketImpl: async () => { socketWrites += 1; },
+    socketImpl: async () => {
+      socketWrites += 1;
+    },
   });
   worker.setAuthorization("Bearer test-token");
 
@@ -336,7 +557,6 @@ test("A4 paper cannot fall through to the default TCP printer", async () => {
   assert.match(failure, /A4 format/);
 });
 test("virtual ESC/POS printer receives cancellation once and job completes", async () => {
-
   const chunks: Buffer[] = [];
   const server = createServer((socket) => {
     socket.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
@@ -356,23 +576,74 @@ test("virtual ESC/POS printer receives cancellation once and job completes", asy
     fetchImpl: async (input) => {
       const url = String(input);
       if (url.endsWith("/printers")) {
-        return jsonResponse([{ id: "printer-1", name: "Kassa", status: "ONLINE", metadata: { host: "127.0.0.1", port: address.port, paperWidthMm: 58 } }]);
+        return jsonResponse([
+          {
+            id: "printer-1",
+            name: "Kassa",
+            status: "ONLINE",
+            metadata: {
+              host: "127.0.0.1",
+              port: address.port,
+              paperWidthMm: 58,
+            },
+          },
+        ]);
       }
       if (url.endsWith("/print-jobs/claim")) {
         if (claimed) return jsonResponse(null);
         claimed = true;
-        return jsonResponse({ id: "job-1", receiptId: "receipt-1", leaseToken: "lease-1", receipt: { receiptNumber: "CANCEL-1", documentType: "CANCELLATION", orderId: "order-1" }, payload: { documentType: "CANCELLATION", orderNumber: "42", items: [{ name: "Achchiq katta lavash qo'shimcha pishloq", quantity: "1", total: "39000" }] }, printer: { id: "printer-1", name: "Kassa", metadata: { host: "127.0.0.1", port: address.port, paperWidthMm: 58 } } });
+        return jsonResponse({
+          id: "job-1",
+          receiptId: "receipt-1",
+          leaseToken: "lease-1",
+          receipt: {
+            receiptNumber: "CANCEL-1",
+            documentType: "CANCELLATION",
+            orderId: "order-1",
+          },
+          payload: {
+            documentType: "CANCELLATION",
+            orderNumber: "42",
+            items: [
+              {
+                name: "Achchiq katta lavash qo'shimcha pishloq",
+                quantity: "1",
+                total: "39000",
+              },
+            ],
+          },
+          printer: {
+            id: "printer-1",
+            name: "Kassa",
+            metadata: {
+              host: "127.0.0.1",
+              port: address.port,
+              paperWidthMm: 58,
+            },
+          },
+        });
       }
       if (url.endsWith("/receipts/receipt-1")) {
         receiptRequests += 1;
-        return jsonResponse({ receiptNumber: "CANCEL-1", escpos: { commands: [
-          { type: "align", value: "center" },
-          { type: "bold", value: true },
-          { type: "text", value: "BUYURTMA BEKOR QILINDI" },
-          { type: "item", quantity: "1", name: "Achchiq katta lavash qo'shimcha pishloq", notes: "z".repeat(35), total: "39000" },
-          { type: "line" },
-          { type: "cut" },
-        ] } });
+        return jsonResponse({
+          receiptNumber: "CANCEL-1",
+          escpos: {
+            commands: [
+              { type: "align", value: "center" },
+              { type: "bold", value: true },
+              { type: "text", value: "BUYURTMA BEKOR QILINDI" },
+              {
+                type: "item",
+                quantity: "1",
+                name: "Achchiq katta lavash qo'shimcha pishloq",
+                notes: "z".repeat(35),
+                total: "39000",
+              },
+              { type: "line" },
+              { type: "cut" },
+            ],
+          },
+        });
       }
       if (url.endsWith("/complete")) {
         completed += 1;
@@ -398,8 +669,18 @@ test("virtual ESC/POS printer receives cancellation once and job completes", asy
   assert.equal(receiptRequests, 1);
   assert.deepEqual([...payload.subarray(0, 2)], [0x1b, 0x40]);
   assert.match(payload.toString("utf8"), /BUYURTMA BEKOR QILINDI/);
-  assert.match(payload.toString("utf8"), /1x Achchiq katta lavash\nqo'shimcha pishloq/);
-  assert.ok(payload.includes(Buffer.from("  " + "z".repeat(30) + "\n  " + "z".repeat(5) + "\n", "utf8")));
+  assert.match(
+    payload.toString("utf8"),
+    /1x Achchiq katta lavash\nqo'shimcha pishloq/,
+  );
+  assert.ok(
+    payload.includes(
+      Buffer.from(
+        "  " + "z".repeat(30) + "\n  " + "z".repeat(5) + "\n",
+        "utf8",
+      ),
+    ),
+  );
   assert.ok(payload.includes(Buffer.from("-".repeat(32) + "\n", "utf8")));
   assert.ok(!payload.includes(Buffer.from("-".repeat(48) + "\n", "utf8")));
   assert.deepEqual([...payload.subarray(-3)], [0x1d, 0x56, 0x00]);
