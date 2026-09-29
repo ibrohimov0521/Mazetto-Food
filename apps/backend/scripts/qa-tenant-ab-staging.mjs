@@ -152,6 +152,8 @@ async function main() {
     membershipIds: [],
     mediaObjects: [],
     uploadPermissionId: null,
+    outboxEventIds: [],
+    realtimePermissionId: null,
   };
   let cleanupFailure = null;
   let guardPassed = false;
@@ -178,6 +180,7 @@ async function main() {
       settingCount,
       roleCount,
       permissionCount,
+      outboxEventCount,
     ] = await Promise.all([
       prisma.restaurantTenant.count(),
       prisma.branch.count(),
@@ -189,6 +192,7 @@ async function main() {
       prisma.setting.count(),
       prisma.role.count(),
       prisma.permission.count(),
+      prisma.outboxEvent.count(),
     ]);
     assert.deepEqual(
       {
@@ -202,6 +206,7 @@ async function main() {
         settingCount,
         roleCount,
         permissionCount,
+        outboxEventCount,
       },
       {
         tenantCount: 1,
@@ -214,6 +219,7 @@ async function main() {
         settingCount: 0,
         roleCount: 0,
         permissionCount: 0,
+        outboxEventCount: 0,
       },
       "Staging must be an empty baseline before the disposable A/B fixture is created.",
     );
@@ -287,6 +293,13 @@ async function main() {
     fixture.uploadPermissionId = uploadPermission.id;
     await prisma.rolePermission.create({
       data: { roleId: role.id, permissionId: uploadPermission.id },
+    });
+    const realtimePermission = await prisma.permission.create({
+      data: { code: "ORDER_VIEW", name: "Disposable staging realtime view" },
+    });
+    fixture.realtimePermissionId = realtimePermission.id;
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionId: realtimePermission.id },
     });
 
     const user = await prisma.user.create({
@@ -445,6 +458,74 @@ async function main() {
       "Tenant A must not mutate tenant B settings.",
     );
 
+    const realtimeEventA = await prisma.outboxEvent.create({
+      data: {
+        branchId: branchA.id,
+        aggregateType: "qa_fixture",
+        aggregateId: "qa-ab-" + suffix + "-a",
+        eventType: "qa.tenant.scope",
+        payload: { marker: "tenant-a-" + suffix },
+        correlationId: "qa-ab-" + suffix + "-a",
+      },
+    });
+    fixture.outboxEventIds.push(realtimeEventA.id);
+    const realtimeEventB = await prisma.outboxEvent.create({
+      data: {
+        branchId: branchB.id,
+        aggregateType: "qa_fixture",
+        aggregateId: "qa-ab-" + suffix + "-b",
+        eventType: "qa.tenant.scope",
+        payload: { marker: "tenant-b-" + suffix },
+        correlationId: "qa-ab-" + suffix + "-b",
+      },
+    });
+    fixture.outboxEventIds.push(realtimeEventB.id);
+
+    const realtimeEvents = (host, token, query = "") =>
+      request("/realtime/events" + query, {
+        host,
+        headers: { Authorization: "Bearer " + token },
+      });
+    const realtimeA = await realtimeEvents(
+      tenantAHost,
+      loginA.body.data.tokens.accessToken,
+      "?limit=50",
+    );
+    const realtimeB = await realtimeEvents(
+      tenantBHost,
+      loginB.body.data.tokens.accessToken,
+      "?limit=50",
+    );
+    assert.equal(realtimeA.status, 200);
+    assert.equal(realtimeB.status, 200);
+    assert.deepEqual(
+      realtimeA.body.data.events.map((event) => event.id),
+      [realtimeEventA.id],
+      "Tenant A realtime catch-up must exclude tenant B events.",
+    );
+    assert.deepEqual(
+      realtimeB.body.data.events.map((event) => event.id),
+      [realtimeEventB.id],
+      "Tenant B realtime catch-up must exclude tenant A events.",
+    );
+    const foreignBranchEvents = await realtimeEvents(
+      tenantAHost,
+      loginA.body.data.tokens.accessToken,
+      "?branchId=" + encodeURIComponent(branchB.id),
+    );
+    assert.equal(
+      foreignBranchEvents.status,
+      404,
+      "Tenant A must not request tenant B realtime branch events.",
+    );
+    const afterCursor = await realtimeEvents(
+      tenantAHost,
+      loginA.body.data.tokens.accessToken,
+      "?cursor=" + encodeURIComponent(realtimeA.body.data.cursor),
+    );
+    assert.equal(afterCursor.status, 200);
+    assert.deepEqual(afterCursor.body.data.events, []);
+
     const boundary = "----MazettoStagingQA" + suffix;
     const imageBytes = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
@@ -592,7 +673,7 @@ async function main() {
     assert.equal(refreshedB.body.data.customer.tenantId, tenantB.id);
 
     console.log(
-      "Staging A/B proof passed: host/domain, branch/settings/auth, OTP/customer sessions, and tenant-prefixed media uploads.",
+      "Staging A/B proof passed: host/domain, branch/settings/auth, OTP/customer sessions, realtime catch-up, and tenant-prefixed media uploads.",
     );
   } catch (error) {
     failure = error;
@@ -663,6 +744,11 @@ async function main() {
             where: { id: { in: fixture.domainIds } },
           });
         }
+        if (fixture.outboxEventIds.length) {
+          await prisma.outboxEvent.deleteMany({
+            where: { id: { in: fixture.outboxEventIds } },
+          });
+        }
         if (fixture.branchIds.length) {
           await prisma.branch.deleteMany({
             where: { id: { in: fixture.branchIds } },
@@ -677,6 +763,10 @@ async function main() {
         if (fixture.uploadPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.uploadPermissionId },
+          });
+        if (fixture.realtimePermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.realtimePermissionId },
           });
         if (fixture.tenantBId) {
           await prisma.restaurantTenant.deleteMany({
@@ -694,10 +784,11 @@ async function main() {
           prisma.setting.count(),
           prisma.role.count(),
           prisma.permission.count(),
+          prisma.outboxEvent.count(),
         ]);
         assert.deepEqual(
           remaining,
-          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
           "All staging fixtures must be removed.",
         );
       } catch {

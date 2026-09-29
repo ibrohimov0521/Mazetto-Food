@@ -361,11 +361,6 @@ export class KitchenGateway implements OnGatewayConnection {
   }
 
   private async resolveEventScope(payload: unknown): Promise<OrderEventScope> {
-    const fallbackBranchId =
-      this.readString(payload, "branchId") ??
-      this.readString(payload, "order.branchId") ??
-      this.readString(payload, "order.branch.id") ??
-      this.readString(payload, "ticket.order.branchId");
     const orderId =
       this.readString(payload, "order.id") ??
       this.readString(payload, "orderId") ??
@@ -374,23 +369,20 @@ export class KitchenGateway implements OnGatewayConnection {
       this.readString(payload, "id");
 
     if (orderId) {
-      return this.resolveOrderScope(orderId, fallbackBranchId);
+      return this.resolveOrderScope(orderId);
     }
 
     const ticketId =
       this.readString(payload, "ticket.id") ?? this.readString(payload, "id");
 
     if (ticketId) {
-      return this.resolveTicketScope(ticketId, fallbackBranchId);
+      return this.resolveTicketScope(ticketId);
     }
 
-    return { branchId: fallbackBranchId ?? null, customerId: null };
+    return { branchId: null, customerId: null };
   }
 
-  private async resolveOrderScope(
-    orderId: string,
-    fallbackBranchId?: string,
-  ): Promise<OrderEventScope> {
+  private async resolveOrderScope(orderId: string): Promise<OrderEventScope> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: {
@@ -401,15 +393,12 @@ export class KitchenGateway implements OnGatewayConnection {
 
     return {
       orderId,
-      branchId: order?.branchId ?? fallbackBranchId ?? null,
+      branchId: order?.branchId ?? null,
       customerId: order?.customerOrder?.customerId ?? null,
     };
   }
 
-  private async resolveTicketScope(
-    ticketId: string,
-    fallbackBranchId?: string,
-  ): Promise<OrderEventScope> {
+  private async resolveTicketScope(ticketId: string): Promise<OrderEventScope> {
     const ticket = await this.prisma.kitchenTicket.findUnique({
       where: { id: ticketId },
       select: {
@@ -426,7 +415,7 @@ export class KitchenGateway implements OnGatewayConnection {
 
     return {
       ticketId,
-      branchId: ticket?.order.branchId ?? fallbackBranchId ?? null,
+      branchId: ticket?.order.branchId ?? null,
       customerId: ticket?.order.customerOrder?.customerId ?? null,
       ...(ticket?.orderId ? { orderId: ticket.orderId } : {}),
     };
