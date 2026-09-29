@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
 import { Pool } from "pg";
-import { URL } from "node:url";
+import { URL, pathToFileURL } from "node:url";
 import * as Minio from "minio";
 
 const EXPECTED_DATABASE_HOST = "postgres-input-wireless-sensor-gioz9i";
@@ -20,6 +22,50 @@ const DELIVERY_SETTING = "customer_delivery_fee";
 const SHARED_PHONE = "+998901234567";
 const CODE_A = "135791";
 const CODE_B = "246802";
+
+let socketIoClientPromise;
+
+async function connectStaffSocket(host, token) {
+  if (!socketIoClientPromise) {
+    const store = "/app/node_modules/.pnpm";
+    const packageDirectory = readdirSync(store).find((entry) =>
+      entry.startsWith("socket.io-client@"),
+    );
+    assert.ok(
+      packageDirectory,
+      "Staging Socket.IO client package is required.",
+    );
+    const modulePath = join(
+      store,
+      packageDirectory,
+      "node_modules/socket.io-client/build/esm/index.js",
+    );
+    socketIoClientPromise = import(pathToFileURL(modulePath).href);
+  }
+
+  const { io } = await socketIoClientPromise;
+  const socket = io(API_BASE.replace(/\/api\/v1$/, ""), {
+    auth: { token, tokenType: "staff" },
+    extraHeaders: { host },
+    transports: ["websocket"],
+    reconnection: false,
+    timeout: 8000,
+  });
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = globalThis.setTimeout(() => finish(false), 9000);
+    const finish = (connected) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timer);
+      if (!connected) socket.disconnect();
+      resolve({ connected, socket });
+    };
+    socket.once("connect", () => finish(true));
+    socket.once("connect_error", () => finish(false));
+  });
+}
 
 function requireStagingTarget() {
   assert.equal(
@@ -154,6 +200,7 @@ async function main() {
     uploadPermissionId: null,
     outboxEventIds: [],
     realtimePermissionId: null,
+    socketClients: [],
   };
   let cleanupFailure = null;
   let guardPassed = false;
@@ -526,6 +573,54 @@ async function main() {
     assert.equal(afterCursor.status, 200);
     assert.deepEqual(afterCursor.body.data.events, []);
 
+    const socketA = await connectStaffSocket(
+      tenantAHost,
+      loginA.body.data.tokens.accessToken,
+    );
+    const socketB = await connectStaffSocket(
+      tenantBHost,
+      loginB.body.data.tokens.accessToken,
+    );
+    assert.equal(
+      socketA.connected,
+      true,
+      "Tenant A staff WebSocket must connect.",
+    );
+    assert.equal(
+      socketB.connected,
+      true,
+      "Tenant B staff WebSocket must connect.",
+    );
+    fixture.socketClients.push(socketA.socket, socketB.socket);
+
+    const tenantATokenOnBHost = await connectStaffSocket(
+      tenantBHost,
+      loginA.body.data.tokens.accessToken,
+    );
+    const tenantBTokenOnAHost = await connectStaffSocket(
+      tenantAHost,
+      loginB.body.data.tokens.accessToken,
+    );
+    const tenantTokenOnUnknownHost = await connectStaffSocket(
+      "qa-unknown-" + suffix + ".invalid",
+      loginA.body.data.tokens.accessToken,
+    );
+    assert.equal(
+      tenantATokenOnBHost.connected,
+      false,
+      "Tenant A staff WebSocket must be rejected on tenant B's host.",
+    );
+    assert.equal(
+      tenantBTokenOnAHost.connected,
+      false,
+      "Tenant B staff WebSocket must be rejected on tenant A's host.",
+    );
+    assert.equal(
+      tenantTokenOnUnknownHost.connected,
+      false,
+      "Tenant staff WebSocket must be rejected on an unknown host.",
+    );
+
     const boundary = "----MazettoStagingQA" + suffix;
     const imageBytes = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
@@ -673,11 +768,12 @@ async function main() {
     assert.equal(refreshedB.body.data.customer.tenantId, tenantB.id);
 
     console.log(
-      "Staging A/B proof passed: host/domain, branch/settings/auth, OTP/customer sessions, realtime catch-up, and tenant-prefixed media uploads.",
+      "Staging A/B proof passed: host/domain, branch/settings/auth, OTP/customer sessions, realtime catch-up, WebSocket host isolation, and tenant-prefixed media uploads.",
     );
   } catch (error) {
     failure = error;
   } finally {
+    for (const socket of fixture.socketClients) socket.disconnect();
     if (guardPassed) {
       for (const mediaObject of fixture.mediaObjects) {
         const safePrefix = "tenants/" + mediaObject.tenantId + "/products/";

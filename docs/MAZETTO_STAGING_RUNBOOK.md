@@ -5,16 +5,16 @@ Maqsad: tenant identity va tenantlararo izolyatsiyani production'ga tegmasdan te
 
 ## Muhit xaritasi
 
-| Qism | Staging holati |
-| --- | --- |
-| Dokploy loyiha / environment | `Mazetto Staging / staging` |
-| API | `Mazetto Staging API`, ichki servis; public domain/route yo'q |
-| PostgreSQL | `mazetto-staging-postgres`, alohida bo'sh baza |
-| Redis | `mazetto-staging-redis` |
-| S3-compatible media | `mazetto-staging-media`, SeaweedFS 4.47, faqat staging |
-| Production ma'lumotlari | Ko'chirilmagan |
-| Telegram va BestTeam monitoring credential'lari | Kiritilmagan |
-| DNS / public access | Ochilmagan |
+| Qism                                            | Staging holati                                                |
+| ----------------------------------------------- | ------------------------------------------------------------- |
+| Dokploy loyiha / environment                    | `Mazetto Staging / staging`                                   |
+| API                                             | `Mazetto Staging API`, ichki servis; public domain/route yo'q |
+| PostgreSQL                                      | `mazetto-staging-postgres`, alohida bo'sh baza                |
+| Redis                                           | `mazetto-staging-redis`                                       |
+| S3-compatible media                             | `mazetto-staging-media`, SeaweedFS 4.47, faqat staging        |
+| Production ma'lumotlari                         | Ko'chirilmagan                                                |
+| Telegram va BestTeam monitoring credential'lari | Kiritilmagan                                                  |
+| DNS / public access                             | Ochilmagan                                                    |
 
 Staging API health tekshiruvi: `/api/v1/health` 200 qaytarishi, PostgreSQL `ok` va Redis `connected` bo'lishi kerak. Media tekshiruvi app ichidagi S3 SDK bilan staging bucket mavjudligini tasdiqlaydi. 2026-09-29 dagi tekshiruvlar o'tdi.
 
@@ -118,3 +118,10 @@ Staging A/B harness media tekshiruvini ham bajaradi. U faqat MINIO_ENDPOINT=maze
 - [ ] Har bir production API domain uchun alohida login/refresh smoke va owner tasdig'i.
 
 Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va ikkinchi restoran faollashtirishni bajarma. Bu runbook production deploy uchun o'z-o'zidan ruxsat bermaydi.
+
+## Realtime event scope A/B (2026-09-30)
+
+- PR #119 tightened Kitchen Gateway scope: branch/customer rooms now come only from persisted order/ticket ownership; unresolved records fail closed. Unit tests cover forged payload branch IDs and deleted order records.
+- The guarded live staging harness verifies A/B outbox catch-up, foreign-branch denial, and cursor pagination; the post-run staging DB returns to its baseline.
+- PR #119 (1f970bb) was merged after hosted CI passed; only the isolated staging API was redeployed. Health returned 200, PostgreSQL was ok, Redis was connected, and the live A/B harness passed.
+- These checks do not yet prove actual WebSocket event delivery/reconnect, cache/device/export/report isolation, full POS/KDS/courier workflows, or restore/rollback. Keep those release gates closed.
