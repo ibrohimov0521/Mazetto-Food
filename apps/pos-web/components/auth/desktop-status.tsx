@@ -97,7 +97,7 @@ type SelectedSystemPrinter = {
   name: string;
   displayName: string;
   roles: string[];
-  paperWidthMm: 58 | 80 | 210;
+  paperWidthMm: number;
 };
 
 const printRoleOptions = [
@@ -105,6 +105,7 @@ const printRoleOptions = [
   { value: "KITCHEN", label: "Oshxona" },
   { value: "CANCELLATION", label: "Bekor qilish" },
   { value: "REFUND", label: "Pul qaytarish" },
+  { value: "BAR", label: "Bar (alohida chek yo'q)" },
 ] as const;
 
 export function DesktopStatusBadge() {
@@ -269,7 +270,7 @@ export function DesktopStatusBadge() {
 
   function setSystemPrinterPaperWidth(printerName: string, value: string): void {
     const paperWidthMm = Number(value);
-    if (paperWidthMm !== 58 && paperWidthMm !== 80 && paperWidthMm !== 210) return;
+    if (!Number.isInteger(paperWidthMm) || paperWidthMm < 30 || paperWidthMm > 300) return;
     printerSettingsDirty.current = true;
     setSelectedSystemPrinters((current) => current.map((printer) =>
       printer.name === printerName ? { ...printer, paperWidthMm } : printer,
@@ -519,15 +520,16 @@ export function DesktopStatusBadge() {
                         </div>
                         <label className="grid gap-1 text-[11px] font-medium text-mz-text">
                           Qog'oz formati
-                          <select
+                          <input
+                            aria-label={`${printer.displayName} qog'oz kengligi millimetrda`}
                             className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-2 text-xs"
+                            max={300}
+                            min={30}
                             onChange={(event) => setSystemPrinterPaperWidth(printer.name, event.target.value)}
+                            step={1}
+                            type="number"
                             value={selected.paperWidthMm}
-                          >
-                            <option value={58}>58 mm</option>
-                            <option value={80}>80 mm</option>
-                            <option value={210}>A4</option>
-                          </select>
+                          />
                         </label>
                       </div>
                     ) : null}
@@ -537,7 +539,7 @@ export function DesktopStatusBadge() {
                 <p className="rounded-mz-control border border-dashed border-mz-border p-3 text-center text-[12px] text-mz-text-muted">Windows printer topilmadi.</p>
               )}
             </div>
-            <p className="mt-3 text-[11px] text-mz-text-muted">Chek satr kengligini tanlang; Windows drayverida ham shu qog'oz o'lchami sozlangan bo'lishi kerak.</p>
+            <p className="mt-3 text-[11px] text-mz-text-muted">Windows printerida qog'oz kengligini 30–300 mm oralig'ida kiriting va drayverdagi o'lcham bilan moslang. A4 uchun 210 mm; tarmoq ESC/POS printerida 58 yoki 80 mm ishlatiladi.</p>
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <Button isLoading={printerBusy} onClick={() => void loadSystemPrinters()} size="sm" variant="ghost">Qayta qidirish</Button>
               <Button disabled={!selectedSystemPrinters.length} isLoading={printerBusy} onClick={() => void saveSystemPrinters(true)} size="sm" variant="ghost">Test cheki</Button>

@@ -11,7 +11,11 @@ import {
   type PrintableReceipt,
   type SystemPrinterTarget,
 } from "./print-worker.js";
-import { printableReceiptHtml, windowsPrintPageSize } from "./receipt-renderer.js";
+import {
+  normalizeWindowsPaperWidth,
+  printableReceiptHtml,
+  windowsPrintPageSize,
+} from "./receipt-renderer.js";
 import { resolveDesktopUpdateFeed } from "./update-feed.js";
 
 const require = createRequire(import.meta.url);
@@ -524,7 +528,7 @@ function setupPrinterControls(): void {
       const name = typeof input?.name === "string" ? input.name.trim() : "";
       if (!name) throw new Error("Windows printerini tanlang");
       const role = typeof input?.role === "string" ? input.role : "RECEIPT";
-      const paperWidthMm = input?.paperWidthMm === 58 || input?.paperWidthMm === 210 ? input.paperWidthMm : 80;
+      const paperWidthMm = normalizeWindowsPaperWidth(input?.paperWidthMm);
       await silentPrintReceipt(name, {
         receiptNumber: "TEST",
         documentType: role,
@@ -674,7 +678,7 @@ function normalizeSystemPrinterTargets(value: unknown): SystemPrinterTarget[] {
     const roles = Array.isArray(record.roles)
       ? [...new Set(record.roles.filter((role): role is string => typeof role === "string" && validRoles.has(role)))]
       : [];
-    const paperWidthMm = record.paperWidthMm === 58 || record.paperWidthMm === 210 ? record.paperWidthMm : 80;
+    const paperWidthMm = normalizeWindowsPaperWidth(record.paperWidthMm);
     return roles.length > 0 ? [{ name, displayName, roles, paperWidthMm }] : [];
   });
 }
@@ -685,10 +689,10 @@ async function silentPrintReceipt(
   selectedPaperWidthMm = 80,
 ): Promise<void> {
   const godexLabelPrinter = /\bgodex\b/i.test(deviceName);
-  const paperWidthMm = godexLabelPrinter ? 90 : selectedPaperWidthMm === 58 || selectedPaperWidthMm === 210 ? selectedPaperWidthMm : 80;
+  const paperWidthMm = godexLabelPrinter ? 90 : normalizeWindowsPaperWidth(selectedPaperWidthMm);
   const window = new BrowserWindow({
     show: false,
-    width: paperWidthMm === 210 ? 900 : 420,
+    width: paperWidthMm === 210 ? 900 : Math.min(1_600, Math.max(420, Math.round(paperWidthMm * 4.25 + 80))),
     height: 800,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });

@@ -51,11 +51,9 @@ export function printableReceiptHtml(
     "body{line-height:1.3}li>div{min-width:0;overflow-wrap:anywhere}strong{font-variant-numeric:tabular-nums}.total{border-top:2px solid #000;padding-top:2mm}";
   const bodyWidth = godexLabelPrinter
     ? "86mm"
-    : paperWidthMm === 58
-      ? "52mm"
-      : paperWidthMm === 210
-        ? "194mm"
-        : "74mm";
+    : paperWidthMm === 210
+      ? "194mm"
+      : `${Math.max(20, normalizeWindowsPaperWidth(paperWidthMm) - 6)}mm`;
   const footer = kitchen ? "Tayyorlash uchun" : cancelled ? "Bekor qilingan buyurtma" : refunded ? "Pulni qaytarish qayd etildi" : "Xaridingiz uchun rahmat!";
 
   return `<!doctype html>
@@ -114,4 +112,10 @@ export function windowsPrintPageSize(godexLabelPrinter: boolean, paperWidthMm: n
     return { pageSize: { width: 90_000, height: 80_000 } };
   }
   return paperWidthMm === 210 ? { pageSize: "A4" as const } : {};
+}
+
+export function normalizeWindowsPaperWidth(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 30 && value <= 300
+    ? value
+    : 80;
 }
