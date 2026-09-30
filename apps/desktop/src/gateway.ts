@@ -727,6 +727,16 @@ export class DesktopGateway {
             payload.targetUrl,
             responseText,
           );
+          const cachedCashTransaction = cachedShift
+            ? null
+            : acknowledgedCashTransactionCache(
+                this.store,
+                command.authScope,
+                command.commandType,
+                payload.pathname ?? "",
+                payload.targetUrl,
+                responseText,
+              );
           if (cachedShift) {
             this.store.acknowledgeMutationAndCacheResponse(
               command.id,
@@ -734,6 +744,14 @@ export class DesktopGateway {
               cachedShift.path,
               cachedShift.requestUrl,
               cachedShift.body,
+            );
+          } else if (cachedCashTransaction) {
+            this.store.acknowledgeMutationAndCacheResponse(
+              command.id,
+              command.authScope,
+              cachedCashTransaction.path,
+              cachedCashTransaction.requestUrl,
+              cachedCashTransaction.body,
             );
           } else {
             this.store.markMutationAcknowledged(command.id);
@@ -1147,6 +1165,165 @@ function acknowledgedCashShiftCache(
   }
 }
 
+function acknowledgedCashTransactionCache(
+  store: DesktopStore,
+  authScope: string,
+  commandType: string,
+  pathname: string,
+  targetUrl: string | undefined,
+  responseText: string,
+): { path: string; requestUrl: string; body: string } | null {
+  const transactionPath = pathname.match(
+    /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
+  );
+  const envelope = parseJsonObject(responseText);
+  const transaction = recordField(envelope, "data");
+  if (
+    commandType !== "cash.transaction.create" ||
+    !transactionPath?.[1] ||
+    !transaction ||
+    !targetUrl
+  ) {
+    return null;
+  }
+
+  const resolvedTarget = store.resolveLocalReferences(targetUrl, authScope);
+  if (resolvedTarget.unresolved.length) return null;
+
+  try {
+    const transactionUrl = new URL(resolvedTarget.value);
+    const resolvedShiftId = transactionUrl.pathname.match(
+      /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
+    )?.[1];
+    if (!resolvedShiftId) return null;
+
+    const shiftUrl = new URL(transactionUrl);
+    shiftUrl.pathname = "/api/v1/cash-register/shift";
+    shiftUrl.search = "";
+    const cached = store.getCachedResponse(
+      DesktopStore.cacheKey(shiftUrl.toString(), authScope),
+    );
+    if (!cached) return null;
+
+    const cachedEnvelope = parseJsonObject(cached.body);
+    const shift = responseDataRecord(cachedEnvelope);
+    if (
+      !shift ||
+      shift.id !== resolvedShiftId ||
+      shift.status !== "OPEN" ||
+      !applyCashTransactionToShift(shift, transaction)
+    ) {
+      return null;
+    }
+
+    return {
+      path: "/api/v1/cash-register/shift",
+      requestUrl: shiftUrl.toString(),
+      body: JSON.stringify(cachedEnvelope),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function optimisticCashTransaction(
+  command: PendingOutboxCommand,
+  payload: Record<string, unknown> | null,
+  body: Record<string, unknown>,
+  shiftId: string,
+): Record<string, unknown> | null {
+  const type = stringField(body, "type");
+  const amount = numberField(body, "amount");
+  if (
+    !type ||
+    ![
+      "OPENING",
+      "OPENING_BALANCE",
+      "SALE",
+      "REFUND",
+      "EXPENSE",
+      "WITHDRAW",
+      "INCOME",
+      "CASH_IN",
+      "CASH_OUT",
+      "CLOSING",
+      "CLOSING_BALANCE",
+    ].includes(type) ||
+    amount === null ||
+    amount <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    id: `local-cash-${command.id}`,
+    shiftId,
+    type,
+    amount: String(amount),
+    reason: stringField(body, "reason"),
+    orderId: stringField(body, "orderId"),
+    paymentId: stringField(body, "paymentId"),
+    occurredAt: stringField(payload, "queuedAt") ?? new Date().toISOString(),
+    pendingSync: true,
+    offlineQueued: true,
+    commandId: command.id,
+  };
+}
+
+function applyCashTransactionToShift(
+  shift: Record<string, unknown>,
+  transaction: Record<string, unknown>,
+): boolean {
+  const transactions = Array.isArray(shift.cashTransactions)
+    ? [...shift.cashTransactions]
+    : [];
+  if (
+    transactions.some(
+      (item) =>
+        isRecord(item) &&
+        (item.id === transaction.id ||
+          (typeof transaction.commandId === "string" &&
+            item.commandId === transaction.commandId)),
+    )
+  ) {
+    return false;
+  }
+
+  const amount = finiteAmount(transaction.amount);
+  const type = stringField(transaction, "type");
+  if (amount === null || !type) return false;
+
+  const currentBalance =
+    finiteAmount(shift.expectedCash) ??
+    finiteAmount(shift.currentBalance) ??
+    finiteAmount(shift.currentCash) ??
+    finiteAmount(shift.openingBalance) ??
+    0;
+  const outgoing = ["REFUND", "EXPENSE", "WITHDRAW", "CASH_OUT"].includes(type);
+  const closing = ["CLOSING", "CLOSING_BALANCE"].includes(type);
+  const nextBalance =
+    currentBalance + (closing ? 0 : outgoing ? -amount : amount);
+
+  transactions.unshift(transaction);
+  shift.cashTransactions = transactions.slice(0, 50);
+  shift.currentBalance = String(nextBalance);
+  shift.expectedCash = String(nextBalance);
+  if ("currentCash" in shift) shift.currentCash = String(nextBalance);
+  return true;
+}
+
+function responseDataRecord(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const data = value.data;
+  return isRecord(data) ? data : value;
+}
+
+function finiteAmount(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function isCashRegisterShiftReadPath(pathname: string): boolean {
   return (
     pathname === "/api/v1/cash-register/shift" ||
@@ -1272,6 +1449,38 @@ function applyOptimisticProjection(
       if (pathname === "/api/v1/kitchen/orders") {
         const ticket = optimisticKitchenTicket(command, order);
         if (prependProjection(projected, ticket)) applied.push(command.id);
+      }
+      continue;
+    }
+
+    if (command.commandType === "cash.transaction.create") {
+      const transactionPath = commandPath.match(
+        /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
+      );
+      const transaction = transactionPath?.[1]
+        ? optimisticCashTransaction(
+            command,
+            payload,
+            commandBody ?? {},
+            transactionPath[1],
+          )
+        : null;
+      if (transaction && pathname === "/api/v1/cash-register/shift") {
+        const shift = responseDataRecord(projected);
+        if (
+          shift &&
+          shift.id === transactionPath?.[1] &&
+          shift.status === "OPEN" &&
+          applyCashTransactionToShift(shift, transaction)
+        ) {
+          applied.push(command.id);
+        }
+      } else if (
+        transaction &&
+        pathname === commandPath &&
+        prependProjection(projected, transaction)
+      ) {
+        applied.push(command.id);
       }
       continue;
     }
@@ -1574,6 +1783,19 @@ function queuedResponseData(
       ...base,
       ...optimisticCashShift(command, queuedPayload, parsedBody ?? {}),
     };
+  }
+
+  const cashTransaction = pathname.match(
+    /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
+  );
+  if (cashTransaction?.[1]) {
+    const transaction = optimisticCashTransaction(
+      command,
+      queuedPayload,
+      parsedBody ?? {},
+      cashTransaction[1],
+    );
+    if (transaction) return { ...base, ...transaction };
   }
 
   const closedShift = pathname.match(

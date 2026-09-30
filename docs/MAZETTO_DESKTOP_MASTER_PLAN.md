@@ -308,7 +308,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Rendering and Windows spooler page sizes use the selected profile rather than assuming a specific printer brand. Legacy Godex settings are migrated to their prior 90 x 80 mm label behavior.
 - USB, Bluetooth, and network-connected printers remain usable through an installed Windows driver; direct network ESC/POS remains available for supported devices.
 - This improves format compatibility, not universal hardware/protocol support. The exact printer model, Windows driver, paper and cutter still require a physical test print at the restaurant.
-- Desktop bundle version: `0.1.66`. Profile normalization, renderer sizes, Windows driver routing, full CI, release, deploy and production smoke must pass before closing this stage.
+- Desktop bundle version: `0.1.66`. PR #158 merged; full CI, Desktop release, deploy and 24/24 production smoke passed. Restaurant-specific physical printer tests remain open.
+
+## D3 offline cash transactions and shift cache reconciliation (2026-10-01)
+
+- Cash-in/out transactions queued during an outage immediately appear in the current-shift transaction history and update the projected cash balance using the same incoming/outgoing rules as the server.
+- Duplicate submissions with the same idempotency key remain one outbox command. Transactions queued against a locally opened shift wait for that shift's server ID and replay in branch order.
+- Each acknowledged transaction updates the scoped cached shift snapshot atomically with outbox acknowledgement. A later outage keeps the confirmed transactions and balance instead of falling back to the pre-transaction snapshot.
+- Desktop bundle version: `0.1.67`. Full Desktop tests, typecheck, lint, build, CI, release, deploy and production smoke are required; physical register acceptance remains separate.
 
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
