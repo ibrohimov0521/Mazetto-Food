@@ -14,12 +14,22 @@ import {
 import {
   DesktopStore,
   readJwtContext,
+  type CachedResponse,
   type PendingOutboxCommand,
 } from "./store.js";
 
 const KNOWN_OFFLINE_ERROR = new Error(
   "Desktop upstream is already marked offline",
 );
+const UPSTREAM_UNAVAILABLE_STATUSES = new Set([
+  502,
+  503,
+  504,
+  521,
+  522,
+  523,
+  524,
+]);
 
 export type DesktopGatewayOptions = {
   host?: string;
@@ -227,6 +237,52 @@ export class DesktopGateway {
         upstream.headers.get("content-type") ??
         "application/json; charset=utf-8";
 
+      if (UPSTREAM_UNAVAILABLE_STATUSES.has(upstream.status)) {
+        this.markOffline(new Error("Upstream returned HTTP " + upstream.status));
+        const cached =
+          method === "GET" && !isRealtimeCatchUp
+            ? this.store.getCachedResponse(cacheKey)
+            : null;
+        if (cached) {
+          this.sendCachedResponse(response, cached, targetUrl, authScope);
+          return;
+        }
+
+        const commandDefinition = resolveOfflineCommand(method, url.pathname);
+        const isPaymentCommand =
+          commandDefinition?.commandType === "pos.order.create" ||
+          commandDefinition?.commandType === "payment.process";
+        const offlinePaymentAllowed =
+          !isPaymentCommand || isOfflineCashPayment(body);
+        if (
+          authorization &&
+          body &&
+          commandDefinition &&
+          offlinePaymentAllowed &&
+          hasStableIdempotencyKey(request, body)
+        ) {
+          const queued = this.queueMutation({
+            authorization,
+            authScope,
+            body,
+            method,
+            pathname: url.pathname,
+            targetUrl,
+            request,
+            definition: commandDefinition,
+          });
+          this.sendQueuedMutationResponse(response, url.pathname, queued.command, body);
+          return;
+        }
+
+        response.writeHead(upstream.status, {
+          "Content-Type": contentType,
+          "X-Mazetto-Desktop": "offline-unavailable",
+        });
+        response.end(responseBody);
+        return;
+      }
+
       this.mode = "online";
       this.lastOnlineAt = new Date().toISOString();
       this.lastError = null;
@@ -285,25 +341,7 @@ export class DesktopGateway {
           ? this.store.getCachedResponse(cacheKey)
           : null;
       if (cached) {
-        const optimistic = applyOptimisticProjection(
-          cached.body,
-          targetUrl,
-          this.store.listActiveMutations(authScope),
-        );
-        response.writeHead(cached.status, {
-          "Content-Type": cached.contentType,
-          "X-Mazetto-Desktop": optimistic
-            ? "offline-optimistic"
-            : "offline-cache",
-          "X-Mazetto-Cached-At": cached.cachedAt,
-          ...(optimistic
-            ? {
-                "X-Mazetto-Optimistic-Commands":
-                  optimistic.commandIds.join(","),
-              }
-            : {}),
-        });
-        response.end(optimistic?.body ?? cached.body);
+        this.sendCachedResponse(response, cached, targetUrl, authScope);
         return;
       }
 
@@ -324,17 +362,7 @@ export class DesktopGateway {
           request,
           definition: commandDefinition,
         });
-        response.writeHead(202, {
-          "Content-Type": "application/json; charset=utf-8",
-          "X-Mazetto-Desktop": "offline-queued",
-          "X-Mazetto-Queued-Command": queued.command.id,
-        });
-        response.end(
-          JSON.stringify({
-            success: true,
-            data: queuedResponseData(url.pathname, queued.command, body),
-          }),
-        );
+        this.sendQueuedMutationResponse(response, url.pathname, queued.command, body);
         return;
       }
 
@@ -351,6 +379,47 @@ export class DesktopGateway {
         },
       });
     }
+  }
+
+  private sendCachedResponse(
+    response: ServerResponse,
+    cached: CachedResponse,
+    targetUrl: string,
+    authScope: string,
+  ): void {
+    const optimistic = applyOptimisticProjection(
+      cached.body,
+      targetUrl,
+      this.store.listActiveMutations(authScope),
+    );
+    response.writeHead(cached.status, {
+      "Content-Type": cached.contentType,
+      "X-Mazetto-Desktop": optimistic ? "offline-optimistic" : "offline-cache",
+      "X-Mazetto-Cached-At": cached.cachedAt,
+      ...(optimistic
+        ? { "X-Mazetto-Optimistic-Commands": optimistic.commandIds.join(",") }
+        : {}),
+    });
+    response.end(optimistic?.body ?? cached.body);
+  }
+
+  private sendQueuedMutationResponse(
+    response: ServerResponse,
+    pathname: string,
+    command: PendingOutboxCommand,
+    body: ArrayBuffer,
+  ): void {
+    response.writeHead(202, {
+      "Content-Type": "application/json; charset=utf-8",
+      "X-Mazetto-Desktop": "offline-queued",
+      "X-Mazetto-Queued-Command": command.id,
+    });
+    response.end(
+      JSON.stringify({
+        success: true,
+        data: queuedResponseData(pathname, command, body),
+      }),
+    );
   }
 
   private queueMutation(input: {
@@ -1413,6 +1482,15 @@ function proxyHeaders(
   headers.set("x-mazetto-device-id", deviceId);
   if (deviceToken) headers.set("x-mazetto-device-token", deviceToken);
   return headers;
+}
+
+function hasStableIdempotencyKey(
+  request: IncomingMessage,
+  body: ArrayBuffer,
+): boolean {
+  if (headerValue(request.headers["idempotency-key"])) return true;
+  const parsedBody = parseJsonObject(Buffer.from(body).toString("utf8"));
+  return Boolean(stringField(parsedBody, "idempotencyKey"));
 }
 
 function cachedCatalog(

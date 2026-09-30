@@ -67,6 +67,128 @@ test("gateway serves the last successful JSON snapshot when upstream is offline"
   }
 });
 
+test("gateway serves cached reads and marks itself offline on an upstream 503", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  let apiStatus = 200;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      if (String(input).endsWith("/health")) return jsonResponse({ ok: true });
+      return apiStatus === 200
+        ? jsonResponse({ success: true, data: [{ id: "branch-1" }] })
+        : jsonResponse({ success: false, error: { message: "Service unavailable" } }, apiStatus);
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const url = `http://127.0.0.1:${port}/api/v1/branches`;
+    const headers = { Authorization: desktopJwt("cashier-http-503", "branch-1") };
+    const online = await fetch(url, { headers });
+    assert.equal(online.status, 200);
+    assert.equal(store.summary().cachedResponses, 1);
+
+    apiStatus = 503;
+    const cached = await fetch(url, { headers });
+    assert.equal(cached.status, 200);
+    assert.equal(cached.headers.get("x-mazetto-desktop"), "offline-cache");
+    assert.deepEqual(await cached.json(), {
+      success: true,
+      data: [{ id: "branch-1" }],
+    });
+    assert.equal(gateway.status().mode, "offline");
+    assert.match(gateway.status().lastError ?? "", /503/);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway queues an upstream-unavailable cash sale only with a stable idempotency key", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) =>
+      String(input).endsWith("/health")
+        ? jsonResponse({ ok: true })
+        : jsonResponse({ success: false, error: { message: "Gateway unavailable" } }, 503),
+  });
+
+  try {
+    const port = await gateway.start();
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/pos/orders`, {
+      method: "POST",
+      headers: {
+        Authorization: desktopJwt("cashier-http-sale", "branch-1"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        idempotencyKey: "http-outage-sale-1",
+        items: [],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      }),
+    });
+
+    assert.equal(response.status, 202);
+    assert.equal(response.headers.get("x-mazetto-desktop"), "offline-queued");
+    assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.listOutbox()[0]?.idempotencyKey, "http-outage-sale-1");
+    assert.equal(gateway.status().mode, "offline");
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway does not queue an ambiguous upstream-unavailable write without idempotency", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) =>
+      String(input).endsWith("/health")
+        ? jsonResponse({ ok: true })
+        : jsonResponse({ success: false, error: { message: "Gateway unavailable" } }, 503),
+  });
+
+  try {
+    const port = await gateway.start();
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/pos/orders`, {
+      method: "POST",
+      headers: {
+        Authorization: desktopJwt("cashier-ambiguous", "branch-1"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        items: [],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      }),
+    });
+
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("x-mazetto-desktop"), "offline-unavailable");
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(gateway.status().mode, "offline");
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway stop waits for a durable mutation sync before the store closes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
@@ -1002,9 +1124,9 @@ function desktopJwt(userId: string, branchId: string): string {
   return `Bearer header.${payload}.signature`;
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
