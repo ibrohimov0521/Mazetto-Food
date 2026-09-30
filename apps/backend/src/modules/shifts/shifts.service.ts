@@ -260,7 +260,11 @@ export class ShiftsService {
     );
   }
 
-  async openShift(dto: OpenShiftDto, user: AuthenticatedUser) {
+  async openShift(
+    dto: OpenShiftDto,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
     const employeeId = this.resolveTargetEmployee(dto.employeeId, user);
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     await assertBranchBelongsToActor(this.prisma, user, branchId);
@@ -271,7 +275,59 @@ export class ShiftsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    await this.assertEmployeeInBranch(this.prisma, employeeId, branchId);
+    await this.assertDeviceInBranch(this.prisma, dto.deviceId, branchId);
+
+    const idempotencyKey = context?.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+    const requestHash = idempotencyKey
+      ? hashCanonicalJson({
+          branchId,
+          employeeId,
+          deviceId: dto.deviceId ?? null,
+          openingBalance: dto.openingBalance,
+        })
+      : undefined;
+    let decision:
+      | Awaited<ReturnType<IdempotencyService["start"]>>
+      | undefined;
+
+    if (idempotencyKey && requestHash) {
+      if (!this.idempotency) {
+        throw new BadRequestException("Shift idempotency is unavailable");
+      }
+      decision = await this.idempotency.start({
+        scope: buildIdempotencyScope(
+          "shift-open",
+          branchId,
+          employeeId,
+          user.id,
+        ),
+        key: idempotencyKey,
+        requestHash,
+        correlationId: context?.correlationId ?? idempotencyKey,
+        actorId: user.id,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      });
+
+      if (decision.kind === "REPLAY") {
+        const resourceId = decision.record.resourceId;
+        if (decision.record.resourceType !== "SHIFT" || !resourceId) {
+          throw new BadRequestException("Previous shift opening did not complete");
+        }
+        const previous = await this.prisma.shift.findFirst({
+          where: { id: resourceId, branchId, employeeId },
+          include: this.shiftInclude(),
+        });
+        if (!previous) {
+          throw new NotFoundException("Previous shift is unavailable");
+        }
+        return previous;
+      }
+    }
+
+    const createShift = async (tx: Prisma.TransactionClient) => {
       await this.assertEmployeeInBranch(tx, employeeId, branchId);
       await this.assertDeviceInBranch(tx, dto.deviceId, branchId);
 
@@ -337,16 +393,111 @@ export class ShiftsService {
       });
 
       return shift;
-    });
+    };
+
+    if (!decision || decision.kind !== "CLAIMED" || !requestHash) {
+      return this.prisma.$transaction(createShift);
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const shift = await createShift(tx);
+        await this.idempotency!.complete(
+          decision.record.id,
+          {
+            requestHash,
+            responseStatus: 201,
+            responseBody: { shiftId: shift.id },
+            resourceType: "SHIFT",
+            resourceId: shift.id,
+          },
+          tx,
+        );
+        return shift;
+      });
+    } catch (error) {
+      await this.idempotency!
+        .fail(decision.record.id, requestHash, "SHIFT_OPEN_FAILED")
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
-  async closeShift(id: string, dto: CloseShiftDto, user: AuthenticatedUser) {
+  async closeShift(
+    id: string,
+    dto: CloseShiftDto,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
     const employeeId = user.employeeId;
 
     if (!employeeId) {
       throw new ForbiddenException(
         "Authenticated user is not linked to an employee",
       );
+    }
+
+    const idempotencyKey = context?.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+    let requestHash: string | undefined;
+    let decision:
+      | Awaited<ReturnType<IdempotencyService["start"]>>
+      | undefined;
+
+    if (idempotencyKey) {
+      const currentShift = await this.prisma.shift.findUnique({ where: { id } });
+      if (!currentShift) {
+        throw new NotFoundException("Shift not found");
+      }
+      await assertBranchBelongsToActor(
+        this.prisma,
+        user,
+        currentShift.branchId,
+      );
+      await this.assertEmployeeInBranch(
+        this.prisma,
+        employeeId,
+        currentShift.branchId,
+      );
+      this.assertCanOperateShift(user, currentShift.employeeId);
+      requestHash = hashCanonicalJson({
+        shiftId: id,
+        employeeId: currentShift.employeeId,
+        closingBalance: dto.closingBalance,
+      });
+
+      if (!this.idempotency) {
+        throw new BadRequestException("Shift idempotency is unavailable");
+      }
+      decision = await this.idempotency.start({
+        scope: buildIdempotencyScope("shift-close", id, user.id),
+        key: idempotencyKey,
+        requestHash,
+        correlationId: context?.correlationId ?? idempotencyKey,
+        actorId: user.id,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      });
+
+      if (decision.kind === "REPLAY") {
+        const resourceId = decision.record.resourceId;
+        if (decision.record.resourceType !== "SHIFT" || !resourceId) {
+          throw new BadRequestException("Previous shift close did not complete");
+        }
+        const previous = await this.prisma.shift.findFirst({
+          where: {
+            id: resourceId,
+            branchId: currentShift.branchId,
+            employeeId: currentShift.employeeId,
+            status: ShiftStatus.CLOSED,
+          },
+          include: this.shiftInclude(),
+        });
+        if (!previous) {
+          throw new NotFoundException("Previous closed shift is unavailable");
+        }
+        return previous;
+      }
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -441,10 +592,24 @@ export class ShiftsService {
               },
             });
 
-            return tx.shift.findUniqueOrThrow({
+            const closedShift = await tx.shift.findUniqueOrThrow({
               where: { id },
               include: this.shiftInclude(),
             });
+            if (decision?.kind === "CLAIMED" && requestHash) {
+              await this.idempotency!.complete(
+                decision.record.id,
+                {
+                  requestHash,
+                  responseStatus: 200,
+                  responseBody: { shiftId: closedShift.id, status: "CLOSED" },
+                  resourceType: "SHIFT",
+                  resourceId: closedShift.id,
+                },
+                tx,
+              );
+            }
+            return closedShift;
           },
           {
             isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -454,6 +619,12 @@ export class ShiftsService {
       } catch (error) {
         if (this.isRetryableTransactionConflict(error) && attempt < 2) {
           continue;
+        }
+
+        if (decision?.kind === "CLAIMED" && requestHash) {
+          await this.idempotency!
+            .fail(decision.record.id, requestHash, "SHIFT_CLOSE_FAILED")
+            .catch(() => undefined);
         }
 
         throw error;
@@ -774,7 +945,11 @@ export class ShiftsService {
     }
   }
 
-  async openCourierShift(dto: OpenShiftDto, user: AuthenticatedUser) {
+  async openCourierShift(
+    dto: OpenShiftDto,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
     if (!user.employeeId) {
       throw new ForbiddenException(
         "Authenticated user is not linked to an employee",
@@ -784,6 +959,7 @@ export class ShiftsService {
     return this.openShift(
       { ...dto, employeeId: user.employeeId, type: ShiftType.CASHIER },
       user,
+      context,
     );
   }
 

@@ -229,7 +229,7 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Existing actor/tenant/branch filters are applied when returning a replay. No schema migration is required.
 - Verification: transfer replay and payload-mismatch tests, full backend suite, and monorepo CI passed.
 - Transfer acceptance/rejection now have separate actor-, action-, and transfer-scoped replay contracts; ledger writes and the completed idempotency row share one transaction.
-- Shift open/close and courier status still need server-side replay contracts before those queued commands are considered complete.
+- Shift open/close now have server-side replay contracts; courier status still needs separate route-by-route coverage.
 
 ## D3 cash-transfer resolution idempotency (2026-09-30)
 
@@ -237,4 +237,12 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Accept/reject results and their CASH_IN ledger entries commit atomically with the completed idempotency record. A retry returns the original branch-scoped result without a second ledger write.
 - Reusing a rejection key with a different reason is rejected; acceptance replay is restricted to the accepting user and their receiver shift.
 - Verification: acceptance/refund replay tests, payload-mismatch test, full monorepo CI and production smoke passed.
-- Shift open/close and courier status remain the next server-side idempotency risks; this checkpoint does not imply all Desktop queued commands are fully protected yet.
+- Courier status remains a server-side idempotency risk; this checkpoint does not imply all Desktop queued commands are fully protected yet.
+
+## D3 shift lifecycle idempotency (2026-09-30)
+
+- Cashier shift open, courier-shift open alias, and the legacy shifts open route pass the Desktop idempotency key and correlation id to one shared service operation.
+- Shift creation, opening-balance ledger entry, and idempotency completion commit together. A replay is scoped to the same actor, branch, employee, and request payload.
+- Shift close is similarly replay-safe: closing totals, closing-balance ledger entry, and the completed idempotency record commit in one serializable transaction. Retries return the same closed shift without recalculating or writing another closing row.
+- Verification: shift open/close replay tests, full monorepo CI and production smoke passed.
+- Courier order status, order/kitchen transition side effects, dependency mapping and offline projections remain separate release gates.
