@@ -11,8 +11,6 @@ const cases = [
   ["POST", "/api/v1/orders/order-1/items/item-1/actions/cancel", "order.item.cancel"],
   ["POST", "/api/v1/cash-register/transfers", "cash.transfer.create"],
   ["POST", "/api/v1/cash-register/courier-shift/transfers", "cash.transfer.create"],
-  ["POST", "/api/v1/cash-register/transfers/transfer-1/accept", "cash.transfer.action"],
-  ["POST", "/api/v1/cash-register/transfers/transfer-1/reject", "cash.transfer.action"],
 ] as const;
 
 for (const [method, pathname, commandType] of cases) {
@@ -42,6 +40,14 @@ test("unsupported kitchen verbs and actions stay online-only", () => {
     resolveOfflineCommand("PATCH", "/api/v1/kitchen/orders/order-1/unknown"),
     null,
   );
+});
+
+test("cash handover acceptance and rejection stay online-only", () => {
+  for (const action of ["accept", "reject"]) {
+    const path = `/api/v1/cash-register/transfers/transfer-1/${action}`;
+    assert.equal(resolveOfflineCommand("POST", path), null);
+    assert.equal(classifyOfflineMutation("POST", path), "online-only");
+  }
 });
 
 for (const [method, pathname, commandType] of [

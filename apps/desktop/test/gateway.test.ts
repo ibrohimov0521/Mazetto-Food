@@ -1889,6 +1889,225 @@ test("offline cash transactions update the shift balance and survive acknowledge
   }
 });
 
+test("offline cash transfers debit the shift once, enforce the cached balance, and reconcile", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-offline-cash-transfers-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-transfer", "branch-1");
+  const sent: Array<{ amount: number; idempotencyKey: string | null }> = [];
+  let online = true;
+  let transferNumber = 0;
+  let serverShift: Record<string, unknown> = {
+    id: "server-shift-transfer-1",
+    status: "OPEN",
+    openingBalance: "12000",
+    currentBalance: "12000",
+    expectedCash: "12000",
+    cashTransactions: [],
+    outgoingCashTransfers: [],
+  };
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      if (!online) throw new Error("offline");
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (
+        init?.method === "GET" &&
+        url.pathname === "/api/v1/cash-register/shift"
+      ) {
+        return jsonResponse({ success: true, data: serverShift });
+      }
+      if (
+        init?.method === "GET" &&
+        url.pathname === "/api/v1/cash-register/transfers/receivers"
+      ) {
+        return jsonResponse({
+          success: true,
+          data: [{ shiftId: "receiver-shift-1", employeeId: "cashier-2" }],
+        });
+      }
+      if (
+        init?.method === "POST" &&
+        url.pathname === "/api/v1/cash-register/transfers"
+      ) {
+        const body = JSON.parse(String(init.body)) as {
+          amount: number;
+          toShiftId: string;
+        };
+        const idempotencyKey = new Headers(init.headers).get("idempotency-key");
+        sent.push({ amount: body.amount, idempotencyKey });
+        transferNumber++;
+        const id = `server-transfer-${transferNumber}`;
+        const amount = Number(body.amount);
+        const nextBalance =
+          Number(serverShift.expectedCash) - amount;
+        const transfer = {
+          id,
+          fromShiftId: "server-shift-transfer-1",
+          toShiftId: body.toShiftId,
+          amount: String(amount),
+          status: "PENDING",
+          createdAt: `2026-10-01T10:0${transferNumber}:00.000Z`,
+        };
+        serverShift = {
+          ...serverShift,
+          currentBalance: String(nextBalance),
+          expectedCash: String(nextBalance),
+          cashTransactions: [
+            {
+              id: `server-ledger-${transferNumber}`,
+              shiftId: "server-shift-transfer-1",
+              cashTransferId: id,
+              type: "CASH_OUT",
+              amount: String(amount),
+              reason: "Cash transfer to cashier",
+            },
+            ...(serverShift.cashTransactions as unknown[]),
+          ],
+          outgoingCashTransfers: [
+            transfer,
+            ...(serverShift.outgoingCashTransfers as unknown[]),
+          ],
+        };
+        return jsonResponse({ success: true, data: transfer });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const baseUrl = `http://127.0.0.1:${port}/api/v1/cash-register`;
+    const headers = {
+      Authorization: authorization,
+      "Content-Type": "application/json",
+    };
+    assert.equal(
+      (await fetch(`${baseUrl}/shift`, { headers: { Authorization: authorization } }))
+        .status,
+      200,
+    );
+    assert.equal(
+      (await fetch(`${baseUrl}/transfers/receivers`, {
+        headers: { Authorization: authorization },
+      })).status,
+      200,
+    );
+    online = false;
+    await waitFor(() => gateway.status().mode === "offline");
+
+    const firstRequest = {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-transfer-1" },
+      body: JSON.stringify({ amount: 5_000, toShiftId: "receiver-shift-1" }),
+    };
+    const first = await fetch(`${baseUrl}/transfers`, firstRequest);
+    assert.equal(first.status, 202, await first.clone().text());
+    const firstData = (await first.json()) as {
+      data: { commandId: string; pendingSync: boolean };
+    };
+    assert.equal(firstData.data.pendingSync, true);
+    const duplicate = await fetch(`${baseUrl}/transfers`, firstRequest);
+    assert.equal(duplicate.status, 202);
+    assert.equal(
+      ((await duplicate.json()) as { data: { commandId: string } }).data.commandId,
+      firstData.data.commandId,
+    );
+    const staleReceiver = await fetch(`${baseUrl}/transfers`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-transfer-stale-receiver" },
+      body: JSON.stringify({ amount: 500, toShiftId: "closed-receiver-shift" }),
+    });
+    assert.equal(staleReceiver.status, 409);
+    assert.match((await staleReceiver.text()), /ochiq smenasi.*topilmadi/i);
+
+    const second = await fetch(`${baseUrl}/transfers`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-transfer-2" },
+      body: JSON.stringify({ amount: 2_000, toShiftId: "receiver-shift-1" }),
+    });
+    assert.equal(second.status, 202);
+    const overdraw = await fetch(`${baseUrl}/transfers`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-transfer-overdraw" },
+      body: JSON.stringify({ amount: 6_000, toShiftId: "receiver-shift-1" }),
+    });
+    assert.equal(overdraw.status, 409);
+    assert.match((await overdraw.text()), /mavjud naqd puldan oshib/);
+
+    const accept = await fetch(`${baseUrl}/transfers/server-transfer-1/accept`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-transfer-accept" },
+    });
+    assert.equal(accept.status, 503);
+    assert.match((await accept.text()), /ikki kassa holatini tekshirmasdan/i);
+    assert.equal(store.summary().pendingCommands, 2);
+
+    const projected = await fetch(`${baseUrl}/shift`, {
+      headers: { Authorization: authorization },
+    });
+    const projectedData = (await projected.json()) as {
+      data: {
+        expectedCash: string;
+        cashTransactions: Array<Record<string, unknown>>;
+        outgoingCashTransfers: Array<Record<string, unknown>>;
+      };
+    };
+    assert.equal(projectedData.data.expectedCash, "5000");
+    assert.equal(projectedData.data.cashTransactions.length, 2);
+    assert.equal(projectedData.data.outgoingCashTransfers.length, 2);
+    assert.ok(projectedData.data.outgoingCashTransfers.every((item) => item.pendingSync));
+
+    online = true;
+    const reconnect = await fetch(`http://127.0.0.1:${port}/api/v1/branches`, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(reconnect.status, 503);
+    await waitFor(() => gateway.status().mode === "online");
+    await waitFor(() => store.summary().pendingCommands === 0);
+    assert.deepEqual(sent, [
+      { amount: 5_000, idempotencyKey: "offline-transfer-1" },
+      { amount: 2_000, idempotencyKey: "offline-transfer-2" },
+    ]);
+    assert.equal(serverShift.expectedCash, "5000");
+
+    online = false;
+    const reconciled = await fetch(`${baseUrl}/shift`, {
+      headers: { Authorization: authorization },
+    });
+    const reconciledData = (await reconciled.json()) as {
+      data: {
+        expectedCash: string;
+        cashTransactions: Array<Record<string, unknown>>;
+        outgoingCashTransfers: Array<Record<string, unknown>>;
+      };
+    };
+    assert.equal(reconciledData.data.expectedCash, "5000");
+    assert.deepEqual(
+      reconciledData.data.cashTransactions
+        .map((item) => item.cashTransferId)
+        .sort(),
+      ["server-transfer-1", "server-transfer-2"],
+    );
+    assert.deepEqual(
+      reconciledData.data.outgoingCashTransfers.map((item) => item.id).sort(),
+      ["server-transfer-1", "server-transfer-2"],
+    );
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("an unresolved earlier command blocks later writes to the same aggregate only", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-order-sequence-"),
