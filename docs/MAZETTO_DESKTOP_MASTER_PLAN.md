@@ -237,7 +237,7 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Accept/reject results and their CASH_IN ledger entries commit atomically with the completed idempotency record. A retry returns the original branch-scoped result without a second ledger write.
 - Reusing a rejection key with a different reason is rejected; acceptance replay is restricted to the accepting user and their receiver shift.
 - Verification: acceptance/refund replay tests, payload-mismatch test, full monorepo CI and production smoke passed.
-- Courier status remains a server-side idempotency risk; this checkpoint does not imply all Desktop queued commands are fully protected yet.
+- Courier status is covered by the D3 courier retry checkpoint below; remaining D3 gates are still listed separately.
 
 ## D3 shift lifecycle idempotency (2026-09-30)
 
@@ -245,4 +245,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Shift creation, opening-balance ledger entry, and idempotency completion commit together. A replay is scoped to the same actor, branch, employee, and request payload.
 - Shift close is similarly replay-safe: closing totals, closing-balance ledger entry, and the completed idempotency record commit in one serializable transaction. Retries return the same closed shift without recalculating or writing another closing row.
 - Verification: shift open/close replay tests, full monorepo CI and production smoke passed.
-- Courier order status, order/kitchen transition side effects, dependency mapping and offline projections remain separate release gates.
+- Order/kitchen transition coverage, dependency mapping and offline projections remain separate release gates.
+
+## D3 courier status idempotency (2026-09-30)
+
+- Courier status endpoints forward Desktop's persisted idempotency key and correlation id while preserving existing keyless online requests.
+- The key is scoped by tenant, customer order and courier; changing status or tender details under a reused key is rejected.
+- Courier payment creation, order status/history, kitchen synchronization, outbox event and completed idempotency result commit in one database transaction. A replay returns the tenant-scoped order without repeating payment or realtime notifications.
+- Existing body-provided courier idempotency keys remain supported for older clients.
+- Verification: courier replay, transaction atomicity and changed-payload tests (3/3); full monorepo CI and 33 validators passed. Production smoke is pending deployment.
+- This closes the courier-status idempotency slice only. Dependency ordering, offline projections, conflict resolution, receipt delivery and physical printer/power-loss acceptance remain open.
