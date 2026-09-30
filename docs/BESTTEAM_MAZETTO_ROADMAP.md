@@ -265,3 +265,13 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - The guarded live harness used the actual authenticated upload endpoint for synthetic A/B images, denied the B token on A's host, verified both storage keys under their own tenant prefixes and confirmed both objects in the exact private staging bucket.
 - Cleanup removed only the two recorded fixture objects and verified absence; database cleanup returned to 1 ACTIVE baseline tenant and zero fixture rows. Production media and Mazetto Food services remain unchanged.
 - Remaining next gate: customer/staff realtime cross-tenant event and reconnect tests, followed by cache/device/export/report and end-to-end restaurant workflow regression. The broader media/realtime release gate stays open until all its remaining areas pass.
+
+
+## 22. Customer/staff realtime va membership cache A/B proof (2026-09-30)
+
+- PR #126 staging harnessiga customer logout revocation, real staff order.created delivery va reconnect catch-up, hamda shared account A/B membership role ajratilishini qo'shdi; PR #127 sinov permissionini haqiqiy ORDER_CREATE kodiga tuzatdi.
+- Hosted CI #397/#399 yashil; 463 backend test + 3 retry test, backend typecheck/lint va production-mode startup smoke o'tdi.
+- Isolated staging API e3c3931c7f5b0dd4a53442ec2a77477bf620b1d0 commitida ishga tushdi. Health 200, PostgreSQL OK, Redis connected.
+- Live proof: bir userning tenant A/B /auth/me rollari ajraldi; real A/B staff sockets o'z order eventlarinigina oldi; reconnect catch-up faqat A eventini berdi; customer A logout faqat A socketni uzdi, B faol qoldi va A sessiyasi reconnectdan rad etildi.
+- Harness yakunida DB bazaviy holatga qaytdi: 1 baseline ACTIVE tenant, sintetik tenant/branch/user/membership/domain/customer/session/setting/order/order-event/outbox/role/permission qoldig'i 0, audit baseline saqlandi. Production DB/app, domen va botlarga tegilmadi.
+- Realtime, customer session revocation va tenant membership auth-cache A/B darvozasi yopildi. Navbatdagi bosqich: durable queue/worker va idempotency hamda tenant bot/webhook config yo'lini tekshirish; so'ng Mazetto Food offline/POS/KDS/courier/receipt-printer regression, backup restore/rollback va production domen login smoke. Ikkinchi restoran PROVISIONING holatda qoladi.
