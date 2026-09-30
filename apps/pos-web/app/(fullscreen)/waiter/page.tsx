@@ -47,10 +47,74 @@ import {
 } from "../../../components/waiter/waiter-model";
 import {
   apiFetch,
+  ApiRequestError,
   isOfflineQueuedResult,
   SessionExpiredError,
 } from "../../../lib/api";
 import { formatMoney } from "../../../lib/order-display";
+
+type PendingTableOrderIntent = {
+  signature: string;
+  idempotencyKey: string;
+  createdAt: number;
+  baselineOrderIds: string[];
+};
+
+function tableOrderIntentStorageKey(
+  actorId: string,
+  tableId: string,
+  isSupplemental: boolean,
+): string {
+  return [
+    "mazetto",
+    "waiter-table-order",
+    "v1",
+    encodeURIComponent(actorId),
+    encodeURIComponent(tableId),
+    isSupplemental ? "additional" : "open",
+  ].join(":");
+}
+
+function readPendingTableOrderIntent(
+  storageKey: string,
+): PendingTableOrderIntent | null {
+  try {
+    const value = window.localStorage.getItem(storageKey);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as Partial<PendingTableOrderIntent>;
+    if (
+      typeof parsed.signature !== "string" ||
+      typeof parsed.idempotencyKey !== "string" ||
+      typeof parsed.createdAt !== "number" ||
+      !Array.isArray(parsed.baselineOrderIds) ||
+      !parsed.baselineOrderIds.every((id) => typeof id === "string")
+    ) {
+      return null;
+    }
+    return parsed as PendingTableOrderIntent;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingTableOrderIntent(
+  storageKey: string,
+  intent: PendingTableOrderIntent,
+): void {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(intent));
+  } catch {
+    // The in-memory key still protects retries for this open app session.
+  }
+}
+
+function clearPendingTableOrderIntent(storageKey: string): void {
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+}
 
 type Confirmation =
   | { kind: "kitchen" }
@@ -101,6 +165,9 @@ function WaiterFloor() {
 
   const actionLock = useRef(false);
   const itemActionKeys = useRef(new Map<string, string>());
+  const tableOrderActionKeys = useRef(
+    new Map<string, PendingTableOrderIntent>(),
+  );
   const floorRequest = useRef<AbortController | null>(null);
   const floorVersion = useRef(0);
   const detailRequest = useRef<AbortController | null>(null);
@@ -276,6 +343,31 @@ function WaiterFloor() {
   );
   const detailMatches = tableDetail?.id === selectedTableId;
   const panelTable = (detailMatches ? tableDetail : selectedTable) ?? null;
+  useEffect(() => {
+    if (!detailMatches || !tableDetail || !user?.id) return;
+
+    for (const isSupplemental of [false, true]) {
+      const storageKey = tableOrderIntentStorageKey(
+        user.id,
+        tableDetail.id,
+        isSupplemental,
+      );
+      const pending =
+        tableOrderActionKeys.current.get(storageKey) ??
+        readPendingTableOrderIntent(storageKey);
+      if (!pending) continue;
+
+      const completedOrderVisible = tableDetail.orders.some(
+        (order) =>
+          order.isSupplemental === isSupplemental &&
+          !pending.baselineOrderIds.includes(order.id),
+      );
+      if (completedOrderVisible) {
+        tableOrderActionKeys.current.delete(storageKey);
+        clearPendingTableOrderIntent(storageKey);
+      }
+    }
+  }, [detailMatches, tableDetail, user?.id]);
   const openOrders = useMemo(() => {
     const source = detailMatches
       ? (tableDetail?.orders ?? [])
@@ -396,40 +488,84 @@ function WaiterFloor() {
     }
 
     const note = openNote.trim();
+    const payload = {
+      guestCount: isSupplemental
+        ? (currentOrder?.guestCount ?? guestCount)
+        : guestCount,
+      ...(isSupplemental ? { isSupplemental: true } : {}),
+      ...(note ? { notes: note } : {}),
+    };
+    const signature = JSON.stringify(payload);
+    const intentStorageKey = tableOrderIntentStorageKey(
+      user?.id ?? "unknown",
+      panelTable.id,
+      isSupplemental,
+    );
+    const pendingIntent =
+      tableOrderActionKeys.current.get(intentStorageKey) ??
+      readPendingTableOrderIntent(intentStorageKey);
+
+    if (pendingIntent && pendingIntent.signature !== signature) {
+      setActionError(
+        "Bu stol uchun oldingi buyurtma hali sinxronlanmoqda. Avval internet tiklanib, buyurtma ko'rinishini kuting.",
+      );
+      return;
+    }
+
+    const intent = pendingIntent ?? {
+      signature,
+      idempotencyKey: crypto.randomUUID(),
+      createdAt: Date.now(),
+      baselineOrderIds: panelTable.orders.map((order) => order.id),
+    };
+    tableOrderActionKeys.current.set(intentStorageKey, intent);
+    savePendingTableOrderIntent(intentStorageKey, intent);
+
     let createdOrderId: string | null = null;
     let queuedOpen = false;
     const created = await runAction(
       isSupplemental ? "additional" : "open",
       async () => {
-        const createdOrder = await apiFetch<{ id: string }>(
-          `/tables/${panelTable.id}/orders`,
-          {
-            method: "POST",
-            signal: AbortSignal.timeout(15000),
-            body: JSON.stringify({
-              guestCount: isSupplemental
-                ? (currentOrder?.guestCount ?? guestCount)
-                : guestCount,
-              ...(isSupplemental ? { isSupplemental: true } : {}),
-              ...(note ? { notes: note } : {}),
-            }),
-          },
-        );
-        queuedOpen = isOfflineQueuedResult(createdOrder);
-        createdOrderId = queuedOpen ? null : createdOrder.id;
-        return createdOrder;
+        try {
+          const createdOrder = await apiFetch<{ id: string }>(
+            "/tables/" + panelTable.id + "/orders",
+            {
+              method: "POST",
+              headers: { "Idempotency-Key": intent.idempotencyKey },
+              signal: AbortSignal.timeout(15000),
+              body: JSON.stringify(payload),
+            },
+          );
+          queuedOpen = isOfflineQueuedResult(createdOrder);
+          createdOrderId = queuedOpen ? null : createdOrder.id;
+          return createdOrder;
+        } catch (error) {
+          if (
+            error instanceof ApiRequestError &&
+            error.status >= 400 &&
+            error.status < 500 &&
+            !(
+              error.status === 409 &&
+              error.message.toLowerCase().includes("still in progress")
+            )
+          ) {
+            tableOrderActionKeys.current.delete(intentStorageKey);
+            clearPendingTableOrderIntent(intentStorageKey);
+          }
+          throw error;
+        }
       },
       isSupplemental
         ? "Qo'shimcha buyurtma ochilmadi."
         : "Stolni ochib bo'lmadi.",
     );
 
-    if (created) {
+    if (created && !queuedOpen) {
+      tableOrderActionKeys.current.delete(intentStorageKey);
+      clearPendingTableOrderIntent(intentStorageKey);
       setOpenNote("");
-      if (!queuedOpen) {
-        setSelectedOrderId(createdOrderId);
-        setPane("menu");
-      }
+      setSelectedOrderId(createdOrderId);
+      setPane("menu");
     }
   }
 

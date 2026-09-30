@@ -18,7 +18,16 @@ const waiter: AuthenticatedUser = {
   permissions: ["TABLE_VIEW", "ORDER_CREATE"],
 };
 
-function createService(prisma: Record<string, unknown>): TablesService {
+function createService(
+  prisma: Record<string, unknown>,
+  idempotency: object = {
+    start: async () => {
+      throw new Error("Unexpected idempotency request");
+    },
+    complete: async () => undefined,
+    fail: async () => undefined,
+  },
+): TablesService {
   return new TablesService(
     {
       restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
@@ -29,6 +38,7 @@ function createService(prisma: Record<string, unknown>): TablesService {
       ...prisma,
     } as never,
     { emitOrderCreated: () => undefined } as never,
+    idempotency as never,
   );
 }
 
@@ -225,9 +235,74 @@ test("buyurtmasiz stol qo'lda Band holatiga o'tkazilmaydi", async () => {
   );
 });
 
+type MemoryIdempotencyRecord = {
+  id: string;
+  requestHash: string;
+  status: "IN_PROGRESS" | "COMPLETED";
+  resourceType?: string;
+  resourceId?: string;
+};
+
+function createMemoryIdempotency() {
+  const records = new Map<string, MemoryIdempotencyRecord>();
+  let transactionClient: unknown;
+  return {
+    setTransactionClient(client: unknown) {
+      transactionClient = client;
+    },
+    service: {
+      start: async (input: {
+        scope: string;
+        key: string;
+        requestHash: string;
+      }) => {
+        const slot = input.scope + ":" + input.key;
+        const existing = records.get(slot);
+        if (existing) {
+          if (existing.requestHash !== input.requestHash) {
+            throw new ConflictException("Idempotency key payload mismatch");
+          }
+          if (existing.status === "COMPLETED") {
+            return { kind: "REPLAY" as const, record: existing };
+          }
+          throw new ConflictException("Request still in progress");
+        }
+        const record: MemoryIdempotencyRecord = {
+          id: "idempotency-1",
+          requestHash: input.requestHash,
+          status: "IN_PROGRESS",
+        };
+        records.set(slot, record);
+        return { kind: "CLAIMED" as const, record };
+      },
+      complete: async (
+        id: string,
+        result: {
+          requestHash: string;
+          resourceType?: string;
+          resourceId?: string;
+        },
+        db?: unknown,
+      ) => {
+        assert.equal(db, transactionClient);
+        const record = [...records.values()].find((entry) => entry.id === id);
+        assert.ok(record);
+        record.status = "COMPLETED";
+        record.requestHash = result.requestHash;
+        record.resourceType = result.resourceType;
+        record.resourceId = result.resourceId;
+      },
+      fail: async () => undefined,
+    },
+  };
+}
+
 function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
   let createdData: Record<string, unknown> | undefined;
+  let createdOrder: Record<string, unknown> | null = null;
+  let createCount = 0;
   const writes: string[] = [];
+  const idempotency = createMemoryIdempotency();
   const tx = {
     branch: {
       findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
@@ -249,6 +324,7 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
     order: {
       findMany: async () => existingOrders,
       create: async ({ data }: { data: Record<string, unknown> }) => {
+        createCount += 1;
         createdData = data;
         return {
           id: "new-order",
@@ -257,12 +333,15 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
           isSupplemental: data.isSupplemental,
         };
       },
-      findUnique: async () => ({
-        id: "new-order",
-        ...createdData,
-        table: { id: "table-1" },
-        items: [],
-      }),
+      findUnique: async () => {
+        createdOrder = {
+          id: "new-order",
+          ...createdData,
+          table: { id: "table-1" },
+          items: [],
+        };
+        return createdOrder;
+      },
     },
     orderStatusHistory: { create: async () => undefined },
     orderEvent: {
@@ -277,13 +356,16 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
       },
     },
   };
+  idempotency.setTransactionClient(tx);
   const prisma = {
+    order: { findFirst: async () => createdOrder },
     $transaction: async (callback: (client: typeof tx) => unknown) =>
       callback(tx),
   };
   return {
-    service: createService(prisma),
+    service: createService(prisma, idempotency.service),
     getCreatedData: () => createdData,
+    getCreateCount: () => createCount,
     writes,
   };
 }
@@ -299,6 +381,62 @@ test("tasdiqlangan order ortidan alohida qo'shimcha order ochiladi", async () =>
   assert.equal(fixture.getCreatedData()?.isSupplemental, true);
   assert.equal(created?.id, "new-order");
   assert.deepEqual(fixture.writes, ["event:OrderPlaced:1", "outbox"]);
+});
+
+test("takror yuborilgan stol buyurtmasi avvalgi natijani qaytaradi", async () => {
+  const fixture = tableOrderFixture([]);
+  const context = {
+    correlationId: "correlation-001",
+    idempotencyKey: "table-order-key-0001",
+  };
+  const dto = { guestCount: 2, type: "DINE_IN" as const };
+
+  const first = await fixture.service.createOrderForTable(
+    "table-1",
+    dto,
+    waiter,
+    context,
+  );
+  const replay = await fixture.service.createOrderForTable(
+    "table-1",
+    dto,
+    waiter,
+    context,
+  );
+
+  assert.equal(first?.id, "new-order");
+  assert.equal(replay?.id, first?.id);
+  assert.equal(fixture.getCreateCount(), 1);
+  assert.equal(
+    fixture.writes.filter((write) => write.startsWith("event:")).length,
+    1,
+  );
+});
+
+test("idempotency kaliti boshqa mazmundagi buyurtmaga qayta ishlatilmaydi", async () => {
+  const fixture = tableOrderFixture([]);
+  const context = {
+    correlationId: "correlation-002",
+    idempotencyKey: "table-order-key-0002",
+  };
+
+  await fixture.service.createOrderForTable(
+    "table-1",
+    { guestCount: 2, type: "DINE_IN" },
+    waiter,
+    context,
+  );
+
+  await assert.rejects(
+    fixture.service.createOrderForTable(
+      "table-1",
+      { guestCount: 4, type: "DINE_IN" },
+      waiter,
+      context,
+    ),
+    ConflictException,
+  );
+  assert.equal(fixture.getCreateCount(), 1);
 });
 
 test("stolda yangi draft turganda ikkinchi qo'shimcha order ochilmaydi", async () => {

@@ -33,7 +33,7 @@ test("hall, table, and permanent-delete queries are tenant filtered", async () =
       },
     },
   };
-  const service = new TablesService(tenant as never, {} as never);
+  const service = new TablesService(tenant as never, {} as never, {} as never);
 
   await service.listHalls(undefined, owner);
   await service.listTables(undefined, owner);
@@ -61,6 +61,7 @@ test("ambiguous active tenants are rejected before table data is queried", async
         },
       },
     } as never,
+    {} as never,
     {} as never,
   );
 
