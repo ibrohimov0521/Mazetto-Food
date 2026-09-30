@@ -14,6 +14,33 @@ const owner: AuthenticatedUser = {
 test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read snapshot", async () => {
   let transactionOptions: unknown;
   let productSelect: Record<string, unknown> | undefined;
+  let categoryWhere: Record<string, unknown> | undefined;
+  const configuredPaymentMethods = [
+    {
+      branchId: "branch-a",
+      code: "CASH",
+      name: "Naqd filial",
+      sortOrder: 1,
+    },
+    {
+      branchId: null,
+      code: "CASH",
+      name: "Naqd umumiy",
+      sortOrder: 2,
+    },
+    { branchId: null, code: "CARD", name: "Karta", sortOrder: 3 },
+  ];
+  const tables = [
+    {
+      id: "table-a",
+      code: "T1",
+      name: "1-stol",
+      number: 1,
+      capacity: 4,
+      status: "AVAILABLE",
+      hall: { id: "hall-a", name: "Asosiy zal" },
+    },
+  ];
   const branch = {
     id: "branch-a",
     code: "A",
@@ -38,12 +65,23 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
           findFirst: async (args: { select: Record<string, boolean> }) =>
             "realtimeRevision" in args.select ? branch : { id: "branch-a" },
         },
-        category: { findMany: async () => [{ id: "category-a" }] },
+        category: {
+          findMany: async (args: { where: Record<string, unknown> }) => {
+            categoryWhere = args.where;
+            return [{ id: "category-a", name: "Lavash" }];
+          },
+        },
         product: {
           findMany: async (args: { select: Record<string, unknown> }) => {
             productSelect = args.select;
             return [{ id: "product-a", sellingPrice: 1000 }];
           },
+        },
+        paymentMethod: {
+          findMany: async () => configuredPaymentMethods,
+        },
+        restaurantTable: {
+          findMany: async () => tables,
         },
       });
     },
@@ -59,11 +97,22 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
     branches: { "branch-a": "44" },
   });
   assert.deepEqual(snapshot.offlineCapabilities.queuedPaymentMethods, ["CASH"]);
+  assert.equal(snapshot.schemaVersion, 2);
+  assert.deepEqual(snapshot.catalog.categories, [
+    { id: "category-a", name: "Lavash" },
+  ]);
+  assert.deepEqual(snapshot.catalog.paymentMethods, [
+    { code: "CASH", name: "Naqd filial", active: true },
+    { code: "CARD", name: "Karta", active: true },
+  ]);
+  assert.deepEqual(snapshot.catalog.tables, tables);
   assert.equal(
     (transactionOptions as { isolationLevel: string }).isolationLevel,
     "RepeatableRead",
   );
   assert.ok(productSelect);
+  assert.ok(categoryWhere);
+  assert.ok((categoryWhere.products as { some?: unknown }).some);
   assert.equal(productSelect.costPrice, undefined);
   assert.ok(productSelect.variants);
   const variantSelect = (

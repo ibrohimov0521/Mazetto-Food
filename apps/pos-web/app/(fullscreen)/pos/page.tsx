@@ -26,7 +26,8 @@ import {
   StaffSync,
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
-import { apiFetch } from "../../../lib/api";
+import { ApiRequestError, apiFetch } from "../../../lib/api";
+import { readOfflinePosCatalogSnapshot } from "../../../lib/offline-pos-bootstrap.mjs";
 import {
   parsePosCheckoutDraft,
   serializePosCheckoutDraft,
@@ -108,6 +109,7 @@ type PosOrderResult = {
 };
 type CurrentShift = {
   id: string;
+  branchId?: string;
   shiftNumber?: number;
   status: "OPEN" | "CLOSED";
   openedAt?: string;
@@ -232,10 +234,38 @@ function PosTerminal() {
         return;
       }
       setCurrentShift(shift);
-      const data = await apiFetch<Catalog>("/pos/catalog", { signal });
+      let data: Catalog;
+      let catalogUpdatedAt = new Date();
+      try {
+        data = await apiFetch<Catalog>("/pos/catalog", { signal });
+      } catch (catalogError) {
+        const offlineStatusCodes = new Set([502, 503, 504, 521, 522, 523, 524]);
+        if (
+          !window.mazettoDesktop?.api ||
+          !(catalogError instanceof ApiRequestError) ||
+          !offlineStatusCodes.has(catalogError.status)
+        ) {
+          throw catalogError;
+        }
+
+        try {
+          const snapshot = await apiFetch<unknown>("/realtime/bootstrap", {
+            signal,
+          });
+          const restored = readOfflinePosCatalogSnapshot(
+            snapshot,
+            shift.branchId || user?.branchId || null,
+          );
+          if (!restored) throw catalogError;
+          data = restored.catalog as Catalog;
+          catalogUpdatedAt = new Date(restored.generatedAt);
+        } catch {
+          throw catalogError;
+        }
+      }
       if (!controller.signal.aborted) {
         setCatalog(data);
-        setLastUpdatedAt(new Date());
+        setLastUpdatedAt(catalogUpdatedAt);
       }
     } catch (caught) {
       if (controller.signal.aborted) return;
