@@ -5,6 +5,11 @@ import {
   PrintOutcomeUnknownError,
   withTimeout,
 } from "./print-errors.js";
+import {
+  normalizeWindowsPaperSettings,
+  type WindowsPaperFormat,
+  type WindowsPaperSettings,
+} from "./receipt-renderer.js";
 
 type PrinterMetadata = {
   host?: unknown;
@@ -32,6 +37,8 @@ export type SystemPrinterTarget = {
   displayName: string;
   roles: string[];
   paperWidthMm?: number;
+  paperFormat?: WindowsPaperFormat;
+  paperHeightMm?: number;
 };
 
 export type PrinterConnectionResult = ManagedPrinter & {
@@ -85,7 +92,7 @@ export type DesktopPrintWorkerOptions = {
   printSystem?: (
     deviceName: string,
     receipt: PrintableReceipt,
-    paperWidthMm?: number,
+    paperSettings?: WindowsPaperSettings,
   ) => Promise<void>;
   localQueue?: LocalPrintQueue;
   fetchImpl?: typeof fetch;
@@ -138,7 +145,11 @@ export class DesktopPrintWorker {
     this.agentId = options.agentId;
     this.deviceId = options.deviceId;
     this.deviceToken = options.deviceToken ?? null;
-    this.systemPrinters = options.systemPrinters ?? [];
+    this.systemPrinters = (options.systemPrinters ?? []).map((printer) => ({
+      ...printer,
+      ...normalizeWindowsPaperSettings(printer),
+      roles: [...new Set(printer.roles)],
+    }));
     this.printSystem = options.printSystem;
     this.localQueue = options.localQueue;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -158,6 +169,7 @@ export class DesktopPrintWorker {
   configureSystemPrinters(printers: SystemPrinterTarget[]): void {
     this.systemPrinters = printers.map((printer) => ({
       ...printer,
+      ...normalizeWindowsPaperSettings(printer),
       roles: [...new Set(printer.roles)],
     }));
     this.printerDiscoveryCache = null;
@@ -321,7 +333,7 @@ export class DesktopPrintWorker {
             await this.printToSystem(
               target,
               receipt,
-              target.paperWidthMm || paperWidthMm,
+              normalizeWindowsPaperSettings(target),
             );
           } catch (error) {
             if (isPrintOutcomeUnknown(error)) {
@@ -458,7 +470,11 @@ export class DesktopPrintWorker {
           continue;
         }
         try {
-          await this.printToSystem(target, receipt, target.paperWidthMm);
+          await this.printToSystem(
+            target,
+            receipt,
+            normalizeWindowsPaperSettings(target),
+          );
           this.localQueue.markTargetPrinted?.("local", job.id, target.name);
         } catch (error) {
           const ambiguous = isPrintOutcomeUnknown(error);
@@ -497,19 +513,23 @@ export class DesktopPrintWorker {
   private async printToSystem(
     target: SystemPrinterTarget,
     receipt: PrintableReceipt,
-    paperWidthMm?: number,
+    paperSettings: WindowsPaperSettings,
   ): Promise<void> {
     if (!this.printSystem) throw new Error("Windows printer adapter sozlanmagan");
-      await withTimeout(
+    await withTimeout(
       Promise.resolve().then(() =>
-        this.printSystem!(target.name, receipt, paperWidthMm),
+        this.printSystem!(
+          target.name,
+          receipt,
+          normalizeWindowsPaperSettings(paperSettings),
+        ),
       ),
       this.printTimeoutMs,
-        () =>
+      () =>
           new PrintOutcomeUnknownError(
             `"${target.displayName}" printerida chop etish ${Math.ceil(this.printTimeoutMs / 1_000)} soniyada tasdiqlanmadi. Qog'ozni tekshirib, keyin qo'lda qayta yuboring.`,
           ),
-      );
+    );
   }
 
   private async discoverReadyPrinters(): Promise<ManagedPrinter[]> {

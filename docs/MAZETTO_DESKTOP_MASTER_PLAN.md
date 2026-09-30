@@ -300,7 +300,15 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Cash-register and shift commands are serialized by branch, so dependent register actions cannot overtake an offline shift open or courier-shift open.
 - Cached current-shift reads project queued opens/closes; successful replay reconciles the scoped cache, including creating a snapshot when none existed.
 - Outbox optimistic projections use SQLite row order as a deterministic tie-breaker when commands share a timestamp.
-- Desktop bundle version: `0.1.65`. Shift lifecycle, replay, full CI, release, deploy and production smoke must pass before closing; physical register-device acceptance remains open.
+- Desktop bundle version: `0.1.65`. PR #157 merged; full CI, Desktop release, deploy and 24/24 production smoke passed. Physical register-device acceptance remains open.
+
+## D5 printer paper profiles and driver-independent label sizing (2026-10-01)
+
+- Each installed Windows printer can be assigned a receipt role and explicit paper profile: thermal roll, A4 sheet, or custom-size label with width and height in millimeters.
+- Rendering and Windows spooler page sizes use the selected profile rather than assuming a specific printer brand. Legacy Godex settings are migrated to their prior 90 x 80 mm label behavior.
+- USB, Bluetooth, and network-connected printers remain usable through an installed Windows driver; direct network ESC/POS remains available for supported devices.
+- This improves format compatibility, not universal hardware/protocol support. The exact printer model, Windows driver, paper and cutter still require a physical test print at the restaurant.
+- Desktop bundle version: `0.1.66`. Profile normalization, renderer sizes, Windows driver routing, full CI, release, deploy and production smoke must pass before closing this stage.
 
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 

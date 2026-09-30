@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  normalizeWindowsPaperSettings,
   normalizeWindowsPaperWidth,
   printableReceiptHtml,
   windowsPrintPageSize,
@@ -8,18 +9,18 @@ import {
 
 test("Windows receipt layout honors 58, 80 and A4 printable widths", () => {
   const receipt = { content: { orderNumber: "42" } };
-  assert.match(printableReceiptHtml(receipt, false, 58), /width: 52mm/);
-  assert.match(printableReceiptHtml(receipt, false, 80), /width: 74mm/);
-  assert.match(printableReceiptHtml(receipt, false, 210), /width: 194mm/);
-  assert.deepEqual(windowsPrintPageSize(false, 58), {});
-  assert.deepEqual(windowsPrintPageSize(false, 80), {});
-  assert.deepEqual(windowsPrintPageSize(false, 210), { pageSize: "A4" });
-  assert.deepEqual(windowsPrintPageSize(true, 210), { pageSize: { width: 90_000, height: 80_000 } });
+  assert.match(printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 58 }), /width: 52mm/);
+  assert.match(printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 80 }), /width: 74mm/);
+  assert.match(printableReceiptHtml(receipt, { paperFormat: "A4", paperWidthMm: 210 }), /width: 194mm/);
+  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 58 }), {});
+  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 80 }), {});
+  assert.deepEqual(windowsPrintPageSize({ paperFormat: "A4", paperWidthMm: 210 }), { pageSize: "A4" });
+  assert.deepEqual(windowsPrintPageSize({ paperFormat: "LABEL", paperWidthMm: 90, paperHeightMm: 80 }), { pageSize: { width: 90_000, height: 80_000 } });
 });
 
 test("custom Windows driver widths are preserved and invalid widths fall back safely", () => {
-  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, false, 70), /width: 64mm/);
-  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, false, 102), /width: 96mm/);
+  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, { paperFormat: "ROLL", paperWidthMm: 70 }), /width: 64mm/);
+  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, { paperFormat: "ROLL", paperWidthMm: 102 }), /width: 96mm/);
   assert.equal(normalizeWindowsPaperWidth(70), 70);
   assert.equal(normalizeWindowsPaperWidth(30), 30);
   assert.equal(normalizeWindowsPaperWidth(300), 300);
@@ -40,7 +41,7 @@ test("A4 refund receipts include the reason and negative total", () => {
       total: "-12 000",
       items: [],
     },
-  }, false, 210);
+  }, { paperFormat: "A4", paperWidthMm: 210 });
 
   assert.match(html, /TO'LOV QAYTARILDI/);
   assert.match(html, /Pulni qaytarish qayd etildi/);
@@ -49,6 +50,35 @@ test("A4 refund receipts include the reason and negative total", () => {
   assert.match(html, /Naqd/);
   assert.match(html, /-12 000/);
   assert.doesNotMatch(html, /<tekshirish>/);
+});
+
+test("label dimensions are explicit and legacy Godex settings remain compatible", () => {
+  const settings = normalizeWindowsPaperSettings({
+    paperFormat: "LABEL",
+    paperWidthMm: 100,
+    paperHeightMm: 60,
+  });
+  assert.deepEqual(settings, {
+    paperFormat: "LABEL",
+    paperWidthMm: 100,
+    paperHeightMm: 60,
+  });
+  assert.match(
+    printableReceiptHtml({ content: { orderNumber: "42" } }, settings),
+    /@page\{size:100mm 60mm;margin:0\}/,
+  );
+  assert.deepEqual(windowsPrintPageSize(settings), {
+    pageSize: { width: 100_000, height: 60_000 },
+  });
+  assert.deepEqual(normalizeWindowsPaperSettings({ paperWidthMm: 90 }, "Godex G500"), {
+    paperFormat: "LABEL",
+    paperWidthMm: 90,
+    paperHeightMm: 80,
+  });
+  assert.deepEqual(normalizeWindowsPaperSettings({ paperWidthMm: 210 }), {
+    paperFormat: "A4",
+    paperWidthMm: 210,
+  });
 });
 
 test("kitchen tickets keep notes and modifiers without prices or payments", () => {

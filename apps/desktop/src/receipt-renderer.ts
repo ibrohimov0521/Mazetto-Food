@@ -1,10 +1,57 @@
 import type { PrintableReceipt } from "./print-worker.js";
 
+export type WindowsPaperFormat = "ROLL" | "A4" | "LABEL";
+
+export type WindowsPaperSettings = {
+  paperFormat: WindowsPaperFormat;
+  paperWidthMm: number;
+  paperHeightMm?: number;
+};
+
+export function normalizeWindowsPaperSettings(
+  value: unknown,
+  printerName?: string,
+): WindowsPaperSettings {
+  const record = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  const name = printerName?.trim() ?? "";
+  const legacyLabel = !record.paperFormat && /\bgodex\b/i.test(name);
+  const requestedFormat = typeof record.paperFormat === "string"
+    ? record.paperFormat.toUpperCase()
+    : "";
+  const rawWidth = record.paperWidthMm ?? (legacyLabel ? 90 : undefined);
+  const width = normalizeWindowsPaperWidth(rawWidth);
+  const paperFormat: WindowsPaperFormat =
+    requestedFormat === "ROLL" || requestedFormat === "A4" || requestedFormat === "LABEL"
+      ? requestedFormat
+      : legacyLabel
+        ? "LABEL"
+        : width === 210
+          ? "A4"
+          : "ROLL";
+
+  if (paperFormat === "A4") {
+    return { paperFormat, paperWidthMm: 210 };
+  }
+
+  if (paperFormat === "LABEL") {
+    const rawHeight = record.paperHeightMm ?? (legacyLabel ? 80 : undefined);
+    return {
+      paperFormat,
+      paperWidthMm: width,
+      paperHeightMm: normalizeWindowsPaperHeight(rawHeight),
+    };
+  }
+
+  return { paperFormat, paperWidthMm: width };
+}
+
 export function printableReceiptHtml(
   receipt: PrintableReceipt,
-  godexLabelPrinter = false,
-  paperWidthMm = 80,
+  paperInput: WindowsPaperSettings | unknown = { paperFormat: "ROLL", paperWidthMm: 80 },
 ): string {
+  const paper = normalizeWindowsPaperSettings(paperInput);
   const content = receipt.content ?? {};
   const documentType = String(content.documentType ?? receipt.documentType ?? "RECEIPT");
   const kitchen = documentType === "KITCHEN";
@@ -47,13 +94,17 @@ export function printableReceiptHtml(
     : refunded
       ? content.refundReason
       : null;
-  const pageStyle = (godexLabelPrinter ? "@page{size:90mm 80mm;margin:0}" : "@page{margin:2mm}") +
+  const pageStyle = (paper.paperFormat === "LABEL"
+    ? `@page{size:${paper.paperWidthMm}mm ${paper.paperHeightMm}mm;margin:0}`
+    : paper.paperFormat === "A4"
+      ? "@page{size:A4;margin:2mm}"
+      : "@page{margin:2mm}") +
     "body{line-height:1.3}li>div{min-width:0;overflow-wrap:anywhere}strong{font-variant-numeric:tabular-nums}.total{border-top:2px solid #000;padding-top:2mm}";
-  const bodyWidth = godexLabelPrinter
-    ? "86mm"
-    : paperWidthMm === 210
+  const bodyWidth = paper.paperFormat === "LABEL"
+    ? `${Math.max(20, paper.paperWidthMm - 4)}mm`
+    : paper.paperFormat === "A4"
       ? "194mm"
-      : `${Math.max(20, normalizeWindowsPaperWidth(paperWidthMm) - 6)}mm`;
+      : `${Math.max(20, paper.paperWidthMm - 6)}mm`;
   const footer = kitchen ? "Tayyorlash uchun" : cancelled ? "Bekor qilingan buyurtma" : refunded ? "Pulni qaytarish qayd etildi" : "Xaridingiz uchun rahmat!";
 
   return `<!doctype html>
@@ -107,15 +158,27 @@ function escapeHtml(value: string): string {
   })[character] ?? character);
 }
 
-export function windowsPrintPageSize(godexLabelPrinter: boolean, paperWidthMm: number) {
-  if (godexLabelPrinter) {
-    return { pageSize: { width: 90_000, height: 80_000 } };
+export function windowsPrintPageSize(paperInput: WindowsPaperSettings | unknown) {
+  const paper = normalizeWindowsPaperSettings(paperInput);
+  if (paper.paperFormat === "LABEL") {
+    return {
+      pageSize: {
+        width: paper.paperWidthMm * 1_000,
+        height: (paper.paperHeightMm ?? 80) * 1_000,
+      },
+    };
   }
-  return paperWidthMm === 210 ? { pageSize: "A4" as const } : {};
+  return paper.paperFormat === "A4" ? { pageSize: "A4" as const } : {};
 }
 
 export function normalizeWindowsPaperWidth(value: unknown): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 30 && value <= 300
+    ? value
+    : 80;
+}
+
+function normalizeWindowsPaperHeight(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 20 && value <= 300
     ? value
     : 80;
 }
