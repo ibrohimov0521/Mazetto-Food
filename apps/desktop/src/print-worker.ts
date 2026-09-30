@@ -71,6 +71,8 @@ export type DesktopPrintWorkerOptions = {
   socketImpl?: (host: string, port: number, payload?: Buffer) => Promise<void>;
 };
 
+const MAX_LOCAL_PRINT_JOBS_PER_TICK = 5;
+
 /** Claims each durable job once and dispatches it through a Windows driver or ESC/POS TCP. */
 export class DesktopPrintWorker {
   private readonly apiUrl: string;
@@ -146,9 +148,10 @@ export class DesktopPrintWorker {
     if (this.running) return;
     this.running = true;
     try {
-      while (await this.printNextLocalJob()) {
-        // Drain locally queued tickets in this pass; polling once per second
-        // between every customer and kitchen slip adds avoidable delay.
+      for (let index = 0; index < MAX_LOCAL_PRINT_JOBS_PER_TICK; index += 1) {
+        if (!(await this.printNextLocalJob())) {
+          break;
+        }
       }
       if (!this.authorization) return;
 
@@ -265,6 +268,7 @@ export class DesktopPrintWorker {
       this.localQueue.complete(job.id);
     } catch (error) {
       this.localQueue.fail(job.id, message(error));
+      return false;
     }
     return true;
   }

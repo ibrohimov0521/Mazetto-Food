@@ -215,17 +215,22 @@ export class DesktopStore {
       );
   }
 
-  claimLocalPrintJob(documentTypes: string[]): LocalPrintJob | null {
+  claimLocalPrintJob(
+    documentTypes: string[],
+    now = new Date(),
+  ): LocalPrintJob | null {
     if (documentTypes.length === 0) return null;
-    const now = new Date().toISOString();
+    const nowIso = now.toISOString();
     this.database
       .prepare(
         `UPDATE print_jobs
-       SET state = 'retry', lease_token = NULL, lease_expires_at = NULL
-       WHERE state IN ('leased', 'printing')
+       SET state = 'retry', lease_token = NULL, lease_expires_at = NULL,
+           next_attempt_at = ?
+       WHERE printer_id = 'system:auto'
+         AND state IN ('leased', 'printing')
          AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
       )
-      .run(now);
+      .run(nowIso, nowIso);
     const placeholders = documentTypes.map(() => "?").join(", ");
     const row = this.database
       .prepare(
@@ -233,21 +238,24 @@ export class DesktopStore {
               document_type AS documentType, payload_json AS payloadJson,
               attempts
        FROM print_jobs
-       WHERE state IN ('pending', 'retry')
+       WHERE printer_id = 'system:auto'
+         AND state IN ('pending', 'retry')
+         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
          AND document_type IN (${placeholders})
        ORDER BY created_at ASC
        LIMIT 1`,
       )
-      .get(...documentTypes) as LocalPrintJob | undefined;
+      .get(nowIso, ...documentTypes) as LocalPrintJob | undefined;
     if (!row) return null;
     const leaseToken = randomUUID();
-    const leaseExpiresAt = new Date(Date.now() + 60_000).toISOString();
+    const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
     const result = this.database
       .prepare(
         `UPDATE print_jobs
        SET state = 'leased', lease_token = ?, lease_expires_at = ?,
-           attempts = attempts + 1
-       WHERE id = ? AND state IN ('pending', 'retry')`,
+           next_attempt_at = NULL, attempts = attempts + 1
+       WHERE id = ? AND printer_id = 'system:auto'
+         AND state IN ('pending', 'retry')`,
       )
       .run(leaseToken, leaseExpiresAt, row.id);
     return Number(result.changes) > 0
@@ -260,7 +268,7 @@ export class DesktopStore {
       .prepare(
         `UPDATE print_jobs
        SET state = 'printed', printed_at = ?, lease_token = NULL,
-           lease_expires_at = NULL, last_error = NULL
+           lease_expires_at = NULL, next_attempt_at = NULL, last_error = NULL
        WHERE id = ?`,
       )
       .run(new Date().toISOString(), id);
@@ -282,26 +290,31 @@ export class DesktopStore {
     const result = this.database
       .prepare(
         "UPDATE print_jobs SET state = 'pending', attempts = 0, " +
-          "lease_token = NULL, lease_expires_at = NULL, last_error = NULL " +
+          "lease_token = NULL, lease_expires_at = NULL, next_attempt_at = NULL, last_error = NULL " +
           "WHERE id = ? AND printer_id = 'system:auto' AND state = 'dead_letter'",
       )
       .run(id);
     return Number(result.changes) > 0;
   }
 
-  failLocalPrintJob(id: string, error: string): void {
+  failLocalPrintJob(id: string, error: string, now = new Date()): void {
     const row = this.database
       .prepare(`SELECT attempts FROM print_jobs WHERE id = ?`)
       .get(id) as { attempts: number | bigint } | undefined;
     const attempts = Number(row?.attempts ?? 1);
+    const deadLetter = attempts >= 5;
+    const delayMs = Math.min(300_000, 5_000 * 2 ** Math.max(0, attempts - 1));
+    const nextAttemptAt = deadLetter
+      ? null
+      : new Date(now.getTime() + delayMs).toISOString();
     this.database
       .prepare(
         `UPDATE print_jobs
        SET state = ?, lease_token = NULL, lease_expires_at = NULL,
-           last_error = ?
+           next_attempt_at = ?, last_error = ?
        WHERE id = ?`,
       )
-      .run(attempts >= 5 ? "dead_letter" : "retry", error, id);
+      .run(deadLetter ? "dead_letter" : "retry", nextAttemptAt, error, id);
   }
 
   wasLocalDocumentPrinted(
@@ -849,6 +862,7 @@ export class DesktopStore {
         lease_token TEXT,
         lease_expires_at TEXT,
         attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT,
         created_at TEXT NOT NULL,
         printed_at TEXT,
         last_error TEXT
@@ -875,9 +889,12 @@ export class DesktopStore {
       "auth_scope",
       "TEXT NOT NULL DEFAULT 'anonymous'",
     );
+    this.ensureColumn("print_jobs", "next_attempt_at", "TEXT");
     this.database.exec(`
       CREATE INDEX IF NOT EXISTS mutation_outbox_scope_state_idx
         ON mutation_outbox(auth_scope, state, next_attempt_at, created_at);
+      CREATE INDEX IF NOT EXISTS local_print_jobs_due_idx
+        ON print_jobs(printer_id, state, next_attempt_at, created_at);
     `);
   }
 

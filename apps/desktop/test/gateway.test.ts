@@ -339,10 +339,14 @@ test("gateway exposes and retries failed local printer jobs", async () => {
     payload: { orderNumber: "OFF-101" },
   });
   let printJob = null;
+  let retryAt = new Date();
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    printJob = store.claimLocalPrintJob(["RECEIPT"]);
+    printJob = store.claimLocalPrintJob(["RECEIPT"], retryAt);
     assert.ok(printJob);
-    store.failLocalPrintJob(printJob.id, "Printer offline");
+    store.failLocalPrintJob(printJob.id, "Printer offline", retryAt);
+    if (attempt < 4) {
+      retryAt = new Date(retryAt.getTime() + 5_000 * 2 ** attempt);
+    }
   }
   assert.equal(store.summary().deadLetterPrintJobs, 1);
 
