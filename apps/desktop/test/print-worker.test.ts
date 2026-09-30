@@ -135,9 +135,10 @@ test("print worker stop waits for the active local paper job", async () => {
   assert.equal(completed, 1);
 });
 
-test("failed local print stops the current drain pass after one attempt", async () => {
+test("failed local print is not retried again before its backoff is due", async () => {
   let claims = 0;
   let failures = 0;
+  let claimed = false;
   const job = {
     id: "retrying-print-job",
     logicalKey: "order-retry:RECEIPT",
@@ -160,6 +161,8 @@ test("failed local print stops the current drain pass after one attempt", async 
     localQueue: {
       claim: () => {
         claims += 1;
+        if (claimed) return null;
+        claimed = true;
         return job;
       },
       complete: () => assert.fail("failed print must not complete"),
@@ -172,7 +175,7 @@ test("failed local print stops the current drain pass after one attempt", async 
 
   await worker.tick();
 
-  assert.equal(claims, 1);
+  assert.equal(claims, 2);
   assert.equal(failures, 1);
 });
 
@@ -937,3 +940,155 @@ function jsonResponse(data: unknown): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+test("hung Windows printer is timed out as ambiguous and the offline queue keeps draining", async () => {
+  const jobs = [
+    {
+      id: "hung-job",
+      logicalKey: "order-hung:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payloadJson: JSON.stringify({ orderId: "order-hung" }),
+      attempts: 1,
+    },
+    {
+      id: "next-job",
+      logicalKey: "order-next:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payloadJson: JSON.stringify({ orderId: "order-next" }),
+      attempts: 1,
+    },
+  ];
+  const failures: Array<{ id: string; error: string; ambiguous?: boolean }> = [];
+  const completed: string[] = [];
+  const printedTargets = new Set<string>();
+  const ambiguousTargets = new Set<string>();
+  const printedOrders: string[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    printTimeoutMs: 15,
+    systemPrinters: [
+      { name: "Till A", displayName: "Till A", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (_name, receipt) => {
+      if (receipt.orderId === "order-hung") return new Promise<void>(() => {});
+      printedOrders.push(receipt.orderId ?? "");
+    },
+    localQueue: {
+      claim: () => jobs.shift() ?? null,
+      complete: (id) => completed.push(id),
+      fail: (id, error, ambiguous) => failures.push({ id, error, ambiguous }),
+      wasPrinted: () => false,
+      wasTargetPrinted: (scope, jobId, name) =>
+        printedTargets.has(scope + ":" + jobId + ":" + name),
+      markTargetPrinted: (scope, jobId, name) =>
+        printedTargets.add(scope + ":" + jobId + ":" + name),
+      markTargetAmbiguous: (scope, jobId, name) =>
+        ambiguousTargets.add(scope + ":" + jobId + ":" + name),
+    },
+  });
+
+  const startedAt = Date.now();
+  await worker.tick();
+
+  assert.ok(Date.now() - startedAt < 500);
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0]?.id, "hung-job");
+  assert.equal(failures[0]?.ambiguous, true);
+  assert.match(failures[0]?.error ?? "", /qog'ozni tekshir/i);
+  assert.deepEqual([...ambiguousTargets], ["local:hung-job:Till A"]);
+  assert.deepEqual(completed, ["next-job"]);
+  assert.deepEqual(printedOrders, ["order-next"]);
+});
+
+test("fan-out retry skips printers already confirmed successful", async () => {
+  const job = {
+    id: "fanout-job",
+    logicalKey: "order-fanout:RECEIPT",
+    branchId: "branch-1",
+    documentType: "RECEIPT",
+    payloadJson: JSON.stringify({ orderId: "order-fanout" }),
+    attempts: 1,
+  };
+  const printedTargets = new Set<string>();
+  const printed: string[] = [];
+  let phase = 0;
+  let failed = false;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    printTimeoutMs: 30,
+    systemPrinters: [
+      { name: "Till A", displayName: "Till A", roles: ["RECEIPT"] },
+      { name: "Till B", displayName: "Till B", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (name) => {
+      printed.push(name);
+      if (name === "Till B" && !failed) {
+        failed = true;
+        throw new Error("Printer offline");
+      }
+    },
+    localQueue: {
+      claim: () => {
+        if (phase === 0) {
+          phase = 1;
+          return job;
+        }
+        if (phase === 2) {
+          phase = 3;
+          return job;
+        }
+        return null;
+      },
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: () => false,
+      wasTargetPrinted: (_scope, jobId, name) =>
+        printedTargets.has(jobId + ":" + name),
+      markTargetPrinted: (_scope, jobId, name) =>
+        printedTargets.add(jobId + ":" + name),
+    },
+  });
+
+  await worker.tick();
+  phase = 2;
+  await worker.tick();
+
+  assert.deepEqual(printed, ["Till A", "Till B", "Till B"]);
+});
+
+test("TCP send timeout is reported as an ambiguous printer result", async () => {
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    printTimeoutMs: 12,
+    socketImpl: () => new Promise<void>(() => {}),
+  });
+  const send = (
+    worker as unknown as {
+      send: (
+        commands: Array<Record<string, unknown>>,
+        host: string,
+        port: number,
+        paperWidthMm: number,
+      ) => Promise<void>;
+    }
+  ).send.bind(worker);
+
+  await assert.rejects(
+    () => send([{ type: "line", value: "test" }], "printer.local", 9100, 80),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "PRINT_OUTCOME_UNKNOWN",
+  );
+});

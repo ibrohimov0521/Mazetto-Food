@@ -351,7 +351,13 @@ export class ReceiptsService {
     return this.prisma.printJob.findUnique({ where: { id } });
   }
 
-  async failPrintJob(id: string, leaseToken: string, error: string, user: AuthenticatedUser) {
+  async failPrintJob(
+    id: string,
+    leaseToken: string,
+    error: string,
+    user: AuthenticatedUser,
+    outcome: "FAILED" | "AMBIGUOUS" = "FAILED",
+  ) {
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const job = await this.prisma.printJob.findFirst({
       where: { id, branch: { tenantId } },
@@ -360,8 +366,13 @@ export class ReceiptsService {
     resolveBranchScope(user, job.branchId);
 
     const now = new Date();
-    const dead = job.attemptCount >= job.maxAttempts;
-    const nextAttemptAt = new Date(now.getTime() + Math.min(300_000, 15_000 * 2 ** Math.max(0, job.attemptCount - 1)));
+    const dead = outcome === "AMBIGUOUS" || job.attemptCount >= job.maxAttempts;
+    const nextAttemptAt = dead
+      ? now
+      : new Date(
+          now.getTime() +
+            Math.min(300_000, 15_000 * 2 ** Math.max(0, job.attemptCount - 1)),
+        );
     await this.prisma.$transaction(async (tx) => {
       const released = await tx.printJob.updateMany({
         where: {
@@ -383,7 +394,16 @@ export class ReceiptsService {
       if (released.count !== 1) throw new BadRequestException("Print lease is no longer valid");
       await tx.printAttempt.update({
         where: { jobId_leaseToken: { jobId: id, leaseToken } },
-        data: { outcome: dead ? "DEAD_LETTER" : "FAILED", error: error.slice(0, 1000), completedAt: now },
+          data: {
+            outcome:
+              outcome === "AMBIGUOUS"
+                ? "AMBIGUOUS"
+                : dead
+                  ? "DEAD_LETTER"
+                  : "FAILED",
+            error: error.slice(0, 1000),
+            completedAt: now,
+          },
       });
     });
     return this.prisma.printJob.findUnique({ where: { id } });

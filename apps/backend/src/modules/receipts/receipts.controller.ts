@@ -61,7 +61,13 @@ export class ReceiptsController {
   @Post("print-jobs/:id/fail")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
   failPrintJob(@Param("id") id: string, @Body() body: FailPrintJobDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.receiptsService.failPrintJob(id, body.leaseToken, body.error || "Unknown printer failure", user);
+    return this.receiptsService.failPrintJob(
+      id,
+      body.leaseToken,
+      body.error || "Unknown printer failure",
+      user,
+      body.outcome,
+    );
   }
   @Post("print-jobs/:id/retry")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)

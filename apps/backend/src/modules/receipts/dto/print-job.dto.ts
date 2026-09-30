@@ -30,6 +30,10 @@ export class FailPrintJobDto extends CompletePrintJobDto {
   @IsString()
   @MaxLength(1000)
   error?: string;
+
+  @IsOptional()
+  @IsIn(["FAILED", "AMBIGUOUS"])
+  outcome?: "FAILED" | "AMBIGUOUS";
 }
 const printJobStatuses = ["PENDING", "PROCESSING", "PRINTED", "DEAD_LETTER", "CANCELLED"] as const;
 

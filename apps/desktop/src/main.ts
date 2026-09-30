@@ -16,6 +16,7 @@ import {
   printableReceiptHtml,
   windowsPrintPageSize,
 } from "./receipt-renderer.js";
+import { PrintOutcomeUnknownError, withTimeout } from "./print-errors.js";
 import { resolveDesktopUpdateFeed } from "./update-feed.js";
 
 const require = createRequire(import.meta.url);
@@ -162,9 +163,16 @@ async function startDesktop(): Promise<void> {
     localQueue: {
       claim: (documentTypes) => store?.claimLocalPrintJob(documentTypes) ?? null,
       complete: (id) => store?.completeLocalPrintJob(id),
-      fail: (id, error) => store?.failLocalPrintJob(id, error),
+      fail: (id, error, ambiguous) =>
+        store?.failLocalPrintJob(id, error, new Date(), ambiguous),
       wasPrinted: (orderId, documentType) =>
         store?.wasLocalDocumentPrinted(orderId, documentType) ?? false,
+      wasTargetPrinted: (scope, jobId, printerName) =>
+        store?.wasPrintTargetPrinted(scope, jobId, printerName) ?? false,
+      markTargetPrinted: (scope, jobId, printerName) =>
+        store?.recordPrintTarget(scope, jobId, printerName, "printed"),
+      markTargetAmbiguous: (scope, jobId, printerName) =>
+        store?.recordPrintTarget(scope, jobId, printerName, "ambiguous"),
     },
   });
   gateway = new DesktopGateway({
@@ -700,31 +708,52 @@ async function silentPrintReceipt(
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   try {
-    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, godexLabelPrinter, paperWidthMm))}`);
+    await withTimeout(
+      window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, godexLabelPrinter, paperWidthMm))}`),
+      10_000,
+      () => new Error("Chek oynasi 10 soniyada tayyor bo'lmadi"),
+    );
     // Hidden oynada `loadURL` tugashi sahifa birinchi marta chizilganini
     // kafolatlamaydi. Godex kabi Windows drayverlari shu onda print qilinsa
     // bo'sh sahifa berishi mumkin, shuning uchun ikki frame kutamiz.
-    await window.webContents.executeJavaScript(
-      "new Promise((resolve, reject) => requestAnimationFrame(() => requestAnimationFrame(() => { if (!document.body || !document.body.innerText.trim()) reject(new Error(\"Chek oynasi bo'sh render bo'ldi\")); else resolve(); })))",
-      true,
+    await withTimeout(
+      window.webContents.executeJavaScript(
+        "new Promise((resolve, reject) => requestAnimationFrame(() => requestAnimationFrame(() => { if (!document.body || !document.body.innerText.trim()) reject(new Error(\"Chek oynasi bo'sh render bo'ldi\")); else resolve(); })))",
+        true,
+      ),
+      8_000,
+      () => new Error("Chek maketi 8 soniyada chizilmadi"),
     );
-    await new Promise<void>((resolve, reject) => {
-      window.webContents.print(
-        {
-          silent: true,
-          deviceName,
-          printBackground: true,
-          // Godex G500 Windows'da 90x80 mm etiketka sifatida ishlaydi.
-          // Unga uzun 80 mm chek varag'ini yuborish drayverda bo'sh label
-          // chiqarishiga olib keladi. Qolgan printerlarda foydalanuvchi
-          // A4 yoki Godex o'lchami aniq so'raladi; rulonli format drayverdan olinadi.
-          ...windowsPrintPageSize(godexLabelPrinter, paperWidthMm),
-          margins: { marginType: "none" },
-        },
-        (success, failureReason) =>
-          success ? resolve() : reject(new Error(failureReason || "Printer chop etishni rad etdi")),
-      );
-    });
+    await withTimeout(
+      new Promise<void>((resolve, reject) => {
+        window.webContents.print(
+          {
+            silent: true,
+            deviceName,
+            printBackground: true,
+            // Godex G500 Windows'da 90x80 mm etiketka sifatida ishlaydi.
+            // Unga uzun 80 mm chek varag'ini yuborish drayverda bo'sh label
+            // chiqarishiga olib keladi. Qolgan printerlarda foydalanuvchi
+            // A4 yoki Godex o'lchami aniq so'raladi; rulonli format drayverdan olinadi.
+            ...windowsPrintPageSize(godexLabelPrinter, paperWidthMm),
+            margins: { marginType: "none" },
+          },
+          (success, failureReason) =>
+            success
+              ? resolve()
+              : reject(
+                  new Error(
+                    failureReason || "Printer chop etishni rad etdi",
+                  ),
+                ),
+        );
+      }),
+      30_000,
+      () =>
+        new PrintOutcomeUnknownError(
+          `"${deviceName}" printerining drayveri 30 soniyada javob bermadi; qog'ozni tekshiring.`,
+        ),
+    );
   } finally {
     window.destroy();
   }

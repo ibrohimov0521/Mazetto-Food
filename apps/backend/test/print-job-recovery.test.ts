@@ -73,3 +73,53 @@ test("faol lease bilan chop etilayotgan ish qo'lda qayta yuborilmaydi", async ()
     /still processing/,
   );
 });
+
+test("ambiguous printer timeout goes to dead letter without automatic reprint", async () => {
+  let jobUpdate: Record<string, unknown> | undefined;
+  let attemptUpdate: Record<string, unknown> | undefined;
+  const job = {
+    id: "job-ambiguous",
+    branchId: "branch-1",
+    receiptId: "receipt-1",
+    status: "PROCESSING",
+    attemptCount: 1,
+    maxAttempts: 5,
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+  };
+  const tx = {
+    printJob: {
+      updateMany: async (args: { data: Record<string, unknown> }) => {
+        jobUpdate = args.data;
+        return { count: 1 };
+      },
+    },
+    printAttempt: {
+      update: async (args: { data: Record<string, unknown> }) => {
+        attemptUpdate = args.data;
+      },
+    },
+  };
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    printJob: {
+      findFirst: async () => job,
+      findUnique: async () => job,
+    },
+    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+  } as never);
+
+  await service.failPrintJob(
+    job.id,
+    "lease-token-with-enough-length",
+    "Windows printer callback timed out",
+    actor,
+    "AMBIGUOUS",
+  );
+
+  assert.equal(jobUpdate?.status, "DEAD_LETTER");
+  assert.ok(jobUpdate?.nextAttemptAt instanceof Date);
+  assert.equal(jobUpdate?.leaseToken, null);
+  assert.equal(attemptUpdate?.outcome, "AMBIGUOUS");
+  assert.match(String(attemptUpdate?.error), /timed out/);
+});
