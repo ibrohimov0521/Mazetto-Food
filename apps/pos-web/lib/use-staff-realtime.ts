@@ -54,9 +54,14 @@ export function useStaffRealtime(options: {
     const cursorKey = `mazetto.staff.realtime.cursor.${encodeURIComponent(
       options.cursorScope ?? "default",
     )}`;
+    const cursorStream = `${cursorKey}:${encodeURIComponent(options.branchId ?? "auto")}`;
+    const desktopSync = isDesktop ? window.mazettoDesktop?.sync : undefined;
     let stopped = false;
     let running = false;
     let cursor = readCursor(cursorKey);
+    let cursorLoaded = !desktopSync;
+    let cursorPersisted = !desktopSync;
+    let cursorPersistenceAvailable = Boolean(desktopSync);
 
     const setState = (state: StaffRealtimeConnectionState) => {
       if (!stopped) setConnectionState(state);
@@ -66,6 +71,16 @@ export function useStaffRealtime(options: {
       if (stopped || running) return;
       running = true;
       try {
+        if (desktopSync && !cursorLoaded) {
+          try {
+            const storedCursor = await desktopSync.loadCursor(cursorStream);
+            if (storedCursor) cursor = storedCursor;
+            cursorPersisted = Boolean(storedCursor);
+          } catch {
+            cursorPersistenceAvailable = false;
+          }
+          cursorLoaded = true;
+        }
         let hasMore = true;
         let lastEvent: StaffRealtimeEvent | undefined;
 
@@ -79,8 +94,25 @@ export function useStaffRealtime(options: {
             { cache: "no-store", signal: AbortSignal.timeout(12000) },
           );
 
-          cursor = next.cursor;
-          writeCursor(cursorKey, cursor);
+          const nextCursor = next.cursor;
+          if (
+            nextCursor &&
+            desktopSync &&
+            cursorPersistenceAvailable &&
+            (!cursorPersisted || nextCursor !== cursor)
+          ) {
+            try {
+              await desktopSync.saveCursor({
+                stream: cursorStream,
+                cursor: nextCursor,
+              });
+              cursorPersisted = true;
+            } catch {
+              cursorPersistenceAvailable = false;
+            }
+          }
+          if (nextCursor !== cursor) writeCursor(cursorKey, nextCursor);
+          cursor = nextCursor;
           lastEvent = next.events.at(-1) ?? lastEvent;
           hasMore = next.hasMore;
 

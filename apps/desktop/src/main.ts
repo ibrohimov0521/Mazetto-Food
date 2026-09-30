@@ -181,6 +181,7 @@ async function startDesktop(): Promise<void> {
   setupAuthControls();
   setupApiControls();
   setupSessionControls();
+  setupSyncControls();
   setupSupportControls();
   await gateway.start();
   printTimer = setInterval(() => void printWorker?.tick(), 1_000);
@@ -790,6 +791,42 @@ function setupSessionControls(): void {
     store?.setSetting("staff_auth_session_encrypted", "");
     printWorker?.setAuthorization(undefined);
   });
+}
+
+function setupSyncControls(): void {
+  ipcMain.removeHandler("desktop:sync:cursor:load");
+  ipcMain.removeHandler("desktop:sync:cursor:save");
+  ipcMain.handle("desktop:sync:cursor:load", (_event, stream: unknown) => {
+    const cursorStream = validateRealtimeCursorStream(stream);
+    return store?.getSyncCursor(cursorStream) ?? null;
+  });
+  ipcMain.handle("desktop:sync:cursor:save", (_event, input: unknown) => {
+    if (!input || typeof input !== "object") {
+      throw new Error("Realtime cursor ma'lumoti noto'g'ri");
+    }
+    const value = input as Record<string, unknown>;
+    const cursorStream = validateRealtimeCursorStream(value.stream);
+    const cursor = value.cursor;
+    if (
+      typeof cursor !== "string" ||
+      cursor.length > 2048 ||
+      !/^[A-Za-z0-9_-]+$/.test(cursor)
+    ) {
+      throw new Error("Realtime cursor noto'g'ri");
+    }
+    store?.setSyncCursor(cursorStream, cursor);
+  });
+}
+
+function validateRealtimeCursorStream(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("mazetto.staff.realtime.cursor.") ||
+    value.length > 512
+  ) {
+    throw new Error("Realtime cursor oqimi noto'g'ri");
+  }
+  return value;
 }
 
 function syncPrinterAuthorization(serialized: string | null): void {

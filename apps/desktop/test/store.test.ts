@@ -308,3 +308,38 @@ test("desktop store enforces cache retention on startup without crossing scopes"
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("desktop store persists realtime cursors per stream across restarts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const posStream = "mazetto.staff.realtime.cursor.user-1%3Apos:branch-1";
+  const kitchenStream =
+    "mazetto.staff.realtime.cursor.user-1%3Akitchen:branch-1";
+
+  try {
+    const firstStore = new DesktopStore(path);
+    try {
+      firstStore.setSyncCursor(posStream, "pos-cursor-1");
+      firstStore.setSyncCursor(kitchenStream, "kitchen-cursor-1");
+      firstStore.setSyncCursor(posStream, "pos-cursor-2");
+      assert.equal(firstStore.getSyncCursor(posStream), "pos-cursor-2");
+      assert.equal(firstStore.getSyncCursor(kitchenStream), "kitchen-cursor-1");
+    } finally {
+      firstStore.close();
+    }
+
+    const reopenedStore = new DesktopStore(path);
+    try {
+      assert.equal(reopenedStore.getSyncCursor(posStream), "pos-cursor-2");
+      assert.equal(
+        reopenedStore.getSyncCursor(kitchenStream),
+        "kitchen-cursor-1",
+      );
+      assert.equal(reopenedStore.getSyncCursor("unknown-stream"), null);
+    } finally {
+      reopenedStore.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

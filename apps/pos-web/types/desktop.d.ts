@@ -90,6 +90,10 @@ type DesktopBridge = {
       cachedAt?: string | null;
     }>;
   };
+  sync?: {
+    loadCursor: (stream: string) => Promise<string | null>;
+    saveCursor: (input: { stream: string; cursor: string }) => Promise<void>;
+  };
   support?: {
     export: () => Promise<{ path: string } | null>;
   };

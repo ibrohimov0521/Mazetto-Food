@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
       headers?: Record<string, string>;
     }) => ipcRenderer.invoke("desktop:api:request", input),
   },
+  sync: {
+    loadCursor: (stream: string): Promise<string | null> =>
+      ipcRenderer.invoke("desktop:sync:cursor:load", stream),
+    saveCursor: (input: { stream: string; cursor: string }): Promise<void> =>
+      ipcRenderer.invoke("desktop:sync:cursor:save", input),
+  },
   updates: {
     getStatus: (): Promise<UpdateStatus> =>
       ipcRenderer.invoke("desktop:updates:status"),
