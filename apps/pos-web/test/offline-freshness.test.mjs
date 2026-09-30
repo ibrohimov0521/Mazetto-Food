@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   clearApiFreshness,
   formatApiFreshnessAge,
+  getApiFreshnessScope,
   getApiFreshnessSnapshot,
   recordApiResponseFreshness,
   subscribeApiFreshness,
@@ -108,4 +109,80 @@ test("cache age is readable and invalid timestamps are explicit", () => {
     "5 daq avval",
   );
   assert.equal(formatApiFreshnessAge(null, now), "yoshi noma'lum");
+});
+
+test("freshness is isolated by the panel that consumed the cached response", () => {
+  clearApiFreshness();
+  const now = Date.parse("2026-09-30T06:12:00.000Z");
+  recordApiResponseFreshness(
+    "/orders",
+    "offline-cache",
+    "2026-09-30T06:10:00.000Z",
+    "/pos",
+  );
+
+  assert.equal(getApiFreshnessSnapshot(now, "/pos").cachedResponses, 1);
+  assert.equal(getApiFreshnessSnapshot(now, "/kitchen").cachedResponses, 0);
+  assert.equal(getApiFreshnessSnapshot(now, "/kitchen").freshnessState, "live");
+
+  recordApiResponseFreshness(
+    "/orders",
+    "offline-cache",
+    "2026-09-30T06:10:00.000Z",
+    "/kitchen",
+  );
+  assert.equal(getApiFreshnessSnapshot(now, "/kitchen").cachedResponses, 1);
+
+  recordApiResponseFreshness("/orders", "online", null, "/pos");
+  assert.equal(getApiFreshnessSnapshot(now, "/pos").cachedResponses, 0);
+  assert.equal(getApiFreshnessSnapshot(now, "/kitchen").cachedResponses, 0);
+  clearApiFreshness();
+});
+
+test("freshness cache scope separates users and their effective permissions", () => {
+  clearApiFreshness();
+  const userA = getApiFreshnessScope({
+    id: "user-a",
+    branchId: "branch-1",
+    roles: ["CASHIER", "POS"],
+    permissions: ["orders.read", "orders.create"],
+  });
+  const userAReordered = getApiFreshnessScope({
+    id: "user-a",
+    branchId: "branch-1",
+    roles: ["POS", "CASHIER"],
+    permissions: ["orders.create", "orders.read"],
+  });
+  const userB = getApiFreshnessScope({
+    id: "user-b",
+    branchId: "branch-1",
+    roles: ["CASHIER", "POS"],
+    permissions: ["orders.read", "orders.create"],
+  });
+
+  assert.equal(userA, userAReordered);
+  assert.notEqual(userA, userB);
+  recordApiResponseFreshness(
+    "/orders",
+    "offline-cache",
+    "2026-09-30T06:10:00.000Z",
+    "/pos",
+    userA,
+  );
+  recordApiResponseFreshness(
+    "/orders",
+    "offline-cache",
+    "2026-09-30T06:10:00.000Z",
+    "/pos",
+    userB,
+  );
+
+  const now = Date.parse("2026-09-30T06:12:00.000Z");
+  assert.equal(getApiFreshnessSnapshot(now, "/pos", userA).cachedResponses, 1);
+  assert.equal(getApiFreshnessSnapshot(now, "/pos", userB).cachedResponses, 1);
+
+  recordApiResponseFreshness("/orders", "online", null, "/pos", userA);
+  assert.equal(getApiFreshnessSnapshot(now, "/pos", userA).cachedResponses, 0);
+  assert.equal(getApiFreshnessSnapshot(now, "/pos", userB).cachedResponses, 1);
+  clearApiFreshness();
 });

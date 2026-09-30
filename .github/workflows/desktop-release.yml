@@ -15,6 +15,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: build and publish Windows app
@@ -23,6 +27,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate release tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
+          $tag = "desktop-v$version"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release $tag already exists. Increment apps/desktop/package.json before publishing another build."
+          }
 
       - name: Setup Node 24
         uses: actions/setup-node@v4
@@ -65,9 +81,4 @@ jobs:
             "apps/desktop/release/MAZETTO-Desktop-$version-x64.exe.blockmap",
             "apps/desktop/release/latest.yml"
           )
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $assets --clobber
-          } else {
-            gh release create $tag $assets --title "MAZETTO Desktop $version" --notes "Windows desktop release $version" --latest
-          }
+          gh release create $tag $assets --title "MAZETTO Desktop $version" --notes "Windows desktop release $version" --latest
