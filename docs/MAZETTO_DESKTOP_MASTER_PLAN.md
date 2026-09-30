@@ -265,6 +265,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Desktop outbox mutations are serialized per aggregate. An unresolved earlier command blocks later commands for that same order, while unrelated orders continue; after acknowledgement, pending commands are rebased to the server's current order version in the local SQLite transaction.
 - Verification: 4 focused order-mutation tests, 21 Desktop gateway tests, 487 backend tests plus 3 retry tests, full GitHub CI passed, Desktop 0.1.60 was published, production deploy completed, and production smoke passed 24/24. Physical offline acceptance remains a separate restaurant-device test.
 
+## D3 kitchen-action transactional idempotency (2026-09-30)
+
+- Kitchen accept/start/ready/complete/cancel now complete their idempotency record inside the same database transaction as the order and ticket transition.
+- If the idempotency completion write fails, the action transaction fails too; a lost response after a successful commit can be replayed without repeating ticket events or notifications.
+- No database schema change is required. Existing version checks, order row locking, tenant scope and event emission behavior are preserved.
+- Verification: 10 focused kitchen hardening tests, including concurrent duplicate acceptance, replay and transactional-completion failure; full monorepo CI and repository validators passed.
+- Offline D3 still requires dependency mapping, complete supported-route coverage and conflict/replay acceptance. Physical kitchen-device outage drills remain separate.
+
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
 - Windows rendering, the hidden print window and the Electron driver callback now have bounded deadlines. ESC/POS TCP connect/write is bounded too; a printer that stops responding can no longer wait forever.

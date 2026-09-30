@@ -103,20 +103,25 @@ export class KitchenActionService {
           expectedVersion: dto.expectedVersion,
           correlationId: context.correlationId,
           idempotencyKey: context.idempotencyKey,
+          completeIdempotency: (tx, ticket) =>
+            this.idempotency.complete(
+              decision.record.id,
+              {
+                requestHash,
+                responseStatus: 200,
+                responseBody: {
+                  ticketId: ticket.id,
+                  status: ticket.status,
+                  version: ticket.version,
+                },
+                resourceType: "KITCHEN_TICKET",
+                resourceId: ticket.id,
+              },
+              tx,
+            ),
           ...(dto.reasonCode ? { reasonCode: dto.reasonCode } : {}),
         },
       );
-      await this.idempotency.complete(decision.record.id, {
-        requestHash,
-        responseStatus: 200,
-        responseBody: {
-          ticketId: result.ticket.id,
-          status: result.ticket.status,
-          version: result.ticket.version,
-        },
-        resourceType: "KITCHEN_TICKET",
-        resourceId: result.ticket.id,
-      });
       return result.ticket;
     } catch (error) {
       await this.idempotency
