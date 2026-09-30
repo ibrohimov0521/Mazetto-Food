@@ -4,9 +4,11 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from "class-validator";
 
 export enum PosOrderStatus {
@@ -31,6 +33,11 @@ export class UpdateOrderStatusDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedVersion?: number;
 }
 
 export class BulkUpdateOrderStatusDto extends UpdateOrderStatusDto {

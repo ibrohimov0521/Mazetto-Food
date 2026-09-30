@@ -1255,6 +1255,9 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
               body: JSON.stringify({
                 status: pendingStatus,
                 force: true,
+                ...(actionVersion !== undefined
+                  ? { expectedVersion: actionVersion }
+                  : {}),
                 ...(reason ? { reason } : {}),
               }),
             },

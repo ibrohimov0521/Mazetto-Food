@@ -80,14 +80,19 @@ test("gateway serves cached reads and marks itself offline on an upstream 503", 
       if (String(input).endsWith("/health")) return jsonResponse({ ok: true });
       return apiStatus === 200
         ? jsonResponse({ success: true, data: [{ id: "branch-1" }] })
-        : jsonResponse({ success: false, error: { message: "Service unavailable" } }, apiStatus);
+        : jsonResponse(
+            { success: false, error: { message: "Service unavailable" } },
+            apiStatus,
+          );
     },
   });
 
   try {
     const port = await gateway.start();
     const url = `http://127.0.0.1:${port}/api/v1/branches`;
-    const headers = { Authorization: desktopJwt("cashier-http-503", "branch-1") };
+    const headers = {
+      Authorization: desktopJwt("cashier-http-503", "branch-1"),
+    };
     const online = await fetch(url, { headers });
     assert.equal(online.status, 200);
     assert.equal(store.summary().cachedResponses, 1);
@@ -120,7 +125,10 @@ test("gateway queues an upstream-unavailable cash sale only with a stable idempo
     fetchImpl: async (input) =>
       String(input).endsWith("/health")
         ? jsonResponse({ ok: true })
-        : jsonResponse({ success: false, error: { message: "Gateway unavailable" } }, 503),
+        : jsonResponse(
+            { success: false, error: { message: "Gateway unavailable" } },
+            503,
+          ),
   });
 
   try {
@@ -161,7 +169,10 @@ test("gateway does not queue an ambiguous upstream-unavailable write without ide
     fetchImpl: async (input) =>
       String(input).endsWith("/health")
         ? jsonResponse({ ok: true })
-        : jsonResponse({ success: false, error: { message: "Gateway unavailable" } }, 503),
+        : jsonResponse(
+            { success: false, error: { message: "Gateway unavailable" } },
+            503,
+          ),
   });
 
   try {
@@ -179,7 +190,10 @@ test("gateway does not queue an ambiguous upstream-unavailable write without ide
     });
 
     assert.equal(response.status, 503);
-    assert.equal(response.headers.get("x-mazetto-desktop"), "offline-unavailable");
+    assert.equal(
+      response.headers.get("x-mazetto-desktop"),
+      "offline-unavailable",
+    );
     assert.equal(store.summary().pendingCommands, 0);
     assert.equal(gateway.status().mode, "offline");
   } finally {
@@ -1190,3 +1204,118 @@ async function waitFor(
 
   assert.equal(predicate(), true);
 }
+
+test("queued writes for one order rebase versions after every server acknowledgement", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-order-rebase-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("waiter-rebase", "branch-1");
+  const sentVersions: number[] = [];
+  let online = false;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          expectedVersion?: number;
+        };
+        sentVersions.push(body.expectedVersion ?? -1);
+        return jsonResponse({
+          success: true,
+          data: { id: "order-rebase", version: 10 + sentVersions.length },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    for (let index = 0; index < 3; index += 1) {
+      const response = await fetch(
+        `http://127.0.0.1:${port}/api/v1/orders/order-rebase/items`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            "Idempotency-Key": `offline-order-item-${index}`,
+          },
+          body: JSON.stringify({
+            productId: `product-${index}`,
+            quantity: 1,
+            expectedVersion: 10,
+          }),
+        },
+      );
+      assert.equal(response.status, 202);
+    }
+
+    online = true;
+    await waitFor(() => sentVersions.length === 3, 3_000);
+    assert.deepEqual(sentVersions, [10, 11, 12]);
+    await waitFor(() => store.summary().pendingCommands === 0);
+    const commands = store.listOutbox(10);
+    assert.ok(commands.every((command) => command.state === "acknowledged"));
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("an unresolved earlier command blocks later writes to the same aggregate only", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-order-sequence-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const base = {
+    commandType: "order.items.update",
+    aggregateType: "orders",
+    actorId: "waiter-a",
+    branchId: "branch-1",
+    authScope: "waiter-a:branch-1",
+    payload: {
+      method: "POST",
+      pathname: "/api/v1/orders/order-a/items",
+      body: "{}",
+    },
+  };
+  const first = store.enqueueMutation({
+    ...base,
+    idempotencyKey: "order-a-first",
+    aggregateId: "order-a",
+  });
+  const second = store.enqueueMutation({
+    ...base,
+    idempotencyKey: "order-a-second",
+    aggregateId: "order-a",
+  });
+  const otherOrder = store.enqueueMutation({
+    ...base,
+    idempotencyKey: "order-b-first",
+    aggregateId: "order-b",
+  });
+
+  try {
+    store.markMutationConflict(first.id, "version conflict needs review");
+    assert.deepEqual(
+      store.dueMutations("waiter-a:branch-1", 10).map((item) => item.id),
+      [otherOrder.id],
+    );
+    assert.equal(store.getOutboxCommand(second.id)?.aggregateId, "order-a");
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

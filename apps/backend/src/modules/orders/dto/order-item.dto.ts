@@ -46,6 +46,11 @@ export class AddOrderItemDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedVersion?: number;
 }
 
 export class UpdateOrderItemDto {
@@ -68,6 +73,11 @@ export class UpdateOrderItemDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedVersion?: number;
 
   @IsOptional()
   @IsString()

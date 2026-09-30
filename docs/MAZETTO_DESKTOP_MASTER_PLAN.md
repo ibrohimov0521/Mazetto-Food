@@ -229,7 +229,7 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Existing actor/tenant/branch filters are applied when returning a replay. No schema migration is required.
 - Verification: transfer replay and payload-mismatch tests, full backend suite, and monorepo CI passed.
 - Transfer acceptance/rejection now have separate actor-, action-, and transfer-scoped replay contracts; ledger writes and the completed idempotency row share one transaction.
-- Shift open/close now have server-side replay contracts; courier status still needs separate route-by-route coverage.
+- Shift open/close and courier status now have server-side replay contracts; waiter order mutations and kitchen transitions remain route-by-route gates.
 
 ## D3 cash-transfer resolution idempotency (2026-09-30)
 
@@ -253,5 +253,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - The key is scoped by tenant, customer order and courier; changing status or tender details under a reused key is rejected.
 - Courier payment creation, order status/history, kitchen synchronization, outbox event and completed idempotency result commit in one database transaction. A replay returns the tenant-scoped order without repeating payment or realtime notifications.
 - Existing body-provided courier idempotency keys remain supported for older clients.
-- Verification: courier replay, transaction atomicity and changed-payload tests (3/3); full monorepo CI and 33 validators passed. Production smoke is pending deployment.
+- Verification: courier replay, transaction atomicity and changed-payload tests (3/3); full monorepo CI and 33 validators passed. Production deploy and 24/24 smoke completed.
 - This closes the courier-status idempotency slice only. Dependency ordering, offline projections, conflict resolution, receipt delivery and physical printer/power-loss acceptance remain open.
+
+## D3 waiter order-mutation idempotency (2026-09-30)
+
+- Order item add/update and legacy status routes forward the desktop idempotency key, correlation id and expected aggregate version.
+- The mutation and completed idempotency record commit in the same database transaction. Replays read the current order within the actor's tenant/branch scope and do not repeat status notifications.
+- Courier updates include the expected order version in the request hash and reject stale writes before recording payment or changing status.
+- The waiter, admin-online-orders and courier screens submit the version they last read; the bundled Desktop UI is released as `0.1.60`.
+- Desktop outbox mutations are serialized per aggregate. An unresolved earlier command blocks later commands for that same order, while unrelated orders continue; after acknowledgement, pending commands are rebased to the server's current order version in the local SQLite transaction.
+- Verification so far: 4 focused order-mutation tests, 21 Desktop gateway tests, 487 backend tests plus 3 retry tests, and the complete monorepo CI passed. Physical offline acceptance remains a separate restaurant-device test.

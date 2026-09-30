@@ -402,11 +402,20 @@ export class DesktopStore {
         auth_scope AS authScope,
         payload_json AS payloadJson,
         attempts
-      FROM mutation_outbox
-      WHERE auth_scope = ?
-        AND state = 'pending'
-        AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-      ORDER BY created_at ASC
+      FROM mutation_outbox AS current
+      WHERE current.auth_scope = ?
+        AND current.state = 'pending'
+        AND (current.next_attempt_at IS NULL OR current.next_attempt_at <= ?)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM mutation_outbox AS earlier
+          WHERE earlier.auth_scope = current.auth_scope
+            AND earlier.aggregate_type = current.aggregate_type
+            AND COALESCE(earlier.aggregate_id, '') = COALESCE(current.aggregate_id, '')
+            AND earlier.state IN ('pending', 'sending', 'conflict', 'dead_letter')
+            AND earlier.rowid < current.rowid
+        )
+      ORDER BY current.rowid ASC
       LIMIT ?
     `,
       )
@@ -441,6 +450,79 @@ export class DesktopStore {
     `,
       )
       .run(new Date().toISOString(), id);
+  }
+
+  acknowledgeOrderMutation(
+    id: string,
+    authScope: string,
+    aggregateId: string,
+    serverVersion: number,
+  ): void {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(
+          `
+        UPDATE mutation_outbox
+        SET state = 'acknowledged', acknowledged_at = ?, last_error = NULL
+        WHERE id = ?
+      `,
+        )
+        .run(new Date().toISOString(), id);
+
+      const pending = this.database
+        .prepare(
+          `
+        SELECT id, payload_json AS payloadJson
+        FROM mutation_outbox AS queued
+        WHERE queued.auth_scope = ?
+          AND queued.aggregate_type = 'orders'
+          AND queued.aggregate_id = ?
+          AND queued.state = 'pending'
+          AND queued.rowid > (
+            SELECT completed.rowid FROM mutation_outbox AS completed WHERE completed.id = ?
+          )
+        ORDER BY queued.rowid ASC
+      `,
+        )
+        .all(authScope, aggregateId, id) as Array<{
+        id: string;
+        payloadJson: string;
+      }>;
+
+      for (const row of pending) {
+        try {
+          const payload = JSON.parse(row.payloadJson) as Record<
+            string,
+            unknown
+          >;
+          if (typeof payload.body !== "string") continue;
+          const body = JSON.parse(payload.body);
+          if (!body || typeof body !== "object" || Array.isArray(body))
+            continue;
+          payload.body = JSON.stringify({
+            ...(body as Record<string, unknown>),
+            expectedVersion: serverVersion,
+          });
+          this.database
+            .prepare(
+              `
+            UPDATE mutation_outbox
+            SET base_version = ?, payload_json = ?
+            WHERE id = ? AND state = 'pending'
+          `,
+            )
+            .run(serverVersion, JSON.stringify(payload), row.id);
+        } catch {
+          // Keep malformed queued payloads intact so the normal replay validation can surface them.
+        }
+      }
+
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   markMutationPending(id: string, error: string): void {
