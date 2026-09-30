@@ -92,8 +92,13 @@ export class CashRegisterController {
   acceptTransfer(
     @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.cashRegisterService.acceptTransfer(id, user);
+    return this.cashRegisterService.acceptTransfer(id, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Post("transfers/:id/reject")
@@ -102,8 +107,13 @@ export class CashRegisterController {
     @Param("id") id: string,
     @Body() body: { reason?: string },
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.cashRegisterService.rejectTransfer(id, body.reason, user);
+    return this.cashRegisterService.rejectTransfer(id, body.reason, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Post("shift/open")
