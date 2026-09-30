@@ -170,7 +170,7 @@ test("stale accept version is rejected before mutation and includes current vers
   const service = new OrdersService(prisma as never, {} as never, {} as never);
   await assert.rejects(
     service.updateStatus("order-1", { status: "CONFIRMED" as never }, user, {
-      expectedVersion: 3, eventType: ORDER_EVENTS.ACCEPTED, idempotencyKey: "action-1",
+      expectedVersion: 3, eventType: ORDER_EVENTS.ACCEPTED,
     }),
     (error: unknown) => {
       assert.ok(error instanceof ConflictException);

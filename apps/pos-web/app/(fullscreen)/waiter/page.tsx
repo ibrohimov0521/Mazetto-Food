@@ -584,6 +584,7 @@ function WaiterFloor() {
             productId: product.id,
             ...(draft.variantId ? { variantId: draft.variantId } : {}),
             quantity: draft.quantity,
+            expectedVersion: currentOrder.version,
             modifiers: draft.modifierIds.map((modifierId) => ({
               modifierId,
               quantity: 1,
@@ -622,6 +623,7 @@ function WaiterFloor() {
           body: JSON.stringify({
             quantity: draft.quantity,
             notes: draft.notes.trim(),
+            expectedVersion: currentOrder.version,
             ...(modifiersChanged
               ? {
                   modifiers: draft.modifierIds.map((modifierId) => ({
@@ -663,7 +665,10 @@ function WaiterFloor() {
         apiFetch(`/orders/${currentOrder.id}/items/${line.id}`, {
           method: "PATCH",
           signal: AbortSignal.timeout(15000),
-          body: JSON.stringify({ quantity: next }),
+          body: JSON.stringify({
+            quantity: next,
+            expectedVersion: currentOrder.version,
+          }),
         }),
       "Sonni o'zgartirib bo'lmadi.",
       { lineId: line.id },
@@ -718,8 +723,13 @@ function WaiterFloor() {
               ? {
                   status: "CONFIRMED",
                   reason: "Ofitsiant buyurtmani oshxonaga yubordi",
+                  expectedVersion: currentOrder.version,
                 }
-              : { status: "SERVED", reason: "Ofitsiant hisob so'radi" },
+              : {
+                  status: "SERVED",
+                  reason: "Ofitsiant hisob so'radi",
+                  expectedVersion: currentOrder.version,
+                },
           ),
         }),
       kind === "kitchen"

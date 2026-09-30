@@ -31,6 +31,7 @@ import {
 } from "./dto/order-status.dto";
 import { OrdersService } from "./orders.service";
 import { OrderActionService } from "./order-action.service";
+import { ORDER_EVENTS } from "./order-events";
 
 @Controller("orders")
 export class OrdersController {
@@ -134,8 +135,16 @@ export class OrdersController {
     @Param("id") id: string,
     @Body() dto: AddOrderItemDto,
     @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
+    @IdempotencyKey() idempotencyKey?: string,
   ) {
-    return this.ordersService.addItem(id, dto, user);
+    return this.ordersService.addItem(id, dto, user, {
+      expectedVersion: dto.expectedVersion,
+      correlationId,
+      idempotencyKey,
+      eventType: ORDER_EVENTS.ITEM_ADDED,
+      source: "API",
+    });
   }
 
   @Post(":id/items/:itemId/actions/cancel")
@@ -161,8 +170,16 @@ export class OrdersController {
     @Param("itemId") itemId: string,
     @Body() dto: UpdateOrderItemDto,
     @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
+    @IdempotencyKey() idempotencyKey?: string,
   ) {
-    return this.ordersService.updateItem(id, itemId, dto, user);
+    return this.ordersService.updateItem(id, itemId, dto, user, {
+      expectedVersion: dto.expectedVersion,
+      correlationId,
+      idempotencyKey,
+      eventType: ORDER_EVENTS.ITEM_UPDATED,
+      source: "API",
+    });
   }
 
   @Patch(":id/status")
@@ -172,9 +189,12 @@ export class OrdersController {
     @Body() dto: UpdateOrderStatusDto,
     @CurrentUser() user: AuthenticatedUser,
     @CorrelationId() correlationId: string,
+    @IdempotencyKey() idempotencyKey?: string,
   ) {
     return this.ordersService.updateStatus(id, dto, user, {
+      expectedVersion: dto.expectedVersion,
       correlationId,
+      idempotencyKey,
       source: "API",
     });
   }

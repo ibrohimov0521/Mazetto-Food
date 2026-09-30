@@ -89,6 +89,7 @@ type CustomerOrder = {
     orderNumber: string;
     displayOrderNumber?: string | null;
     status: OrderStatus;
+    version?: number;
     total: string;
     servedById?: string | null;
   } | null;
@@ -266,6 +267,9 @@ export function AdminOnlineOrdersPage() {
           method: "PATCH",
           body: JSON.stringify({
             status: pending.status,
+            ...(pending.order.order?.version !== undefined
+              ? { expectedVersion: pending.order.order.version }
+              : {}),
             reason:
               trimmed ||
               `Online buyurtma: ${orderStatusLabels[pending.status]} (admin)`,

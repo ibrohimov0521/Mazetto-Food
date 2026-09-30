@@ -71,6 +71,7 @@ type CourierOrder = {
     orderNumber: string;
     displayOrderNumber?: string | null;
     status: OrderStatus;
+    version?: number;
     total: string;
     /*
      * Buyurtma allaqachon to'langanmi. Server buni har doim qaytaradi
@@ -154,7 +155,9 @@ export function CourierOrdersPage() {
   const [courierShift, setCourierShift] = useState<CourierShift | null>(null);
   const [transferAmount, setTransferAmount] = useState("");
   const [transferReceiverId, setTransferReceiverId] = useState("");
-  const [transferReceivers, setTransferReceivers] = useState<TransferReceiver[]>([]);
+  const [transferReceivers, setTransferReceivers] = useState<
+    TransferReceiver[]
+  >([]);
   const [shiftBusy, setShiftBusy] = useState(false);
   const [shiftError, setShiftError] = useState("");
   const [cashPanelOpen, setCashPanelOpen] = useState(false);
@@ -198,11 +201,15 @@ export function CourierOrdersPage() {
       );
       setTransferReceivers(receivers);
       setTransferReceiverId((current) =>
-        receivers.some((receiver) => receiver.shiftId === current) ? current : "",
+        receivers.some((receiver) => receiver.shiftId === current)
+          ? current
+          : "",
       );
     } catch (caught) {
       setShiftError(
-        caught instanceof Error ? caught.message : "Kassirlar ro'yxati yuklanmadi",
+        caught instanceof Error
+          ? caught.message
+          : "Kassirlar ro'yxati yuklanmadi",
       );
     }
   }, []);
@@ -372,6 +379,9 @@ export function CourierOrdersPage() {
         method: "PATCH",
         body: JSON.stringify({
           status,
+          ...(order.order?.version !== undefined
+            ? { expectedVersion: order.order.version }
+            : {}),
           /*
            * To'lov usuli FAQAT haqiqatan pul yig'ilganda yuboriladi.
            *
@@ -430,7 +440,12 @@ export function CourierOrdersPage() {
   }
 
   async function transferCash() {
-    if (!courierShift || !validTransferAmount || !transferReceiverId || shiftBusy)
+    if (
+      !courierShift ||
+      !validTransferAmount ||
+      !transferReceiverId ||
+      shiftBusy
+    )
       return;
     setShiftBusy(true);
     setShiftError("");
@@ -456,7 +471,9 @@ export function CourierOrdersPage() {
   }
 
   return (
-    <div className={`${styles.content} ${styles.narrowContent} ${styles.courierContent}`}>
+    <div
+      className={`${styles.content} ${styles.narrowContent} ${styles.courierContent}`}
+    >
       <div className={`${styles.overview} ${styles.courierOverview}`}>
         <h2 className={styles.pageHeading}>Yetkazib berishlar</h2>
         <div className={styles.inlineActions}>
@@ -528,7 +545,9 @@ export function CourierOrdersPage() {
               <option value="">Kassirni tanlang</option>
               {transferReceivers.map((receiver) => (
                 <option key={receiver.shiftId} value={receiver.shiftId}>
-                  {[receiver.firstName, receiver.lastName].filter(Boolean).join(" ")}
+                  {[receiver.firstName, receiver.lastName]
+                    .filter(Boolean)
+                    .join(" ")}
                   {receiver.employeeCode ? ` (${receiver.employeeCode})` : ""}
                 </option>
               ))}
@@ -547,7 +566,9 @@ export function CourierOrdersPage() {
             />
             <button
               className={styles.primary}
-              disabled={shiftBusy || !validTransferAmount || !transferReceiverId}
+              disabled={
+                shiftBusy || !validTransferAmount || !transferReceiverId
+              }
               onClick={() => void transferCash()}
               type="button"
             >
@@ -555,8 +576,13 @@ export function CourierOrdersPage() {
             </button>
           </div>
         ) : null}
-        {courierShift && cashPanelOpen && !transferReceivers.length && !shiftError ? (
-          <p className={styles.muted}>Pul topshirish uchun kassirning ochiq smenasi kerak.</p>
+        {courierShift &&
+        cashPanelOpen &&
+        !transferReceivers.length &&
+        !shiftError ? (
+          <p className={styles.muted}>
+            Pul topshirish uchun kassirning ochiq smenasi kerak.
+          </p>
         ) : null}
         {shiftError && (
           <p className={styles.error} role="alert">
@@ -791,8 +817,8 @@ export function CourierOrdersPage() {
             needsCashCollection(confirmation.order) ? (
               <p className={styles.note}>
                 Mijozdan naqd oling:{" "}
-                <strong>{formatMoney(cashDue(confirmation.order))}</strong>.
-                Bu summa sizning ochiq smenangizga yoziladi.
+                <strong>{formatMoney(cashDue(confirmation.order))}</strong>. Bu
+                summa sizning ochiq smenangizga yoziladi.
               </p>
             ) : (
               <p className={styles.muted}>
@@ -882,9 +908,7 @@ function CourierOrderCard({
             data-tone={collectCash ? "waiting" : "ready"}
           >
             {collectCash ? <Banknote size={14} /> : <Check size={14} />}
-            {collectCash
-              ? `Naqd: ${formatMoney(cashDue(order))}`
-              : "To'langan"}
+            {collectCash ? `Naqd: ${formatMoney(cashDue(order))}` : "To'langan"}
           </span>
           <span
             className={styles.badge}

@@ -30,6 +30,12 @@ import {
   assertBranchBelongsToActor,
   resolveRestaurantTenantId,
 } from "../../common/auth/tenant-scope";
+import { IdempotencyService } from "../../common/idempotency/idempotency.service";
+import {
+  buildIdempotencyScope,
+  hashCanonicalJson,
+  normalizeIdempotencyKey,
+} from "../../common/idempotency/idempotency-key";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { buildOrderListWhere } from "./orders-list-filters";
@@ -128,6 +134,7 @@ export class OrdersService {
     private readonly kitchenService: KitchenService,
     @Optional()
     private readonly telegramOrderNotificationService?: TelegramOrderNotificationService,
+    @Optional() private readonly idempotency?: IdempotencyService,
   ) {}
 
   async listPosCatalog(user: AuthenticatedUser) {
@@ -810,9 +817,7 @@ export class OrdersService {
         select: { id: true },
       });
       if (scopedOrders.length !== uniqueIds.length) {
-        throw new NotFoundException(
-          "Tanlangan buyurtmalarning biri topilmadi",
-        );
+        throw new NotFoundException("Tanlangan buyurtmalarning biri topilmadi");
       }
 
       const paymentIds = (
@@ -887,63 +892,94 @@ export class OrdersService {
     orderId: string,
     dto: AddOrderItemDto,
     user: AuthenticatedUser,
+    context?: OrderMutationContext,
   ) {
     const employeeId = requireEmployee(user);
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
-      const order = await tx.order.findUnique({ where: { id: orderId } });
+    const mutation = await this.runOrderMutation(
+      "item-add",
+      orderId,
+      dto,
+      user,
+      {
+        ...context,
+        expectedVersion: dto.expectedVersion ?? context?.expectedVersion,
+      },
+      (tx) =>
+        (async () => {
+          await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
+          const order = await tx.order.findUnique({ where: { id: orderId } });
 
-      if (!order) {
-        throw new NotFoundException("Order not found");
-      }
+          if (!order) {
+            throw new NotFoundException("Order not found");
+          }
 
-      assertOrderCanChange(order.status);
-      await assertEmployeeInBranch(tx, employeeId, order.branchId);
+          assertOrderCanChange(order.status);
+          await assertEmployeeInBranch(tx, employeeId, order.branchId);
 
-      const snapshot = await this.createItemSnapshot(tx, order.branchId, dto);
+          if (
+            dto.expectedVersion !== undefined &&
+            order.version !== dto.expectedVersion
+          ) {
+            throw new ConflictException({
+              error: "ORDER_VERSION_CONFLICT",
+              message: "Buyurtma boshqa qurilmada yangilangan",
+              details: { currentVersion: order.version },
+            });
+          }
 
-      const item = await tx.orderItem.create({
-        data: {
-          orderId,
-          productId: dto.productId,
-          variantId: dto.variantId ?? null,
-          createdById: employeeId,
-          productName: snapshot.productName,
-          variantName: snapshot.variantName ?? null,
-          quantity: snapshot.quantity,
-          unitPrice: snapshot.unitPrice,
-          totalPrice: snapshot.totalPrice,
-          modifierSnapshot: snapshot.modifiers,
-          notes: dto.notes ?? null,
-        },
-      });
+          const snapshot = await this.createItemSnapshot(
+            tx,
+            order.branchId,
+            dto,
+          );
 
-      await recalculateOrderTotals(tx, orderId);
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: { version: { increment: 1 } },
-        select: { version: true, orderState: true },
-      });
-      await recordOrderEvent(tx, {
-        orderId,
-        branchId: order.branchId,
-        aggregateVersion: updatedOrder.version,
-        eventType: ORDER_EVENTS.ITEM_ADDED,
-        actorType: "STAFF",
-        actorId: user.id,
-        source: "API",
-        previousState: updatedOrder.orderState,
-        newState: updatedOrder.orderState,
-        payload: {
-          itemId: item.id,
-          productId: dto.productId,
-          quantity: dto.quantity,
-        },
-        reasonCode: "ORDER_ITEM_ADDED",
-      });
-      return this.findOrderById(orderId, tx);
-    });
+          const item = await tx.orderItem.create({
+            data: {
+              orderId,
+              productId: dto.productId,
+              variantId: dto.variantId ?? null,
+              createdById: employeeId,
+              productName: snapshot.productName,
+              variantName: snapshot.variantName ?? null,
+              quantity: snapshot.quantity,
+              unitPrice: snapshot.unitPrice,
+              totalPrice: snapshot.totalPrice,
+              modifierSnapshot: snapshot.modifiers,
+              notes: dto.notes ?? null,
+            },
+          });
+
+          await recalculateOrderTotals(tx, orderId);
+          const updatedOrder = await tx.order.update({
+            where: { id: orderId },
+            data: { version: { increment: 1 } },
+            select: { version: true, orderState: true },
+          });
+          await recordOrderEvent(tx, {
+            orderId,
+            branchId: order.branchId,
+            aggregateVersion: updatedOrder.version,
+            eventType: ORDER_EVENTS.ITEM_ADDED,
+            actorType: "STAFF",
+            actorId: user.id,
+            source: context?.source ?? "API",
+            previousState: updatedOrder.orderState,
+            newState: updatedOrder.orderState,
+            payload: {
+              itemId: item.id,
+              productId: dto.productId,
+              quantity: dto.quantity,
+            },
+            reasonCode: "ORDER_ITEM_ADDED",
+            correlationId: context?.correlationId,
+            idempotencyKey: context?.idempotencyKey,
+          });
+          return this.findOrderById(orderId, tx);
+        })(),
+      () => this.findOrderByIdForActor(orderId, user, this.prisma),
+    );
+    return mutation.result;
   }
 
   async updateItem(
@@ -965,158 +1001,172 @@ export class OrdersService {
       );
     }
     const employeeId = requireEmployee(user);
+    const mutationContext = {
+      ...context,
+      expectedVersion: dto.expectedVersion ?? context?.expectedVersion,
+      eventType: context?.eventType ?? ORDER_EVENTS.ITEM_UPDATED,
+    };
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
-      const order = await tx.order.findUnique({ where: { id: orderId } });
+    const mutation = await this.runOrderMutation(
+      "item-update",
+      orderId,
+      { itemId, dto },
+      user,
+      mutationContext,
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
+        const order = await tx.order.findUnique({ where: { id: orderId } });
 
-      if (!order) {
-        throw new NotFoundException("Order not found");
-      }
-
-      assertOrderCanChange(order.status);
-      await assertEmployeeInBranch(tx, employeeId, order.branchId);
-
-      if (
-        context?.expectedVersion !== undefined &&
-        order.version !== context.expectedVersion
-      ) {
-        const completedReplay =
-          context.idempotencyKey && context.eventType
-            ? await tx.orderEvent.findFirst({
-                where: {
-                  orderId,
-                  eventType: context.eventType,
-                  idempotencyKey: context.idempotencyKey,
-                },
-                select: { id: true },
-              })
-            : null;
-        if (completedReplay) {
-          return this.findOrderById(orderId, tx);
+        if (!order) {
+          throw new NotFoundException("Order not found");
         }
-        throw new ConflictException({
-          message: "Buyurtma boshqa qurilmada yangilangan",
-          code: "ORDER_VERSION_CONFLICT",
-          details: { currentVersion: order.version },
+
+        assertOrderCanChange(order.status);
+        await assertEmployeeInBranch(tx, employeeId, order.branchId);
+
+        if (
+          mutationContext.expectedVersion !== undefined &&
+          order.version !== mutationContext.expectedVersion
+        ) {
+          const completedReplay =
+            mutationContext.idempotencyKey && mutationContext.eventType
+              ? await tx.orderEvent.findFirst({
+                  where: {
+                    orderId,
+                    eventType: mutationContext.eventType,
+                    idempotencyKey: mutationContext.idempotencyKey,
+                  },
+                  select: { id: true },
+                })
+              : null;
+          if (completedReplay) {
+            return this.findOrderById(orderId, tx);
+          }
+          throw new ConflictException({
+            message: "Buyurtma boshqa qurilmada yangilangan",
+            code: "ORDER_VERSION_CONFLICT",
+            details: { currentVersion: order.version },
+          });
+        }
+
+        const item = await tx.orderItem.findFirst({
+          where: { id: itemId, orderId },
         });
-      }
 
-      const item = await tx.orderItem.findFirst({
-        where: { id: itemId, orderId },
-      });
+        if (!item) {
+          throw new NotFoundException("Order item not found");
+        }
 
-      if (!item) {
-        throw new NotFoundException("Order item not found");
-      }
+        if (item.status === OrderItemStatus.CANCELLED) {
+          throw new BadRequestException(
+            "Buyurtma mahsuloti allaqachon bekor qilingan",
+          );
+        }
+        if (dto.status && dto.status !== OrderItemStatus.CANCELLED) {
+          throw new BadRequestException(
+            "Bekor qilingan mahsulot qayta faollashtirilmaydi",
+          );
+        }
 
-      if (item.status === OrderItemStatus.CANCELLED) {
-        throw new BadRequestException(
-          "Buyurtma mahsuloti allaqachon bekor qilingan",
+        const quantity = dto.quantity
+          ? new Prisma.Decimal(dto.quantity)
+          : item.quantity;
+        const modifierSnapshot =
+          dto.modifiers && item.productId
+            ? await createModifierSnapshot(tx, item.productId, dto.modifiers)
+            : (item.modifierSnapshot as ModifierSnapshot[] | null);
+        const totalPrice = calculateItemTotal(
+          item.unitPrice,
+          quantity,
+          modifierSnapshot ?? [],
         );
-      }
-      if (dto.status && dto.status !== OrderItemStatus.CANCELLED) {
-        throw new BadRequestException(
-          "Bekor qilingan mahsulot qayta faollashtirilmaydi",
-        );
-      }
+        const isCancelling = dto.status === OrderItemStatus.CANCELLED;
 
-      const quantity = dto.quantity
-        ? new Prisma.Decimal(dto.quantity)
-        : item.quantity;
-      const modifierSnapshot =
-        dto.modifiers && item.productId
-          ? await createModifierSnapshot(tx, item.productId, dto.modifiers)
-          : (item.modifierSnapshot as ModifierSnapshot[] | null);
-      const totalPrice = calculateItemTotal(
-        item.unitPrice,
-        quantity,
-        modifierSnapshot ?? [],
-      );
-      const isCancelling = dto.status === OrderItemStatus.CANCELLED;
+        if (isCancelling && item.stockDeductedAt) {
+          await restoreUnstartedOrderItemStock(tx, this.inventoryService, {
+            orderId,
+            orderItemId: item.id,
+            actorId: user.id,
+            reason: dto.cancellationReason ?? "Mahsulot bekor qilindi",
+          });
+        }
 
-      if (isCancelling && item.stockDeductedAt) {
-        await restoreUnstartedOrderItemStock(tx, this.inventoryService, {
+        const data: Prisma.OrderItemUncheckedUpdateInput = {
+          totalPrice,
+        };
+
+        if (dto.quantity) {
+          data.quantity = quantity;
+        }
+
+        if (dto.notes !== undefined) {
+          data.notes = dto.notes;
+        }
+
+        if (dto.modifiers) {
+          data.modifierSnapshot = modifierSnapshot ?? [];
+        }
+
+        if (dto.status) {
+          data.status = dto.status;
+        }
+
+        if (isCancelling) {
+          data.cancelledAt = new Date();
+          data.cancelledById = employeeId;
+          data.cancellationReason = dto.cancellationReason ?? null;
+        }
+
+        await tx.orderItem.update({
+          where: { id: itemId },
+          data,
+        });
+
+        if (isCancelling) {
+          await this.kitchenService.recordItemCancellation(tx, {
+            orderItemId: itemId,
+            actorId: user.id,
+            reason: dto.cancellationReason ?? "Mahsulot bekor qilindi",
+            reasonCode: context?.reasonCode ?? "ORDER_ITEM_CANCELLED",
+            ...(context?.correlationId
+              ? { correlationId: context.correlationId }
+              : {}),
+            ...(context?.idempotencyKey
+              ? { idempotencyKey: context.idempotencyKey }
+              : {}),
+          });
+        }
+
+        await recalculateOrderTotals(tx, orderId);
+        const updatedOrder = await tx.order.update({
+          where: { id: orderId },
+          data: { version: { increment: 1 } },
+          select: { version: true, orderState: true },
+        });
+        await recordOrderEvent(tx, {
           orderId,
-          orderItemId: item.id,
+          branchId: order.branchId,
+          aggregateVersion: updatedOrder.version,
+          eventType: isCancelling
+            ? ORDER_EVENTS.ITEM_CANCELLED
+            : ORDER_EVENTS.ITEM_UPDATED,
+          actorType: "STAFF",
           actorId: user.id,
-          reason: dto.cancellationReason ?? "Mahsulot bekor qilindi",
+          source: "API",
+          previousState: updatedOrder.orderState,
+          newState: updatedOrder.orderState,
+          payload: { itemId, status: dto.status ?? item.status },
+          reasonCode: isCancelling
+            ? (context?.reasonCode ?? "ORDER_ITEM_CANCELLED")
+            : "ORDER_ITEM_UPDATED",
+          correlationId: context?.correlationId,
+          idempotencyKey: context?.idempotencyKey,
         });
-      }
-
-      const data: Prisma.OrderItemUncheckedUpdateInput = {
-        totalPrice,
-      };
-
-      if (dto.quantity) {
-        data.quantity = quantity;
-      }
-
-      if (dto.notes !== undefined) {
-        data.notes = dto.notes;
-      }
-
-      if (dto.modifiers) {
-        data.modifierSnapshot = modifierSnapshot ?? [];
-      }
-
-      if (dto.status) {
-        data.status = dto.status;
-      }
-
-      if (isCancelling) {
-        data.cancelledAt = new Date();
-        data.cancelledById = employeeId;
-        data.cancellationReason = dto.cancellationReason ?? null;
-      }
-
-      await tx.orderItem.update({
-        where: { id: itemId },
-        data,
-      });
-
-      if (isCancelling) {
-        await this.kitchenService.recordItemCancellation(tx, {
-          orderItemId: itemId,
-          actorId: user.id,
-          reason: dto.cancellationReason ?? "Mahsulot bekor qilindi",
-          reasonCode: context?.reasonCode ?? "ORDER_ITEM_CANCELLED",
-          ...(context?.correlationId
-            ? { correlationId: context.correlationId }
-            : {}),
-          ...(context?.idempotencyKey
-            ? { idempotencyKey: context.idempotencyKey }
-            : {}),
-        });
-      }
-
-      await recalculateOrderTotals(tx, orderId);
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: { version: { increment: 1 } },
-        select: { version: true, orderState: true },
-      });
-      await recordOrderEvent(tx, {
-        orderId,
-        branchId: order.branchId,
-        aggregateVersion: updatedOrder.version,
-        eventType: isCancelling
-          ? ORDER_EVENTS.ITEM_CANCELLED
-          : ORDER_EVENTS.ITEM_UPDATED,
-        actorType: "STAFF",
-        actorId: user.id,
-        source: "API",
-        previousState: updatedOrder.orderState,
-        newState: updatedOrder.orderState,
-        payload: { itemId, status: dto.status ?? item.status },
-        reasonCode: isCancelling
-          ? (context?.reasonCode ?? "ORDER_ITEM_CANCELLED")
-          : "ORDER_ITEM_UPDATED",
-        correlationId: context?.correlationId,
-        idempotencyKey: context?.idempotencyKey,
-      });
-      return this.findOrderById(orderId, tx);
-    });
+        return this.findOrderById(orderId, tx);
+      },
+      () => this.findOrderByIdForActor(orderId, user, this.prisma),
+    );
+    return mutation.result;
   }
 
   async updateStatus(
@@ -1130,69 +1180,108 @@ export class OrdersService {
       ? (user.employeeId ?? null)
       : requireEmployee(user);
     const nextStatus = toStoredStatus(dto.status);
+    const mutationContext = {
+      ...context,
+      expectedVersion: dto.expectedVersion ?? context?.expectedVersion,
+    };
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
-      const order = force
-        ? await this.findOrderByIdForActor(orderId, user, tx)
-        : await tx.order.findUnique({ where: { id: orderId } });
+    const execution = await this.runOrderMutation(
+      "status-update",
+      orderId,
+      dto,
+      user,
+      mutationContext,
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
+        const order = force
+          ? await this.findOrderByIdForActor(orderId, user, tx)
+          : await tx.order.findUnique({ where: { id: orderId } });
 
-      if (!order) {
-        throw new NotFoundException("Order not found");
-      }
+        if (!order) {
+          throw new NotFoundException("Order not found");
+        }
 
-      if (!force) {
-        await assertEmployeeInBranch(tx, employeeId!, order.branchId);
-      }
+        if (!force) {
+          await assertEmployeeInBranch(tx, employeeId!, order.branchId);
+        }
 
-      if (
-        context?.expectedVersion !== undefined &&
-        order.version !== context.expectedVersion
-      ) {
-        const completedReplay =
-          context.idempotencyKey && context.eventType
-            ? await tx.orderEvent.findFirst({
-                where: {
-                  orderId,
-                  eventType: context.eventType,
-                  idempotencyKey: context.idempotencyKey,
-                },
-                select: { id: true },
-              })
-            : null;
+        if (
+          mutationContext.expectedVersion !== undefined &&
+          order.version !== mutationContext.expectedVersion
+        ) {
+          const completedReplay =
+            mutationContext.idempotencyKey && mutationContext.eventType
+              ? await tx.orderEvent.findFirst({
+                  where: {
+                    orderId,
+                    eventType: mutationContext.eventType,
+                    idempotencyKey: mutationContext.idempotencyKey,
+                  },
+                  select: { id: true },
+                })
+              : null;
 
-        if (completedReplay) {
+          if (completedReplay) {
+            return {
+              kitchenTicket: null,
+              order: await this.findOrderById(orderId, tx),
+            };
+          }
+
+          throw new ConflictException({
+            error: "ORDER_VERSION_CONFLICT",
+            message: "Order was changed by another operation",
+            details: { currentVersion: order.version },
+          });
+        }
+
+        if (
+          !force &&
+          (order.status === OrderStatus.COMPLETED ||
+            order.status === OrderStatus.CANCELLED)
+        ) {
+          throw new BadRequestException(
+            "Completed or cancelled orders cannot change status",
+          );
+        }
+
+        if (nextStatus === order.status) {
+          if (context?.eventType === ORDER_EVENTS.ACCEPTED) {
+            throw new ConflictException({
+              error: "ORDER_STATE_CONFLICT",
+              message: "Order has already been accepted",
+              details: { currentVersion: order.version },
+            });
+          }
+          if (
+            nextStatus === OrderStatus.CONFIRMED &&
+            (!force ||
+              order.status === OrderStatus.NEW ||
+              order.status === OrderStatus.CONFIRMED)
+          ) {
+            const confirmed = await this.confirmOrderForPreparation(tx, {
+              orderId,
+              userId: user.id,
+              employeeId,
+              reason: dto.reason ?? `POS status requested: ${dto.status}`,
+              correlationId: context?.correlationId,
+              idempotencyKey: context?.idempotencyKey,
+              source: context?.source ?? "API",
+              reasonCode: context?.reasonCode,
+            });
+
+            return {
+              kitchenTicket: confirmed.kitchenTicket,
+              order: await this.findOrderById(orderId, tx),
+            };
+          }
+
           return {
             kitchenTicket: null,
             order: await this.findOrderById(orderId, tx),
           };
         }
 
-        throw new ConflictException({
-          error: "ORDER_VERSION_CONFLICT",
-          message: "Order was changed by another operation",
-          details: { currentVersion: order.version },
-        });
-      }
-
-      if (
-        !force &&
-        (order.status === OrderStatus.COMPLETED ||
-          order.status === OrderStatus.CANCELLED)
-      ) {
-        throw new BadRequestException(
-          "Completed or cancelled orders cannot change status",
-        );
-      }
-
-      if (nextStatus === order.status) {
-        if (context?.eventType === ORDER_EVENTS.ACCEPTED) {
-          throw new ConflictException({
-            error: "ORDER_STATE_CONFLICT",
-            message: "Order has already been accepted",
-            details: { currentVersion: order.version },
-          });
-        }
         if (
           nextStatus === OrderStatus.CONFIRMED &&
           (!force ||
@@ -1216,149 +1305,128 @@ export class OrdersService {
           };
         }
 
+        if (
+          !force &&
+          order.status === OrderStatus.NEW &&
+          nextStatus !== OrderStatus.CANCELLED
+        ) {
+          throw new BadRequestException(
+            "Order must be confirmed before moving to preparation or service states",
+          );
+        }
+
+        if (nextStatus === OrderStatus.CANCELLED) {
+          await restoreUnstartedOrderStock(tx, this.inventoryService, {
+            orderId,
+            actorId: user.id,
+            reason: dto.reason ?? "Buyurtma bekor qilindi",
+          });
+        }
+
+        const data: Prisma.OrderUpdateInput = {
+          status: nextStatus,
+          orderState: orderStateForLegacyStatus(nextStatus),
+          version: { increment: 1 },
+        };
+
+        if (nextStatus === OrderStatus.SERVED) {
+          if (employeeId) data.servedBy = { connect: { id: employeeId } };
+        }
+
+        if (nextStatus === OrderStatus.COMPLETED) {
+          data.closedAt = new Date();
+          if (employeeId) data.closedBy = { connect: { id: employeeId } };
+        }
+
+        if (nextStatus === OrderStatus.CANCELLED) {
+          data.cancelledAt = new Date();
+          if (employeeId) data.cancelledBy = { connect: { id: employeeId } };
+          data.cancellationReason = dto.reason ?? null;
+        }
+
+        const updated = await tx.order.update({
+          where: { id: orderId },
+          data,
+          select: { version: true, orderState: true },
+        });
+
+        await syncKitchenTickets(tx, orderId, nextStatus);
+
+        if (
+          order.tableId &&
+          (nextStatus === OrderStatus.COMPLETED ||
+            nextStatus === OrderStatus.CANCELLED)
+        ) {
+          await releaseTableIfNoActiveOrders(tx, order.tableId);
+        }
+
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId,
+            fromStatus: order.status,
+            toStatus: nextStatus,
+            changedByUserId: user.id,
+            changedByEmployeeId: employeeId,
+            reason: dto.reason ?? `POS status requested: ${dto.status}`,
+          },
+        });
+
+        const eventType =
+          context?.eventType ??
+          (nextStatus === OrderStatus.CANCELLED
+            ? ORDER_EVENTS.CANCELLED
+            : nextStatus === OrderStatus.COMPLETED
+              ? ORDER_EVENTS.COMPLETED
+              : ORDER_EVENTS.LEGACY_STATUS_CHANGED);
+        await recordOrderEvent(tx, {
+          orderId,
+          branchId: order.branchId,
+          aggregateVersion: updated.version,
+          eventType,
+          actorType: "STAFF",
+          actorId: user.id,
+          source: context?.source ?? "API",
+          previousState: order.orderState,
+          newState: updated.orderState,
+          payload: { fromStatus: order.status, toStatus: nextStatus, force },
+          reasonCode:
+            context?.reasonCode ??
+            (force ? `ADMIN_FORCE_${nextStatus}` : `LEGACY_${nextStatus}`),
+          correlationId: context?.correlationId,
+          idempotencyKey: context?.idempotencyKey,
+        });
+
+        if (nextStatus === OrderStatus.CANCELLED) {
+          await ensureCancellationReceipt(tx, orderId, dto.reason);
+        }
+
         return {
           kitchenTicket: null,
           order: await this.findOrderById(orderId, tx),
         };
-      }
-
-      if (
-        nextStatus === OrderStatus.CONFIRMED &&
-        (!force ||
-          order.status === OrderStatus.NEW ||
-          order.status === OrderStatus.CONFIRMED)
-      ) {
-        const confirmed = await this.confirmOrderForPreparation(tx, {
-          orderId,
-          userId: user.id,
-          employeeId,
-          reason: dto.reason ?? `POS status requested: ${dto.status}`,
-          correlationId: context?.correlationId,
-          idempotencyKey: context?.idempotencyKey,
-          source: context?.source ?? "API",
-          reasonCode: context?.reasonCode,
-        });
-
-        return {
-          kitchenTicket: confirmed.kitchenTicket,
-          order: await this.findOrderById(orderId, tx),
-        };
-      }
-
-      if (
-        !force &&
-        order.status === OrderStatus.NEW &&
-        nextStatus !== OrderStatus.CANCELLED
-      ) {
-        throw new BadRequestException(
-          "Order must be confirmed before moving to preparation or service states",
-        );
-      }
-
-      if (nextStatus === OrderStatus.CANCELLED) {
-        await restoreUnstartedOrderStock(tx, this.inventoryService, {
-          orderId,
-          actorId: user.id,
-          reason: dto.reason ?? "Buyurtma bekor qilindi",
-        });
-      }
-
-      const data: Prisma.OrderUpdateInput = {
-        status: nextStatus,
-        orderState: orderStateForLegacyStatus(nextStatus),
-        version: { increment: 1 },
-      };
-
-      if (nextStatus === OrderStatus.SERVED) {
-        if (employeeId) data.servedBy = { connect: { id: employeeId } };
-      }
-
-      if (nextStatus === OrderStatus.COMPLETED) {
-        data.closedAt = new Date();
-        if (employeeId) data.closedBy = { connect: { id: employeeId } };
-      }
-
-      if (nextStatus === OrderStatus.CANCELLED) {
-        data.cancelledAt = new Date();
-        if (employeeId) data.cancelledBy = { connect: { id: employeeId } };
-        data.cancellationReason = dto.reason ?? null;
-      }
-
-      const updated = await tx.order.update({
-        where: { id: orderId },
-        data,
-        select: { version: true, orderState: true },
-      });
-
-      await syncKitchenTickets(tx, orderId, nextStatus);
-
-      if (
-        order.tableId &&
-        (nextStatus === OrderStatus.COMPLETED ||
-          nextStatus === OrderStatus.CANCELLED)
-      ) {
-        await releaseTableIfNoActiveOrders(tx, order.tableId);
-      }
-
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId,
-          fromStatus: order.status,
-          toStatus: nextStatus,
-          changedByUserId: user.id,
-          changedByEmployeeId: employeeId,
-          reason: dto.reason ?? `POS status requested: ${dto.status}`,
-        },
-      });
-
-      const eventType =
-        context?.eventType ??
-        (nextStatus === OrderStatus.CANCELLED
-          ? ORDER_EVENTS.CANCELLED
-          : nextStatus === OrderStatus.COMPLETED
-            ? ORDER_EVENTS.COMPLETED
-            : ORDER_EVENTS.LEGACY_STATUS_CHANGED);
-      await recordOrderEvent(tx, {
-        orderId,
-        branchId: order.branchId,
-        aggregateVersion: updated.version,
-        eventType,
-        actorType: "STAFF",
-        actorId: user.id,
-        source: context?.source ?? "API",
-        previousState: order.orderState,
-        newState: updated.orderState,
-        payload: { fromStatus: order.status, toStatus: nextStatus, force },
-        reasonCode:
-          context?.reasonCode ??
-          (force ? `ADMIN_FORCE_${nextStatus}` : `LEGACY_${nextStatus}`),
-        correlationId: context?.correlationId,
-        idempotencyKey: context?.idempotencyKey,
-      });
-
-      if (nextStatus === OrderStatus.CANCELLED) {
-        await ensureCancellationReceipt(tx, orderId, dto.reason);
-      }
-
-      return {
+      },
+      async () => ({
         kitchenTicket: null,
-        order: await this.findOrderById(orderId, tx),
-      };
-    });
+        order: await this.findOrderByIdForActor(orderId, user, this.prisma),
+      }),
+    );
+    const result = execution.result;
 
-    if (nextStatus === OrderStatus.CONFIRMED) {
+    if (!execution.replayed && nextStatus === OrderStatus.CONFIRMED) {
       this.kitchenService.emitOrderConfirmed(result.order);
     }
 
-    if (result.kitchenTicket) {
+    if (!execution.replayed && result.kitchenTicket) {
       this.kitchenService.emitOrderSentToKitchen(result.kitchenTicket);
     }
 
-    this.kitchenService.emitOrderStatusChanged(result.order);
-    kitchenEvents.emit(kitchenOrderStatusChangedEvent, {
-      orderId,
-      action: "refresh",
-    });
+    if (!execution.replayed) {
+      this.kitchenService.emitOrderStatusChanged(result.order);
+      kitchenEvents.emit(kitchenOrderStatusChangedEvent, {
+        orderId,
+        action: "refresh",
+      });
+    }
     return result.order;
   }
 
@@ -1678,6 +1746,85 @@ export class OrdersService {
       }
     }
   }
+  private async runOrderMutation<T>(
+    action: string,
+    orderId: string,
+    payload: unknown,
+    user: AuthenticatedUser,
+    context: OrderMutationContext,
+    mutate: (tx: TransactionClient) => Promise<T>,
+    replay: () => Promise<T>,
+  ): Promise<{ result: T; replayed: boolean }> {
+    const key = context.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+
+    if (!key) {
+      return {
+        result: await this.prisma.$transaction(mutate),
+        replayed: false,
+      };
+    }
+
+    if (!this.idempotency) {
+      throw new BadRequestException("Order idempotency is unavailable");
+    }
+
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const branchId = resolveBranchScope(user) ?? "global";
+    const requestHash = hashCanonicalJson({ action, orderId, payload });
+    const correlationId = context.correlationId ?? key;
+    const decision = await this.idempotency.start({
+      scope: buildIdempotencyScope(
+        "order-mutation",
+        action,
+        tenantId,
+        branchId,
+        orderId,
+        user.id,
+      ),
+      key,
+      requestHash,
+      correlationId,
+      actorId: user.id,
+      expiresAt: new Date(Date.now() + 5 * 60_000),
+    });
+
+    if (decision.kind === "REPLAY") {
+      if (
+        decision.record.resourceType !== "ORDER" ||
+        decision.record.resourceId !== orderId
+      ) {
+        throw new ConflictException("Previous order mutation did not complete");
+      }
+      return { result: await replay(), replayed: true };
+    }
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const value = await mutate(tx);
+        await this.idempotency!.complete(
+          decision.record.id,
+          {
+            requestHash,
+            responseStatus: 200,
+            responseBody: { orderId, action },
+            resourceType: "ORDER",
+            resourceId: orderId,
+          },
+          tx,
+        );
+        return value;
+      });
+      return { result, replayed: false };
+    } catch (error) {
+      await this.idempotency
+        .fail(decision.record.id, requestHash, "ORDER_MUTATION_FAILED")
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
   private async findOrderByIdForActor(
     id: string,
     user: AuthenticatedUser,
@@ -1700,7 +1847,6 @@ export class OrdersService {
 
     return order;
   }
-
 
   private async findOrderById(
     id: string,

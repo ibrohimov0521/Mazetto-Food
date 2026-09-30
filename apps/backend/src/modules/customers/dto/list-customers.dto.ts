@@ -62,6 +62,12 @@ export class UpdateCourierOrderStatusDto {
   status!: CourierOrderStatus;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  expectedVersion?: number;
+
+  @IsOptional()
   @IsString()
   @Max(160)
   idempotencyKey?: string;

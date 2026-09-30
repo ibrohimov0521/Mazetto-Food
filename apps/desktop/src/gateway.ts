@@ -22,13 +22,7 @@ const KNOWN_OFFLINE_ERROR = new Error(
   "Desktop upstream is already marked offline",
 );
 const UPSTREAM_UNAVAILABLE_STATUSES = new Set([
-  502,
-  503,
-  504,
-  521,
-  522,
-  523,
-  524,
+  502, 503, 504, 521, 522, 523, 524,
 ]);
 
 export type DesktopGatewayOptions = {
@@ -238,7 +232,9 @@ export class DesktopGateway {
         "application/json; charset=utf-8";
 
       if (UPSTREAM_UNAVAILABLE_STATUSES.has(upstream.status)) {
-        this.markOffline(new Error("Upstream returned HTTP " + upstream.status));
+        this.markOffline(
+          new Error("Upstream returned HTTP " + upstream.status),
+        );
         const cached =
           method === "GET" && !isRealtimeCatchUp
             ? this.store.getCachedResponse(cacheKey)
@@ -271,7 +267,12 @@ export class DesktopGateway {
             request,
             definition: commandDefinition,
           });
-          this.sendQueuedMutationResponse(response, url.pathname, queued.command, body);
+          this.sendQueuedMutationResponse(
+            response,
+            url.pathname,
+            queued.command,
+            body,
+          );
           return;
         }
 
@@ -294,7 +295,9 @@ export class DesktopGateway {
         rememberOnlinePosSequence(this.store, responseBody);
       }
       if (authorization) {
-        this.trackBackgroundTask(this.flushPendingMutations(authorization, authScope));
+        this.trackBackgroundTask(
+          this.flushPendingMutations(authorization, authScope),
+        );
       }
 
       if (
@@ -369,7 +372,12 @@ export class DesktopGateway {
           request,
           definition: commandDefinition,
         });
-        this.sendQueuedMutationResponse(response, url.pathname, queued.command, body);
+        this.sendQueuedMutationResponse(
+          response,
+          url.pathname,
+          queued.command,
+          body,
+        );
         return;
       }
 
@@ -568,10 +576,11 @@ export class DesktopGateway {
     command: PendingOutboxCommand,
     authorization: string,
   ): Promise<void> {
-    this.store.markMutationSending(command.id);
+    const latestCommand = this.store.getOutboxCommand(command.id) ?? command;
+    this.store.markMutationSending(latestCommand.id);
 
     try {
-      const payload = JSON.parse(command.payloadJson) as {
+      const payload = JSON.parse(latestCommand.payloadJson) as {
         body?: string;
         commandType?: string;
         headers?: Record<string, string>;
@@ -651,7 +660,23 @@ export class DesktopGateway {
             authScope: command.authScope,
           });
         }
-        this.store.markMutationAcknowledged(command.id);
+        const orderAggregateId =
+          payload.localAggregateId ?? command.aggregateId;
+        const serverVersion = extractServerVersion(responseText);
+        if (
+          orderAggregateId &&
+          serverVersion !== null &&
+          (command.aggregateType === "orders" || payload.localAggregateId)
+        ) {
+          this.store.acknowledgeOrderMutation(
+            command.id,
+            command.authScope,
+            orderAggregateId,
+            serverVersion,
+          );
+        } else {
+          this.store.markMutationAcknowledged(command.id);
+        }
         this.mode = "online";
         this.lastOnlineAt = new Date().toISOString();
         this.lastError = null;
@@ -776,7 +801,9 @@ export class DesktopGateway {
 
     if (action === "retry") {
       for (const [authScope, authorization] of this.activeAuthorizations) {
-        this.trackBackgroundTask(this.flushPendingMutations(authorization, authScope));
+        this.trackBackgroundTask(
+          this.flushPendingMutations(authorization, authScope),
+        );
       }
     }
 
@@ -924,7 +951,8 @@ export class DesktopGateway {
       if (this.mode === "offline" && !this.probeRetryTimer) {
         this.probeRetryTimer = setTimeout(() => {
           this.probeRetryTimer = null;
-          if (this.mode === "offline") this.trackBackgroundTask(this.probeUpstream());
+          if (this.mode === "offline")
+            this.trackBackgroundTask(this.probeUpstream());
         }, retryIn);
         this.probeRetryTimer.unref();
       }
@@ -946,7 +974,9 @@ export class DesktopGateway {
       this.lastOnlineAt = new Date().toISOString();
       this.lastError = null;
       for (const [authScope, authorization] of this.activeAuthorizations) {
-        this.trackBackgroundTask(this.flushPendingMutations(authorization, authScope));
+        this.trackBackgroundTask(
+          this.flushPendingMutations(authorization, authScope),
+        );
       }
     } catch (error) {
       if (!this.stopping) this.markOffline(error);
@@ -957,7 +987,9 @@ export class DesktopGateway {
 
   private trackBackgroundTask(task: Promise<void>): void {
     this.backgroundTasks.add(task);
-    void task.finally(() => this.backgroundTasks.delete(task)).catch(() => undefined);
+    void task
+      .finally(() => this.backgroundTasks.delete(task))
+      .catch(() => undefined);
   }
 
   private setCorsHeaders(
@@ -1013,6 +1045,36 @@ function extractServerId(source: string): string | null {
   } catch {
     return null;
   }
+}
+
+function extractServerVersion(source: string): number | null {
+  try {
+    return findServerVersion(JSON.parse(source));
+  } catch {
+    return null;
+  }
+}
+
+function findServerVersion(value: unknown): number | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findServerVersion(item);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (Number.isInteger(record.version) && Number(record.version) >= 0) {
+    return Number(record.version);
+  }
+  for (const key of ["data", "order", "customerOrder", "result"]) {
+    if (key in record) {
+      const found = findServerVersion(record[key]);
+      if (found !== null) return found;
+    }
+  }
+  return null;
 }
 
 function findServerId(value: unknown): string | null {

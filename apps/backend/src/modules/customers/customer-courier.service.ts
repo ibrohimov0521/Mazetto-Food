@@ -22,7 +22,11 @@ import {
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentsService } from "../payments/payments.service";
-import { eventForLegacyStatus, orderStateForLegacyStatus, recordOrderEvent } from "../orders/order-events";
+import {
+  eventForLegacyStatus,
+  orderStateForLegacyStatus,
+  recordOrderEvent,
+} from "../orders/order-events";
 import {
   kitchenEvents,
   kitchenOrderStatusChangedEvent,
@@ -120,7 +124,11 @@ export class CustomerCourierService {
     user: AuthenticatedUser,
   ) {
     const employeeId = requireEmployee(user);
-    const scope = await resolveRestaurantScope(this.prisma, user, query.branchId);
+    const scope = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const day = todayTashkentRange();
     const status = toOrderStatus(query.status);
     const search = query.search?.trim();
@@ -135,7 +143,10 @@ export class CustomerCourierService {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
         type: "DELIVERY",
-        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
+        branch: {
+          tenantId: scope.tenantId,
+          ...(scope.branchId ? { id: scope.branchId } : {}),
+        },
         order: {
           createdAt: { gte: day.start, lt: day.end },
           status: status ?? {
@@ -229,7 +240,11 @@ export class CustomerCourierService {
     user: AuthenticatedUser,
   ) {
     const employeeId = requireEmployee(user);
-    const scope = await resolveRestaurantScope(this.prisma, user, query.branchId);
+    const scope = await resolveRestaurantScope(
+      this.prisma,
+      user,
+      query.branchId,
+    );
     const day = todayTashkentRange();
     const status = toOrderStatus(query.status);
     const search = query.search?.trim();
@@ -237,7 +252,10 @@ export class CustomerCourierService {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
         type: "DELIVERY",
-        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
+        branch: {
+          tenantId: scope.tenantId,
+          ...(scope.branchId ? { id: scope.branchId } : {}),
+        },
         order: {
           servedById: employeeId,
           createdAt: { gte: day.start, lt: day.end },
@@ -325,18 +343,19 @@ export class CustomerCourierService {
           customerOrderId,
           employeeId,
           status: dto.status,
+          expectedVersion: dto.expectedVersion ?? null,
           shiftId: dto.shiftId ?? null,
           paymentMethodCode: dto.paymentMethodCode ?? null,
           amount: dto.amount ?? null,
         })
       : undefined;
-    let decision:
-      | Awaited<ReturnType<IdempotencyService["start"]>>
-      | undefined;
+    let decision: Awaited<ReturnType<IdempotencyService["start"]>> | undefined;
 
     if (idempotencyKey && requestHash) {
       if (!this.idempotency) {
-        throw new BadRequestException("Courier status idempotency is unavailable");
+        throw new BadRequestException(
+          "Courier status idempotency is unavailable",
+        );
       }
       decision = await this.idempotency.start({
         scope: buildIdempotencyScope(
@@ -358,7 +377,9 @@ export class CustomerCourierService {
           decision.record.resourceType !== "CUSTOMER_ORDER" ||
           decision.record.resourceId !== customerOrderId
         ) {
-          throw new ConflictException("Previous courier update did not complete");
+          throw new ConflictException(
+            "Previous courier update did not complete",
+          );
         }
         const previous = await this.prisma.customerOrder.findFirst({
           where: {
@@ -380,7 +401,9 @@ export class CustomerCourierService {
           (previous.order.cancelledById &&
             previous.order.cancelledById !== employeeId)
         ) {
-          throw new ForbiddenException("Bu buyurtmani boshqa kuryer olib ketgan.");
+          throw new ForbiddenException(
+            "Bu buyurtmani boshqa kuryer olib ketgan.",
+          );
         }
         return withDerivedCustomerOrderStatus(previous);
       }
@@ -389,170 +412,218 @@ export class CustomerCourierService {
     let customerOrder;
     try {
       customerOrder = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id JOIN "branches" b ON b.id = c."branchId" WHERE c.id = ${customerOrderId} AND b."tenantId" = ${scope.tenantId} FOR UPDATE OF o`;
-      const existing = await tx.customerOrder.findFirst({
-        where: { id: customerOrderId, branch: { tenantId: scope.tenantId } },
-        include: { order: { include: { payments: true } } },
-      });
+        await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id JOIN "branches" b ON b.id = c."branchId" WHERE c.id = ${customerOrderId} AND b."tenantId" = ${scope.tenantId} FOR UPDATE OF o`;
+        const existing = await tx.customerOrder.findFirst({
+          where: { id: customerOrderId, branch: { tenantId: scope.tenantId } },
+          include: { order: { include: { payments: true } } },
+        });
 
-      if (!existing) {
-        throw new NotFoundException("Online order not found");
-      }
+        if (!existing) {
+          throw new NotFoundException("Online order not found");
+        }
 
-      if (existing.type !== "DELIVERY") {
-        throw new BadRequestException(
-          "Only delivery orders can be updated by courier",
-        );
-      }
-
-      if (scope.branchId && existing.branchId !== scope.branchId) {
-        throw new ForbiddenException("Cannot access another branch");
-      }
-
-      if (
-        existing.order.status === OrderStatus.COMPLETED ||
-        existing.order.status === OrderStatus.CANCELLED
-      ) {
-        throw new BadRequestException(
-          "Completed or cancelled orders cannot change status",
-        );
-      }
-
-      if (
-        existing.order.servedById &&
-        existing.order.servedById !== employeeId
-      ) {
-        throw new ForbiddenException(
-          "Bu buyurtmani boshqa kuryer olib ketgan.",
-        );
-      }
-
-      if (existing.order.status !== nextStatus) {
-        if (
-          existing.order.status === OrderStatus.SERVED &&
-          nextStatus === OrderStatus.READY
-        ) {
+        if (existing.type !== "DELIVERY") {
           throw new BadRequestException(
-            "Yo'ldagi buyurtmani tayyor holatiga qaytarib bo'lmaydi.",
+            "Only delivery orders can be updated by courier",
           );
         }
+
+        if (scope.branchId && existing.branchId !== scope.branchId) {
+          throw new ForbiddenException("Cannot access another branch");
+        }
+
         if (
-          nextStatus !== OrderStatus.CANCELLED &&
-          existing.order.status !== OrderStatus.READY &&
-          existing.order.status !== OrderStatus.SERVED
+          dto.expectedVersion !== undefined &&
+          existing.order.version !== dto.expectedVersion
+        ) {
+          throw new ConflictException({
+            error: "ORDER_VERSION_CONFLICT",
+            message: "Buyurtma boshqa qurilmada yangilangan",
+            details: { currentVersion: existing.order.version },
+          });
+        }
+
+        if (
+          existing.order.status === OrderStatus.COMPLETED ||
+          existing.order.status === OrderStatus.CANCELLED
         ) {
           throw new BadRequestException(
-            "Buyurtma hali oshxonada tayyor bo'lmagan.",
+            "Completed or cancelled orders cannot change status",
           );
         }
-        if (nextStatus === OrderStatus.COMPLETED) {
-          const paidTotal = existing.order.payments
-            .filter(payment => payment.status === PaymentStatus.PAID || payment.status === PaymentStatus.SUCCESS)
-            .reduce((total, payment) => total.add(payment.amount), new Prisma.Decimal(0));
-          const outstanding = existing.order.total.sub(paidTotal);
-          if (outstanding.greaterThan(0)) {
-            if (dto.amount !== undefined && !outstanding.equals(dto.amount)) {
-              throw new BadRequestException("Buyurtmani yakunlash uchun qolgan summa to'liq qabul qilinishi kerak");
-            }
-            const courierShift = await tx.shift.findFirst({
-              where: { employeeId, branchId: existing.branchId, status: ShiftStatus.OPEN },
-              orderBy: { openedAt: "desc" },
-              select: { id: true },
-            });
-            if (!courierShift) throw new BadRequestException("Naqd pulni yig'ishdan oldin xodim smenasi ochiq bo'lishi shart");
-            if (dto.shiftId && dto.shiftId !== courierShift.id) throw new ForbiddenException("To'lov faqat o'zingizning ochiq smenangizga yoziladi");
-            await this.paymentsService.processOrderPayment({
-              orderId: existing.orderId,
-              idempotencyKey: idempotencyKey ?? "courier-cash-" + existing.orderId,
-              shiftId: courierShift.id,
-              payments: [{ paymentMethodCode: dto.paymentMethodCode ?? "CASH", amount: Number(outstanding) }],
-            }, user, undefined, undefined, undefined, tx);
+
+        if (
+          existing.order.servedById &&
+          existing.order.servedById !== employeeId
+        ) {
+          throw new ForbiddenException(
+            "Bu buyurtmani boshqa kuryer olib ketgan.",
+          );
+        }
+
+        if (existing.order.status !== nextStatus) {
+          if (
+            existing.order.status === OrderStatus.SERVED &&
+            nextStatus === OrderStatus.READY
+          ) {
+            throw new BadRequestException(
+              "Yo'ldagi buyurtmani tayyor holatiga qaytarib bo'lmaydi.",
+            );
           }
+          if (
+            nextStatus !== OrderStatus.CANCELLED &&
+            existing.order.status !== OrderStatus.READY &&
+            existing.order.status !== OrderStatus.SERVED
+          ) {
+            throw new BadRequestException(
+              "Buyurtma hali oshxonada tayyor bo'lmagan.",
+            );
+          }
+          if (nextStatus === OrderStatus.COMPLETED) {
+            const paidTotal = existing.order.payments
+              .filter(
+                (payment) =>
+                  payment.status === PaymentStatus.PAID ||
+                  payment.status === PaymentStatus.SUCCESS,
+              )
+              .reduce(
+                (total, payment) => total.add(payment.amount),
+                new Prisma.Decimal(0),
+              );
+            const outstanding = existing.order.total.sub(paidTotal);
+            if (outstanding.greaterThan(0)) {
+              if (dto.amount !== undefined && !outstanding.equals(dto.amount)) {
+                throw new BadRequestException(
+                  "Buyurtmani yakunlash uchun qolgan summa to'liq qabul qilinishi kerak",
+                );
+              }
+              const courierShift = await tx.shift.findFirst({
+                where: {
+                  employeeId,
+                  branchId: existing.branchId,
+                  status: ShiftStatus.OPEN,
+                },
+                orderBy: { openedAt: "desc" },
+                select: { id: true },
+              });
+              if (!courierShift)
+                throw new BadRequestException(
+                  "Naqd pulni yig'ishdan oldin xodim smenasi ochiq bo'lishi shart",
+                );
+              if (dto.shiftId && dto.shiftId !== courierShift.id)
+                throw new ForbiddenException(
+                  "To'lov faqat o'zingizning ochiq smenangizga yoziladi",
+                );
+              await this.paymentsService.processOrderPayment(
+                {
+                  orderId: existing.orderId,
+                  idempotencyKey:
+                    idempotencyKey ?? "courier-cash-" + existing.orderId,
+                  shiftId: courierShift.id,
+                  payments: [
+                    {
+                      paymentMethodCode: dto.paymentMethodCode ?? "CASH",
+                      amount: Number(outstanding),
+                    },
+                  ],
+                },
+                user,
+                undefined,
+                undefined,
+                undefined,
+                tx,
+              );
+            }
+          }
+
+          const updated = await tx.order.update({
+            where: { id: existing.orderId },
+            data: {
+              status: nextStatus,
+              orderState: orderStateForLegacyStatus(nextStatus),
+              version: { increment: 1 },
+              ...(nextStatus === OrderStatus.SERVED ||
+              nextStatus === OrderStatus.COMPLETED
+                ? { servedBy: { connect: { id: employeeId } } }
+                : {}),
+              ...(nextStatus === OrderStatus.COMPLETED
+                ? {
+                    closedAt: new Date(),
+                    closedBy: { connect: { id: employeeId } },
+                  }
+                : {}),
+              ...(nextStatus === OrderStatus.CANCELLED
+                ? {
+                    cancelledAt: new Date(),
+                    cancellationReason: "Courier cancelled delivery",
+                    cancelledBy: { connect: { id: employeeId } },
+                  }
+                : {}),
+            },
+          });
+
+          await recordOrderEvent(tx, {
+            orderId: existing.orderId,
+            branchId: existing.branchId,
+            aggregateVersion: updated.version,
+            eventType: eventForLegacyStatus(nextStatus),
+            actorType: "STAFF",
+            actorId: user.id,
+            source: "API",
+            previousState: existing.order.orderState,
+            newState: updated.orderState,
+            payload: {
+              fromStatus: existing.order.status,
+              toStatus: nextStatus,
+            },
+            reasonCode: `COURIER_${nextStatus}`,
+            correlationId: context?.correlationId,
+            idempotencyKey,
+          });
+
+          await syncKitchenTickets(tx, existing.orderId, nextStatus);
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: existing.orderId,
+              fromStatus: existing.order.status,
+              toStatus: nextStatus,
+              changedByUserId: user.id,
+              changedByEmployeeId: user.employeeId ?? null,
+              reason: `Courier status requested: ${dto.status}`,
+            },
+          });
         }
 
-        const updated = await tx.order.update({
-          where: { id: existing.orderId },
-          data: {
-            status: nextStatus,
-            orderState: orderStateForLegacyStatus(nextStatus),
-            version: { increment: 1 },
-            ...(nextStatus === OrderStatus.SERVED ||
-            nextStatus === OrderStatus.COMPLETED
-              ? { servedBy: { connect: { id: employeeId } } }
-              : {}),
-            ...(nextStatus === OrderStatus.COMPLETED
-              ? {
-                  closedAt: new Date(),
-                  closedBy: { connect: { id: employeeId } },
-                }
-              : {}),
-            ...(nextStatus === OrderStatus.CANCELLED
-              ? {
-                  cancelledAt: new Date(),
-                  cancellationReason: "Courier cancelled delivery",
-                  cancelledBy: { connect: { id: employeeId } },
-                }
-              : {}),
-          },
+        const result = await tx.customerOrder.findUniqueOrThrow({
+          where: { id: customerOrderId },
+          include: COURIER_STATUS_RESULT_INCLUDE,
         });
-
-        await recordOrderEvent(tx, {
-          orderId: existing.orderId,
-          branchId: existing.branchId,
-          aggregateVersion: updated.version,
-          eventType: eventForLegacyStatus(nextStatus),
-          actorType: "STAFF",
-          actorId: user.id,
-          source: "API",
-          previousState: existing.order.orderState,
-          newState: updated.orderState,
-          payload: { fromStatus: existing.order.status, toStatus: nextStatus },
-          reasonCode: `COURIER_${nextStatus}`,
-          correlationId: context?.correlationId,
-          idempotencyKey,
-        });
-
-        await syncKitchenTickets(tx, existing.orderId, nextStatus);
-        await tx.orderStatusHistory.create({
-          data: {
-            orderId: existing.orderId,
-            fromStatus: existing.order.status,
-            toStatus: nextStatus,
-            changedByUserId: user.id,
-            changedByEmployeeId: user.employeeId ?? null,
-            reason: `Courier status requested: ${dto.status}`,
-          },
-        });
-      }
-
-      const result = await tx.customerOrder.findUniqueOrThrow({
-        where: { id: customerOrderId },
-        include: COURIER_STATUS_RESULT_INCLUDE,
-      });
-      if (decision?.kind === "CLAIMED" && requestHash) {
-        await this.idempotency!.complete(
-          decision.record.id,
-          {
-            requestHash,
-            responseStatus: 200,
-            responseBody: {
-              customerOrderId: result.id,
-              orderId: result.orderId,
-              status: result.order.status,
+        if (decision?.kind === "CLAIMED" && requestHash) {
+          await this.idempotency!.complete(
+            decision.record.id,
+            {
+              requestHash,
+              responseStatus: 200,
+              responseBody: {
+                customerOrderId: result.id,
+                orderId: result.orderId,
+                status: result.order.status,
+              },
+              resourceType: "CUSTOMER_ORDER",
+              resourceId: result.id,
             },
-            resourceType: "CUSTOMER_ORDER",
-            resourceId: result.id,
-          },
-          tx,
-        );
-      }
-      return result;
+            tx,
+          );
+        }
+        return result;
       });
     } catch (error) {
       if (decision?.kind === "CLAIMED" && requestHash) {
-        await this.idempotency!
-          .fail(decision.record.id, requestHash, "COURIER_STATUS_UPDATE_FAILED")
-          .catch(() => undefined);
+        await this.idempotency!.fail(
+          decision.record.id,
+          requestHash,
+          "COURIER_STATUS_UPDATE_FAILED",
+        ).catch(() => undefined);
       }
       throw error;
     }
@@ -574,7 +645,10 @@ export class CustomerCourierService {
     const couriers = await this.prisma.employee.findMany({
       where: {
         status: "ACTIVE",
-        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
+        branch: {
+          tenantId: scope.tenantId,
+          ...(scope.branchId ? { id: scope.branchId } : {}),
+        },
         user: { roles: { some: { role: { code: "COURIER" } } } },
       },
       select: {
@@ -604,7 +678,10 @@ export class CustomerCourierService {
           servedById: { in: courierIds },
           type: "DELIVERY",
           status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
-          branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
+          branch: {
+            tenantId: scope.tenantId,
+            ...(scope.branchId ? { id: scope.branchId } : {}),
+          },
         },
         _count: { _all: true },
       }),
@@ -616,7 +693,10 @@ export class CustomerCourierService {
           status: OrderStatus.COMPLETED,
           // "Bugun" Toshkent bo'yicha — UTC yarim tunda hisob nolga tushmasin.
           updatedAt: { gte: day.start, lt: day.end },
-          branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
+          branch: {
+            tenantId: scope.tenantId,
+            ...(scope.branchId ? { id: scope.branchId } : {}),
+          },
         },
         _count: { _all: true },
       }),
@@ -654,7 +734,10 @@ export class CustomerCourierService {
     const customerOrders = await this.prisma.customerOrder.findMany({
       where: {
         type: "DELIVERY",
-        branch: { tenantId: scope.tenantId, ...(scope.branchId ? { id: scope.branchId } : {}) },
+        branch: {
+          tenantId: scope.tenantId,
+          ...(scope.branchId ? { id: scope.branchId } : {}),
+        },
         order: {
           status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
         },
