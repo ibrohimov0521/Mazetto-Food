@@ -27,6 +27,10 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
+import {
+  parsePosCheckoutDraft,
+  serializePosCheckoutDraft,
+} from "../../../lib/pos-checkout-draft.mjs";
 import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 import { handleProductImageError, productImage } from "../../../lib/media";
 import {
@@ -82,14 +86,6 @@ type CartLine = {
   product: Product;
   variant?: Variant;
   modifiers: Modifier[];
-  quantity: number;
-};
-/** Savatni sessiyada saqlash uchun ixcham shakl — narxlar katalogdan qayta olinadi. */
-type StoredCartLine = {
-  key: string;
-  productId: string;
-  variantId?: string | null;
-  modifierIds: string[];
   quantity: number;
 };
 type OrderType = "TAKEAWAY" | "DINE_IN";
@@ -188,7 +184,10 @@ function PosTerminal() {
   );
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [checkoutKey, setCheckoutKey] = useState(createCheckoutKey);
+  const [checkoutAttempt, setCheckoutAttempt] = useState<{
+    key: string;
+    payloadSignature: string | null;
+  }>(() => ({ key: createCheckoutKey(), payloadSignature: null }));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<PosOrderResult | null>(null);
   const [mobileView, setMobileView] = useState("menu");
@@ -209,6 +208,7 @@ function PosTerminal() {
    * bo'sh savatni yozib, saqlangan savatni o'chirib yuborardi.
    */
   const cartRestored = useRef<string | null>(null);
+  const draftRestorePending = useRef<string | null>(null);
 
   const loadTerminal = useCallback(async () => {
     loadRequest.current?.abort();
@@ -363,6 +363,7 @@ function PosTerminal() {
         tableId: isDineIn ? tableId : null,
         paymentCode,
         cashReceived: isCashPayment ? received : null,
+        total,
         items: cart.map((line) => [
           line.product.id,
           line.variant?.id ?? null,
@@ -374,7 +375,11 @@ function PosTerminal() {
   );
 
   useEffect(() => {
-    setCheckoutKey(createCheckoutKey());
+    setCheckoutAttempt((current) =>
+      current.payloadSignature === payloadSignature
+        ? current
+        : { key: createCheckoutKey(), payloadSignature },
+    );
   }, [payloadSignature]);
 
   /*
@@ -397,16 +402,22 @@ function PosTerminal() {
     const shiftId = currentShift?.id;
     if (!shiftId || !catalog || cartRestored.current === shiftId) return;
     cartRestored.current = shiftId;
-    let stored: StoredCartLine[] = [];
+    let draft: ReturnType<typeof parsePosCheckoutDraft> = null;
     try {
       const raw = window.sessionStorage.getItem(cartStorageKey(shiftId));
-      if (raw) stored = JSON.parse(raw) as StoredCartLine[];
+      if (raw) draft = parsePosCheckoutDraft(raw);
     } catch {
       // Buzilgan yozuv savatni bloklamasligi kerak — bo'sh savat bilan boshlanadi.
       return;
     }
-    if (!Array.isArray(stored) || !stored.length) return;
-    const restored = stored.flatMap((line) => {
+    if (!draft) return;
+
+    setOrderType(draft.orderType);
+    setTableId(draft.tableId);
+    setPaymentCode(draft.paymentCode);
+    setCashReceived(draft.cashReceived);
+    if (draft.checkoutAttempt) setCheckoutAttempt(draft.checkoutAttempt);
+    const restored = draft.lines.flatMap((line) => {
       const product = catalog.products.find(
         (candidate) => candidate.id === line.productId,
       );
@@ -429,34 +440,59 @@ function PosTerminal() {
         } satisfies CartLine,
       ];
     });
-    if (restored.length) setCart(restored);
+    if (restored.length) {
+      draftRestorePending.current = shiftId;
+      setCart(restored);
+    }
   }, [catalog, currentShift?.id]);
 
   useEffect(() => {
     const shiftId = currentShift?.id;
     if (!shiftId || cartRestored.current !== shiftId) return;
+    if (draftRestorePending.current === shiftId) {
+      draftRestorePending.current = null;
+      return;
+    }
     const key = cartStorageKey(shiftId);
     try {
       if (!cart.length) {
         window.sessionStorage.removeItem(key);
         return;
       }
+      if (checkoutAttempt.payloadSignature !== payloadSignature) return;
       window.sessionStorage.setItem(
         key,
-        JSON.stringify(
-          cart.map((line) => ({
+        serializePosCheckoutDraft({
+          lines: cart.map((line) => ({
             key: line.key,
             productId: line.product.id,
             variantId: line.variant?.id ?? null,
             modifierIds: line.modifiers.map((modifier) => modifier.modifier.id),
             quantity: line.quantity,
           })),
-        ),
+          checkoutAttempt: {
+            key: checkoutAttempt.key,
+            payloadSignature: checkoutAttempt.payloadSignature,
+          },
+          orderType,
+          tableId: isDineIn ? tableId : "",
+          paymentCode,
+          cashReceived,
+        }),
       );
     } catch {
       // Xotira to'lgan bo'lsa sotuvni to'xtatmaslik kerak.
     }
-  }, [cart, currentShift?.id]);
+  }, [
+    cart,
+    currentShift?.id,
+    checkoutAttempt,
+    payloadSignature,
+    orderType,
+    tableId,
+    paymentCode,
+    cashReceived,
+  ]);
 
   /*
    * Yorliq yopilishi `sessionStorage` ni ham o'chiradi, shuning uchun
@@ -522,7 +558,6 @@ function PosTerminal() {
             },
           ],
     );
-    setCheckoutKey(createCheckoutKey());
     setSuccess(null);
     setError(null);
   }
@@ -538,7 +573,6 @@ function PosTerminal() {
         )
         .filter((line) => line.quantity > 0),
     );
-    setCheckoutKey(createCheckoutKey());
     setSuccess(null);
   }
 
@@ -562,12 +596,45 @@ function PosTerminal() {
     }
     submissionLock.current = true;
     setIsSubmitting(true);
+    const attempt =
+      checkoutAttempt.payloadSignature === payloadSignature
+        ? checkoutAttempt
+        : { key: createCheckoutKey(), payloadSignature };
+    setCheckoutAttempt(attempt);
     try {
+      if (currentShift?.id) {
+        try {
+          window.sessionStorage.setItem(
+            cartStorageKey(currentShift.id),
+            serializePosCheckoutDraft({
+              lines: cart.map((line) => ({
+                key: line.key,
+                productId: line.product.id,
+                variantId: line.variant?.id ?? null,
+                modifierIds: line.modifiers.map(
+                  (modifier) => modifier.modifier.id,
+                ),
+                quantity: line.quantity,
+              })),
+              checkoutAttempt: {
+                key: attempt.key,
+                payloadSignature,
+              },
+              orderType,
+              tableId: isDineIn ? tableId : "",
+              paymentCode,
+              cashReceived,
+            }),
+          );
+        } catch {
+          // Sessiya xotirasi sotuvni to'xtatmasligi kerak.
+        }
+      }
       const result = await apiFetch<PosOrderResult>("/pos/orders", {
         method: "POST",
         signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
-          idempotencyKey: checkoutKey,
+          idempotencyKey: attempt.key,
           type: orderType,
           ...(isDineIn && tableId ? { tableId } : {}),
           /*
@@ -592,7 +659,6 @@ function PosTerminal() {
       setCart([]);
       setCashReceived("");
       setTableId("");
-      setCheckoutKey(createCheckoutKey());
       setCheckoutOpen(false);
       // Mobil'da keyingi mijoz uchun darhol menyuga qaytiladi.
       setMobileView("menu");
