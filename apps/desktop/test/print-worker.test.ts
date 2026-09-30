@@ -244,6 +244,134 @@ test("offline print queue routes documents across multiple configured system pri
   ]);
 });
 
+test("server print worker drains at most five jobs per tick without parallel printer writes", async () => {
+  const jobs = Array.from({ length: 7 }, (_, index) => ({
+    id: `job-${index + 1}`,
+    receiptId: `receipt-${index + 1}`,
+    leaseToken: `lease-${index + 1}`,
+    payload: {
+      documentType: "RECEIPT",
+      orderNumber: String(index + 1),
+      items: [{ name: "Lavash", quantity: 1 }],
+    },
+    receipt: { orderId: `order-${index + 1}`, documentType: "RECEIPT" },
+    printer: null,
+  }));
+  let nextJob = 0;
+  let claims = 0;
+  let activePrints = 0;
+  let maxActivePrints = 0;
+  const printed: string[] = [];
+  const completed: string[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (_name, receipt) => {
+      activePrints += 1;
+      maxActivePrints = Math.max(maxActivePrints, activePrints);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      printed.push(receipt.orderId ?? "");
+      activePrints -= 1;
+    },
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([]);
+      if (url.endsWith("/print-jobs/claim")) {
+        claims += 1;
+        return jsonResponse(jobs[nextJob++] ?? null);
+      }
+      const completedMatch = url.match(/\/print-jobs\/([^/]+)\/complete$/);
+      if (completedMatch) {
+        completed.push(decodeURIComponent(completedMatch[1]!));
+        return jsonResponse({});
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+  assert.equal(claims, 5);
+  assert.equal(completed.length, 5);
+  assert.deepEqual(printed, [
+    "order-1",
+    "order-2",
+    "order-3",
+    "order-4",
+    "order-5",
+  ]);
+  assert.equal(maxActivePrints, 1);
+
+  await worker.tick();
+  assert.equal(claims, 8);
+  assert.equal(completed.length, 7);
+  assert.equal(maxActivePrints, 1);
+});
+
+test("offline local print jobs keep draining while a timed-out server poll backs off", async () => {
+  const localJobs = ["q1", "q2"];
+  const printed: string[] = [];
+  let serverRequests = 0;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    requestTimeoutMs: 10,
+    systemPrinters: [
+      { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (_name, receipt) => {
+      printed.push(receipt.receiptNumber ?? "");
+    },
+    localQueue: {
+      claim: () => {
+        const id = localJobs.shift();
+        return id
+          ? {
+              id,
+              logicalKey: `${id}:RECEIPT`,
+              branchId: "branch-1",
+              documentType: "RECEIPT",
+              payloadJson: JSON.stringify({ orderId: id }),
+              attempts: 0,
+            }
+          : null;
+      },
+      complete: () => undefined,
+      fail: (_id, error) => assert.fail(error),
+      wasPrinted: () => false,
+    },
+    fetchImpl: async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        serverRequests += 1;
+        const signal = init?.signal;
+        if (!signal) return reject(new Error("request timeout signal missing"));
+        if (signal.aborted) return reject(signal.reason);
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+      }),
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  const timeoutKeepAlive = setTimeout(() => undefined, 50);
+  await worker.tick();
+  clearTimeout(timeoutKeepAlive);
+  assert.deepEqual(printed, ["OFFLINE-Q1", "OFFLINE-Q2"]);
+  assert.equal(serverRequests, 1);
+
+  localJobs.push("q3");
+  await worker.tick();
+  assert.deepEqual(printed, ["OFFLINE-Q1", "OFFLINE-Q2", "OFFLINE-Q3"]);
+  assert.equal(serverRequests, 1);
+});
+
 test("assigned server printer jobs print only to the matching Windows queue", async () => {
   let claimed = false;
   let completed = 0;
@@ -431,6 +559,7 @@ test("server-assigned Windows job never falls through to the generic TCP printer
 test("server replay is completed without duplicate paper when local document already printed", async () => {
   let completed = 0;
   let physicalPrints = 0;
+  let claimed = false;
   const worker = new DesktopPrintWorker({
     apiUrl: "https://api.example.test/api/v1",
     printerHost: null,
@@ -452,13 +581,16 @@ test("server replay is completed without duplicate paper when local document alr
     fetchImpl: async (input) => {
       const url = String(input);
       if (url.endsWith("/printers")) return jsonResponse([]);
-      if (url.endsWith("/print-jobs/claim"))
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
         return jsonResponse({
           id: "job-1",
           receiptId: "receipt-1",
           leaseToken: "lease-1",
           printer: null,
         });
+      }
       if (url.endsWith("/receipts/receipt-1"))
         return jsonResponse({
           orderId: "server-order-1",

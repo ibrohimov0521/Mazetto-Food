@@ -1,7 +1,12 @@
 import { Socket } from "node:net";
 import type { LocalPrintJob } from "./store.js";
 
-type PrinterMetadata = { host?: unknown; port?: unknown; printRoles?: unknown; paperWidthMm?: unknown };
+type PrinterMetadata = {
+  host?: unknown;
+  port?: unknown;
+  printRoles?: unknown;
+  paperWidthMm?: unknown;
+};
 type PrinterConfig = {
   id: string;
   name?: string;
@@ -39,7 +44,11 @@ type PrintJob = {
     documentType?: string;
     orderId?: string;
   } | null;
-  printer?: { id: string; name: string; metadata?: PrinterMetadata | null } | null;
+  printer?: {
+    id: string;
+    name: string;
+    metadata?: PrinterMetadata | null;
+  } | null;
 };
 
 export type PrintableReceipt = {
@@ -65,13 +74,22 @@ export type DesktopPrintWorkerOptions = {
   deviceId: string;
   deviceToken?: string | null;
   systemPrinters?: SystemPrinterTarget[];
-  printSystem?: (deviceName: string, receipt: PrintableReceipt, paperWidthMm?: number) => Promise<void>;
+  printSystem?: (
+    deviceName: string,
+    receipt: PrintableReceipt,
+    paperWidthMm?: number,
+  ) => Promise<void>;
   localQueue?: LocalPrintQueue;
   fetchImpl?: typeof fetch;
   socketImpl?: (host: string, port: number, payload?: Buffer) => Promise<void>;
+  requestTimeoutMs?: number;
 };
 
 const MAX_LOCAL_PRINT_JOBS_PER_TICK = 5;
+const MAX_SERVER_PRINT_JOBS_PER_TICK = 5;
+const SERVER_REQUEST_TIMEOUT_MS = 5_000;
+const SERVER_RETRY_BASE_MS = 1_000;
+const SERVER_RETRY_MAX_MS = 30_000;
 
 /** Claims each durable job once and dispatches it through a Windows driver or ESC/POS TCP. */
 export class DesktopPrintWorker {
@@ -85,6 +103,7 @@ export class DesktopPrintWorker {
   private readonly socketImpl?: DesktopPrintWorkerOptions["socketImpl"];
   private readonly printSystem?: DesktopPrintWorkerOptions["printSystem"];
   private readonly localQueue: LocalPrintQueue | undefined;
+  private readonly requestTimeoutMs: number;
   private authorization: string | null = null;
   private running = false;
   private stopping = false;
@@ -98,6 +117,8 @@ export class DesktopPrintWorker {
     readyPrinters: ManagedPrinter[];
     localAssignedPrinterIds: string[];
   } | null = null;
+  private serverRetryAt = 0;
+  private serverFailureCount = 0;
 
   constructor(options: DesktopPrintWorkerOptions) {
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
@@ -111,6 +132,8 @@ export class DesktopPrintWorker {
     this.localQueue = options.localQueue;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.socketImpl = options.socketImpl;
+    this.requestTimeoutMs =
+      options.requestTimeoutMs ?? SERVER_REQUEST_TIMEOUT_MS;
   }
 
   configure(printerHost: string | null, printerPort: number): void {
@@ -129,12 +152,20 @@ export class DesktopPrintWorker {
 
   status() {
     return {
-      configured: Boolean(this.printerHost) || this.managedPrinters > 0 || this.systemPrinters.length > 0,
+      configured:
+        Boolean(this.printerHost) ||
+        this.managedPrinters > 0 ||
+        this.systemPrinters.length > 0,
       host: this.printerHost,
       port: this.printerPort,
       managedPrinters: this.managedPrinters,
-      managedPrinterDetails: this.managedPrinterDetails.map((printer) => ({ ...printer })),
-      systemPrinters: this.systemPrinters.map((printer) => ({ ...printer, roles: [...printer.roles] })),
+      managedPrinterDetails: this.managedPrinterDetails.map((printer) => ({
+        ...printer,
+      })),
+      systemPrinters: this.systemPrinters.map((printer) => ({
+        ...printer,
+        roles: [...printer.roles],
+      })),
     };
   }
 
@@ -172,74 +203,158 @@ export class DesktopPrintWorker {
       }
     }
     if (this.stopping || !this.authorization) return;
+    if (Date.now() < this.serverRetryAt) return;
 
-    const readyPrinters = await this.discoverReadyPrinters();
-    const acceptsUnassigned = Boolean(this.printerHost) || this.systemPrinters.length > 0;
-    if (readyPrinters.length === 0 && !acceptsUnassigned) return;
-    const job = await this.request<PrintJob | null>("/receipts/print-jobs/claim", {
-      method: "POST",
-      body: JSON.stringify({
-        agentId: this.agentId,
-        printerIds: [
-          ...readyPrinters.map((printer) => printer.id),
-          ...this.localAssignedPrinterIds,
-        ],
-        acceptUnassigned: acceptsUnassigned,
-      }),
-    });
-    if (!job) return;
+    try {
+      const readyPrinters = await this.discoverReadyPrinters();
+      const acceptsUnassigned =
+        Boolean(this.printerHost) || this.systemPrinters.length > 0;
+      if (readyPrinters.length === 0 && !acceptsUnassigned) {
+        this.resetServerPollingBackoff();
+        return;
+      }
+      for (let index = 0; index < MAX_SERVER_PRINT_JOBS_PER_TICK; index += 1) {
+        if (this.stopping) return;
+        const job = await this.request<PrintJob | null>(
+          "/receipts/print-jobs/claim",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              agentId: this.agentId,
+              printerIds: [
+                ...readyPrinters.map((printer) => printer.id),
+                ...this.localAssignedPrinterIds,
+              ],
+              acceptUnassigned: acceptsUnassigned,
+            }),
+          },
+        );
+        if (!job) {
+          this.resetServerPollingBackoff();
+          return;
+        }
+        if (!(await this.printServerJob(job))) {
+          this.deferServerPolling();
+          return;
+        }
+      }
+      this.resetServerPollingBackoff();
+    } catch {
+      this.deferServerPolling();
+    }
+  }
+
+  private async printServerJob(job: PrintJob): Promise<boolean> {
     try {
       // Job payloadi chek yaratilgan tranzaksiyaning immutable nusxasi.
       // Uni birinchi ishlatish printerdagi ishni keyingi GET so'rovidan
       // mustaqil qiladi: chek ekrani yoki vaqtinchalik API xatosi sabab
       // bo'sh sahifa chop etilmaydi.
-      const receipt = printableReceiptFromJob(job) ?? await this.request<PrintableReceipt>(`/receipts/${encodeURIComponent(job.receiptId)}`);
+      const receipt =
+        printableReceiptFromJob(job) ??
+        (await this.request<PrintableReceipt>(
+          `/receipts/${encodeURIComponent(job.receiptId)}`,
+        ));
       const route = receiptRoute(receipt);
       if (
         receipt.orderId &&
         this.localQueue?.wasPrinted(receipt.orderId, route)
       ) {
         await this.completeServerJob(job);
-        return;
+        return true;
       }
       assertPrintableReceipt(receipt);
 
       const metadata = job.printer?.metadata ?? {};
-      const host = typeof metadata.host === "string" && metadata.host.trim()
-        ? metadata.host.trim()
-        : null;
+      const host =
+        typeof metadata.host === "string" && metadata.host.trim()
+          ? metadata.host.trim()
+          : null;
       const paperWidthMm = printerPaperWidth(metadata.paperWidthMm);
-      const systemTargets = selectSystemPrinterTargets(job, route, this.systemPrinters);
-      if (paperWidthMm === 210 && (host || (!(systemTargets.length > 0 && this.printSystem) && this.printerHost))) {
-        throw new Error("A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning");
+      const systemTargets = selectSystemPrinterTargets(
+        job,
+        route,
+        this.systemPrinters,
+      );
+      if (
+        paperWidthMm === 210 &&
+        (host ||
+          (!(systemTargets.length > 0 && this.printSystem) && this.printerHost))
+      ) {
+        throw new Error(
+          "A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning",
+        );
       }
       if (host) {
-        const port = typeof metadata.port === "number" && Number.isInteger(metadata.port)
-          ? metadata.port
-          : this.printerPort;
-        const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
+        const port =
+          typeof metadata.port === "number" && Number.isInteger(metadata.port)
+            ? metadata.port
+            : this.printerPort;
+        const printable = receipt.escpos?.commands?.length
+          ? receipt
+          : await this.request<PrintableReceipt>(
+              "/receipts/" + encodeURIComponent(job.receiptId),
+            );
         const commands = printable.escpos?.commands ?? [];
-        if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
+        if (commands.length === 0)
+          throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
         await this.send(commands, host, port, paperWidthMm);
       } else if (systemTargets.length > 0 && this.printSystem) {
         for (const target of systemTargets) {
-          await this.printSystem(target.name, receipt, target.paperWidthMm || paperWidthMm);
+          await this.printSystem(
+            target.name,
+            receipt,
+            target.paperWidthMm || paperWidthMm,
+          );
         }
       } else if (this.printerHost && !job.printer) {
-        const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
+        const printable = receipt.escpos?.commands?.length
+          ? receipt
+          : await this.request<PrintableReceipt>(
+              "/receipts/" + encodeURIComponent(job.receiptId),
+            );
         const commands = printable.escpos?.commands ?? [];
-        if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
-        await this.send(commands, this.printerHost, this.printerPort, paperWidthMm);
+        if (commands.length === 0)
+          throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
+        await this.send(
+          commands,
+          this.printerHost,
+          this.printerPort,
+          paperWidthMm,
+        );
       } else {
         throw new Error(`${route} uchun lokal printer tanlanmagan`);
       }
       await this.completeServerJob(job);
+      return true;
     } catch (error) {
-      await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, {
-        method: "POST",
-        body: JSON.stringify({ leaseToken: job.leaseToken, error: message(error) }),
-      }).catch(() => undefined);
+      await this.request(
+        `/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            leaseToken: job.leaseToken,
+            error: message(error),
+          }),
+        },
+      ).catch(() => undefined);
+      return false;
     }
+  }
+
+  private deferServerPolling(): void {
+    const delay = Math.min(
+      SERVER_RETRY_BASE_MS * 2 ** this.serverFailureCount,
+      SERVER_RETRY_MAX_MS,
+    );
+    this.serverFailureCount = Math.min(this.serverFailureCount + 1, 5);
+    this.serverRetryAt = Date.now() + delay;
+    this.printerDiscoveryCache = null;
+  }
+
+  private resetServerPollingBackoff(): void {
+    this.serverFailureCount = 0;
+    this.serverRetryAt = 0;
   }
 
   async testConnection(): Promise<void> {
@@ -248,38 +363,64 @@ export class DesktopPrintWorker {
   }
 
   async testManagedConnections(): Promise<PrinterConnectionResult[]> {
-    const printers = this.authorization ? await this.discoverReadyPrinters() : this.managedPrinterDetails;
+    const printers = this.authorization
+      ? await this.discoverReadyPrinters()
+      : this.managedPrinterDetails;
     if (printers.length === 0) {
       if (!this.printerHost) throw new Error("Faol IP printer topilmadi");
       await this.openSocket(this.printerHost, this.printerPort, undefined);
-      return [{ id: "fallback", name: "Lokal zaxira printer", host: this.printerHost, port: this.printerPort, ok: true, message: null }];
+      return [
+        {
+          id: "fallback",
+          name: "Lokal zaxira printer",
+          host: this.printerHost,
+          port: this.printerPort,
+          ok: true,
+          message: null,
+        },
+      ];
     }
-    return Promise.all(printers.map(async (printer) => {
-      try {
-        await this.openSocket(printer.host, printer.port, undefined);
-        return { ...printer, ok: true, message: null };
-      } catch (error) {
-        return { ...printer, ok: false, message: message(error) };
-      }
-    }));
+    return Promise.all(
+      printers.map(async (printer) => {
+        try {
+          await this.openSocket(printer.host, printer.port, undefined);
+          return { ...printer, ok: true, message: null };
+        } catch (error) {
+          return { ...printer, ok: false, message: message(error) };
+        }
+      }),
+    );
   }
 
   private async printNextLocalJob(): Promise<boolean> {
-    if (!this.localQueue || !this.printSystem || this.systemPrinters.length === 0) return false;
-    const roles = [...new Set(this.systemPrinters.flatMap((printer) => printer.roles))];
+    if (
+      !this.localQueue ||
+      !this.printSystem ||
+      this.systemPrinters.length === 0
+    )
+      return false;
+    const roles = [
+      ...new Set(this.systemPrinters.flatMap((printer) => printer.roles)),
+    ];
     const job = this.localQueue.claim(roles);
     if (!job) return false;
     try {
       const content = JSON.parse(job.payloadJson) as Record<string, unknown>;
-      const targets = this.systemPrinters.filter((printer) => printer.roles.includes(job.documentType));
-      if (targets.length === 0) throw new Error(`${job.documentType} uchun printer tanlanmagan`);
+      const targets = this.systemPrinters.filter((printer) =>
+        printer.roles.includes(job.documentType),
+      );
+      if (targets.length === 0)
+        throw new Error(`${job.documentType} uchun printer tanlanmagan`);
       const receipt: PrintableReceipt = {
         receiptNumber: `OFFLINE-${job.id.slice(0, 8).toUpperCase()}`,
-        ...(typeof content.orderId === "string" ? { orderId: content.orderId } : {}),
+        ...(typeof content.orderId === "string"
+          ? { orderId: content.orderId }
+          : {}),
         documentType: job.documentType,
         content,
       };
-      for (const target of targets) await this.printSystem(target.name, receipt, target.paperWidthMm);
+      for (const target of targets)
+        await this.printSystem(target.name, receipt, target.paperWidthMm);
       this.localQueue.complete(job.id);
     } catch (error) {
       this.localQueue.fail(job.id, message(error));
@@ -289,15 +430,21 @@ export class DesktopPrintWorker {
   }
 
   private async completeServerJob(job: PrintJob): Promise<void> {
-    await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`, {
-      method: "POST",
-      body: JSON.stringify({ leaseToken: job.leaseToken }),
-    });
+    await this.request(
+      `/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ leaseToken: job.leaseToken }),
+      },
+    );
   }
 
   private async discoverReadyPrinters(): Promise<ManagedPrinter[]> {
     const now = Date.now();
-    if (this.printerDiscoveryCache && this.printerDiscoveryCache.expiresAt > now) {
+    if (
+      this.printerDiscoveryCache &&
+      this.printerDiscoveryCache.expiresAt > now
+    ) {
       this.localAssignedPrinterIds = [
         ...this.printerDiscoveryCache.localAssignedPrinterIds,
       ];
@@ -309,12 +456,18 @@ export class DesktopPrintWorker {
     }
 
     const printers = await this.request<PrinterConfig[]>("/printers");
-    const localRoles = new Set(this.systemPrinters.flatMap((printer) => printer.roles));
+    const localRoles = new Set(
+      this.systemPrinters.flatMap((printer) => printer.roles),
+    );
     this.localAssignedPrinterIds = printers.flatMap((printer) => {
       const roles = Array.isArray(printer.metadata?.printRoles)
-        ? printer.metadata.printRoles.filter((role): role is string => typeof role === "string")
+        ? printer.metadata.printRoles.filter(
+            (role): role is string => typeof role === "string",
+          )
         : [];
-      const hasHost = typeof printer.metadata?.host === "string" && printer.metadata.host.trim();
+      const hasHost =
+        typeof printer.metadata?.host === "string" &&
+        printer.metadata.host.trim();
       return printer.isActive !== false &&
         printer.status === "ONLINE" &&
         !hasHost &&
@@ -324,14 +477,25 @@ export class DesktopPrintWorker {
     });
     const readyPrinters = printers.flatMap((printer) => {
       const host = printer.metadata?.host;
-      if (printer.isActive === false || printer.status !== "ONLINE" || typeof host !== "string" || !host.trim()) return [];
+      if (
+        printer.isActive === false ||
+        printer.status !== "ONLINE" ||
+        typeof host !== "string" ||
+        !host.trim()
+      )
+        return [];
       const rawPort = printer.metadata?.port;
-      return [{
-        id: printer.id,
-        name: printer.name?.trim() || "Printer",
-        host: host.trim(),
-        port: typeof rawPort === "number" && Number.isInteger(rawPort) ? rawPort : this.printerPort,
-      }];
+      return [
+        {
+          id: printer.id,
+          name: printer.name?.trim() || "Printer",
+          host: host.trim(),
+          port:
+            typeof rawPort === "number" && Number.isInteger(rawPort)
+              ? rawPort
+              : this.printerPort,
+        },
+      ];
     });
     this.managedPrinterDetails = readyPrinters;
     this.managedPrinters = readyPrinters.length;
@@ -343,7 +507,10 @@ export class DesktopPrintWorker {
     return readyPrinters;
   }
 
-  private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T = unknown>(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<T> {
     const response = await this.fetchImpl(`${this.apiUrl}${path}`, {
       ...init,
       headers: {
@@ -351,46 +518,103 @@ export class DesktopPrintWorker {
         Authorization: this.authorization ?? "",
         "Content-Type": "application/json",
         "x-mazetto-device-id": this.deviceId,
-        ...(this.deviceToken ? { "x-mazetto-device-token": this.deviceToken } : {}),
+        ...(this.deviceToken
+          ? { "x-mazetto-device-token": this.deviceToken }
+          : {}),
         ...init.headers,
       },
+      signal: init.signal ?? AbortSignal.timeout(this.requestTimeoutMs),
     });
     if (!response.ok) throw new Error(`Printer API ${response.status}`);
-    const body = await response.json() as T | { data: T };
-    return body && typeof body === "object" && "data" in body ? body.data : body as T;
+    const body = (await response.json()) as T | { data: T };
+    return body && typeof body === "object" && "data" in body
+      ? body.data
+      : (body as T);
   }
 
-  private async send(commands: Array<Record<string, unknown>>, host: string, port: number, paperWidthMm: number): Promise<void> {
+  private async send(
+    commands: Array<Record<string, unknown>>,
+    host: string,
+    port: number,
+    paperWidthMm: number,
+  ): Promise<void> {
     const columns = paperWidthMm === 58 ? 32 : 48;
-    const payload = Buffer.concat([Buffer.from("\x1b@", "binary"), ...commands.map((command) => this.encodeCommand(command, columns))]);
+    const payload = Buffer.concat([
+      Buffer.from("\x1b@", "binary"),
+      ...commands.map((command) => this.encodeCommand(command, columns)),
+    ]);
     await this.openSocket(host, port, payload);
   }
 
-  private encodeCommand(command: Record<string, unknown>, columns: number): Buffer {
+  private encodeCommand(
+    command: Record<string, unknown>,
+    columns: number,
+  ): Buffer {
     const type = String(command.type ?? "");
-    if (type === "align") return Buffer.from([0x1b, 0x61, command.value === "center" ? 1 : command.value === "right" ? 2 : 0]);
-    if (type === "bold") return Buffer.from([0x1b, 0x45, command.value ? 1 : 0]);
+    if (type === "align")
+      return Buffer.from([
+        0x1b,
+        0x61,
+        command.value === "center" ? 1 : command.value === "right" ? 2 : 0,
+      ]);
+    if (type === "bold")
+      return Buffer.from([0x1b, 0x45, command.value ? 1 : 0]);
     if (type === "line") return Buffer.from("-".repeat(columns) + "\n", "utf8");
     if (type === "cut") return Buffer.from([0x1d, 0x56, 0x00]);
     if (type === "item") {
-      const lines = wrapEscPosText(String(command.quantity ?? "") + "x " + String(command.name ?? ""), columns);
+      const lines = wrapEscPosText(
+        String(command.quantity ?? "") + "x " + String(command.name ?? ""),
+        columns,
+      );
       const total = String(command.total ?? "").trim();
-      if (total) lines.push(...wrapEscPosPair(lines.pop() ?? "", total, columns));
-      if (command.notes) lines.push(...wrapEscPosText("Izoh: " + String(command.notes), columns, "  "));
-      for (const modifier of modifierNames(command.modifiers)) lines.push(...wrapEscPosText("+ " + modifier, columns, "  "));
+      if (total)
+        lines.push(...wrapEscPosPair(lines.pop() ?? "", total, columns));
+      if (command.notes)
+        lines.push(
+          ...wrapEscPosText("Izoh: " + String(command.notes), columns, "  "),
+        );
+      for (const modifier of modifierNames(command.modifiers))
+        lines.push(...wrapEscPosText("+ " + modifier, columns, "  "));
       return Buffer.from(lines.join("\n") + "\n", "utf8");
     }
-    if (type === "payment") return Buffer.from(wrapEscPosPair(String(command.method ?? "To'lov"), String(command.amount ?? ""), columns).join("\n") + "\n", "utf8");
-    if (type === "total") return Buffer.from(wrapEscPosPair("JAMI", String(command.value ?? ""), columns).join("\n") + "\n", "utf8");
-    return Buffer.from(wrapEscPosText(String(command.value ?? ""), columns).join("\n") + "\n", "utf8");
+    if (type === "payment")
+      return Buffer.from(
+        wrapEscPosPair(
+          String(command.method ?? "To'lov"),
+          String(command.amount ?? ""),
+          columns,
+        ).join("\n") + "\n",
+        "utf8",
+      );
+    if (type === "total")
+      return Buffer.from(
+        wrapEscPosPair("JAMI", String(command.value ?? ""), columns).join(
+          "\n",
+        ) + "\n",
+        "utf8",
+      );
+    return Buffer.from(
+      wrapEscPosText(String(command.value ?? ""), columns).join("\n") + "\n",
+      "utf8",
+    );
   }
 
-  private async openSocket(host: string, port: number, payload: Buffer | undefined): Promise<void> {
+  private async openSocket(
+    host: string,
+    port: number,
+    payload: Buffer | undefined,
+  ): Promise<void> {
     if (this.socketImpl) return this.socketImpl(host, port, payload);
     await new Promise<void>((resolve, reject) => {
       const socket = new Socket();
-      const timer = setTimeout(() => { socket.destroy(); reject(new Error("Printer 5 soniyada javob bermadi")); }, 5_000);
-      socket.once("error", (error) => { clearTimeout(timer); reject(error); });
+      const timer = setTimeout(() => {
+        socket.destroy();
+        reject(new Error("Printer 5 soniyada javob bermadi"));
+      }, 5_000);
+      socket.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
       socket.connect(port, host, () => {
         clearTimeout(timer);
         if (payload) socket.end(payload, resolve);
@@ -404,44 +628,74 @@ function printerPaperWidth(value: unknown): 58 | 80 | 210 {
   return value === 58 || value === 80 || value === 210 ? value : 80;
 }
 
-function selectSystemPrinterTargets(job: PrintJob, route: string, printers: SystemPrinterTarget[]): SystemPrinterTarget[] {
+function selectSystemPrinterTargets(
+  job: PrintJob,
+  route: string,
+  printers: SystemPrinterTarget[],
+): SystemPrinterTarget[] {
   const targets = printers.filter((printer) => printer.roles.includes(route));
   if (!job.printer || targets.length <= 1) return targets;
 
   const expectedName = job.printer.name.trim().toLocaleLowerCase();
   const matches = targets.filter((target) =>
-    [target.name, target.displayName].some((name) => name.trim().toLocaleLowerCase() === expectedName),
+    [target.name, target.displayName].some(
+      (name) => name.trim().toLocaleLowerCase() === expectedName,
+    ),
   );
   if (matches.length === 1) return matches;
   if (matches.length > 1) {
-    throw new Error(`"${job.printer.name}" nomiga bir nechta Windows printer mos keldi; printer nomlarini yagona qiling`);
+    throw new Error(
+      `"${job.printer.name}" nomiga bir nechta Windows printer mos keldi; printer nomlarini yagona qiling`,
+    );
   }
-  throw new Error(`"${job.printer.name}" printeri uchun Windows queue topilmadi; bir xil yo'nalishdagi Windows printer nomini moslang`);
+  throw new Error(
+    `"${job.printer.name}" printeri uchun Windows queue topilmadi; bir xil yo'nalishdagi Windows printer nomini moslang`,
+  );
 }
 
-function wrapEscPosPair(left: string, right: string, columns: number): string[] {
+function wrapEscPosPair(
+  left: string,
+  right: string,
+  columns: number,
+): string[] {
   const leftLines = wrapEscPosText(left, columns);
   const finalLine = leftLines.pop() ?? "";
   if (finalLine.length + right.length + 1 <= columns) {
-    leftLines.push(finalLine + " ".repeat(columns - finalLine.length - right.length) + right);
+    leftLines.push(
+      finalLine + " ".repeat(columns - finalLine.length - right.length) + right,
+    );
   } else {
-    leftLines.push(finalLine, ...wrapEscPosText(right, columns).map((line) => line.padStart(columns)));
+    leftLines.push(
+      finalLine,
+      ...wrapEscPosText(right, columns).map((line) => line.padStart(columns)),
+    );
   }
   return leftLines;
 }
 
-function wrapEscPosText(value: string, columns: number, continuationIndent = ""): string[] {
+function wrapEscPosText(
+  value: string,
+  columns: number,
+  continuationIndent = "",
+): string[] {
   const words = value.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return [""];
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
     const wordWidth = Math.max(1, columns - continuationIndent.length);
-    const parts = word.length > wordWidth
-      ? Array.from({ length: Math.ceil(word.length / wordWidth) }, (_, index) => word.slice(index * wordWidth, (index + 1) * wordWidth))
-      : [word];
+    const parts =
+      word.length > wordWidth
+        ? Array.from(
+            { length: Math.ceil(word.length / wordWidth) },
+            (_, index) =>
+              word.slice(index * wordWidth, (index + 1) * wordWidth),
+          )
+        : [word];
     for (const part of parts) {
-      const candidate = line ? line + " " + part : (lines.length > 0 ? continuationIndent : "") + part;
+      const candidate = line
+        ? line + " " + part
+        : (lines.length > 0 ? continuationIndent : "") + part;
       if (candidate.length <= columns) line = candidate;
       else {
         if (line) lines.push(line);
@@ -455,21 +709,32 @@ function wrapEscPosText(value: string, columns: number, continuationIndent = "")
 
 function receiptRoute(receipt: PrintableReceipt): string {
   const contentType = receipt.content?.documentType;
-  if (typeof contentType === "string") return contentType.startsWith("REFUND") ? "REFUND" : contentType;
-  if (typeof receipt.documentType === "string") return receipt.documentType.startsWith("REFUND") ? "REFUND" : receipt.documentType;
+  if (typeof contentType === "string")
+    return contentType.startsWith("REFUND") ? "REFUND" : contentType;
+  if (typeof receipt.documentType === "string")
+    return receipt.documentType.startsWith("REFUND")
+      ? "REFUND"
+      : receipt.documentType;
   return "RECEIPT";
 }
 
 function printableReceiptFromJob(job: PrintJob): PrintableReceipt | null {
-  if (!job.payload || typeof job.payload !== "object" || Array.isArray(job.payload)) {
+  if (
+    !job.payload ||
+    typeof job.payload !== "object" ||
+    Array.isArray(job.payload)
+  ) {
     return null;
   }
-  const documentType = typeof job.payload.documentType === "string"
-    ? job.payload.documentType
-    : job.receipt?.documentType;
+  const documentType =
+    typeof job.payload.documentType === "string"
+      ? job.payload.documentType
+      : job.receipt?.documentType;
   if (!documentType) return null;
   return {
-    ...(job.receipt?.receiptNumber ? { receiptNumber: job.receipt.receiptNumber } : {}),
+    ...(job.receipt?.receiptNumber
+      ? { receiptNumber: job.receipt.receiptNumber }
+      : {}),
     ...(job.receipt?.orderId ? { orderId: job.receipt.orderId } : {}),
     documentType,
     content: job.payload,
@@ -479,7 +744,10 @@ function printableReceiptFromJob(job: PrintJob): PrintableReceipt | null {
 function assertPrintableReceipt(receipt: PrintableReceipt): void {
   // TCP ESC/POS printerlari backend tuzgan buyruqlarni ishlatadi; ular uchun
   // HTML snapshot shart emas.
-  if (Array.isArray(receipt.escpos?.commands) && receipt.escpos.commands.length > 0) {
+  if (
+    Array.isArray(receipt.escpos?.commands) &&
+    receipt.escpos.commands.length > 0
+  ) {
     return;
   }
   const content = receipt.content;
@@ -487,7 +755,8 @@ function assertPrintableReceipt(receipt: PrintableReceipt): void {
     throw new Error("Chek mazmuni topilmadi; chop etish navbatda qoldirildi");
   }
   const documentType = receiptRoute(receipt);
-  const hasOrder = typeof content.orderNumber === "string" ||
+  const hasOrder =
+    typeof content.orderNumber === "string" ||
     typeof content.displayOrderNumber === "string";
   const items = content.items;
   const hasItems = Array.isArray(items) && items.length > 0;
