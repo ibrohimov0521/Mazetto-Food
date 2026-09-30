@@ -221,3 +221,11 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - No schema migration is needed; this uses the existing idempotency request ledger. Requests without a key retain the existing online behavior, while Desktop-queued requests always include the persisted key.
 - Verification: cash transaction replay, payload mismatch, tenant/branch link validation, backend tests and full monorepo CI passed.
 - This protects cash-in/out ledger rows only. Shift open/close, cash transfers, courier state and other queueable routes still need server-side idempotency before the entire D3 queue is considered safe.
+
+## D3 cash-transfer creation idempotency (2026-09-30)
+
+- Both cashier and courier-shift transfer-creation routes forward the Desktop idempotency key and correlation id.
+- The transfer, its source-balance allocation snapshot, cash-out ledger row and completed idempotency record are committed together. A replay resolves to the original transfer; a changed payload with the same key is rejected.
+- Existing actor/tenant/branch filters are applied when returning a replay. No schema migration is required.
+- Verification: transfer replay and payload-mismatch tests, full backend suite, and monorepo CI passed.
+- Transfer acceptance/rejection, shift open/close and courier status still need separate server-side replay contracts.

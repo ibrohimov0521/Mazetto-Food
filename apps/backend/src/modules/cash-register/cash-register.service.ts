@@ -72,8 +72,12 @@ export class CashRegisterService {
     return this.shiftsService.openCourierShift(dto, user);
   }
 
-  createCashTransfer(dto: CreateCashTransferDto, user: AuthenticatedUser) {
-    return this.shiftsService.createCashTransfer(dto, user);
+  createCashTransfer(
+    dto: CreateCashTransferDto,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
+    return this.shiftsService.createCashTransfer(dto, user, context);
   }
 
   listTransferReceivers(user: AuthenticatedUser) {

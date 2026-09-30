@@ -833,6 +833,7 @@ export class ShiftsService {
   async createCashTransfer(
     dto: CreateCashTransferDto,
     user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
   ) {
     const employeeId = user.employeeId;
     if (!employeeId) {
@@ -842,7 +843,63 @@ export class ShiftsService {
     }
 
     const scope = await resolveRestaurantScope(this.prisma, user);
-    return this.prisma.$transaction(async (tx) => {
+    const idempotencyKey = context?.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+    const requestHash = idempotencyKey
+      ? hashCanonicalJson(dto)
+      : undefined;
+    let decision:
+      | Awaited<ReturnType<IdempotencyService["start"]>>
+      | undefined;
+
+    if (idempotencyKey && requestHash) {
+      if (!this.idempotency) {
+        throw new BadRequestException(
+          "Cash transfer idempotency is unavailable",
+        );
+      }
+      decision = await this.idempotency.start({
+        scope: buildIdempotencyScope("cash-transfer-create", user.id),
+        key: idempotencyKey,
+        requestHash,
+        correlationId: context?.correlationId ?? idempotencyKey,
+        actorId: user.id,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      });
+
+      if (decision.kind === "REPLAY") {
+        const resourceId = decision.record.resourceId;
+        if (
+          decision.record.resourceType !== "CASH_TRANSFER" ||
+          !resourceId
+        ) {
+          throw new BadRequestException(
+            "Previous cash transfer request did not complete",
+          );
+        }
+        const previous = await this.prisma.cashTransfer.findFirst({
+          where: {
+            id: resourceId,
+            createdById: user.id,
+            ...(scope.branchId
+              ? { branchId: scope.branchId }
+              : { branch: { tenantId: scope.tenantId } }),
+          },
+          include: {
+            fromShift: { include: { employee: true } },
+            toShift: { include: { employee: true } },
+            allocations: this.transferAllocationInclude(),
+          },
+        });
+        if (!previous) {
+          throw new NotFoundException("Previous cash transfer is unavailable");
+        }
+        return previous;
+      }
+    }
+
+    const createTransfer = async (tx: Prisma.TransactionClient) => {
       const shift = await tx.shift.findFirst({
         where: {
           employeeId,
@@ -975,7 +1032,34 @@ export class ShiftsService {
           allocations: this.transferAllocationInclude(),
         },
       });
-    });
+    };
+
+    if (!decision || decision.kind !== "CLAIMED" || !requestHash) {
+      return this.prisma.$transaction(createTransfer);
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const transfer = await createTransfer(tx);
+        await this.idempotency!.complete(
+          decision.record.id,
+          {
+            requestHash,
+            responseStatus: 201,
+            responseBody: { cashTransferId: transfer.id },
+            resourceType: "CASH_TRANSFER",
+            resourceId: transfer.id,
+          },
+          tx,
+        );
+        return transfer;
+      });
+    } catch (error) {
+      await this.idempotency!
+        .fail(decision.record.id, requestHash, "CASH_TRANSFER_FAILED")
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   async getCashTransferDetail(id: string, user: AuthenticatedUser) {

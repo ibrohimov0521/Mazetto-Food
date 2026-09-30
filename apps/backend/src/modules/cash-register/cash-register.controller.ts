@@ -57,8 +57,13 @@ export class CashRegisterController {
   createCashTransfer(
     @Body() dto: CreateCashTransferDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.cashRegisterService.createCashTransfer(dto, user);
+    return this.cashRegisterService.createCashTransfer(dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Get("transfers/receivers")
