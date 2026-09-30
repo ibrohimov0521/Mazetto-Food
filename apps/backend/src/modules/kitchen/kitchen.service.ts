@@ -55,12 +55,17 @@ type KitchenTransitionActor = {
   correlationId?: string;
   idempotencyKey?: string;
   reasonCode?: string;
+  completeIdempotency?: (
+    tx: Prisma.TransactionClient,
+    ticket: { id: string; status: KitchenTicketStatus; version: number },
+  ) => Promise<void>;
 };
 type KitchenTicketActionContext = {
   expectedVersion?: number;
   correlationId?: string;
   idempotencyKey?: string;
   reasonCode?: string;
+  completeIdempotency?: KitchenTransitionActor["completeIdempotency"];
 };
 type KitchenTransitionOrder = {
   id: string;
@@ -432,6 +437,9 @@ export class KitchenService {
         ? { idempotencyKey: context.idempotencyKey }
         : {}),
       ...(context?.reasonCode ? { reasonCode: context.reasonCode } : {}),
+      ...(context?.completeIdempotency
+        ? { completeIdempotency: context.completeIdempotency }
+        : {}),
       ...(context?.expectedVersion !== undefined
         ? { expectedVersion: context.expectedVersion }
         : {}),
@@ -493,12 +501,14 @@ export class KitchenService {
       }
 
       if (!transition.changed) {
-        return {
+        const unchanged = {
           action,
           changed: false,
           order: await this.findOrderForTransition(tx, orderId, scope),
           ticket: await this.findTicketById(tx, ticket.id),
         };
+        await actor.completeIdempotency?.(tx, unchanged.ticket);
+        return unchanged;
       }
 
       const now = new Date();
@@ -642,12 +652,14 @@ export class KitchenService {
         });
       }
 
-      return {
+      const changed = {
         action,
         changed: true,
         order: await this.findOrderForTransition(tx, orderId, scope),
         ticket: await this.findTicketById(tx, ticket.id),
       };
+      await actor.completeIdempotency?.(tx, changed.ticket);
+      return changed;
     });
 
     if (result.changed) {

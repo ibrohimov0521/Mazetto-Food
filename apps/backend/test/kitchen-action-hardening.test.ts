@@ -51,25 +51,51 @@ test("kitchen action claims, mutates and completes one idempotency record", asyn
       action: string,
       _user: AuthenticatedUser,
       _reason: string | undefined,
-      context: object,
+      context: {
+        expectedVersion?: number;
+        correlationId?: string;
+        idempotencyKey?: string;
+        completeIdempotency: (
+          tx: unknown,
+          ticket: { id: string; status: string; version: number },
+        ) => Promise<void>;
+      },
     ) => {
       calls.push("action");
       assert.equal(ticketId, "ticket-1");
       assert.equal(action, "accept");
-      assert.deepEqual(context, {
-        expectedVersion: 3,
-        correlationId: "correlation-1",
-        idempotencyKey: "kitchen-key-1",
-      });
-      return { ticket: { id: ticketId, status: "ACCEPTED", version: 4 } };
+      assert.deepEqual(
+        {
+          expectedVersion: context.expectedVersion,
+          correlationId: context.correlationId,
+          idempotencyKey: context.idempotencyKey,
+        },
+        {
+          expectedVersion: 3,
+          correlationId: "correlation-1",
+          idempotencyKey: "kitchen-key-1",
+        },
+      );
+      const ticket = { id: ticketId, status: "ACCEPTED", version: 4 };
+      await context.completeIdempotency({ transaction: true }, ticket);
+      return { ticket };
     },
   };
+  let completion: Record<string, unknown> | undefined;
   const idempotency = {
     start: async () => {
       calls.push("claim");
       return { kind: "CLAIMED", record: { id: "idem-1" } };
     },
-    complete: async () => calls.push("complete"),
+    complete: async (
+      _id: string,
+      result: Record<string, unknown>,
+      db: unknown,
+    ) => {
+      calls.push("complete");
+      completion = result;
+      assert.deepEqual(db, { transaction: true });
+    },
     fail: async () => calls.push("fail"),
   };
   const service = new KitchenActionService(
@@ -86,6 +112,13 @@ test("kitchen action claims, mutates and completes one idempotency record", asyn
 
   assert.equal(result.version, 4);
   assert.deepEqual(calls, ["claim", "action", "complete"]);
+  assert.equal(typeof completion?.requestHash, "string");
+  assert.equal(completion?.responseStatus, 200);
+  assert.deepEqual(completion?.responseBody, {
+    ticketId: "ticket-1",
+    status: "ACCEPTED",
+    version: 4,
+  });
 });
 
 test("completed kitchen idempotency record replays without mutation", async () => {
@@ -116,6 +149,57 @@ test("completed kitchen idempotency record replays without mutation", async () =
 
   assert.equal(result.version, 2);
   assert.equal(mutations, 0);
+});
+
+test("kitchen action does not succeed when its transactional idempotency completion fails", async () => {
+  const calls: string[] = [];
+  let status = "NEW";
+  const kitchen = {
+    applyTicketAction: async (
+      ticketId: string,
+      _action: string,
+      _user: AuthenticatedUser,
+      _reason: string | undefined,
+      context: {
+        completeIdempotency: (
+          tx: unknown,
+          ticket: { id: string; status: string; version: number },
+        ) => Promise<void>;
+      },
+    ) => {
+      calls.push("action");
+      const next = { id: ticketId, status: "ACCEPTED", version: 2 };
+      await context.completeIdempotency({ transaction: true }, next);
+      status = next.status;
+      return { ticket: next };
+    },
+  };
+  const service = new KitchenActionService(
+    kitchen as never,
+    {
+      start: async () => {
+        calls.push("claim");
+        return { kind: "CLAIMED", record: { id: "idem-2" } };
+      },
+      complete: async () => {
+        calls.push("complete");
+        throw new Error("idempotency write failed");
+      },
+      fail: async () => calls.push("fail"),
+    } as never,
+  );
+
+  await assert.rejects(
+    service.accept(
+      "ticket-1",
+      { expectedVersion: 1 },
+      user,
+      { correlationId: "correlation-3", idempotencyKey: "kitchen-key-3" },
+    ),
+    /idempotency write failed/,
+  );
+  assert.equal(status, "NEW");
+  assert.deepEqual(calls, ["claim", "action", "complete", "fail"]);
 });
 
 test("two devices cannot advance one ticket from the same stale version", async () => {
@@ -158,18 +242,28 @@ test("duplicate accept from two devices creates only one ticket event", async ()
     state.gateway as never,
   );
 
+  const completionVersions: number[] = [];
   const [first, second] = await Promise.all([
     service.applyTicketAction("ticket-1", "accept", user, undefined, {
       expectedVersion: 1,
+      completeIdempotency: async (_tx, completedTicket) => {
+        assert.equal(state.isTransactionOpen(), true);
+        completionVersions.push(completedTicket.version);
+      },
     }),
     service.applyTicketAction("ticket-1", "accept", user, undefined, {
       expectedVersion: 1,
+      completeIdempotency: async (_tx, completedTicket) => {
+        assert.equal(state.isTransactionOpen(), true);
+        completionVersions.push(completedTicket.version);
+      },
     }),
   ]);
 
   assert.equal(first.ticket.status, KitchenTicketStatus.ACCEPTED);
   assert.equal(second.ticket.status, KitchenTicketStatus.ACCEPTED);
   assert.equal(state.ticketEvents.length, 1);
+  assert.deepEqual(completionVersions, [2, 2]);
 });
 
 test("cancel and ready racing from two devices produce one terminal decision", async () => {
@@ -350,6 +444,7 @@ function createConcurrentKitchenState() {
       },
     },
   };
+  let transactionOpen = false;
   let tail = Promise.resolve();
   const prisma = {
     branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
@@ -358,7 +453,14 @@ function createConcurrentKitchenState() {
       findUnique: async () => ({ orderId: order.id }),
     },
     $transaction: <T>(callback: (client: typeof tx) => Promise<T>) => {
-      const result = tail.then(() => callback(tx));
+      const result = tail.then(async () => {
+        transactionOpen = true;
+        try {
+          return await callback(tx);
+        } finally {
+          transactionOpen = false;
+        }
+      });
       tail = result.then(
         () => undefined,
         () => undefined,
@@ -367,5 +469,12 @@ function createConcurrentKitchenState() {
     },
   };
   const gateway = { emitOrderStatusChanged: () => undefined };
-  return { prisma, gateway, order, ticket, ticketEvents };
+  return {
+    prisma,
+    gateway,
+    order,
+    ticket,
+    ticketEvents,
+    isTransactionOpen: () => transactionOpen,
+  };
 }
