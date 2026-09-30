@@ -257,6 +257,22 @@ export class DesktopGateway {
           offlinePaymentAllowed &&
           hasStableIdempotencyKey(request, body)
         ) {
+          const transferError =
+            commandDefinition.commandType === "cash.transfer.create"
+              ? validateOfflineCashTransfer(
+                  this.store,
+                  authScope,
+                  targetUrl,
+                  body,
+                )
+              : null;
+          if (transferError) {
+            this.sendJson(response, 409, {
+              success: false,
+              error: { code: "OFFLINE_CASH_TRANSFER_UNSAFE", message: transferError },
+            });
+            return;
+          }
           const queued = this.queueMutation({
             authorization,
             authScope,
@@ -379,6 +395,22 @@ export class DesktopGateway {
         (error === KNOWN_OFFLINE_ERROR ||
           hasStableIdempotencyKey(request, body))
       ) {
+        const transferError =
+          commandDefinition.commandType === "cash.transfer.create"
+            ? validateOfflineCashTransfer(
+                this.store,
+                authScope,
+                targetUrl,
+                body,
+              )
+            : null;
+        if (transferError) {
+          this.sendJson(response, 409, {
+            success: false,
+            error: { code: "OFFLINE_CASH_TRANSFER_UNSAFE", message: transferError },
+          });
+          return;
+        }
         const queued = this.queueMutation({
           authorization,
           authScope,
@@ -405,6 +437,10 @@ export class DesktopGateway {
           message:
             isPaymentCommand && !offlinePaymentAllowed
               ? "Oflayn rejimda faqat naqd to'lov saqlanadi. Boshqa to'lov usuli uchun internet kerak."
+              : /^\/api\/v1\/cash-register\/transfers\/[^/]+\/(?:accept|reject)$/.test(
+                    url.pathname,
+                  )
+                ? "Pul topshiruvini qabul qilish yoki rad etish uchun internet kerak. Ikki kassa holatini tekshirmasdan bu amal navbatga olinmaydi."
               : method === "GET"
                 ? "Internet yo'q va bu ma'lumot hali qurilmada saqlanmagan."
                 : "Bu amal hozircha internet ulanishini talab qiladi.",
@@ -1176,11 +1212,17 @@ function acknowledgedCashTransactionCache(
   const transactionPath = pathname.match(
     /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
   );
+  const cashTransferPath = /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/;
   const envelope = parseJsonObject(responseText);
-  const transaction = recordField(envelope, "data");
+  const responseData = recordField(envelope, "data");
+  const isCashTransfer =
+    commandType === "cash.transfer.create" && cashTransferPath.test(pathname);
+  const transaction = isCashTransfer && responseData
+    ? cashTransferLedgerEntry(responseData)
+    : responseData;
   if (
-    commandType !== "cash.transaction.create" ||
-    !transactionPath?.[1] ||
+    (!isCashTransfer && commandType !== "cash.transaction.create") ||
+    (!isCashTransfer && !transactionPath?.[1]) ||
     !transaction ||
     !targetUrl
   ) {
@@ -1192,9 +1234,12 @@ function acknowledgedCashTransactionCache(
 
   try {
     const transactionUrl = new URL(resolvedTarget.value);
-    const resolvedShiftId = transactionUrl.pathname.match(
-      /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
-    )?.[1];
+    const resolvedShiftId = isCashTransfer
+      ? stringField(responseData, "fromShiftId") ??
+        stringField(recordField(responseData, "fromShift"), "id")
+      : transactionUrl.pathname.match(
+          /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
+        )?.[1];
     if (!resolvedShiftId) return null;
 
     const shiftUrl = new URL(transactionUrl);
@@ -1207,6 +1252,24 @@ function acknowledgedCashTransactionCache(
 
     const cachedEnvelope = parseJsonObject(cached.body);
     const shift = responseDataRecord(cachedEnvelope);
+    if (isCashTransfer && shift && responseData) {
+      const transferId = stringField(responseData, "id");
+      const hasServerLedgerEntry =
+        Array.isArray(shift.cashTransactions) &&
+        shift.cashTransactions.some(
+          (entry) =>
+            isRecord(entry) &&
+            entry.cashTransferId === transferId,
+        );
+      if (hasServerLedgerEntry) {
+        appendUniqueRecord(shift, "outgoingCashTransfers", responseData);
+        return {
+          path: "/api/v1/cash-register/shift",
+          requestUrl: shiftUrl.toString(),
+          body: JSON.stringify(cachedEnvelope),
+        };
+      }
+    }
     if (
       !shift ||
       shift.id !== resolvedShiftId ||
@@ -1214,6 +1277,9 @@ function acknowledgedCashTransactionCache(
       !applyCashTransactionToShift(shift, transaction)
     ) {
       return null;
+    }
+    if (isCashTransfer && responseData) {
+      appendUniqueRecord(shift, "outgoingCashTransfers", responseData);
     }
 
     return {
@@ -1224,6 +1290,159 @@ function acknowledgedCashTransactionCache(
   } catch {
     return null;
   }
+}
+
+function cashTransferLedgerEntry(
+  transfer: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const amount = finiteAmount(transfer.amount);
+  const fromShiftId =
+    stringField(transfer, "fromShiftId") ??
+    stringField(recordField(transfer, "fromShift"), "id");
+  if (
+    !stringField(transfer, "id") ||
+    !fromShiftId ||
+    amount === null ||
+    amount <= 0
+  ) {
+    return null;
+  }
+  return {
+    id: `cash-transfer-${stringField(transfer, "id")}`,
+    shiftId: fromShiftId,
+    cashTransferId: stringField(transfer, "id"),
+    type: "CASH_OUT",
+    amount: String(amount),
+    reason: "Cash transfer to cashier",
+    occurredAt: stringField(transfer, "createdAt") ?? new Date().toISOString(),
+    ...(stringField(transfer, "commandId")
+      ? {
+          commandId: stringField(transfer, "commandId"),
+          pendingSync: true,
+          offlineQueued: true,
+        }
+      : {}),
+  };
+}
+
+function optimisticCashTransfer(
+  command: PendingOutboxCommand,
+  payload: Record<string, unknown>,
+  body: Record<string, unknown>,
+  fromShiftId: string,
+): Record<string, unknown> | null {
+  const amount = finiteAmount(body.amount);
+  const toShiftId = stringField(body, "toShiftId");
+  if (!toShiftId || amount === null || amount <= 0) return null;
+  return {
+    id: `local-cash-transfer-${command.id}`,
+    commandId: command.id,
+    idempotencyKey: command.idempotencyKey,
+    fromShiftId,
+    toShiftId,
+    amount: String(amount),
+    reason: stringField(body, "reason") ?? "Xodim naqd pulni kassirga topshirdi",
+    status: "PENDING_SYNC",
+    createdAt: stringField(payload, "queuedAt") ?? new Date().toISOString(),
+    pendingSync: true,
+    offlineQueued: true,
+  };
+}
+
+function validateOfflineCashTransfer(
+  store: DesktopStore,
+  authScope: string,
+  targetUrl: string,
+  body: ArrayBuffer,
+): string | null {
+  const payload = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const amount = numberField(payload, "amount");
+  const toShiftId = stringField(payload, "toShiftId");
+  if (amount === null || amount <= 0 || !toShiftId) {
+    return "Pul topshirish summasi va qabul qiluvchi kassirni tekshiring.";
+  }
+
+  try {
+    const shiftUrl = new URL(targetUrl);
+    shiftUrl.pathname = "/api/v1/cash-register/shift";
+    shiftUrl.search = "";
+    const cachedShift = store.getCachedResponse(
+      DesktopStore.cacheKey(shiftUrl.toString(), authScope),
+    );
+    const source = cachedShift?.body ?? JSON.stringify({ success: true, data: null });
+    const projected = applyOptimisticProjection(
+      source,
+      shiftUrl.toString(),
+      store.listActiveMutations(authScope),
+    );
+    const shift = responseDataRecord(
+      parseJsonValue(projected?.body ?? source),
+    );
+    if (!shift || shift.status !== "OPEN") {
+      return "Oflayn pul topshirish uchun ochiq kassaning saqlangan holati topilmadi.";
+    }
+    const available =
+      finiteAmount(shift.expectedCash) ??
+      finiteAmount(shift.currentBalance) ??
+      finiteAmount(shift.currentCash) ??
+      finiteAmount(shift.openingBalance);
+    if (available === null) {
+      return "Kassadagi naqd pul qoldig'i oflayn tekshirilmadi. Internetga ulaning.";
+    }
+    if (amount > available) {
+      return "Topshirish summasi kassadagi mavjud naqd puldan oshib ketadi.";
+    }
+
+    const receiversUrl = new URL(targetUrl);
+    receiversUrl.pathname = "/api/v1/cash-register/transfers/receivers";
+    receiversUrl.search = "";
+    const cachedReceivers = store.getCachedResponse(
+      DesktopStore.cacheKey(receiversUrl.toString(), authScope),
+    );
+    const receiverEnvelope = cachedReceivers
+      ? parseJsonValue(cachedReceivers.body)
+      : null;
+    const receivers = Array.isArray(receiverEnvelope)
+      ? receiverEnvelope
+      : isRecord(receiverEnvelope) && Array.isArray(receiverEnvelope.data)
+        ? receiverEnvelope.data
+        : [];
+    if (
+      !receivers.some(
+        (receiver) => isRecord(receiver) && receiver.shiftId === toShiftId,
+      )
+    ) {
+      return "Qabul qiluvchi kassirning ochiq smenasi oflayn ro'yxatda topilmadi. Internetga ulaning.";
+    }
+    return null;
+  } catch {
+    return "Kassa holatini oflayn tekshirib bo'lmadi. Internetga ulaning.";
+  }
+}
+
+function appendUniqueRecord(
+  target: Record<string, unknown>,
+  collectionName: string,
+  item: Record<string, unknown>,
+): boolean {
+  const collection = Array.isArray(target[collectionName])
+    ? [...(target[collectionName] as unknown[])]
+    : [];
+  const itemId = stringField(item, "id");
+  if (
+    collection.some(
+      (entry) =>
+        isRecord(entry) &&
+        (entry.id === itemId ||
+          (typeof item.commandId === "string" &&
+            entry.commandId === item.commandId)),
+    )
+  ) {
+    return false;
+  }
+  collection.unshift(item);
+  target[collectionName] = collection.slice(0, 100);
+  return true;
 }
 
 function optimisticCashTransaction(
@@ -1485,6 +1704,41 @@ function applyOptimisticProjection(
       continue;
     }
 
+    if (
+      command.commandType === "cash.transfer.create" &&
+      /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/.test(
+        commandPath,
+      ) &&
+      pathname === "/api/v1/cash-register/shift"
+    ) {
+      const shift = responseDataRecord(projected);
+      const transfer =
+        shift?.status === "OPEN" && typeof shift.id === "string"
+          ? optimisticCashTransfer(command, payload ?? {}, commandBody ?? {}, shift.id)
+          : null;
+      const transaction = transfer ? cashTransferLedgerEntry(transfer) : null;
+      const available = shift
+        ? finiteAmount(shift.expectedCash) ??
+          finiteAmount(shift.currentBalance) ??
+          finiteAmount(shift.currentCash) ??
+          finiteAmount(shift.openingBalance)
+        : null;
+      const amount = transfer ? finiteAmount(transfer.amount) : null;
+      if (
+        shift &&
+        transfer &&
+        transaction &&
+        available !== null &&
+        amount !== null &&
+        amount <= available &&
+        applyCashTransactionToShift(shift, transaction)
+      ) {
+        appendUniqueRecord(shift, "outgoingCashTransfers", transfer);
+        applied.push(command.id);
+      }
+      continue;
+    }
+
     const statusMatch = commandPath.match(
       /^\/api\/v1\/orders\/([^/]+)\/status$/,
     );
@@ -1739,6 +1993,24 @@ function queuedResponseData(
     idempotencyKey: command.idempotencyKey,
     message: "Internet qaytganda avtomatik yuboriladi.",
   };
+
+  if (
+    /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/.test(
+      pathname,
+    )
+  ) {
+    const amount = numberField(parsedBody, "amount");
+    const toShiftId = stringField(parsedBody, "toShiftId");
+    return {
+      ...base,
+      id: `local-cash-transfer-${command.id}`,
+      amount: amount === null ? "0" : String(amount),
+      toShiftId,
+      status: "PENDING_SYNC",
+      createdAt: stringField(queuedPayload, "queuedAt") ?? new Date().toISOString(),
+      pendingSync: true,
+    };
+  }
 
   if (pathname === "/api/v1/pos/orders") {
     return {

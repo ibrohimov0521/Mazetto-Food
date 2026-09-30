@@ -317,6 +317,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Each acknowledged transaction updates the scoped cached shift snapshot atomically with outbox acknowledgement. A later outage keeps the confirmed transactions and balance instead of falling back to the pre-transaction snapshot.
 - Desktop bundle version: `0.1.67`. Full Desktop tests, typecheck, lint, build, CI, release, deploy and production smoke are required; physical register acceptance remains separate.
 
+## D3 offline cash handover creation (2026-10-01)
+
+- Cash handover creation carries a stable idempotency key across retries. While offline, the gateway checks the cached open shift, subtracts earlier queued handovers from the available cash, and refuses amounts above that projection or receivers absent from the cached open-receiver list.
+- A queued handover immediately appears as pending synchronization in the sender's history and reduces the projected cash balance. Server acknowledgement reconciles the outgoing-transfer list and cash-out ledger into the scoped shift cache without double-debiting if a server refresh already included the transfer.
+- Accept/reject remains online-only because either action changes two employee shift ledgers and cannot be reconciled safely from a stale offline snapshot.
+- Desktop bundle version: `0.1.68`. Automated transfer replay, duplicate-key, overdraw, offline accept/reject, full monorepo CI, deployment smoke and release checks are required; two-device physical reconciliation remains open.
+
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
 - Windows rendering, the hidden print window and the Electron driver callback now have bounded deadlines. ESC/POS TCP connect/write is bounded too; a printer that stops responding can no longer wait forever.

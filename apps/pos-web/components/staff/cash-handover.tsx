@@ -12,6 +12,8 @@ export type OutgoingTransfer = {
   amount: string;
   status: string;
   createdAt: string;
+  pendingSync?: boolean;
+  commandId?: string;
   toShift?: {
     employee?: { firstName: string; lastName?: string | null };
   } | null;
@@ -25,6 +27,7 @@ export type CashReceiver = {
 };
 const labels: Record<string, string> = {
   PENDING: "Kassir tasdig'i kutilmoqda",
+  PENDING_SYNC: "Internet qaytishini kutmoqda",
   ACCEPTED: "Qabul qilindi",
   REJECTED: "Qaytarildi",
   DISPUTED: "Tekshiruvda",
@@ -51,6 +54,7 @@ export function CashHandover({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
+  const idempotency = useRef<{ fingerprint: string; key: string } | null>(null);
   const value = Number(amount);
   const receiver = receivers.find(
     (candidate) => candidate.shiftId === receiverShiftId,
@@ -76,14 +80,31 @@ export function CashHandover({
     setBusy(true);
     setError("");
     try {
+      const fingerprint = `${shiftId}:${receiverShiftId}:${value}`;
+      if (idempotency.current?.fingerprint !== fingerprint) {
+        idempotency.current = {
+          fingerprint,
+          key:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `cash-transfer-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        };
+      }
+      const idempotencyKey = idempotency.current.key;
       await apiFetch("/cash-register/transfers", {
         method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({ amount: value, toShiftId: receiverShiftId }),
         signal: AbortSignal.timeout(15000),
       });
+      idempotency.current = null;
       setConfirming(false);
       setAmount("");
-      await onChanged();
+      try {
+        await onChanged();
+      } catch {
+        setError("Pul topshirildi, lekin ro'yxat yangilanmadi. Sahifani yangilang.");
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Pul topshirilmadi");
     } finally {
@@ -211,7 +232,11 @@ export function CashHandover({
                 )}
                 {labels[transfer.status] ?? transfer.status}
               </span>
-              <CashTransferDetailButton transferId={transfer.id} />
+              {transfer.pendingSync ? (
+                <span className={styles.muted}>Qurilmada saqlandi</span>
+              ) : (
+                <CashTransferDetailButton transferId={transfer.id} />
+              )}
             </article>
           ))}
         </div>
