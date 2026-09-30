@@ -283,7 +283,26 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
   const authorization = desktopJwt("cashier-1", "branch-1");
   const sent: { url: string; idempotencyKey: string | null; body: string }[] =
     [];
-  let online = false;
+  let online = true;
+  const bootstrapSnapshot = {
+    success: true,
+    data: {
+      schemaVersion: 2,
+      branchId: "branch-1",
+      catalog: {
+        branchId: "branch-1",
+        products: [
+          {
+            id: "product-1",
+            name: "Lavash",
+            variants: [{ id: "variant-1", name: "Katta" }],
+            modifiers: [],
+          },
+        ],
+        tables: [{ id: "table-1", name: "1-stol", code: "T1" }],
+      },
+    },
+  };
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: 0,
@@ -308,12 +327,24 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
         return jsonResponse({ success: true, data: { ok: true } });
       }
 
+      if (url.endsWith("/realtime/bootstrap")) {
+        return jsonResponse(bootstrapSnapshot);
+      }
+
       return jsonResponse({ success: true, data: [] });
     },
   });
 
   try {
     const gatewayPort = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const bootstrap = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/realtime/bootstrap`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(bootstrap.status, 200);
+    online = false;
+
     const sale = await fetch(
       `http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`,
       {
@@ -324,6 +355,15 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
         },
         body: JSON.stringify({
           idempotencyKey: "sale-key-1",
+          type: "DINE_IN",
+          tableId: "table-1",
+          items: [
+            {
+              productId: "product-1",
+              variantId: "variant-1",
+              quantity: 1,
+            },
+          ],
           payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
         }),
       },
@@ -335,6 +375,25 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     const saleData = (await sale.json()).data;
     assert.match(saleData.order.orderNumber, /^POS-\d{8}-\d{6}-[A-F0-9]{8}$/);
     assert.equal(saleData.order.displayOrderNumber, 101);
+    const outboxCommand = store.listOutbox()[0];
+    assert.ok(outboxCommand);
+    const queuedPayload = JSON.parse(
+      store.getOutboxCommand(outboxCommand.id)?.payloadJson ?? "{}",
+    ) as {
+      offlineOrderSnapshot?: {
+        items?: Array<{ productName?: string; variantName?: string }>;
+        table?: { id?: string };
+      };
+    };
+    assert.equal(
+      queuedPayload.offlineOrderSnapshot?.items?.[0]?.productName,
+      "Lavash",
+    );
+    assert.equal(
+      queuedPayload.offlineOrderSnapshot?.items?.[0]?.variantName,
+      "Katta",
+    );
+    assert.equal(queuedPayload.offlineOrderSnapshot?.table?.id, "table-1");
 
     online = true;
     const onlineRequest = await fetch(
