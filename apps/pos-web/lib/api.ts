@@ -29,6 +29,16 @@ function readEnvelopeMessage(
  * Sessiya tugaganda `apiFetch` shu xatoni tashlaydi.
  * Chaqiruvchi buni oddiy xatodan ajratib, login'ga yo'naltirishi mumkin.
  */
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 export class SessionExpiredError extends Error {
   constructor(message = "Sessiya muddati tugagan. Qaytadan kiring.") {
     super(message);
@@ -61,7 +71,10 @@ export function isOfflineQueuedResult(
  */
 let refreshInFlight: Promise<AuthSession | null> | null = null;
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
   const session = readSession();
   let response = await requestWithSession(path, init, session);
 
@@ -85,8 +98,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const payload = await parseEnvelope<T>(response);
 
   if (!response.ok || !payload.success || payload.data === undefined) {
-    throw new Error(
+    throw new ApiRequestError(
       readEnvelopeMessage(payload.error?.message) ?? "Request failed",
+      response.status,
     );
   }
 
@@ -131,7 +145,9 @@ async function requestWithSession(
   }
 }
 
-async function refreshSession(session: AuthSession): Promise<AuthSession | null> {
+async function refreshSession(
+  session: AuthSession,
+): Promise<AuthSession | null> {
   refreshInFlight ??= performRefresh(session).finally(() => {
     refreshInFlight = null;
   });
@@ -139,7 +155,9 @@ async function refreshSession(session: AuthSession): Promise<AuthSession | null>
   return refreshInFlight;
 }
 
-async function performRefresh(session: AuthSession): Promise<AuthSession | null> {
+async function performRefresh(
+  session: AuthSession,
+): Promise<AuthSession | null> {
   /*
    * Boshqa bir so'rov biz kutayotgan vaqtda yangilab ulgurgan bo'lishi mumkin.
    * Saqlangan token o'zgargan bo'lsa, uni ishlatamiz.
@@ -153,13 +171,19 @@ async function performRefresh(session: AuthSession): Promise<AuthSession | null>
   let response: Response;
 
   try {
-    response = await requestWithSession("/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(session.tokens.refreshToken
-        ? { refreshToken: session.tokens.refreshToken }
-        : {}),
-    }, null);
+    response = await requestWithSession(
+      "/auth/refresh",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          session.tokens.refreshToken
+            ? { refreshToken: session.tokens.refreshToken }
+            : {},
+        ),
+      },
+      null,
+    );
   } catch {
     // Tarmoq uzilishi — sessiyani o'chirmaymiz, keyingi urinishda tiklanishi mumkin.
     return null;

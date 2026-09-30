@@ -3,6 +3,7 @@ import {
   Delete,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -10,6 +11,7 @@ import {
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -62,8 +64,13 @@ export class TablesController {
     @Param("id") id: string,
     @Body() dto: CreateTableOrderDto,
     @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    return this.tablesService.createOrderForTable(id, dto, user);
+    return this.tablesService.createOrderForTable(id, dto, user, {
+      correlationId,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+    });
   }
 
   @Patch("tables/:id/status")

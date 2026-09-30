@@ -20,6 +20,12 @@ import {
   resolveRestaurantScope,
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { IdempotencyService } from "../../common/idempotency/idempotency.service";
+import {
+  buildIdempotencyScope,
+  hashCanonicalJson,
+  normalizeIdempotencyKey,
+} from "../../common/idempotency/idempotency-key";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
@@ -39,6 +45,7 @@ export class TablesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   async listHalls(branchId: string | undefined, user: AuthenticatedUser) {
@@ -384,169 +391,253 @@ export class TablesService {
     id: string,
     dto: CreateTableOrderDto,
     user: AuthenticatedUser,
+    context?: { correlationId: string; idempotencyKey?: string },
   ) {
     const waiterId = this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const idempotencyKey = context?.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+    const requestHash = idempotencyKey
+      ? hashCanonicalJson({ tableId: id, dto })
+      : undefined;
+    const idempotencyScope = idempotencyKey
+      ? buildIdempotencyScope("tables", "order", scope.tenantId, user.id, id)
+      : undefined;
+    const decision =
+      idempotencyKey && requestHash && idempotencyScope
+        ? await this.idempotency.start({
+            scope: idempotencyScope,
+            key: idempotencyKey,
+            requestHash,
+            correlationId: context!.correlationId,
+            actorId: user.id,
+            expiresAt: new Date(Date.now() + 5 * 60_000),
+          })
+        : undefined;
 
-    const order = await this.prisma.$transaction(async (tx) => {
-      const table = await tx.restaurantTable.findFirst({
+    if (decision?.kind === "REPLAY") {
+      const resourceId = decision.record.resourceId;
+      if (decision.record.resourceType !== "ORDER" || !resourceId) {
+        throw new ConflictException("Previous table order did not complete");
+      }
+      const previousOrder = await this.prisma.order.findFirst({
         where: {
-          id,
+          id: resourceId,
+          tableId: id,
           ...(scope.branchId
             ? { branchId: scope.branchId }
             : { branch: { tenantId: scope.tenantId } }),
         },
-      });
-
-      if (!table?.isActive) {
-        throw new NotFoundException("Table not found");
-      }
-
-      await this.assertEmployeeInBranch(tx, waiterId, table.branchId);
-      await assertBranchBelongsToActor(tx, user, table.branchId);
-      await tx.$queryRawUnsafe(
-        'SELECT "id" FROM "restaurant_tables" WHERE "id" = $1 FOR UPDATE',
-        id,
-      );
-
-      if (
-        table.status === TableStatus.CLEANING ||
-        table.status === TableStatus.RESERVED
-      ) {
-        throw new BadRequestException("Table is not available for a new order");
-      }
-
-      const existingOrders = await tx.order.findMany({
-        where: {
-          tableId: id,
-          status: { in: activeTableOrderStatuses },
-        },
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          status: true,
-          isSupplemental: true,
-          parentOrderId: true,
-          supplementNumber: true,
-          createdAt: true,
-        },
-      });
-
-      if (!dto.isSupplemental && existingOrders.length) {
-        throw new BadRequestException("Table already has an active order");
-      }
-      if (dto.isSupplemental) {
-        if (existingOrders.some((order) => order.status === OrderStatus.NEW)) {
-          throw new BadRequestException(
-            "Qo'shimcha buyurtma allaqachon ochilgan",
-          );
-        }
-        if (
-          !existingOrders.some((order) =>
-            (
-              [
-                OrderStatus.CONFIRMED,
-                OrderStatus.PREPARING,
-                OrderStatus.READY,
-              ] as OrderStatus[]
-            ).includes(order.status),
-          )
-        ) {
-          throw new BadRequestException(
-            "Qo'shimcha buyurtma uchun oshxonaga yuborilgan faol buyurtma kerak",
-          );
-        }
-      }
-
-      const parentOrder = dto.isSupplemental
-        ? existingOrders.find((candidate) => !candidate.isSupplemental)
-        : undefined;
-      if (dto.isSupplemental && !parentOrder) {
-        throw new BadRequestException(
-          "Qo'shimcha buyurtmaning asosiy buyurtmasi topilmadi",
-        );
-      }
-      const supplementNumber = parentOrder
-        ? Math.max(
-            0,
-            ...existingOrders
-              .filter(
-                (candidate) =>
-                  candidate.isSupplemental &&
-                  (!candidate.parentOrderId ||
-                    candidate.parentOrderId === parentOrder.id),
-              )
-              .map((candidate) => candidate.supplementNumber ?? 0),
-          ) + 1
-        : null;
-
-      const displayOrder = await allocateDisplayOrderNumber(
-        tx,
-        OrderSource.POS,
-      );
-      const order = await tx.order.create({
-        data: {
-          branchId: table.branchId,
-          tableId: id,
-          waiterId,
-          createdById: waiterId,
-          orderNumber: this.createOrderNumber(),
-          ...displayOrder,
-          source: OrderSource.POS,
-          type: dto.type ?? OrderType.DINE_IN,
-          isSupplemental: dto.isSupplemental ?? false,
-          parentOrderId: parentOrder?.id ?? null,
-          supplementNumber,
-          status: OrderStatus.NEW,
-          guestCount: dto.guestCount ?? null,
-          notes: dto.notes ?? null,
-        },
-      });
-
-      await tx.restaurantTable.update({
-        where: { id },
-        data: { status: TableStatus.OCCUPIED },
-      });
-
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          toStatus: OrderStatus.NEW,
-          changedByUserId: user.id,
-          changedByEmployeeId: waiterId,
-          reason: dto.isSupplemental
-            ? "Waiter opened supplemental table order"
-            : "Waiter opened table order",
-        },
-      });
-
-      await recordOrderEvent(tx, {
-        orderId: order.id,
-        branchId: table.branchId,
-        aggregateVersion: order.version,
-        eventType: ORDER_EVENTS.PLACED,
-        actorType: "STAFF",
-        actorId: user.id,
-        source: "POS",
-        newState: OrderState.PLACED,
-        payload: {
-          legacyStatus: OrderStatus.NEW,
-          type: order.type,
-          isSupplemental: order.isSupplemental,
-          parentOrderId: order.parentOrderId,
-          supplementNumber: order.supplementNumber,
-        },
-        reasonCode: dto.isSupplemental
-          ? "SUPPLEMENTAL_TABLE_ORDER_CREATED"
-          : "TABLE_ORDER_CREATED",
-        correlationId: randomUUID(),
-      });
-
-      return tx.order.findUnique({
-        where: { id: order.id },
         include: { table: true, items: true },
       });
-    });
+      if (!previousOrder) {
+        throw new ConflictException(
+          "Previous table order is no longer available",
+        );
+      }
+      return previousOrder;
+    }
+
+    const order = await (async () => {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const table = await tx.restaurantTable.findFirst({
+            where: {
+              id,
+              ...(scope.branchId
+                ? { branchId: scope.branchId }
+                : { branch: { tenantId: scope.tenantId } }),
+            },
+          });
+
+          if (!table?.isActive) {
+            throw new NotFoundException("Table not found");
+          }
+
+          await this.assertEmployeeInBranch(tx, waiterId, table.branchId);
+          await assertBranchBelongsToActor(tx, user, table.branchId);
+          await tx.$queryRawUnsafe(
+            'SELECT "id" FROM "restaurant_tables" WHERE "id" = $1 FOR UPDATE',
+            id,
+          );
+
+          if (
+            table.status === TableStatus.CLEANING ||
+            table.status === TableStatus.RESERVED
+          ) {
+            throw new BadRequestException(
+              "Table is not available for a new order",
+            );
+          }
+
+          const existingOrders = await tx.order.findMany({
+            where: {
+              tableId: id,
+              status: { in: activeTableOrderStatuses },
+            },
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              status: true,
+              isSupplemental: true,
+              parentOrderId: true,
+              supplementNumber: true,
+              createdAt: true,
+            },
+          });
+
+          if (!dto.isSupplemental && existingOrders.length) {
+            throw new BadRequestException("Table already has an active order");
+          }
+          if (dto.isSupplemental) {
+            if (
+              existingOrders.some((order) => order.status === OrderStatus.NEW)
+            ) {
+              throw new BadRequestException(
+                "Qo'shimcha buyurtma allaqachon ochilgan",
+              );
+            }
+            if (
+              !existingOrders.some((order) =>
+                (
+                  [
+                    OrderStatus.CONFIRMED,
+                    OrderStatus.PREPARING,
+                    OrderStatus.READY,
+                  ] as OrderStatus[]
+                ).includes(order.status),
+              )
+            ) {
+              throw new BadRequestException(
+                "Qo'shimcha buyurtma uchun oshxonaga yuborilgan faol buyurtma kerak",
+              );
+            }
+          }
+
+          const parentOrder = dto.isSupplemental
+            ? existingOrders.find((candidate) => !candidate.isSupplemental)
+            : undefined;
+          if (dto.isSupplemental && !parentOrder) {
+            throw new BadRequestException(
+              "Qo'shimcha buyurtmaning asosiy buyurtmasi topilmadi",
+            );
+          }
+          const supplementNumber = parentOrder
+            ? Math.max(
+                0,
+                ...existingOrders
+                  .filter(
+                    (candidate) =>
+                      candidate.isSupplemental &&
+                      (!candidate.parentOrderId ||
+                        candidate.parentOrderId === parentOrder.id),
+                  )
+                  .map((candidate) => candidate.supplementNumber ?? 0),
+              ) + 1
+            : null;
+
+          const displayOrder = await allocateDisplayOrderNumber(
+            tx,
+            OrderSource.POS,
+          );
+          const order = await tx.order.create({
+            data: {
+              branchId: table.branchId,
+              tableId: id,
+              waiterId,
+              createdById: waiterId,
+              orderNumber: this.createOrderNumber(),
+              ...displayOrder,
+              source: OrderSource.POS,
+              type: dto.type ?? OrderType.DINE_IN,
+              isSupplemental: dto.isSupplemental ?? false,
+              parentOrderId: parentOrder?.id ?? null,
+              supplementNumber,
+              status: OrderStatus.NEW,
+              guestCount: dto.guestCount ?? null,
+              notes: dto.notes ?? null,
+            },
+          });
+
+          await tx.restaurantTable.update({
+            where: { id },
+            data: { status: TableStatus.OCCUPIED },
+          });
+
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              toStatus: OrderStatus.NEW,
+              changedByUserId: user.id,
+              changedByEmployeeId: waiterId,
+              reason: dto.isSupplemental
+                ? "Waiter opened supplemental table order"
+                : "Waiter opened table order",
+            },
+          });
+
+          await recordOrderEvent(tx, {
+            orderId: order.id,
+            branchId: table.branchId,
+            aggregateVersion: order.version,
+            eventType: ORDER_EVENTS.PLACED,
+            actorType: "STAFF",
+            actorId: user.id,
+            source: "POS",
+            newState: OrderState.PLACED,
+            payload: {
+              legacyStatus: OrderStatus.NEW,
+              type: order.type,
+              isSupplemental: order.isSupplemental,
+              parentOrderId: order.parentOrderId,
+              supplementNumber: order.supplementNumber,
+            },
+            reasonCode: dto.isSupplemental
+              ? "SUPPLEMENTAL_TABLE_ORDER_CREATED"
+              : "TABLE_ORDER_CREATED",
+            correlationId: context?.correlationId ?? randomUUID(),
+          });
+
+          const result = await tx.order.findUnique({
+            where: { id: order.id },
+            include: { table: true, items: true },
+          });
+          if (!result) {
+            throw new ConflictException(
+              "Created table order could not be loaded",
+            );
+          }
+          if (decision?.kind === "CLAIMED" && requestHash) {
+            await this.idempotency.complete(
+              decision.record.id,
+              {
+                requestHash,
+                responseStatus: 201,
+                responseBody: { orderId: result.id },
+                resourceType: "ORDER",
+                resourceId: result.id,
+              },
+              tx,
+            );
+          }
+          return result;
+        });
+      } catch (error) {
+        if (decision?.kind === "CLAIMED" && requestHash) {
+          try {
+            await this.idempotency.fail(
+              decision.record.id,
+              requestHash,
+              "TABLE_ORDER_CREATE_FAILED",
+            );
+          } catch {
+            // Preserve the original transaction failure.
+          }
+        }
+        throw error;
+      }
+    })();
 
     this.kitchenService.emitOrderCreated(order);
     return order;
