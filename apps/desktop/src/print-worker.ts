@@ -87,6 +87,8 @@ export class DesktopPrintWorker {
   private readonly localQueue: LocalPrintQueue | undefined;
   private authorization: string | null = null;
   private running = false;
+  private stopping = false;
+  private activeTick: Promise<void> | null = null;
   private managedPrinters = 0;
   private managedPrinterDetails: ManagedPrinter[] = [];
   private localAssignedPrinterIds: string[] = [];
@@ -145,85 +147,98 @@ export class DesktopPrintWorker {
   }
 
   async tick(): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.stopping) return;
     this.running = true;
+    const activeTick = this.performTick();
+    this.activeTick = activeTick;
     try {
-      for (let index = 0; index < MAX_LOCAL_PRINT_JOBS_PER_TICK; index += 1) {
-        if (!(await this.printNextLocalJob())) {
-          break;
-        }
-      }
-      if (!this.authorization) return;
-
-      const readyPrinters = await this.discoverReadyPrinters();
-      const acceptsUnassigned = Boolean(this.printerHost) || this.systemPrinters.length > 0;
-      if (readyPrinters.length === 0 && !acceptsUnassigned) return;
-      const job = await this.request<PrintJob | null>("/receipts/print-jobs/claim", {
-        method: "POST",
-        body: JSON.stringify({
-          agentId: this.agentId,
-          printerIds: [
-            ...readyPrinters.map((printer) => printer.id),
-            ...this.localAssignedPrinterIds,
-          ],
-          acceptUnassigned: acceptsUnassigned,
-        }),
-      });
-      if (!job) return;
-      try {
-        // Job payloadi chek yaratilgan tranzaksiyaning immutable nusxasi.
-        // Uni birinchi ishlatish printerdagi ishni keyingi GET so'rovidan
-        // mustaqil qiladi: chek ekrani yoki vaqtinchalik API xatosi sabab
-        // bo'sh sahifa chop etilmaydi.
-        const receipt = printableReceiptFromJob(job) ?? await this.request<PrintableReceipt>(`/receipts/${encodeURIComponent(job.receiptId)}`);
-        const route = receiptRoute(receipt);
-        if (
-          receipt.orderId &&
-          this.localQueue?.wasPrinted(receipt.orderId, route)
-        ) {
-          await this.completeServerJob(job);
-          return;
-        }
-        assertPrintableReceipt(receipt);
-
-        const metadata = job.printer?.metadata ?? {};
-        const host = typeof metadata.host === "string" && metadata.host.trim()
-          ? metadata.host.trim()
-          : null;
-        const paperWidthMm = printerPaperWidth(metadata.paperWidthMm);
-        const systemTargets = selectSystemPrinterTargets(job, route, this.systemPrinters);
-        if (paperWidthMm === 210 && (host || (!(systemTargets.length > 0 && this.printSystem) && this.printerHost))) {
-          throw new Error("A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning");
-        }
-        if (host) {
-          const port = typeof metadata.port === "number" && Number.isInteger(metadata.port)
-            ? metadata.port
-            : this.printerPort;
-          const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
-          const commands = printable.escpos?.commands ?? [];
-          if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
-          await this.send(commands, host, port, paperWidthMm);
-        } else if (systemTargets.length > 0 && this.printSystem) {
-          for (const target of systemTargets) {
-            await this.printSystem(target.name, receipt, target.paperWidthMm || paperWidthMm);
-          }
-        } else if (this.printerHost && !job.printer) {
-          const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
-          const commands = printable.escpos?.commands ?? [];
-          if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
-          await this.send(commands, this.printerHost, this.printerPort, paperWidthMm);
-        } else {
-          throw new Error(`${route} uchun lokal printer tanlanmagan`);
-        }
-        await this.completeServerJob(job);
-      } catch (error) {
-        await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, {
-          method: "POST",
-          body: JSON.stringify({ leaseToken: job.leaseToken, error: message(error) }),
-        }).catch(() => undefined);
-      }
+      await activeTick;
     } finally {
+      if (this.activeTick === activeTick) this.activeTick = null;
       this.running = false;
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.stopping = true;
+    await this.activeTick?.catch(() => undefined);
+  }
+
+  private async performTick(): Promise<void> {
+    for (let index = 0; index < MAX_LOCAL_PRINT_JOBS_PER_TICK; index += 1) {
+      if (this.stopping) break;
+      if (!(await this.printNextLocalJob())) {
+        break;
+      }
+    }
+    if (this.stopping || !this.authorization) return;
+
+    const readyPrinters = await this.discoverReadyPrinters();
+    const acceptsUnassigned = Boolean(this.printerHost) || this.systemPrinters.length > 0;
+    if (readyPrinters.length === 0 && !acceptsUnassigned) return;
+    const job = await this.request<PrintJob | null>("/receipts/print-jobs/claim", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: this.agentId,
+        printerIds: [
+          ...readyPrinters.map((printer) => printer.id),
+          ...this.localAssignedPrinterIds,
+        ],
+        acceptUnassigned: acceptsUnassigned,
+      }),
+    });
+    if (!job) return;
+    try {
+      // Job payloadi chek yaratilgan tranzaksiyaning immutable nusxasi.
+      // Uni birinchi ishlatish printerdagi ishni keyingi GET so'rovidan
+      // mustaqil qiladi: chek ekrani yoki vaqtinchalik API xatosi sabab
+      // bo'sh sahifa chop etilmaydi.
+      const receipt = printableReceiptFromJob(job) ?? await this.request<PrintableReceipt>(`/receipts/${encodeURIComponent(job.receiptId)}`);
+      const route = receiptRoute(receipt);
+      if (
+        receipt.orderId &&
+        this.localQueue?.wasPrinted(receipt.orderId, route)
+      ) {
+        await this.completeServerJob(job);
+        return;
+      }
+      assertPrintableReceipt(receipt);
+
+      const metadata = job.printer?.metadata ?? {};
+      const host = typeof metadata.host === "string" && metadata.host.trim()
+        ? metadata.host.trim()
+        : null;
+      const paperWidthMm = printerPaperWidth(metadata.paperWidthMm);
+      const systemTargets = selectSystemPrinterTargets(job, route, this.systemPrinters);
+      if (paperWidthMm === 210 && (host || (!(systemTargets.length > 0 && this.printSystem) && this.printerHost))) {
+        throw new Error("A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning");
+      }
+      if (host) {
+        const port = typeof metadata.port === "number" && Number.isInteger(metadata.port)
+          ? metadata.port
+          : this.printerPort;
+        const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
+        const commands = printable.escpos?.commands ?? [];
+        if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
+        await this.send(commands, host, port, paperWidthMm);
+      } else if (systemTargets.length > 0 && this.printSystem) {
+        for (const target of systemTargets) {
+          await this.printSystem(target.name, receipt, target.paperWidthMm || paperWidthMm);
+        }
+      } else if (this.printerHost && !job.printer) {
+        const printable = receipt.escpos?.commands?.length ? receipt : await this.request<PrintableReceipt>("/receipts/" + encodeURIComponent(job.receiptId));
+        const commands = printable.escpos?.commands ?? [];
+        if (commands.length === 0) throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
+        await this.send(commands, this.printerHost, this.printerPort, paperWidthMm);
+      } else {
+        throw new Error(`${route} uchun lokal printer tanlanmagan`);
+      }
+      await this.completeServerJob(job);
+    } catch (error) {
+      await this.request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, {
+        method: "POST",
+        body: JSON.stringify({ leaseToken: job.leaseToken, error: message(error) }),
+      }).catch(() => undefined);
     }
   }
 
