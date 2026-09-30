@@ -62,7 +62,10 @@ test("desktop store removes expired cache entries without touching another scope
       cachedAt: "2020-01-01T00:00:00.000Z",
     });
     store.putCachedResponse({
-      cacheKey: DesktopStore.cacheKey("https://api.example.test/current", currentScope),
+      cacheKey: DesktopStore.cacheKey(
+        "https://api.example.test/current",
+        currentScope,
+      ),
       requestUrl: "https://api.example.test/current",
       authScope: currentScope,
       status: 200,
@@ -249,6 +252,59 @@ test("desktop store lists, retries and cancels queued mutations", async () => {
     assert.equal(store.listOutbox().length, 0);
   } finally {
     store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("desktop store enforces cache retention on startup without crossing scopes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const expiredScope = DesktopStore.authScope("Bearer expired-scope");
+  const activeScope = DesktopStore.authScope("Bearer active-scope");
+  const expiredUrl = "https://api.example.test/expired";
+  const activeUrl = "https://api.example.test/active";
+  const expiredKey = DesktopStore.cacheKey(expiredUrl, expiredScope);
+  const activeKey = DesktopStore.cacheKey(activeUrl, activeScope);
+
+  const initialStore = new DesktopStore(path);
+  initialStore.close();
+
+  const database = new DatabaseSync(path);
+  try {
+    const insert = database.prepare(
+      `INSERT INTO api_cache (
+        cache_key, request_url, auth_scope, status, content_type, body, cached_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insert.run(
+      expiredKey,
+      expiredUrl,
+      expiredScope,
+      200,
+      "application/json",
+      "{}",
+      "2020-01-01T00:00:00.000Z",
+    );
+    insert.run(
+      activeKey,
+      activeUrl,
+      activeScope,
+      200,
+      "application/json",
+      "{}",
+      new Date().toISOString(),
+    );
+  } finally {
+    database.close();
+  }
+
+  const reopenedStore = new DesktopStore(path);
+  try {
+    assert.equal(reopenedStore.getCachedResponse(expiredKey), null);
+    assert.ok(reopenedStore.getCachedResponse(activeKey));
+    assert.equal(reopenedStore.summary().cachedResponses, 1);
+  } finally {
+    reopenedStore.close();
     await rm(directory, { recursive: true, force: true });
   }
 });
