@@ -105,6 +105,13 @@ function ShiftConsole() {
   const expectedCash = Number(
     shift?.expectedCash ?? shift?.currentBalance ?? shift?.openingBalance ?? 0,
   );
+  const hasUnresolvedCashTransfer = Boolean(
+    shift?.outgoingCashTransfers?.some(
+      (transfer) => transfer.status === "PENDING" || transfer.pendingSync,
+    ),
+  );
+  const closeBlockedByTransfer =
+    "Smenani yopishdan oldin pul topshiruvi qabul qilinishi yoki rad etilishi kerak. Internet aloqasi tiklangach, topshiruvni hal qiling.";
   const closingValue = Number(closingCash || 0);
   const difference = closingValue - expectedCash;
   const closingValid =
@@ -252,6 +259,11 @@ function ShiftConsole() {
 
   async function closeShift() {
     if (!shift || saving.current || !closingValid) return;
+    if (hasUnresolvedCashTransfer) {
+      setIsConfirmingClose(false);
+      setError(closeBlockedByTransfer);
+      return;
+    }
     saving.current = true;
     setIsSaving(true);
     setError(null);
@@ -467,13 +479,18 @@ function ShiftConsole() {
                 </div>
                 <button
                   className={`${styles.secondary} ${styles.full}`}
-                  disabled={isSaving || !closingValid}
+                  disabled={isSaving || !closingValid || hasUnresolvedCashTransfer}
                   onClick={() => setIsConfirmingClose(true)}
                   type="button"
                 >
                   <LockKeyhole size={18} />
                   Smenani yopish
                 </button>
+                {hasUnresolvedCashTransfer && (
+                  <p className={styles.error} role="status">
+                    {closeBlockedByTransfer}
+                  </p>
+                )}
               </section>
             </div>
           </>
