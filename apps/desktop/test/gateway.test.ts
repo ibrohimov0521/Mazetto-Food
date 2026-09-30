@@ -408,6 +408,51 @@ test("gateway bounds slow upstream requests and queues the POS sale", async () =
   }
 });
 
+test("gateway does not queue a write after an ambiguous network failure without a stable idempotency key", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-ambiguous-network", "branch-1");
+  const attempted: string[] = [];
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      attempted.push(url);
+      throw new Error("connection reset after request write");
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/pos/orders`, {
+      method: "POST",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        items: [],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      }),
+    });
+
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("x-mazetto-desktop"), null);
+    assert.equal(attempted.length, 1);
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.summary().sendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway queues only cash payments while offline", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));

@@ -205,3 +205,11 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Catalog filtering follows POS visibility and stock-availability rules. Snapshot mismatch, malformed data, unsupported versions and cross-branch data fail closed.
 - Verification: backend bootstrap tests, POS snapshot-validation tests, backend/POS typecheck, POS lint, full backend/POS/Desktop test suites, affected production builds and 33 repository validators passed.
 - This only improves offline POS catalog reads after a successful authorized bootstrap. It does not enable offline login, an uncached shift, card/terminal payments, arbitrary admin writes, or all staff panels. It is not a 100% offline guarantee; D2 and later offline phases remain open, as do physical printer acceptance and outage/power-loss drills.
+
+## D3 ambiguous-request idempotency gate (2026-09-30)
+
+- A command may be queued without a caller-provided idempotency key only when the Desktop gateway had already marked the upstream offline and therefore did not send that request.
+- If a request was attempted and the connection failed before a response arrived, it is queued only when the original request already had a stable idempotency key. This avoids replaying a command with a newly generated key after the server may already have committed it.
+- Existing branch/user scoping, cash-only offline payment restrictions, and explicitly supported command routes remain unchanged.
+- Verification: Desktop command suite and full monorepo CI passed; the regression test simulates a connection reset after sending a keyless POS command and verifies no outbox row is created.
+- This tightens duplicate prevention but does not complete D3: route-by-route idempotency guarantees, dependency ordering, projections, conflicts, and replay acceptance still need dedicated validation.
