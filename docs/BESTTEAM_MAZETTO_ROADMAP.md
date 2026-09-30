@@ -290,3 +290,15 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Printer worker yangi ticklarni to'xtatadi, ammo boshlangan chekni/print jobni yakunlashini kutadi; shunda yopilish vaqtida lokal navbat yoki outbox yozuvlari SQLite yopilgandan keyin ishlatilmaydi.
 - Regression testlar: gateway yopilishi durable mutation sync tugashini kutadi; print worker faol printer ishini kutib, keyingi ishni boshlamaydi.
 - Release tekshiruvlari: desktop test suite 62/62, TypeScript typecheck, ESLint va compile/preload build o'tdi. Bu xavfsiz shutdown dalili, internet uzilganda barcha amallar ishlashining kafolati emas.
+
+
+- Desktop updater package 0.1.48 Windows release successfully published; Dokploy backend was not redeployed.
+
+## 25. HTTP outage detection in desktop offline mode (2026-09-30)
+
+- Upstream HTTP 502/503/504 and Cloudflare origin-unavailable 521-524 now switch the local gateway to offline mode instead of falsely reporting online.
+- Cached successful GET snapshots are returned for ordinary reads. Realtime catch-up stays online-only and is not replaced with stale data.
+- Cash POS/payment writes with a stable idempotency key may be saved to the local outbox on these outage responses. A write without a stable key is returned as an outage error and is not replayed, avoiding duplicate sales.
+- Gateway regression suite: 18/18; full desktop suite: 65/65, plus TypeScript, ESLint, and compile/preload build passed.
+- Desktop updater package 0.1.49; release will publish after hosted CI. This does not deploy backend services. Absolute offline operation is not claimed: first login/device enrollment, card/terminal payments, unregistered API actions, and uncached data still need internet. Physical printer acceptance is still pending.
+- Next: customer-site hardware acceptance for cash sales, reconnect sync and configured printers; record exact printer models/connection types and resolve any driver-specific issues before promising compatibility. Continue the separate staging tenant A/B and durable Telegram queue gates without activating a second restaurant.
