@@ -1,7 +1,10 @@
 "use client";
 
 import { getApiBaseUrl, type AuthSession } from "./auth";
-import { recordApiResponseFreshness } from "./offline-freshness.mjs";
+import {
+  getApiFreshnessScope,
+  recordApiResponseFreshness,
+} from "./offline-freshness.mjs";
 import { readSession, writeSession } from "./session";
 
 /*
@@ -76,7 +79,10 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const panelPath =
+    typeof window === "undefined" ? null : window.location.pathname;
   const session = readSession();
+  const freshnessScope = getApiFreshnessScope(session?.user ?? null);
   let response = await requestWithSession(path, init, session);
 
   if (response.status === 401 && session) {
@@ -101,6 +107,8 @@ export async function apiFetch<T>(
       path,
       response.headers.get("X-Mazetto-Desktop") ?? "online",
       response.headers.get("X-Mazetto-Cached-At"),
+      panelPath,
+      freshnessScope,
     );
   }
 

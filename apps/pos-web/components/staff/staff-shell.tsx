@@ -7,6 +7,7 @@ import { useAuth } from "../auth/auth-provider";
 import type { StaffRealtimeConnectionState } from "../../lib/use-staff-realtime";
 import {
   formatApiFreshnessAge,
+  getApiFreshnessScope,
   getApiFreshnessSnapshot,
   subscribeApiFreshness,
 } from "../../lib/offline-freshness.mjs";
@@ -173,6 +174,9 @@ export function StaffSync({
     "live" | "cached" | "stale"
   >("live");
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  const panelPath = usePathname() ?? "/";
+  const { user } = useAuth();
+  const freshnessScope = getApiFreshnessScope(user);
 
   useEffect(() => {
     const updateFreshness = (
@@ -185,9 +189,16 @@ export function StaffSync({
       setFreshnessState(snapshot.freshnessState);
       setFreshnessNow(Date.now());
     };
-    const unsubscribe = subscribeApiFreshness(updateFreshness);
+    const unsubscribe = subscribeApiFreshness(
+      updateFreshness,
+      panelPath,
+      freshnessScope,
+    );
     const timer = window.setInterval(
-      () => updateFreshness(getApiFreshnessSnapshot()),
+      () =>
+        updateFreshness(
+          getApiFreshnessSnapshot(Date.now(), panelPath, freshnessScope),
+        ),
       60_000,
     );
 
@@ -195,7 +206,7 @@ export function StaffSync({
       unsubscribe();
       window.clearInterval(timer);
     };
-  }, []);
+  }, [panelPath, freshnessScope]);
 
   const hasRealtimeState = connectionState !== undefined;
   const isOffline = Boolean(error) || connectionState === "offline";
