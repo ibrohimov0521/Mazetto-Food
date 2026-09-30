@@ -25,7 +25,7 @@ const CODE_B = "246802";
 
 let socketIoClientPromise;
 
-async function connectStaffSocket(host, token) {
+async function connectStaffSocket(host, token, tokenType = "staff") {
   if (!socketIoClientPromise) {
     const store = "/app/node_modules/.pnpm";
     const packageDirectory = readdirSync(store).find((entry) =>
@@ -54,7 +54,7 @@ async function connectStaffSocket(host, token) {
     },
   });
   const socket = io("http://" + host + ":4000", {
-    auth: { token, tokenType: "staff" },
+    auth: { token, tokenType },
     transports: ["websocket"],
     transportOptions: { websocket: { agent } },
     reconnection: false,
@@ -97,6 +97,30 @@ async function connectStaffSocket(host, token) {
       finish(false);
     });
   });
+}
+
+function waitForSocketDisconnect(socket, timeoutMs = 5000) {
+  if (!socket.connected) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = globalThis.setTimeout(() => {
+      socket.off("disconnect", onDisconnect);
+      resolve(false);
+    }, timeoutMs);
+    const onDisconnect = () => {
+      globalThis.clearTimeout(timer);
+      resolve(true);
+    };
+    socket.once("disconnect", onDisconnect);
+  });
+}
+
+async function waitUntil(predicate, timeoutMs, message) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
+  }
+  assert.ok(predicate(), message);
 }
 
 function requireStagingTarget() {
@@ -240,7 +264,11 @@ async function main() {
     mediaObjects: [],
     uploadPermissionId: null,
     outboxEventIds: [],
+    orderIds: [],
     realtimePermissionId: null,
+    orderCreatePermissionId: null,
+    tenantAOnlyRoleId: null,
+    tenantAOnlyPermissionId: null,
     socketClients: [],
   };
   let cleanupFailure = null;
@@ -270,6 +298,8 @@ async function main() {
       settingCount,
       roleCount,
       permissionCount,
+      orderCount,
+      orderEventCount,
       outboxEventCount,
     ] = await Promise.all([
       prisma.restaurantTenant.count(),
@@ -284,6 +314,8 @@ async function main() {
       prisma.setting.count(),
       prisma.role.count(),
       prisma.permission.count(),
+      prisma.order.count(),
+      prisma.orderEvent.count(),
       prisma.outboxEvent.count(),
     ]);
     assert.deepEqual(
@@ -300,6 +332,8 @@ async function main() {
         settingCount,
         roleCount,
         permissionCount,
+        orderCount,
+        orderEventCount,
         outboxEventCount,
       },
       {
@@ -315,6 +349,8 @@ async function main() {
         settingCount: 0,
         roleCount: 0,
         permissionCount: 0,
+        orderCount: 0,
+        orderEventCount: 0,
         outboxEventCount: 0,
       },
       "Staging must be an empty baseline before the disposable A/B fixture is created.",
@@ -415,6 +451,26 @@ async function main() {
     await prisma.rolePermission.create({
       data: { roleId: role.id, permissionId: realtimePermission.id },
     });
+    const orderCreatePermission = await prisma.permission.create({
+      data: { code: `QA_ORDER_CREATE_${suffix}`, name: "Disposable order creation" },
+    });
+    fixture.orderCreatePermissionId = orderCreatePermission.id;
+    const tenantAOnlyPermission = await prisma.permission.create({
+      data: { code: `QA_TENANT_A_ONLY_${suffix}`, name: "Disposable tenant A role marker" },
+    });
+    fixture.tenantAOnlyPermissionId = tenantAOnlyPermission.id;
+    const tenantAOnlyRole = await prisma.role.create({
+      data: {
+        code: `QA_TENANT_A_ONLY_${suffix}`,
+        name: "Disposable tenant A membership marker",
+        isSystem: false,
+        isActive: true,
+      },
+    });
+    fixture.tenantAOnlyRoleId = tenantAOnlyRole.id;
+    await prisma.rolePermission.create({
+      data: { roleId: tenantAOnlyRole.id, permissionId: tenantAOnlyPermission.id },
+    });
 
     const owner = await prisma.user.create({
       data: { email, passwordHash: await hash(password, 10), isActive: true },
@@ -432,6 +488,11 @@ async function main() {
       await prisma.tenantMembershipRole.create({
         data: { membershipId: membership.id, roleId: role.id },
       });
+      if (tenantId === tenantA.id) {
+        await prisma.tenantMembershipRole.create({
+          data: { membershipId: membership.id, roleId: tenantAOnlyRole.id },
+        });
+      }
     }
 
     const socketRole = await prisma.role.create({
@@ -446,6 +507,9 @@ async function main() {
     fixture.socketRoleId = socketRole.id;
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: realtimePermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: orderCreatePermission.id },
     });
 
     for (const staff of [
@@ -686,6 +750,21 @@ async function main() {
     assert.equal(loginB.status, 201);
     assert.equal(loginA.body.data.user.tenantId, tenantA.id);
     assert.equal(loginB.body.data.user.tenantId, tenantB.id);
+    assert.equal(loginA.body.data.user.id, loginB.body.data.user.id);
+    assert.ok(loginA.body.data.user.roles.includes(tenantAOnlyRole.code));
+    assert.ok(!loginB.body.data.user.roles.includes(tenantAOnlyRole.code));
+    const authMeA = await request("/auth/me", {
+      host: tenantAHost,
+      headers: { Authorization: "Bearer " + loginA.body.data.tokens.accessToken },
+    });
+    const authMeB = await request("/auth/me", {
+      host: tenantBHost,
+      headers: { Authorization: "Bearer " + loginB.body.data.tokens.accessToken },
+    });
+    assert.equal(authMeA.status, 200);
+    assert.equal(authMeB.status, 200);
+    assert.ok(authMeA.body.data.roles.includes(tenantAOnlyRole.code));
+    assert.ok(!authMeB.body.data.roles.includes(tenantAOnlyRole.code));
     const auditMarkerA = "QA_AUDIT_A_" + suffix;
     const auditMarkerB = "QA_AUDIT_B_" + suffix;
     const auditFixtureA = await prisma.auditLog.create({
@@ -874,6 +953,63 @@ async function main() {
     );
     fixture.socketClients.push(socketA.socket, socketB.socket);
 
+    const receivedA = [];
+    const receivedB = [];
+    socketA.socket.on("order.created", (event) => receivedA.push(event));
+    socketB.socket.on("order.created", (event) => receivedB.push(event));
+    const orderAName = "Realtime QA A " + suffix;
+    const orderA = await request("/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: { Authorization: "Bearer " + socketLoginA.body.data.tokens.accessToken },
+      body: { branchId: branchA.id, type: "TAKEAWAY", customerName: orderAName },
+    });
+    const createdOrderA = await prisma.order.findFirst({
+      where: { branchId: branchA.id, customerName: orderAName },
+      select: { id: true },
+    });
+    const orderAId = createdOrderA?.id ?? orderA.body.data?.id ?? orderA.body.data?.order?.id;
+    if (typeof orderAId === "string") fixture.orderIds.push(orderAId);
+    assert.equal(orderA.status, 201);
+    assert.equal(typeof orderAId, "string");
+    const orderBName = "Realtime QA B " + suffix;
+    const orderB = await request("/orders", {
+      host: tenantBHost,
+      method: "POST",
+      headers: { Authorization: "Bearer " + socketLoginB.body.data.tokens.accessToken },
+      body: { branchId: branchB.id, type: "TAKEAWAY", customerName: orderBName },
+    });
+    const createdOrderB = await prisma.order.findFirst({
+      where: { branchId: branchB.id, customerName: orderBName },
+      select: { id: true },
+    });
+    const orderBId = createdOrderB?.id ?? orderB.body.data?.id ?? orderB.body.data?.order?.id;
+    if (typeof orderBId === "string") fixture.orderIds.push(orderBId);
+    assert.equal(orderB.status, 201);
+    assert.equal(typeof orderBId, "string");
+    await waitUntil(
+      () => receivedA.some((event) => event.orderId === orderAId) &&
+        receivedB.some((event) => event.orderId === orderBId),
+      5000,
+      "Each tenant staff socket must receive its own live order event.",
+    );
+    assert.deepEqual(receivedA.map((event) => event.orderId), [orderAId]);
+    assert.deepEqual(receivedB.map((event) => event.orderId), [orderBId]);
+
+    socketA.close();
+    const reconnectedA = await connectStaffSocket(
+      tenantAHost, socketLoginA.body.data.tokens.accessToken,
+    );
+    assert.equal(reconnectedA.connected, true);
+    fixture.socketClients.push(reconnectedA.socket);
+    const replayedA = await realtimeEvents(
+      tenantAHost,
+      socketLoginA.body.data.tokens.accessToken,
+      "?cursor=" + encodeURIComponent(realtimeA.body.data.cursor) + "&limit=50",
+    );
+    assert.equal(replayedA.status, 200);
+    assert.deepEqual(replayedA.body.data.events.map((event) => event.aggregateId), [orderAId]);
+
     const tenantATokenOnBHost = await connectStaffSocket(
       tenantBHost,
       socketLoginA.body.data.tokens.accessToken,
@@ -1048,8 +1184,30 @@ async function main() {
     assert.equal(refreshedB.status, 201);
     assert.equal(refreshedB.body.data.customer.tenantId, tenantB.id);
 
+    const customerSocketA = await connectStaffSocket(
+      tenantAHost, customerA.body.data.tokens.accessToken, "customer",
+    );
+    const customerSocketB = await connectStaffSocket(
+      tenantBHost, customerB.body.data.tokens.accessToken, "customer",
+    );
+    assert.equal(customerSocketA.connected, true);
+    assert.equal(customerSocketB.connected, true);
+    fixture.socketClients.push(customerSocketA.socket, customerSocketB.socket);
+    const customerLogoutA = await request("/customer/auth/logout", {
+      host: tenantAHost,
+      method: "POST",
+      body: { refreshToken: customerA.body.data.tokens.refreshToken },
+    });
+    assert.equal(customerLogoutA.status, 201);
+    assert.equal(await waitForSocketDisconnect(customerSocketA.socket), true);
+    assert.equal(customerSocketB.socket.connected, true);
+    const revokedCustomerReconnect = await connectStaffSocket(
+      tenantAHost, customerA.body.data.tokens.accessToken, "customer",
+    );
+    assert.equal(revokedCustomerReconnect.connected, false);
+
     console.log(
-      "Staging A/B proof passed: host/domain, branch/settings/auth, OTP/customer sessions, realtime catch-up, WebSocket host isolation, and tenant-prefixed media uploads.",
+      "Staging A/B proof passed: tenant membership/cache separation, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -1112,6 +1270,17 @@ async function main() {
         await prisma.customerVerificationChallenge.deleteMany({
           where: { tenantId: { in: tenantIds }, phone: SHARED_PHONE },
         });
+        if (fixture.orderIds.length) {
+          await prisma.outboxEvent.deleteMany({
+            where: { aggregateType: "ORDER", aggregateId: { in: fixture.orderIds } },
+          });
+          await prisma.orderEvent.deleteMany({
+            where: { orderId: { in: fixture.orderIds } },
+          });
+          await prisma.order.deleteMany({
+            where: { id: { in: fixture.orderIds } },
+          });
+        }
         await prisma.setting.deleteMany({
           where: { tenantId: { in: tenantIds }, key: DELIVERY_SETTING },
         });
@@ -1155,6 +1324,8 @@ async function main() {
           await prisma.role.deleteMany({ where: { id: fixture.roleId } });
         if (fixture.socketRoleId)
           await prisma.role.deleteMany({ where: { id: fixture.socketRoleId } });
+        if (fixture.tenantAOnlyRoleId)
+          await prisma.role.deleteMany({ where: { id: fixture.tenantAOnlyRoleId } });
         if (fixture.permissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.permissionId },
@@ -1171,6 +1342,10 @@ async function main() {
           await prisma.permission.deleteMany({ where: { id: fixture.auditPermissionId } });
         if (fixture.reportPermissionId)
           await prisma.permission.deleteMany({ where: { id: fixture.reportPermissionId } });
+        if (fixture.orderCreatePermissionId)
+          await prisma.permission.deleteMany({ where: { id: fixture.orderCreatePermissionId } });
+        if (fixture.tenantAOnlyPermissionId)
+          await prisma.permission.deleteMany({ where: { id: fixture.tenantAOnlyPermissionId } });
         if (fixture.tenantBId) {
           await prisma.restaurantTenant.deleteMany({
             where: { id: fixture.tenantBId },
@@ -1187,6 +1362,8 @@ async function main() {
           prisma.customer.count(),
           prisma.customerVerificationChallenge.count(),
           prisma.setting.count(),
+          prisma.order.count(),
+          prisma.orderEvent.count(),
           prisma.role.count(),
           prisma.permission.count(),
           prisma.outboxEvent.count(),
@@ -1194,7 +1371,7 @@ async function main() {
         ]);
         assert.deepEqual(
           remaining,
-          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, fixture.auditBaselineCount],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, fixture.auditBaselineCount],
           "All staging fixtures must be removed.",
         );
       } catch {

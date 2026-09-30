@@ -109,12 +109,13 @@ Staging A/B harness media tekshiruvini ham bajaradi. U faqat MINIO_ENDPOINT=maze
 ## Release darvozasi
 
 - [x] Alohida Dokploy staging project/environment va DB/Redis/media resurslari.
-- [x] Staging migration 53/53 va API/PostgreSQL/Redis/S3 infrastructure smoke.
+- [x] Staging migration 54/54 va API/PostgreSQL/Redis/S3 infrastructure smoke.
 - [x] Sintetik A/B fixture va HTTP/auth/domain fail-closed testlar (staging live smoke, 2026-09-30; PR #113/#114).
 - [x] Fake transport bilan Telegram retry/dead-letter tenant isolation testi (unit/mock).
 - [ ] Durable queue/worker, idempotency va restoranlarga alohida Telegram bot/webhook mapping.
 - [x] Tenant-prefixed media upload va staff WebSocket auth A/B smoke (staging only; 2026-09-30).
-- [ ] Customer WebSocket/revocation, actual staff event delivery/reconnect, cache/device/audit/export/report A/B tests.
+- [x] Tenant device enrollment, audit list/facets, report/dashboard A/B scope (staging only; PR #123/#124/#125, 2026-09-30). Sales CSV is client-side and reads the scoped sales-report payload.
+- [ ] Customer WebSocket/revocation, actual staff event delivery/reconnect va shared cache A/B tests.
 - [ ] Mazetto Food order/POS/KDS/courier regression va screenshot baseline.
 - [ ] Staging backup restore hamda rollback mashqi.
 - [ ] Har bir production API domain uchun alohida login/refresh smoke va owner tasdig'i.
@@ -140,5 +141,7 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Audit yozuvlariga nullable tenant bog'lanishi va `(tenantId, createdAt)` indeksi qo'shildi. Yangi tenant amallari audit izini tegishli tenant bilan yozadi; eski tenant-siz yozuvlar backfill qilinmaydi va faqat platform egasiga ko'rinadi.
 - Audit ro'yxati va filter facetlari tenant membership kontekstiga ko'ra chegaralandi. Tenant-siz restaurant admin global auditni ko'ra olmaydi; tenantId/membershipId nomuvofiqligi rad etiladi.
 - Report/dashboard A/B tenant scope va audit list/facet scope uchun testlar qo'shildi. Lokal backend test, typecheck, lint va build o'tdi.
-- **Live staging bosqichi hali ochiq:** migrationni alohida staging backupdan keyin qo'llash, A/B harnessni staging API'da bajarish, migration status/health/cleanup baseline'ini tasdiqlash kerak. Shu dalillar olinmaguncha release gate belgilanmaydi va production migratsiyasi yo'q.
-- Backup fayli faqat staging DB uchun olinadi; SHA/checksum, migration commit va restore mashqi keyingi qaydga qo'shiladi.
+- Staging live A/B o'tdi: audit ro'yxati/facetlari A va B tenantlarida ajraldi; sales report A/B javoblari 200, A token bilan B branch report so'rovi 404 bo'ldi. Cleanup 1 baseline tenant, 0 branch/user va 6 baseline audit yozuvini tikladi.
+- 54/54 migration, API health 200; staging deploy commit 757f5ad95829edab8a4922b2e873a24823f924d2. Pre-migration backup: /home/javohir/backups/mazetto-staging/mazetto_staging-before-tenant-audit-20260930T012128Z.dump; SHA-256 f77a209907128cb3f93ee532093942fa705ad0c043fb966389e686c48347205c, pg_restore --list passed.
+- Birinchi smoke audit fixture izini qoldirdi; uni pre-test backup bilan solishtirib faqat bitta aniq synthetic row sifatida olib tashladik. Cleanup PR #125 endi unique fixture user ID'lari bo'yicha auditlarni user delete'dan oldin o'chiradi; qayta live smoke to'liq o'tdi. Restore/rollback mashqi hali alohida darvoza.
+- Production migratsiyasi/deployi qilinmadi; qolgan release darvozalari yopilmaguncha production va ikkinchi tenant faollashtirilmaydi.
