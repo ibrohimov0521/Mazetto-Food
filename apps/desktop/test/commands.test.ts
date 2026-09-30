@@ -21,6 +21,18 @@ for (const [method, pathname, commandType] of cases) {
   });
 }
 
+test("offline POS and waiter order creation use the shared order aggregate", () => {
+  assert.equal(
+    resolveOfflineCommand("POST", "/api/v1/pos/orders")?.aggregateType,
+    "orders",
+  );
+  assert.equal(
+    resolveOfflineCommand("POST", "/api/v1/tables/table-1/orders")
+      ?.aggregateType,
+    "orders",
+  );
+});
+
 test("unsupported kitchen verbs and actions stay online-only", () => {
   assert.equal(
     resolveOfflineCommand("POST", "/api/v1/kitchen/orders/order-1/ready"),

@@ -6,7 +6,7 @@ export type OfflineCommandDefinition = {
 };
 
 const registry: OfflineCommandDefinition[] = [
-  { commandType: "pos.order.create", aggregateType: "pos", methods: ["POST"], pattern: /^\/api\/v1\/pos\/orders$/ },
+  { commandType: "pos.order.create", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/pos\/orders$/ },
   { commandType: "payment.process", aggregateType: "payments", methods: ["POST"], pattern: /^\/api\/v1\/payments\/process$/ },
   { commandType: "shift.open", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/shift\/open$/ },
   { commandType: "shift.close", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/shift\/[^/]+\/close$/ },
@@ -18,7 +18,7 @@ const registry: OfflineCommandDefinition[] = [
   { commandType: "order.action", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/orders\/[^/]+\/actions\/[^/]+$/ },
   { commandType: "order.items.update", aggregateType: "orders", methods: ["POST", "PATCH", "DELETE"], pattern: /^\/api\/v1\/orders\/[^/]+\/items(?:\/[^/]+)?$/ },
   { commandType: "order.item.cancel", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/orders\/[^/]+\/items\/[^/]+\/actions\/cancel$/ },
-  { commandType: "table.order.create", aggregateType: "tables", methods: ["POST"], pattern: /^\/api\/v1\/tables\/[^/]+\/orders$/ },
+  { commandType: "table.order.create", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/tables\/[^/]+\/orders$/ },
   { commandType: "kitchen.action", aggregateType: "kitchen", methods: ["PATCH"], pattern: /^\/api\/v1\/kitchen\/orders\/[^/]+\/(?:accept|start|ready|complete|cancel)$/ },
   { commandType: "courier.status.update", aggregateType: "courier", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/courier\/orders\/[^/]+\/status$/ },
   { commandType: "shift.open", aggregateType: "shifts", methods: ["POST"], pattern: /^\/api\/v1\/shifts\/open$/ },

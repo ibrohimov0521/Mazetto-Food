@@ -964,6 +964,76 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("conflicted offline order creation blocks only its dependent commands", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-dependency-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-dependency-conflict", "branch-1");
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      throw new Error("offline");
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const createOrder = async (idempotencyKey: string) => {
+      const response = await fetch(
+        `http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            idempotencyKey,
+            payments: [{ paymentMethodCode: "CASH", amount: 10_000 }],
+          }),
+        },
+      );
+      assert.equal(response.status, 202);
+      return (await response.json()) as { data: { order: { id: string } } };
+    };
+
+    const firstOrder = await createOrder("dependency-conflict-sale-1");
+    const dependentResponse = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/orders/${firstOrder.data.order.id}/status`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "ACCEPTED", expectedVersion: 0 }),
+      },
+    );
+    assert.equal(dependentResponse.status, 202);
+    await createOrder("dependency-conflict-sale-2");
+
+    const commands = store.listOutbox();
+    assert.equal(commands.length, 3);
+    assert.ok(commands.every((command) => command.aggregateType === "orders"));
+    assert.equal(commands[0]?.aggregateId, commands[1]?.aggregateId);
+    assert.notEqual(commands[0]?.aggregateId, commands[2]?.aggregateId);
+
+    const authScope = commands[0]!.authScope;
+    store.markMutationConflict(commands[0]!.id, "create requires review");
+    assert.deepEqual(
+      store.dueMutations(authScope, 10).map((command) => command.id),
+      [commands[2]!.id],
+    );
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway can retry a blocked outbox command", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
