@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ForbiddenException,
   Controller,
   Delete,
   Get,
@@ -9,18 +10,24 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
+import { TenantRequestContextService } from "../../common/tenant/tenant-request-context.service";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import type { Request } from "express";
 import { CreateDeviceDto, EnrollDeviceDto, UpdateDeviceDto } from "./dto/device.dto";
 import { DevicesService } from "./devices.service";
 
 @Controller("devices")
 export class DevicesController {
-  constructor(private readonly devicesService: DevicesService) {}
+  constructor(
+    private readonly devicesService: DevicesService,
+    private readonly tenantRequestContext: TenantRequestContextService,
+  ) {}
 
   @Get()
   @Permissions(PERMISSIONS.DEVICE_VIEW)
@@ -55,8 +62,14 @@ export class DevicesController {
 
   @Public()
   @Post("enroll")
-  enroll(@Body() dto: EnrollDeviceDto) {
-    return this.devicesService.enroll(dto);
+  async enroll(@Body() dto: EnrollDeviceDto, @Req() request: Request) {
+    const context = await this.tenantRequestContext.resolve(request.headers.host);
+    if (context.kind !== "TRUSTED") {
+      throw new ForbiddenException(
+        "Device enrollment requires a verified active restaurant domain",
+      );
+    }
+    return this.devicesService.enroll(dto, context.tenantId);
   }
 
   @Patch(":id")

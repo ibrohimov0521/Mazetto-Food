@@ -2,6 +2,7 @@ import { DeviceType } from "@prisma/client";
 import {
   IsBoolean,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -9,9 +10,12 @@ import {
 
 export class EnrollDeviceDto {
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
   deviceId!: string;
 
   @IsString()
+  @IsNotEmpty()
   @MaxLength(32)
   enrollmentCode!: string;
 

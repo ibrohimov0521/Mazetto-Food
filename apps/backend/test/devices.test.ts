@@ -167,7 +167,7 @@ test("enrollment kodi muddati va hash tekshiruvidan o'tadi", async () => {
   } as never);
 
   await assert.rejects(
-    () => service.enroll({ deviceId: "device-1", enrollmentCode: "wrong" }),
+    () => service.enroll({ deviceId: "device-1", enrollmentCode: "wrong" }, "tenant-a"),
     /invalid or expired/,
   );
 });
@@ -226,7 +226,7 @@ test("enrollment muvaffaqiyatli bo'lganda kod bir martalik tozalanadi", async ()
     deviceId: "desktop-uuid-1",
     enrollmentCode: code,
     softwareVersion: "0.1.5",
-  });
+  }, "tenant-a");
 
   assert.equal(updateData?.hardwareId, "desktop-uuid-1");
   assert.equal(typeof result.deviceToken, "string");
@@ -281,8 +281,8 @@ test("enrollment code can only be claimed once under concurrent requests", async
   } as never);
 
   const outcomes = await Promise.allSettled([
-    service.enroll({ deviceId: "desktop-uuid-2", enrollmentCode: code }),
-    service.enroll({ deviceId: "desktop-uuid-3", enrollmentCode: code }),
+    service.enroll({ deviceId: "desktop-uuid-2", enrollmentCode: code }, "tenant-a"),
+    service.enroll({ deviceId: "desktop-uuid-3", enrollmentCode: code }, "tenant-a"),
   ]);
 
   assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);

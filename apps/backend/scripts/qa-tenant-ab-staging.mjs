@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
@@ -225,6 +225,7 @@ async function main() {
     tenantAId: null,
     tenantBId: null,
     branchIds: [],
+    deviceIds: [],
     domainIds: [],
     userIds: [],
     employeeIds: [],
@@ -255,6 +256,7 @@ async function main() {
     const [
       tenantCount,
       branchCount,
+      deviceCount,
       userCount,
       employeeCount,
       membershipCount,
@@ -268,6 +270,7 @@ async function main() {
     ] = await Promise.all([
       prisma.restaurantTenant.count(),
       prisma.branch.count(),
+      prisma.device.count(),
       prisma.user.count(),
       prisma.employee.count(),
       prisma.tenantMembership.count(),
@@ -283,6 +286,7 @@ async function main() {
       {
         tenantCount,
         branchCount,
+        deviceCount,
         userCount,
         employeeCount,
         membershipCount,
@@ -297,6 +301,7 @@ async function main() {
       {
         tenantCount: 1,
         branchCount: 0,
+        deviceCount: 0,
         userCount: 0,
         employeeCount: 0,
         membershipCount: 0,
@@ -514,12 +519,87 @@ async function main() {
       data: { isActive: true },
     });
 
+    const deviceCodeA = randomBytes(6).toString("hex").toUpperCase();
+    const deviceCodeB = randomBytes(6).toString("hex").toUpperCase();
+    const enrollmentExpiresAt = new Date(Date.now() + 15 * 60_000);
+    const deviceA = await prisma.device.create({
+      data: {
+        branchId: branchA.id,
+        name: "Disposable staging POS A",
+        type: "POS_TERMINAL",
+        enrollmentCodeHash: createHash("sha256").update(deviceCodeA).digest("hex"),
+        enrollmentExpiresAt,
+      },
+    });
+    fixture.deviceIds.push(deviceA.id);
+    const deviceB = await prisma.device.create({
+      data: {
+        branchId: branchB.id,
+        name: "Disposable staging POS B",
+        type: "POS_TERMINAL",
+        enrollmentCodeHash: createHash("sha256").update(deviceCodeB).digest("hex"),
+        enrollmentExpiresAt,
+      },
+    });
+    fixture.deviceIds.push(deviceB.id);
+
     const health = await request("/health");
     assert.equal(
       health.status,
       200,
       "The staging API must be healthy before A/B checks.",
     );
+
+    const enroll = (host, deviceId, enrollmentCode) =>
+      request("/devices/enroll", {
+        host,
+        method: "POST",
+        body: { deviceId, enrollmentCode, softwareVersion: "staging-qa" },
+      });
+    assert.equal(
+      (await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeB)).status,
+      400,
+      "Tenant A must not claim tenant B enrollment code.",
+    );
+    assert.equal(
+      (await enroll(tenantBHost, "qa-hardware-b-" + suffix, deviceCodeA)).status,
+      400,
+      "Tenant B must not claim tenant A enrollment code.",
+    );
+    assert.equal(
+      (await enroll(pendingHost, "qa-hardware-p-" + suffix, deviceCodeB)).status,
+      403,
+      "Pending domain must not enroll a device.",
+    );
+    assert.equal(
+      (await enroll("unknown-" + suffix + ".invalid", "qa-hardware-u-" + suffix, deviceCodeB)).status,
+      403,
+      "Unknown domain must not enroll a device.",
+    );
+    const enrolledA = await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeA);
+    const enrolledB = await enroll(tenantBHost, "qa-hardware-b-" + suffix, deviceCodeB);
+    assert.equal(enrolledA.status, 201);
+    assert.equal(enrolledB.status, 201);
+    assert.equal(
+      (await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeA)).status,
+      400,
+      "Enrollment code must be consumed after one successful claim.",
+    );
+    const enrolledDeviceRows = await prisma.device.findMany({
+      where: { id: { in: [deviceA.id, deviceB.id] } },
+      select: { id: true, branchId: true, hardwareId: true, enrolledAt: true, deviceAuthTokenHash: true, enrollmentCodeHash: true },
+    });
+    const enrolledById = new Map(enrolledDeviceRows.map((device) => [device.id, device]));
+    assert.equal(enrolledById.get(deviceA.id)?.branchId, branchA.id);
+    assert.equal(enrolledById.get(deviceA.id)?.hardwareId, "qa-hardware-a-" + suffix);
+    assert.ok(enrolledById.get(deviceA.id)?.enrolledAt);
+    assert.ok(enrolledById.get(deviceA.id)?.deviceAuthTokenHash);
+    assert.equal(enrolledById.get(deviceA.id)?.enrollmentCodeHash, null);
+    assert.equal(enrolledById.get(deviceB.id)?.branchId, branchB.id);
+    assert.equal(enrolledById.get(deviceB.id)?.hardwareId, "qa-hardware-b-" + suffix);
+    assert.ok(enrolledById.get(deviceB.id)?.enrolledAt);
+    assert.ok(enrolledById.get(deviceB.id)?.deviceAuthTokenHash);
+    assert.equal(enrolledById.get(deviceB.id)?.enrollmentCodeHash, null);
 
     const unknownHost = await request("/customer/branches", {
       host: `unknown-${suffix}.invalid`,
@@ -961,6 +1041,9 @@ async function main() {
             where: { id: { in: fixture.outboxEventIds } },
           });
         }
+        if (fixture.deviceIds.length) {
+          await prisma.device.deleteMany({ where: { id: { in: fixture.deviceIds } } });
+        }
         if (fixture.branchIds.length) {
           await prisma.branch.deleteMany({
             where: { id: { in: fixture.branchIds } },
@@ -990,6 +1073,7 @@ async function main() {
         const remaining = await Promise.all([
           prisma.restaurantTenant.count(),
           prisma.branch.count(),
+          prisma.device.count(),
           prisma.user.count(),
           prisma.employee.count(),
           prisma.tenantMembership.count(),
@@ -1003,7 +1087,7 @@ async function main() {
         ]);
         assert.deepEqual(
           remaining,
-          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
           "All staging fixtures must be removed.",
         );
       } catch {
