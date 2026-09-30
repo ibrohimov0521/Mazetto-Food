@@ -649,6 +649,8 @@ function setupApiControls(): void {
         body: await response.text(),
         contentType: response.headers.get("content-type") ?? "application/json; charset=utf-8",
         status: response.status,
+        desktopSource: response.headers.get("X-Mazetto-Desktop"),
+        cachedAt: response.headers.get("X-Mazetto-Cached-At"),
       };
     },
   );

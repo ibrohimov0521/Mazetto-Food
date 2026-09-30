@@ -82,7 +82,13 @@ type DesktopBridge = {
       method: string;
       body?: string;
       headers?: Record<string, string>;
-    }) => Promise<{ body: string; contentType: string; status: number }>;
+    }) => Promise<{
+      body: string;
+      contentType: string;
+      status: number;
+      desktopSource?: string | null;
+      cachedAt?: string | null;
+    }>;
   };
   support?: {
     export: () => Promise<{ path: string } | null>;

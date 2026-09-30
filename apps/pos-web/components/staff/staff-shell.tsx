@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Leaf, RefreshCw, X } from "lucide-react";
 import { useAuth } from "../auth/auth-provider";
 import type { StaffRealtimeConnectionState } from "../../lib/use-staff-realtime";
+import { subscribeApiFreshness } from "../../lib/offline-freshness.mjs";
 import { PanelNavbar } from "../auth/panel-navbar";
 import styles from "./staff.module.css";
 import {
@@ -162,28 +163,67 @@ export function StaffSync({
   onRefresh: () => void;
   connectionState?: StaffRealtimeConnectionState;
 }) {
+  const [cachedResources, setCachedResources] = useState(0);
+  const [oldestCachedAt, setOldestCachedAt] = useState<Date | null>(null);
+
+  useEffect(
+    () =>
+      subscribeApiFreshness((snapshot) => {
+        setCachedResources(snapshot.cachedResponses);
+        setOldestCachedAt(
+          snapshot.oldestCachedAt ? new Date(snapshot.oldestCachedAt) : null,
+        );
+      }),
+    [],
+  );
+
   const hasRealtimeState = connectionState !== undefined;
   const isOffline = Boolean(error) || connectionState === "offline";
+  const usesCachedData = cachedResources > 0;
   const isConnecting =
     !isOffline &&
     (connectionState === "connecting" || (!hasRealtimeState && !updatedAt));
-  const statusLabel = isOffline
-    ? "Aloqa uzildi"
-    : isConnecting
-      ? "Ulanmoqda"
-      : "Ulangan";
+  const statusLabel = usesCachedData
+    ? isOffline
+      ? "Kesh + aloqa uzilgan"
+      : "Kesh ma'lumotlari bor"
+    : isOffline
+      ? "Aloqa uzildi"
+      : isConnecting
+        ? "Ulanmoqda"
+        : "Ulangan";
+  const freshnessAt = usesCachedData ? oldestCachedAt : updatedAt;
 
   return (
-    <div className={styles.sync} title={statusLabel}>
+    <div
+      className={styles.sync}
+      title={
+        usesCachedData
+          ? cachedResources + " ta javob keshdan o'qilmoqda"
+          : statusLabel
+      }
+    >
       <span
         className={
-          styles.connection + (isOffline ? " " + styles.connectionError : "")
+          styles.connection +
+          (isOffline
+            ? " " + styles.connectionError
+            : usesCachedData
+              ? " " + styles.connectionCached
+              : "")
         }
       />
       <span className={styles.syncStatus}>{statusLabel}</span>
-      {updatedAt && (
-        <time className={styles.syncTime} title="Oxirgi yangilanish">
-          {updatedAt.toLocaleTimeString("uz-UZ", {
+      {freshnessAt && (
+        <time
+          className={styles.syncTime}
+          title={
+            usesCachedData
+              ? "Keshdagi ma'lumotlarning eng eski yangilanishi"
+              : "Oxirgi yangilanish"
+          }
+        >
+          {freshnessAt.toLocaleTimeString("uz-UZ", {
             hour: "2-digit",
             minute: "2-digit",
             timeZone: "Asia/Tashkent",

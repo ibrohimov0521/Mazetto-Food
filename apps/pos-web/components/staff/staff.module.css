@@ -318,6 +318,9 @@
 .connectionError {
   background: #c53340;
 }
+.connectionCached {
+  background: #d89117;
+}
 .iconButton,
 .button,
 .primary,
