@@ -115,7 +115,7 @@ Staging A/B harness media tekshiruvini ham bajaradi. U faqat MINIO_ENDPOINT=maze
 - [ ] Durable queue/worker, idempotency va restoranlarga alohida Telegram bot/webhook mapping.
 - [x] Tenant-prefixed media upload va staff WebSocket auth A/B smoke (staging only; 2026-09-30).
 - [x] Tenant device enrollment, audit list/facets, report/dashboard A/B scope (staging only; PR #123/#124/#125, 2026-09-30). Sales CSV is client-side and reads the scoped sales-report payload.
-- [ ] Customer WebSocket/revocation, actual staff event delivery/reconnect va shared cache A/B tests.
+- [x] Customer WebSocket/revocation, actual staff event delivery/reconnect va shared cache A/B tests (staging live proof, PR #126/#127, 2026-09-30).
 - [ ] Mazetto Food order/POS/KDS/courier regression va screenshot baseline.
 - [ ] Staging backup restore hamda rollback mashqi.
 - [ ] Har bir production API domain uchun alohida login/refresh smoke va owner tasdig'i.
@@ -145,3 +145,14 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - 54/54 migration, API health 200; staging deploy commit 757f5ad95829edab8a4922b2e873a24823f924d2. Pre-migration backup: /home/javohir/backups/mazetto-staging/mazetto_staging-before-tenant-audit-20260930T012128Z.dump; SHA-256 f77a209907128cb3f93ee532093942fa705ad0c043fb966389e686c48347205c, pg_restore --list passed.
 - Birinchi smoke audit fixture izini qoldirdi; uni pre-test backup bilan solishtirib faqat bitta aniq synthetic row sifatida olib tashladik. Cleanup PR #125 endi unique fixture user ID'lari bo'yicha auditlarni user delete'dan oldin o'chiradi; qayta live smoke to'liq o'tdi. Restore/rollback mashqi hali alohida darvoza.
 - Production migratsiyasi/deployi qilinmadi; qolgan release darvozalari yopilmaguncha production va ikkinchi tenant faollashtirilmaydi.
+
+
+## Customer/staff realtime va membership cache A/B (2026-09-30)
+
+- PR #126 staging harness kengaytmasi va #127 canonical permission fixture tuzatishi main'ga merge qilindi. Hosted CI #397/#399 muvaffaqiyatli; backend typecheck, lint, 463 test + 3 HTTP retry testi o'tdi.
+- Faqat alohida Dokploy staging backend e3c3931c7f5b0dd4a53442ec2a77477bf620b1d0 commitiga deploy qilindi. Health 200, PostgreSQL OK, Redis connected.
+- Bir xil foydalanuvchi tenant A va B membershiplarida ataylab turli rollarga ega bo'ldi. Login va /auth/me A-only rolni faqat A'da ko'rsatdi; B'da global user cache'dan A roli chiqmagan.
+- Haqiqiy POST /orders oqimi A/B branch staff WebSocket'lariga buyurtma hodisasini chiqardi: har socket faqat o'z tenantining order ID'sini oldi. A staff socket qayta ulangach, catch-up cursor faqat A order eventini qaytardi.
+- Customer A/B socketlari ulandi; A logout A sessiyasini darhol uzdi, B socket faol qoldi, A access token bilan qayta ulanish rad etildi.
+- Yakuniy cleanup'dan so'ng A/B test tenant, branch, user, membership, domain, customer/session, setting, order, order event/outbox, role/permission fixture'lari yo'q qilindi; DB boshlang'ich baseline'i va health qayta tasdiqlandi. Synthetic .invalid hostlar ishlatildi; real SMS, bot yoki production ma'lumotlariga tegilmadi.
+- Bu realtime/auth-cache darvozasini staging uchun yopadi; Mazetto Food production va ikkinchi tenant holatiga tegilmagan. Keyingi tartib: durable worker/queue va idempotency + bot mapping audit; keyin offline/online order, POS, kitchen, courier va receipt/printer regression; undan keyin backup restore/rollback hamda har production domen uchun read-only login/refresh smoke. Har bir release gate alohida staging'da o'tmaguncha production deploy/migration yoki ikkinchi tenant activation yo'q.
