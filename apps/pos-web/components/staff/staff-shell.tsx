@@ -5,7 +5,11 @@ import { usePathname } from "next/navigation";
 import { Leaf, RefreshCw, X } from "lucide-react";
 import { useAuth } from "../auth/auth-provider";
 import type { StaffRealtimeConnectionState } from "../../lib/use-staff-realtime";
-import { subscribeApiFreshness } from "../../lib/offline-freshness.mjs";
+import {
+  formatApiFreshnessAge,
+  getApiFreshnessSnapshot,
+  subscribeApiFreshness,
+} from "../../lib/offline-freshness.mjs";
 import { PanelNavbar } from "../auth/panel-navbar";
 import styles from "./staff.module.css";
 import {
@@ -165,17 +169,33 @@ export function StaffSync({
 }) {
   const [cachedResources, setCachedResources] = useState(0);
   const [oldestCachedAt, setOldestCachedAt] = useState<Date | null>(null);
+  const [freshnessState, setFreshnessState] = useState<
+    "live" | "cached" | "stale"
+  >("live");
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
 
-  useEffect(
-    () =>
-      subscribeApiFreshness((snapshot) => {
-        setCachedResources(snapshot.cachedResponses);
-        setOldestCachedAt(
-          snapshot.oldestCachedAt ? new Date(snapshot.oldestCachedAt) : null,
-        );
-      }),
-    [],
-  );
+  useEffect(() => {
+    const updateFreshness = (
+      snapshot: ReturnType<typeof getApiFreshnessSnapshot>,
+    ) => {
+      setCachedResources(snapshot.cachedResponses);
+      setOldestCachedAt(
+        snapshot.oldestCachedAt ? new Date(snapshot.oldestCachedAt) : null,
+      );
+      setFreshnessState(snapshot.freshnessState);
+      setFreshnessNow(Date.now());
+    };
+    const unsubscribe = subscribeApiFreshness(updateFreshness);
+    const timer = window.setInterval(
+      () => updateFreshness(getApiFreshnessSnapshot()),
+      60_000,
+    );
+
+    return () => {
+      unsubscribe();
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const hasRealtimeState = connectionState !== undefined;
   const isOffline = Boolean(error) || connectionState === "offline";
@@ -184,9 +204,13 @@ export function StaffSync({
     !isOffline &&
     (connectionState === "connecting" || (!hasRealtimeState && !updatedAt));
   const statusLabel = usesCachedData
-    ? isOffline
-      ? "Kesh + aloqa uzilgan"
-      : "Kesh ma'lumotlari bor"
+    ? freshnessState === "stale"
+      ? isOffline
+        ? "Oflayn · kesh eski"
+        : "Kesh eskirgan"
+      : isOffline
+        ? "Oflayn · kesh"
+        : "Keshdan o'qildi"
     : isOffline
       ? "Aloqa uzildi"
       : isConnecting
@@ -199,7 +223,7 @@ export function StaffSync({
       className={styles.sync}
       title={
         usesCachedData
-          ? cachedResources + " ta javob keshdan o'qilmoqda"
+          ? `${cachedResources} ta javob keshdan o'qilmoqda. ${freshnessState === "stale" ? "Kesh 15 daqiqadan eski yoki vaqti noma'lum." : "Kesh javoblari 15 daqiqadan yangi."}${isOffline ? " Internet aloqasi uzilgan." : ""}`
           : statusLabel
       }
     >
@@ -219,15 +243,25 @@ export function StaffSync({
           className={styles.syncTime}
           title={
             usesCachedData
-              ? "Keshdagi ma'lumotlarning eng eski yangilanishi"
+              ? "Keshdagi eng eski javob · " +
+                formatApiFreshnessAge(
+                  oldestCachedAt?.toISOString() ?? null,
+                  freshnessNow,
+                )
               : "Oxirgi yangilanish"
           }
+          dateTime={freshnessAt.toISOString()}
         >
-          {freshnessAt.toLocaleTimeString("uz-UZ", {
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZone: "Asia/Tashkent",
-          })}
+          {usesCachedData
+            ? formatApiFreshnessAge(
+                oldestCachedAt?.toISOString() ?? null,
+                freshnessNow,
+              )
+            : freshnessAt.toLocaleTimeString("uz-UZ", {
+                hour: "2-digit",
+                minute: "2-digit",
+                timeZone: "Asia/Tashkent",
+              })}
         </time>
       )}
       <button

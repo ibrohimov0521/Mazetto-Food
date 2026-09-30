@@ -1,22 +1,51 @@
 const cachedResponses = new Map();
 const listeners = new Set();
 const MAX_TRACKED_RESPONSES = 300;
+const STALE_AFTER_MS = 15 * 60 * 1000;
 
 /**
- * @typedef {{ cachedResponses: number; oldestCachedAt: string | null }} ApiFreshnessSnapshot
+ * @typedef {"live" | "cached" | "stale"} ApiFreshnessState
+ * @typedef {{ cachedResponses: number; oldestCachedAt: string | null; freshnessState: ApiFreshnessState }} ApiFreshnessSnapshot
  * @typedef {(snapshot: ApiFreshnessSnapshot) => void} ApiFreshnessListener
  */
 
-/** @returns {ApiFreshnessSnapshot} */
-export function getApiFreshnessSnapshot() {
-  const times = [...cachedResponses.values()]
-    .map((entry) => entry.cachedAt)
-    .filter((value) => value !== null)
-    .sort();
+/** @param {number} [now] @returns {ApiFreshnessSnapshot} */
+export function getApiFreshnessSnapshot(now = Date.now()) {
+  const cachedAtValues = [...cachedResponses.values()].map(
+    (entry) => entry.cachedAt,
+  );
+  const times = cachedAtValues
+    .map((value) => (value === null ? Number.NaN : Date.parse(value)))
+    .filter(Number.isFinite);
+  const oldestTime = times.length ? Math.min(...times) : null;
+  const cacheAge = oldestTime === null ? null : Math.max(0, now - oldestTime);
+  const hasUnknownTimestamp = times.length < cachedAtValues.length;
+  const freshnessState =
+    cachedResponses.size === 0
+      ? "live"
+      : hasUnknownTimestamp || cacheAge === null || cacheAge >= STALE_AFTER_MS
+        ? "stale"
+        : "cached";
+
   return {
     cachedResponses: cachedResponses.size,
-    oldestCachedAt: times[0] ?? null,
+    oldestCachedAt:
+      oldestTime === null ? null : new Date(oldestTime).toISOString(),
+    freshnessState,
   };
+}
+
+/** @param {string | null} timestamp @param {number} [now] */
+export function formatApiFreshnessAge(timestamp, now = Date.now()) {
+  const cachedAt = timestamp === null ? Number.NaN : Date.parse(timestamp);
+  if (!Number.isFinite(cachedAt)) return "yoshi noma'lum";
+
+  const age = Math.max(0, now - cachedAt);
+  if (age < 60_000) return "hozirgina";
+  if (age < 60 * 60 * 1000) return `${Math.floor(age / 60_000)} daq avval`;
+  if (age < 24 * 60 * 60 * 1000)
+    return `${Math.floor(age / (60 * 60 * 1000))} soat avval`;
+  return `${Math.floor(age / (24 * 60 * 60 * 1000))} kun avval`;
 }
 
 /** @param {ApiFreshnessListener} listener */
