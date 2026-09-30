@@ -263,4 +263,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Courier updates include the expected order version in the request hash and reject stale writes before recording payment or changing status.
 - The waiter, admin-online-orders and courier screens submit the version they last read; the bundled Desktop UI is released as `0.1.60`.
 - Desktop outbox mutations are serialized per aggregate. An unresolved earlier command blocks later commands for that same order, while unrelated orders continue; after acknowledgement, pending commands are rebased to the server's current order version in the local SQLite transaction.
-- Verification so far: 4 focused order-mutation tests, 21 Desktop gateway tests, 487 backend tests plus 3 retry tests, and the complete monorepo CI passed. Physical offline acceptance remains a separate restaurant-device test.
+- Verification: 4 focused order-mutation tests, 21 Desktop gateway tests, 487 backend tests plus 3 retry tests, full GitHub CI passed, Desktop 0.1.60 was published, production deploy completed, and production smoke passed 24/24. Physical offline acceptance remains a separate restaurant-device test.
+
+## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
+
+- Windows rendering, the hidden print window and the Electron driver callback now have bounded deadlines. ESC/POS TCP connect/write is bounded too; a printer that stops responding can no longer wait forever.
+- A timeout after print submission is recorded as an ambiguous outcome and moved directly to manual review instead of being automatically retried. This avoids silently printing duplicate customer/kitchen slips when the driver may already have accepted the job.
+- Successful delivery is tracked per configured printer and job in the Desktop SQLite database. If a multi-printer route partially succeeds and another printer fails, retries skip printers already confirmed successful. The operator can inspect ambiguous output before explicitly retrying it.
+- The Desktop queue continues with other due jobs after a printer failure or timeout; retries for definitely failed jobs retain their bounded backoff.
+- The Windows Desktop bundle version for this stage is 0.1.61.
+- Verification: Desktop tests 77/77, print-queue service tests 3/3, full monorepo typecheck/lint/test/build and 33/33 validators passed. Production deployment and smoke are the post-merge gate. Restaurant-specific physical printer tests remain required; this does not claim support for every printer model or a 100% offline guarantee.

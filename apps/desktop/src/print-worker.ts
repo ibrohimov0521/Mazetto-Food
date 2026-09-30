@@ -1,5 +1,10 @@
 import { Socket } from "node:net";
 import type { LocalPrintJob } from "./store.js";
+import {
+  isPrintOutcomeUnknown,
+  PrintOutcomeUnknownError,
+  withTimeout,
+} from "./print-errors.js";
 
 type PrinterMetadata = {
   host?: unknown;
@@ -62,8 +67,11 @@ export type PrintableReceipt = {
 type LocalPrintQueue = {
   claim: (documentTypes: string[]) => LocalPrintJob | null;
   complete: (id: string) => void;
-  fail: (id: string, error: string) => void;
+  fail: (id: string, error: string, ambiguous?: boolean) => void;
   wasPrinted: (serverOrderId: string, documentType: string) => boolean;
+  wasTargetPrinted?: (scope: "local" | "server", jobId: string, printerName: string) => boolean;
+  markTargetPrinted?: (scope: "local" | "server", jobId: string, printerName: string) => void;
+  markTargetAmbiguous?: (scope: "local" | "server", jobId: string, printerName: string) => void;
 };
 
 export type DesktopPrintWorkerOptions = {
@@ -83,11 +91,13 @@ export type DesktopPrintWorkerOptions = {
   fetchImpl?: typeof fetch;
   socketImpl?: (host: string, port: number, payload?: Buffer) => Promise<void>;
   requestTimeoutMs?: number;
+  printTimeoutMs?: number;
 };
 
 const MAX_LOCAL_PRINT_JOBS_PER_TICK = 5;
 const MAX_SERVER_PRINT_JOBS_PER_TICK = 5;
 const SERVER_REQUEST_TIMEOUT_MS = 5_000;
+const PRINTER_OPERATION_TIMEOUT_MS = 45_000;
 const SERVER_RETRY_BASE_MS = 1_000;
 const SERVER_RETRY_MAX_MS = 30_000;
 
@@ -104,6 +114,7 @@ export class DesktopPrintWorker {
   private readonly printSystem?: DesktopPrintWorkerOptions["printSystem"];
   private readonly localQueue: LocalPrintQueue | undefined;
   private readonly requestTimeoutMs: number;
+  private readonly printTimeoutMs: number;
   private authorization: string | null = null;
   private running = false;
   private stopping = false;
@@ -134,6 +145,8 @@ export class DesktopPrintWorker {
     this.socketImpl = options.socketImpl;
     this.requestTimeoutMs =
       options.requestTimeoutMs ?? SERVER_REQUEST_TIMEOUT_MS;
+    this.printTimeoutMs =
+      options.printTimeoutMs ?? PRINTER_OPERATION_TIMEOUT_MS;
   }
 
   configure(printerHost: string | null, printerPort: number): void {
@@ -301,11 +314,26 @@ export class DesktopPrintWorker {
         await this.send(commands, host, port, paperWidthMm);
       } else if (systemTargets.length > 0 && this.printSystem) {
         for (const target of systemTargets) {
-          await this.printSystem(
-            target.name,
-            receipt,
-            target.paperWidthMm || paperWidthMm,
-          );
+          if (this.localQueue?.wasTargetPrinted?.("server", job.id, target.name)) {
+            continue;
+          }
+          try {
+            await this.printToSystem(
+              target,
+              receipt,
+              target.paperWidthMm || paperWidthMm,
+            );
+          } catch (error) {
+            if (isPrintOutcomeUnknown(error)) {
+              this.localQueue?.markTargetAmbiguous?.(
+                "server",
+                job.id,
+                target.name,
+              );
+            }
+            throw error;
+          }
+          this.localQueue?.markTargetPrinted?.("server", job.id, target.name);
         }
       } else if (this.printerHost && !job.printer) {
         const printable = receipt.escpos?.commands?.length
@@ -328,17 +356,23 @@ export class DesktopPrintWorker {
       await this.completeServerJob(job);
       return true;
     } catch (error) {
-      await this.request(
-        `/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            leaseToken: job.leaseToken,
-            error: message(error),
-          }),
-        },
-      ).catch(() => undefined);
-      return false;
+      const ambiguous = isPrintOutcomeUnknown(error);
+      try {
+        await this.request(
+          `/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              leaseToken: job.leaseToken,
+              error: message(error),
+              ...(ambiguous ? { outcome: "AMBIGUOUS" } : {}),
+            }),
+          },
+        );
+        return true;
+      } catch {
+        return false;
+      }
     }
   }
 
@@ -419,12 +453,33 @@ export class DesktopPrintWorker {
         documentType: job.documentType,
         content,
       };
-      for (const target of targets)
-        await this.printSystem(target.name, receipt, target.paperWidthMm);
+      for (const target of targets) {
+        if (this.localQueue.wasTargetPrinted?.("local", job.id, target.name)) {
+          continue;
+        }
+        try {
+          await this.printToSystem(target, receipt, target.paperWidthMm);
+          this.localQueue.markTargetPrinted?.("local", job.id, target.name);
+        } catch (error) {
+          const ambiguous = isPrintOutcomeUnknown(error);
+          if (ambiguous) {
+            this.localQueue.markTargetAmbiguous?.(
+              "local",
+              job.id,
+              target.name,
+            );
+          }
+          throw error;
+        }
+      }
       this.localQueue.complete(job.id);
     } catch (error) {
-      this.localQueue.fail(job.id, message(error));
-      return false;
+      this.localQueue.fail(
+        job.id,
+        message(error),
+        isPrintOutcomeUnknown(error),
+      );
+      return true;
     }
     return true;
   }
@@ -437,6 +492,24 @@ export class DesktopPrintWorker {
         body: JSON.stringify({ leaseToken: job.leaseToken }),
       },
     );
+  }
+
+  private async printToSystem(
+    target: SystemPrinterTarget,
+    receipt: PrintableReceipt,
+    paperWidthMm?: number,
+  ): Promise<void> {
+    if (!this.printSystem) throw new Error("Windows printer adapter sozlanmagan");
+      await withTimeout(
+      Promise.resolve().then(() =>
+        this.printSystem!(target.name, receipt, paperWidthMm),
+      ),
+      this.printTimeoutMs,
+        () =>
+          new PrintOutcomeUnknownError(
+            `"${target.displayName}" printerida chop etish ${Math.ceil(this.printTimeoutMs / 1_000)} soniyada tasdiqlanmadi. Qog'ozni tekshirib, keyin qo'lda qayta yuboring.`,
+          ),
+      );
   }
 
   private async discoverReadyPrinters(): Promise<ManagedPrinter[]> {
@@ -604,21 +677,62 @@ export class DesktopPrintWorker {
     port: number,
     payload: Buffer | undefined,
   ): Promise<void> {
-    if (this.socketImpl) return this.socketImpl(host, port, payload);
+    if (this.socketImpl) {
+      try {
+        await withTimeout(
+          this.socketImpl(host, port, payload),
+          this.printTimeoutMs,
+          () =>
+          new PrintOutcomeUnknownError(
+              `TCP printerga yuborish ${this.printTimeoutMs / 1_000} soniyada tugamadi; qog'ozni tekshiring.`,
+            ),
+        );
+      } catch (error) {
+        if (payload && !isPrintOutcomeUnknown(error)) {
+          throw new PrintOutcomeUnknownError(
+            `${message(error)}. Qog'ozni tekshiring.`,
+          );
+        }
+        throw error;
+      }
+      return;
+    }
     await new Promise<void>((resolve, reject) => {
       const socket = new Socket();
+      let settled = false;
+      let payloadStarted = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        socket.removeAllListeners();
+        if (error) reject(error);
+        else resolve();
+      };
       const timer = setTimeout(() => {
         socket.destroy();
-        reject(new Error("Printer 5 soniyada javob bermadi"));
-      }, 5_000);
+        finish(
+          payloadStarted
+            ? new PrintOutcomeUnknownError(
+                "TCP printer ma'lumotni qabul qilgan-qilmagani 8 soniyada tasdiqlanmadi; qog'ozni tekshiring.",
+              )
+          : new Error("Printer 8 soniyada ulanmadi"),
+        );
+      }, 8_000);
       socket.once("error", (error) => {
-        clearTimeout(timer);
-        reject(error);
+        finish(
+          payloadStarted
+            ? new PrintOutcomeUnknownError(error.message)
+            : error,
+        );
       });
       socket.connect(port, host, () => {
-        clearTimeout(timer);
-        if (payload) socket.end(payload, resolve);
-        else socket.end(resolve);
+        if (payload) {
+          payloadStarted = true;
+          socket.end(payload, () => finish());
+        } else {
+          socket.end(() => finish());
+        }
       });
     });
   }

@@ -339,6 +339,9 @@ export function DesktopStatusBadge() {
   const sending = status?.sendingCommands ?? 0;
   const blocked = (status?.conflictCommands ?? 0) + (status?.deadLetterCommands ?? 0);
   const failedPrintJobs = outbox?.printJobs?.filter((job) => job.state === "dead_letter") ?? [];
+  const uncertainPrintJobs = failedPrintJobs.filter((job) =>
+    /qog'ozni tekshiring/i.test(job.lastError ?? ""),
+  );
   const Icon =
     mode === "online" ? Cloud : mode === "offline" ? CloudOff : RefreshCw;
   const title = status
@@ -568,6 +571,11 @@ export function DesktopStatusBadge() {
 
           {failedPrintJobs.length ? (
             <div className="grid gap-2 rounded-mz-card border border-mz-danger-accent bg-mz-danger-bg p-3">
+              {uncertainPrintJobs.length ? (
+                <p className="text-xs text-mz-danger" role="note">
+                  {uncertainPrintJobs.length} ta chek natijasi noaniq. Qayta yuborishdan oldin printerdan qog'oz chiqqanini tekshiring; avtomatik dublikat chiqarilmaydi.
+                </p>
+              ) : null}
               <p className="text-sm font-semibold text-mz-danger">
                 Qayta chop etish kerak
               </p>

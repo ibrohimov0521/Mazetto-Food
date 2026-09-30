@@ -275,6 +275,49 @@ export class DesktopStore {
       .run(new Date().toISOString(), id);
   }
 
+  wasPrintTargetPrinted(
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ): boolean {
+    const row = this.database
+      .prepare(
+        `SELECT 1 FROM print_job_targets
+         WHERE scope = ? AND job_id = ? AND printer_key = ? AND state = 'printed'`,
+      )
+      .get(scope, jobId, printerName.trim().toLowerCase());
+    return Boolean(row);
+  }
+
+  recordPrintTarget(
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+    state: "printed" | "ambiguous",
+  ): void {
+    this.database
+      .prepare(
+        `INSERT INTO print_job_targets (
+           scope, job_id, printer_key, printer_name, state, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(scope, job_id, printer_key) DO UPDATE SET
+           printer_name = excluded.printer_name,
+           state = CASE
+             WHEN print_job_targets.state = 'printed' THEN 'printed'
+             ELSE excluded.state
+           END,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        scope,
+        jobId,
+        printerName.trim().toLowerCase(),
+        printerName.trim(),
+        state,
+        new Date().toISOString(),
+      );
+  }
+
   listLocalPrintJobs(limit = 50): LocalPrintQueueItem[] {
     const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
     const rows = this.database
@@ -298,12 +341,17 @@ export class DesktopStore {
     return Number(result.changes) > 0;
   }
 
-  failLocalPrintJob(id: string, error: string, now = new Date()): void {
+  failLocalPrintJob(
+    id: string,
+    error: string,
+    now = new Date(),
+    ambiguous = false,
+  ): void {
     const row = this.database
       .prepare(`SELECT attempts FROM print_jobs WHERE id = ?`)
       .get(id) as { attempts: number | bigint } | undefined;
     const attempts = Number(row?.attempts ?? 1);
-    const deadLetter = attempts >= 5;
+    const deadLetter = ambiguous || attempts >= 5;
     const delayMs = Math.min(300_000, 5_000 * 2 ** Math.max(0, attempts - 1));
     const nextAttemptAt = deadLetter
       ? null
@@ -315,7 +363,12 @@ export class DesktopStore {
            next_attempt_at = ?, last_error = ?
        WHERE id = ?`,
       )
-      .run(deadLetter ? "dead_letter" : "retry", nextAttemptAt, error, id);
+      .run(
+        deadLetter ? "dead_letter" : "retry",
+        nextAttemptAt,
+        error,
+        id,
+      );
   }
 
   wasLocalDocumentPrinted(
@@ -993,6 +1046,15 @@ export class DesktopStore {
         error_code TEXT,
         error_message TEXT,
         UNIQUE(print_job_id, attempt_number)
+      );
+      CREATE TABLE IF NOT EXISTS print_job_targets (
+        scope TEXT NOT NULL CHECK (scope IN ('local', 'server')),
+        job_id TEXT NOT NULL,
+        printer_key TEXT NOT NULL,
+        printer_name TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('printed', 'ambiguous')),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (scope, job_id, printer_key)
       );
     `);
 

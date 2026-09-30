@@ -343,3 +343,62 @@ test("desktop store persists realtime cursors per stream across restarts", async
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("printer target receipts persist and ambiguous jobs stop automatic retries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  let jobId = "";
+
+  try {
+    const store = new DesktopStore(path);
+    try {
+      store.enqueueLocalPrintJob({
+        logicalKey: "timeout-order:RECEIPT",
+        branchId: "branch-1",
+        documentType: "RECEIPT",
+        payload: { orderId: "timeout-order" },
+      });
+      const job = store.claimLocalPrintJob(["RECEIPT"]);
+      assert.ok(job);
+      jobId = job.id;
+
+      store.recordPrintTarget("local", job.id, "Till A", "printed");
+      store.recordPrintTarget("local", job.id, "till a", "ambiguous");
+      store.recordPrintTarget("local", job.id, "Kitchen 1", "ambiguous");
+
+      assert.equal(store.wasPrintTargetPrinted("local", job.id, "TILL A"), true);
+      assert.equal(
+        store.wasPrintTargetPrinted("local", job.id, "Kitchen 1"),
+        false,
+      );
+      store.failLocalPrintJob(
+        job.id,
+        "Printer natijasi noma'lum; qog'ozni tekshiring.",
+        new Date(),
+        true,
+      );
+
+      assert.equal(store.listLocalPrintJobs()[0]?.state, "dead_letter");
+      assert.equal(store.listLocalPrintJobs()[0]?.attempts, 1);
+      assert.equal(store.claimLocalPrintJob(["RECEIPT"]), null);
+    } finally {
+      store.close();
+    }
+
+    const reopened = new DesktopStore(path);
+    try {
+      assert.equal(
+        reopened.wasPrintTargetPrinted("local", jobId, "Till A"),
+        true,
+      );
+      assert.equal(
+        reopened.wasPrintTargetPrinted("local", jobId, "Kitchen 1"),
+        false,
+      );
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
