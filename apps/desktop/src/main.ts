@@ -12,7 +12,7 @@ import {
   type SystemPrinterTarget,
 } from "./print-worker.js";
 import {
-  normalizeWindowsPaperWidth,
+  normalizeWindowsPaperSettings,
   printableReceiptHtml,
   windowsPrintPageSize,
 } from "./receipt-renderer.js";
@@ -533,11 +533,17 @@ function setupPrinterControls(): void {
   );
   ipcMain.handle(
     "desktop:printer:test-system",
-    async (_event, input: { name?: unknown; role?: unknown; paperWidthMm?: unknown }) => {
+    async (_event, input: {
+      name?: unknown;
+      role?: unknown;
+      paperFormat?: unknown;
+      paperWidthMm?: unknown;
+      paperHeightMm?: unknown;
+    }) => {
       const name = typeof input?.name === "string" ? input.name.trim() : "";
       if (!name) throw new Error("Windows printerini tanlang");
       const role = typeof input?.role === "string" ? input.role : "RECEIPT";
-      const paperWidthMm = normalizeWindowsPaperWidth(input?.paperWidthMm);
+      const paperSettings = normalizeWindowsPaperSettings(input, name);
       await silentPrintReceipt(name, {
         receiptNumber: "TEST",
         documentType: role,
@@ -552,7 +558,7 @@ function setupPrinterControls(): void {
           total: "1000",
           dateTime: new Date().toISOString(),
         },
-      }, paperWidthMm);
+      }, paperSettings);
       return { ok: true };
     },
   );
@@ -689,27 +695,29 @@ function normalizeSystemPrinterTargets(value: unknown): SystemPrinterTarget[] {
     const roles = Array.isArray(record.roles)
       ? [...new Set(record.roles.filter((role): role is string => typeof role === "string" && validRoles.has(role)))]
       : [];
-    const paperWidthMm = normalizeWindowsPaperWidth(record.paperWidthMm);
-    return roles.length > 0 ? [{ name, displayName, roles, paperWidthMm }] : [];
+    const paperSettings = normalizeWindowsPaperSettings(record, name);
+    return roles.length > 0 ? [{ name, displayName, roles, ...paperSettings }] : [];
   });
 }
 
 async function silentPrintReceipt(
   deviceName: string,
   receipt: PrintableReceipt,
-  selectedPaperWidthMm = 80,
+  selectedPaperInput?: unknown,
 ): Promise<void> {
-  const godexLabelPrinter = /\bgodex\b/i.test(deviceName);
-  const paperWidthMm = godexLabelPrinter ? 90 : normalizeWindowsPaperWidth(selectedPaperWidthMm);
+  const paper = normalizeWindowsPaperSettings(selectedPaperInput, deviceName);
+  const paperWidthMm = paper.paperWidthMm;
   const window = new BrowserWindow({
     show: false,
     width: paperWidthMm === 210 ? 900 : Math.min(1_600, Math.max(420, Math.round(paperWidthMm * 4.25 + 80))),
-    height: 800,
+    height: paper.paperFormat === "LABEL"
+      ? Math.max(300, Math.round((paper.paperHeightMm ?? 80) * 4.25 + 80))
+      : 800,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   try {
     await withTimeout(
-      window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, godexLabelPrinter, paperWidthMm))}`),
+      window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, paper))}`),
       10_000,
       () => new Error("Chek oynasi 10 soniyada tayyor bo'lmadi"),
     );
@@ -731,11 +739,7 @@ async function silentPrintReceipt(
             silent: true,
             deviceName,
             printBackground: true,
-            // Godex G500 Windows'da 90x80 mm etiketka sifatida ishlaydi.
-            // Unga uzun 80 mm chek varag'ini yuborish drayverda bo'sh label
-            // chiqarishiga olib keladi. Qolgan printerlarda foydalanuvchi
-            // A4 yoki Godex o'lchami aniq so'raladi; rulonli format drayverdan olinadi.
-            ...windowsPrintPageSize(godexLabelPrinter, paperWidthMm),
+            ...windowsPrintPageSize(paper),
             margins: { marginType: "none" },
           },
           (success, failureReason) =>

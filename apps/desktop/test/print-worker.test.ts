@@ -4,7 +4,7 @@ import test from "node:test";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 
 test("offline receipt and kitchen documents print through selected Windows drivers", async () => {
-  const printed: Array<{ name: string; type: string; paperWidthMm?: number }> =
+  const printed: Array<{ name: string; type: string; paperWidthMm?: number; paperFormat?: string }> =
     [];
   const completed: string[] = [];
   const jobs = [
@@ -50,8 +50,13 @@ test("offline receipt and kitchen documents print through selected Windows drive
         paperWidthMm: 210,
       },
     ],
-    printSystem: async (name, receipt, paperWidthMm) => {
-      printed.push({ name, type: receipt.documentType ?? "", paperWidthMm });
+    printSystem: async (name, receipt, paperSettings) => {
+      printed.push({
+        name,
+        type: receipt.documentType ?? "",
+        paperWidthMm: paperSettings?.paperWidthMm,
+        paperFormat: paperSettings?.paperFormat,
+      });
     },
     localQueue: {
       claim: (types) => {
@@ -68,10 +73,63 @@ test("offline receipt and kitchen documents print through selected Windows drive
   await worker.tick();
 
   assert.deepEqual(printed, [
-    { name: "Windows POS", type: "RECEIPT", paperWidthMm: 58 },
-    { name: "Windows Kitchen", type: "KITCHEN", paperWidthMm: 210 },
+    { name: "Windows POS", type: "RECEIPT", paperWidthMm: 58, paperFormat: "ROLL" },
+    { name: "Windows Kitchen", type: "KITCHEN", paperWidthMm: 210, paperFormat: "A4" },
   ]);
   assert.deepEqual(completed, ["local-1", "local-2"]);
+});
+
+test("custom label profiles work through any installed Windows printer driver", async () => {
+  let printed: { name: string; format?: string; width?: number; height?: number } | null = null;
+  let claimed = false;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [{
+      name: "Generic USB Label Printer",
+      displayName: "Generic USB Label Printer",
+      roles: ["RECEIPT"],
+      paperFormat: "LABEL",
+      paperWidthMm: 100,
+      paperHeightMm: 60,
+    }],
+    printSystem: async (name, _receipt, paper) => {
+      printed = {
+        name,
+        format: paper?.paperFormat,
+        width: paper?.paperWidthMm,
+        height: paper?.paperHeightMm,
+      };
+    },
+    localQueue: {
+      claim: () => {
+        if (claimed) return null;
+        claimed = true;
+        return {
+          id: "label-job-1",
+          logicalKey: "order-label:RECEIPT",
+          branchId: "branch-1",
+          documentType: "RECEIPT",
+          payloadJson: JSON.stringify({ documentType: "RECEIPT" }),
+          attempts: 0,
+        };
+      },
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+
+  assert.deepEqual(printed, {
+    name: "Generic USB Label Printer",
+    format: "LABEL",
+    width: 100,
+    height: 60,
+  });
 });
 
 test("print worker stop waits for the active local paper job", async () => {
