@@ -29,7 +29,7 @@ type DesktopPrinterStatus = {
     name: string;
     displayName: string;
     roles: string[];
-    paperWidthMm: 58 | 80 | 210;
+    paperWidthMm: number;
   }>;
 };
 
@@ -63,8 +63,8 @@ type DesktopBridge = {
     test: () => Promise<void>;
     testManaged: () => Promise<DesktopPrinterConnectionResult[]>;
     listSystem: () => Promise<DesktopSystemPrinter[]>;
-    saveSystem: (input: { printers: Array<{ name: string; displayName: string; roles: string[]; paperWidthMm?: 58 | 80 | 210 }> }) => Promise<DesktopPrinterStatus>;
-    testSystem: (input: { name: string; role: string; paperWidthMm?: 58 | 80 | 210 }) => Promise<{ ok: boolean }>;
+    saveSystem: (input: { printers: Array<{ name: string; displayName: string; roles: string[]; paperWidthMm?: number }> }) => Promise<DesktopPrinterStatus>;
+    testSystem: (input: { name: string; role: string; paperWidthMm?: number }) => Promise<{ ok: boolean }>;
   };
   updates?: {
     getStatus: () => Promise<DesktopUpdateStatus>;

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { printableReceiptHtml, windowsPrintPageSize } from "../src/receipt-renderer.js";
+import {
+  normalizeWindowsPaperWidth,
+  printableReceiptHtml,
+  windowsPrintPageSize,
+} from "../src/receipt-renderer.js";
 
 test("Windows receipt layout honors 58, 80 and A4 printable widths", () => {
   const receipt = { content: { orderNumber: "42" } };
@@ -11,6 +15,18 @@ test("Windows receipt layout honors 58, 80 and A4 printable widths", () => {
   assert.deepEqual(windowsPrintPageSize(false, 80), {});
   assert.deepEqual(windowsPrintPageSize(false, 210), { pageSize: "A4" });
   assert.deepEqual(windowsPrintPageSize(true, 210), { pageSize: { width: 90_000, height: 80_000 } });
+});
+
+test("custom Windows driver widths are preserved and invalid widths fall back safely", () => {
+  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, false, 70), /width: 64mm/);
+  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, false, 102), /width: 96mm/);
+  assert.equal(normalizeWindowsPaperWidth(70), 70);
+  assert.equal(normalizeWindowsPaperWidth(30), 30);
+  assert.equal(normalizeWindowsPaperWidth(300), 300);
+  assert.equal(normalizeWindowsPaperWidth(29), 80);
+  assert.equal(normalizeWindowsPaperWidth(301), 80);
+  assert.equal(normalizeWindowsPaperWidth(58.5), 80);
+  assert.equal(normalizeWindowsPaperWidth("80"), 80);
 });
 
 test("A4 refund receipts include the reason and negative total", () => {

@@ -26,7 +26,7 @@ export type SystemPrinterTarget = {
   name: string;
   displayName: string;
   roles: string[];
-  paperWidthMm?: 58 | 80 | 210;
+  paperWidthMm?: number;
 };
 
 export type PrinterConnectionResult = ManagedPrinter & {
