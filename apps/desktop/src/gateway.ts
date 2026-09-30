@@ -536,7 +536,7 @@ export class DesktopGateway {
       input.definition.commandType === "pos.order.create" && localAggregateId
         ? buildOfflineOrderSnapshot(
             parsedBody ?? {},
-            cachedCatalog(this.store, input.authScope),
+            cachedCatalog(this.store, input.authScope, context?.branchId),
             localAggregateId,
           )
         : null;
@@ -2326,14 +2326,37 @@ function hasStableIdempotencyKey(
 function cachedCatalog(
   store: DesktopStore,
   authScope: string,
+  branchId?: string,
 ): Record<string, unknown> | null {
   const cached = store.getLatestCachedResponse(
     authScope,
     "/api/v1/pos/catalog",
   );
-  if (!cached) return null;
-  const parsed = parseJsonObject(cached.body);
-  return recordField(parsed, "data") ?? parsed;
+  if (cached) {
+    const parsed = parseJsonObject(cached.body);
+    return recordField(parsed, "data") ?? parsed;
+  }
+
+  if (!branchId) return null;
+  const bootstrap = store.getLatestCachedResponse(
+    authScope,
+    "/api/v1/realtime/bootstrap",
+  );
+  if (!bootstrap) return null;
+
+  const snapshot = recordField(parseJsonObject(bootstrap.body), "data");
+  const catalog = recordField(snapshot, "catalog");
+  if (
+    snapshot?.schemaVersion !== 2 ||
+    snapshot?.branchId !== branchId ||
+    catalog?.branchId !== branchId ||
+    !Array.isArray(catalog.products) ||
+    !Array.isArray(catalog.tables)
+  ) {
+    return null;
+  }
+
+  return catalog;
 }
 
 function buildOfflineOrderSnapshot(

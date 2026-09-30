@@ -206,6 +206,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Verification: backend bootstrap tests, POS snapshot-validation tests, backend/POS typecheck, POS lint, full backend/POS/Desktop test suites, affected production builds and 33 repository validators passed.
 - This only improves offline POS catalog reads after a successful authorized bootstrap. It does not enable offline login, an uncached shift, card/terminal payments, arbitrary admin writes, or all staff panels. It is not a 100% offline guarantee; D2 and later offline phases remain open, as do physical printer acceptance and outage/power-loss drills.
 
+## D2 offline order documents reuse branch bootstrap (2026-10-01)
+
+- When the POS catalog endpoint has not yet been cached, queued offline orders now reuse the authenticated realtime bootstrap catalog to build accurate local order, receipt and kitchen snapshots.
+- The fallback requires both the snapshot and embedded catalog to match the active JWT branch and contain product/table collections; missing or cross-branch data is not used.
+- Verification: a reconnect integration test checks that an offline queued sale retains product, variant and table labels from the bootstrap snapshot; full CI, Windows release and production smoke are release gates.
+- Desktop bundle version: 0.1.70.
+
 ## D3 ambiguous-request idempotency gate (2026-09-30)
 
 - A command may be queued without a caller-provided idempotency key only when the Desktop gateway had already marked the upstream offline and therefore did not send that request.
