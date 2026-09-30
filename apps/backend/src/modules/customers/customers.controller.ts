@@ -4,6 +4,7 @@ import {
   Delete,
   Put,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -25,6 +26,7 @@ import { CancelCustomerOrderDto } from "./dto/cancel-customer-order.dto";
 import { CurrentCustomer } from "../../common/decorators/current-customer.decorator";
 import { CustomerAuth } from "../../common/decorators/customer-auth.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import type { AuthenticatedCustomer, CustomerAuthenticatedRequest } from "../../common/types/authenticated-customer";
@@ -343,7 +345,12 @@ export class CustomersAdminController {
     @Param("id") id: string,
     @Body() dto: UpdateCourierOrderStatusDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.courierService.updateCourierOrderStatus(id, dto, user);
+    return this.courierService.updateCourierOrderStatus(id, dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 }

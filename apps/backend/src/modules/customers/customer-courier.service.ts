@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   OrderStatus,
@@ -11,6 +13,12 @@ import {
   ShiftStatus,
 } from "@prisma/client";
 import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
+import { IdempotencyService } from "../../common/idempotency/idempotency.service";
+import {
+  buildIdempotencyScope,
+  hashCanonicalJson,
+  normalizeIdempotencyKey,
+} from "../../common/idempotency/idempotency-key";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentsService } from "../payments/payments.service";
@@ -34,6 +42,55 @@ import type {
   UpdateCourierOrderStatusDto,
 } from "./dto/list-customers.dto";
 
+type CourierStatusContext = {
+  idempotencyKey?: string;
+  correlationId?: string;
+};
+
+const COURIER_STATUS_RESULT_INCLUDE = {
+  customer: { select: { id: true, name: true, phone: true } },
+  branch: {
+    select: {
+      id: true,
+      name: true,
+      address: true,
+      latitude: true,
+      longitude: true,
+    },
+  },
+  order: {
+    include: {
+      statusHistory: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          fromStatus: true,
+          toStatus: true,
+          reason: true,
+          createdAt: true,
+          changedByEmployee: {
+            select: {
+              firstName: true,
+              lastName: true,
+              employeeCode: true,
+            },
+          },
+          changedByUser: { select: { displayName: true, email: true } },
+        },
+      },
+      items: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          productName: true,
+          quantity: true,
+          totalPrice: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.CustomerOrderInclude;
+
 /*
  * KURYER domeni: yetkazish ro'yxatlari, holat o'zgartirish va admin
  * nazorati.
@@ -55,6 +112,7 @@ export class CustomerCourierService {
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
     private readonly paymentsService: PaymentsService,
+    @Optional() private readonly idempotency?: IdempotencyService,
   ) {}
 
   async listCourierDeliveryOrders(
@@ -252,12 +310,85 @@ export class CustomerCourierService {
     customerOrderId: string,
     dto: UpdateCourierOrderStatusDto,
     user: AuthenticatedUser,
+    context?: CourierStatusContext,
   ) {
     const employeeId = requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
     const nextStatus = dto.status as OrderStatus;
+    const rawIdempotencyKey = context?.idempotencyKey ?? dto.idempotencyKey;
+    const idempotencyKey =
+      rawIdempotencyKey === undefined
+        ? undefined
+        : normalizeIdempotencyKey(rawIdempotencyKey);
+    const requestHash = idempotencyKey
+      ? hashCanonicalJson({
+          customerOrderId,
+          employeeId,
+          status: dto.status,
+          shiftId: dto.shiftId ?? null,
+          paymentMethodCode: dto.paymentMethodCode ?? null,
+          amount: dto.amount ?? null,
+        })
+      : undefined;
+    let decision:
+      | Awaited<ReturnType<IdempotencyService["start"]>>
+      | undefined;
 
-    const customerOrder = await this.prisma.$transaction(async (tx) => {
+    if (idempotencyKey && requestHash) {
+      if (!this.idempotency) {
+        throw new BadRequestException("Courier status idempotency is unavailable");
+      }
+      decision = await this.idempotency.start({
+        scope: buildIdempotencyScope(
+          "courier-order-status",
+          scope.tenantId,
+          customerOrderId,
+          employeeId,
+          user.id,
+        ),
+        key: idempotencyKey,
+        requestHash,
+        correlationId: context?.correlationId ?? idempotencyKey,
+        actorId: user.id,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      });
+
+      if (decision.kind === "REPLAY") {
+        if (
+          decision.record.resourceType !== "CUSTOMER_ORDER" ||
+          decision.record.resourceId !== customerOrderId
+        ) {
+          throw new ConflictException("Previous courier update did not complete");
+        }
+        const previous = await this.prisma.customerOrder.findFirst({
+          where: {
+            id: customerOrderId,
+            type: "DELIVERY",
+            branch: {
+              tenantId: scope.tenantId,
+              ...(scope.branchId ? { id: scope.branchId } : {}),
+            },
+          },
+          include: COURIER_STATUS_RESULT_INCLUDE,
+        });
+        if (!previous) {
+          throw new NotFoundException("Online order not found");
+        }
+        if (
+          (previous.order.servedById &&
+            previous.order.servedById !== employeeId) ||
+          (previous.order.cancelledById &&
+            previous.order.cancelledById !== employeeId)
+        ) {
+          throw new ForbiddenException("Bu buyurtmani boshqa kuryer olib ketgan.");
+        }
+        return withDerivedCustomerOrderStatus(previous);
+      }
+    }
+
+    let customerOrder;
+    try {
+      customerOrder = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id JOIN "branches" b ON b.id = c."branchId" WHERE c.id = ${customerOrderId} AND b."tenantId" = ${scope.tenantId} FOR UPDATE OF o`;
       const existing = await tx.customerOrder.findFirst({
         where: { id: customerOrderId, branch: { tenantId: scope.tenantId } },
@@ -332,7 +463,7 @@ export class CustomerCourierService {
             if (dto.shiftId && dto.shiftId !== courierShift.id) throw new ForbiddenException("To'lov faqat o'zingizning ochiq smenangizga yoziladi");
             await this.paymentsService.processOrderPayment({
               orderId: existing.orderId,
-              idempotencyKey: dto.idempotencyKey ?? "courier-cash-" + existing.orderId,
+              idempotencyKey: idempotencyKey ?? "courier-cash-" + existing.orderId,
               shiftId: courierShift.id,
               payments: [{ paymentMethodCode: dto.paymentMethodCode ?? "CASH", amount: Number(outstanding) }],
             }, user, undefined, undefined, undefined, tx);
@@ -377,6 +508,8 @@ export class CustomerCourierService {
           newState: updated.orderState,
           payload: { fromStatus: existing.order.status, toStatus: nextStatus },
           reasonCode: `COURIER_${nextStatus}`,
+          correlationId: context?.correlationId,
+          idempotencyKey,
         });
 
         await syncKitchenTickets(tx, existing.orderId, nextStatus);
@@ -392,55 +525,37 @@ export class CustomerCourierService {
         });
       }
 
-      return tx.customerOrder.findUniqueOrThrow({
+      const result = await tx.customerOrder.findUniqueOrThrow({
         where: { id: customerOrderId },
-        include: {
-          customer: { select: { id: true, name: true, phone: true } },
-          branch: {
-            select: {
-              id: true,
-              name: true,
-              address: true,
-              latitude: true,
-              longitude: true,
-            },
-          },
-          order: {
-            include: {
-              statusHistory: {
-              orderBy: { createdAt: "asc" },
-              select: {
-                id: true,
-                fromStatus: true,
-                toStatus: true,
-                reason: true,
-                createdAt: true,
-                changedByEmployee: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
-                    employeeCode: true,
-                  },
-                },
-                changedByUser: {
-                  select: { displayName: true, email: true },
-                },
-              },
-            },
-            items: {
-                orderBy: { createdAt: "asc" },
-                select: {
-                  id: true,
-                  productName: true,
-                  quantity: true,
-                  totalPrice: true,
-                },
-              },
-            },
-          },
-        },
+        include: COURIER_STATUS_RESULT_INCLUDE,
       });
-    });
+      if (decision?.kind === "CLAIMED" && requestHash) {
+        await this.idempotency!.complete(
+          decision.record.id,
+          {
+            requestHash,
+            responseStatus: 200,
+            responseBody: {
+              customerOrderId: result.id,
+              orderId: result.orderId,
+              status: result.order.status,
+            },
+            resourceType: "CUSTOMER_ORDER",
+            resourceId: result.id,
+          },
+          tx,
+        );
+      }
+      return result;
+      });
+    } catch (error) {
+      if (decision?.kind === "CLAIMED" && requestHash) {
+        await this.idempotency!
+          .fail(decision.record.id, requestHash, "COURIER_STATUS_UPDATE_FAILED")
+          .catch(() => undefined);
+      }
+      throw error;
+    }
 
     this.kitchenService.emitOrderStatusChanged({
       orderId: customerOrder.orderId,
