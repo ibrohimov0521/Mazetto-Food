@@ -1,13 +1,28 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { PermissionsAny } from "../../common/decorators/permissions.decorator";
+import {
+  Permissions,
+  PermissionsAny,
+} from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { RealtimeService } from "./realtime.service";
+import { RealtimeBootstrapService } from "./desktop-bootstrap.service";
 
 @Controller("realtime")
 export class RealtimeController {
-  constructor(private readonly realtimeService: RealtimeService) {}
+  constructor(
+    private readonly realtimeService: RealtimeService,
+    private readonly bootstrapService: RealtimeBootstrapService,
+  ) {}
+  @Get("bootstrap")
+  @Permissions(PERMISSIONS.POS_USE)
+  bootstrap(
+    @Query("branchId") branchId: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.bootstrapService.create(branchId, user);
+  }
 
   @Get("events")
   @PermissionsAny(

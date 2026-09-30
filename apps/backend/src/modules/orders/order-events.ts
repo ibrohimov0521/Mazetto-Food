@@ -58,10 +58,22 @@ export async function recordOrderEvent(
   });
 
   if (input.publish !== false) {
+    const [revision] = await tx.$queryRaw<
+      Array<{ branchRevision: bigint }>
+    >`UPDATE "branches"
+      SET "realtime_revision" = "realtime_revision" + 1
+      WHERE "id" = ${input.branchId}
+      RETURNING "realtime_revision" AS "branchRevision"`;
+
+    if (!revision) {
+      throw new Error("Order event branch does not exist");
+    }
+
     await tx.outboxEvent.create({
       data: {
         sourceEventId: event.id,
         branchId: input.branchId,
+        branchRevision: revision.branchRevision,
         aggregateType: "ORDER",
         aggregateId: input.orderId,
         eventType: input.eventType,

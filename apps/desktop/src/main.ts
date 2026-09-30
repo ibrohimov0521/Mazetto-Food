@@ -809,7 +809,7 @@ function setupSyncControls(): void {
     const cursor = value.cursor;
     if (
       typeof cursor !== "string" ||
-      cursor.length > 2048 ||
+      cursor.length > 65_536 ||
       !/^[A-Za-z0-9_-]+$/.test(cursor)
     ) {
       throw new Error("Realtime cursor noto'g'ri");

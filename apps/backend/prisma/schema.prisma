@@ -218,6 +218,7 @@ model Branch {
   id                  String   @id @default(cuid())
   code                String   @unique
   tenantId            String   @default("tenant_mazetto_food")
+  realtimeRevision    BigInt   @default(0) @map("realtime_revision")
   name                String
   address             String?
   phone               String?
@@ -1415,23 +1416,25 @@ model OrderEvent {
 }
 
 model OutboxEvent {
-  id            String    @id @default(cuid())
-  sourceEventId String?   @unique
-  branchId      String?
-  aggregateType String
-  aggregateId   String
-  eventType     String
-  payload       Json
-  correlationId String
-  causationId   String?
-  availableAt   DateTime  @default(now())
-  processedAt   DateTime?
-  attemptCount  Int       @default(0)
-  lastError     String?
-  createdAt     DateTime  @default(now())
+  id             String    @id @default(cuid())
+  sourceEventId  String?   @unique
+  branchId       String?
+  branchRevision BigInt?   @map("branch_revision")
+  aggregateType  String
+  aggregateId    String
+  eventType      String
+  payload        Json
+  correlationId  String
+  causationId    String?
+  availableAt    DateTime  @default(now())
+  processedAt    DateTime?
+  attemptCount   Int       @default(0)
+  lastError      String?
+  createdAt      DateTime  @default(now())
 
   sourceEvent OrderEvent? @relation(fields: [sourceEventId], references: [id], onDelete: Restrict)
 
+  @@unique([branchId, branchRevision])
   @@index([processedAt, availableAt, createdAt])
   @@index([aggregateType, aggregateId])
   @@index([branchId, createdAt])

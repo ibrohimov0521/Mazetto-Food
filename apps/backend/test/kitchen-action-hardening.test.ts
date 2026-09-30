@@ -303,8 +303,15 @@ function createConcurrentKitchenState() {
     completedAt: null as Date | null,
   };
   const ticketEvents: Record<string, unknown>[] = [];
+  let realtimeRevision = 0n;
   const tx = {
-    $queryRaw: async () => [],
+    $queryRaw: async (strings: TemplateStringsArray) => {
+      if (strings.join("").includes("realtime_revision")) {
+        realtimeRevision += 1n;
+        return [{ branchRevision: realtimeRevision }];
+      }
+      return [];
+    },
     order: {
       findFirst: async () => ({ ...order, kitchenTickets: [{ ...ticket }] }),
       update: async ({ data }: { data: Record<string, unknown> }) => {

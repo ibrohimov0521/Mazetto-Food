@@ -51,6 +51,7 @@ test("cancel action requires both an explicit reason and reason code", async () 
 test("order event and publishable outbox entry share identity and correlation", async () => {
   const writes: Array<{ kind: string; data: Record<string, unknown> }> = [];
   const tx = {
+    $queryRaw: async () => [{ branchRevision: 42n }],
     orderEvent: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         writes.push({ kind: "event", data });
@@ -187,7 +188,10 @@ test("cancel writes order state, version, history, event and outbox in one trans
     orderState: OrderState.PLACED, version: 1, tableId: null,
   };
   const tx = {
-    $queryRaw: async () => [],
+    $queryRaw: async (strings: TemplateStringsArray) =>
+      strings.join("").includes("realtime_revision")
+        ? [{ branchRevision: 1n }]
+        : [],
     order: {
       findUnique: async () => stored,
       update: async ({ data }: { data: { status: OrderStatus; orderState: OrderState } }) => {

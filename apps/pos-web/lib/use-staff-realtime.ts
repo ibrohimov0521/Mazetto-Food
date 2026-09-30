@@ -37,6 +37,7 @@ export function useStaffRealtime(options: {
   cursorScope?: string | undefined;
   /** Global admin tanlagan filial. Xodim uchun backend o'zi scope qiladi. */
   branchId?: string | undefined;
+  bootstrapSnapshot?: boolean | undefined;
 }): StaffRealtimeConnectionState {
   const [connectionState, setConnectionState] =
     useState<StaffRealtimeConnectionState>("offline");
@@ -53,15 +54,16 @@ export function useStaffRealtime(options: {
     const isDesktop = window.navigator.userAgent.includes("MAZETTO-Desktop/");
     const cursorKey = `mazetto.staff.realtime.cursor.${encodeURIComponent(
       options.cursorScope ?? "default",
-    )}`;
-    const cursorStream = `${cursorKey}:${encodeURIComponent(options.branchId ?? "auto")}`;
+    )}:${encodeURIComponent(options.branchId ?? "auto")}`;
+    const cursorStream = cursorKey;
     const desktopSync = isDesktop ? window.mazettoDesktop?.sync : undefined;
     let stopped = false;
     let running = false;
-    let cursor = readCursor(cursorKey);
+    let cursor = readCursor(cursorStream);
     let cursorLoaded = !desktopSync;
     let cursorPersisted = !desktopSync;
     let cursorPersistenceAvailable = Boolean(desktopSync);
+    let bootstrapAttempted = false;
 
     const setState = (state: StaffRealtimeConnectionState) => {
       if (!stopped) setConnectionState(state);
@@ -80,6 +82,41 @@ export function useStaffRealtime(options: {
             cursorPersistenceAvailable = false;
           }
           cursorLoaded = true;
+        }
+        if (desktopSync && options.bootstrapSnapshot && !bootstrapAttempted) {
+          bootstrapAttempted = true;
+          try {
+            const branchQuery = options.branchId
+              ? `?${new URLSearchParams({ branchId: options.branchId })}`
+              : "";
+            const bootstrap = await apiFetch<{
+              cursor?: unknown;
+              branchId?: unknown;
+            }>(`/realtime/bootstrap${branchQuery}`, {
+              cache: "no-store",
+              signal: AbortSignal.timeout(12000),
+            });
+            if (
+              typeof bootstrap.cursor === "string" &&
+              typeof bootstrap.branchId === "string" &&
+              isBranchRevisionCursor(bootstrap.cursor, bootstrap.branchId) &&
+              !isBranchRevisionCursor(cursor, bootstrap.branchId)
+            ) {
+              cursor = bootstrap.cursor;
+              cursorPersisted = false;
+              writeCursor(cursorStream, cursor);
+              if (cursorPersistenceAvailable) {
+                try {
+                  await desktopSync.saveCursor({ stream: cursorStream, cursor });
+                  cursorPersisted = true;
+                } catch {
+                  cursorPersistenceAvailable = false;
+                }
+              }
+            }
+          } catch {
+            // Roles without POS access keep using their existing event stream.
+          }
         }
         let hasMore = true;
         let lastEvent: StaffRealtimeEvent | undefined;
@@ -111,7 +148,7 @@ export function useStaffRealtime(options: {
               cursorPersistenceAvailable = false;
             }
           }
-          if (nextCursor !== cursor) writeCursor(cursorKey, nextCursor);
+          if (nextCursor !== cursor) writeCursor(cursorStream, nextCursor);
           cursor = nextCursor;
           lastEvent = next.events.at(-1) ?? lastEvent;
           hasMore = next.hasMore;
@@ -197,7 +234,7 @@ export function useStaffRealtime(options: {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [options.accessToken, options.branchId, options.cursorScope]);
+  }, [options.accessToken, options.branchId, options.bootstrapSnapshot, options.cursorScope]);
 
   return connectionState;
 }
@@ -216,5 +253,26 @@ function writeCursor(key: string, cursor: string | null): void {
     window.localStorage.setItem(key, cursor);
   } catch {
     // Local storage can be disabled by a browser policy.
+  }
+}
+function isBranchRevisionCursor(
+  value: string | null,
+  branchId: string,
+): boolean {
+  if (!value) return false;
+  try {
+    const padded = value
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(value.length / 4) * 4, "=");
+    const parsed = JSON.parse(window.atob(padded)) as {
+      version?: unknown;
+      branches?: Record<string, unknown>;
+    };
+    return (
+      parsed.version === 2 && typeof parsed.branches?.[branchId] === "string"
+    );
+  } catch {
+    return false;
   }
 }
