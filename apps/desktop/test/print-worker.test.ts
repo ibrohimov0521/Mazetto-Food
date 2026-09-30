@@ -74,6 +74,67 @@ test("offline receipt and kitchen documents print through selected Windows drive
   assert.deepEqual(completed, ["local-1", "local-2"]);
 });
 
+test("print worker stop waits for the active local paper job", async () => {
+  let claims = 0;
+  let completed = 0;
+  let beginPrint: () => void = () => undefined;
+  let releasePrint: () => void = () => undefined;
+  const printStarted = new Promise<void>((resolve) => {
+    beginPrint = resolve;
+  });
+  const printGate = new Promise<void>((resolve) => {
+    releasePrint = resolve;
+  });
+  const job = {
+    id: "active-print-job",
+    logicalKey: "order-active:RECEIPT",
+    branchId: "branch-1",
+    documentType: "RECEIPT",
+    payloadJson: JSON.stringify({ orderId: "order-active" }),
+    attempts: 0,
+  };
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      beginPrint();
+      await printGate;
+    },
+    localQueue: {
+      claim: () => {
+        claims += 1;
+        return job;
+      },
+      complete: () => {
+        completed += 1;
+      },
+      fail: (_id, error) => assert.fail(error),
+      wasPrinted: () => false,
+    },
+  });
+
+  const ticking = worker.tick();
+  await printStarted;
+  let stopped = false;
+  const stopping = worker.stop().then(() => {
+    stopped = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(stopped, false);
+
+  releasePrint();
+  await Promise.all([ticking, stopping]);
+  await worker.tick();
+
+  assert.equal(claims, 1);
+  assert.equal(completed, 1);
+});
+
 test("failed local print stops the current drain pass after one attempt", async () => {
   let claims = 0;
   let failures = 0;

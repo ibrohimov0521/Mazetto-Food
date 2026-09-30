@@ -33,6 +33,8 @@ let uiProcess: ChildProcess | null = null;
 let printWorker: DesktopPrintWorker | null = null;
 let deviceAuthToken: string | null = null;
 let printTimer: NodeJS.Timeout | null = null;
+let shutdownStarted = false;
+let shutdownComplete = false;
 
 type UpdateStatus = {
   state:
@@ -89,20 +91,55 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", () => {
-  if (printTimer) { clearInterval(printTimer); printTimer = null; }
-  printWorker = null;
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  void shutdownDesktop()
+    .catch((error: unknown) => {
+      console.error("[desktop] graceful shutdown failed", error);
+    })
+    .finally(() => {
+      shutdownComplete = true;
+      app.quit();
+    });
+});
+
+async function shutdownDesktop(): Promise<void> {
+  if (printTimer) {
+    clearInterval(printTimer);
+    printTimer = null;
+  }
   if (updateTimer) {
     clearInterval(updateTimer);
     updateTimer = null;
   }
+
   uiProcess?.kill();
   uiProcess = null;
-  void gateway?.stop();
-  store?.close();
+  const activeGateway = gateway;
+  const activePrintWorker = printWorker;
+  printWorker = null;
+
+  const results = await Promise.allSettled([
+    activeGateway?.stop(),
+    activePrintWorker?.stop(),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("[desktop] runtime shutdown task failed", result.reason);
+    }
+  }
+
   gateway = null;
+  try {
+    store?.close();
+  } catch (error) {
+    console.error("[desktop] local database close failed", error);
+  }
   store = null;
-});
+}
 
 async function startDesktop(): Promise<void> {
   const dataDirectory = join(app.getPath("userData"), "runtime");

@@ -71,6 +71,8 @@ export class DesktopGateway {
   private mode: DesktopGatewayStatus["mode"] = "starting";
   private readonly activeAuthorizations = new Map<string, string>();
   private readonly syncingScopes = new Set<string>();
+  private readonly backgroundTasks = new Set<Promise<void>>();
+  private stopping = false;
 
   constructor(options: DesktopGatewayOptions) {
     this.host = options.host ?? "127.0.0.1";
@@ -89,6 +91,7 @@ export class DesktopGateway {
       return this.port;
     }
 
+    this.stopping = false;
     this.startedAt = new Date().toISOString();
     this.server = createServer((request, response) => {
       void this.handle(request, response).catch((error: unknown) => {
@@ -101,9 +104,9 @@ export class DesktopGateway {
     });
     this.server.listen(this.requestedPort, this.host);
     await once(this.server, "listening");
-    void this.probeUpstream();
+    this.trackBackgroundTask(this.probeUpstream());
     this.probeTimer = setInterval(
-      () => void this.probeUpstream(),
+      () => this.trackBackgroundTask(this.probeUpstream()),
       this.probeIntervalMs,
     );
     this.probeTimer.unref();
@@ -111,6 +114,7 @@ export class DesktopGateway {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     const server = this.server;
     this.server = null;
     if (this.probeTimer) {
@@ -121,12 +125,14 @@ export class DesktopGateway {
       clearTimeout(this.probeRetryTimer);
       this.probeRetryTimer = null;
     }
-    if (!server) {
-      return;
+    if (server) {
+      server.close();
+      await once(server, "close");
     }
 
-    server.close();
-    await once(server, "close");
+    while (this.backgroundTasks.size > 0) {
+      await Promise.allSettled([...this.backgroundTasks]);
+    }
   }
 
   get port(): number {
@@ -202,7 +208,7 @@ export class DesktopGateway {
       // cashier action wait for another 10-second upstream timeout; the health
       // probe is responsible for reopening it after connectivity returns.
       if (this.mode === "offline") {
-        void this.probeUpstream();
+        this.trackBackgroundTask(this.probeUpstream());
         throw KNOWN_OFFLINE_ERROR;
       }
 
@@ -232,7 +238,7 @@ export class DesktopGateway {
         rememberOnlinePosSequence(this.store, responseBody);
       }
       if (authorization) {
-        void this.flushPendingMutations(authorization, authScope);
+        this.trackBackgroundTask(this.flushPendingMutations(authorization, authScope));
       }
 
       if (
@@ -694,7 +700,7 @@ export class DesktopGateway {
 
     if (action === "retry") {
       for (const [authScope, authorization] of this.activeAuthorizations) {
-        void this.flushPendingMutations(authorization, authScope);
+        this.trackBackgroundTask(this.flushPendingMutations(authorization, authScope));
       }
     }
 
@@ -835,14 +841,14 @@ export class DesktopGateway {
   }
 
   private async probeUpstream(): Promise<void> {
-    if (this.probing) return;
+    if (this.stopping || this.probing) return;
     const now = Date.now();
     const retryIn = 1_000 - (now - this.lastProbeStartedAt);
     if (retryIn > 0) {
       if (this.mode === "offline" && !this.probeRetryTimer) {
         this.probeRetryTimer = setTimeout(() => {
           this.probeRetryTimer = null;
-          if (this.mode === "offline") void this.probeUpstream();
+          if (this.mode === "offline") this.trackBackgroundTask(this.probeUpstream());
         }, retryIn);
         this.probeRetryTimer.unref();
       }
@@ -858,18 +864,24 @@ export class DesktopGateway {
       if (!response.ok) {
         throw new Error(`Health probe failed with ${response.status}`);
       }
+      if (this.stopping) return;
 
       this.mode = "online";
       this.lastOnlineAt = new Date().toISOString();
       this.lastError = null;
       for (const [authScope, authorization] of this.activeAuthorizations) {
-        void this.flushPendingMutations(authorization, authScope);
+        this.trackBackgroundTask(this.flushPendingMutations(authorization, authScope));
       }
     } catch (error) {
-      this.markOffline(error);
+      if (!this.stopping) this.markOffline(error);
     } finally {
       this.probing = false;
     }
+  }
+
+  private trackBackgroundTask(task: Promise<void>): void {
+    this.backgroundTasks.add(task);
+    void task.finally(() => this.backgroundTasks.delete(task)).catch(() => undefined);
   }
 
   private setCorsHeaders(

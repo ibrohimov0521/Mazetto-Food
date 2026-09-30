@@ -282,4 +282,11 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Eski desktop SQLite bazalariga mos additive next_attempt_at migratsiyasi qo'shildi; lokal claim faqat system:auto navbatiga ta'sir qiladi.
 - Desktop tekshiruvlari: 60/60 test (shu jumladan eski SQLite schema upgrade), TypeScript, ESLint va desktop compile/preload build o'tdi.
 - Bu to'liq offline kafolati yoki production deploy degani emas. Faqat ro'yxatdan o'tgan offline commandlar va keshlangan GET'lar offline ishlaydi; karta to'lovi, login/enrollment va boshqa online-only yo'llar tarmoq talab qiladi. Jismoniy printerlar mijoz kassasida hali tekshirilmagan; Windows drayverlari va ESC/POS tarmoq yo'li virtual/unit testlar bilan qamralgan.
-- O'zgarish faqat desktop client runtime'da; Dokploy backend qayta deploy qilinmadi. Bu relizni MazettoFood production desktop clientlariga tarqatishdan oldin installer/update kanali va real printer acceptance testlari talab qilinadi. Desktop package versiyasi 0.1.47 ga ko'tarildi; updater relizi staging/hardware va release darvozalari o'tmaguncha publish qilinmaydi.
+- O'zgarish faqat desktop client runtime'da; Dokploy backend qayta deploy qilinmadi. Desktop 0.1.47 Windows updater relizi GitHub release kanaliga muvaffaqiyatli chiqarildi. Haqiqiy printer acceptance testi hali restorandagi apparatlarda bajarilmagan.
+
+## 24. Desktop graceful shutdown va offline navbatni asrash (2026-09-30)
+
+- Desktop yopilayotganda gateway endi yangi so'rovlarni qabul qilmaydi, faol HTTP ishlarini va background sync/probe vazifalarini tugatishini kutadi. Shundan keyingina SQLite yopiladi.
+- Printer worker yangi ticklarni to'xtatadi, ammo boshlangan chekni/print jobni yakunlashini kutadi; shunda yopilish vaqtida lokal navbat yoki outbox yozuvlari SQLite yopilgandan keyin ishlatilmaydi.
+- Regression testlar: gateway yopilishi durable mutation sync tugashini kutadi; print worker faol printer ishini kutib, keyingi ishni boshlamaydi.
+- Release tekshiruvlari: desktop test suite 62/62, TypeScript typecheck, ESLint va compile/preload build o'tdi. Bu xavfsiz shutdown dalili, internet uzilganda barcha amallar ishlashining kafolati emas.

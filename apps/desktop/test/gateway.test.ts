@@ -67,6 +67,80 @@ test("gateway serves the last successful JSON snapshot when upstream is offline"
   }
 });
 
+test("gateway stop waits for a durable mutation sync before the store closes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-1", "branch-1");
+  const authScope = DesktopStore.authScope(authorization);
+  let beginPost: () => void = () => undefined;
+  let releasePost: () => void = () => undefined;
+  const postStarted = new Promise<void>((resolve) => {
+    beginPost = resolve;
+  });
+  const postGate = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  store.enqueueMutation({
+    idempotencyKey: "shutdown-safe-shift",
+    commandType: "shift.open",
+    aggregateType: "shifts",
+    actorId: "cashier-1",
+    branchId: "branch-1",
+    authScope,
+    payload: {
+      commandType: "shift.open",
+      method: "POST",
+      pathname: "/api/v1/shifts/open",
+      targetUrl: "https://api.example.test/api/v1/shifts/open",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "shutdown-safe-shift",
+      },
+      body: JSON.stringify({ branchId: "branch-1" }),
+    },
+  });
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/shifts/open")) {
+        beginPost();
+        await postGate;
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const read = await fetch(`http://127.0.0.1:${port}/api/v1/branches`, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(read.status, 200);
+    await postStarted;
+
+    let stopped = false;
+    const stopping = gateway.stop().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(stopped, false);
+
+    releasePost();
+    await stopping;
+    assert.equal(store.listOutbox().length, 0);
+  } finally {
+    releasePost();
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway queues POS sales offline and flushes them after reconnect", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
