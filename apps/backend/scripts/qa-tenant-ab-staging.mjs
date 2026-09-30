@@ -1103,6 +1103,9 @@ async function main() {
             where: { id: { in: fixture.auditLogIds } },
           });
         }
+        if (fixture.userIds.length) {
+          await prisma.auditLog.deleteMany({ where: { userId: { in: fixture.userIds } } });
+        }
         await prisma.customer.deleteMany({
           where: { tenantId: { in: tenantIds }, phone: SHARED_PHONE },
         });
