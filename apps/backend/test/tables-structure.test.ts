@@ -289,8 +289,10 @@ function createMemoryIdempotency() {
         assert.ok(record);
         record.status = "COMPLETED";
         record.requestHash = result.requestHash;
-        record.resourceType = result.resourceType;
-        record.resourceId = result.resourceId;
+        if (result.resourceType) record.resourceType = result.resourceType;
+        else delete record.resourceType;
+        if (result.resourceId) record.resourceId = result.resourceId;
+        else delete record.resourceId;
       },
       fail: async () => undefined,
     },
