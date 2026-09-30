@@ -72,6 +72,7 @@ test("first branch is explicitly linked to its provisioning tenant and audited",
   });
   assert.equal(result.tenantId, "tenant-a");
   assert.deepEqual(captured.auditData, {
+    tenantId: "tenant-a",
     userId: "owner-1",
     action: "PLATFORM_TENANT_BRANCH_CREATED",
     entity: "BRANCH",

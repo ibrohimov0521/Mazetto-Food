@@ -87,6 +87,7 @@ export class PrintersService {
         include: { branch: true },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "PRINTER_DEACTIVATED",
         entity: "Printer",

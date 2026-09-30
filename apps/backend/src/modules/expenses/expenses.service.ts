@@ -138,6 +138,7 @@ export class ExpensesService {
         data: { id: randomUUID(), branchId, name, normalizedName },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "EXPENSE_CATEGORY_CREATED",
         entity: "ExpenseCategory",
@@ -168,6 +169,7 @@ export class ExpensesService {
         data: { name, normalizedName },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "EXPENSE_CATEGORY_UPDATED",
         entity: "ExpenseCategory",
@@ -190,6 +192,7 @@ export class ExpensesService {
         data: { isActive: false },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "EXPENSE_CATEGORY_ARCHIVED",
         entity: "ExpenseCategory",
@@ -221,6 +224,7 @@ export class ExpensesService {
       await tx.expenseCategory.deleteMany({ where });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, {
+          tenantId: user.tenantId ?? null,
           userId: user.id,
           action: "EXPENSE_CATEGORY_DELETED",
           entity: "ExpenseCategory",

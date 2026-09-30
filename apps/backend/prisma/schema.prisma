@@ -280,6 +280,7 @@ model RestaurantTenant {
   domains                        TenantDomain[]
   platformSites                  PlatformSite[]
   memberships                    TenantMembership[]
+  auditLogs                      AuditLog[]
   customers                      Customer[]
   customerVerificationChallenges CustomerVerificationChallenge[]
   settings                       Setting[]
@@ -622,6 +623,7 @@ model TenantMembershipRole {
 model AuditLog {
   id            String   @id @default(cuid())
   userId        String?
+  tenantId      String?
   action        String
   entity        String
   entityId      String?
@@ -632,8 +634,10 @@ model AuditLog {
   userAgent     String?
   createdAt     DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tenant RestaurantTenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([tenantId, createdAt])
   @@index([userId, createdAt])
   @@index([entity, entityId])
   @@index([action])

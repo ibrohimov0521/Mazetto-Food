@@ -222,6 +222,7 @@ export class ShiftsService {
         });
 
         await writeAuditLog(tx, {
+          tenantId: user.tenantId ?? null,
           userId: user.id,
           action: "CASH_HANDOVER_FORCED",
           entity: "Shift",
@@ -557,6 +558,7 @@ export class ShiftsService {
             });
 
             await writeAuditLog(tx, {
+              tenantId: user.tenantId ?? null,
               userId: user.id,
               action: "SHIFT_FORCE_CLOSED",
               entity: "Shift",

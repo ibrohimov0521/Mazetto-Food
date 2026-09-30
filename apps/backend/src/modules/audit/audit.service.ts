@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
+import { hasOnlyPlatformRoles } from "../../common/auth/access-scope";
+import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListAuditLogsDto } from "./dto/list-audit-logs.dto";
 
@@ -9,15 +11,14 @@ import type { ListAuditLogsDto } from "./dto/list-audit-logs.dto";
  * (STAFF_CREATED, STAFF_ROLE_CHANGED, STAFF_BLOCKED va h.k.), lekin uni
  * o'qish uchun endpoint yo'q edi — ya'ni yozuvlar hech kimga ko'rinmasdi.
  *
- * DIQQAT: `AuditLog` da `branchId` yo'q — jurnal tabiatan global.
- * Shuning uchun bu endpoint branch scope qo'llamaydi va `AUDIT_VIEW`
- * permission'i faqat global rolga (SUPER_ADMIN) beriladi.
+ * Tenant a'zosi faqat o'z tenantiga biriktirilgan yozuvlarni ko'radi.
+ * Egasi ko'rsatilmagan eski yozuvlarni faqat platform egasi ko'rishi mumkin.
  */
 @Injectable()
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
-  listAuditLogs(query: ListAuditLogsDto) {
+  listAuditLogs(query: ListAuditLogsDto, user: AuthenticatedUser) {
     if (query.from && query.to && query.from > query.to) {
       throw new BadRequestException(
         "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak",
@@ -34,6 +35,7 @@ export class AuditService {
     return this.prisma.auditLog.findMany({
       where: {
         ...(query.action ? { action: query.action } : {}),
+        ...this.scopeWhere(user),
         ...(query.entity ? { entity: query.entity } : {}),
         ...(query.entityId ? { entityId: query.entityId } : {}),
         ...(query.userId ? { userId: query.userId } : {}),
@@ -62,16 +64,19 @@ export class AuditService {
   }
 
   /** Filtr tanlagichlarini to'ldirish uchun mavjud action va entity qiymatlari. */
-  async listAuditFacets() {
+  async listAuditFacets(user: AuthenticatedUser) {
+    const where = this.scopeWhere(user);
     const [actions, entities] = await Promise.all([
       this.prisma.auditLog.findMany({
         distinct: ["action"],
         select: { action: true },
+        where,
         orderBy: { action: "asc" },
       }),
       this.prisma.auditLog.findMany({
         distinct: ["entity"],
         select: { entity: true },
+        where,
         orderBy: { entity: "asc" },
       }),
     ]);
@@ -80,5 +85,13 @@ export class AuditService {
       actions: actions.map((row) => row.action),
       entities: entities.map((row) => row.entity),
     };
+  }
+  private scopeWhere(user: AuthenticatedUser) {
+    if (Boolean(user.tenantId) !== Boolean(user.membershipId)) {
+      throw new ForbiddenException("Audit uchun tenant membership konteksti noto'g'ri.");
+    }
+    if (user.tenantId) return { tenantId: user.tenantId };
+    if (hasOnlyPlatformRoles(user.roles)) return {};
+    throw new ForbiddenException("Audit jurnaliga platform egasi yoki tenant a'zosi kirishi mumkin.");
   }
 }

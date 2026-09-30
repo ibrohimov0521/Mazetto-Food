@@ -121,6 +121,7 @@ export class InventoryService {
         },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "INGREDIENT_UPDATED",
         entity: "Ingredient",
@@ -146,6 +147,7 @@ export class InventoryService {
         data: { isActive: false },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "INGREDIENT_ARCHIVED",
         entity: "Ingredient",
@@ -169,7 +171,9 @@ export class InventoryService {
     await this.prisma.$transaction(async (tx) => {
       await tx.ingredient.deleteMany({ where: { id: { in: uniqueIds } } });
       for (const id of uniqueIds) {
-        await writeAuditLog(tx, { userId: user.id, action: "INGREDIENT_DELETED", entity: "Ingredient", entityId: id });
+        await writeAuditLog(tx, {
+          tenantId: user.tenantId ?? null,
+          userId: user.id, action: "INGREDIENT_DELETED", entity: "Ingredient", entityId: id });
       }
     });
     return { deletedCount: uniqueIds.length };
@@ -187,6 +191,7 @@ export class InventoryService {
         data: { name: dto.name.trim() },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "WAREHOUSE_UPDATED",
         entity: "Warehouse",
@@ -211,6 +216,7 @@ export class InventoryService {
         data: { isActive: false },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "WAREHOUSE_ARCHIVED",
         entity: "Warehouse",
@@ -242,7 +248,9 @@ export class InventoryService {
         where: { id: { in: uniqueIds }, ...scope },
       });
       for (const id of uniqueIds) {
-        await writeAuditLog(tx, { userId: user.id, action: "WAREHOUSE_DELETED", entity: "Warehouse", entityId: id });
+        await writeAuditLog(tx, {
+          tenantId: user.tenantId ?? null,
+          userId: user.id, action: "WAREHOUSE_DELETED", entity: "Warehouse", entityId: id });
       }
     });
     return { deletedCount: uniqueIds.length };

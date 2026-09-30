@@ -46,6 +46,7 @@ export class PlatformTenantLifecycleService {
         });
 
         await writeAuditLog(tx, {
+          tenantId: tenant.id,
           userId: actor.id,
           action: "PLATFORM_TENANT_CREATED",
           entity: "RESTAURANT_TENANT",

@@ -121,6 +121,7 @@ export class SettingsService {
         select: { key: true, value: true, isPublic: true, updatedAt: true },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "SETTING_UPDATED",
         entity: "Setting",

@@ -226,12 +226,16 @@ async function main() {
     tenantBId: null,
     branchIds: [],
     deviceIds: [],
+    auditLogIds: [],
+    auditBaselineCount: null,
     domainIds: [],
     userIds: [],
     employeeIds: [],
     roleId: null,
     socketRoleId: null,
     permissionId: null,
+    auditPermissionId: null,
+    reportPermissionId: null,
     membershipIds: [],
     mediaObjects: [],
     uploadPermissionId: null,
@@ -315,6 +319,7 @@ async function main() {
       },
       "Staging must be an empty baseline before the disposable A/B fixture is created.",
     );
+    fixture.auditBaselineCount = await prisma.auditLog.count();
     guardPassed = true;
 
     const tenantB = await prisma.restaurantTenant.create({
@@ -378,6 +383,23 @@ async function main() {
     fixture.permissionId = permission.id;
     await prisma.rolePermission.create({
       data: { roleId: role.id, permissionId: permission.id },
+    });
+    const auditPermission = await prisma.permission.create({
+      data: { code: "AUDIT_VIEW", name: "Disposable staging audit access" },
+    });
+    fixture.auditPermissionId = auditPermission.id;
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionId: auditPermission.id },
+    });
+    const reportPermission = await prisma.permission.create({
+      data: {
+        code: "REPORT_SALES_VIEW",
+        name: "Disposable staging sales report access",
+      },
+    });
+    fixture.reportPermissionId = reportPermission.id;
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionId: reportPermission.id },
     });
     const uploadPermission = await prisma.permission.create({
       data: { code: "MENU_EDIT", name: "Disposable staging media upload" },
@@ -664,6 +686,78 @@ async function main() {
     assert.equal(loginB.status, 201);
     assert.equal(loginA.body.data.user.tenantId, tenantA.id);
     assert.equal(loginB.body.data.user.tenantId, tenantB.id);
+    const auditMarkerA = "QA_AUDIT_A_" + suffix;
+    const auditMarkerB = "QA_AUDIT_B_" + suffix;
+    const auditFixtureA = await prisma.auditLog.create({
+      data: {
+        tenantId: tenantA.id,
+        userId: owner.id,
+        action: auditMarkerA,
+        entity: "QA_AUDIT",
+        entityId: "qa-audit-a-" + suffix,
+      },
+    });
+    const auditFixtureB = await prisma.auditLog.create({
+      data: {
+        tenantId: tenantB.id,
+        userId: owner.id,
+        action: auditMarkerB,
+        entity: "QA_AUDIT",
+        entityId: "qa-audit-b-" + suffix,
+      },
+    });
+    fixture.auditLogIds.push(auditFixtureA.id, auditFixtureB.id);
+    const auditA = await request("/audit-logs?limit=100", {
+      host: tenantAHost,
+      headers: {
+        Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+      },
+    });
+    const auditB = await request("/audit-logs?limit=100", {
+      host: tenantBHost,
+      headers: {
+        Authorization: "Bearer " + loginB.body.data.tokens.accessToken,
+      },
+    });
+    assert.equal(auditA.status, 200);
+    assert.equal(auditB.status, 200);
+    assert.ok(auditA.body.data.some((row) => row.action === auditMarkerA));
+    assert.ok(!auditA.body.data.some((row) => row.action === auditMarkerB));
+    assert.ok(auditB.body.data.some((row) => row.action === auditMarkerB));
+    assert.ok(!auditB.body.data.some((row) => row.action === auditMarkerA));
+    const facetsA = await request("/audit-logs/facets", {
+      host: tenantAHost,
+      headers: {
+        Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+      },
+    });
+    assert.equal(facetsA.status, 200);
+    assert.ok(facetsA.body.data.actions.includes(auditMarkerA));
+    assert.ok(!facetsA.body.data.actions.includes(auditMarkerB));
+    const reportA = await request("/reports/sales?preset=today", {
+      host: tenantAHost,
+      headers: {
+        Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+      },
+    });
+    const reportB = await request("/reports/sales?preset=today", {
+      host: tenantBHost,
+      headers: {
+        Authorization: "Bearer " + loginB.body.data.tokens.accessToken,
+      },
+    });
+    assert.equal(reportA.status, 200);
+    assert.equal(reportB.status, 200);
+    const foreignBranchReport = await request(
+      "/reports/sales?preset=today&branchId=" + encodeURIComponent(branchB.id),
+      {
+        host: tenantAHost,
+        headers: {
+          Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+        },
+      },
+    );
+    assert.equal(foreignBranchReport.status, 404);
     const socketLoginA = await login(tenantAHost, socketEmailA);
     const socketLoginB = await login(tenantBHost, socketEmailB);
     assert.equal(socketLoginA.status, 201);
@@ -1004,6 +1098,11 @@ async function main() {
         const tenantIds = [fixture.tenantAId, fixture.tenantBId].filter(
           Boolean,
         );
+        if (fixture.auditLogIds.length) {
+          await prisma.auditLog.deleteMany({
+            where: { id: { in: fixture.auditLogIds } },
+          });
+        }
         await prisma.customer.deleteMany({
           where: { tenantId: { in: tenantIds }, phone: SHARED_PHONE },
         });
@@ -1065,6 +1164,10 @@ async function main() {
           await prisma.permission.deleteMany({
             where: { id: fixture.realtimePermissionId },
           });
+        if (fixture.auditPermissionId)
+          await prisma.permission.deleteMany({ where: { id: fixture.auditPermissionId } });
+        if (fixture.reportPermissionId)
+          await prisma.permission.deleteMany({ where: { id: fixture.reportPermissionId } });
         if (fixture.tenantBId) {
           await prisma.restaurantTenant.deleteMany({
             where: { id: fixture.tenantBId },
@@ -1084,10 +1187,11 @@ async function main() {
           prisma.role.count(),
           prisma.permission.count(),
           prisma.outboxEvent.count(),
+          prisma.auditLog.count(),
         ]);
         assert.deepEqual(
           remaining,
-          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, fixture.auditBaselineCount],
           "All staging fixtures must be removed.",
         );
       } catch {

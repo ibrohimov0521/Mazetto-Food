@@ -67,6 +67,7 @@ export class TenantDomainService {
           select: { id: true, hostname: true, status: true, verifiedAt: true, createdAt: true },
         });
         await writeAuditLog(tx, {
+          tenantId: tenantId,
           userId: actor.id,
           action: "PLATFORM_TENANT_DOMAIN_CREATED",
           entity: "TENANT_DOMAIN",
@@ -121,6 +122,7 @@ export class TenantDomainService {
       });
       if (updated.count !== 1) throw new ConflictException("Domen holati o'zgargan; sahifani yangilab qayta tekshiring.");
       await writeAuditLog(tx, {
+        tenantId: tenantId,
         userId: actor.id,
         action: "PLATFORM_TENANT_DOMAIN_VERIFIED",
         entity: "TENANT_DOMAIN",
@@ -145,6 +147,7 @@ export class TenantDomainService {
       });
       if (updated.count !== 1) throw new ConflictException("Domen holati o'zgargan; sahifani yangilab qayta urinib ko'ring.");
       await writeAuditLog(tx, {
+        tenantId: tenantId,
         userId: actor.id,
         action: "PLATFORM_TENANT_DOMAIN_CHALLENGE_ROTATED",
         entity: "TENANT_DOMAIN",
@@ -171,6 +174,7 @@ export class TenantDomainService {
       });
       if (updated.count !== 1) throw new ConflictException("Domen holati o'zgargan; sahifani yangilab qayta urinib ko'ring.");
       await writeAuditLog(tx, {
+        tenantId: tenantId,
         userId: actor.id,
         action: "PLATFORM_TENANT_DOMAIN_DISABLED",
         entity: "TENANT_DOMAIN",

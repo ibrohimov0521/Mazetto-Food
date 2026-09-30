@@ -47,6 +47,7 @@ test("new restaurant is created only as PROVISIONING and audited atomically", as
   assert.deepEqual(tenantData, { code: "MAZETTO_NORTH", name: "Mazetto North", status: "PROVISIONING" });
   assert.equal(result.status, "PROVISIONING");
   assert.deepEqual(auditData, {
+    tenantId: "tenant-new",
     userId: "owner-1",
     action: "PLATFORM_TENANT_CREATED",
     entity: "RESTAURANT_TENANT",

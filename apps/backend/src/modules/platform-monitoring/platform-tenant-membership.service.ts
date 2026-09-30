@@ -166,6 +166,7 @@ export class PlatformTenantMembershipService {
           select: membershipSelect,
         });
         await writeAuditLog(tx, {
+          tenantId: tenantId,
           userId: actor.id,
           action: "PLATFORM_TENANT_MEMBERSHIP_CREATED",
           entity: "TENANT_MEMBERSHIP",
@@ -207,6 +208,7 @@ export class PlatformTenantMembershipService {
         select: { id: true, status: true },
       });
       await writeAuditLog(tx, {
+        tenantId: tenantId,
         userId: actor.id,
         action:
           status === "SUSPENDED"
@@ -263,6 +265,7 @@ export class PlatformTenantMembershipService {
         select: membershipSelect,
       });
       await writeAuditLog(tx, {
+        tenantId: tenantId,
         userId: actor.id,
         action: "PLATFORM_TENANT_MEMBERSHIP_ROLES_REPLACED",
         entity: "TENANT_MEMBERSHIP",

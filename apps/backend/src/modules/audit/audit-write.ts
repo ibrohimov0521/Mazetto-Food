@@ -4,6 +4,7 @@ type AuditClient = Pick<Prisma.TransactionClient, "auditLog">;
 
 type AuditEntry = {
   userId: string | null;
+  tenantId: string | null;
   action: string;
   entity: string;
   entityId?: string | null;
@@ -15,6 +16,7 @@ export function writeAuditLog(client: AuditClient, entry: AuditEntry) {
   return client.auditLog.create({
     data: {
       userId: entry.userId,
+      tenantId: entry.tenantId,
       action: entry.action,
       entity: entry.entity,
       entityId: entry.entityId ?? null,

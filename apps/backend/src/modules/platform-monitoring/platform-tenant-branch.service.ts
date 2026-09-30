@@ -78,6 +78,7 @@ export class PlatformTenantBranchService {
         });
 
         await writeAuditLog(tx, {
+          tenantId: tenant.id,
           userId: actor.id,
           action: "PLATFORM_TENANT_BRANCH_CREATED",
           entity: "BRANCH",
