@@ -251,13 +251,13 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 
 ## 21. Staging tenant-isolation evidence (2026-09-30)
 
-### Audit/cache/report izolatsiyasi (live staging pending)
+### Audit/report tenant izolatsiyasi (live staging passed; shared cache remains open)
 
-- AuditLog yozuvlari endi tenantId bilan belgilanishi mumkin; tenant admin audit ro'yxati va facetlarida faqat o'z tenantini ko'radi. Legacy tenant-siz audit yozuvlari faqat platform owner scope'ida qoladi.
-- Yangi/yangilangan audit writerlar tenant kontekstini uzatadi; report/dashboard A/B scope testlari kengaydi. Prisma schema/migration hamda staging A/B harness'da audit fixture va report branch-denial tekshiruvlari tayyor.
-- Lokal backend testlari, TypeScript, lint, build va diff tekshiruvi o'tdi. Bu kodning stagingda ishlash dalili emas.
-- Keyingi ketma-ketlik: avval staging backup va checksum; PR/CI; faqat staging deploy+migration; audit/report A/B live smoke va cleanup baseline tekshiruvi. Bular o'tgach keyingi qolgan realtime yoki POS/KDS/courier darvozasiga o'tiladi.
-- Production migration/deploy, Mazetto Food production o'zgarishi va ikkinchi tenantni faollashtirish ushbu bosqichda qilinmaydi; release runbookdagi ochiq darvozalar yopilmaguncha taqiqlangan.
+- AuditLog yozuvlari tenantId bilan yoziladi va tenant admin faqat o'z tenantining audit list/facetlarini ko'radi; eski tenant-siz yozuvlar faqat platform owner scope'ida.
+- PR #124 tenant audit/report kodi, PR #125 fixture cleanup tuzatishini olib kirdi. 463 backend test, hosted CI (#393 va #395), typecheck, lint, build va 54/54 clean migration o'tdi.
+- Live staging A/B o'tdi: A/B audit ro'yxati/facetlari ajraldi, tenant sales reportlar 200 qaytardi, A token bilan B branch hisoboti 404 bo'ldi. Cleanup 1 baseline tenant, 0 test branch/user va 6 original audit yozuvini tikladi; health 200.
+- Staging deploy commit 757f5ad95829edab8a4922b2e873a24823f924d2. Pre-migration backup va SHA-256, migration status hamda cleanup tafsilotlari MAZETTO_STAGING_RUNBOOK.md'da.
+- Keyingi darvoza: customer socket revocation, real staff event delivery/reconnect va shared cache A/B. Production migration/deploy va ikkinchi tenant activation hali yopiq.
 
 ### Earlier tenant-prefixed media A/B live proof
 
