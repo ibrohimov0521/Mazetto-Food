@@ -664,6 +664,25 @@ export class DesktopStore {
       .run(`setting:${key}`, value, new Date().toISOString());
   }
 
+  getSyncCursor(stream: string): string | null {
+    const row = this.database
+      .prepare("SELECT cursor FROM sync_cursors WHERE stream = ?")
+      .get(stream) as { cursor: string } | undefined;
+    return row?.cursor ?? null;
+  }
+
+  setSyncCursor(stream: string, cursor: string): void {
+    this.database
+      .prepare(
+        `INSERT INTO sync_cursors (stream, cursor, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(stream) DO UPDATE SET
+           cursor = excluded.cursor,
+           updated_at = excluded.updated_at`,
+      )
+      .run(stream, cursor, new Date().toISOString());
+  }
+
   saveLocalIdMapping(input: {
     localId: string;
     serverId: string;
