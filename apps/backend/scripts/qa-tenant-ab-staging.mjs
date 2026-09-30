@@ -452,7 +452,7 @@ async function main() {
       data: { roleId: role.id, permissionId: realtimePermission.id },
     });
     const orderCreatePermission = await prisma.permission.create({
-      data: { code: `QA_ORDER_CREATE_${suffix}`, name: "Disposable order creation" },
+      data: { code: "ORDER_CREATE", name: "Disposable order creation" },
     });
     fixture.orderCreatePermissionId = orderCreatePermission.id;
     const tenantAOnlyPermission = await prisma.permission.create({
