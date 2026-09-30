@@ -257,7 +257,7 @@ export class DesktopGateway {
           offlinePaymentAllowed &&
           hasStableIdempotencyKey(request, body)
         ) {
-          const transferError =
+          const mutationError =
             commandDefinition.commandType === "cash.transfer.create"
               ? validateOfflineCashTransfer(
                   this.store,
@@ -265,11 +265,13 @@ export class DesktopGateway {
                   targetUrl,
                   body,
                 )
+              : commandDefinition.commandType === "shift.close"
+                ? validateOfflineShiftClose(this.store, authScope, targetUrl)
               : null;
-          if (transferError) {
+          if (mutationError) {
             this.sendJson(response, 409, {
               success: false,
-              error: { code: "OFFLINE_CASH_TRANSFER_UNSAFE", message: transferError },
+              error: { code: "OFFLINE_CASH_MUTATION_UNSAFE", message: mutationError },
             });
             return;
           }
@@ -395,7 +397,7 @@ export class DesktopGateway {
         (error === KNOWN_OFFLINE_ERROR ||
           hasStableIdempotencyKey(request, body))
       ) {
-        const transferError =
+        const mutationError =
           commandDefinition.commandType === "cash.transfer.create"
             ? validateOfflineCashTransfer(
                 this.store,
@@ -403,11 +405,13 @@ export class DesktopGateway {
                 targetUrl,
                 body,
               )
+            : commandDefinition.commandType === "shift.close"
+              ? validateOfflineShiftClose(this.store, authScope, targetUrl)
             : null;
-        if (transferError) {
+        if (mutationError) {
           this.sendJson(response, 409, {
             success: false,
-            error: { code: "OFFLINE_CASH_TRANSFER_UNSAFE", message: transferError },
+            error: { code: "OFFLINE_CASH_MUTATION_UNSAFE", message: mutationError },
           });
           return;
         }
@@ -1415,6 +1419,54 @@ function validateOfflineCashTransfer(
       return "Qabul qiluvchi kassirning ochiq smenasi oflayn ro'yxatda topilmadi. Internetga ulaning.";
     }
     return null;
+  } catch {
+    return "Kassa holatini oflayn tekshirib bo'lmadi. Internetga ulaning.";
+  }
+}
+
+function validateOfflineShiftClose(
+  store: DesktopStore,
+  authScope: string,
+  targetUrl: string,
+): string | null {
+  try {
+    const closeUrl = new URL(targetUrl);
+    const requestedShiftId = closeUrl.pathname.match(
+      /^\/api\/v1\/cash-register\/shift\/([^/]+)\/close$/,
+    )?.[1];
+    if (!requestedShiftId) return "Yopiladigan smena manzili noto'g'ri.";
+    const shiftUrl = new URL(closeUrl);
+    shiftUrl.pathname = "/api/v1/cash-register/shift";
+    shiftUrl.search = "";
+    const cachedShift = store.getCachedResponse(
+      DesktopStore.cacheKey(shiftUrl.toString(), authScope),
+    );
+    const source = cachedShift?.body ?? JSON.stringify({ success: true, data: null });
+    const projected = applyOptimisticProjection(
+      source,
+      shiftUrl.toString(),
+      store.listActiveMutations(authScope),
+    );
+    const shift = responseDataRecord(
+      parseJsonValue(projected?.body ?? source),
+    );
+    if (
+      !shift ||
+      shift.status !== "OPEN" ||
+      shift.id !== requestedShiftId
+    ) {
+      return "Oflayn smenani yopish uchun kassaning saqlangan ochiq holati topilmadi.";
+    }
+    const hasUnresolvedTransfer =
+      Array.isArray(shift.outgoingCashTransfers) &&
+      shift.outgoingCashTransfers.some(
+        (transfer) =>
+          isRecord(transfer) &&
+          (transfer.status === "PENDING" || transfer.pendingSync === true),
+      );
+    return hasUnresolvedTransfer
+      ? "Smenani yopishdan oldin pul topshiruvi qabul qilinishi yoki rad etilishi kerak. Internet aloqasi tiklangach, topshiruvni hal qiling."
+      : null;
   } catch {
     return "Kassa holatini oflayn tekshirib bo'lmadi. Internetga ulaning.";
   }

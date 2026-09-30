@@ -324,6 +324,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Accept/reject remains online-only because either action changes two employee shift ledgers and cannot be reconciled safely from a stale offline snapshot.
 - Desktop bundle version: `0.1.68`. Automated transfer replay, duplicate-key, overdraw, offline accept/reject, full monorepo CI, deployment smoke and release checks are required; two-device physical reconciliation remains open.
 
+## D3 offline shift-close guard for pending handovers (2026-10-01)
+
+- A register shift cannot be closed offline while the cached/projected outgoing handover list contains an unacknowledged transfer. The gateway fails closed before queueing the close, avoiding a guaranteed server conflict after reconnect.
+- The POS shift screen disables close and explains that the receiving cashier must accept or reject the handover after connectivity returns. The gateway guard covers other Desktop clients as well as this screen.
+- Verification: offline transfer-plus-close regression, Desktop typecheck/lint/tests, POS typecheck/lint/build, monorepo CI, release and post-deploy smoke. Physical cashier/receiver acceptance remains an on-site test.
+- Desktop bundle version: `0.1.69`.
+
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
 - Windows rendering, the hidden print window and the Electron driver callback now have bounded deadlines. ESC/POS TCP connect/write is bounded too; a printer that stops responding can no longer wait forever.

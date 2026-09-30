@@ -42,7 +42,12 @@ function main(): void {
   assert.match(shiftPage, /Smenani yakunlaysizmi\?/);
   assert.match(shiftPage, /isSaving \? "Yopilmoqda\.\.\." : "Yakunlash"/);
   assert.match(shiftPage, /closingCash !== "" &&\s+Number\.isFinite\(closingValue\) &&\s+closingValue >= 0/);
-  assert.match(shiftPage, /disabled=\{isSaving \|\| !closingValid\}/);
+  assert.match(shiftPage, /const hasUnresolvedCashTransfer = Boolean\(/);
+  assert.match(shiftPage, /transfer\.status === "PENDING" \|\| transfer\.pendingSync/);
+  assert.match(
+    shiftPage,
+    /disabled=\{isSaving \|\| !closingValid \|\| hasUnresolvedCashTransfer\}/,
+  );
   assert.match(shiftPage, /const difference = closingValue - expectedCash/);
   assert.match(shiftPage, /differenceText\(difference\)/);
 

@@ -2050,6 +2050,17 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
     assert.equal(accept.status, 503);
     assert.match((await accept.text()), /ikki kassa holatini tekshirmasdan/i);
     assert.equal(store.summary().pendingCommands, 2);
+    const close = await fetch(
+      `${baseUrl}/shift/server-shift-transfer-1/close`,
+      {
+        method: "POST",
+        headers: { ...headers, "Idempotency-Key": "offline-close-with-pending-transfer" },
+        body: JSON.stringify({ closingBalance: 5_000 }),
+      },
+    );
+    assert.equal(close.status, 409);
+    assert.match((await close.text()), /oldin pul topshiruvi qabul qilinishi/i);
+    assert.equal(store.summary().pendingCommands, 2);
 
     const projected = await fetch(`${baseUrl}/shift`, {
       headers: { Authorization: authorization },
