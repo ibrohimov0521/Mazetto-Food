@@ -197,3 +197,11 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Verification for this checkpoint: Desktop tests, POS checkout-draft and freshness tests, POS typecheck/build, plus printer routing/failure recovery tests. Windows release packaging runs on the repository's Windows GitHub Actions runner after merge.
 - This is not a claim of 100% offline operation. Cached reads require prior authorized synchronization; customer browser ordering and unsupported/configuration/security actions still require the server. Only Windows-driver-compatible printers and supported ESC/POS network devices are covered; physical validation is still needed for the restaurant's exact models.
 - Remaining Desktop phases D2-D6, physical printer/power-loss drills, signed staged updates and rollback remain release gates.
+
+## D2 POS catalog bootstrap fallback (2026-09-30)
+
+- Bootstrap schema v2 includes the authenticated branch's active POS catalog, effective payment methods and active tables in the same repeatable-read response as its revision cursor.
+- The Desktop gateway already stores each successful JSON response as one scoped SQLite cache row. If the POS catalog endpoint is unavailable, the POS terminal can use that previously authorized bootstrap response after validating schema version, timestamp and the open shift's branch.
+- Catalog filtering follows POS visibility and stock-availability rules. Snapshot mismatch, malformed data, unsupported versions and cross-branch data fail closed.
+- Verification: backend bootstrap tests, POS snapshot-validation tests, backend/POS typecheck, POS lint, full backend/POS/Desktop test suites, affected production builds and 33 repository validators passed.
+- This only improves offline POS catalog reads after a successful authorized bootstrap. It does not enable offline login, an uncached shift, card/terminal payments, arbitrary admin writes, or all staff panels. It is not a 100% offline guarantee; D2 and later offline phases remain open, as do physical printer acceptance and outage/power-loss drills.
