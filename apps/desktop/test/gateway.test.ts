@@ -1344,6 +1344,121 @@ test("queued writes for one order rebase versions after every server acknowledge
   }
 });
 
+test("offline kitchen actions project status and rebase versions during replay", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-kitchen-rebase-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("kitchen-rebase", "branch-1");
+  const sent: Array<{ action: string; expectedVersion: number }> = [];
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if ((init?.method ?? "GET") === "GET" && url.endsWith("/kitchen/orders")) {
+        return jsonResponse({
+          success: true,
+          data: [
+            {
+              id: "ticket-rebase",
+              status: "NEW",
+              version: 5,
+              order: { id: "order-rebase" },
+            },
+          ],
+        });
+      }
+      if (init?.method === "PATCH") {
+        const action = new URL(url).pathname.split("/").at(-1) ?? "";
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          expectedVersion?: number;
+        };
+        sent.push({ action, expectedVersion: body.expectedVersion ?? -1 });
+        return jsonResponse({
+          success: true,
+          data: {
+            id: "ticket-rebase",
+            status: action.toUpperCase(),
+            version: 10 + sent.length,
+          },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const kitchenPath = `http://127.0.0.1:${port}/api/v1/kitchen/orders`;
+    const initial = await fetch(kitchenPath, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(initial.status, 200);
+    online = false;
+
+    for (const [index, action] of ["accept", "start", "ready"].entries()) {
+      const queued = await fetch(`${kitchenPath}/ticket-rebase/${action}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": `offline-kitchen-rebase-${index}`,
+        },
+        body: JSON.stringify({ expectedVersion: 5 + index }),
+      });
+      assert.equal(queued.status, 202);
+    }
+
+    const projected = await fetch(kitchenPath, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(projected.status, 200);
+    assert.equal(
+      projected.headers.get("x-mazetto-desktop"),
+      "offline-optimistic",
+    );
+    const projectedBody = (await projected.json()) as {
+      data: Array<Record<string, unknown>>;
+    };
+    assert.equal(projectedBody.data[0]?.status, "READY");
+    assert.equal(projectedBody.data[0]?.version, 8);
+    assert.equal(projectedBody.data[0]?.pendingSync, true);
+
+    online = true;
+    const reconnecting = await fetch(
+      `http://127.0.0.1:${port}/api/v1/branches`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(reconnecting.status, 503);
+    await waitFor(() => gateway.status().mode === "online");
+    const recovered = await fetch(
+      `http://127.0.0.1:${port}/api/v1/branches`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(recovered.status, 200);
+    await waitFor(() => sent.length === 3, 3_000);
+    await waitFor(() => store.summary().pendingCommands === 0);
+    assert.deepEqual(sent, [
+      { action: "accept", expectedVersion: 5 },
+      { action: "start", expectedVersion: 11 },
+      { action: "ready", expectedVersion: 12 },
+    ]);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("an unresolved earlier command blocks later writes to the same aggregate only", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-order-sequence-"),

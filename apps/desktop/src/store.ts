@@ -511,6 +511,22 @@ export class DesktopStore {
     aggregateId: string,
     serverVersion: number,
   ): void {
+    this.acknowledgeVersionedMutation(
+      id,
+      authScope,
+      "orders",
+      aggregateId,
+      serverVersion,
+    );
+  }
+
+  acknowledgeVersionedMutation(
+    id: string,
+    authScope: string,
+    aggregateType: "orders" | "kitchen",
+    aggregateId: string,
+    serverVersion: number,
+  ): void {
     this.database.exec("BEGIN IMMEDIATE");
     try {
       this.database
@@ -529,7 +545,7 @@ export class DesktopStore {
         SELECT id, payload_json AS payloadJson
         FROM mutation_outbox AS queued
         WHERE queued.auth_scope = ?
-          AND queued.aggregate_type = 'orders'
+          AND queued.aggregate_type = ?
           AND queued.aggregate_id = ?
           AND queued.state = 'pending'
           AND queued.rowid > (
@@ -538,7 +554,7 @@ export class DesktopStore {
         ORDER BY queued.rowid ASC
       `,
         )
-        .all(authScope, aggregateId, id) as Array<{
+        .all(authScope, aggregateType, aggregateId, id) as Array<{
         id: string;
         payloadJson: string;
       }>;
