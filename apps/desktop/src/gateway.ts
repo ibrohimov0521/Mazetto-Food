@@ -663,14 +663,21 @@ export class DesktopGateway {
         const orderAggregateId =
           payload.localAggregateId ?? command.aggregateId;
         const serverVersion = extractServerVersion(responseText);
+        const versionedAggregateType =
+          command.aggregateType === "kitchen"
+            ? "kitchen"
+            : command.aggregateType === "orders" || payload.localAggregateId
+              ? "orders"
+              : null;
         if (
+          versionedAggregateType &&
           orderAggregateId &&
-          serverVersion !== null &&
-          (command.aggregateType === "orders" || payload.localAggregateId)
+          serverVersion !== null
         ) {
-          this.store.acknowledgeOrderMutation(
+          this.store.acknowledgeVersionedMutation(
             command.id,
             command.authScope,
+            versionedAggregateType,
             orderAggregateId,
             serverVersion,
           );
@@ -1068,7 +1075,7 @@ function findServerVersion(value: unknown): number | null {
   if (Number.isInteger(record.version) && Number(record.version) >= 0) {
     return Number(record.version);
   }
-  for (const key of ["data", "order", "customerOrder", "result"]) {
+  for (const key of ["data", "order", "ticket", "customerOrder", "result"]) {
     if (key in record) {
       const found = findServerVersion(record[key]);
       if (found !== null) return found;
@@ -1176,6 +1183,23 @@ function applyOptimisticProjection(
     ) {
       applied.push(command.id);
     }
+
+    const kitchenAction = commandPath.match(
+      /^\/api\/v1\/kitchen\/orders\/([^/]+)\/(accept|start|ready|complete|cancel)$/,
+    );
+    const expectedVersion = numberField(commandBody, "expectedVersion");
+    if (
+      kitchenAction?.[1] &&
+      expectedVersion !== null &&
+      pathname === "/api/v1/kitchen/orders" &&
+      patchKitchenTicketProjection(projected, kitchenAction[1], {
+        status: kitchenStatusForAction(kitchenAction[2] ?? ""),
+        version: expectedVersion + 1,
+        pendingSync: true,
+      })
+    ) {
+      applied.push(command.id);
+    }
   }
 
   return applied.length
@@ -1238,6 +1262,17 @@ function patchOrderProjection(
   const order = findRecordById(projected, orderId);
   if (!order) return false;
   Object.assign(order, patch);
+  return true;
+}
+
+function patchKitchenTicketProjection(
+  projected: unknown,
+  ticketId: string,
+  patch: Record<string, unknown>,
+): boolean {
+  const ticket = findRecordById(projected, ticketId);
+  if (!ticket) return false;
+  Object.assign(ticket, patch);
   return true;
 }
 

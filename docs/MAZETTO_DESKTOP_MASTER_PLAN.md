@@ -278,7 +278,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - POS and waiter offline order creation now use the canonical `orders` aggregate, matching later order status, kitchen and item commands that reference the local order ID.
 - A pending, sending, conflicted or dead-lettered creation blocks only later commands for that same local order. Independent orders remain eligible for synchronization.
 - Verification: command registry tests assert both creation routes share the order aggregate; Desktop gateway regression tests cover a conflicted first order with a dependent command and a second independent order.
-- Desktop bundle version: `0.1.62`. Production deployment and release smoke are post-merge gates; physical multi-device outage testing remains open.
+- Desktop bundle version: `0.1.62`. Deployment workflow and direct 24/24 production smoke passed; physical multi-device outage testing remains open.
+
+## D3 offline kitchen action replay (2026-10-01)
+
+- Cached kitchen tickets project queued accept/start/ready/complete/cancel states and the next ticket version immediately, marked as pending synchronization.
+- Kitchen commands remain serialized per ticket. After each server acknowledgement, later pending actions for that ticket receive the acknowledged version inside one SQLite transaction, preventing stale-version replay conflicts.
+- Version extraction accepts both direct ticket responses and responses nested under a `ticket` field.
+- Desktop bundle version: `0.1.63`. Focused replay/projection tests and the full monorepo CI are required before merge; physical kitchen-device outage acceptance remains open.
 
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
