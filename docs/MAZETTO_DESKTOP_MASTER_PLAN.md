@@ -273,6 +273,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Verification: 10 focused kitchen hardening tests, including concurrent duplicate acceptance, replay and transactional-completion failure; full monorepo CI and repository validators passed.
 - Offline D3 still requires dependency mapping, complete supported-route coverage and conflict/replay acceptance. Physical kitchen-device outage drills remain separate.
 
+## D3 offline order dependency sequencing (2026-10-01)
+
+- POS and waiter offline order creation now use the canonical `orders` aggregate, matching later order status, kitchen and item commands that reference the local order ID.
+- A pending, sending, conflicted or dead-lettered creation blocks only later commands for that same local order. Independent orders remain eligible for synchronization.
+- Verification: command registry tests assert both creation routes share the order aggregate; Desktop gateway regression tests cover a conflicted first order with a dependent command and a second independent order.
+- Desktop bundle version: `0.1.62`. Production deployment and release smoke are post-merge gates; physical multi-device outage testing remains open.
+
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
 - Windows rendering, the hidden print window and the Electron driver callback now have bounded deadlines. ESC/POS TCP connect/write is bounded too; a printer that stops responding can no longer wait forever.
@@ -280,4 +287,4 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Successful delivery is tracked per configured printer and job in the Desktop SQLite database. If a multi-printer route partially succeeds and another printer fails, retries skip printers already confirmed successful. The operator can inspect ambiguous output before explicitly retrying it.
 - The Desktop queue continues with other due jobs after a printer failure or timeout; retries for definitely failed jobs retain their bounded backoff.
 - The Windows Desktop bundle version for this stage is 0.1.61.
-- Verification: Desktop tests 77/77, print-queue service tests 3/3, full monorepo typecheck/lint/test/build and 33/33 validators passed. Production deployment and smoke are the post-merge gate. Restaurant-specific physical printer tests remain required; this does not claim support for every printer model or a 100% offline guarantee.
+- Verification: Desktop tests 77/77, print-queue service tests 3/3, full monorepo typecheck/lint/test/build and 33/33 validators passed; production deploy and 24/24 smoke succeeded. Restaurant-specific physical printer tests remain required; this does not claim support for every printer model or a 100% offline guarantee.
