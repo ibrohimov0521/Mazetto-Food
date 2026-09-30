@@ -1472,6 +1472,190 @@ test("offline kitchen actions project status and rebase versions during replay",
   }
 });
 
+test("offline register shifts keep local IDs, project state, and replay in branch order", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-offline-shifts-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("offline-shifts", "branch-1");
+  const sent: string[] = [];
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      if (!online) throw new Error("offline");
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (
+        init?.method === "GET" &&
+        ["/api/v1/cash-register/shift", "/api/v1/cash-register/courier-shift"].includes(
+          url.pathname,
+        )
+      ) {
+        return jsonResponse({ success: true, data: null });
+      }
+      if (init?.method === "POST") {
+        sent.push(url.pathname);
+        if (url.pathname === "/api/v1/cash-register/shift/open") {
+          return jsonResponse({
+            success: true,
+            data: {
+              id: "server-shift-17",
+              shiftNumber: 17,
+              status: "OPEN",
+              openingBalance: "25000",
+              openedAt: "2026-10-01T08:00:00.000Z",
+            },
+          });
+        }
+        if (url.pathname === "/api/v1/cash-register/courier-shift/open") {
+          return jsonResponse({
+            success: true,
+            data: {
+              id: "server-courier-shift-4",
+              shiftNumber: 4,
+              status: "OPEN",
+              currentCash: "0",
+              openedAt: "2026-10-01T08:01:00.000Z",
+            },
+          });
+        }
+        if (url.pathname === "/api/v1/cash-register/shift/server-shift-17/close") {
+          return jsonResponse({
+            success: true,
+            data: {
+              id: "server-shift-17",
+              shiftNumber: 17,
+              status: "CLOSED",
+            },
+          });
+        }
+        return jsonResponse({ success: false }, 404);
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const headers = {
+      Authorization: authorization,
+      "Content-Type": "application/json",
+    };
+    const shiftPath = `http://127.0.0.1:${port}/api/v1/cash-register/shift`;
+    const courierShiftPath =
+      `http://127.0.0.1:${port}/api/v1/cash-register/courier-shift`;
+    online = false;
+
+    const openedResponse = await fetch(`${shiftPath}/open`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-register-open" },
+      body: JSON.stringify({ openingBalance: 25_000 }),
+    });
+    assert.equal(openedResponse.status, 202);
+    const openedPayload = (await openedResponse.json()) as {
+      data: { id: string; pendingSync: boolean };
+    };
+    const localShiftId = openedPayload.data.id;
+    assert.match(localShiftId, /^local-/);
+    assert.equal(openedPayload.data.pendingSync, true);
+
+    const openProjection = await fetch(shiftPath, {
+      headers: { Authorization: authorization },
+    });
+    const openData = (await openProjection.json()) as {
+      data: Record<string, unknown>;
+    };
+    assert.equal(openData.data.id, localShiftId);
+    assert.equal(openData.data.status, "OPEN");
+    assert.equal(openData.data.pendingSync, true);
+
+    const courierOpenedResponse = await fetch(`${courierShiftPath}/open`, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Idempotency-Key": "offline-courier-shift-open",
+      },
+      body: JSON.stringify({ openingBalance: 0 }),
+    });
+    assert.equal(courierOpenedResponse.status, 202);
+    const courierOpenedPayload = (await courierOpenedResponse.json()) as {
+      data: { id: string };
+    };
+    assert.match(courierOpenedPayload.data.id, /^local-/);
+
+    const courierProjection = await fetch(courierShiftPath, {
+      headers: { Authorization: authorization },
+    });
+    const courierData = (await courierProjection.json()) as {
+      data: Record<string, unknown>;
+    };
+    assert.equal(courierData.data.id, courierOpenedPayload.data.id);
+    assert.equal(courierData.data.pendingSync, true);
+
+    const closedResponse = await fetch(`${shiftPath}/${localShiftId}/close`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-register-close" },
+      body: JSON.stringify({ closingBalance: 30_000 }),
+    });
+    assert.equal(closedResponse.status, 202);
+    const closedPayload = (await closedResponse.json()) as {
+      data: { status: string; pendingSync: boolean };
+    };
+    assert.equal(closedPayload.data.status, "CLOSED");
+    assert.equal(closedPayload.data.pendingSync, true);
+
+    const closedProjection = await fetch(shiftPath, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(
+      ((await closedProjection.json()) as { data: unknown }).data,
+      null,
+    );
+
+    online = true;
+    const reconnecting = await fetch(
+      `http://127.0.0.1:${port}/api/v1/branches`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(reconnecting.status, 503);
+    await waitFor(() => gateway.status().mode === "online");
+    await waitFor(() => sent.length === 3, 3_000);
+    await waitFor(() => store.summary().pendingCommands === 0);
+    assert.deepEqual(sent, [
+      "/api/v1/cash-register/shift/open",
+      "/api/v1/cash-register/courier-shift/open",
+      "/api/v1/cash-register/shift/server-shift-17/close",
+    ]);
+
+    online = false;
+    const finalShift = await fetch(shiftPath, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(finalShift.headers.get("x-mazetto-desktop"), "offline-cache");
+    assert.equal(((await finalShift.json()) as { data: unknown }).data, null);
+    const finalCourierShift = await fetch(courierShiftPath, {
+      headers: { Authorization: authorization },
+    });
+    const finalCourierData = (await finalCourierShift.json()) as {
+      data: Record<string, unknown>;
+    };
+    assert.equal(finalCourierShift.headers.get("x-mazetto-desktop"), "offline-cache");
+    assert.equal(finalCourierData.data.id, "server-courier-shift-4");
+    assert.equal(finalCourierData.data.pendingSync, undefined);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("an unresolved earlier command blocks later writes to the same aggregate only", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-order-sequence-"),
