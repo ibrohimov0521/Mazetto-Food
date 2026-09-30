@@ -77,7 +77,7 @@ test("branch revision migration backfills old events and covers legacy inserts",
   );
 
   assert.match(migration, /ROW_NUMBER\(\) OVER/);
-  assert.match(migration, /PARTITION BY "branch_id"/);
+  assert.match(migration, /PARTITION BY "branchId"/);
   assert.match(
     migration,
     /CREATE TRIGGER "outbox_events_assign_branch_revision"/,

@@ -8,11 +8,11 @@ WITH ranked_events AS (
   SELECT
     "id",
     ROW_NUMBER() OVER (
-      PARTITION BY "branch_id"
-      ORDER BY "created_at" ASC, "id" ASC
+      PARTITION BY "branchId"
+      ORDER BY "createdAt" ASC, "id" ASC
     ) AS "revision"
   FROM "outbox_events"
-  WHERE "branch_id" IS NOT NULL
+  WHERE "branchId" IS NOT NULL
 )
 UPDATE "outbox_events" AS event
 SET "branch_revision" = ranked_events."revision"
@@ -24,21 +24,21 @@ SET "realtime_revision" = COALESCE(
   (
     SELECT MAX(event."branch_revision")
     FROM "outbox_events" AS event
-    WHERE event."branch_id" = branch."id"
+    WHERE event."branchId" = branch."id"
   ),
   0
 );
 
-CREATE UNIQUE INDEX "outbox_events_branch_id_branch_revision_key" ON "outbox_events"("branch_id", "branch_revision");
+CREATE UNIQUE INDEX "outbox_events_branchId_branch_revision_key" ON "outbox_events"("branchId", "branch_revision");
 CREATE FUNCTION assign_outbox_branch_revision()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF NEW."branch_id" IS NOT NULL AND NEW."branch_revision" IS NULL THEN
+  IF NEW."branchId" IS NOT NULL AND NEW."branch_revision" IS NULL THEN
     UPDATE "branches"
     SET "realtime_revision" = "realtime_revision" + 1
-    WHERE "id" = NEW."branch_id"
+    WHERE "id" = NEW."branchId"
     RETURNING "realtime_revision" INTO NEW."branch_revision";
 
     IF NEW."branch_revision" IS NULL THEN
