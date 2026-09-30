@@ -48,8 +48,13 @@ export class CashRegisterController {
   openCourierShift(
     @Body() dto: OpenShiftDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.cashRegisterService.openCourierShift(dto, user);
+    return this.cashRegisterService.openCourierShift(dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Post(["transfers", "courier-shift/transfers"])
@@ -118,8 +123,16 @@ export class CashRegisterController {
 
   @Post("shift/open")
   @Permissions(PERMISSIONS.SHIFT_OPEN)
-  openShift(@Body() dto: OpenShiftDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.cashRegisterService.openShift(dto, user);
+  openShift(
+    @Body() dto: OpenShiftDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
+  ) {
+    return this.cashRegisterService.openShift(dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Post("shift/:id/close")
@@ -128,8 +141,13 @@ export class CashRegisterController {
     @Param("id") id: string,
     @Body() dto: CloseShiftDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.cashRegisterService.closeShift(id, dto, user);
+    return this.cashRegisterService.closeShift(id, dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Get("shift/:id/transactions")

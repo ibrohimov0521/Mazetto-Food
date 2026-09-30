@@ -68,8 +68,12 @@ export class CashRegisterService {
     return this.shiftsService.getCurrentCourierShift(user);
   }
 
-  openCourierShift(dto: OpenShiftDto, user: AuthenticatedUser) {
-    return this.shiftsService.openCourierShift(dto, user);
+  openCourierShift(
+    dto: OpenShiftDto,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
+    return this.shiftsService.openCourierShift(dto, user, context);
   }
 
   createCashTransfer(
@@ -109,12 +113,21 @@ export class CashRegisterService {
     return this.shiftsService.rejectCashTransfer(id, reason, user, context);
   }
 
-  openShift(dto: OpenShiftDto, user: AuthenticatedUser) {
-    return this.shiftsService.openShift(dto, user);
+  openShift(
+    dto: OpenShiftDto,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
+    return this.shiftsService.openShift(dto, user, context);
   }
 
-  closeShift(id: string, dto: CloseShiftDto, user: AuthenticatedUser) {
-    return this.shiftsService.closeShift(id, dto, user);
+  closeShift(
+    id: string,
+    dto: CloseShiftDto,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
+    return this.shiftsService.closeShift(id, dto, user, context);
   }
 
   createCashTransaction(

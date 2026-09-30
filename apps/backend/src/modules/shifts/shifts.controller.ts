@@ -29,8 +29,16 @@ export class ShiftsController {
 
   @Post("open")
   @Permissions(PERMISSIONS.SHIFT_OPEN)
-  openShift(@Body() dto: OpenShiftDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.shiftsService.openShift(dto, user);
+  openShift(
+    @Body() dto: OpenShiftDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
+  ) {
+    return this.shiftsService.openShift(dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Post(":id/close")
@@ -39,8 +47,13 @@ export class ShiftsController {
     @Param("id") id: string,
     @Body() dto: CloseShiftDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.shiftsService.closeShift(id, dto, user);
+    return this.shiftsService.closeShift(id, dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 
   @Post(":id/force-close")
