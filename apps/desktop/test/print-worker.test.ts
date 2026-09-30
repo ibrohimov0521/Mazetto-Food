@@ -74,6 +74,47 @@ test("offline receipt and kitchen documents print through selected Windows drive
   assert.deepEqual(completed, ["local-1", "local-2"]);
 });
 
+test("failed local print stops the current drain pass after one attempt", async () => {
+  let claims = 0;
+  let failures = 0;
+  const job = {
+    id: "retrying-print-job",
+    logicalKey: "order-retry:RECEIPT",
+    branchId: "branch-1",
+    documentType: "RECEIPT",
+    payloadJson: JSON.stringify({ orderId: "order-retry" }),
+    attempts: 0,
+  };
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      throw new Error("Printer is offline");
+    },
+    localQueue: {
+      claim: () => {
+        claims += 1;
+        return job;
+      },
+      complete: () => assert.fail("failed print must not complete"),
+      fail: () => {
+        failures += 1;
+      },
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+
+  assert.equal(claims, 1);
+  assert.equal(failures, 1);
+});
+
 test("offline print queue routes documents across multiple configured system printers", async () => {
   const printed: string[] = [];
   const jobs = [

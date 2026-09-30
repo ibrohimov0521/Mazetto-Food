@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -120,6 +121,67 @@ test("desktop store creates one stable device identity", async () => {
     assert.equal(reopened.deviceId(), deviceId);
     reopened.close();
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("desktop store migrates existing databases for local printer retry timing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const initial = new DesktopStore(path);
+  initial.close();
+
+  const legacy = new DatabaseSync(path);
+  legacy.exec(
+    "DROP INDEX local_print_jobs_due_idx; " +
+      "ALTER TABLE print_jobs DROP COLUMN next_attempt_at",
+  );
+  legacy.close();
+
+  const migrated = new DesktopStore(path);
+  try {
+    migrated.enqueueLocalPrintJob({
+      logicalKey: "legacy-order:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payload: { orderId: "legacy-order" },
+    });
+    assert.ok(migrated.claimLocalPrintJob(["RECEIPT"]));
+  } finally {
+    migrated.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("local print retries back off and stop at the dead-letter limit", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  let now = new Date("2026-09-30T10:00:00.000Z");
+
+  try {
+    store.enqueueLocalPrintJob({
+      logicalKey: "offline-order:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payload: { orderId: "offline-order" },
+    });
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const job = store.claimLocalPrintJob(["RECEIPT"], now);
+      assert.ok(job);
+      assert.equal(job.attempts, attempt);
+      store.failLocalPrintJob(job.id, "Printer is offline", now);
+      assert.equal(store.claimLocalPrintJob(["RECEIPT"], now), null);
+
+      if (attempt < 5) {
+        now = new Date(now.getTime() + 5_000 * 2 ** (attempt - 1));
+      }
+    }
+
+    assert.equal(store.listLocalPrintJobs()[0]?.state, "dead_letter");
+    assert.equal(store.listLocalPrintJobs()[0]?.attempts, 5);
+  } finally {
+    store.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

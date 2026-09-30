@@ -275,3 +275,11 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Live proof: bir userning tenant A/B /auth/me rollari ajraldi; real A/B staff sockets o'z order eventlarinigina oldi; reconnect catch-up faqat A eventini berdi; customer A logout faqat A socketni uzdi, B faol qoldi va A sessiyasi reconnectdan rad etildi.
 - Harness yakunida DB bazaviy holatga qaytdi: 1 baseline ACTIVE tenant, sintetik tenant/branch/user/membership/domain/customer/session/setting/order/order-event/outbox/role/permission qoldig'i 0, audit baseline saqlandi. Production DB/app, domen va botlarga tegilmadi.
 - Realtime, customer session revocation va tenant membership auth-cache A/B darvozasi yopildi. Navbatdagi bosqich: durable queue/worker va idempotency hamda tenant bot/webhook config yo'lini tekshirish; so'ng Mazetto Food offline/POS/KDS/courier/receipt-printer regression, backup restore/rollback va production domen login smoke. Ikkinchi restoran PROVISIONING holatda qoladi.
+
+## 23. Desktop offline printer retry hardening (2026-09-30)
+
+- Lokal chek navbati endi muvaffaqiyatsiz printerga darhol qayta-qayta murojaat qilmaydi: 5, 10, 20, 40 soniyalik kechikishlar bilan qayta urinadi va beshinchi muvaffaqiyatsizlikdan keyin dead-letter holatiga o'tadi. Navbat bitta tick'da ko'pi bilan 5 ishni bajaradi; xato bo'lsa shu drain pass to'xtaydi.
+- Eski desktop SQLite bazalariga mos additive next_attempt_at migratsiyasi qo'shildi; lokal claim faqat system:auto navbatiga ta'sir qiladi.
+- Desktop tekshiruvlari: 60/60 test (shu jumladan eski SQLite schema upgrade), TypeScript, ESLint va desktop compile/preload build o'tdi.
+- Bu to'liq offline kafolati yoki production deploy degani emas. Faqat ro'yxatdan o'tgan offline commandlar va keshlangan GET'lar offline ishlaydi; karta to'lovi, login/enrollment va boshqa online-only yo'llar tarmoq talab qiladi. Jismoniy printerlar mijoz kassasida hali tekshirilmagan; Windows drayverlari va ESC/POS tarmoq yo'li virtual/unit testlar bilan qamralgan.
+- O'zgarish faqat desktop client runtime'da; Dokploy backend qayta deploy qilinmadi. Bu relizni MazettoFood production desktop clientlariga tarqatishdan oldin installer/update kanali va real printer acceptance testlari talab qilinadi.
