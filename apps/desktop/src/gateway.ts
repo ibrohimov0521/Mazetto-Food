@@ -662,13 +662,23 @@ export class DesktopGateway {
         }
         const orderAggregateId =
           payload.localAggregateId ?? command.aggregateId;
-        const serverVersion = extractServerVersion(responseText);
         const versionedAggregateType =
           command.aggregateType === "kitchen"
             ? "kitchen"
             : command.aggregateType === "orders" || payload.localAggregateId
               ? "orders"
               : null;
+        const kitchenTicket =
+          versionedAggregateType === "kitchen" && orderAggregateId
+            ? findRecordById(parseJsonObject(responseText), orderAggregateId)
+            : null;
+        const ticketVersion = kitchenTicket?.version;
+        const serverVersion =
+          typeof ticketVersion === "number" &&
+          Number.isInteger(ticketVersion) &&
+          ticketVersion >= 0
+            ? ticketVersion
+            : extractServerVersion(responseText);
         if (
           versionedAggregateType &&
           orderAggregateId &&
@@ -680,6 +690,9 @@ export class DesktopGateway {
             versionedAggregateType,
             orderAggregateId,
             serverVersion,
+            kitchenTicket && typeof kitchenTicket.status === "string"
+              ? { status: kitchenTicket.status, version: serverVersion }
+              : undefined,
           );
         } else {
           this.store.markMutationAcknowledged(command.id);

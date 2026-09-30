@@ -15,6 +15,11 @@ export type CachedResponse = {
   cachedAt: string;
 };
 
+export type KitchenTicketCacheUpdate = {
+  status: string;
+  version: number;
+};
+
 export type DesktopStoreSummary = {
   deviceId: string;
   cachedResponses: number;
@@ -526,6 +531,7 @@ export class DesktopStore {
     aggregateType: "orders" | "kitchen",
     aggregateId: string,
     serverVersion: number,
+    kitchenTicketUpdate?: KitchenTicketCacheUpdate,
   ): void {
     this.database.exec("BEGIN IMMEDIATE");
     try {
@@ -587,10 +593,52 @@ export class DesktopStore {
         }
       }
 
+      if (aggregateType === "kitchen" && kitchenTicketUpdate) {
+        this.reconcileKitchenTicketCache(
+          authScope,
+          aggregateId,
+          kitchenTicketUpdate,
+        );
+      }
+
       this.database.exec("COMMIT");
     } catch (error) {
       this.database.exec("ROLLBACK");
       throw error;
+    }
+  }
+
+  private reconcileKitchenTicketCache(
+    authScope: string,
+    ticketId: string,
+    update: KitchenTicketCacheUpdate,
+  ): void {
+    const rows = this.database
+      .prepare(
+        `SELECT cache_key AS cacheKey, request_url AS requestUrl, body
+         FROM api_cache
+         WHERE auth_scope = ? AND request_url LIKE '%/kitchen/orders%'`,
+      )
+      .all(authScope) as Array<{
+      cacheKey: string;
+      requestUrl: string;
+      body: string;
+    }>;
+
+    for (const row of rows) {
+      try {
+        const pathname = new URL(row.requestUrl).pathname.replace(/\/+$/, "");
+        if (!pathname.endsWith("/kitchen/orders")) continue;
+        const body = JSON.parse(row.body) as unknown;
+        if (!patchCachedRecordById(body, ticketId, update)) continue;
+        this.database
+          .prepare(
+            "UPDATE api_cache SET body = ? WHERE cache_key = ? AND auth_scope = ?",
+          )
+          .run(JSON.stringify(body), row.cacheKey, authScope);
+      } catch {
+        // Keep malformed cached responses unchanged; the next online read replaces them.
+      }
     }
   }
 
@@ -1150,6 +1198,35 @@ function summarizeOutboxPayload(source: string): OutboxQueueItem["payload"] {
   } catch {
     return {};
   }
+}
+
+function patchCachedRecordById(
+  value: unknown,
+  id: string,
+  update: KitchenTicketCacheUpdate,
+): boolean {
+  if (Array.isArray(value)) {
+    let changed = false;
+    for (const child of value) {
+      changed = patchCachedRecordById(child, id, update) || changed;
+    }
+    return changed;
+  }
+  if (!value || typeof value !== "object") return false;
+
+  const record = value as Record<string, unknown>;
+  if (record.id === id) {
+    record.status = update.status;
+    record.version = update.version;
+    delete record.pendingSync;
+    return true;
+  }
+
+  let changed = false;
+  for (const child of Object.values(record)) {
+    changed = patchCachedRecordById(child, id, update) || changed;
+  }
+  return changed;
 }
 
 export function readJwtContext(authorization: string): JwtContext | null {
