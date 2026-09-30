@@ -268,6 +268,7 @@ export class PlatformMonitoringService {
           },
         });
         await writeAuditLog(tx, {
+          tenantId: created.tenantId,
           userId: actor.id,
           action: "PLATFORM_SITE_CREATED",
           entity: "PLATFORM_SITE",
@@ -317,6 +318,7 @@ export class PlatformMonitoringService {
       const updated = await this.prisma.$transaction(async (tx) => {
         const result = await tx.platformSite.update({ where: { id }, data });
         await writeAuditLog(tx, {
+          tenantId: result.tenantId,
           userId: actor.id,
           action: "PLATFORM_SITE_UPDATED",
           entity: "PLATFORM_SITE",
@@ -349,6 +351,7 @@ export class PlatformMonitoringService {
         data: { tokenHash: digestToken(token).toString("hex"), lastHeartbeatAt: null },
       });
       await writeAuditLog(tx, {
+        tenantId: existing.tenantId,
         userId: actor.id,
         action: "PLATFORM_SITE_TOKEN_ROTATED",
         entity: "PLATFORM_SITE",
@@ -563,7 +566,7 @@ export class PlatformMonitoringService {
         select: {
           id: true, siteId: true, code: true, acknowledgedAt: true, acknowledgedById: true,
           acknowledgedBy: { select: { displayName: true, email: true, phone: true } },
-          site: { select: { name: true } },
+          site: { select: { tenantId: true, name: true } },
         },
       });
       if (!event) throw new NotFoundException("Hodisa topilmadi.");
@@ -601,6 +604,7 @@ export class PlatformMonitoringService {
       }
 
       await writeAuditLog(tx, {
+        tenantId: event.site.tenantId,
         userId: actor.id,
         action: "PLATFORM_EVENT_ACKNOWLEDGED",
         entity: "PLATFORM_SITE_EVENT",

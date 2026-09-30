@@ -249,7 +249,17 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Tekshiruv: backend suite 456/456, backend src typecheck, scripts/tests strict typecheck, yangi test lint o'tdi. Mazetto Food production o'zgarmadi.
 - Durable worker/queue va restaurant-specific Telegram credentials/webhooklar implementatsiya yoki production sinovdan o'tkazilmadi; release gate ochiq. Keyingi xavfsiz ish: tenant-prefixed media uploadni private staging object store'da real A/B bilan sinash, so'ng customer/staff realtime va printer/receipt regression darvozalariga o'tish.
 
-## 21. Tenant-prefixed media A/B live proof (2026-09-30)
+## 21. Staging tenant-isolation evidence (2026-09-30)
+
+### Audit/cache/report izolatsiyasi (live staging pending)
+
+- AuditLog yozuvlari endi tenantId bilan belgilanishi mumkin; tenant admin audit ro'yxati va facetlarida faqat o'z tenantini ko'radi. Legacy tenant-siz audit yozuvlari faqat platform owner scope'ida qoladi.
+- Yangi/yangilangan audit writerlar tenant kontekstini uzatadi; report/dashboard A/B scope testlari kengaydi. Prisma schema/migration hamda staging A/B harness'da audit fixture va report branch-denial tekshiruvlari tayyor.
+- Lokal backend testlari, TypeScript, lint, build va diff tekshiruvi o'tdi. Bu kodning stagingda ishlash dalili emas.
+- Keyingi ketma-ketlik: avval staging backup va checksum; PR/CI; faqat staging deploy+migration; audit/report A/B live smoke va cleanup baseline tekshiruvi. Bular o'tgach keyingi qolgan realtime yoki POS/KDS/courier darvozasiga o'tiladi.
+- Production migration/deploy, Mazetto Food production o'zgarishi va ikkinchi tenantni faollashtirish ushbu bosqichda qilinmaydi; release runbookdagi ochiq darvozalar yopilmaguncha taqiqlangan.
+
+### Earlier tenant-prefixed media A/B live proof
 
 - PR #117 merged as 7a07e82; only the separate staging API was redeployed. Health returned 200, PostgreSQL ok, Redis connected.
 - The guarded live harness used the actual authenticated upload endpoint for synthetic A/B images, denied the B token on A's host, verified both storage keys under their own tenant prefixes and confirmed both objects in the exact private staging bucket.

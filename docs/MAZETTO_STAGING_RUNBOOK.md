@@ -134,3 +134,11 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Each staff account connected on its own verified synthetic host. A token on B's host, B token on A's host, and a tenant token on an unknown host all failed to remain connected. The client maps only the synthetic hostname to 127.0.0.1; no public DNS or egress is used.
 - The harness waited for the server's post-connect authorization/disconnect decision, then closed successful sockets before deleting fixtures. Live run passed on the isolated staging API; fixture cleanup returned the database to its baseline and removed test media objects.
 - This proves staff socket host/membership authentication, not actual order event delivery/reconnect or customer socket revocation. Those remain release gates.
+
+## Tenant audit izolatsiyasi (2026-09-30)
+
+- Audit yozuvlariga nullable tenant bog'lanishi va `(tenantId, createdAt)` indeksi qo'shildi. Yangi tenant amallari audit izini tegishli tenant bilan yozadi; eski tenant-siz yozuvlar backfill qilinmaydi va faqat platform egasiga ko'rinadi.
+- Audit ro'yxati va filter facetlari tenant membership kontekstiga ko'ra chegaralandi. Tenant-siz restaurant admin global auditni ko'ra olmaydi; tenantId/membershipId nomuvofiqligi rad etiladi.
+- Report/dashboard A/B tenant scope va audit list/facet scope uchun testlar qo'shildi. Lokal backend test, typecheck, lint va build o'tdi.
+- **Live staging bosqichi hali ochiq:** migrationni alohida staging backupdan keyin qo'llash, A/B harnessni staging API'da bajarish, migration status/health/cleanup baseline'ini tasdiqlash kerak. Shu dalillar olinmaguncha release gate belgilanmaydi va production migratsiyasi yo'q.
+- Backup fayli faqat staging DB uchun olinadi; SHA/checksum, migration commit va restore mashqi keyingi qaydga qo'shiladi.

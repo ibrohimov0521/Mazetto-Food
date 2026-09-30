@@ -84,6 +84,7 @@ export class RolesService {
         });
       }
       await writeAuditLog(tx, {
+        tenantId: actor.tenantId ?? null,
         userId: actor.id,
         action: "ROLE_CREATED",
         entity: "Role",
@@ -131,6 +132,7 @@ export class RolesService {
         }
       }
       await writeAuditLog(tx, {
+        tenantId: actor.tenantId ?? null,
         userId: actor.id,
         action: "ROLE_UPDATED",
         entity: "Role",
@@ -178,6 +180,7 @@ export class RolesService {
         select: { id: true, isActive: true },
       });
       await writeAuditLog(tx, {
+        tenantId: actor.tenantId ?? null,
         userId: actor.id,
         action: "ROLE_ARCHIVED",
         entity: "Role",
@@ -201,7 +204,9 @@ export class RolesService {
       await tx.userRole.deleteMany({ where: { roleId: { in: uniqueIds } } });
       await tx.role.deleteMany({ where: { id: { in: uniqueIds } } });
       for (const id of uniqueIds) {
-        await writeAuditLog(tx, { userId: actor.id, action: "ROLE_DELETED", entity: "Role", entityId: id });
+        await writeAuditLog(tx, {
+          tenantId: actor.tenantId ?? null,
+          userId: actor.id, action: "ROLE_DELETED", entity: "Role", entityId: id });
       }
     });
     return { deletedCount: uniqueIds.length };

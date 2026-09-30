@@ -73,6 +73,7 @@ export class DevicesService {
         include: { branch: true },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "DEVICE_CREATED",
         entity: "Device",
@@ -204,6 +205,7 @@ export class DevicesService {
         include: { branch: true },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "DEVICE_UPDATED",
         entity: "Device",
@@ -239,6 +241,7 @@ export class DevicesService {
     await this.prisma.$transaction(async (tx) => {
       await tx.device.delete({ where: { id: device.id } });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "DEVICE_DELETED",
         entity: "Device",

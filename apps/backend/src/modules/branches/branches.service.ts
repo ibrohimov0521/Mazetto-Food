@@ -133,7 +133,9 @@ export class BranchesService {
     await this.prisma.$transaction(async (tx) => {
       await tx.branch.deleteMany({ where: { id: { in: uniqueIds }, tenantId } });
       for (const id of uniqueIds) {
-        await writeAuditLog(tx, { userId: user.id, action: "BRANCH_DELETED", entity: "Branch", entityId: id });
+        await writeAuditLog(tx, {
+          tenantId: user.tenantId ?? null,
+          userId: user.id, action: "BRANCH_DELETED", entity: "Branch", entityId: id });
       }
     });
     return { deletedCount: uniqueIds.length };

@@ -859,6 +859,7 @@ export class OrdersService {
       });
       await tx.order.deleteMany({ where: { id: { in: uniqueIds } } });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "ORDERS_BULK_DELETED",
         entity: "Order",

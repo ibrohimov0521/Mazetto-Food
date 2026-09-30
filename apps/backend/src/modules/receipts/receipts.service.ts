@@ -121,6 +121,7 @@ export class ReceiptsService {
         where: { id: { in: uniqueIds }, ...scope },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "RECEIPTS_BULK_DELETED",
         entity: "Receipt",
@@ -437,6 +438,7 @@ export class ReceiptsService {
         data: { printed: false, printedAt: null },
       });
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "PRINT_JOB_RETRIED",
         entity: "PrintJob",

@@ -436,6 +436,7 @@ export class PaymentsService {
             }
 
             await writeAuditLog(tx, {
+              tenantId: user.tenantId ?? null,
               userId: user.id,
               action: "PAYMENT_OPERATION_COMPLETED",
               entity: "PaymentOperation",
@@ -587,6 +588,7 @@ export class PaymentsService {
       });
       await ensureRefundReceipt(tx, paymentId, reason, payment.amount);
       await writeAuditLog(tx, {
+        tenantId: user.tenantId ?? null,
         userId: user.id,
         action: "PAYMENT_REFUNDED",
         entity: "Payment",

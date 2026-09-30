@@ -12,9 +12,19 @@ const owner: AuthenticatedUser = {
   permissions: [],
 };
 
+const tenantBActor: AuthenticatedUser = {
+  id: "owner-b",
+  tenantId: "tenant-b",
+  membershipId: "membership-b",
+  isGlobalScope: true,
+  roles: ["SUPER_ADMIN"],
+  permissions: [],
+};
+
 const activeTenant = {
   restaurantTenant: {
     findMany: async () => [{ id: "tenant-a" }],
+    findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }),
   },
 };
 
@@ -86,6 +96,19 @@ test("all restaurant report aggregations stay inside the resolved tenant", async
 
   await service.getZReport(query, owner);
   assert.deepEqual(tenantOf(filters.get("expenseAggregate")!), { tenantId: "tenant-a" });
+
+  await service.getSalesReport(query, tenantBActor);
+  assert.deepEqual(
+    (filters.get("salesPayments")?.order as Record<string, unknown>).branch,
+    { tenantId: "tenant-b" },
+  );
+  assert.deepEqual(tenantOf(filters.get("cancelledOrders")!), { tenantId: "tenant-b" });
+  assert.deepEqual(
+    ((filters.get("salesItems")?.order as Record<string, unknown>).branch),
+    { tenantId: "tenant-b" },
+  );
+  assert.deepEqual(tenantOf(filters.get("shifts")!), { tenantId: "tenant-b" });
+  assert.deepEqual(tenantOf(filters.get("refunds")!), { tenantId: "tenant-b" });
 });
 
 test("dashboard summary aggregates only the resolved tenant", async () => {
@@ -119,4 +142,12 @@ test("dashboard summary aggregates only the resolved tenant", async () => {
   );
   assert.deepEqual(tenantOf(filters.get("orders")!), { tenantId: "tenant-a" });
   assert.deepEqual(tenantOf(filters.get("shifts")!), { tenantId: "tenant-a" });
+
+  await service.getSummary(tenantBActor);
+  assert.deepEqual(
+    ((filters.get("payments")?.order as Record<string, unknown>).branch),
+    { tenantId: "tenant-b" },
+  );
+  assert.deepEqual(tenantOf(filters.get("orders")!), { tenantId: "tenant-b" });
+  assert.deepEqual(tenantOf(filters.get("shifts")!), { tenantId: "tenant-b" });
 });
