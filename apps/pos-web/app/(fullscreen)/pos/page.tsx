@@ -260,6 +260,7 @@ function PosTerminal() {
   const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,
     cursorScope: (user?.id ?? "staff") + ":pos",
+    bootstrapSnapshot: true,
     onEvent: () => undefined,
   });
 
