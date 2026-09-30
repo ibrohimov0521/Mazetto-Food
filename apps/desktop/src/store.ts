@@ -154,6 +154,81 @@ export class DesktopStore {
     this.compactCache(entry.authScope);
   }
 
+  acknowledgeMutationAndCacheResponse(
+    id: string,
+    authScope: string,
+    requestPath: string,
+    requestUrl: string,
+    responseBody: string,
+  ): void {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(
+          `UPDATE mutation_outbox
+           SET state = 'acknowledged', acknowledged_at = ?, last_error = NULL
+           WHERE id = ?`,
+        )
+        .run(new Date().toISOString(), id);
+
+      const rows = this.database
+        .prepare(
+          `SELECT cache_key AS cacheKey, request_url AS requestUrl
+           FROM api_cache
+           WHERE auth_scope = ? AND request_url LIKE ?`,
+        )
+        .all(authScope, `%${requestPath}%`) as Array<{
+        cacheKey: string;
+        requestUrl: string;
+      }>;
+
+      let updated = 0;
+      const cachedAt = new Date().toISOString();
+      for (const row of rows) {
+        let pathname: string;
+        try {
+          pathname = new URL(row.requestUrl).pathname.replace(/\/+$/, "");
+        } catch {
+          continue;
+        }
+        if (pathname !== requestPath) continue;
+        this.database
+          .prepare(
+            "UPDATE api_cache SET body = ?, cached_at = ? WHERE cache_key = ? AND auth_scope = ?",
+          )
+          .run(responseBody, cachedAt, row.cacheKey, authScope);
+        updated++;
+      }
+
+      if (updated === 0) {
+        this.database
+          .prepare(
+            `INSERT INTO api_cache (
+              cache_key, request_url, auth_scope, status, content_type, body, cached_at
+            ) VALUES (?, ?, ?, 200, 'application/json; charset=utf-8', ?, ?)
+            ON CONFLICT(cache_key) DO UPDATE SET
+              status = excluded.status,
+              content_type = excluded.content_type,
+              body = excluded.body,
+              cached_at = excluded.cached_at`,
+          )
+          .run(
+            DesktopStore.cacheKey(requestUrl, authScope),
+            requestUrl,
+            authScope,
+            responseBody,
+            cachedAt,
+          );
+      }
+      this.compactCache(authScope);
+
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   getCachedResponse(cacheKey: string): CachedResponse | null {
     const row = this.database
       .prepare(
@@ -761,7 +836,7 @@ export class DesktopStore {
       FROM mutation_outbox
       WHERE auth_scope = ?
         AND state IN ('pending', 'sending')
-      ORDER BY created_at ASC
+      ORDER BY created_at ASC, rowid ASC
     `,
       )
       .all(authScope) as PendingOutboxCommand[];

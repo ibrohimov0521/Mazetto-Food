@@ -348,6 +348,23 @@ export class DesktopGateway {
         return;
       }
 
+      if (method === "GET" && isCashRegisterShiftReadPath(url.pathname)) {
+        const optimistic = applyOptimisticProjection(
+          JSON.stringify({ success: true, data: null }),
+          targetUrl,
+          this.store.listActiveMutations(authScope),
+        );
+        if (optimistic) {
+          response.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-Mazetto-Desktop": "offline-optimistic",
+            "X-Mazetto-Optimistic-Commands": optimistic.commandIds.join(","),
+          });
+          response.end(optimistic.body);
+          return;
+        }
+      }
+
       const commandDefinition = resolveOfflineCommand(method, url.pathname);
       const isPaymentCommand =
         commandDefinition?.commandType === "pos.order.create" ||
@@ -484,11 +501,16 @@ export class DesktopGateway {
           )
         : null;
 
+    const dependencyLane =
+      input.definition.aggregateType === "cash-register" ||
+      input.definition.aggregateType === "shifts"
+        ? `branch:${context?.branchId ?? "global"}`
+        : null;
     const command = this.store.enqueueMutation({
       idempotencyKey,
       commandType: input.definition.commandType,
       aggregateType: input.definition.aggregateType,
-      aggregateId: localAggregateId ?? aggregate.id,
+      aggregateId: dependencyLane ?? localAggregateId ?? aggregate.id,
       baseVersion,
       actorId: context?.actorId ?? "unknown",
       branchId: context?.branchId ?? "global",
@@ -665,7 +687,11 @@ export class DesktopGateway {
         const versionedAggregateType =
           command.aggregateType === "kitchen"
             ? "kitchen"
-            : command.aggregateType === "orders" || payload.localAggregateId
+            : command.aggregateType === "orders" ||
+                (payload.localAggregateId &&
+                  ["pos.order.create", "table.order.create"].includes(
+                    command.commandType,
+                  ))
               ? "orders"
               : null;
         const kitchenTicket =
@@ -695,7 +721,23 @@ export class DesktopGateway {
               : undefined,
           );
         } else {
-          this.store.markMutationAcknowledged(command.id);
+          const cachedShift = acknowledgedCashShiftCache(
+            command.commandType,
+            payload.pathname ?? "",
+            payload.targetUrl,
+            responseText,
+          );
+          if (cachedShift) {
+            this.store.acknowledgeMutationAndCacheResponse(
+              command.id,
+              command.authScope,
+              cachedShift.path,
+              cachedShift.requestUrl,
+              cachedShift.body,
+            );
+          } else {
+            this.store.markMutationAcknowledged(command.id);
+          }
         }
         this.mode = "online";
         this.lastOnlineAt = new Date().toISOString();
@@ -1055,7 +1097,60 @@ export class DesktopGateway {
 
 function createsLocalAggregate(commandType: string): boolean {
   return (
-    commandType === "pos.order.create" || commandType === "table.order.create"
+    commandType === "pos.order.create" ||
+    commandType === "table.order.create" ||
+    commandType === "shift.open" ||
+    commandType === "courier-shift.open"
+  );
+}
+
+function acknowledgedCashShiftCache(
+  commandType: string,
+  pathname: string,
+  targetUrl: string | undefined,
+  responseText: string,
+): { path: string; requestUrl: string; body: string } | null {
+  const envelope = parseJsonObject(responseText);
+  if (!envelope || !targetUrl) return null;
+
+  let path: string;
+  let body = responseText;
+  if (
+    commandType === "shift.open" &&
+    pathname === "/api/v1/cash-register/shift/open" &&
+    isRecord(envelope.data)
+  ) {
+    path = "/api/v1/cash-register/shift";
+  } else if (
+    commandType === "courier-shift.open" &&
+    pathname === "/api/v1/cash-register/courier-shift/open" &&
+    isRecord(envelope.data)
+  ) {
+    path = "/api/v1/cash-register/courier-shift";
+  } else if (
+    commandType === "shift.close" &&
+    /^\/api\/v1\/cash-register\/shift\/[^/]+\/close$/.test(pathname)
+  ) {
+    path = "/api/v1/cash-register/shift";
+    body = JSON.stringify({ ...envelope, data: null });
+  } else {
+    return null;
+  }
+
+  try {
+    const url = new URL(targetUrl);
+    url.pathname = path;
+    url.search = "";
+    return { path, requestUrl: url.toString(), body };
+  } catch {
+    return null;
+  }
+}
+
+function isCashRegisterShiftReadPath(pathname: string): boolean {
+  return (
+    pathname === "/api/v1/cash-register/shift" ||
+    pathname === "/api/v1/cash-register/courier-shift"
   );
 }
 
@@ -1213,6 +1308,37 @@ function applyOptimisticProjection(
     ) {
       applied.push(command.id);
     }
+
+    if (pathname === "/api/v1/cash-register/shift") {
+      if (
+        command.commandType === "shift.open" &&
+        commandPath === "/api/v1/cash-register/shift/open"
+      ) {
+        projected = replaceResponseData(
+          projected,
+          optimisticCashShift(command, payload, commandBody ?? {}),
+        );
+        applied.push(command.id);
+      } else if (
+        command.commandType === "shift.close" &&
+        /^\/api\/v1\/cash-register\/shift\/[^/]+\/close$/.test(commandPath)
+      ) {
+        projected = replaceResponseData(projected, null);
+        applied.push(command.id);
+      }
+    }
+
+    if (
+      pathname === "/api/v1/cash-register/courier-shift" &&
+      command.commandType === "courier-shift.open" &&
+      commandPath === "/api/v1/cash-register/courier-shift/open"
+    ) {
+      projected = replaceResponseData(
+        projected,
+        optimisticCashShift(command, payload, commandBody ?? {}),
+      );
+      applied.push(command.id);
+    }
   }
 
   return applied.length
@@ -1287,6 +1413,32 @@ function patchKitchenTicketProjection(
   if (!ticket) return false;
   Object.assign(ticket, patch);
   return true;
+}
+
+function optimisticCashShift(
+  command: PendingOutboxCommand,
+  payload: Record<string, unknown> | null,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const openingBalance = numberField(body, "openingBalance") ?? 0;
+  return {
+    id: stringField(payload, "localAggregateId") ?? command.id,
+    shiftNumber: 0,
+    status: "OPEN",
+    openingBalance: String(openingBalance),
+    currentCash: String(openingBalance),
+    openedAt: stringField(payload, "queuedAt") ?? new Date().toISOString(),
+    pendingSync: true,
+    offlineQueued: true,
+  };
+}
+
+function replaceResponseData(source: unknown, data: unknown): unknown {
+  if (isRecord(source)) {
+    source.data = data;
+    return source;
+  }
+  return { success: true, data };
 }
 
 function patchTableProjection(
@@ -1413,13 +1565,28 @@ function queuedResponseData(
     };
   }
 
-  if (pathname === "/api/v1/cash-register/shift/open") {
+  if (
+    pathname === "/api/v1/cash-register/shift/open" ||
+    pathname === "/api/v1/shifts/open" ||
+    pathname === "/api/v1/cash-register/courier-shift/open"
+  ) {
     return {
       ...base,
-      id: command.id,
-      shiftNumber: 0,
-      status: "OPEN",
-      openedAt: new Date().toISOString(),
+      ...optimisticCashShift(command, queuedPayload, parsedBody ?? {}),
+    };
+  }
+
+  const closedShift = pathname.match(
+    /^\/api\/v1\/(?:cash-register\/shift|shifts)\/([^/]+)\/close$/,
+  );
+  if (closedShift?.[1]) {
+    return {
+      ...base,
+      id: closedShift[1],
+      status: "CLOSED",
+      closingBalance: String(numberField(parsedBody, "closingBalance") ?? 0),
+      closedAt: new Date().toISOString(),
+      pendingSync: true,
     };
   }
 

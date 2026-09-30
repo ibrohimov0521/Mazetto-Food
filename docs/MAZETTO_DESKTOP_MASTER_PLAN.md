@@ -292,7 +292,15 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - A successfully replayed kitchen action updates matching cached kitchen-board snapshots with the server-confirmed ticket status and version, then clears `pendingSync`.
 - Cache reconciliation is restricted to the authenticated user/branch cache scope and committed atomically with the outbox acknowledgement and dependent-version rebase.
 - If later actions for the same ticket remain queued, normal optimistic projection overlays them and keeps the ticket marked pending until the last action is confirmed.
-- Desktop bundle version: `0.1.64`. Focused replay/cache tests, full CI, release, deploy and production smoke are required before closing this stage; physical restaurant-device acceptance remains open.
+- Desktop bundle version: `0.1.64`. PR #156 merged; full CI, Desktop release, deploy and 24/24 production smoke passed. Physical restaurant-device acceptance remains open.
+
+## D3 offline cash shift lifecycle (2026-10-01)
+
+- Register and courier-shift opens now receive durable local IDs; subsequent close/transaction URLs and bodies resolve those IDs to server IDs after the opening command is acknowledged.
+- Cash-register and shift commands are serialized by branch, so dependent register actions cannot overtake an offline shift open or courier-shift open.
+- Cached current-shift reads project queued opens/closes; successful replay reconciles the scoped cache, including creating a snapshot when none existed.
+- Outbox optimistic projections use SQLite row order as a deterministic tie-breaker when commands share a timestamp.
+- Desktop bundle version: `0.1.65`. Shift lifecycle, replay, full CI, release, deploy and production smoke must pass before closing; physical register-device acceptance remains open.
 
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
