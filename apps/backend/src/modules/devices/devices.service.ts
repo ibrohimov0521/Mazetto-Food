@@ -8,7 +8,6 @@ import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import {
   assertBranchBelongsToActor,
   resolveRestaurantScope,
-  resolveSoleActiveTenantId,
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -104,7 +103,7 @@ export class DevicesService {
     };
   }
 
-  async enroll(dto: EnrollDeviceDto) {
+  async enroll(dto: EnrollDeviceDto, tenantId: string) {
     const deviceId = dto.deviceId.trim();
     if (!deviceId) {
       throw new BadRequestException("Device identity is required");
@@ -112,7 +111,6 @@ export class DevicesService {
 
     // The desktop creates its own stable hardware ID. The one-time code chooses
     // the admin-created slot and then binds that slot to this actual computer.
-    const tenantId = await resolveSoleActiveTenantId(this.prisma);
     const device = await this.prisma.device.findFirst({
       where: {
         isActive: true,
