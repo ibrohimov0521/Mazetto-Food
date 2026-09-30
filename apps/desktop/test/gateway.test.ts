@@ -1452,6 +1452,19 @@ test("offline kitchen actions project status and rebase versions during replay",
       { action: "start", expectedVersion: 11 },
       { action: "ready", expectedVersion: 12 },
     ]);
+
+    online = false;
+    const reconciled = await fetch(kitchenPath, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(reconciled.status, 200);
+    assert.equal(reconciled.headers.get("x-mazetto-desktop"), "offline-cache");
+    const reconciledBody = (await reconciled.json()) as {
+      data: Array<Record<string, unknown>>;
+    };
+    assert.equal(reconciledBody.data[0]?.status, "READY");
+    assert.equal(reconciledBody.data[0]?.version, 13);
+    assert.equal(reconciledBody.data[0]?.pendingSync, undefined);
   } finally {
     await gateway.stop();
     store.close();

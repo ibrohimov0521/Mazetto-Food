@@ -285,7 +285,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Cached kitchen tickets project queued accept/start/ready/complete/cancel states and the next ticket version immediately, marked as pending synchronization.
 - Kitchen commands remain serialized per ticket. After each server acknowledgement, later pending actions for that ticket receive the acknowledged version inside one SQLite transaction, preventing stale-version replay conflicts.
 - Version extraction accepts both direct ticket responses and responses nested under a `ticket` field.
-- Desktop bundle version: `0.1.63`. Focused replay/projection tests and the full monorepo CI are required before merge; physical kitchen-device outage acceptance remains open.
+- Desktop bundle version: `0.1.63`. PR #155 merged; full monorepo CI, Desktop release, deploy and 24/24 production smoke passed. Physical kitchen-device outage acceptance remains open.
+
+## D3 offline kitchen cache reconciliation (2026-10-01)
+
+- A successfully replayed kitchen action updates matching cached kitchen-board snapshots with the server-confirmed ticket status and version, then clears `pendingSync`.
+- Cache reconciliation is restricted to the authenticated user/branch cache scope and committed atomically with the outbox acknowledgement and dependent-version rebase.
+- If later actions for the same ticket remain queued, normal optimistic projection overlays them and keeps the ticket marked pending until the last action is confirmed.
+- Desktop bundle version: `0.1.64`. Focused replay/cache tests, full CI, release, deploy and production smoke are required before closing this stage; physical restaurant-device acceptance remains open.
 
 ## D4 printer deadlines and duplicate-safe recovery (2026-09-30)
 
