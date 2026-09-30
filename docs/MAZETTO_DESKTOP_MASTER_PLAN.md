@@ -228,4 +228,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - The transfer, its source-balance allocation snapshot, cash-out ledger row and completed idempotency record are committed together. A replay resolves to the original transfer; a changed payload with the same key is rejected.
 - Existing actor/tenant/branch filters are applied when returning a replay. No schema migration is required.
 - Verification: transfer replay and payload-mismatch tests, full backend suite, and monorepo CI passed.
-- Transfer acceptance/rejection, shift open/close and courier status still need separate server-side replay contracts.
+- Transfer acceptance/rejection now have separate actor-, action-, and transfer-scoped replay contracts; ledger writes and the completed idempotency row share one transaction.
+- Shift open/close and courier status still need server-side replay contracts before those queued commands are considered complete.
+
+## D3 cash-transfer resolution idempotency (2026-09-30)
+
+- Accept and reject routes forward Desktop's persisted idempotency key and correlation id.
+- Accept/reject results and their CASH_IN ledger entries commit atomically with the completed idempotency record. A retry returns the original branch-scoped result without a second ledger write.
+- Reusing a rejection key with a different reason is rejected; acceptance replay is restricted to the accepting user and their receiver shift.
+- Verification: acceptance/refund replay tests, payload-mismatch test, full monorepo CI and production smoke passed.
+- Shift open/close and courier status remain the next server-side idempotency risks; this checkpoint does not imply all Desktop queued commands are fully protected yet.

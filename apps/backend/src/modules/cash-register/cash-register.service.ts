@@ -92,16 +92,21 @@ export class CashRegisterService {
     return this.shiftsService.getCashTransferDetail(id, user);
   }
 
-  acceptTransfer(id: string, user: AuthenticatedUser) {
-    return this.shiftsService.acceptCashTransfer(id, user);
+  acceptTransfer(
+    id: string,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
+    return this.shiftsService.acceptCashTransfer(id, user, context);
   }
 
   rejectTransfer(
     id: string,
     reason: string | undefined,
     user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
   ) {
-    return this.shiftsService.rejectCashTransfer(id, reason, user);
+    return this.shiftsService.rejectCashTransfer(id, reason, user, context);
   }
 
   openShift(dto: OpenShiftDto, user: AuthenticatedUser) {

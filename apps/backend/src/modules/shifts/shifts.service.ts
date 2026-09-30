@@ -1188,7 +1188,11 @@ export class ShiftsService {
     });
   }
 
-  async acceptCashTransfer(id: string, user: AuthenticatedUser) {
+  async acceptCashTransfer(
+    id: string,
+    user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
+  ) {
     this.assertCashReceiver(user);
     const employeeId = user.employeeId;
     if (!employeeId) {
@@ -1197,7 +1201,63 @@ export class ShiftsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const idempotencyKey = context?.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+    const requestHash = idempotencyKey
+      ? hashCanonicalJson({ transferId: id, action: "ACCEPT" })
+      : undefined;
+    let decision:
+      | Awaited<ReturnType<IdempotencyService["start"]>>
+      | undefined;
+
+    if (idempotencyKey && requestHash) {
+      if (!this.idempotency) {
+        throw new BadRequestException(
+          "Cash transfer idempotency is unavailable",
+        );
+      }
+      decision = await this.idempotency.start({
+        scope: buildIdempotencyScope("cash-transfer-accept", id, user.id),
+        key: idempotencyKey,
+        requestHash,
+        correlationId: context?.correlationId ?? idempotencyKey,
+        actorId: user.id,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      });
+
+      if (decision.kind === "REPLAY") {
+        const resourceId = decision.record.resourceId;
+        if (decision.record.resourceType !== "CASH_TRANSFER" || !resourceId) {
+          throw new BadRequestException(
+            "Previous cash transfer acceptance did not complete",
+          );
+        }
+        const previous = await this.prisma.cashTransfer.findFirst({
+          where: {
+            id: resourceId,
+            status: CashTransferStatus.ACCEPTED,
+            acceptedById: user.id,
+            toShift: { is: { employeeId } },
+            ...(scope.branchId
+              ? { branchId: scope.branchId }
+              : { branch: { tenantId: scope.tenantId } }),
+          },
+          include: {
+            fromShift: { include: { employee: true } },
+            toShift: { include: { employee: true } },
+            allocations: this.transferAllocationInclude(),
+          },
+        });
+        if (!previous) {
+          throw new NotFoundException("Previous cash transfer is unavailable");
+        }
+        return previous;
+      }
+    }
+
+    const acceptTransfer = async (tx: Prisma.TransactionClient) => {
       const cashierShift = await tx.shift.findFirst({
         where: {
           employeeId,
@@ -1280,13 +1340,41 @@ export class ShiftsService {
           allocations: this.transferAllocationInclude(),
         },
       });
-    });
+    };
+
+    if (!decision || decision.kind !== "CLAIMED" || !requestHash) {
+      return this.prisma.$transaction(acceptTransfer);
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const accepted = await acceptTransfer(tx);
+        await this.idempotency!.complete(
+          decision.record.id,
+          {
+            requestHash,
+            responseStatus: 200,
+            responseBody: { cashTransferId: accepted.id, status: "ACCEPTED" },
+            resourceType: "CASH_TRANSFER",
+            resourceId: accepted.id,
+          },
+          tx,
+        );
+        return accepted;
+      });
+    } catch (error) {
+      await this.idempotency!
+        .fail(decision.record.id, requestHash, "CASH_TRANSFER_ACCEPT_FAILED")
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   async rejectCashTransfer(
     id: string,
     reason: string | undefined,
     user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
   ) {
     this.assertCashReceiver(user);
     const receiverEmployeeId = user.employeeId;
@@ -1294,7 +1382,66 @@ export class ShiftsService {
       throw new ForbiddenException("Employee profile is required");
     }
     const scope = await resolveRestaurantScope(this.prisma, user);
-    return this.prisma.$transaction(async (tx) => {
+    const idempotencyKey = context?.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+    const requestHash = idempotencyKey
+      ? hashCanonicalJson({
+          transferId: id,
+          action: "REJECT",
+          reason: reason ?? null,
+        })
+      : undefined;
+    let decision:
+      | Awaited<ReturnType<IdempotencyService["start"]>>
+      | undefined;
+
+    if (idempotencyKey && requestHash) {
+      if (!this.idempotency) {
+        throw new BadRequestException(
+          "Cash transfer idempotency is unavailable",
+        );
+      }
+      decision = await this.idempotency.start({
+        scope: buildIdempotencyScope("cash-transfer-reject", id, user.id),
+        key: idempotencyKey,
+        requestHash,
+        correlationId: context?.correlationId ?? idempotencyKey,
+        actorId: user.id,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      });
+
+      if (decision.kind === "REPLAY") {
+        const resourceId = decision.record.resourceId;
+        if (decision.record.resourceType !== "CASH_TRANSFER" || !resourceId) {
+          throw new BadRequestException(
+            "Previous cash transfer rejection did not complete",
+          );
+        }
+        const previous = await this.prisma.cashTransfer.findFirst({
+          where: {
+            id: resourceId,
+            status: {
+              in: [CashTransferStatus.REJECTED, CashTransferStatus.DISPUTED],
+            },
+            rejectedAt: { not: null },
+            ...(scope.branchId
+              ? { branchId: scope.branchId }
+              : { branch: { tenantId: scope.tenantId } }),
+          },
+          include: {
+            fromShift: { include: { employee: true } },
+            toShift: { include: { employee: true } },
+          },
+        });
+        if (!previous) {
+          throw new NotFoundException("Previous cash transfer is unavailable");
+        }
+        return previous;
+      }
+    }
+
+    const rejectTransfer = async (tx: Prisma.TransactionClient) => {
       const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
         'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
         id,
@@ -1377,7 +1524,34 @@ export class ShiftsService {
           toShift: { include: { employee: true } },
         },
       });
-    });
+    };
+
+    if (!decision || decision.kind !== "CLAIMED" || !requestHash) {
+      return this.prisma.$transaction(rejectTransfer);
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const rejected = await rejectTransfer(tx);
+        await this.idempotency!.complete(
+          decision.record.id,
+          {
+            requestHash,
+            responseStatus: 200,
+            responseBody: { cashTransferId: rejected.id, status: rejected.status },
+            resourceType: "CASH_TRANSFER",
+            resourceId: rejected.id,
+          },
+          tx,
+        );
+        return rejected;
+      });
+    } catch (error) {
+      await this.idempotency!
+        .fail(decision.record.id, requestHash, "CASH_TRANSFER_REJECT_FAILED")
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   private assertCashReceiver(user: AuthenticatedUser) {
