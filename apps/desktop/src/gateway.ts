@@ -351,7 +351,14 @@ export class DesktopGateway {
         commandDefinition?.commandType === "payment.process";
       const offlinePaymentAllowed =
         !isPaymentCommand || isOfflineCashPayment(body);
-      if (authorization && body && commandDefinition && offlinePaymentAllowed) {
+      if (
+        authorization &&
+        body &&
+        commandDefinition &&
+        offlinePaymentAllowed &&
+        (error === KNOWN_OFFLINE_ERROR ||
+          hasStableIdempotencyKey(request, body))
+      ) {
         const queued = this.queueMutation({
           authorization,
           authScope,
