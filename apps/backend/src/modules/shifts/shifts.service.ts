@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   CashTransactionType,
@@ -13,6 +14,12 @@ import {
   ShiftType,
 } from "@prisma/client";
 import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
+import { IdempotencyService } from "../../common/idempotency/idempotency.service";
+import {
+  buildIdempotencyScope,
+  hashCanonicalJson,
+  normalizeIdempotencyKey,
+} from "../../common/idempotency/idempotency-key";
 import {
   assertBranchBelongsToActor,
   resolveRestaurantScope,
@@ -32,7 +39,10 @@ import type {
 
 @Injectable()
 export class ShiftsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly idempotency?: IdempotencyService,
+  ) {}
 
   /**
    * Filial smenalari ro'yxati.
@@ -600,6 +610,7 @@ export class ShiftsService {
     shiftId: string,
     dto: CreateCashTransactionDto,
     user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
   ) {
     const employeeId = user.employeeId;
 
@@ -609,7 +620,68 @@ export class ShiftsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const idempotencyKey = context?.idempotencyKey
+      ? normalizeIdempotencyKey(context.idempotencyKey)
+      : undefined;
+    const requestHash = idempotencyKey
+      ? hashCanonicalJson({ shiftId, dto })
+      : undefined;
+    let decision:
+      | Awaited<ReturnType<IdempotencyService["start"]>>
+      | undefined;
+
+    if (idempotencyKey && requestHash) {
+      if (!this.idempotency) {
+        throw new BadRequestException(
+          "Cash transaction idempotency is unavailable",
+        );
+      }
+      decision = await this.idempotency.start({
+        scope: buildIdempotencyScope("cash-transaction", shiftId, user.id),
+        key: idempotencyKey,
+        requestHash,
+        correlationId: context?.correlationId ?? idempotencyKey,
+        actorId: user.id,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      });
+
+      if (decision.kind === "REPLAY") {
+        const resourceId = decision.record.resourceId;
+        if (
+          decision.record.resourceType !== "CASH_TRANSACTION" ||
+          !resourceId
+        ) {
+          throw new BadRequestException(
+            "Previous cash transaction request did not complete",
+          );
+        }
+
+        return this.prisma.$transaction(async (tx) => {
+          const shift = await tx.shift.findUnique({ where: { id: shiftId } });
+          if (!shift) throw new NotFoundException("Shift not found");
+          await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
+          await assertBranchBelongsToActor(tx, user, shift.branchId);
+          this.assertCanOperateShift(user, shift.employeeId);
+
+          const previous = await tx.cashTransaction.findFirst({
+            where: {
+              id: resourceId,
+              shiftId,
+              branchId: shift.branchId,
+              createdById: user.id,
+            },
+          });
+          if (!previous) {
+            throw new NotFoundException(
+              "Previous cash transaction is no longer available",
+            );
+          }
+          return previous;
+        });
+      }
+    }
+
+    const createTransaction = async (tx: Prisma.TransactionClient) => {
       const shift = await tx.shift.findUnique({ where: { id: shiftId } });
 
       if (!shift) {
@@ -668,7 +740,38 @@ export class ShiftsService {
           createdById: user.id,
         },
       });
-    });
+    };
+
+    if (!decision || decision.kind !== "CLAIMED" || !requestHash) {
+      return this.prisma.$transaction(createTransaction);
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const transaction = await createTransaction(tx);
+        await this.idempotency!.complete(
+          decision.record.id,
+          {
+            requestHash,
+            responseStatus: 201,
+            responseBody: { cashTransactionId: transaction.id },
+            resourceType: "CASH_TRANSACTION",
+            resourceId: transaction.id,
+          },
+          tx,
+        );
+        return transaction;
+      });
+    } catch (error) {
+      await this.idempotency!
+        .fail(
+          decision.record.id,
+          requestHash,
+          "CASH_TRANSACTION_FAILED",
+        )
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   async openCourierShift(dto: OpenShiftDto, user: AuthenticatedUser) {

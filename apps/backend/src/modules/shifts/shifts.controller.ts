@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
+import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -68,7 +69,12 @@ export class ShiftsController {
     @Param("id") id: string,
     @Body() dto: CreateCashTransactionDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CorrelationId() correlationId: string,
   ) {
-    return this.shiftsService.createCashTransaction(id, dto, user);
+    return this.shiftsService.createCashTransaction(id, dto, user, {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      correlationId,
+    });
   }
 }
