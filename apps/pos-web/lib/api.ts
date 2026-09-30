@@ -1,6 +1,7 @@
 "use client";
 
 import { getApiBaseUrl, type AuthSession } from "./auth";
+import { recordApiResponseFreshness } from "./offline-freshness.mjs";
 import { readSession, writeSession } from "./session";
 
 /*
@@ -95,6 +96,14 @@ export async function apiFetch<T>(
     }
   }
 
+  if ((init?.method ?? "GET").toUpperCase() === "GET") {
+    recordApiResponseFreshness(
+      path,
+      response.headers.get("X-Mazetto-Desktop") ?? "online",
+      response.headers.get("X-Mazetto-Cached-At"),
+    );
+  }
+
   const payload = await parseEnvelope<T>(response);
 
   if (!response.ok || !payload.success || payload.data === undefined) {
@@ -138,8 +147,17 @@ async function requestWithSession(
       ...(body ? { body } : {}),
       headers: Object.fromEntries(headers.entries()),
     });
+    const responseHeaders = new Headers({
+      "Content-Type": nativeResponse.contentType,
+    });
+    if (nativeResponse.desktopSource) {
+      responseHeaders.set("X-Mazetto-Desktop", nativeResponse.desktopSource);
+    }
+    if (nativeResponse.cachedAt) {
+      responseHeaders.set("X-Mazetto-Cached-At", nativeResponse.cachedAt);
+    }
     return new Response(nativeResponse.body, {
-      headers: { "Content-Type": nativeResponse.contentType },
+      headers: responseHeaders,
       status: nativeResponse.status,
     });
   }
