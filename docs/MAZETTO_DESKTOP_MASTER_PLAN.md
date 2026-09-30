@@ -213,3 +213,11 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Existing branch/user scoping, cash-only offline payment restrictions, and explicitly supported command routes remain unchanged.
 - Verification: Desktop command suite and full monorepo CI passed; the regression test simulates a connection reset after sending a keyless POS command and verifies no outbox row is created.
 - This tightens duplicate prevention but does not complete D3: route-by-route idempotency guarantees, dependency ordering, projections, conflicts, and replay acceptance still need dedicated validation.
+
+## D3 cash-ledger idempotency (2026-09-30)
+
+- The two supported shift cash-transaction routes now accept the Desktop idempotency header and scope it to the acting user and shift.
+- The ledger write and completed idempotency record commit in the same database transaction. A replay returns the original transaction; reusing the key with a different request is rejected.
+- No schema migration is needed; this uses the existing idempotency request ledger. Requests without a key retain the existing online behavior, while Desktop-queued requests always include the persisted key.
+- Verification: cash transaction replay, payload mismatch, tenant/branch link validation, backend tests and full monorepo CI passed.
+- This protects cash-in/out ledger rows only. Shift open/close, cash transfers, courier state and other queueable routes still need server-side idempotency before the entire D3 queue is considered safe.

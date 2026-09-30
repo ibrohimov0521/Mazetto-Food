@@ -112,8 +112,9 @@ export class CashRegisterService {
     id: string,
     dto: CreateCashTransactionDto,
     user: AuthenticatedUser,
+    context?: { idempotencyKey?: string; correlationId?: string },
   ) {
-    return this.shiftsService.createCashTransaction(id, dto, user);
+    return this.shiftsService.createCashTransaction(id, dto, user, context);
   }
 
   async getTransactions(shiftId: string, user: AuthenticatedUser) {
