@@ -3,7 +3,15 @@ import { DatabaseSync } from "node:sqlite";
 
 const CACHE_RETENTION_DAYS = 30;
 const MAX_CACHED_RESPONSES_PER_SCOPE = 5000;
+const CACHE_COMPACTION_WRITE_INTERVAL = 64;
+const CACHE_COMPACTION_INTERVAL_MS = 60 * 60 * 1000;
 const LOCAL_ID_PATTERN = /\blocal-[0-9a-f-]{36}\b/g;
+
+function cacheRetentionCutoff(now = Date.now()): string {
+  return new Date(
+    now - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+}
 
 export type CachedResponse = {
   cacheKey: string;
@@ -100,6 +108,8 @@ export type LocalPrintQueueItem = {
 
 export class DesktopStore {
   private readonly database: DatabaseSync;
+  private readonly cacheWritesSinceCompaction = new Map<string, number>();
+  private readonly lastCacheCompactionAt = new Map<string, number>();
 
   constructor(path: string) {
     this.database = new DatabaseSync(path);
@@ -163,7 +173,7 @@ export class DesktopStore {
         entry.cachedAt,
       );
 
-    this.compactCache(entry.authScope);
+    this.maybeCompactCache(entry.authScope);
   }
 
   acknowledgeMutationAndCacheResponse(
@@ -233,7 +243,7 @@ export class DesktopStore {
             cachedAt,
           );
       }
-      this.compactCache(cacheScope);
+      this.maybeCompactCache(cacheScope);
 
       this.database.exec("COMMIT");
     } catch (error) {
@@ -243,6 +253,7 @@ export class DesktopStore {
   }
 
   getCachedResponse(cacheKey: string): CachedResponse | null {
+    const cutoff = cacheRetentionCutoff();
     const row = this.database
       .prepare(
         `
@@ -255,10 +266,10 @@ export class DesktopStore {
         body,
         cached_at AS cachedAt
       FROM api_cache
-      WHERE cache_key = ?
+      WHERE cache_key = ? AND cached_at >= ?
     `,
       )
-      .get(cacheKey) as CachedResponse | undefined;
+      .get(cacheKey, cutoff) as CachedResponse | undefined;
 
     return row ? { ...row } : null;
   }
@@ -267,17 +278,18 @@ export class DesktopStore {
     authScope: string,
     pathname: string,
   ): CachedResponse | null {
+    const cutoff = cacheRetentionCutoff();
     const rows = this.database
       .prepare(
         `SELECT cache_key AS cacheKey, request_url AS requestUrl,
                 auth_scope AS authScope, status, content_type AS contentType,
                 body, cached_at AS cachedAt
          FROM api_cache
-         WHERE auth_scope = ? AND request_url LIKE ?
+         WHERE auth_scope = ? AND request_url LIKE ? AND cached_at >= ?
          ORDER BY cached_at DESC
          `,
       )
-      .all(authScope, `%${pathname}%`) as CachedResponse[];
+      .all(authScope, `%${pathname}%`, cutoff) as CachedResponse[];
     const expectedPath = pathname.replace(/\/+$/, "") || "/";
     for (const row of rows) {
       try {
@@ -1082,10 +1094,22 @@ export class DesktopStore {
     }
   }
 
+  private maybeCompactCache(authScope: string): void {
+    const writes = (this.cacheWritesSinceCompaction.get(authScope) ?? 0) + 1;
+    const lastCompaction = this.lastCacheCompactionAt.get(authScope);
+    if (
+      lastCompaction === undefined ||
+      writes >= CACHE_COMPACTION_WRITE_INTERVAL ||
+      Date.now() - lastCompaction >= CACHE_COMPACTION_INTERVAL_MS
+    ) {
+      this.compactCache(authScope);
+      return;
+    }
+    this.cacheWritesSinceCompaction.set(authScope, writes);
+  }
+
   private compactCache(authScope: string): void {
-    const cutoff = new Date(
-      Date.now() - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const cutoff = cacheRetentionCutoff();
 
     this.database
       .prepare(`DELETE FROM api_cache WHERE auth_scope = ? AND cached_at < ?`)
@@ -1105,6 +1129,8 @@ export class DesktopStore {
       `,
       )
       .run(authScope, MAX_CACHED_RESPONSES_PER_SCOPE);
+    this.cacheWritesSinceCompaction.set(authScope, 0);
+    this.lastCacheCompactionAt.set(authScope, Date.now());
   }
 
   private count(table: string, where?: string): number {
