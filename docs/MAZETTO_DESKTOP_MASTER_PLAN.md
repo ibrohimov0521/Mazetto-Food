@@ -375,6 +375,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Offline fallback lookups now verify the cached URL pathname exactly, so a newer detail route such as `/orders/:id` cannot replace a collection response such as `/orders`. Query variants of the exact endpoint still use the newest response.
 - Added regression coverage for overlapping collection and detail routes.
-- Verification: Desktop tests 89/89, typecheck and lint passed. Full CI, Windows release and production deployment checks remain release gates.
+- Verification: Desktop tests 89/89, typecheck and lint, full CI, Windows Desktop 0.1.76 release and production tag passed. Dokploy completed without rebuilding server apps; production web smoke was skipped because no server service changed.
 - This does not complete D2: atomic grouped snapshots, per-role field coverage, outage drills and physical printer acceptance remain open.
 - Desktop bundle version: `0.1.76`.
+
+## D2 branch-validated offline POS catalog (2026-10-01)
+
+- Offline order snapshots now use a cached POS catalog only when its branch ID matches the authenticated branch and its product/table collections are present. An invalid cached catalog falls back only to a valid same-branch versioned realtime bootstrap.
+- Regression test reproduced a different-branch product and variant leaking into the offline order snapshot; it now fails closed instead.
+- Verification: Desktop tests 90/90, typecheck and lint passed. Full CI, Windows release and production deployment checks remain release gates.
+- This hardens offline display snapshots only; it does not replace server authorization or complete offline POS, cross-device reconciliation, printer hardware testing, or a 100% offline guarantee.
+- Desktop bundle version: `0.1.77`.
