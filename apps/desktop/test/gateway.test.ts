@@ -1958,6 +1958,209 @@ test("waiter offline item writes require a branch-bound order and current versio
   }
 });
 
+test("waiter quantity and note edits project offline and replay with rebased versions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-waiter-edit-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("waiter-edit", "branch-1");
+  let online = true;
+  let serverVersion = 4;
+  let serverQuantity = 2;
+  let serverNotes = "";
+  const replayedVersions: number[] = [];
+  const table = {
+    id: "table-1",
+    branchId: "branch-1",
+    name: "1-stol",
+    status: "OCCUPIED",
+    orders: [
+      {
+        id: "server-order-1",
+        branchId: "branch-1",
+        version: 4,
+        status: "CONFIRMED",
+        total: "24000.00",
+        items: [
+          {
+            id: "item-1",
+            productId: "product-1",
+            productName: "Lavash",
+            quantity: "2",
+            unitPrice: "12000.00",
+            totalPrice: "24000.00",
+            status: "ACTIVE",
+            notes: "",
+            modifierSnapshot: [],
+          },
+        ],
+      },
+    ],
+  };
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    probeIntervalMs: 25,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/health")) return jsonResponse({ success: true });
+      if (url.pathname === "/api/v1/realtime/bootstrap") {
+        return jsonResponse({
+          success: true,
+          data: {
+            schemaVersion: 2,
+            generatedAt: new Date().toISOString(),
+            branchId: "branch-1",
+            menu: { categories: [], products: [] },
+            tables: [
+              table,
+              {
+                id: "foreign-table",
+                branchId: "branch-2",
+                name: "B-filial",
+                status: "OCCUPIED",
+                orders: [
+                  {
+                    id: "foreign-order",
+                    branchId: "branch-2",
+                    version: 1,
+                    status: "CONFIRMED",
+                    total: "24000.00",
+                    items: [
+                      {
+                        id: "item-1",
+                        productName: "Lavash",
+                        quantity: "2",
+                        unitPrice: "12000.00",
+                        totalPrice: "24000.00",
+                        status: "ACTIVE",
+                        notes: "",
+                        modifierSnapshot: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
+      if (url.pathname === "/api/v1/tables/table-1") {
+        return jsonResponse({ success: true, data: table });
+      }
+      if (!online) throw new Error("offline");
+      if (
+        url.pathname === "/api/v1/orders/server-order-1/items/item-1" &&
+        init?.method === "PATCH"
+      ) {
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          expectedVersion?: number;
+          quantity?: number;
+          notes?: string;
+        };
+        replayedVersions.push(body.expectedVersion ?? -1);
+        if (body.expectedVersion !== serverVersion) {
+          return jsonResponse({ success: false, error: { message: "version conflict" } }, 409);
+        }
+        if (body.quantity !== undefined) serverQuantity = body.quantity;
+        if (body.notes !== undefined) serverNotes = body.notes;
+        serverVersion += 1;
+        return jsonResponse({
+          success: true,
+          data: { id: "server-order-1", version: serverVersion },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const request = (path: string, init: RequestInit = {}) =>
+      fetch(`http://127.0.0.1:${port}${path}`, {
+        ...init,
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          ...(init.headers ?? {}),
+        },
+      });
+    const bootstrap = await request("/api/v1/realtime/bootstrap?branchId=branch-1");
+    assert.equal(bootstrap.status, 200);
+    const tableDetail = await request("/api/v1/tables/table-1?branchId=branch-1");
+    assert.equal(tableDetail.status, 200);
+
+    online = false;
+    const patch = (body: Record<string, unknown>, key: string) =>
+      request("/api/v1/orders/server-order-1/items/item-1", {
+        method: "PATCH",
+        headers: { "Idempotency-Key": key },
+        body: JSON.stringify(body),
+      });
+    const first = await patch(
+      { quantity: 3, notes: "kam tuz", expectedVersion: 4 },
+      "waiter-edit-quantity",
+    );
+    assert.equal(first.status, 202);
+    const second = await patch(
+      { notes: "kunjut qo'shilsin", expectedVersion: 5 },
+      "waiter-edit-notes",
+    );
+    assert.equal(second.status, 202);
+
+    const projectedResponse = await request("/api/v1/tables/table-1?branchId=branch-1");
+    const projected = (await projectedResponse.json()) as {
+      data: { orders: Array<{ version: number; total: string; items: Array<Record<string, unknown>> }> };
+    };
+    const projectedOrder = projected.data.orders[0]!;
+    assert.equal(projectedOrder.version, 6);
+    assert.equal(projectedOrder.total, "36000.00");
+    assert.equal(projectedOrder.items[0]?.quantity, "3");
+    assert.equal(projectedOrder.items[0]?.totalPrice, "36000.00");
+    assert.equal(projectedOrder.items[0]?.notes, "kunjut qo'shilsin");
+    assert.equal(projectedOrder.items[0]?.pendingSync, true);
+
+    const stale = await patch(
+      { notes: "stale", expectedVersion: 5 },
+      "waiter-edit-stale-version",
+    );
+    assert.equal(stale.status, 503);
+    const foreign = await request("/api/v1/orders/foreign-order/items/item-1", {
+      method: "PATCH",
+      headers: { "Idempotency-Key": "waiter-edit-cross-branch" },
+      body: JSON.stringify({ quantity: 4, expectedVersion: 1 }),
+    });
+    assert.equal(foreign.status, 503);
+    const invalidQuantity = await patch(
+      { quantity: 100, expectedVersion: 6 },
+      "waiter-edit-invalid-quantity",
+    );
+    assert.equal(invalidQuantity.status, 503);
+    const unsupported = await patch(
+      { modifiers: [], expectedVersion: 6 },
+      "waiter-edit-modifiers-online-only",
+    );
+    assert.equal(unsupported.status, 503);
+    assert.equal(store.summary().pendingCommands, 2);
+
+    online = true;
+    await waitFor(
+      () => store.summary().pendingCommands === 0 && store.summary().sendingCommands === 0,
+      8000,
+    );
+    assert.deepEqual(replayedVersions, [4, 5]);
+    assert.equal(serverVersion, 6);
+    assert.equal(serverQuantity, 3);
+    assert.equal(serverNotes, "kunjut qo'shilsin");
+    assert.equal(store.summary().conflictCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("waiter offline writes reject a bootstrap snapshot owned by another branch", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-waiter-tenant-"),

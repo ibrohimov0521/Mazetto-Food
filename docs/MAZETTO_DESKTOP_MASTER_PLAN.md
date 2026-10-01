@@ -469,5 +469,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 ## D7 Desktop cold-start cache cleanup (2026-10-01)
 
 - Desktop no longer scans and compacts every cached user scope synchronously during startup. Cache entries are still freshness-checked on reads; the existing bounded compaction runs when that scope is next written. This avoids doing unrelated cleanup work before the staff UI can open.
-- Verification: pending focused Desktop tests, typecheck, lint, Windows release and Dokploy workflow.
+- Verification: Desktop tests 101/101, TypeScript, scoped ESLint and diff checks passed. PR #181 merged as 74a23ad; Windows Desktop 0.1.88 installer assets published, Dokploy deploy succeeded, and production smoke was skipped because no server service changed.
 - Desktop bundle version: 0.1.88.
+
+
+## D6 waiter item quantity and note edits (2026-10-01)
+
+- Offline waiter edits may change an existing active line's integer quantity (1-99) and/or note only when the order and line are in the authenticated branch snapshot and the expected order version exactly matches the optimistic cache. Modifiers, cancellation, terminal orders, malformed pricing snapshots and stale versions remain online-only/fail-closed.
+- The local table cache projects line and order totals and versions; edits on one order replay in order and are rebased from each server acknowledgement. Waiter PATCH calls now carry stable idempotency keys.
+- Verification: pending focused tests, typecheck, lint, full CI, Windows 0.1.89 release and Dokploy deploy.
+- Desktop bundle version: 0.1.89.

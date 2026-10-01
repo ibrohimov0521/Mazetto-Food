@@ -25,11 +25,14 @@ test("waiter supplemental item additions queue offline", () => {
   );
 });
 
-test("waiter item edits and cancellations stay online-only without local projections", () => {
+test("waiter item quantity and note edits can queue while destructive actions stay online-only", () => {
+  const editPath = "/api/v1/orders/order-1/items/item-1";
+  assert.equal(resolveOfflineCommand("PATCH", editPath)?.commandType, "order.items.update");
+  assert.equal(classifyOfflineMutation("PATCH", editPath), "queueable");
+
   for (const [method, pathname] of [
-    ["PATCH", "/api/v1/orders/order-1/items/item-1"],
-    ["DELETE", "/api/v1/orders/order-1/items/item-1"],
-    ["POST", "/api/v1/orders/order-1/items/item-1/actions/cancel"],
+    ["DELETE", editPath],
+    ["POST", `${editPath}/actions/cancel`],
   ] as const) {
     assert.equal(resolveOfflineCommand(method, pathname), null);
     assert.equal(classifyOfflineMutation(method, pathname), "online-only");

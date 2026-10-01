@@ -2048,6 +2048,40 @@ function applyOptimisticProjection(
       continue;
     }
 
+    const waiterItemUpdatePath = commandPath.match(
+      /^\/api\/v1\/orders\/([^/]+)\/items\/([^/]+)$/,
+    );
+    if (
+      command.commandType === "order.items.update" &&
+      stringField(payload, "method") === "PATCH" &&
+      waiterItemUpdatePath?.[1] &&
+      waiterItemUpdatePath[2] &&
+      (pathname === `/api/v1/orders/${waiterItemUpdatePath[1]}` ||
+        pathname === "/api/v1/tables" ||
+        /^\/api\/v1\/tables\/[^/]+$/.test(pathname))
+    ) {
+      let orderId = "";
+      let itemId = "";
+      try {
+        orderId = decodeURIComponent(waiterItemUpdatePath[1]);
+        itemId = decodeURIComponent(waiterItemUpdatePath[2]);
+      } catch {
+        continue;
+      }
+      if (
+        patchExistingOrderItemProjection(
+          projected,
+          orderId,
+          itemId,
+          commandBody ?? {},
+          numberField(commandBody, "expectedVersion"),
+        )
+      ) {
+        applied.push(command.id);
+      }
+      continue;
+    }
+
     if (command.commandType === "cash.transaction.create") {
       const transactionPath = commandPath.match(
         /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
@@ -2398,6 +2432,92 @@ function patchOrderItemProjection(
   order.offlineQueued = true;
   return true;
 }
+function patchExistingOrderItemProjection(
+  projected: unknown,
+  orderId: string,
+  itemId: string,
+  body: Record<string, unknown>,
+  expectedVersion: number | null,
+): boolean {
+  const order = findRecordById(projected, orderId);
+  if (
+    !order ||
+    expectedVersion === null ||
+    numberField(order, "version") !== expectedVersion ||
+    ["COMPLETED", "CANCELLED"].includes(
+      stringField(order, "status") ?? stringField(order, "orderState") ?? "",
+    )
+  ) {
+    return false;
+  }
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  const matches = items.filter(
+    (value) => isRecord(value) && value.id === itemId,
+  );
+  if (matches.length !== 1) return false;
+  const item = matches[0];
+  if (!isRecord(item) || item.status === "CANCELLED") return false;
+
+  const hasQuantity = Object.prototype.hasOwnProperty.call(body, "quantity");
+  const hasNotes = Object.prototype.hasOwnProperty.call(body, "notes");
+  if (!hasQuantity && !hasNotes) return false;
+
+  if (hasNotes) {
+    if (typeof body.notes !== "string" || body.notes.length > 1000) return false;
+    item.notes = body.notes;
+  }
+
+  if (hasQuantity) {
+    const quantity = finiteAmount(body.quantity);
+    const currentQuantity = finiteAmount(item.quantity);
+    const unitPrice = finiteAmount(item.unitPrice);
+    const oldItemTotal = finiteAmount(item.totalPrice);
+    const orderTotal = finiteAmount(order.total);
+    if (
+      quantity === null ||
+      !Number.isInteger(quantity) ||
+      quantity < 1 ||
+      quantity > 99 ||
+      currentQuantity === null ||
+      currentQuantity <= 0 ||
+      unitPrice === null ||
+      oldItemTotal === null ||
+      orderTotal === null
+    ) {
+      return false;
+    }
+
+    const snapshot = item.modifierSnapshot;
+    if (snapshot !== null && snapshot !== undefined && !Array.isArray(snapshot)) {
+      return false;
+    }
+    let modifierTotal = 0;
+    for (const value of (snapshot as unknown[] | null | undefined) ?? []) {
+      if (!isRecord(value)) return false;
+      const price = finiteAmount(value.totalPrice);
+      if (price === null) return false;
+      modifierTotal += price;
+    }
+
+    const nextItemTotal = roundCurrency((unitPrice + modifierTotal) * quantity);
+    item.quantity = String(quantity);
+    item.totalPrice = nextItemTotal.toFixed(2);
+    order.total = roundCurrency(orderTotal - oldItemTotal + nextItemTotal).toFixed(2);
+  }
+
+  item.pendingSync = true;
+  order.items = items;
+  order.version = expectedVersion + 1;
+  order.pendingSync = true;
+  order.offlineQueued = true;
+  return true;
+}
+
+function roundCurrency(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function patchKitchenOrderItemProjection(
   projected: unknown,
   orderId: string,
@@ -2546,6 +2666,24 @@ function queuedResponseData(
       ...base,
       id: waiterItemSnapshot.id,
       item: waiterItemSnapshot,
+      pendingSync: true,
+      version: (numberField(parsedBody, "expectedVersion") ?? 0) + 1,
+    };
+  }
+
+  const waiterItemUpdatePath = pathname.match(
+    /^\/api\/v1\/orders\/([^/]+)\/items\/([^/]+)$/,
+  );
+  if (
+    command.commandType === "order.items.update" &&
+    stringField(queuedPayload, "method") === "PATCH" &&
+    waiterItemUpdatePath?.[1] &&
+    waiterItemUpdatePath[2]
+  ) {
+    return {
+      ...base,
+      orderId: decodeURIComponent(waiterItemUpdatePath[1]),
+      itemId: decodeURIComponent(waiterItemUpdatePath[2]),
       pendingSync: true,
       version: (numberField(parsedBody, "expectedVersion") ?? 0) + 1,
     };
@@ -3047,12 +3185,41 @@ function offlineWaiterMutationQueueError(
       return "Buyurtma qatori identifikatori yaroqsiz. Amal navbatga olinmadi.";
     }
     const items = Array.isArray(order.items) ? order.items : [];
-    if (
-      !items.some(
-        (item) => isRecord(item) && item.id === decodedItemId,
-      )
-    ) {
+    const cachedItem = items.find(
+      (item) => isRecord(item) && item.id === decodedItemId,
+    );
+    if (!isRecord(cachedItem)) {
       return "Buyurtma qatori keshlangan holatda topilmadi. Internet ulang va stolni yangilang.";
+    }
+    if (method === "PATCH") {
+      const allowedFields = new Set(["expectedVersion", "quantity", "notes"]);
+      if (Object.keys(parsedBody ?? {}).some((key) => !allowedFields.has(key))) {
+        return "Oflayn faqat qator miqdori va izohini o'zgartirish mumkin. Modifikatorlar uchun internet kerak.";
+      }
+      const hasQuantity = Object.prototype.hasOwnProperty.call(parsedBody, "quantity");
+      const hasNotes = Object.prototype.hasOwnProperty.call(parsedBody, "notes");
+      if (
+        (hasQuantity &&
+          (!Number.isInteger(finiteAmount(parsedBody?.quantity)) ||
+            (finiteAmount(parsedBody?.quantity) ?? 0) < 1 ||
+            (finiteAmount(parsedBody?.quantity) ?? 100) > 99)) ||
+        (hasNotes &&
+          (typeof parsedBody?.notes !== "string" || parsedBody.notes.length > 1000))
+      ) {
+        return "Qator miqdori yoki izohi yaroqsiz. Oflayn o'zgarish navbatga olinmadi.";
+      }
+      const candidate = JSON.parse(JSON.stringify(order)) as Record<string, unknown>;
+      if (
+        !patchExistingOrderItemProjection(
+          candidate,
+          orderId,
+          decodedItemId,
+          parsedBody ?? {},
+          expectedVersion,
+        )
+      ) {
+        return "Qatorning keshlangan holatini xavfsiz hisoblab bo'lmadi. Internet ulang va buyurtmani yangilang.";
+      }
     }
   } else if (method === "POST") {
     const product = cachedWaiterMenuProduct(

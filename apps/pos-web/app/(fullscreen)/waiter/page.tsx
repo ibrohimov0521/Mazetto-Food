@@ -662,31 +662,38 @@ function WaiterFloor() {
       product !== null &&
       (currentModifierIds.length !== draft.modifierIds.length ||
         currentModifierIds.some((id) => !draft.modifierIds.includes(id)));
+    const body = {
+      quantity: draft.quantity,
+      notes: draft.notes.trim(),
+      expectedVersion: currentOrder.version,
+      ...(modifiersChanged
+        ? {
+            modifiers: draft.modifierIds.map((modifierId) => ({
+              modifierId,
+              quantity: 1,
+            })),
+          }
+        : {}),
+    };
+    const fingerprint = `${currentOrder.id}:${currentOrder.version}:${line.id}:edit:${JSON.stringify(body)}`;
+    const idempotencyKey =
+      itemActionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    itemActionKeys.current.set(fingerprint, idempotencyKey);
     const saved = await runAction(
       "line",
       () =>
         apiFetch(`/orders/${currentOrder.id}/items/${line.id}`, {
           method: "PATCH",
+          headers: { "Idempotency-Key": idempotencyKey },
           signal: AbortSignal.timeout(15000),
-          body: JSON.stringify({
-            quantity: draft.quantity,
-            notes: draft.notes.trim(),
-            expectedVersion: currentOrder.version,
-            ...(modifiersChanged
-              ? {
-                  modifiers: draft.modifierIds.map((modifierId) => ({
-                    modifierId,
-                    quantity: 1,
-                  })),
-                }
-              : {}),
-          }),
+          body: JSON.stringify(body),
         }),
       "Qator saqlanmadi.",
       { lineId: line.id, inDialog: true },
     );
 
     if (saved) {
+      itemActionKeys.current.delete(fingerprint);
       setEditTarget(null);
     }
   }
@@ -707,20 +714,28 @@ function WaiterFloor() {
       return;
     }
 
+    const expectedVersion = currentOrder.version;
+    const fingerprint = `${currentOrder.id}:${expectedVersion}:${line.id}:quantity:${next}`;
+    const idempotencyKey =
+      itemActionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    itemActionKeys.current.set(fingerprint, idempotencyKey);
     void runAction(
       "line",
       () =>
         apiFetch(`/orders/${currentOrder.id}/items/${line.id}`, {
           method: "PATCH",
+          headers: { "Idempotency-Key": idempotencyKey },
           signal: AbortSignal.timeout(15000),
           body: JSON.stringify({
             quantity: next,
-            expectedVersion: currentOrder.version,
+            expectedVersion,
           }),
         }),
       "Sonni o'zgartirib bo'lmadi.",
       { lineId: line.id },
-    );
+    ).then((changed) => {
+      if (changed) itemActionKeys.current.delete(fingerprint);
+    });
   }
 
   async function removeLine(line: OrderLine) {
