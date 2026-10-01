@@ -37,8 +37,10 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const forwardedHost = request.headers["x-forwarded-host"];
     const tenantContext = await this.tenantRequestContext.resolve(
       request.headers.host,
+      typeof forwardedHost === "string" ? forwardedHost : undefined,
     );
     request.tenantContext = tenantContext;
     if (tenantContext.kind === "BLOCKED") {

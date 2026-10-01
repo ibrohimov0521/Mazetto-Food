@@ -53,7 +53,11 @@ export class KitchenGateway implements OnGatewayConnection {
       await client.join(this.customerSessionRoom(auth.sessionId));
       const token = this.extractToken(client);
       const revalidated = token
-        ? await this.authenticateCustomer(token, this.socketHost(client))
+        ? await this.authenticateCustomer(
+            token,
+            this.socketHost(client),
+            this.socketForwardedHost(client),
+          )
         : null;
       if (
         !revalidated ||
@@ -76,7 +80,11 @@ export class KitchenGateway implements OnGatewayConnection {
       await client.join(this.staffUserRoom(auth.userId));
       const token = this.extractToken(client);
       const revalidated = token
-        ? await this.authenticateStaff(token, this.socketHost(client))
+        ? await this.authenticateStaff(
+            token,
+            this.socketHost(client),
+            this.socketForwardedHost(client),
+          )
         : null;
       if (
         !revalidated ||
@@ -145,6 +153,7 @@ export class KitchenGateway implements OnGatewayConnection {
   ): Promise<RealtimeAuth | null> {
     const token = this.extractToken(client);
     const rawHost = this.socketHost(client);
+    const forwardedHost = this.socketForwardedHost(client);
 
     if (!token) {
       return null;
@@ -156,21 +165,26 @@ export class KitchenGateway implements OnGatewayConnection {
         : undefined;
 
     if (tokenType === "customer") {
-      return this.authenticateCustomer(token, rawHost);
+      return this.authenticateCustomer(token, rawHost, forwardedHost);
     }
 
     if (tokenType === "staff") {
-      return this.authenticateStaff(token, rawHost);
+      return this.authenticateStaff(token, rawHost, forwardedHost);
     }
 
     return (
-      (await this.authenticateStaff(token, rawHost)) ??
-      this.authenticateCustomer(token, rawHost)
+      (await this.authenticateStaff(token, rawHost, forwardedHost)) ??
+      this.authenticateCustomer(token, rawHost, forwardedHost)
     );
   }
 
   private socketHost(client: Socket): string | undefined {
     const host = client.handshake.headers.host;
+    return typeof host === "string" ? host : undefined;
+  }
+
+  private socketForwardedHost(client: Socket): string | undefined {
+    const host = client.handshake.headers["x-forwarded-host"];
     return typeof host === "string" ? host : undefined;
   }
 
@@ -199,10 +213,11 @@ export class KitchenGateway implements OnGatewayConnection {
   private async authenticateCustomer(
     token: string,
     rawHost?: string,
+    forwardedHost?: string,
   ): Promise<RealtimeAuth | null> {
     try {
       const tenantContext = await this.tenantRequestContext
-        .resolve(rawHost)
+        .resolve(rawHost, forwardedHost)
         .catch(() => null);
       if (!tenantContext || tenantContext.kind !== "TRUSTED") return null;
 
@@ -250,9 +265,10 @@ export class KitchenGateway implements OnGatewayConnection {
   private async authenticateStaff(
     token: string,
     rawHost?: string,
+    forwardedHost?: string,
   ): Promise<RealtimeAuth | null> {
     const tenantContext = await this.tenantRequestContext
-      .resolve(rawHost)
+      .resolve(rawHost, forwardedHost)
       .catch(() => null);
     if (!tenantContext || tenantContext.kind !== "TRUSTED") return null;
 

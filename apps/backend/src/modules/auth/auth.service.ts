@@ -61,8 +61,12 @@ export class AuthService {
     dto: LoginDto,
     clientAddress = "unknown",
     rawHost?: string,
+    forwardedHost?: string,
   ): Promise<AuthResponse> {
-    const tenantContext = await this.tenantRequestContext.resolve(rawHost);
+    const tenantContext = await this.tenantRequestContext.resolve(
+      rawHost,
+      forwardedHost,
+    );
     if (tenantContext.kind === "BLOCKED") {
       throw new ForbiddenException(
         "Bu domen faol va tasdiqlangan restoranga tegishli emas.",
@@ -128,8 +132,15 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string, rawHost?: string): Promise<AuthResponse> {
-    const tenantContext = await this.tenantRequestContext.resolve(rawHost);
+  async refresh(
+    refreshToken: string,
+    rawHost?: string,
+    forwardedHost?: string,
+  ): Promise<AuthResponse> {
+    const tenantContext = await this.tenantRequestContext.resolve(
+      rawHost,
+      forwardedHost,
+    );
     if (tenantContext.kind === "BLOCKED") {
       throw new ForbiddenException(
         "Bu domen faol va tasdiqlangan restoranga tegishli emas.",

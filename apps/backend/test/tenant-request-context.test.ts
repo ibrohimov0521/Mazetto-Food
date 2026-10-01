@@ -7,8 +7,14 @@ import {
 } from "../src/common/tenant/tenant-request-context.service";
 
 test("request hostname parser normalizes case, IDN, trailing dot, and port", () => {
-  assert.equal(normalizeRequestHostname("API.MazettoFood.UZ.:443"), "api.mazettofood.uz");
-  assert.equal(normalizeRequestHostname("xn--caf-dma.example:8080"), "xn--caf-dma.example");
+  assert.equal(
+    normalizeRequestHostname("API.MazettoFood.UZ.:443"),
+    "api.mazettofood.uz",
+  );
+  assert.equal(
+    normalizeRequestHostname("xn--caf-dma.example:8080"),
+    "xn--caf-dma.example",
+  );
 });
 
 test("request hostname parser rejects spoofable or non-domain authorities", () => {
@@ -28,13 +34,20 @@ test("request hostname parser rejects spoofable or non-domain authorities", () =
   }
 });
 
-test("tenant request context trusts only an exact verified domain on an active tenant", async () => {
+test("tenant request context trusts an exact verified domain on an active tenant", async () => {
   let query: unknown;
   const prisma = {
     tenantDomain: {
-      findUnique: async (input: unknown) => {
+      findMany: async (input: unknown) => {
         query = input;
-        return { status: "VERIFIED", tenantId: "tenant-a", tenant: { status: "ACTIVE" } };
+        return [
+          {
+            hostname: "api.example.test",
+            status: "VERIFIED",
+            tenantId: "tenant-a",
+            tenant: { status: "ACTIVE" },
+          },
+        ];
       },
     },
   } as unknown as PrismaService;
@@ -46,20 +59,131 @@ test("tenant request context trusts only an exact verified domain on an active t
     tenantId: "tenant-a",
   });
   assert.deepEqual(query, {
-    where: { hostname: "api.example.test" },
-    select: { status: true, tenantId: true, tenant: { select: { status: true } } },
+    where: { hostname: { in: ["api.example.test", "example.test"] } },
+    select: {
+      hostname: true,
+      status: true,
+      tenantId: true,
+      tenant: { select: { status: true } },
+    },
   });
 });
 
-test("pending, disabled, or inactive tenant domains are blocked, not treated as legacy hosts", async () => {
+test("verified root domain authorizes its owned app subdomains", async () => {
+  const prisma = {
+    tenantDomain: {
+      findMany: async () => [
+        {
+          hostname: "mazettofood.uz",
+          status: "VERIFIED",
+          tenantId: "mazetto",
+          tenant: { status: "ACTIVE" },
+        },
+      ],
+    },
+  } as unknown as PrismaService;
+
+  assert.deepEqual(
+    await new TenantRequestContextService(prisma).resolve("pos.mazettofood.uz"),
+    {
+      kind: "TRUSTED",
+      hostname: "pos.mazettofood.uz",
+      tenantId: "mazetto",
+    },
+  );
+});
+
+test("internal Next.js API proxy resolves using its original forwarded hostname", async () => {
+  let queried: string[] = [];
+  const prisma = {
+    tenantDomain: {
+      findMany: async (input: { where: { hostname: { in: string[] } } }) => {
+        queried = input.where.hostname.in;
+        return [
+          {
+            hostname: "mazettofood.uz",
+            status: "VERIFIED",
+            tenantId: "mazetto",
+            tenant: { status: "ACTIVE" },
+          },
+        ];
+      },
+    },
+  } as unknown as PrismaService;
+
+  assert.deepEqual(
+    await new TenantRequestContextService(prisma).resolve(
+      "mazetto-food-backend-pdslpm:4000",
+      "pos.mazettofood.uz",
+    ),
+    {
+      kind: "TRUSTED",
+      hostname: "pos.mazettofood.uz",
+      tenantId: "mazetto",
+    },
+  );
+  assert.deepEqual(queried, ["pos.mazettofood.uz", "mazettofood.uz"]);
+});
+
+test("a more-specific disabled domain blocks inheritance from a verified root", async () => {
+  const prisma = {
+    tenantDomain: {
+      findMany: async () => [
+        {
+          hostname: "pos.mazettofood.uz",
+          status: "DISABLED",
+          tenantId: "mazetto",
+          tenant: { status: "ACTIVE" },
+        },
+        {
+          hostname: "mazettofood.uz",
+          status: "VERIFIED",
+          tenantId: "mazetto",
+          tenant: { status: "ACTIVE" },
+        },
+      ],
+    },
+  } as unknown as PrismaService;
+
+  assert.deepEqual(
+    await new TenantRequestContextService(prisma).resolve("pos.mazettofood.uz"),
+    { kind: "BLOCKED", hostname: "pos.mazettofood.uz" },
+  );
+});
+
+test("public API hosts do not let an untrusted forwarded host switch tenants", async () => {
+  const prisma = {
+    tenantDomain: { findMany: async () => [] },
+  } as unknown as PrismaService;
+
+  assert.deepEqual(
+    await new TenantRequestContextService(prisma).resolve(
+      "api.other.test",
+      "pos.mazettofood.uz",
+    ),
+    { kind: "UNREGISTERED", hostname: "api.other.test" },
+  );
+});
+
+test("pending, disabled, or inactive tenant domains are blocked", async () => {
   for (const domain of [
     { status: "PENDING", tenantId: "tenant-a", tenant: { status: "ACTIVE" } },
     { status: "DISABLED", tenantId: "tenant-a", tenant: { status: "ACTIVE" } },
-    { status: "VERIFIED", tenantId: "tenant-a", tenant: { status: "PROVISIONING" } },
-    { status: "VERIFIED", tenantId: "tenant-a", tenant: { status: "SUSPENDED" } },
+    {
+      status: "VERIFIED",
+      tenantId: "tenant-a",
+      tenant: { status: "PROVISIONING" },
+    },
+    {
+      status: "VERIFIED",
+      tenantId: "tenant-a",
+      tenant: { status: "SUSPENDED" },
+    },
   ]) {
     const prisma = {
-      tenantDomain: { findUnique: async () => domain },
+      tenantDomain: {
+        findMany: async () => [{ hostname: "api.example.test", ...domain }],
+      },
     } as unknown as PrismaService;
     assert.deepEqual(
       await new TenantRequestContextService(prisma).resolve("api.example.test"),
@@ -70,7 +194,7 @@ test("pending, disabled, or inactive tenant domains are blocked, not treated as 
 
 test("unknown host remains distinguishable from a registered but blocked host", async () => {
   const prisma = {
-    tenantDomain: { findUnique: async () => null },
+    tenantDomain: { findMany: async () => [] },
   } as unknown as PrismaService;
   assert.deepEqual(
     await new TenantRequestContextService(prisma).resolve("api.example.test"),

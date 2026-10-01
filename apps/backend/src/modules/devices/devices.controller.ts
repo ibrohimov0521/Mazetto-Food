@@ -19,7 +19,11 @@ import { Public } from "../../common/decorators/public.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import type { Request } from "express";
-import { CreateDeviceDto, EnrollDeviceDto, UpdateDeviceDto } from "./dto/device.dto";
+import {
+  CreateDeviceDto,
+  EnrollDeviceDto,
+  UpdateDeviceDto,
+} from "./dto/device.dto";
 import { DevicesService } from "./devices.service";
 
 @Controller("devices")
@@ -63,7 +67,11 @@ export class DevicesController {
   @Public()
   @Post("enroll")
   async enroll(@Body() dto: EnrollDeviceDto, @Req() request: Request) {
-    const context = await this.tenantRequestContext.resolve(request.headers.host);
+    const forwardedHost = request.headers["x-forwarded-host"];
+    const context = await this.tenantRequestContext.resolve(
+      request.headers.host,
+      typeof forwardedHost === "string" ? forwardedHost : undefined,
+    );
     if (context.kind !== "TRUSTED") {
       throw new ForbiddenException(
         "Device enrollment requires a verified active restaurant domain",
