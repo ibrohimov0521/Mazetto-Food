@@ -1,4 +1,5 @@
 "use client";
+import { isMazettoFoodHost } from "./mazetto-food-host.mjs";
 
 export type MazettoRole =
   | "SUPER_ADMIN"
@@ -97,14 +98,11 @@ const adminWorkspacePermissions = customAdminRedirects.map(
 );
 
 export function getApiBaseUrl(): string {
-  // A desktop build may be configured to show the hosted POS UI. In that
-  // mode the hosted proxy is reachable even when the old local gateway is
-  // missing or has a stale CORS allow-list. Bundled UI keeps using the
-  // gateway so offline behavior is preserved.
-  if (
-    typeof window !== "undefined" &&
-    window.location.hostname === "pos.mazettofood.uz"
-  ) {
+  const hostname = typeof window === "undefined" ? "" : window.location.hostname;
+
+  // Restaurant domains use the same-origin proxy so the backend can resolve
+  // the tenant from the original browser hostname.
+  if (isMazettoFoodHost(hostname)) {
     return "/api/v1";
   }
 
@@ -113,14 +111,6 @@ export function getApiBaseUrl(): string {
     window.navigator.userAgent.includes("MAZETTO-Desktop/")
   ) {
     return "http://127.0.0.1:7359/api/v1";
-  }
-
-  if (
-    typeof window !== "undefined" &&
-    (window.location.hostname === "pos.mazettofood.uz" ||
-      window.location.hostname.endsWith(".mazettofood.uz"))
-  ) {
-    return "/api/v1";
   }
 
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
