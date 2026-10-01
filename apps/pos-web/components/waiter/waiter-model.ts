@@ -36,6 +36,7 @@ export type OrderLine = {
   status: OrderItemState;
   notes?: string | null;
   modifierSnapshot?: ModifierSnapshotEntry[] | null;
+  pendingSync?: boolean;
 };
 
 export type TableOrder = {
@@ -50,6 +51,7 @@ export type TableOrder = {
   total: string;
   guestCount?: number | null;
   notes?: string | null;
+  pendingSync?: boolean;
   createdAt: string;
   items: OrderLine[];
 };

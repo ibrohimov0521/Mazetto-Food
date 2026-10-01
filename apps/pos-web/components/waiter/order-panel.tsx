@@ -211,6 +211,11 @@ export function OrderPanel({
                       <div className={styles.waiterLineTop}>
                         <div>
                           <strong>{line.productName}</strong>
+                          {line.pendingSync && (
+                            <span className={styles.badge} data-tone="warning">
+                              Sinxronlanmoqda
+                            </span>
+                          )}
                           {subtitle && (
                             <p className={styles.waiterLineMeta}>{subtitle}</p>
                           )}
@@ -219,8 +224,8 @@ export function OrderPanel({
                           <button
                             className={styles.iconButton}
                             aria-label={`${line.productName} qatorini tahrirlash`}
-                            title="Tahrirlash"
-                            disabled={busy || !isOrderEditable(order)}
+                            title={line.pendingSync ? "Sinxronlash kutilmoqda" : "Tahrirlash"}
+                            disabled={busy || line.pendingSync || !isOrderEditable(order)}
                             onClick={() => onEditLine(line)}
                             type="button"
                           >
@@ -229,8 +234,8 @@ export function OrderPanel({
                           <button
                             className={`${styles.iconButton} ${styles.waiterRemove}`}
                             aria-label={`${line.productName} qatorini o'chirish`}
-                            title="O'chirish"
-                            disabled={busy || !isOrderEditable(order)}
+                            title={line.pendingSync ? "Sinxronlash kutilmoqda" : "O'chirish"}
+                            disabled={busy || line.pendingSync || !isOrderEditable(order)}
                             onClick={() => onRemoveLine(line)}
                             type="button"
                           >
@@ -249,8 +254,8 @@ export function OrderPanel({
                         <div className={styles.waiterQty}>
                           <button
                             aria-label={`${line.productName} sonini kamaytirish`}
-                            title="Kamaytirish"
-                            disabled={busy || !isOrderEditable(order)}
+                            title={line.pendingSync ? "Sinxronlash kutilmoqda" : "Kamaytirish"}
+                            disabled={busy || line.pendingSync || !isOrderEditable(order)}
                             onClick={() => onChangeQuantity(line, -1)}
                             type="button"
                           >
@@ -259,8 +264,8 @@ export function OrderPanel({
                           <span>{lineBusy ? "..." : quantity}</span>
                           <button
                             aria-label={`${line.productName} sonini ko'paytirish`}
-                            title="Ko'paytirish"
-                            disabled={busy || !isOrderEditable(order)}
+                            title={line.pendingSync ? "Sinxronlash kutilmoqda" : "Ko'paytirish"}
+                            disabled={busy || line.pendingSync || !isOrderEditable(order)}
                             onClick={() => onChangeQuantity(line, 1)}
                             type="button"
                           >

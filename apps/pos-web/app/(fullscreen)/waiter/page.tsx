@@ -360,6 +360,7 @@ function WaiterFloor() {
       const completedOrderVisible = tableDetail.orders.some(
         (order) =>
           order.isSupplemental === isSupplemental &&
+          !order.pendingSync &&
           !pending.baselineOrderIds.includes(order.id),
       );
       if (completedOrderVisible) {
@@ -445,6 +446,8 @@ function WaiterFloor() {
             result.message ??
               "Amal navbatga olindi. Internet qaytganda yuboriladi.",
           );
+          // Refresh through the local gateway so queued mutations are projected immediately.
+          await refreshAfterAction();
           return true;
         }
         await refreshAfterAction();
@@ -537,7 +540,7 @@ function WaiterFloor() {
             },
           );
           queuedOpen = isOfflineQueuedResult(createdOrder);
-          createdOrderId = queuedOpen ? null : createdOrder.id;
+          createdOrderId = createdOrder.id;
           return createdOrder;
         } catch (error) {
           if (
@@ -560,9 +563,11 @@ function WaiterFloor() {
         : "Stolni ochib bo'lmadi.",
     );
 
-    if (created && !queuedOpen) {
-      tableOrderActionKeys.current.delete(intentStorageKey);
-      clearPendingTableOrderIntent(intentStorageKey);
+    if (created && createdOrderId) {
+      if (!queuedOpen) {
+        tableOrderActionKeys.current.delete(intentStorageKey);
+        clearPendingTableOrderIntent(intentStorageKey);
+      }
       setOpenNote("");
       setSelectedOrderId(createdOrderId);
       setPane("menu");
@@ -574,11 +579,23 @@ function WaiterFloor() {
       return;
     }
 
+    const fingerprint = [
+      currentOrder.id,
+      product.id,
+      draft.variantId ?? "",
+      draft.quantity,
+      [...draft.modifierIds].sort().join(","),
+      draft.notes.trim(),
+    ].join(":");
+    const idempotencyKey =
+      itemActionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    itemActionKeys.current.set(fingerprint, idempotencyKey);
     const added = await runAction(
       "line",
       () =>
         apiFetch(`/orders/${currentOrder.id}/items`, {
           method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
           signal: AbortSignal.timeout(15000),
           body: JSON.stringify({
             productId: product.id,
@@ -597,6 +614,7 @@ function WaiterFloor() {
     );
 
     if (added) {
+      itemActionKeys.current.delete(fingerprint);
       setAddTarget(null);
     }
   }
