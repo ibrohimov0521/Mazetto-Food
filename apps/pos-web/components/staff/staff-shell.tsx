@@ -7,6 +7,7 @@ import { useAuth } from "../auth/auth-provider";
 import type { StaffRealtimeConnectionState } from "../../lib/use-staff-realtime";
 import {
   formatApiFreshnessAge,
+  getApiSyncStatusLabel,
   getApiFreshnessScope,
   getApiFreshnessSnapshot,
   subscribeApiFreshness,
@@ -214,19 +215,13 @@ export function StaffSync({
   const isConnecting =
     !isOffline &&
     (connectionState === "connecting" || (!hasRealtimeState && !updatedAt));
-  const statusLabel = usesCachedData
-    ? freshnessState === "stale"
-      ? isOffline
-        ? "Oflayn · kesh eski"
-        : "Kesh eskirgan"
-      : isOffline
-        ? "Oflayn · kesh"
-        : "Keshdan o'qildi"
-    : isOffline
-      ? "Aloqa uzildi"
-      : isConnecting
-        ? "Ulanmoqda"
-        : "Ulangan";
+  const statusLabel = getApiSyncStatusLabel({
+    cachedResponses: cachedResources,
+    freshnessState,
+    isOffline,
+    isConnecting,
+    refreshing: Boolean(refreshing),
+  });
   const freshnessAt = usesCachedData ? oldestCachedAt : updatedAt;
 
   return (
