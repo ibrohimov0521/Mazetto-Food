@@ -15,7 +15,7 @@ const registry: OfflineCommandDefinition[] = [
   { commandType: "cash.transfer.create", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/ },
   { commandType: "order.status.update", aggregateType: "orders", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/orders\/[^/]+\/status$/ },
   { commandType: "order.action", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/orders\/[^/]+\/actions\/[^/]+$/ },
-  { commandType: "order.items.update", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/orders\/[^/]+\/items$/ },
+  { commandType: "order.items.update", aggregateType: "orders", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/orders\/[^/]+\/items(?:\/[^/]+)?$/ },
   { commandType: "table.order.create", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/tables\/[^/]+\/orders$/ },
   { commandType: "kitchen.action", aggregateType: "kitchen", methods: ["PATCH"], pattern: /^\/api\/v1\/kitchen\/orders\/[^/]+\/(?:accept|start|ready|complete|cancel)$/ },
   { commandType: "courier.status.update", aggregateType: "courier", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/courier\/orders\/[^/]+\/status$/ },
