@@ -326,6 +326,25 @@ export class DesktopGateway {
             });
             return;
           }
+          const kitchenMutationError = offlineKitchenMutationQueueError(
+            this.store,
+            authScope,
+            cacheScope,
+            identity?.branchId,
+            method,
+            url.pathname,
+            body,
+          );
+          if (kitchenMutationError) {
+            this.sendJson(response, 409, {
+              success: false,
+              error: {
+                code: "OFFLINE_KITCHEN_MUTATION_UNSAFE",
+                message: kitchenMutationError,
+              },
+            });
+            return;
+          }
           const waiterItemError = offlineWaiterMutationQueueError(
             this.store,
             cacheScope,
@@ -521,6 +540,25 @@ export class DesktopGateway {
             error: {
               code: "OFFLINE_COURIER_MUTATION_UNSAFE",
               message: courierMutationError,
+            },
+          });
+          return;
+        }
+        const kitchenMutationError = offlineKitchenMutationQueueError(
+          this.store,
+          authScope,
+          cacheScope,
+          identity?.branchId,
+          method,
+          url.pathname,
+          body,
+        );
+        if (kitchenMutationError) {
+          this.sendJson(response, 409, {
+            success: false,
+            error: {
+              code: "OFFLINE_KITCHEN_MUTATION_UNSAFE",
+              message: kitchenMutationError,
             },
           });
           return;
@@ -2785,6 +2823,81 @@ function hasStableIdempotencyKey(
   if (headerValue(request.headers["idempotency-key"])) return true;
   const parsedBody = parseJsonObject(Buffer.from(body).toString("utf8"));
   return Boolean(stringField(parsedBody, "idempotencyKey"));
+}
+
+function offlineKitchenMutationQueueError(
+  store: DesktopStore,
+  authScope: string,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  method: string,
+  pathname: string,
+  body: ArrayBuffer | undefined,
+): string | null {
+  const match = pathname.match(
+    /^\/api\/v1\/kitchen\/orders\/([^/]+)\/(?:accept|start|ready|complete|cancel)$/,
+  );
+  if (!match || method !== "PATCH") return null;
+  if (!body || !branchId) {
+    return "Oshxona buyurtmasi yoki filiali aniqlanmadi. Oflayn amal navbatga olinmadi.";
+  }
+
+  const request = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const expectedVersion = numberField(request, "expectedVersion");
+  if (expectedVersion === null) {
+    return "Oshxona buyurtmasining versiyasi yo'q. Internet ulang va navbatni yangilang.";
+  }
+
+  const cached = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/kitchen/orders",
+  );
+  if (!cached) {
+    return "Oshxona navbati qurilmada saqlanmagan. Internet borida oshxona panelini yangilang.";
+  }
+  const snapshot = parseJsonObject(cached.body);
+  const base = Array.isArray(snapshot?.data)
+    ? snapshot.data
+    : Array.isArray(snapshot)
+      ? snapshot
+      : null;
+  if (!base) {
+    return "Keshlangan oshxona navbati yaroqsiz. Internet borida uni yangilang.";
+  }
+
+  const optimistic = applyOptimisticProjection(
+    cached.body,
+    cached.requestUrl,
+    store.listActiveMutations(authScope),
+  );
+  const projected = optimistic
+    ? parseJsonObject(optimistic.body)
+    : snapshot;
+  const records = Array.isArray(projected?.data)
+    ? projected.data
+    : Array.isArray(projected)
+      ? projected
+      : base;
+  let ticketId = "";
+  try {
+    ticketId = decodeURIComponent(match[1] ?? "");
+  } catch {
+    return "Oshxona buyurtmasi identifikatori yaroqsiz. Amal navbatga olinmadi.";
+  }
+  const ticket = records.find(
+    (value: unknown) => isRecord(value) && value.id === ticketId,
+  );
+  if (!isRecord(ticket)) {
+    return "Buyurtma shu filialning keshlangan oshxona navbatida yo'q. Amal navbatga olinmadi.";
+  }
+  const order = recordField(ticket, "order");
+  if (!isRecord(order) || order.branchId !== branchId) {
+    return "Keshlangan oshxona buyurtmasi tanlangan filialga tegishli emas.";
+  }
+  if (numberField(ticket, "version") !== expectedVersion) {
+    return "Oshxona buyurtmasi yangilangan bo'lishi mumkin. Internet ulang va navbatni yangilang.";
+  }
+  return null;
 }
 
 function offlineCourierMutationQueueError(

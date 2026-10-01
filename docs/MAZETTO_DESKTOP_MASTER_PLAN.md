@@ -448,5 +448,12 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Testing selected Windows printer queues now continues after an individual printer fails and reports each queue result separately. The summary says Windows accepted the print request; staff still need to confirm the paper physically came out.
 - Mazetto imposes no fixed count limit on selected Windows-installed queues. USB, Bluetooth and network printers work through their installed Windows drivers; direct driverless network printing is limited to compatible ESC/POS TCP devices. There is no honest guarantee for every printer model without driver/protocol and physical-device testing.
-- Verification: POS tests 25/25, POS typecheck/lint and production build (49 routes) passed locally. CI, Desktop 0.1.85 release and deployment are pending.
+- Verification: POS tests 25/25, typecheck/lint and production build (49 routes) passed locally. PR CI 36858783551 and main CI 36859230064 passed; Desktop 0.1.85 release 36859230045 published `desktop-v0.1.85`; Dokploy deploy 36859610772 and production smoke passed.
 - This is a reliability improvement to the existing configuration screen, not completion of D5's end-to-end durability gates. Power-loss, lease expiry, real printer failure/restart, and duplicate-prevention acceptance still need branch hardware tests.
+
+## D6 offline kitchen mutation cache/version gate (2026-10-01)
+
+- Before returning an offline queued response for a kitchen action, Desktop now requires a cached kitchen ticket from the active branch and an exact expected version. Missing version/cache/ticket, cross-branch data and stale versions are rejected without creating an outbox command.
+- Valid sequential kitchen actions remain optimistically projected and are rebased on server acknowledgements during replay.
+- Verification: Desktop tests 98/98, typecheck and scoped lint passed. Full monorepo CI, Desktop 0.1.86 release and Dokploy production smoke are pending.
+- This closes one unsafe queue path; it does not make unsupported admin/configuration writes, first-time login, uncached data, card payments or every role fully offline.
