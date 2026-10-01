@@ -15,6 +15,7 @@ import {
   readJwtContext,
   type CachedResponse,
   type PendingOutboxCommand,
+  type LocalPrintJobInput,
 } from "./store.js";
 
 const KNOWN_OFFLINE_ERROR = new Error(
@@ -850,40 +851,11 @@ export class DesktopGateway {
       input.definition.aggregateType === "shifts"
         ? `branch:${context?.branchId ?? "global"}`
         : null;
-    const command = this.store.enqueueMutation({
-      idempotencyKey,
-      commandType: input.definition.commandType,
-      aggregateType: input.definition.aggregateType,
-      aggregateId: dependencyLane ?? localAggregateId ?? aggregate.id,
-      baseVersion,
-      actorId: context?.actorId ?? "unknown",
-      branchId: context?.branchId ?? "global",
-      authScope: input.authScope,
-      payload: {
-        commandType: input.definition.commandType,
-        method: input.method,
-        targetUrl: input.targetUrl,
-        pathname: input.pathname,
-        ...(localAggregateId ? { localAggregateId } : {}),
-        ...(localItemId ? { localItemId } : {}),
-        ...(offlineOrderSnapshot ? { offlineOrderSnapshot } : {}),
-        ...(offlineWaiterItemSnapshot ? { offlineWaiterItemSnapshot } : {}),
-        ...(offlineWaiterTableSnapshot ? { offlineWaiterTableSnapshot } : {}),
-        headers: {
-          "content-type":
-            headerValue(input.request.headers["content-type"]) ??
-            "application/json",
-          "idempotency-key": idempotencyKey,
-        },
-        body: bodyText,
-        queuedAt: new Date().toISOString(),
-      },
-    });
-
+    const localPrintJobs: LocalPrintJobInput[] = [];
     if (offlineOrderSnapshot && localAggregateId) {
       for (const documentType of ["RECEIPT", "KITCHEN"] as const) {
-        this.store.enqueueLocalPrintJob({
-          logicalKey: `${localAggregateId}:${documentType}`,
+        localPrintJobs.push({
+          logicalKey: localAggregateId + ":" + documentType,
           branchId: context?.branchId ?? "global",
           documentType,
           payload: buildOfflinePrintDocument(
@@ -903,13 +875,46 @@ export class DesktopGateway {
       aggregate.id,
     );
     if (cancellation) {
-      this.store.enqueueLocalPrintJob({
-        logicalKey: `${cancellation.orderId}:CANCELLATION`,
+      localPrintJobs.push({
+        logicalKey: cancellation.orderId + ":CANCELLATION",
         branchId: context?.branchId ?? "global",
         documentType: "CANCELLATION",
         payload: cancellation,
       });
     }
+
+    const command = this.store.enqueueMutationWithLocalPrintJobs(
+      {
+        idempotencyKey,
+        commandType: input.definition.commandType,
+        aggregateType: input.definition.aggregateType,
+        aggregateId: dependencyLane ?? localAggregateId ?? aggregate.id,
+        baseVersion,
+        actorId: context?.actorId ?? "unknown",
+        branchId: context?.branchId ?? "global",
+        authScope: input.authScope,
+        payload: {
+          commandType: input.definition.commandType,
+          method: input.method,
+          targetUrl: input.targetUrl,
+          pathname: input.pathname,
+          ...(localAggregateId ? { localAggregateId } : {}),
+          ...(localItemId ? { localItemId } : {}),
+          ...(offlineOrderSnapshot ? { offlineOrderSnapshot } : {}),
+          ...(offlineWaiterItemSnapshot ? { offlineWaiterItemSnapshot } : {}),
+          ...(offlineWaiterTableSnapshot ? { offlineWaiterTableSnapshot } : {}),
+          headers: {
+            "content-type":
+              headerValue(input.request.headers["content-type"]) ??
+              "application/json",
+            "idempotency-key": idempotencyKey,
+          },
+          body: bodyText,
+          queuedAt: new Date().toISOString(),
+        },
+      },
+      localPrintJobs,
+    );
 
     return { command };
   }
@@ -934,7 +939,8 @@ export class DesktopGateway {
         if (
           this.authBlockedScopes.has(authScope) ||
           this.activeAuthorizations.get(authScope) !== authorization
-        ) break;
+        )
+          break;
         const due = this.store.dueMutations(authScope, 25);
         if (!due.length) {
           break;
@@ -946,7 +952,8 @@ export class DesktopGateway {
           if (
             this.authBlockedScopes.has(authScope) ||
             this.activeAuthorizations.get(authScope) !== authorization
-          ) break;
+          )
+            break;
         }
       }
     } finally {
@@ -1114,7 +1121,10 @@ export class DesktopGateway {
             versionedAggregateType === "courier" && courierOrder
               ? {
                   status:
-                    stringField(parseJsonObject(payload.body ?? ""), "status") ??
+                    stringField(
+                      parseJsonObject(payload.body ?? ""),
+                      "status",
+                    ) ??
                     stringField(recordField(courierOrder, "order"), "status") ??
                     "",
                   version: serverVersion,
@@ -2564,7 +2574,8 @@ function patchExistingOrderItemProjection(
   if (!hasQuantity && !hasNotes) return false;
 
   if (hasNotes) {
-    if (typeof body.notes !== "string" || body.notes.length > 1000) return false;
+    if (typeof body.notes !== "string" || body.notes.length > 1000)
+      return false;
     item.notes = body.notes;
   }
 
@@ -2589,7 +2600,11 @@ function patchExistingOrderItemProjection(
     }
 
     const snapshot = item.modifierSnapshot;
-    if (snapshot !== null && snapshot !== undefined && !Array.isArray(snapshot)) {
+    if (
+      snapshot !== null &&
+      snapshot !== undefined &&
+      !Array.isArray(snapshot)
+    ) {
       return false;
     }
     let modifierTotal = 0;
@@ -2603,7 +2618,9 @@ function patchExistingOrderItemProjection(
     const nextItemTotal = roundCurrency((unitPrice + modifierTotal) * quantity);
     item.quantity = String(quantity);
     item.totalPrice = nextItemTotal.toFixed(2);
-    order.total = roundCurrency(orderTotal - oldItemTotal + nextItemTotal).toFixed(2);
+    order.total = roundCurrency(
+      orderTotal - oldItemTotal + nextItemTotal,
+    ).toFixed(2);
   }
 
   item.pendingSync = true;
@@ -3110,9 +3127,7 @@ function offlineKitchenMutationQueueError(
     cached.requestUrl,
     store.listActiveMutations(authScope),
   );
-  const projected = optimistic
-    ? parseJsonObject(optimistic.body)
-    : snapshot;
+  const projected = optimistic ? parseJsonObject(optimistic.body) : snapshot;
   const records = Array.isArray(projected?.data)
     ? projected.data
     : Array.isArray(projected)
@@ -3164,12 +3179,19 @@ function offlineCourierMutationQueueError(
   ) {
     return "Buyurtma statusi yoki versiyasi aniq emas. Oflayn o'zgarish navbatga olinmadi.";
   }
-  const cached = store.getLatestCachedResponse(cacheScope, "/api/v1/courier/orders");
+  const cached = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/courier/orders",
+  );
   if (!cached) {
     return "Kuryer buyurtmalarining filiallarga mos keshi yo'q. Internet borida ro'yxatni yangilang.";
   }
   const snapshot = parseJsonObject(cached.body);
-  const base = Array.isArray(snapshot?.data) ? snapshot.data : Array.isArray(snapshot) ? snapshot : null;
+  const base = Array.isArray(snapshot?.data)
+    ? snapshot.data
+    : Array.isArray(snapshot)
+      ? snapshot
+      : null;
   if (!base) {
     return "Kuryer buyurtmalarining keshlangan shakli yaroqsiz. Internet borida ro'yxatni yangilang.";
   }
@@ -3187,15 +3209,19 @@ function offlineCourierMutationQueueError(
       ? projected
       : base;
   const customerOrderId = decodeURIComponent(match[1] ?? "");
-  const item = records.find((value: unknown) =>
-    isRecord(value) &&
-    (value.id === customerOrderId || recordField(value, "order")?.id === customerOrderId),
+  const item = records.find(
+    (value: unknown) =>
+      isRecord(value) &&
+      (value.id === customerOrderId ||
+        recordField(value, "order")?.id === customerOrderId),
   );
   if (!isRecord(item)) {
     return "Buyurtma shu kuryer va filial keshlangan ro'yxatida topilmadi. Status o'zgartirilmadi.";
   }
   const branch = recordField(item, "branch");
-  if ((stringField(branch, "id") ?? stringField(item, "branchId")) !== branchId) {
+  if (
+    (stringField(branch, "id") ?? stringField(item, "branchId")) !== branchId
+  ) {
     return "Keshlangan buyurtma tanlangan filialga tegishli emas. Status o'zgartirilmadi.";
   }
   const order = recordField(item, "order") ?? item;
@@ -3256,7 +3282,8 @@ function offlineWaiterOrderWorkflowQueueError(
     !requestBody ||
     Object.keys(requestBody).some((key) => !allowedFields.has(key)) ||
     (requestBody.reason !== undefined &&
-      (typeof requestBody.reason !== "string" || requestBody.reason.length > 500))
+      (typeof requestBody.reason !== "string" ||
+        requestBody.reason.length > 500))
   ) {
     return "Oflayn faqat qo'llab-quvvatlanadigan buyurtma holatini yuborish mumkin.";
   }
@@ -3281,15 +3308,17 @@ function offlineWaiterOrderWorkflowQueueError(
     orderId,
   );
   if (!order && orderId.startsWith("local-")) {
-    const localCreate = store.listActiveMutations(authScope).find(
-      (command) =>
-        command.aggregateId === orderId &&
-        command.aggregateType === "orders" &&
-        command.branchId === branchId &&
-        ["pos.order.create", "table.order.create"].includes(
-          command.commandType,
-        ),
-    );
+    const localCreate = store
+      .listActiveMutations(authScope)
+      .find(
+        (command) =>
+          command.aggregateId === orderId &&
+          command.aggregateType === "orders" &&
+          command.branchId === branchId &&
+          ["pos.order.create", "table.order.create"].includes(
+            command.commandType,
+          ),
+      );
     if (!localCreate || expectedVersion !== 0) {
       return "Lokal buyurtma shu filialdagi faol yaratish amali bilan bog'lanmadi. Oflayn status navbatga olinmadi.";
     }
@@ -3315,10 +3344,7 @@ function offlineWaiterOrderWorkflowQueueError(
   }
 
   const nextStatus = stringField(requestBody, "status");
-  if (
-    nextStatus === "CONFIRMED" &&
-    currentStatus === "NEW"
-  ) {
+  if (nextStatus === "CONFIRMED" && currentStatus === "NEW") {
     return null;
   }
   if (
@@ -3401,22 +3427,34 @@ function offlineWaiterMutationQueueError(
     }
     if (method === "PATCH") {
       const allowedFields = new Set(["expectedVersion", "quantity", "notes"]);
-      if (Object.keys(parsedBody ?? {}).some((key) => !allowedFields.has(key))) {
+      if (
+        Object.keys(parsedBody ?? {}).some((key) => !allowedFields.has(key))
+      ) {
         return "Oflayn faqat qator miqdori va izohini o'zgartirish mumkin. Modifikatorlar uchun internet kerak.";
       }
-      const hasQuantity = Object.prototype.hasOwnProperty.call(parsedBody, "quantity");
-      const hasNotes = Object.prototype.hasOwnProperty.call(parsedBody, "notes");
+      const hasQuantity = Object.prototype.hasOwnProperty.call(
+        parsedBody,
+        "quantity",
+      );
+      const hasNotes = Object.prototype.hasOwnProperty.call(
+        parsedBody,
+        "notes",
+      );
       if (
         (hasQuantity &&
           (!Number.isInteger(finiteAmount(parsedBody?.quantity)) ||
             (finiteAmount(parsedBody?.quantity) ?? 0) < 1 ||
             (finiteAmount(parsedBody?.quantity) ?? 100) > 99)) ||
         (hasNotes &&
-          (typeof parsedBody?.notes !== "string" || parsedBody.notes.length > 1000))
+          (typeof parsedBody?.notes !== "string" ||
+            parsedBody.notes.length > 1000))
       ) {
         return "Qator miqdori yoki izohi yaroqsiz. Oflayn o'zgarish navbatga olinmadi.";
       }
-      const candidate = JSON.parse(JSON.stringify(order)) as Record<string, unknown>;
+      const candidate = JSON.parse(JSON.stringify(order)) as Record<
+        string,
+        unknown
+      >;
       if (
         !patchExistingOrderItemProjection(
           candidate,
@@ -3475,8 +3513,7 @@ function cachedWaiterOrderRecord(
     let tableUrl: URL;
     try {
       tableUrl = new URL(cached.requestUrl);
-      tableUrl.pathname =
-        "/api/v1/tables/" + encodeURIComponent(value.id);
+      tableUrl.pathname = "/api/v1/tables/" + encodeURIComponent(value.id);
       tableUrl.search = "?branchId=" + encodeURIComponent(branchId);
     } catch {
       return null;
@@ -3487,17 +3524,13 @@ function cachedWaiterOrderRecord(
       tableUrl.toString(),
       store.listActiveMutations(authScope),
     );
-    const table = recordField(
-      parseJsonObject(projected?.body ?? base),
-      "data",
-    );
+    const table = recordField(parseJsonObject(projected?.body ?? base), "data");
     const orders = Array.isArray(table?.orders) ? table.orders : [];
     const order = orders.find(
       (candidate) =>
         isRecord(candidate) &&
         candidate.id === orderId &&
-        (candidate.branchId === undefined ||
-          candidate.branchId === branchId),
+        (candidate.branchId === undefined || candidate.branchId === branchId),
     );
     if (isRecord(order)) matches.push(order);
   }
