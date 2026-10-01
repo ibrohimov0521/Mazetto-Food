@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -140,6 +141,7 @@ test("desktop cache scope follows membership and effective permissions", async (
   const changedCredentials = authorization({ credentialVersion: 8 });
   const fullScope = DesktopStore.authScope(fullAccess);
   const reducedScope = DesktopStore.authScope(reducedAccess);
+  const fullMutationScope = DesktopStore.mutationScope(fullAccess);
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const requestUrl = "https://api.example.test/api/v1/staff";
@@ -150,6 +152,17 @@ test("desktop cache scope follows membership and effective permissions", async (
     assert.notEqual(fullScope, DesktopStore.authScope(otherMembership));
     assert.notEqual(fullScope, DesktopStore.authScope(otherTenant));
     assert.notEqual(fullScope, DesktopStore.authScope(changedCredentials));
+    assert.equal(fullMutationScope, DesktopStore.mutationScope(reducedAccess));
+    assert.notEqual(
+      fullMutationScope,
+      DesktopStore.mutationScope(authorization({ branchId: "branch-2" })),
+    );
+    assert.equal(
+      fullMutationScope,
+      createHash("sha256")
+        .update("user:user-1:branch:branch-1:global:false")
+        .digest("hex"),
+    );
     store.putCachedResponse({
       cacheKey: DesktopStore.cacheKey(requestUrl, fullScope),
       requestUrl,
@@ -256,6 +269,64 @@ test("desktop store recovers interrupted sending mutations on reopen", async () 
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const path = join(directory, "test.sqlite");
   const first = new DesktopStore(path);
+test("desktop store adopts legacy outbox rows only for the matching actor and branch", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+
+  try {
+    for (const command of [
+      {
+        idempotencyKey: "legacy-same-branch",
+        actorId: "cashier-1",
+        branchId: "branch-1",
+        authScope: "old-permission-scope",
+      },
+      {
+        idempotencyKey: "legacy-other-branch",
+        actorId: "cashier-1",
+        branchId: "branch-2",
+        authScope: "other-branch-scope",
+      },
+      {
+        idempotencyKey: "legacy-other-actor",
+        actorId: "cashier-2",
+        branchId: "branch-1",
+        authScope: "other-actor-scope",
+      },
+    ]) {
+      store.enqueueMutation({
+        ...command,
+        commandType: "pos.order.create",
+        aggregateType: "orders",
+        payload: { method: "POST", targetUrl: "https://api.test/pos/orders" },
+      });
+    }
+
+    assert.equal(
+      store.adoptMutationsForIdentity("cashier-1", "branch-1", "new-scope"),
+      1,
+    );
+    assert.deepEqual(
+      store.dueMutations("new-scope").map((command) => command.idempotencyKey),
+      ["legacy-same-branch"],
+    );
+    assert.deepEqual(
+      store
+        .dueMutations("other-branch-scope")
+        .map((command) => command.idempotencyKey),
+      ["legacy-other-branch"],
+    );
+    assert.deepEqual(
+      store
+        .dueMutations("other-actor-scope")
+        .map((command) => command.idempotencyKey),
+      ["legacy-other-actor"],
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
   try {
     const command = first.enqueueMutation({

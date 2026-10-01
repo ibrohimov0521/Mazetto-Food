@@ -121,6 +121,18 @@ export class DesktopStore {
       .digest("hex");
   }
 
+  static mutationScope(authorization: string | undefined): string {
+    if (!authorization) {
+      return "anonymous";
+    }
+
+    const context = readJwtContext(authorization);
+    const identity = context
+      ? `user:${context.actorId}:branch:${context.branchId}:global:${context.isGlobalScope}`
+      : authorization;
+    return createHash("sha256").update(identity).digest("hex");
+  }
+
   static cacheKey(requestUrl: string, authScope: string): string {
     return createHash("sha256")
       .update(`${authScope}:${requestUrl}`)
@@ -157,6 +169,7 @@ export class DesktopStore {
   acknowledgeMutationAndCacheResponse(
     id: string,
     authScope: string,
+    cacheScope: string,
     requestPath: string,
     requestUrl: string,
     responseBody: string,
@@ -177,7 +190,7 @@ export class DesktopStore {
            FROM api_cache
            WHERE auth_scope = ? AND request_url LIKE ?`,
         )
-        .all(authScope, `%${requestPath}%`) as Array<{
+        .all(cacheScope, `%${requestPath}%`) as Array<{
         cacheKey: string;
         requestUrl: string;
       }>;
@@ -196,7 +209,7 @@ export class DesktopStore {
           .prepare(
             "UPDATE api_cache SET body = ?, cached_at = ? WHERE cache_key = ? AND auth_scope = ?",
           )
-          .run(responseBody, cachedAt, row.cacheKey, authScope);
+          .run(responseBody, cachedAt, row.cacheKey, cacheScope);
         updated++;
       }
 
@@ -213,14 +226,14 @@ export class DesktopStore {
               cached_at = excluded.cached_at`,
           )
           .run(
-            DesktopStore.cacheKey(requestUrl, authScope),
+            DesktopStore.cacheKey(requestUrl, cacheScope),
             requestUrl,
-            authScope,
+            cacheScope,
             responseBody,
             cachedAt,
           );
       }
-      this.compactCache(authScope);
+      this.compactCache(cacheScope);
 
       this.database.exec("COMMIT");
     } catch (error) {
@@ -519,6 +532,37 @@ export class DesktopStore {
     );
   }
 
+  adoptMutationsForIdentity(
+    actorId: string,
+    branchId: string,
+    authScope: string,
+  ): number {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(
+          `UPDATE local_id_map
+           SET auth_scope = ?
+           WHERE command_id IN (
+             SELECT id FROM mutation_outbox
+             WHERE actor_id = ? AND branch_id = ? AND auth_scope <> ?
+           )`,
+        )
+        .run(authScope, actorId, branchId, authScope);
+      const result = this.database
+        .prepare(
+          `UPDATE mutation_outbox
+           SET auth_scope = ?
+           WHERE actor_id = ? AND branch_id = ? AND auth_scope <> ?`,
+        )
+        .run(authScope, actorId, branchId, authScope);
+      this.database.exec("COMMIT");
+      return Number(result.changes);
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
   dueMutations(authScope: string, limit = 25): PendingOutboxCommand[] {
     const rows = this.database
       .prepare(
@@ -594,6 +638,7 @@ export class DesktopStore {
     this.acknowledgeVersionedMutation(
       id,
       authScope,
+      authScope,
       "orders",
       aggregateId,
       serverVersion,
@@ -603,6 +648,7 @@ export class DesktopStore {
   acknowledgeVersionedMutation(
     id: string,
     authScope: string,
+    cacheScope: string,
     aggregateType: "orders" | "kitchen",
     aggregateId: string,
     serverVersion: number,
@@ -670,7 +716,7 @@ export class DesktopStore {
 
       if (aggregateType === "kitchen" && kitchenTicketUpdate) {
         this.reconcileKitchenTicketCache(
-          authScope,
+          cacheScope,
           aggregateId,
           kitchenTicketUpdate,
         );

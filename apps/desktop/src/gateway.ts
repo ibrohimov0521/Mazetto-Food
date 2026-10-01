@@ -77,6 +77,7 @@ export class DesktopGateway {
   private readonly syncingScopes = new Set<string>();
   private readonly backgroundTasks = new Set<Promise<void>>();
   private stopping = false;
+  private readonly adoptedMutationScopes = new Set<string>();
 
   constructor(options: DesktopGatewayOptions) {
     this.host = options.host ?? "127.0.0.1";
@@ -196,12 +197,22 @@ export class DesktopGateway {
     const targetUrl = `${this.upstreamApiUrl}${url.pathname.slice("/api/v1".length)}${url.search}`;
     const isRealtimeCatchUp = url.pathname === "/api/v1/realtime/events";
     const authorization = headerValue(request.headers.authorization);
-    const authScope = DesktopStore.authScope(authorization);
+    const authScope = DesktopStore.mutationScope(authorization);
+    const cacheScope = DesktopStore.authScope(authorization);
+    const identity = authorization ? readJwtContext(authorization) : null;
+    if (identity && !this.adoptedMutationScopes.has(authScope)) {
+      this.store.adoptMutationsForIdentity(
+        identity.actorId,
+        identity.branchId,
+        authScope,
+      );
+      this.adoptedMutationScopes.add(authScope);
+    }
     if (authorization) {
       this.activeAuthorizations.set(authScope, authorization);
       this.onAuthorization?.(authorization);
     }
-    const cacheKey = DesktopStore.cacheKey(targetUrl, authScope);
+    const cacheKey = DesktopStore.cacheKey(targetUrl, cacheScope);
     const body =
       method === "GET" || method === "HEAD"
         ? undefined
@@ -262,22 +273,32 @@ export class DesktopGateway {
               ? validateOfflineCashTransfer(
                   this.store,
                   authScope,
+                  cacheScope,
                   targetUrl,
                   body,
                 )
               : commandDefinition.commandType === "shift.close"
-                ? validateOfflineShiftClose(this.store, authScope, targetUrl)
-              : null;
+                ? validateOfflineShiftClose(
+                    this.store,
+                    authScope,
+                    cacheScope,
+                    targetUrl,
+                  )
+                : null;
           if (mutationError) {
             this.sendJson(response, 409, {
               success: false,
-              error: { code: "OFFLINE_CASH_MUTATION_UNSAFE", message: mutationError },
+              error: {
+                code: "OFFLINE_CASH_MUTATION_UNSAFE",
+                message: mutationError,
+              },
             });
             return;
           }
           const queued = this.queueMutation({
             authorization,
             authScope,
+            cacheScope,
             body,
             method,
             pathname: url.pathname,
@@ -327,7 +348,7 @@ export class DesktopGateway {
         this.store.putCachedResponse({
           cacheKey,
           requestUrl: targetUrl,
-          authScope,
+          authScope: cacheScope,
           status: upstream.status,
           contentType,
           body: responseBody,
@@ -402,22 +423,32 @@ export class DesktopGateway {
             ? validateOfflineCashTransfer(
                 this.store,
                 authScope,
+                cacheScope,
                 targetUrl,
                 body,
               )
             : commandDefinition.commandType === "shift.close"
-              ? validateOfflineShiftClose(this.store, authScope, targetUrl)
-            : null;
+              ? validateOfflineShiftClose(
+                  this.store,
+                  authScope,
+                  cacheScope,
+                  targetUrl,
+                )
+              : null;
         if (mutationError) {
           this.sendJson(response, 409, {
             success: false,
-            error: { code: "OFFLINE_CASH_MUTATION_UNSAFE", message: mutationError },
+            error: {
+              code: "OFFLINE_CASH_MUTATION_UNSAFE",
+              message: mutationError,
+            },
           });
           return;
         }
         const queued = this.queueMutation({
           authorization,
           authScope,
+          cacheScope,
           body,
           method,
           pathname: url.pathname,
@@ -497,6 +528,7 @@ export class DesktopGateway {
   private queueMutation(input: {
     authorization: string;
     authScope: string;
+    cacheScope: string;
     body: ArrayBuffer;
     method: string;
     pathname: string;
@@ -521,7 +553,7 @@ export class DesktopGateway {
     ) {
       const offlineDisplayOrderSequence = nextOfflineDisplayOrderSequence(
         this.store,
-        input.authScope,
+        input.cacheScope,
       );
       parsedBody = {
         ...parsedBody,
@@ -536,7 +568,7 @@ export class DesktopGateway {
       input.definition.commandType === "pos.order.create" && localAggregateId
         ? buildOfflineOrderSnapshot(
             parsedBody ?? {},
-            cachedCatalog(this.store, input.authScope, context?.branchId),
+            cachedCatalog(this.store, input.cacheScope, context?.branchId),
             localAggregateId,
           )
         : null;
@@ -589,7 +621,7 @@ export class DesktopGateway {
     }
     const cancellation = buildOfflineCancellationDocument(
       this.store,
-      input.authScope,
+      input.cacheScope,
       input.definition.commandType,
       input.pathname,
       parsedBody ?? {},
@@ -710,6 +742,7 @@ export class DesktopGateway {
         signal: AbortSignal.timeout(10_000),
       });
       const responseText = await response.text();
+      const cacheScope = DesktopStore.authScope(authorization);
 
       if (response.ok) {
         const serverId = extractServerId(responseText);
@@ -753,6 +786,7 @@ export class DesktopGateway {
           this.store.acknowledgeVersionedMutation(
             command.id,
             command.authScope,
+            cacheScope,
             versionedAggregateType,
             orderAggregateId,
             serverVersion,
@@ -772,6 +806,7 @@ export class DesktopGateway {
             : acknowledgedCashTransactionCache(
                 this.store,
                 command.authScope,
+                cacheScope,
                 command.commandType,
                 payload.pathname ?? "",
                 payload.targetUrl,
@@ -781,6 +816,7 @@ export class DesktopGateway {
             this.store.acknowledgeMutationAndCacheResponse(
               command.id,
               command.authScope,
+              cacheScope,
               cachedShift.path,
               cachedShift.requestUrl,
               cachedShift.body,
@@ -789,6 +825,7 @@ export class DesktopGateway {
             this.store.acknowledgeMutationAndCacheResponse(
               command.id,
               command.authScope,
+              cacheScope,
               cachedCashTransaction.path,
               cachedCashTransaction.requestUrl,
               cachedCashTransaction.body,
@@ -1208,6 +1245,7 @@ function acknowledgedCashShiftCache(
 function acknowledgedCashTransactionCache(
   store: DesktopStore,
   authScope: string,
+  cacheScope: string,
   commandType: string,
   pathname: string,
   targetUrl: string | undefined,
@@ -1239,8 +1277,8 @@ function acknowledgedCashTransactionCache(
   try {
     const transactionUrl = new URL(resolvedTarget.value);
     const resolvedShiftId = isCashTransfer
-      ? stringField(responseData, "fromShiftId") ??
-        stringField(recordField(responseData, "fromShift"), "id")
+      ? (stringField(responseData, "fromShiftId") ??
+        stringField(recordField(responseData, "fromShift"), "id"))
       : transactionUrl.pathname.match(
           /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
         )?.[1];
@@ -1250,7 +1288,7 @@ function acknowledgedCashTransactionCache(
     shiftUrl.pathname = "/api/v1/cash-register/shift";
     shiftUrl.search = "";
     const cached = store.getCachedResponse(
-      DesktopStore.cacheKey(shiftUrl.toString(), authScope),
+      DesktopStore.cacheKey(shiftUrl.toString(), cacheScope),
     );
     if (!cached) return null;
 
@@ -1356,6 +1394,7 @@ function optimisticCashTransfer(
 function validateOfflineCashTransfer(
   store: DesktopStore,
   authScope: string,
+  cacheScope: string,
   targetUrl: string,
   body: ArrayBuffer,
 ): string | null {
@@ -1371,7 +1410,7 @@ function validateOfflineCashTransfer(
     shiftUrl.pathname = "/api/v1/cash-register/shift";
     shiftUrl.search = "";
     const cachedShift = store.getCachedResponse(
-      DesktopStore.cacheKey(shiftUrl.toString(), authScope),
+      DesktopStore.cacheKey(shiftUrl.toString(), cacheScope),
     );
     const source = cachedShift?.body ?? JSON.stringify({ success: true, data: null });
     const projected = applyOptimisticProjection(
@@ -1379,9 +1418,7 @@ function validateOfflineCashTransfer(
       shiftUrl.toString(),
       store.listActiveMutations(authScope),
     );
-    const shift = responseDataRecord(
-      parseJsonValue(projected?.body ?? source),
-    );
+    const shift = responseDataRecord(parseJsonValue(projected?.body ?? source));
     if (!shift || shift.status !== "OPEN") {
       return "Oflayn pul topshirish uchun ochiq kassaning saqlangan holati topilmadi.";
     }
@@ -1401,7 +1438,7 @@ function validateOfflineCashTransfer(
     receiversUrl.pathname = "/api/v1/cash-register/transfers/receivers";
     receiversUrl.search = "";
     const cachedReceivers = store.getCachedResponse(
-      DesktopStore.cacheKey(receiversUrl.toString(), authScope),
+      DesktopStore.cacheKey(receiversUrl.toString(), cacheScope),
     );
     const receiverEnvelope = cachedReceivers
       ? parseJsonValue(cachedReceivers.body)
@@ -1427,6 +1464,7 @@ function validateOfflineCashTransfer(
 function validateOfflineShiftClose(
   store: DesktopStore,
   authScope: string,
+  cacheScope: string,
   targetUrl: string,
 ): string | null {
   try {
@@ -1439,7 +1477,7 @@ function validateOfflineShiftClose(
     shiftUrl.pathname = "/api/v1/cash-register/shift";
     shiftUrl.search = "";
     const cachedShift = store.getCachedResponse(
-      DesktopStore.cacheKey(shiftUrl.toString(), authScope),
+      DesktopStore.cacheKey(shiftUrl.toString(), cacheScope),
     );
     const source = cachedShift?.body ?? JSON.stringify({ success: true, data: null });
     const projected = applyOptimisticProjection(
@@ -1447,14 +1485,8 @@ function validateOfflineShiftClose(
       shiftUrl.toString(),
       store.listActiveMutations(authScope),
     );
-    const shift = responseDataRecord(
-      parseJsonValue(projected?.body ?? source),
-    );
-    if (
-      !shift ||
-      shift.status !== "OPEN" ||
-      shift.id !== requestedShiftId
-    ) {
+    const shift = responseDataRecord(parseJsonValue(projected?.body ?? source));
+    if (!shift || shift.status !== "OPEN" || shift.id !== requestedShiftId) {
       return "Oflayn smenani yopish uchun kassaning saqlangan ochiq holati topilmadi.";
     }
     const hasUnresolvedTransfer =
@@ -1766,14 +1798,19 @@ function applyOptimisticProjection(
       const shift = responseDataRecord(projected);
       const transfer =
         shift?.status === "OPEN" && typeof shift.id === "string"
-          ? optimisticCashTransfer(command, payload ?? {}, commandBody ?? {}, shift.id)
+          ? optimisticCashTransfer(
+              command,
+              payload ?? {},
+              commandBody ?? {},
+              shift.id,
+            )
           : null;
       const transaction = transfer ? cashTransferLedgerEntry(transfer) : null;
       const available = shift
-        ? finiteAmount(shift.expectedCash) ??
+        ? (finiteAmount(shift.expectedCash) ??
           finiteAmount(shift.currentBalance) ??
           finiteAmount(shift.currentCash) ??
-          finiteAmount(shift.openingBalance)
+          finiteAmount(shift.openingBalance))
         : null;
       const amount = transfer ? finiteAmount(transfer.amount) : null;
       if (
@@ -2047,9 +2084,7 @@ function queuedResponseData(
   };
 
   if (
-    /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/.test(
-      pathname,
-    )
+    /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/.test(pathname)
   ) {
     const amount = numberField(parsedBody, "amount");
     const toShiftId = stringField(parsedBody, "toShiftId");

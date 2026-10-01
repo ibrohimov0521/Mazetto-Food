@@ -217,7 +217,9 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Desktop API-cache scopes fingerprint branch, tenant, membership, credential version, roles and effective permissions without persisting the bearer token.
 - Reordered but equivalent role/permission claims share the cache; reduced access or another tenant membership receives a separate cache and cannot read the earlier scope.
-- Desktop bundle version: 0.1.71. Full CI, Windows release and production smoke remain required before rollout.
+- Pending outbox commands retain the legacy user/branch scope so a permission refresh does not strand sales; replay uses the latest session token and remains subject to server authorization.
+- Verification: a permission-refresh regression confirms private cached data stays isolated while a queued sale replays once under the reduced-permission token. Full CI, Windows release and production smoke passed.
+- Desktop bundle version: 0.1.72.
 
 ## D3 ambiguous-request idempotency gate (2026-09-30)
 
