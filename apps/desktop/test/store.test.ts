@@ -76,7 +76,10 @@ test("cache compaction is amortized while expired snapshots fail closed", async 
     });
 
     assert.equal(store.getCachedResponse(expiredKey), null);
-    assert.equal(store.getLatestCachedResponse(authScope, "/api/v1/expired"), null);
+    assert.equal(
+      store.getLatestCachedResponse(authScope, "/api/v1/expired"),
+      null,
+    );
     const beforeCompaction = probe
       .prepare("SELECT COUNT(*) AS count FROM api_cache WHERE auth_scope = ?")
       .get(authScope) as { count: number | bigint };
@@ -334,9 +337,7 @@ test("desktop cache scope follows membership and effective permissions", async (
     });
 
     assert.equal(
-      store.getCachedResponse(
-        DesktopStore.cacheKey(requestUrl, reducedScope),
-      ),
+      store.getCachedResponse(DesktopStore.cacheKey(requestUrl, reducedScope)),
       null,
     );
   } finally {
@@ -392,6 +393,100 @@ test("desktop store migrates existing databases for local printer retry timing",
   }
 });
 
+test("offline mutation and local print jobs commit atomically", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+
+  try {
+    store.enqueueMutationWithLocalPrintJobs(
+      {
+        idempotencyKey: "offline-sale-1",
+        commandType: "pos.order.create",
+        aggregateType: "orders",
+        aggregateId: "local-order-1",
+        actorId: "cashier-1",
+        branchId: "branch-1",
+        authScope: "cashier-scope",
+        payload: { localAggregateId: "local-order-1" },
+      },
+      [
+        {
+          logicalKey: "local-order-1:RECEIPT",
+          branchId: "branch-1",
+          documentType: "RECEIPT",
+          payload: { orderId: "local-order-1" },
+        },
+        {
+          logicalKey: "local-order-1:KITCHEN",
+          branchId: "branch-1",
+          documentType: "KITCHEN",
+          payload: { orderId: "local-order-1" },
+        },
+      ],
+    );
+
+    assert.equal(store.summary().pendingCommands, 1);
+    assert.deepEqual(
+      store
+        .listLocalPrintJobs()
+        .map((job) => job.documentType)
+        .sort(),
+      ["KITCHEN", "RECEIPT"],
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline mutation rolls back when a local print job cannot be serialized", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+
+  try {
+    assert.throws(
+      () =>
+        store.enqueueMutationWithLocalPrintJobs(
+          {
+            idempotencyKey: "offline-sale-rollback",
+            commandType: "pos.order.create",
+            aggregateType: "orders",
+            aggregateId: "local-order-rollback",
+            actorId: "cashier-1",
+            branchId: "branch-1",
+            authScope: "cashier-scope",
+            payload: { localAggregateId: "local-order-rollback" },
+          },
+          [
+            {
+              logicalKey: "local-order-rollback:RECEIPT",
+              branchId: "branch-1",
+              documentType: "RECEIPT",
+              payload: { orderId: "local-order-rollback" },
+            },
+            {
+              logicalKey: "local-order-rollback:KITCHEN",
+              branchId: "branch-1",
+              documentType: "KITCHEN",
+              payload: {
+                toJSON() {
+                  throw new Error("serialization failed");
+                },
+              },
+            },
+          ],
+        ),
+      /serialization failed/,
+    );
+
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.deepEqual(store.listLocalPrintJobs(), []);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("local print retries back off and stop at the dead-letter limit", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
@@ -429,64 +524,66 @@ test("desktop store recovers interrupted sending mutations on reopen", async () 
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const path = join(directory, "test.sqlite");
   const first = new DesktopStore(path);
-await test("desktop store adopts legacy outbox rows only for the matching actor and branch", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
-  const store = new DesktopStore(join(directory, "test.sqlite"));
+  await test("desktop store adopts legacy outbox rows only for the matching actor and branch", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+    const store = new DesktopStore(join(directory, "test.sqlite"));
 
-  try {
-    for (const command of [
-      {
-        idempotencyKey: "legacy-same-branch",
-        actorId: "cashier-1",
-        branchId: "branch-1",
-        authScope: "old-permission-scope",
-      },
-      {
-        idempotencyKey: "legacy-other-branch",
-        actorId: "cashier-1",
-        branchId: "branch-2",
-        authScope: "other-branch-scope",
-      },
-      {
-        idempotencyKey: "legacy-other-actor",
-        actorId: "cashier-2",
-        branchId: "branch-1",
-        authScope: "other-actor-scope",
-      },
-    ]) {
-      store.enqueueMutation({
-        ...command,
-        commandType: "pos.order.create",
-        aggregateType: "orders",
-        payload: { method: "POST", targetUrl: "https://api.test/pos/orders" },
-      });
+    try {
+      for (const command of [
+        {
+          idempotencyKey: "legacy-same-branch",
+          actorId: "cashier-1",
+          branchId: "branch-1",
+          authScope: "old-permission-scope",
+        },
+        {
+          idempotencyKey: "legacy-other-branch",
+          actorId: "cashier-1",
+          branchId: "branch-2",
+          authScope: "other-branch-scope",
+        },
+        {
+          idempotencyKey: "legacy-other-actor",
+          actorId: "cashier-2",
+          branchId: "branch-1",
+          authScope: "other-actor-scope",
+        },
+      ]) {
+        store.enqueueMutation({
+          ...command,
+          commandType: "pos.order.create",
+          aggregateType: "orders",
+          payload: { method: "POST", targetUrl: "https://api.test/pos/orders" },
+        });
+      }
+
+      assert.equal(
+        store.adoptMutationsForIdentity("cashier-1", "branch-1", "new-scope"),
+        1,
+      );
+      assert.deepEqual(
+        store
+          .dueMutations("new-scope")
+          .map((command) => command.idempotencyKey),
+        ["legacy-same-branch"],
+      );
+      assert.deepEqual(
+        store
+          .dueMutations("other-branch-scope")
+          .map((command) => command.idempotencyKey),
+        ["legacy-other-branch"],
+      );
+      assert.deepEqual(
+        store
+          .dueMutations("other-actor-scope")
+          .map((command) => command.idempotencyKey),
+        ["legacy-other-actor"],
+      );
+    } finally {
+      store.close();
+      await rm(directory, { recursive: true, force: true });
     }
-
-    assert.equal(
-      store.adoptMutationsForIdentity("cashier-1", "branch-1", "new-scope"),
-      1,
-    );
-    assert.deepEqual(
-      store.dueMutations("new-scope").map((command) => command.idempotencyKey),
-      ["legacy-same-branch"],
-    );
-    assert.deepEqual(
-      store
-        .dueMutations("other-branch-scope")
-        .map((command) => command.idempotencyKey),
-      ["legacy-other-branch"],
-    );
-    assert.deepEqual(
-      store
-        .dueMutations("other-actor-scope")
-        .map((command) => command.idempotencyKey),
-      ["legacy-other-actor"],
-    );
-  } finally {
-    store.close();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
+  });
 
   try {
     const command = first.enqueueMutation({
@@ -676,7 +773,10 @@ test("printer target receipts persist and ambiguous jobs stop automatic retries"
       store.recordPrintTarget("local", job.id, "till a", "ambiguous");
       store.recordPrintTarget("local", job.id, "Kitchen 1", "ambiguous");
 
-      assert.equal(store.wasPrintTargetPrinted("local", job.id, "TILL A"), true);
+      assert.equal(
+        store.wasPrintTargetPrinted("local", job.id, "TILL A"),
+        true,
+      );
       assert.equal(
         store.wasPrintTargetPrinted("local", job.id, "Kitchen 1"),
         false,

@@ -102,6 +102,13 @@ export type LocalPrintJob = {
   attempts: number;
 };
 
+export type LocalPrintJobInput = {
+  logicalKey: string;
+  branchId: string;
+  documentType: string;
+  payload: unknown;
+};
+
 export type LocalPrintQueueItem = {
   id: string;
   documentType: string;
@@ -297,7 +304,8 @@ export class DesktopStore {
     const expectedPath = pathname.replace(/\/+$/, "") || "/";
     for (const row of rows) {
       try {
-        const cachedPath = new URL(row.requestUrl).pathname.replace(/\/+$/, "") || "/";
+        const cachedPath =
+          new URL(row.requestUrl).pathname.replace(/\/+$/, "") || "/";
         if (cachedPath === expectedPath) return { ...row };
       } catch {
         continue;
@@ -306,12 +314,7 @@ export class DesktopStore {
     return null;
   }
 
-  enqueueLocalPrintJob(input: {
-    logicalKey: string;
-    branchId: string;
-    documentType: string;
-    payload: unknown;
-  }): void {
+  enqueueLocalPrintJob(input: LocalPrintJobInput): void {
     const now = new Date().toISOString();
     const payloadJson = JSON.stringify(input.payload);
     const payloadHash = createHash("sha256").update(payloadJson).digest("hex");
@@ -332,6 +335,24 @@ export class DesktopStore {
         payloadHash,
         now,
       );
+  }
+
+  enqueueMutationWithLocalPrintJobs(
+    input: OutboxCommandInput,
+    printJobs: LocalPrintJobInput[],
+  ): PendingOutboxCommand {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const command = this.enqueueMutation(input);
+      for (const printJob of printJobs) {
+        this.enqueueLocalPrintJob(printJob);
+      }
+      this.database.exec("COMMIT");
+      return command;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   claimLocalPrintJob(
@@ -481,12 +502,7 @@ export class DesktopStore {
            next_attempt_at = ?, last_error = ?
        WHERE id = ?`,
       )
-      .run(
-        deadLetter ? "dead_letter" : "retry",
-        nextAttemptAt,
-        error,
-        id,
-      );
+      .run(deadLetter ? "dead_letter" : "retry", nextAttemptAt, error, id);
   }
 
   wasLocalDocumentPrinted(
@@ -748,7 +764,11 @@ export class DesktopStore {
         );
       }
       if (aggregateType === "courier" && courierOrderUpdate) {
-        this.reconcileCourierOrderCache(cacheScope, aggregateId, courierOrderUpdate);
+        this.reconcileCourierOrderCache(
+          cacheScope,
+          aggregateId,
+          courierOrderUpdate,
+        );
       }
 
       this.database.exec("COMMIT");
@@ -797,9 +817,15 @@ export class DesktopStore {
     orderId: string,
     update: CourierOrderCacheUpdate,
   ): void {
-    const rows = this.database.prepare(
-      "SELECT cache_key AS cacheKey, request_url AS requestUrl, body FROM api_cache WHERE auth_scope = ? AND request_url LIKE '%/courier/orders%'",
-    ).all(authScope) as Array<{ cacheKey: string; requestUrl: string; body: string }>;
+    const rows = this.database
+      .prepare(
+        "SELECT cache_key AS cacheKey, request_url AS requestUrl, body FROM api_cache WHERE auth_scope = ? AND request_url LIKE '%/courier/orders%'",
+      )
+      .all(authScope) as Array<{
+      cacheKey: string;
+      requestUrl: string;
+      body: string;
+    }>;
 
     for (const row of rows) {
       try {
@@ -808,27 +834,37 @@ export class DesktopStore {
         const body = JSON.parse(row.body) as unknown;
         const records = Array.isArray(body)
           ? body
-          : body && typeof body === "object" && !Array.isArray(body) &&
+          : body &&
+              typeof body === "object" &&
+              !Array.isArray(body) &&
               Array.isArray((body as Record<string, unknown>).data)
             ? (body as { data: unknown[] }).data
             : null;
         if (!records) continue;
         const index = records.findIndex((value) => {
-          if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+          if (!value || typeof value !== "object" || Array.isArray(value))
+            return false;
           const item = value as Record<string, unknown>;
           const order = item.order;
-          return item.id === orderId ||
-            (order && typeof order === "object" && !Array.isArray(order) &&
-              (order as Record<string, unknown>).id === orderId);
+          return (
+            item.id === orderId ||
+            (order &&
+              typeof order === "object" &&
+              !Array.isArray(order) &&
+              (order as Record<string, unknown>).id === orderId)
+          );
         });
         if (index < 0) continue;
         const item = records[index];
         if (!item || typeof item !== "object" || Array.isArray(item)) continue;
         const record = item as Record<string, unknown>;
         const nestedOrder = record.order;
-        const order = nestedOrder && typeof nestedOrder === "object" && !Array.isArray(nestedOrder)
-          ? nestedOrder as Record<string, unknown>
-          : record;
+        const order =
+          nestedOrder &&
+          typeof nestedOrder === "object" &&
+          !Array.isArray(nestedOrder)
+            ? (nestedOrder as Record<string, unknown>)
+            : record;
         if (update.status === "COMPLETED" || update.status === "CANCELLED") {
           records.splice(index, 1);
         } else {
@@ -836,13 +872,16 @@ export class DesktopStore {
           order.version = update.version;
           delete order.pendingSync;
           if (order !== record) {
-            record.status = update.status === "SERVED" ? "READY" : update.status;
+            record.status =
+              update.status === "SERVED" ? "READY" : update.status;
             delete record.pendingSync;
           }
         }
-        this.database.prepare(
-          "UPDATE api_cache SET body = ? WHERE cache_key = ? AND auth_scope = ?",
-        ).run(JSON.stringify(body), row.cacheKey, authScope);
+        this.database
+          .prepare(
+            "UPDATE api_cache SET body = ? WHERE cache_key = ? AND auth_scope = ?",
+          )
+          .run(JSON.stringify(body), row.cacheKey, authScope);
       } catch {
         // Keep malformed cached responses unchanged; a later online read replaces them.
       }
