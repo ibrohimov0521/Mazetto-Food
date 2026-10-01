@@ -8,7 +8,6 @@ const cases = [
   ["PATCH", "/api/v1/kitchen/orders/order-1/ready", "kitchen.action"],
   ["PATCH", "/api/v1/kitchen/orders/order-1/complete", "kitchen.action"],
   ["PATCH", "/api/v1/kitchen/orders/order-1/cancel", "kitchen.action"],
-  ["POST", "/api/v1/orders/order-1/items/item-1/actions/cancel", "order.item.cancel"],
   ["POST", "/api/v1/cash-register/transfers", "cash.transfer.create"],
   ["POST", "/api/v1/cash-register/courier-shift/transfers", "cash.transfer.create"],
 ] as const;
@@ -18,6 +17,24 @@ for (const [method, pathname, commandType] of cases) {
     assert.equal(resolveOfflineCommand(method, pathname)?.commandType, commandType);
   });
 }
+
+test("waiter supplemental item additions queue offline", () => {
+  assert.equal(
+    resolveOfflineCommand("POST", "/api/v1/orders/order-1/items")?.commandType,
+    "order.items.update",
+  );
+});
+
+test("waiter item edits and cancellations stay online-only without local projections", () => {
+  for (const [method, pathname] of [
+    ["PATCH", "/api/v1/orders/order-1/items/item-1"],
+    ["DELETE", "/api/v1/orders/order-1/items/item-1"],
+    ["POST", "/api/v1/orders/order-1/items/item-1/actions/cancel"],
+  ] as const) {
+    assert.equal(resolveOfflineCommand(method, pathname), null);
+    assert.equal(classifyOfflineMutation(method, pathname), "online-only");
+  }
+});
 
 test("offline POS and waiter order creation use the shared order aggregate", () => {
   assert.equal(
