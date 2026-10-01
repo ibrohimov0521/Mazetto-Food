@@ -60,6 +60,7 @@ export function useStaffRealtime(options: {
     const desktopSync = isDesktop ? window.mazettoDesktop?.sync : undefined;
     let stopped = false;
     let running = false;
+    let catchUpRequested = false;
     let cursor = readCursor(cursorStream);
     let cursorLoaded = !desktopSync;
     let cursorPersisted = !desktopSync;
@@ -70,8 +71,12 @@ export function useStaffRealtime(options: {
       if (!stopped) setConnectionState(state);
     };
 
-    const catchUp = async (notify = true): Promise<void> => {
-      if (stopped || running) return;
+    const catchUp = async (notify = true, rerunIfBusy = false): Promise<void> => {
+      if (stopped) return;
+      if (running) {
+        catchUpRequested = catchUpRequested || rerunIfBusy;
+        return;
+      }
       running = true;
       let checkpointCursor = cursor;
       try {
@@ -182,26 +187,89 @@ export function useStaffRealtime(options: {
         setState("offline");
       } finally {
         running = false;
+        if (catchUpRequested && !stopped) {
+          catchUpRequested = false;
+          queueMicrotask(() => void catchUp());
+        }
       }
     };
 
     if (isDesktop) {
       setState("connecting");
+      let socket: ReturnType<typeof io> | null = null;
+      let pollTimer: number | null = null;
+      let pollInterval = 0;
+      const setPollInterval = (interval: number) => {
+        if (pollInterval === interval) return;
+        if (pollTimer !== null) window.clearInterval(pollTimer);
+        pollInterval = interval;
+        pollTimer = window.setInterval(() => void catchUp(), interval);
+      };
+      setPollInterval(5_000);
       void catchUp();
-      const timer = window.setInterval(() => void catchUp(), 5_000);
+
+      const realtimeOrigin = window.mazettoDesktop?.sync?.realtimeOrigin;
+      if (realtimeOrigin) {
+        void realtimeOrigin()
+          .then((origin) => {
+            if (stopped) return;
+            socket = io(origin, {
+              auth: { token, tokenType: "staff" },
+              transports: ["websocket"],
+              reconnection: true,
+              reconnectionDelay: 500,
+              reconnectionDelayMax: 5_000,
+              timeout: 8_000,
+            });
+            const connected = () => {
+              setPollInterval(30_000);
+              setState("online");
+              void catchUp();
+            };
+            const disconnected = () => {
+              setPollInterval(5_000);
+              setState("offline");
+            };
+            const eventReceived = () => {
+              setState("online");
+              void catchUp(true, true);
+            };
+            socket?.on("connect", connected);
+            socket?.on("disconnect", disconnected);
+            socket?.on("connect_error", disconnected);
+            socket?.io.on("reconnect_attempt", () => setState("connecting"));
+            for (const eventName of realtimeEventNames) {
+              socket?.on(eventName, eventReceived);
+            }
+          })
+          .catch(() => {
+            // Keep the five-second catch-up poll when the direct socket is unavailable.
+          });
+      }
+
       const handleOnline = () => {
         setState("connecting");
+        socket?.connect();
         void catchUp();
       };
-      const handleOffline = () => setState("offline");
+      const handleOffline = () => {
+        socket?.disconnect();
+        setState("offline");
+      };
+      const handleVisible = () => {
+        if (document.visibilityState === "visible") void catchUp();
+      };
       window.addEventListener("online", handleOnline);
       window.addEventListener("offline", handleOffline);
+      document.addEventListener("visibilitychange", handleVisible);
 
       return () => {
         stopped = true;
-        window.clearInterval(timer);
+        if (pollTimer !== null) window.clearInterval(pollTimer);
+        socket?.disconnect();
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
+        document.removeEventListener("visibilitychange", handleVisible);
       };
     }
 
@@ -215,7 +283,6 @@ export function useStaffRealtime(options: {
     const handleConnect = () => {
       setState("online");
       void catchUp();
-      onEventRef.current();
     };
     const handleDisconnect = () => setState("offline");
     const handleConnectError = () => setState("offline");
@@ -238,7 +305,7 @@ export function useStaffRealtime(options: {
     for (const eventName of realtimeEventNames) {
       socket.on(eventName, () => {
         setState("online");
-        onEventRef.current();
+        void catchUp(true, true);
       });
     }
     document.addEventListener("visibilitychange", handleVisible);

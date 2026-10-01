@@ -426,5 +426,19 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - The Desktop kitchen panel now loads its active queue from a branch-bound, repeatable-read bootstrap snapshot. The response is capped at 250 tickets and selects only kitchen display fields; customer phone and address fields are not requested.
 - The browser-based kitchen panel keeps using the existing `/kitchen/orders` endpoint. The Desktop path validates snapshot version, timestamp, queue shape and each ticket's branch before rendering.
 - Verification: backend bootstrap tests 3/3, POS snapshot tests 2/2, focused typecheck/lint passed, and full monorepo CI passed (including all 33 operations validators).
-- Desktop bundle version: 0.1.82. Windows release, Dokploy deployment and production smoke remain pending for this checkpoint.
+- Desktop bundle version: 0.1.82. PR #175 main CI 36845068251, Windows release 36845068298, and Dokploy deployment 36845440710 completed successfully; production smoke passed.
 - This improves cached reads only. Offline kitchen actions still depend on their existing idempotency/replay rules; uncached data, expired sessions and unsupported operations are not made available offline by this change.
+
+
+## D3 courier offline status safety (2026-10-01)
+
+- PR #176 was merged as 17b79672. The Desktop gateway now requires a same-branch cached courier order and exact expected version before queueing status changes, projects pending status locally, rebases sequential commands after each server acknowledgement, and reconciles the active courier cache transactionally.
+- Offline completion is blocked when the cached outstanding balance is positive or unknown, or when payment/shift fields cannot be safely recorded. This prevents marking an unpaid delivery complete without updating the courier shift.
+- Desktop test suite passed 95/95; typecheck, lint and preload build passed. PR CI 36851591256 and main CI 36851965498 passed. Desktop 0.1.83 release 36851965457 succeeded. Dokploy workflow 36852315907 succeeded; production smoke was correctly skipped because this checkpoint changed no server service.
+- This is a bounded offline command path, not a guarantee that all courier work, login, electronic payments or uncached data work without connectivity.
+
+## D4 desktop realtime socket signal (2026-10-01)
+
+- Desktop staff panels currently rely on a five-second catch-up poll because the local HTTP gateway does not proxy Socket.IO upgrades. The D4 change opens an authenticated WebSocket directly to the configured Mazetto API origin, uses realtime events as low-latency catch-up triggers, and retains cursor-based catch-up polling at a slower interval while connected and a five-second fallback while disconnected.
+- Event-triggered catch-up requests are coalesced so an arriving signal during an active sync gets one follow-up pass without making the outage fallback spin.
+- Validation and production rollout for Desktop 0.1.84 remain pending this checkpoint's tests and hosted CI. Socket reconnection, server cursor catch-up and restaurant network acceptance remain required D4 release gates.

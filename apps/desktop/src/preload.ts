@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
     }) => ipcRenderer.invoke("desktop:api:request", input),
   },
   sync: {
+    realtimeOrigin: (): Promise<string> =>
+      ipcRenderer.invoke("desktop:sync:realtime:origin"),
     loadCursor: (stream: string): Promise<string | null> =>
       ipcRenderer.invoke("desktop:sync:cursor:load", stream),
     saveCursor: (input: { stream: string; cursor: string }): Promise<void> =>
