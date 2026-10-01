@@ -2783,9 +2783,16 @@ function cachedCatalog(
     authScope,
     "/api/v1/pos/catalog",
   );
-  if (cached) {
+  if (cached && branchId) {
     const parsed = parseJsonObject(cached.body);
-    return recordField(parsed, "data") ?? parsed;
+    const catalog = recordField(parsed, "data") ?? parsed;
+    if (
+      catalog?.branchId === branchId &&
+      Array.isArray(catalog.products) &&
+      Array.isArray(catalog.tables)
+    ) {
+      return catalog;
+    }
   }
 
   if (!branchId) return null;

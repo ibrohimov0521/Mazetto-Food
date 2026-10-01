@@ -424,6 +424,83 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
   }
 });
 
+test("offline POS order does not use a catalog cached for another branch", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-branch-cache", "branch-1");
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/pos/catalog")) {
+        return jsonResponse({
+          success: true,
+          data: {
+            branchId: "branch-2",
+            categories: [],
+            products: [
+              {
+                id: "product-1",
+                name: "Boshqa filial mahsuloti",
+                variants: [{ id: "variant-1", name: "Chet filial varianti" }],
+              },
+            ],
+            paymentMethods: [],
+            tables: [],
+          },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const baseUrl = `http://127.0.0.1:${port}/api/v1`;
+    const headers = { Authorization: authorization };
+    const catalog = await fetch(baseUrl + "/pos/catalog", { headers });
+    assert.equal(catalog.status, 200);
+
+    online = false;
+    const sale = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: "branch-cache-sale",
+        type: "TAKEAWAY",
+        items: [{ productId: "product-1", variantId: "variant-1", quantity: 1 }],
+        payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+      }),
+    });
+
+    assert.equal(sale.status, 202);
+    await sale.json();
+    const command = store.listOutbox()[0];
+    assert.ok(command);
+    const payload = JSON.parse(
+      store.getOutboxCommand(command.id)?.payloadJson ?? "{}",
+    ) as {
+      offlineOrderSnapshot?: {
+        items?: Array<{ productName?: string; variantName?: string | null }>;
+      };
+    };
+    assert.equal(payload.offlineOrderSnapshot?.items?.[0]?.productName, "Mahsulot");
+    assert.notEqual(payload.offlineOrderSnapshot?.items?.[0]?.productName, "Boshqa filial mahsuloti");
+    assert.notEqual(payload.offlineOrderSnapshot?.items?.[0]?.variantName, "Chet filial varianti");
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway bounds slow upstream requests and queues the POS sale", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
