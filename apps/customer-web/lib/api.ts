@@ -1,4 +1,8 @@
 "use client";
+import {
+  getMazettoFoodCustomerApiBaseUrl,
+  isMazettoFoodHost,
+} from "./mazetto-food-host.mjs";
 
 export type ApiEnvelope<T> = {
   success: boolean;
@@ -7,7 +11,13 @@ export type ApiEnvelope<T> = {
 };
 
 export function getApiBaseUrl(): string {
-  if (typeof window !== "undefined" && window.location.hostname.endsWith("mazettofood.uz")) {
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const tenantApiBaseUrl = getMazettoFoodCustomerApiBaseUrl(hostname);
+  if (process.env.NODE_ENV === "production" && tenantApiBaseUrl) {
+    return tenantApiBaseUrl;
+  }
+
+  if (isMazettoFoodHost(hostname)) {
     return "/api/v1";
   }
 
