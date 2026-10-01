@@ -441,4 +441,12 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Desktop staff panels currently rely on a five-second catch-up poll because the local HTTP gateway does not proxy Socket.IO upgrades. The D4 change opens an authenticated WebSocket directly to the configured Mazetto API origin, uses realtime events as low-latency catch-up triggers, and retains cursor-based catch-up polling at a slower interval while connected and a five-second fallback while disconnected.
 - Event-triggered catch-up requests are coalesced so an arriving signal during an active sync gets one follow-up pass without making the outage fallback spin.
-- Validation and production rollout for Desktop 0.1.84 remain pending this checkpoint's tests and hosted CI. Socket reconnection, server cursor catch-up and restaurant network acceptance remain required D4 release gates.
+- Verification: Desktop tests 97/97, typecheck/lint/preload build passed; POS tests 23/23, typecheck/lint and production build passed. PR CI 36854063208 and main CI 36854559249 passed; Desktop 0.1.84 release 36854559278 completed; Dokploy deploy 36854914031 and production smoke passed.
+- The production smoke confirms the deployed services responded, but an authenticated socket session from each restaurant's real Desktop client and reconnect under an actual network outage remain field acceptance checks.
+
+## D5 printer test-run isolation (2026-10-01)
+
+- Testing selected Windows printer queues now continues after an individual printer fails and reports each queue result separately. The summary says Windows accepted the print request; staff still need to confirm the paper physically came out.
+- Mazetto imposes no fixed count limit on selected Windows-installed queues. USB, Bluetooth and network printers work through their installed Windows drivers; direct driverless network printing is limited to compatible ESC/POS TCP devices. There is no honest guarantee for every printer model without driver/protocol and physical-device testing.
+- Verification: POS tests 25/25, POS typecheck/lint and production build (49 routes) passed locally. CI, Desktop 0.1.85 release and deployment are pending.
+- This is a reliability improvement to the existing configuration screen, not completion of D5's end-to-end durability gates. Power-loss, lease expiry, real printer failure/restart, and duplicate-prevention acceptance still need branch hardware tests.
