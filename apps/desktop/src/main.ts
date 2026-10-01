@@ -17,6 +17,7 @@ import {
   windowsPrintPageSize,
 } from "./receipt-renderer.js";
 import { PrintOutcomeUnknownError, withTimeout } from "./print-errors.js";
+import { realtimeSocketOrigin } from "./realtime-origin.js";
 import { resolveDesktopUpdateFeed } from "./update-feed.js";
 
 const require = createRequire(import.meta.url);
@@ -827,6 +828,10 @@ function setupSessionControls(): void {
 }
 
 function setupSyncControls(): void {
+  ipcMain.removeHandler("desktop:sync:realtime:origin");
+  ipcMain.handle("desktop:sync:realtime:origin", () =>
+    realtimeSocketOrigin(UPSTREAM_API_URL),
+  );
   ipcMain.removeHandler("desktop:sync:cursor:load");
   ipcMain.removeHandler("desktop:sync:cursor:save");
   ipcMain.handle("desktop:sync:cursor:load", (_event, stream: unknown) => {

@@ -93,6 +93,7 @@ type DesktopBridge = {
     }>;
   };
   sync?: {
+    realtimeOrigin: () => Promise<string>;
     loadCursor: (stream: string) => Promise<string | null>;
     saveCursor: (input: { stream: string; cursor: string }) => Promise<void>;
   };
