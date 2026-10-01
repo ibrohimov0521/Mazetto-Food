@@ -141,8 +141,8 @@ function PaymentTerminal() {
     [logout],
   );
 
-  const loadOrders = useCallback(async () => {
-    if (submissionLock.current) return;
+  const loadOrders = useCallback(async (): Promise<boolean> => {
+    if (submissionLock.current) return false;
     loadRequest.current?.abort();
     const controller = new AbortController();
     loadRequest.current = controller;
@@ -169,7 +169,7 @@ function PaymentTerminal() {
       ]);
 
       if (controller.signal.aborted) {
-        return;
+        return false;
       }
 
       const payable = nextOrders.filter(
@@ -183,13 +183,15 @@ function PaymentTerminal() {
           ? current
           : (payable[0]?.id ?? null),
       );
+      return true;
     } catch (caught) {
       if (controller.signal.aborted) {
-        return;
+        return false;
       }
       // Bo'sh ro'yxat va yuklanmagan ro'yxat — IKKI XIL holat.
       setOrders(null);
       setLoadError(handleFailure(caught, "Buyurtmalar yuklanmadi."));
+      return false;
     } finally {
       if (!controller.signal.aborted) {
         setIsLoading(false);
@@ -214,7 +216,7 @@ function PaymentTerminal() {
     accessToken: session?.tokens.accessToken,
     branchId: user?.branchId,
     cursorScope: `${user?.id ?? "staff"}:payment-queue:${user?.branchId ?? "all"}`,
-    onEvent: () => void loadOrders(),
+    onEvent: () => loadOrders(),
   });
 
   useEffect(() => {

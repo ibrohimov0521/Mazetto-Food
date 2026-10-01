@@ -33,6 +33,7 @@ export type ApiResource<T> = {
   /** Bo'sh satr — xato yo'q. */
   error: string;
   reload: () => void;
+  reloadAndWait: () => Promise<boolean>;
 };
 
 export function useApiResource<T>(
@@ -93,8 +94,27 @@ export function useApiResource<T>(
   }, [...deps, attempt, errorMessage]);
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
+  const reloadAndWait = useCallback(async (): Promise<boolean> => {
+    const version = ++request.current;
+    setIsLoading(true);
+    setError("");
+    try {
+      const next = await loadRef.current();
+      if (version !== request.current) return false;
+      setData(next);
+      return true;
+    } catch (caught) {
+      if (version !== request.current) return false;
+      if (!(caught instanceof SessionExpiredError)) {
+        setError(caught instanceof Error ? caught.message : errorMessage);
+      }
+      return false;
+    } finally {
+      if (version === request.current) setIsLoading(false);
+    }
+  }, [errorMessage]);
 
-  return { data, isLoading, error, reload };
+  return { data, isLoading, error, reload, reloadAndWait };
 }
 
 /** Bitta endpoint uchun qisqartma. */

@@ -179,7 +179,7 @@ function WaiterFloor() {
     : "";
 
   const loadFloor = useCallback(
-    async (includeMenu = true) => {
+    async (includeMenu = true): Promise<boolean> => {
       floorRequest.current?.abort();
       const controller = new AbortController();
       floorRequest.current = controller;
@@ -208,7 +208,7 @@ function WaiterFloor() {
         ]);
 
         if (version !== floorVersion.current) {
-          return;
+          return false;
         }
 
         setTables(nextTables);
@@ -218,14 +218,15 @@ function WaiterFloor() {
         }
         setLoadError(null);
         setLastUpdatedAt(new Date());
+        return true;
       } catch (caught) {
         if (version !== floorVersion.current) {
-          return;
+          return false;
         }
 
         if (caught instanceof SessionExpiredError) {
           void logout();
-          return;
+          return false;
         }
 
         setLoadError(
@@ -233,6 +234,7 @@ function WaiterFloor() {
             ? caught.message
             : "Zal ma'lumotlarini yuklab bo'lmadi.",
         );
+        return false;
       } finally {
         if (floorRequest.current === controller) {
           floorRequest.current = null;
@@ -254,7 +256,7 @@ function WaiterFloor() {
    * ofitsiant ular orasidan tanlaydi.
    */
   const loadTableDetail = useCallback(
-    async (tableId: string) => {
+    async (tableId: string): Promise<boolean> => {
       detailRequest.current?.abort();
       const controller = new AbortController();
       detailRequest.current = controller;
@@ -269,25 +271,27 @@ function WaiterFloor() {
         });
 
         if (version !== detailVersion.current) {
-          return;
+          return false;
         }
 
         setTableDetail(detail);
         setDetailError(null);
+        return true;
       } catch (caught) {
         if (version !== detailVersion.current) {
-          return;
+          return false;
         }
 
         if (caught instanceof SessionExpiredError) {
           void logout();
-          return;
+          return false;
         }
 
         setTableDetail(null);
         setDetailError(
           "Stol tafsilotlari yangilanmadi — ro'yxatdagi ma'lumot ko'rsatilmoqda.",
         );
+        return false;
       } finally {
         if (detailRequest.current === controller) {
           detailRequest.current = null;
@@ -329,11 +333,11 @@ function WaiterFloor() {
     accessToken: session?.tokens.accessToken,
     branchId: user?.branchId,
     cursorScope: (user?.id ?? "staff") + ":waiter:" + (user?.branchId ?? "all"),
-    onEvent: () => {
-      if (actionLock.current) return;
-      void loadFloor(false);
+    onEvent: async () => {
+      if (actionLock.current) return false;
+      if (!(await loadFloor(false))) return false;
       const tableId = selectedTableRef.current;
-      if (tableId) void loadTableDetail(tableId);
+      return tableId ? loadTableDetail(tableId) : true;
     },
   });
 

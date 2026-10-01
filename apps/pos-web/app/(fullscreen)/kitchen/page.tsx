@@ -81,8 +81,8 @@ function KitchenDisplay() {
   const pendingActions = useRef(0);
   const actionKeys = useRef(new Map<string, string>());
 
-  const loadTickets = useCallback(async (force = false) => {
-    if ((loadRequest.current || pendingActions.current > 0) && !force) return;
+  const loadTickets = useCallback(async (force = false): Promise<boolean> => {
+    if ((loadRequest.current || pendingActions.current > 0) && !force) return false;
     loadRequest.current?.abort();
     const controller = new AbortController();
     loadRequest.current = controller;
@@ -96,19 +96,21 @@ function KitchenDisplay() {
           AbortSignal.timeout(12000),
         ]),
       });
-      if (version !== loadVersion.current) return;
+      if (version !== loadVersion.current) return false;
       setTickets(queue.items);
       setQueueHasMore(queue.hasMore);
       setQueueLimit(queue.limit);
       setError(null);
       setLastUpdatedAt(new Date());
+      return true;
     } catch (caught) {
-      if (version !== loadVersion.current) return;
+      if (version !== loadVersion.current) return false;
       setError(
         caught instanceof Error
           ? caught.message
           : "Oshxona buyurtmalari yuklanmadi",
       );
+      return false;
     } finally {
       if (loadRequest.current === controller) loadRequest.current = null;
       if (version === loadVersion.current) {
@@ -123,7 +125,7 @@ function KitchenDisplay() {
     branchId: user?.branchId,
     cursorScope:
       (user?.id ?? "staff") + ":kitchen-display:" + (user?.branchId ?? "all"),
-    onEvent: () => void loadTickets(),
+    onEvent: () => loadTickets(),
   });
 
   const loadHistory = useCallback(async () => {
