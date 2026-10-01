@@ -75,6 +75,7 @@ type LocalPrintQueue = {
   claim: (documentTypes: string[]) => LocalPrintJob | null;
   complete: (id: string) => void;
   fail: (id: string, error: string, ambiguous?: boolean) => void;
+  markPrinting?: (id: string) => boolean | void;
   wasPrinted: (serverOrderId: string, documentType: string) => boolean;
   wasTargetPrinted?: (
     scope: "local" | "server",
@@ -442,6 +443,12 @@ export class DesktopPrintWorker {
     ];
     const job = this.localQueue.claim(roles);
     if (!job) return false;
+    if (
+      this.localQueue.markPrinting &&
+      !this.localQueue.markPrinting(job.id)
+    ) {
+      return true;
+    }
     try {
       const content = JSON.parse(job.payloadJson) as Record<string, unknown>;
       const targets = this.systemPrinters.filter((printer) =>

@@ -3,6 +3,50 @@ import { createServer } from "node:net";
 import test from "node:test";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 
+test("local print attempt is persisted before sending data to the printer", async () => {
+  const order: string[] = [];
+  const job = {
+    id: "local-print-order",
+    logicalKey: "local-print-order:RECEIPT",
+    branchId: "branch-1",
+    documentType: "RECEIPT",
+    payloadJson: JSON.stringify({ orderId: "local-print-order" }),
+    attempts: 1,
+  };
+  let claimed = false;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Till A", displayName: "Till A", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      order.push("paper");
+    },
+    localQueue: {
+      claim: () => {
+        if (claimed) return null;
+        claimed = true;
+        return job;
+      },
+      markPrinting: () => {
+        order.push("printing");
+        return true;
+      },
+      complete: () => {
+        order.push("complete");
+      },
+      fail: (_id, error) => assert.fail(error),
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+  assert.deepEqual(order, ["printing", "paper", "complete"]);
+});
+
 test("offline receipt and kitchen documents print through selected Windows drivers", async () => {
   const printed: Array<{
     name: string;

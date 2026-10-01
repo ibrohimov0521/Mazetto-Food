@@ -129,6 +129,7 @@ export class DesktopStore {
     this.database.exec("PRAGMA foreign_keys = ON");
     this.migrate();
     this.recoverInterruptedMutations();
+    this.recoverInterruptedLocalPrintJobs(new Date(), true);
   }
 
   static authScope(authorization: string | undefined): string {
@@ -361,16 +362,8 @@ export class DesktopStore {
   ): LocalPrintJob | null {
     if (documentTypes.length === 0) return null;
     const nowIso = now.toISOString();
-    this.database
-      .prepare(
-        `UPDATE print_jobs
-       SET state = 'retry', lease_token = NULL, lease_expires_at = NULL,
-           next_attempt_at = ?
-       WHERE printer_id = 'system:auto'
-         AND state IN ('leased', 'printing')
-         AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
-      )
-      .run(nowIso, nowIso);
+    this.recoverInterruptedLocalPrintJobs(now, false);
+
     const placeholders = documentTypes.map(() => "?").join(", ");
     const row = this.database
       .prepare(
@@ -401,6 +394,19 @@ export class DesktopStore {
     return Number(result.changes) > 0
       ? { ...row, attempts: row.attempts + 1 }
       : null;
+  }
+
+  markLocalPrintJobPrinting(id: string, now = new Date()): boolean {
+    const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
+    const result = this.database
+      .prepare(
+        `UPDATE print_jobs
+         SET state = 'printing', lease_expires_at = ?
+         WHERE id = ? AND printer_id = 'system:auto' AND state = 'leased'
+           AND lease_expires_at > ?`,
+      )
+      .run(leaseExpiresAt, id, now.toISOString());
+    return Number(result.changes) > 0;
   }
 
   completeLocalPrintJob(id: string): void {
@@ -1414,6 +1420,42 @@ export class DesktopStore {
     this.database.exec(
       `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`,
     );
+  }
+
+  private recoverInterruptedLocalPrintJobs(
+    now: Date,
+    includeActiveLeases: boolean,
+  ): void {
+    const nowIso = now.toISOString();
+    const expiryFilter = includeActiveLeases
+      ? ""
+      : " AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?";
+    const expiryParameters = includeActiveLeases ? [] : [nowIso];
+
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database
+        .prepare(
+          `UPDATE print_jobs
+           SET state = 'dead_letter', lease_token = NULL,
+               lease_expires_at = NULL, next_attempt_at = NULL,
+               last_error = 'Desktop yopildi, chop etish natijasi noaniq. Qog''ozni tekshiring; avtomatik takrorlanmadi.'
+           WHERE printer_id = 'system:auto' AND state = 'printing'${expiryFilter}`,
+        )
+        .run(...expiryParameters);
+      this.database
+        .prepare(
+          `UPDATE print_jobs
+           SET state = 'retry', lease_token = NULL, lease_expires_at = NULL,
+               next_attempt_at = ?, last_error = NULL
+           WHERE printer_id = 'system:auto' AND state = 'leased'${expiryFilter}`,
+        )
+        .run(nowIso, ...expiryParameters);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   private recoverInterruptedMutations(): void {
