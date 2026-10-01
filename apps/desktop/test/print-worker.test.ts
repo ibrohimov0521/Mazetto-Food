@@ -4,8 +4,12 @@ import test from "node:test";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 
 test("offline receipt and kitchen documents print through selected Windows drivers", async () => {
-  const printed: Array<{ name: string; type: string; paperWidthMm?: number; paperFormat?: string }> =
-    [];
+  const printed: Array<{
+    name: string;
+    type: string;
+    paperWidthMm?: number;
+    paperFormat?: string;
+  }> = [];
   const completed: string[] = [];
   const jobs = [
     {
@@ -73,28 +77,45 @@ test("offline receipt and kitchen documents print through selected Windows drive
   await worker.tick();
 
   assert.deepEqual(printed, [
-    { name: "Windows POS", type: "RECEIPT", paperWidthMm: 58, paperFormat: "ROLL" },
-    { name: "Windows Kitchen", type: "KITCHEN", paperWidthMm: 210, paperFormat: "A4" },
+    {
+      name: "Windows POS",
+      type: "RECEIPT",
+      paperWidthMm: 58,
+      paperFormat: "ROLL",
+    },
+    {
+      name: "Windows Kitchen",
+      type: "KITCHEN",
+      paperWidthMm: 210,
+      paperFormat: "A4",
+    },
   ]);
   assert.deepEqual(completed, ["local-1", "local-2"]);
 });
 
 test("custom label profiles work through any installed Windows printer driver", async () => {
-  let printed: { name: string; format?: string; width?: number; height?: number } | null = null;
+  let printed: {
+    name: string;
+    format?: string;
+    width?: number;
+    height?: number;
+  } | null = null;
   let claimed = false;
   const worker = new DesktopPrintWorker({
     apiUrl: "https://api.example.test/api/v1",
     printerHost: null,
     agentId: "desktop-device-1",
     deviceId: "device-1",
-    systemPrinters: [{
-      name: "Generic USB Label Printer",
-      displayName: "Generic USB Label Printer",
-      roles: ["RECEIPT"],
-      paperFormat: "LABEL",
-      paperWidthMm: 100,
-      paperHeightMm: 60,
-    }],
+    systemPrinters: [
+      {
+        name: "Generic USB Label Printer",
+        displayName: "Generic USB Label Printer",
+        roles: ["RECEIPT"],
+        paperFormat: "LABEL",
+        paperWidthMm: 100,
+        paperHeightMm: 60,
+      },
+    ],
     printSystem: async (name, _receipt, paper) => {
       printed = {
         name,
@@ -298,11 +319,107 @@ test("offline print queue routes documents across multiple configured system pri
 
   await worker.tick();
 
-  assert.deepEqual(printed, [
-    "Till A:RECEIPT",
-    "Till B:RECEIPT",
-    "Kitchen 1:KITCHEN",
+  assert.deepEqual(
+    printed.sort(),
+    ["Till A:RECEIPT", "Till B:RECEIPT", "Kitchen 1:KITCHEN"].sort(),
+  );
+});
+
+test("a failed printer target does not block other targets or duplicate successful copies on retry", async () => {
+  const targetNames = Array.from(
+    { length: 7 },
+    (_, index) => "Till " + (index + 1),
+  );
+  const job = {
+    id: "fanout-retry-job",
+    logicalKey: "order-fanout-retry:RECEIPT",
+    branchId: "branch-1",
+    documentType: "RECEIPT",
+    payloadJson: JSON.stringify({ orderId: "order-fanout-retry" }),
+    attempts: 1,
+  };
+  const printedTargets = new Set<string>();
+  const printCounts = new Map<string, number>();
+  const completed: string[] = [];
+  const failures: Array<{ id: string; error: string; ambiguous?: boolean }> =
+    [];
+  let initialClaimed = false;
+  let retryRequested = false;
+  let retryClaimed = false;
+  let active = 0;
+  let maximumActive = 0;
+  let firstAttemptFailed = false;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: targetNames.map((name) => ({
+      name,
+      displayName: name,
+      roles: ["RECEIPT"],
+    })),
+    printSystem: async (name) => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      printCounts.set(name, (printCounts.get(name) ?? 0) + 1);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      if (name === "Till 1" && !firstAttemptFailed) {
+        firstAttemptFailed = true;
+        throw new Error("Printer offline");
+      }
+    },
+    localQueue: {
+      claim: () => {
+        if (!initialClaimed) {
+          initialClaimed = true;
+          return job;
+        }
+        if (retryRequested && !retryClaimed) {
+          retryClaimed = true;
+          return job;
+        }
+        return null;
+      },
+      complete: (id) => completed.push(id),
+      fail: (id, error, ambiguous) => failures.push({ id, error, ambiguous }),
+      wasPrinted: () => false,
+      wasTargetPrinted: (_scope, jobId, name) =>
+        printedTargets.has(jobId + ":" + name),
+      markTargetPrinted: (_scope, jobId, name) =>
+        printedTargets.add(jobId + ":" + name),
+    },
+  });
+
+  await worker.tick();
+
+  assert.equal(maximumActive, 4);
+  assert.deepEqual(
+    [...printedTargets].sort(),
+    targetNames
+      .slice(1)
+      .map((name) => "fanout-retry-job:" + name)
+      .sort(),
+  );
+  assert.equal(failures.length, 1);
+  assert.match(failures[0]?.error ?? "", /Till 1: Printer offline/);
+  assert.deepEqual(completed, []);
+
+  retryRequested = true;
+  await worker.tick();
+
+  assert.deepEqual(completed, ["fanout-retry-job"]);
+  assert.deepEqual(failures, [
+    {
+      id: "fanout-retry-job",
+      error: "Till 1: Printer offline",
+      ambiguous: false,
+    },
   ]);
+  assert.equal(printCounts.get("Till 1"), 2);
+  for (const name of targetNames.slice(1))
+    assert.equal(printCounts.get(name), 1);
 });
 
 test("server print worker drains at most five jobs per tick without parallel printer writes", async () => {
@@ -1018,7 +1135,8 @@ test("hung Windows printer is timed out as ambiguous and the offline queue keeps
       attempts: 1,
     },
   ];
-  const failures: Array<{ id: string; error: string; ambiguous?: boolean }> = [];
+  const failures: Array<{ id: string; error: string; ambiguous?: boolean }> =
+    [];
   const completed: string[] = [];
   const printedTargets = new Set<string>();
   const ambiguousTargets = new Set<string>();
