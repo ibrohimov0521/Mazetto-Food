@@ -116,6 +116,16 @@ export type LocalPrintQueueItem = {
   attempts: number;
   createdAt: string;
   lastError: string | null;
+  attemptHistory: LocalPrintAttempt[];
+};
+
+export type LocalPrintAttempt = {
+  attemptNumber: number;
+  startedAt: string;
+  finishedAt: string | null;
+  outcome: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
 };
 
 export class DesktopStore {
@@ -396,28 +406,89 @@ export class DesktopStore {
       : null;
   }
 
-  markLocalPrintJobPrinting(id: string, now = new Date()): boolean {
+  markLocalPrintJobPrinting(id: string, now = new Date()): string | false {
     const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString();
-    const result = this.database
-      .prepare(
-        `UPDATE print_jobs
-         SET state = 'printing', lease_expires_at = ?
-         WHERE id = ? AND printer_id = 'system:auto' AND state = 'leased'
-           AND lease_expires_at > ?`,
-      )
-      .run(leaseExpiresAt, id, now.toISOString());
-    return Number(result.changes) > 0;
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.database
+        .prepare(
+          `UPDATE print_jobs
+           SET state = 'printing', lease_expires_at = ?
+           WHERE id = ? AND printer_id = 'system:auto' AND state = 'leased'
+             AND lease_expires_at > ?`,
+        )
+        .run(leaseExpiresAt, id, now.toISOString());
+      if (Number(result.changes) === 0) {
+        this.database.exec("COMMIT");
+        return false;
+      }
+
+      const attemptRow = this.database
+        .prepare(
+          "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS attemptNumber " +
+            "FROM print_attempts WHERE print_job_id = ?",
+        )
+        .get(id) as { attemptNumber: number | bigint };
+      const attemptId = randomUUID();
+      this.database
+        .prepare(
+          `INSERT INTO print_attempts (
+             id, print_job_id, attempt_number, agent_attempt_id, started_at
+           ) VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          id,
+          Number(attemptRow.attemptNumber),
+          attemptId,
+          now.toISOString(),
+        );
+      this.database.exec("COMMIT");
+      return attemptId;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
-  completeLocalPrintJob(id: string): void {
-    this.database
-      .prepare(
-        `UPDATE print_jobs
-       SET state = 'printed', printed_at = ?, lease_token = NULL,
-           lease_expires_at = NULL, next_attempt_at = NULL, last_error = NULL
-       WHERE id = ?`,
-      )
-      .run(new Date().toISOString(), id);
+  completeLocalPrintJob(id: string, attemptId?: string): void {
+    const now = new Date().toISOString();
+    const attemptFilter = attemptId
+      ? "agent_attempt_id = ?"
+      : "agent_attempt_id = (SELECT agent_attempt_id FROM print_attempts " +
+        "WHERE print_job_id = ? AND finished_at IS NULL ORDER BY attempt_number DESC LIMIT 1)";
+    const attemptParameters = attemptId ? [attemptId] : [id];
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.database
+        .prepare(
+          `UPDATE print_jobs
+           SET state = 'printed', printed_at = ?, lease_token = NULL,
+               lease_expires_at = NULL, next_attempt_at = NULL, last_error = NULL
+           WHERE id = ? AND state = 'printing'
+             AND EXISTS (
+               SELECT 1 FROM print_attempts
+               WHERE print_job_id = print_jobs.id AND finished_at IS NULL
+                 AND ${attemptFilter}
+             )`,
+        )
+        .run(now, id, ...attemptParameters);
+      if (Number(result.changes) > 0) {
+        this.database
+          .prepare(
+            `UPDATE print_attempts
+             SET outcome = 'printed', finished_at = ?
+             WHERE print_job_id = ? AND finished_at IS NULL
+               AND ${attemptFilter}
+             `,
+          )
+          .run(now, id, ...attemptParameters);
+      }
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   wasPrintTargetPrinted(
@@ -472,18 +543,88 @@ export class DesktopStore {
           "ORDER BY created_at DESC LIMIT ?",
       )
       .all(boundedLimit);
-    return rows as LocalPrintQueueItem[];
+    const jobs = rows as Omit<LocalPrintQueueItem, "attemptHistory">[];
+    if (jobs.length === 0) return [];
+    const placeholders = jobs.map(() => "?").join(", ");
+    const attempts = this.database
+      .prepare(
+        `SELECT printJobId, attemptNumber, startedAt, finishedAt,
+                outcome, errorCode, errorMessage
+         FROM (
+           SELECT print_job_id AS printJobId,
+                  attempt_number AS attemptNumber,
+                  started_at AS startedAt,
+                  finished_at AS finishedAt,
+                  outcome,
+                  error_code AS errorCode,
+                  error_message AS errorMessage,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY print_job_id ORDER BY attempt_number DESC
+                  ) AS attemptRank
+           FROM print_attempts
+           WHERE print_job_id IN (${placeholders})
+         )
+         WHERE attemptRank <= 10
+         ORDER BY printJobId, attemptNumber ASC`,
+      )
+      .all(...jobs.map((job) => job.id)) as Array<
+      LocalPrintAttempt & { printJobId: string }
+    >;
+    const historyByJob = new Map<string, LocalPrintAttempt[]>();
+    for (const { printJobId, ...attempt } of attempts) {
+      const history = historyByJob.get(printJobId) ?? [];
+      history.push(attempt);
+      historyByJob.set(printJobId, history);
+    }
+    return jobs.map((job) => ({
+      ...job,
+      attemptHistory: historyByJob.get(job.id) ?? [],
+    }));
   }
 
   retryLocalPrintJob(id: string): boolean {
-    const result = this.database
-      .prepare(
-        "UPDATE print_jobs SET state = 'pending', attempts = 0, " +
-          "lease_token = NULL, lease_expires_at = NULL, next_attempt_at = NULL, last_error = NULL " +
-          "WHERE id = ? AND printer_id = 'system:auto' AND state = 'dead_letter'",
-      )
-      .run(id);
-    return Number(result.changes) > 0;
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.database
+        .prepare(
+          "UPDATE print_jobs SET state = 'pending', attempts = 0, " +
+            "lease_token = NULL, lease_expires_at = NULL, next_attempt_at = NULL, last_error = NULL " +
+            "WHERE id = ? AND printer_id = 'system:auto' AND state = 'dead_letter'",
+        )
+        .run(id);
+      if (Number(result.changes) === 0) {
+        this.database.exec("COMMIT");
+        return false;
+      }
+      const attemptRow = this.database
+        .prepare(
+          "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS attemptNumber " +
+            "FROM print_attempts WHERE print_job_id = ?",
+        )
+        .get(id) as { attemptNumber: number | bigint };
+      this.database
+        .prepare(
+          `INSERT INTO print_attempts (
+             id, print_job_id, attempt_number, agent_attempt_id,
+             started_at, finished_at, outcome, error_code, error_message
+           ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'operator_action', ?)`,
+        )
+        .run(
+          randomUUID(),
+          id,
+          Number(attemptRow.attemptNumber),
+          randomUUID(),
+          now,
+          now,
+          "Operator chekni qo'lda qayta chop etishni so'radi.",
+        );
+      this.database.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   failLocalPrintJob(
@@ -491,6 +632,7 @@ export class DesktopStore {
     error: string,
     now = new Date(),
     ambiguous = false,
+    attemptId?: string,
   ): void {
     const row = this.database
       .prepare(`SELECT attempts FROM print_jobs WHERE id = ?`)
@@ -501,14 +643,56 @@ export class DesktopStore {
     const nextAttemptAt = deadLetter
       ? null
       : new Date(now.getTime() + delayMs).toISOString();
-    this.database
-      .prepare(
-        `UPDATE print_jobs
-       SET state = ?, lease_token = NULL, lease_expires_at = NULL,
-           next_attempt_at = ?, last_error = ?
-       WHERE id = ?`,
-      )
-      .run(deadLetter ? "dead_letter" : "retry", nextAttemptAt, error, id);
+    const attemptFilter = attemptId
+      ? "agent_attempt_id = ?"
+      : "agent_attempt_id = (SELECT agent_attempt_id FROM print_attempts " +
+        "WHERE print_job_id = ? AND finished_at IS NULL ORDER BY attempt_number DESC LIMIT 1)";
+    const attemptParameters = attemptId ? [attemptId] : [id];
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.database
+        .prepare(
+          `UPDATE print_jobs
+           SET state = ?, lease_token = NULL, lease_expires_at = NULL,
+               next_attempt_at = ?, last_error = ?
+           WHERE id = ? AND state IN ('leased', 'printing')
+             AND (
+               state = 'leased' OR EXISTS (
+                 SELECT 1 FROM print_attempts
+                 WHERE print_job_id = print_jobs.id AND finished_at IS NULL
+                   AND ${attemptFilter}
+               )
+             )`,
+        )
+        .run(
+          deadLetter ? "dead_letter" : "retry",
+          nextAttemptAt,
+          error,
+          id,
+          ...attemptParameters,
+        );
+      if (Number(result.changes) > 0) {
+        this.database
+          .prepare(
+            `UPDATE print_attempts
+             SET outcome = ?, finished_at = ?, error_code = ?, error_message = ?
+             WHERE print_job_id = ? AND finished_at IS NULL
+               AND ${attemptFilter}`,
+          )
+          .run(
+            ambiguous ? "ambiguous" : "failed",
+            now.toISOString(),
+            ambiguous ? "ambiguous_result" : "printer_failure",
+            error.slice(0, 1000),
+            id,
+            ...attemptParameters,
+          );
+      }
+      this.database.exec("COMMIT");
+    } catch (caught) {
+      this.database.exec("ROLLBACK");
+      throw caught;
+    }
   }
 
   wasLocalDocumentPrinted(
@@ -1431,9 +1615,21 @@ export class DesktopStore {
       ? ""
       : " AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?";
     const expiryParameters = includeActiveLeases ? [] : [nowIso];
-
+    const interruptedError =
+      "Desktop yopildi, chop etish natijasi noaniq. Qog'ozni tekshiring; avtomatik takrorlanmadi.";
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      this.database
+        .prepare(
+          `UPDATE print_attempts
+           SET outcome = 'ambiguous', finished_at = ?,
+               error_code = 'process_interrupted', error_message = ?
+           WHERE finished_at IS NULL AND print_job_id IN (
+             SELECT id FROM print_jobs
+             WHERE printer_id = 'system:auto' AND state = 'printing'${expiryFilter}
+           )`,
+        )
+        .run(nowIso, interruptedError, ...expiryParameters);
       this.database
         .prepare(
           `UPDATE print_jobs

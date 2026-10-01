@@ -410,13 +410,11 @@ test("interrupted printer submissions require review after app restart", async (
       new Date("2026-10-02T10:00:00.000Z"),
     );
     assert.ok(inFlight);
-    assert.equal(
-      first.markLocalPrintJobPrinting(
-        inFlight.id,
-        new Date("2026-10-02T10:00:01.000Z"),
-      ),
-      true,
+    const attemptId = first.markLocalPrintJobPrinting(
+      inFlight.id,
+      new Date("2026-10-02T10:00:01.000Z"),
     );
+    assert.equal(typeof attemptId, "string");
   } finally {
     first.close();
   }
@@ -426,12 +424,101 @@ test("interrupted printer submissions require review after app restart", async (
     const [job] = reopened.listLocalPrintJobs();
     assert.equal(job?.state, "dead_letter");
     assert.match(job?.lastError ?? "", /qog'ozni tekshiring/i);
+    assert.deepEqual(
+      job?.attemptHistory.map((attempt) => [
+        attempt.attemptNumber,
+        attempt.outcome,
+        attempt.errorCode,
+      ]),
+      [[1, "ambiguous", "process_interrupted"]],
+    );
     assert.equal(reopened.claimLocalPrintJob(["RECEIPT"]), null);
 
     assert.equal(reopened.retryLocalPrintJob(job!.id), true);
-    assert.ok(reopened.claimLocalPrintJob(["RECEIPT"]));
+    const retried = reopened.listLocalPrintJobs()[0];
+    assert.deepEqual(
+      retried?.attemptHistory.map((attempt) => [
+        attempt.attemptNumber,
+        attempt.outcome,
+        attempt.errorCode,
+      ]),
+      [
+        [1, "ambiguous", "process_interrupted"],
+        [2, null, "operator_action"],
+      ],
+    );
+    const retryJob = reopened.claimLocalPrintJob(["RECEIPT"]);
+    assert.ok(retryJob);
+    const retryAttemptId = reopened.markLocalPrintJobPrinting(retryJob.id);
+    assert.equal(typeof retryAttemptId, "string");
+    reopened.failLocalPrintJob(
+      retryJob.id,
+      "Printer is offline",
+      new Date(),
+      false,
+      retryAttemptId as string,
+    );
+    const failedRetry = reopened.listLocalPrintJobs()[0];
+    assert.deepEqual(
+      failedRetry?.attemptHistory.map((attempt) => [
+        attempt.attemptNumber,
+        attempt.outcome,
+        attempt.errorCode,
+      ]),
+      [
+        [1, "ambiguous", "process_interrupted"],
+        [2, null, "operator_action"],
+        [3, "failed", "printer_failure"],
+      ],
+    );
   } finally {
     reopened.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("successful local print attempts are durably audited", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const store = new DesktopStore(path);
+
+  try {
+    store.enqueueLocalPrintJob({
+      logicalKey: "printed-audit:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payload: { orderId: "printed-audit" },
+    });
+    const job = store.claimLocalPrintJob(["RECEIPT"]);
+    assert.ok(job);
+    const attemptId = store.markLocalPrintJobPrinting(job.id);
+    assert.equal(typeof attemptId, "string");
+    store.completeLocalPrintJob(job.id, attemptId as string);
+    assert.equal(store.wasLocalDocumentPrinted("printed-audit", "RECEIPT"), true);
+  } finally {
+    store.close();
+  }
+
+  const auditDb = new DatabaseSync(path);
+  try {
+    const [attempt] = auditDb
+      .prepare(
+        `SELECT attempt_number AS attemptNumber, outcome, error_code AS errorCode,
+                finished_at AS finishedAt
+         FROM print_attempts`,
+      )
+      .all() as Array<{
+      attemptNumber: number;
+      outcome: string;
+      errorCode: string | null;
+      finishedAt: string | null;
+    }>;
+    assert.equal(attempt?.attemptNumber, 1);
+    assert.equal(attempt?.outcome, "printed");
+    assert.equal(attempt?.errorCode, null);
+    assert.match(attempt?.finishedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    auditDb.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

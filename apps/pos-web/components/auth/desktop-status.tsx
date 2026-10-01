@@ -46,6 +46,15 @@ type LocalPrintJob = {
   attempts: number;
   createdAt: string;
   lastError: string | null;
+  attemptHistory?: LocalPrintAttempt[];
+};
+
+type LocalPrintAttempt = {
+  attemptNumber: number;
+  startedAt: string;
+  outcome: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
 };
 
 type OutboxPayload = {
@@ -431,9 +440,7 @@ export function DesktopStatusBadge() {
   const sending = status?.sendingCommands ?? 0;
   const blocked = (status?.conflictCommands ?? 0) + (status?.deadLetterCommands ?? 0);
   const failedPrintJobs = outbox?.printJobs?.filter((job) => job.state === "dead_letter") ?? [];
-  const uncertainPrintJobs = failedPrintJobs.filter((job) =>
-    /qog'ozni tekshiring/i.test(job.lastError ?? ""),
-  );
+  const uncertainPrintJobs = failedPrintJobs.filter(isUncertainPrintJob);
   const Icon =
     mode === "online" ? Cloud : mode === "offline" ? CloudOff : RefreshCw;
   const title = status
@@ -453,7 +460,16 @@ export function DesktopStatusBadge() {
     }
   }
 
-  async function retryPrintJob(jobId: string): Promise<void> {
+  async function retryPrintJob(job: LocalPrintJob): Promise<void> {
+    if (
+      isUncertainPrintJob(job) &&
+      !window.confirm(
+        "Chek qog'ozini printerdan tekshiring. Agar chek chiqqan bo'lsa, qayta chop etish dublikat chiqarishi mumkin. Baribir qayta chop etilsinmi?",
+      )
+    ) {
+      return;
+    }
+    const jobId = job.id;
     setBusyPrintId(jobId);
     setOutboxError("");
     try {
@@ -718,29 +734,46 @@ export function DesktopStatusBadge() {
               </p>
               {failedPrintJobs.map((job) => (
                 <div
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-mz-control border border-mz-border bg-mz-surface p-3"
+                  className="grid gap-3 rounded-mz-control border border-mz-border bg-mz-surface p-3"
                   key={job.id}
                 >
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-mz-text">
-                      {job.documentType === "KITCHEN"
-                        ? "Oshxona nusxasi"
-                        : job.documentType === "RECEIPT"
-                          ? "Mijoz cheki"
-                          : job.documentType}
-                    </p>
-                    <p className="mt-1 text-[12px] text-mz-danger">
-                      {job.lastError || "Printer javob bermadi."}
-                    </p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-mz-text">
+                        {job.documentType === "KITCHEN"
+                          ? "Oshxona nusxasi"
+                          : job.documentType === "RECEIPT"
+                            ? "Mijoz cheki"
+                            : job.documentType}
+                      </p>
+                      <p className="mt-1 text-[12px] text-mz-danger">
+                        {job.lastError || "Printer javob bermadi."}
+                      </p>
+                    </div>
+                    <Button
+                      disabled={busyPrintId === job.id}
+                      isLoading={busyPrintId === job.id}
+                      onClick={() => void retryPrintJob(job)}
+                      size="sm"
+                    >
+                      Qayta chop etish
+                    </Button>
                   </div>
-                  <Button
-                    disabled={busyPrintId === job.id}
-                    isLoading={busyPrintId === job.id}
-                    onClick={() => void retryPrintJob(job.id)}
-                    size="sm"
-                  >
-                    Qayta chop etish
-                  </Button>
+                  {job.attemptHistory?.length ? (
+                    <div className="rounded-mz-control bg-mz-surface-sunken p-3">
+                      <p className="text-xs font-semibold text-mz-text">Chop etish tarixi</p>
+                      <ol className="mt-2 grid gap-2 text-xs text-mz-text-muted">
+                        {job.attemptHistory.slice(-3).reverse().map((attempt) => (
+                          <li className="grid gap-1 sm:grid-cols-[1fr_auto]" key={attempt.attemptNumber}>
+                            <span>
+                              {getPrintAttemptLabel(attempt)} - {new Date(attempt.startedAt).toLocaleString("uz-UZ")}
+                            </span>
+                            {attempt.errorMessage ? <span className={attempt.errorCode === "operator_action" ? "text-mz-text-muted" : "text-mz-danger"}>{attempt.errorMessage}</span> : null}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -948,4 +981,25 @@ async function desktopFetch<T>(
   }
 
   return payload.data;
+}
+
+function isUncertainPrintJob(job: LocalPrintJob): boolean {
+  return (
+    /qog'ozni tekshiring/i.test(job.lastError ?? "") ||
+    job.attemptHistory?.some(
+      (attempt) =>
+        attempt.outcome === "ambiguous" ||
+        attempt.errorCode === "process_interrupted",
+    ) === true
+  );
+}
+
+function getPrintAttemptLabel(attempt: LocalPrintAttempt): string {
+  if (attempt.errorCode === "operator_action") {
+    return "Qo'lda qayta chop etish so'raldi";
+  }
+  if (attempt.outcome === "printed") return "Muvaffaqiyatli chop etildi";
+  if (attempt.outcome === "failed") return "Chop etish muvaffaqiyatsiz";
+  if (attempt.outcome === "ambiguous") return "Natija noaniq";
+  return "Boshlanishi qayd etildi";
 }

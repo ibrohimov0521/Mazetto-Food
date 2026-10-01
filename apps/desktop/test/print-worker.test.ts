@@ -5,6 +5,7 @@ import { DesktopPrintWorker } from "../src/print-worker.js";
 
 test("local print attempt is persisted before sending data to the printer", async () => {
   const order: string[] = [];
+  const completedAttempts: string[] = [];
   const job = {
     id: "local-print-order",
     logicalKey: "local-print-order:RECEIPT",
@@ -33,10 +34,11 @@ test("local print attempt is persisted before sending data to the printer", asyn
       },
       markPrinting: () => {
         order.push("printing");
-        return true;
+        return "attempt-1";
       },
-      complete: () => {
+      complete: (_id, attemptId) => {
         order.push("complete");
+        if (attemptId) completedAttempts.push(attemptId);
       },
       fail: (_id, error) => assert.fail(error),
       wasPrinted: () => false,
@@ -45,6 +47,49 @@ test("local print attempt is persisted before sending data to the printer", asyn
 
   await worker.tick();
   assert.deepEqual(order, ["printing", "paper", "complete"]);
+  assert.deepEqual(completedAttempts, ["attempt-1"]);
+});
+
+test("a local printer job is not sent if its durable attempt cannot be recorded", async () => {
+  let claimed = false;
+  let printCalls = 0;
+  let completionCalls = 0;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Till A", displayName: "Till A", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      printCalls += 1;
+    },
+    localQueue: {
+      claim: () => {
+        if (claimed) return null;
+        claimed = true;
+        return {
+          id: "local-print-untracked",
+          logicalKey: "local-print-untracked:RECEIPT",
+          branchId: "branch-1",
+          documentType: "RECEIPT",
+          payloadJson: JSON.stringify({ orderId: "local-print-untracked" }),
+          attempts: 1,
+        };
+      },
+      markPrinting: () => false,
+      complete: () => {
+        completionCalls += 1;
+      },
+      fail: () => undefined,
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+  assert.equal(printCalls, 0);
+  assert.equal(completionCalls, 0);
 });
 
 test("offline receipt and kitchen documents print through selected Windows drivers", async () => {

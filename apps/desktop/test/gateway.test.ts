@@ -879,6 +879,7 @@ test("offline sale prints locally, syncs once, and skips duplicate server receip
   const printed: string[] = [];
   const localQueue = {
     claim: (types: string[]) => store.claimLocalPrintJob(types),
+    markPrinting: (id: string) => store.markLocalPrintJobPrinting(id),
     complete: (id: string) => store.completeLocalPrintJob(id),
     fail: (id: string, error: string, ambiguous?: boolean) =>
       store.failLocalPrintJob(id, error, new Date(), ambiguous),

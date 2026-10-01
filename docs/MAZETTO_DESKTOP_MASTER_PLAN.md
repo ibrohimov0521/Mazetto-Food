@@ -477,5 +477,39 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Offline waiter edits may change an existing active line's integer quantity (1-99) and/or note only when the order and line are in the authenticated branch snapshot and the expected order version exactly matches the optimistic cache. Modifiers, cancellation, terminal orders, malformed pricing snapshots and stale versions remain online-only/fail-closed.
 - The local table cache projects line and order totals and versions; edits on one order replay in order and are rebased from each server acknowledgement. Waiter PATCH calls now carry stable idempotency keys.
-- Verification: pending focused tests, typecheck, lint, full CI, Windows 0.1.89 release and Dokploy deploy.
+- Verification: waiter edit regressions, typecheck/lint, CI, and Windows Desktop 0.1.89 release passed. Unsupported edits still fail closed.
 - Desktop bundle version: 0.1.89.
+
+## D6 waiter status actions while offline (2026-10-01)
+
+- Supported waiter order acceptance and status changes can be queued offline with branch and order-version checks; unsupported/destructive actions remain online-only.
+- Desktop bundle version 0.1.90; release and production validation completed.
+
+## D3 offline queue survives authorization refresh (2026-10-01)
+
+- Pending commands remain associated with their original user and branch while replay uses the latest authorized session. A permission refresh no longer strands an otherwise valid offline sale.
+- Desktop bundle version 0.1.91; release and production validation completed.
+
+## D5 isolate multi-printer delivery (2026-10-01)
+
+- A failed printer target no longer blocks other configured targets, and successful target copies are not silently duplicated when a failed target is retried.
+- Desktop bundle version 0.1.92; release and production validation completed.
+
+## D3 atomic offline sale and print enqueue (2026-10-01)
+
+- Offline sale mutation and its local receipt/kitchen print jobs commit atomically. Serialization or persistence failure rolls back the sale instead of leaving a partially queued order.
+- Desktop bundle version 0.1.93; release and production validation completed.
+
+## D5 restart-safe local print retries (2026-10-01)
+
+- A print job interrupted after entering the printer side-effect window is marked ambiguous after restart and is not automatically sent again. Staff must inspect the paper and explicitly request any reprint.
+- Desktop bundle version 0.1.94; release and production validation completed.
+
+## D5 persistent local print attempt audit (2026-10-02)
+
+- Each physical print attempt is committed to SQLite before the printer is called. If the audit row cannot be persisted, the worker does not send paper.
+- Attempt outcomes are linked to the job with stable attempt IDs and stored as printed, failed, or ambiguous. Restart recovery records interrupted work as ambiguous in the same transaction as the job-state change.
+- Manual retries append an operator-action record. The POS/desktop outbox displays recent attempt history and requires explicit confirmation before retrying a job whose result is uncertain.
+- Verification: Desktop tests 116/116, POS tests 28/28, typecheck, lint, desktop build, bundled POS UI build and POS production build passed locally. GitHub CI for this Desktop change is still pending.
+- Desktop bundle version 0.1.95. Windows release and production rollout are pending this stage's merge.
+- Field acceptance remains required for the restaurant's actual printer models, paper output, app termination/power-loss timing, and staff reprint workflow. Physical printing cannot be guaranteed exactly once across an unobservable hardware failure; ambiguous results are exposed for human review instead of silently retried.

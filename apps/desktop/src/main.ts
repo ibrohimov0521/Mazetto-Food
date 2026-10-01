@@ -164,9 +164,9 @@ async function startDesktop(): Promise<void> {
     localQueue: {
       claim: (documentTypes) => store?.claimLocalPrintJob(documentTypes) ?? null,
       markPrinting: (id) => store?.markLocalPrintJobPrinting(id) ?? false,
-      complete: (id) => store?.completeLocalPrintJob(id),
-      fail: (id, error, ambiguous) =>
-        store?.failLocalPrintJob(id, error, new Date(), ambiguous),
+      complete: (id, attemptId) => store?.completeLocalPrintJob(id, attemptId),
+      fail: (id, error, ambiguous, attemptId) =>
+        store?.failLocalPrintJob(id, error, new Date(), ambiguous, attemptId),
       wasPrinted: (orderId, documentType) =>
         store?.wasLocalDocumentPrinted(orderId, documentType) ?? false,
       wasTargetPrinted: (scope, jobId, printerName) =>

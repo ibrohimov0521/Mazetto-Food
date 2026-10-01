@@ -70,12 +70,11 @@ export type PrintableReceipt = {
   content?: Record<string, unknown> | null;
   escpos?: { commands: Array<Record<string, unknown>> };
 };
-
 type LocalPrintQueue = {
   claim: (documentTypes: string[]) => LocalPrintJob | null;
-  complete: (id: string) => void;
-  fail: (id: string, error: string, ambiguous?: boolean) => void;
-  markPrinting?: (id: string) => boolean | void;
+  complete: (id: string, attemptId?: string) => void;
+  fail: (id: string, error: string, ambiguous?: boolean, attemptId?: string) => void;
+  markPrinting?: (id: string) => string | boolean | void;
   wasPrinted: (serverOrderId: string, documentType: string) => boolean;
   wasTargetPrinted?: (
     scope: "local" | "server",
@@ -443,10 +442,8 @@ export class DesktopPrintWorker {
     ];
     const job = this.localQueue.claim(roles);
     if (!job) return false;
-    if (
-      this.localQueue.markPrinting &&
-      !this.localQueue.markPrinting(job.id)
-    ) {
+    const attemptId = this.localQueue.markPrinting?.(job.id);
+    if (this.localQueue.markPrinting && !attemptId) {
       return true;
     }
     try {
@@ -465,12 +462,16 @@ export class DesktopPrintWorker {
         content,
       };
       await this.printSystemTargets("local", job.id, targets, receipt);
-      this.localQueue.complete(job.id);
+      this.localQueue.complete(
+        job.id,
+        typeof attemptId === "string" ? attemptId : undefined,
+      );
     } catch (error) {
       this.localQueue.fail(
         job.id,
         message(error),
         isPrintOutcomeUnknown(error),
+        typeof attemptId === "string" ? attemptId : undefined,
       );
       return true;
     }
