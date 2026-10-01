@@ -89,3 +89,22 @@ test("admin mutations are explicitly online-only instead of silently unknown", (
   assert.equal(classifyOfflineMutation("POST", "/api/v1/platform/sites/site-1/rotate-token"), "online-only");
   assert.equal(classifyOfflineMutation("POST", "/api/v1/unknown/action"), "unknown");
 });
+test("waiter order status and accept queue offline, while cancel stays online-only", () => {
+  assert.equal(
+    resolveOfflineCommand("PATCH", "/api/v1/orders/order-1/status")?.commandType,
+    "order.status.update",
+  );
+  assert.equal(
+    resolveOfflineCommand("POST", "/api/v1/orders/order-1/status"),
+    null,
+  );
+  assert.equal(
+    resolveOfflineCommand("POST", "/api/v1/orders/order-1/actions/accept")?.commandType,
+    "order.action",
+  );
+  for (const action of ["cancel", "refund", "unknown"]) {
+    const path = `/api/v1/orders/order-1/actions/${action}`;
+    assert.equal(resolveOfflineCommand("POST", path), null);
+    assert.equal(classifyOfflineMutation("POST", path), "online-only");
+  }
+});

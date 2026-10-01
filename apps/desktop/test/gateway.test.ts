@@ -1096,7 +1096,7 @@ test("gateway sends server version conflicts to the conflict inbox", async () =>
     authScope,
     payload: {
       commandType: "kitchen.action",
-      method: "POST",
+      method: "PATCH",
       pathname: "/api/v1/kitchen/orders/ticket-1/ready",
       targetUrl:
         "https://api.example.test/api/v1/kitchen/orders/ticket-1/ready",
@@ -1114,7 +1114,7 @@ test("gateway sends server version conflicts to the conflict inbox", async () =>
       if (url.endsWith("/health")) {
         return jsonResponse({ success: true, data: { ok: true } });
       }
-      if (init?.method === "POST") {
+      if (init?.method === "PATCH") {
         return new Response('{"code":"KITCHEN_VERSION_CONFLICT"}', {
           status: 409,
           headers: { "Content-Type": "application/json" },
@@ -1167,7 +1167,7 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
         });
       }
       if (
-        init?.method === "POST" &&
+        init?.method === "PATCH" &&
         url.endsWith("/orders/server-order-1/status")
       ) {
         sent.push(`${init.method} ${url}`);
@@ -1205,12 +1205,13 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
     const dependent = await fetch(
       `http://127.0.0.1:${gatewayPort}/api/v1/orders/${salePayload.data.order.id}/status`,
       {
-        method: "POST",
+        method: "PATCH",
         headers: {
           Authorization: authorization,
           "Content-Type": "application/json",
+          "Idempotency-Key": "dependency-status-key",
         },
-        body: JSON.stringify({ status: "ACCEPTED", expectedVersion: 0 }),
+        body: JSON.stringify({ status: "CONFIRMED", expectedVersion: 0 }),
       },
     );
     assert.equal(dependent.status, 202);
@@ -1237,7 +1238,7 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
     );
     assert.deepEqual(sent, [
       "POST https://api.example.test/api/v1/pos/orders",
-      "POST https://api.example.test/api/v1/orders/server-order-1/status",
+      "PATCH https://api.example.test/api/v1/orders/server-order-1/status",
     ]);
   } finally {
     await gateway.stop();
@@ -1287,12 +1288,13 @@ test("conflicted offline order creation blocks only its dependent commands", asy
     const dependentResponse = await fetch(
       `http://127.0.0.1:${gatewayPort}/api/v1/orders/${firstOrder.data.order.id}/status`,
       {
-        method: "POST",
+        method: "PATCH",
         headers: {
           Authorization: authorization,
           "Content-Type": "application/json",
+          "Idempotency-Key": "dependency-conflict-status-key",
         },
-        body: JSON.stringify({ status: "ACCEPTED", expectedVersion: 0 }),
+        body: JSON.stringify({ status: "CONFIRMED", expectedVersion: 0 }),
       },
     );
     assert.equal(dependentResponse.status, 202);
@@ -3618,6 +3620,279 @@ test("offline courier updates reject cross-branch and stale cached orders", asyn
     assert.equal(staleVersion.status, 409);
     assert.match((await staleVersion.json()).error.message, /versiya/i);
     assert.equal(store.summary().pendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("waiter order status and acceptance queue with branch/version guards and replay online", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-waiter-status-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("waiter-status", "branch-1");
+  let online = true;
+  const serverOrders = new Map<string, { version: number; status: string }>([
+    ["order-served", { version: 4, status: "NEW" }],
+    ["order-confirmed", { version: 2, status: "NEW" }],
+    ["order-accepted", { version: 8, status: "NEW" }],
+  ]);
+  const replayed: Array<{ path: string; version: number; key: string | null }> = [];
+  const table = {
+    id: "table-1",
+    branchId: "branch-1",
+    name: "1-stol",
+    status: "OCCUPIED",
+    orders: [
+      { id: "order-served", branchId: "branch-1", version: 4, status: "NEW", items: [] },
+      { id: "order-confirmed", branchId: "branch-1", version: 2, status: "NEW", items: [] },
+      { id: "order-accepted", branchId: "branch-1", version: 8, status: "NEW", items: [] },
+    ],
+  };
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    probeIntervalMs: 25,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/health")) return jsonResponse({ success: true });
+      if (!online) throw new Error("offline");
+      if (url.pathname === "/api/v1/realtime/bootstrap") {
+        return jsonResponse({
+          success: true,
+          data: {
+            schemaVersion: 2,
+            generatedAt: new Date().toISOString(),
+            branchId: "branch-1",
+            menu: { categories: [], products: [] },
+            tables: [table],
+          },
+        });
+      }
+      if (url.pathname === "/api/v1/tables/table-1") {
+        return jsonResponse({ success: true, data: table });
+      }
+      const statusMatch = url.pathname.match(/^\/api\/v1\/orders\/([^/]+)\/status$/);
+      const acceptMatch = url.pathname.match(/^\/api\/v1\/orders\/([^/]+)\/actions\/accept$/);
+      const orderId = statusMatch?.[1] ?? acceptMatch?.[1];
+      if (orderId && (init?.method === "PATCH" || init?.method === "POST")) {
+        const body = JSON.parse(String(init.body ?? "{}")) as {
+          expectedVersion?: number;
+          status?: string;
+        };
+        const order = serverOrders.get(orderId);
+        if (!order || body.expectedVersion !== order.version) {
+          return jsonResponse({ success: false, error: { message: "version conflict" } }, 409);
+        }
+        const headers = new Headers(init.headers);
+        replayed.push({
+          path: url.pathname,
+          version: body.expectedVersion,
+          key: headers.get("idempotency-key"),
+        });
+        order.version += 1;
+        order.status = acceptMatch?.[1] ? "CONFIRMED" : body.status ?? order.status;
+        return jsonResponse({
+          success: true,
+          data: { id: orderId, version: order.version, status: order.status },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const request = (
+      path: string,
+      method = "GET",
+      body?: Record<string, unknown>,
+      key?: string,
+    ) =>
+      fetch("http://127.0.0.1:" + port + path, {
+        method,
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          ...(key ? { "Idempotency-Key": key } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    assert.equal(
+      (await request("/api/v1/realtime/bootstrap?branchId=branch-1")).status,
+      200,
+    );
+    assert.equal(
+      (await request("/api/v1/tables/table-1?branchId=branch-1")).status,
+      200,
+    );
+
+    online = false;
+    const kitchen = await request(
+      "/api/v1/orders/order-served/status",
+      "PATCH",
+      { status: "CONFIRMED", expectedVersion: 4, reason: "Oshxonaga yuborildi" },
+      "waiter-confirmed-v4",
+    );
+    assert.equal(kitchen.status, 202);
+    const served = await request(
+      "/api/v1/orders/order-served/status",
+      "PATCH",
+      { status: "SERVED", expectedVersion: 5, reason: "Hisob so'raldi" },
+      "waiter-served-v5",
+    );
+    assert.equal(served.status, 202);
+    const confirmed = await request(
+      "/api/v1/orders/order-confirmed/status",
+      "PATCH",
+      { status: "CONFIRMED", expectedVersion: 2 },
+      "waiter-confirmed-v2",
+    );
+    assert.equal(confirmed.status, 202);
+    const accepted = await request(
+      "/api/v1/orders/order-accepted/actions/accept",
+      "POST",
+      { expectedVersion: 8 },
+      "waiter-accept-v8",
+    );
+    assert.equal(accepted.status, 202);
+
+    const invalidStatus = await request(
+      "/api/v1/orders/order-served/status",
+      "PATCH",
+      { status: "CANCELLED", expectedVersion: 6 },
+      "waiter-cancel-status",
+    );
+    assert.equal(invalidStatus.status, 409);
+    const forced = await request(
+      "/api/v1/orders/order-confirmed/status",
+      "PATCH",
+      { status: "SERVED", expectedVersion: 3, force: true },
+      "waiter-force-status",
+    );
+    assert.equal(forced.status, 409);
+    const stale = await request(
+      "/api/v1/orders/order-confirmed/status",
+      "PATCH",
+      { status: "SERVED", expectedVersion: 2 },
+      "waiter-stale-status",
+    );
+    assert.equal(stale.status, 409);
+    const missingKey = await request(
+      "/api/v1/orders/order-confirmed/status",
+      "PATCH",
+      { status: "SERVED", expectedVersion: 3 },
+    );
+    assert.equal(missingKey.status, 409);
+    const foreign = await request(
+      "/api/v1/orders/foreign-order/status",
+      "PATCH",
+      { status: "CONFIRMED", expectedVersion: 1 },
+      "waiter-foreign-status",
+    );
+    assert.equal(foreign.status, 409);
+    const cancel = await request(
+      "/api/v1/orders/order-confirmed/actions/cancel",
+      "POST",
+      { expectedVersion: 3 },
+      "waiter-cancel-action",
+    );
+    assert.equal(cancel.status, 503);
+    assert.equal(store.summary().pendingCommands, 4);
+
+    const projectedResponse = await request(
+      "/api/v1/tables/table-1?branchId=branch-1",
+    );
+    const projected = (await projectedResponse.json()) as {
+      data: { orders: Array<{ id: string; version: number; status: string; pendingSync?: boolean }> };
+    };
+    const projectedOrders = new Map(
+      projected.data.orders.map((order) => [order.id, order]),
+    );
+    assert.deepEqual(
+      [
+        projectedOrders.get("order-served")?.status,
+        projectedOrders.get("order-served")?.version,
+        projectedOrders.get("order-confirmed")?.status,
+        projectedOrders.get("order-confirmed")?.version,
+        projectedOrders.get("order-accepted")?.status,
+        projectedOrders.get("order-accepted")?.version,
+      ],
+      ["SERVED", 6, "CONFIRMED", 3, "CONFIRMED", 9],
+    );
+    assert.equal(projectedOrders.get("order-served")?.pendingSync, true);
+
+    online = true;
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+      8000,
+    );
+    assert.equal(replayed.length, 4);
+    assert.deepEqual(
+      replayed.map((entry) => entry.version).sort((a, b) => a - b),
+      [2, 4, 5, 8],
+    );
+    assert.ok(replayed.every((entry) => entry.key));
+    assert.equal(store.summary().conflictCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("legacy queued order cancellation is conflicted instead of replayed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-order-cancel-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("waiter-legacy-cancel", "branch-1");
+  const authScope = DesktopStore.mutationScope(authorization);
+  store.enqueueMutation({
+    idempotencyKey: "legacy-cancel-key",
+    commandType: "order.action",
+    aggregateType: "orders",
+    aggregateId: "order-legacy",
+    actorId: "waiter-legacy-cancel",
+    branchId: "branch-1",
+    authScope,
+    payload: {
+      commandType: "order.action",
+      method: "POST",
+      pathname: "/api/v1/orders/order-legacy/actions/cancel",
+      targetUrl: "https://api.example.test/api/v1/orders/order-legacy/actions/cancel",
+      headers: { "idempotency-key": "legacy-cancel-key" },
+      body: JSON.stringify({ expectedVersion: 4, reason: "legacy" }),
+    },
+  });
+  let cancellationRequests = 0;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (url.pathname.endsWith("/actions/cancel")) cancellationRequests += 1;
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const refresh = await fetch("http://127.0.0.1:" + port + "/api/v1/branches", {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(refresh.status, 200);
+    await waitFor(() => store.summary().conflictCommands === 1);
+    assert.equal(cancellationRequests, 0);
   } finally {
     await gateway.stop();
     store.close();

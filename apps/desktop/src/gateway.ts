@@ -8,7 +8,6 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import {
   resolveOfflineCommand,
-  resolveOfflineCommandType,
   type OfflineCommandDefinition,
 } from "./commands.js";
 import {
@@ -364,6 +363,26 @@ export class DesktopGateway {
             });
             return;
           }
+          const waiterOrderWorkflowError = offlineWaiterOrderWorkflowQueueError(
+            this.store,
+            authScope,
+            cacheScope,
+            identity?.branchId,
+            method,
+            url.pathname,
+            body,
+            request,
+          );
+          if (waiterOrderWorkflowError) {
+            this.sendJson(response, 409, {
+              success: false,
+              error: {
+                code: "OFFLINE_ORDER_WORKFLOW_UNSAFE",
+                message: waiterOrderWorkflowError,
+              },
+            });
+            return;
+          }
           const queued = this.queueMutation({
             authorization,
             authScope,
@@ -579,6 +598,26 @@ export class DesktopGateway {
             error: {
               code: "OFFLINE_WAITER_CACHE_MISSING",
               message: waiterItemError,
+            },
+          });
+          return;
+        }
+        const waiterOrderWorkflowError = offlineWaiterOrderWorkflowQueueError(
+          this.store,
+          authScope,
+          cacheScope,
+          identity?.branchId,
+          method,
+          url.pathname,
+          body,
+          request,
+        );
+        if (waiterOrderWorkflowError) {
+          this.sendJson(response, 409, {
+            success: false,
+            error: {
+              code: "OFFLINE_ORDER_WORKFLOW_UNSAFE",
+              message: waiterOrderWorkflowError,
             },
           });
           return;
@@ -918,9 +957,10 @@ export class DesktopGateway {
         throw new Error("Queued command payload is incomplete");
       }
 
-      const definition = payload.commandType
-        ? resolveOfflineCommandType(payload.commandType)
-        : resolveOfflineCommand(payload.method, payload.pathname ?? "");
+      const definition = resolveOfflineCommand(
+        payload.method,
+        payload.pathname ?? "",
+      );
       const legacyCommand =
         !payload.commandType &&
         command.commandType === `${payload.method} ${payload.pathname ?? ""}`;
@@ -2157,15 +2197,30 @@ function applyOptimisticProjection(
     const statusMatch = commandPath.match(
       /^\/api\/v1\/orders\/([^/]+)\/status$/,
     );
-    const nextStatus = stringField(commandBody, "status");
+    const acceptMatch = commandPath.match(
+      /^\/api\/v1\/orders\/([^/]+)\/actions\/accept$/,
+    );
+    const expectedVersion = numberField(commandBody, "expectedVersion");
+    const nextStatus =
+      command.commandType === "order.action" && acceptMatch?.[1]
+        ? "CONFIRMED"
+        : stringField(commandBody, "status");
+    const orderWorkflowId = statusMatch?.[1] ?? acceptMatch?.[1];
     if (
-      statusMatch?.[1] &&
+      orderWorkflowId &&
+      expectedVersion !== null &&
       nextStatus &&
-      pathname === "/api/v1/orders" &&
-      patchOrderProjection(projected, statusMatch[1], {
-        status: nextStatus,
-        pendingSync: true,
-      })
+      ((command.commandType === "order.status.update" && statusMatch?.[1]) ||
+        (command.commandType === "order.action" && acceptMatch?.[1])) &&
+      (pathname === "/api/v1/orders" ||
+        pathname === "/api/v1/tables" ||
+        /^\/api\/v1\/tables\/[^/]+$/.test(pathname)) &&
+      patchOrderStatusProjection(
+        projected,
+        orderWorkflowId,
+        expectedVersion,
+        nextStatus,
+      )
     ) {
       applied.push(command.id);
     }
@@ -2173,7 +2228,6 @@ function applyOptimisticProjection(
     const kitchenAction = commandPath.match(
       /^\/api\/v1\/kitchen\/orders\/([^/]+)\/(accept|start|ready|complete|cancel)$/,
     );
-    const expectedVersion = numberField(commandBody, "expectedVersion");
     if (
       kitchenAction?.[1] &&
       expectedVersion !== null &&
@@ -2314,14 +2368,21 @@ function prependProjection(
   return false;
 }
 
-function patchOrderProjection(
+function patchOrderStatusProjection(
   projected: unknown,
   orderId: string,
-  patch: Record<string, unknown>,
+  expectedVersion: number,
+  status: string,
 ): boolean {
   const order = findRecordById(projected, orderId);
-  if (!order) return false;
-  Object.assign(order, patch);
+  if (!order || numberField(order, "version") !== expectedVersion) {
+    return false;
+  }
+  Object.assign(order, {
+    status,
+    version: expectedVersion + 1,
+    pendingSync: true,
+  });
   return true;
 }
 
@@ -3120,6 +3181,114 @@ function offlineCourierMutationQueueError(
     }
   }
   return null;
+}
+
+function offlineWaiterOrderWorkflowQueueError(
+  store: DesktopStore,
+  authScope: string,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  method: string,
+  pathname: string,
+  body: ArrayBuffer | undefined,
+  request: IncomingMessage,
+): string | null {
+  const statusMatch =
+    method === "PATCH"
+      ? pathname.match(/^\/api\/v1\/orders\/([^/]+)\/status$/)
+      : null;
+  const acceptMatch =
+    method === "POST"
+      ? pathname.match(/^\/api\/v1\/orders\/([^/]+)\/actions\/accept$/)
+      : null;
+  if (!statusMatch?.[1] && !acceptMatch?.[1]) return null;
+  if (!body || !branchId) {
+    return "Buyurtma yoki faol filial aniqlanmadi. Oflayn amal navbatga olinmadi.";
+  }
+  if (!headerValue(request.headers["idempotency-key"])) {
+    return "Takroriy yuborishdan himoya kaliti yo'q. Oflayn amal navbatga olinmadi.";
+  }
+
+  const requestBody = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const allowedFields = statusMatch?.[1]
+    ? new Set(["status", "reason", "expectedVersion"])
+    : new Set(["reason", "expectedVersion"]);
+  if (
+    !requestBody ||
+    Object.keys(requestBody).some((key) => !allowedFields.has(key)) ||
+    (requestBody.reason !== undefined &&
+      (typeof requestBody.reason !== "string" || requestBody.reason.length > 500))
+  ) {
+    return "Oflayn faqat qo'llab-quvvatlanadigan buyurtma holatini yuborish mumkin.";
+  }
+
+  const expectedVersion = numberField(requestBody, "expectedVersion");
+  if (expectedVersion === null || !Number.isInteger(expectedVersion)) {
+    return "Buyurtma versiyasi aniqlanmadi. Internet ulang va buyurtmani yangilang.";
+  }
+
+  const rawOrderId = statusMatch?.[1] ?? acceptMatch?.[1] ?? "";
+  let orderId: string;
+  try {
+    orderId = decodeURIComponent(rawOrderId);
+  } catch {
+    return "Buyurtma identifikatori yaroqsiz. Oflayn amal navbatga olinmadi.";
+  }
+  const order = cachedWaiterOrderRecord(
+    store,
+    authScope,
+    cacheScope,
+    branchId,
+    orderId,
+  );
+  if (!order && orderId.startsWith("local-")) {
+    const localCreate = store.listActiveMutations(authScope).find(
+      (command) =>
+        command.aggregateId === orderId &&
+        command.aggregateType === "orders" &&
+        command.branchId === branchId &&
+        ["pos.order.create", "table.order.create"].includes(
+          command.commandType,
+        ),
+    );
+    if (!localCreate || expectedVersion !== 0) {
+      return "Lokal buyurtma shu filialdagi faol yaratish amali bilan bog'lanmadi. Oflayn status navbatga olinmadi.";
+    }
+    const localNextStatus = acceptMatch?.[1]
+      ? "CONFIRMED"
+      : stringField(requestBody, "status");
+    return localNextStatus === "CONFIRMED"
+      ? null
+      : "Lokal yangi buyurtmani oflayn faqat oshxonaga yuborish mumkin.";
+  }
+  if (!order) {
+    return "Buyurtma shu filialning keshlangan stol ro'yxatida topilmadi. Internet borida zalni yangilang.";
+  }
+  if (numberField(order, "version") !== expectedVersion) {
+    return "Buyurtma versiyasi keshdagi holatga mos emas. Internet ulang va buyurtmani yangilang.";
+  }
+
+  const currentStatus = stringField(order, "status");
+  if (acceptMatch?.[1]) {
+    return currentStatus === "NEW"
+      ? null
+      : "Faqat yangi buyurtmani qabul qilish mumkin. Internet borida holatini tekshiring.";
+  }
+
+  const nextStatus = stringField(requestBody, "status");
+  if (
+    nextStatus === "CONFIRMED" &&
+    currentStatus === "NEW"
+  ) {
+    return null;
+  }
+  if (
+    nextStatus === "SERVED" &&
+    ["CONFIRMED", "PREPARING", "READY"].includes(currentStatus ?? "")
+  ) {
+    return null;
+  }
+  return "Oflayn faqat yangi buyurtmani oshxonaga yuborish yoki faol buyurtma uchun hisob so'rash mumkin. Bekor qilish va yakunlash internetni talab qiladi.";
 }
 
 function offlineWaiterMutationQueueError(

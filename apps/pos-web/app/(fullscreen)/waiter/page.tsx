@@ -775,11 +775,17 @@ function WaiterFloor() {
       return;
     }
 
+    const status = kind === "kitchen" ? "CONFIRMED" : "SERVED";
+    const fingerprint = `${currentOrder.id}:${currentOrder.version}:status:${status}`;
+    const idempotencyKey =
+      itemActionKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    itemActionKeys.current.set(fingerprint, idempotencyKey);
     const changed = await runAction(
       kind,
       () =>
         apiFetch(`/orders/${currentOrder.id}/status`, {
           method: "PATCH",
+          headers: { "Idempotency-Key": idempotencyKey },
           signal: AbortSignal.timeout(20000),
           body: JSON.stringify(
             kind === "kitchen"
@@ -801,6 +807,7 @@ function WaiterFloor() {
     );
 
     if (changed) {
+      itemActionKeys.current.delete(fingerprint);
       setConfirmation(null);
 
       if (kind === "kitchen") {
