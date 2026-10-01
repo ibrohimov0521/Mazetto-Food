@@ -2780,3 +2780,278 @@ test("an unresolved earlier command blocks later writes to the same aggregate on
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("offline courier status projection rebases versions and reconciles the active list", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-courier-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("courier-offline", "branch-1");
+  const cacheScope = DesktopStore.authScope(authorization);
+  const requestUrl =
+    "https://api.example.test/api/v1/courier/orders?limit=100&offset=0";
+  const initialOrder = {
+    id: "customer-order-101",
+    type: "DELIVERY",
+    status: "READY",
+    branch: { id: "branch-1" },
+    order: {
+      id: "order-101",
+      status: "READY",
+      version: 7,
+      outstandingAmount: "0",
+    },
+  };
+  store.putCachedResponse({
+    cacheKey: DesktopStore.cacheKey(requestUrl, cacheScope),
+    requestUrl,
+    authScope: cacheScope,
+    status: 200,
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify({ success: true, data: [initialOrder] }),
+    cachedAt: new Date().toISOString(),
+  });
+  let online = false;
+  const replayed: Array<{ status: string; expectedVersion: number }> = [];
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 60_000,
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/health") {
+        return online
+          ? jsonResponse({ ok: true })
+          : jsonResponse({ ok: false }, 503);
+      }
+      if (url.pathname.endsWith("/courier/orders/customer-order-101/status")) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          status: string;
+          expectedVersion: number;
+        };
+        replayed.push(body);
+        return jsonResponse({
+          success: true,
+          data: {
+            ...initialOrder,
+            status: body.status === "SERVED" ? "READY" : body.status,
+            order: {
+              ...initialOrder.order,
+              status: body.status,
+              version: body.expectedVersion + 1,
+            },
+          },
+        });
+      }
+      return online
+        ? jsonResponse({ success: true, data: [] })
+        : jsonResponse({ success: false }, 503);
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "offline");
+    const baseUrl = "http://127.0.0.1:" + port;
+    const update = (status: string, expectedVersion: number, key: string) =>
+      fetch(baseUrl + "/api/v1/courier/orders/customer-order-101/status", {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify({ status, expectedVersion }),
+      });
+
+    const served = await update("SERVED", 7, "courier-served-offline");
+    assert.equal(served.status, 202);
+    const afterServed = await fetch(baseUrl + "/api/v1/courier/orders?limit=100&offset=0", {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(afterServed.headers.get("x-mazetto-desktop"), "offline-optimistic");
+    const servedData = (await afterServed.json()) as {
+      data: Array<{ status: string; pendingSync: boolean; order: { status: string; version: number; pendingSync: boolean } }>;
+    };
+    assert.equal(servedData.data[0]?.status, "READY");
+    assert.equal(servedData.data[0]?.order.status, "SERVED");
+    assert.equal(servedData.data[0]?.order.version, 8);
+    assert.equal(servedData.data[0]?.pendingSync, true);
+    assert.equal(servedData.data[0]?.order.pendingSync, true);
+
+    const completed = await update("COMPLETED", 8, "courier-completed-offline");
+    assert.equal(completed.status, 202);
+    const afterCompleted = await fetch(baseUrl + "/api/v1/courier/orders?limit=100&offset=0", {
+      headers: { Authorization: authorization },
+    });
+    assert.deepEqual((await afterCompleted.json()).data, []);
+
+    online = true;
+    await waitFor(() => gateway.status().mode === "online");
+    await waitFor(() => store.summary().pendingCommands === 0, 3_000);
+    assert.deepEqual(replayed, [
+      { status: "SERVED", expectedVersion: 7 },
+      { status: "COMPLETED", expectedVersion: 8 },
+    ]);
+    const reconciled = store.getLatestCachedResponse(
+      cacheScope,
+      "/api/v1/courier/orders",
+    );
+    assert.ok(reconciled);
+    assert.deepEqual(JSON.parse(reconciled.body).data, []);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline courier completion with an unpaid balance is rejected before queueing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-courier-cash-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("courier-cash-offline", "branch-1");
+  const cacheScope = DesktopStore.authScope(authorization);
+  const requestUrl =
+    "https://api.example.test/api/v1/courier/orders?limit=100&offset=0";
+  store.putCachedResponse({
+    cacheKey: DesktopStore.cacheKey(requestUrl, cacheScope),
+    requestUrl,
+    authScope: cacheScope,
+    status: 200,
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify({
+      success: true,
+      data: [{
+        id: "customer-order-202",
+        type: "DELIVERY",
+        status: "SERVED",
+        branch: { id: "branch-1" },
+        order: {
+          id: "order-202",
+          status: "SERVED",
+          version: 11,
+          outstandingAmount: "18000",
+        },
+      }],
+    }),
+    cachedAt: new Date().toISOString(),
+  });
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 60_000,
+    fetchImpl: async () => jsonResponse({ ok: false }, 503),
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "offline");
+    const response = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/courier/orders/customer-order-202/status",
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "courier-cash-offline",
+        },
+        body: JSON.stringify({
+          status: "COMPLETED",
+          expectedVersion: 11,
+          amount: 18_000,
+          paymentMethodCode: "CASH",
+          shiftId: "courier-shift-1",
+        }),
+      },
+    );
+    assert.equal(response.status, 409);
+    const payload = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(payload.error.code, "OFFLINE_COURIER_MUTATION_UNSAFE");
+    assert.match(payload.error.message, /naqd qoldiq/i);
+    assert.equal(store.summary().pendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("offline courier updates reject cross-branch and stale cached orders", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-courier-scope-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("courier-scope", "branch-1");
+  const cacheScope = DesktopStore.authScope(authorization);
+  const requestUrl = "https://api.example.test/api/v1/courier/orders?limit=100";
+  const saveOrder = (branchId: string, version: number) => {
+    const body = JSON.stringify({
+      success: true,
+      data: [{
+        id: "customer-order-303",
+        type: "DELIVERY",
+        status: "READY",
+        branch: { id: branchId },
+        order: {
+          id: "order-303",
+          status: "READY",
+          version,
+          outstandingAmount: "0",
+        },
+      }],
+    });
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(requestUrl, cacheScope),
+      requestUrl,
+      authScope: cacheScope,
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body,
+      cachedAt: new Date().toISOString(),
+    });
+  };
+  saveOrder("branch-2", 12);
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 60_000,
+    fetchImpl: async () => jsonResponse({ ok: false }, 503),
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "offline");
+    const send = () =>
+      fetch(
+        "http://127.0.0.1:" + port + "/api/v1/courier/orders/customer-order-303/status",
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "courier-scope-check",
+          },
+          body: JSON.stringify({ status: "SERVED", expectedVersion: 12 }),
+        },
+      );
+    const wrongBranch = await send();
+    assert.equal(wrongBranch.status, 409);
+    assert.match((await wrongBranch.json()).error.message, /filial/i);
+
+    saveOrder("branch-1", 11);
+    const staleVersion = await send();
+    assert.equal(staleVersion.status, 409);
+    assert.match((await staleVersion.json()).error.message, /versiya/i);
+    assert.equal(store.summary().pendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
