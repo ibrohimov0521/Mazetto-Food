@@ -106,6 +106,62 @@ test("cache compaction is amortized while expired snapshots fail closed", async 
   }
 });
 
+test("store startup defers compaction until a cache scope is written", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const seedStore = new DesktopStore(path);
+  seedStore.close();
+
+  const authScope = "startup-compaction-scope";
+  const seedDatabase = new DatabaseSync(path);
+  seedDatabase.exec("BEGIN IMMEDIATE");
+  const insert = seedDatabase.prepare(
+    `INSERT INTO api_cache (
+      cache_key, request_url, auth_scope, status, content_type, body, cached_at
+    ) VALUES (?, ?, ?, 200, 'application/json', '{}', ?)`,
+  );
+  const cachedAt = new Date().toISOString();
+  for (let index = 0; index < 5001; index += 1) {
+    insert.run(
+      `startup-cache-${index}`,
+      `https://api.example.test/api/v1/startup-cache/${index}`,
+      authScope,
+      cachedAt,
+    );
+  }
+  seedDatabase.exec("COMMIT");
+  seedDatabase.close();
+
+  const store = new DesktopStore(path);
+  const probe = new DatabaseSync(path);
+  try {
+    const countAfterStartup = probe
+      .prepare("SELECT COUNT(*) AS count FROM api_cache WHERE auth_scope = ?")
+      .get(authScope) as { count: number | bigint };
+    assert.equal(Number(countAfterStartup.count), 5001);
+
+    const requestUrl = "https://api.example.test/api/v1/startup-cache/new";
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(requestUrl, authScope),
+      requestUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: "{}",
+      cachedAt: new Date().toISOString(),
+    });
+
+    const countAfterWrite = probe
+      .prepare("SELECT COUNT(*) AS count FROM api_cache WHERE auth_scope = ?")
+      .get(authScope) as { count: number | bigint };
+    assert.equal(Number(countAfterWrite.count), 5000);
+  } finally {
+    probe.close();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("desktop store selects an exact cached endpoint before newer nested routes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
@@ -494,7 +550,7 @@ test("desktop store lists, retries and cancels queued mutations", async () => {
   }
 });
 
-test("desktop store enforces cache retention on startup without crossing scopes", async () => {
+test("desktop store defers expired cache cleanup to writes in that scope", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const path = join(directory, "test.sqlite");
   const expiredScope = DesktopStore.authScope("Bearer expired-scope");
@@ -540,7 +596,23 @@ test("desktop store enforces cache retention on startup without crossing scopes"
   try {
     assert.equal(reopenedStore.getCachedResponse(expiredKey), null);
     assert.ok(reopenedStore.getCachedResponse(activeKey));
-    assert.equal(reopenedStore.summary().cachedResponses, 1);
+    assert.equal(reopenedStore.summary().cachedResponses, 2);
+
+    const refreshedUrl = "https://api.example.test/refreshed";
+    const refreshedKey = DesktopStore.cacheKey(refreshedUrl, expiredScope);
+    reopenedStore.putCachedResponse({
+      cacheKey: refreshedKey,
+      requestUrl: refreshedUrl,
+      authScope: expiredScope,
+      status: 200,
+      contentType: "application/json",
+      body: "{}",
+      cachedAt: new Date().toISOString(),
+    });
+
+    assert.equal(reopenedStore.getCachedResponse(expiredKey), null);
+    assert.ok(reopenedStore.getCachedResponse(refreshedKey));
+    assert.equal(reopenedStore.summary().cachedResponses, 2);
   } finally {
     reopenedStore.close();
     await rm(directory, { recursive: true, force: true });

@@ -121,7 +121,6 @@ export class DesktopStore {
     this.database.exec("PRAGMA journal_mode = WAL");
     this.database.exec("PRAGMA foreign_keys = ON");
     this.migrate();
-    this.compactAllCaches();
     this.recoverInterruptedMutations();
   }
 
@@ -1148,16 +1147,6 @@ export class DesktopStore {
 
   close(): void {
     this.database.close();
-  }
-
-  private compactAllCaches(): void {
-    const scopes = this.database
-      .prepare("SELECT DISTINCT auth_scope AS authScope FROM api_cache")
-      .all() as Array<{ authScope: string }>;
-
-    for (const { authScope } of scopes) {
-      this.compactCache(authScope);
-    }
   }
 
   private maybeCompactCache(authScope: string): void {
