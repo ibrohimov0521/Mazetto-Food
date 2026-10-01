@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, Printer, RefreshCw, X } from "lucide-react";
 import { apiFetch } from "../../lib/api";
+import { runPrinterTestsIndependently } from "../../lib/printer-test-batch.mjs";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
@@ -102,6 +103,12 @@ type SelectedSystemPrinter = {
   paperHeightMm?: number | "";
 };
 
+type PrinterTestResult = {
+  name: string;
+  ok: boolean;
+  message: string;
+};
+
 const printRoleOptions = [
   { value: "RECEIPT", label: "Mijoz cheki" },
   { value: "KITCHEN", label: "Oshxona" },
@@ -123,6 +130,7 @@ export function DesktopStatusBadge() {
   const [printerHost, setPrinterHost] = useState("");
   const [printerPort, setPrinterPort] = useState("9100");
   const [printerMessage, setPrinterMessage] = useState("");
+  const [printerTestResults, setPrinterTestResults] = useState<PrinterTestResult[]>([]);
   const [printerBusy, setPrinterBusy] = useState(false);
   const [printerStatus, setPrinterStatus] = useState<PrinterStatus | null>(null);
   const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
@@ -335,9 +343,11 @@ export function DesktopStatusBadge() {
   }
 
   async function saveSystemPrinters(test = false): Promise<void> {
-    if (!window.mazettoDesktop?.printer) return;
+    const printerApi = window.mazettoDesktop?.printer;
+    if (!printerApi) return;
     setPrinterBusy(true);
     setPrinterMessage("");
+    setPrinterTestResults([]);
     try {
       const invalidProfile = selectedSystemPrinters.find((printer) => {
         const width = Number(printer.paperWidthMm);
@@ -360,23 +370,34 @@ export function DesktopStatusBadge() {
             : {}),
         };
       });
-      const settings = await window.mazettoDesktop.printer.saveSystem({ printers });
+      const settings = await printerApi.saveSystem({ printers });
       setPrinterStatus(settings);
       printerSettingsDirty.current = false;
       if (test) {
-        for (const printer of printers) {
-          await window.mazettoDesktop.printer.testSystem({
-            name: printer.name,
-            role: printer.roles[0] ?? "RECEIPT",
-            paperFormat: printer.paperFormat,
-            paperWidthMm: printer.paperWidthMm,
-            ...(printer.paperHeightMm == null
-              ? {}
-              : { paperHeightMm: Number(printer.paperHeightMm) }),
-          });
-        }
+        const results = await runPrinterTestsIndependently(
+          printers,
+          async (printer) => {
+            await printerApi.testSystem({
+              name: printer.name,
+              role: printer.roles[0] ?? "RECEIPT",
+              paperFormat: printer.paperFormat,
+              paperWidthMm: printer.paperWidthMm,
+              ...(printer.paperHeightMm == null
+                ? {}
+                : { paperHeightMm: Number(printer.paperHeightMm) }),
+            });
+          },
+          setPrinterTestResults,
+        );
+        const passed = results.filter((result) => result.ok).length;
+        setPrinterMessage(
+          results.length === 0
+            ? "Test qilish uchun printer tanlanmagan."
+            : `${passed}/${results.length} printer Windows tomonidan qabul qilindi. Qog'ozni qurilmaning o'zidan tekshiring.`,
+        );
+      } else {
+        setPrinterMessage("Windows printer sozlamalari saqlandi.");
       }
-      setPrinterMessage(test ? "Tanlangan printerlarda test cheki chiqarildi." : "Windows printer sozlamalari saqlandi.");
     } catch (error) {
       setPrinterMessage(error instanceof Error ? error.message : "Printer sozlamalari saqlanmadi.");
     } finally {
@@ -661,6 +682,15 @@ export function DesktopStatusBadge() {
               <div className="grid gap-2 sm:grid-cols-[1fr_90px_auto_auto]"><input aria-label="Zaxira printer IP manzili" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" value={printerHost} /><input aria-label="Zaxira printer porti" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" inputMode="numeric" onChange={(event) => setPrinterPort(event.target.value)} value={printerPort} /><Button isLoading={printerBusy} onClick={() => void savePrinter()} size="sm" variant="ghost">Saqlash</Button><Button disabled={!printerHost && !printerStatus?.managedPrinters} isLoading={printerBusy} onClick={() => void (printerStatus?.managedPrinters ? testManagedPrinters() : savePrinter(true))} size="sm">Sinash</Button></div>
             </details>
             {printerMessage ? <p className="mt-2 text-[12px] text-mz-text-muted">{printerMessage}</p> : null}
+            {printerTestResults.length ? (
+              <ul aria-live="polite" className="mt-2 grid gap-1 text-[11px]">
+                {printerTestResults.map((result) => (
+                  <li className={result.ok ? "text-mz-success" : "text-mz-danger"} key={result.name}>
+                    <span className="font-semibold">{result.name}:</span> {result.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <DesktopUpdateControls />
           <div className="flex justify-end">
