@@ -36,6 +36,7 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
+import { readOfflineKitchenSnapshot } from "../../../lib/offline-kitchen-bootstrap.mjs";
 import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 
 export default function KitchenPage() {
@@ -81,44 +82,64 @@ function KitchenDisplay() {
   const pendingActions = useRef(0);
   const actionKeys = useRef(new Map<string, string>());
 
-  const loadTickets = useCallback(async (force = false): Promise<boolean> => {
-    if ((loadRequest.current || pendingActions.current > 0) && !force) return false;
-    loadRequest.current?.abort();
-    const controller = new AbortController();
-    loadRequest.current = controller;
-    const version = ++loadVersion.current;
-    setRefreshing(true);
-    try {
-      const queue = await apiFetch<KitchenQueueResponse>("/kitchen/orders", {
-        cache: "no-store",
-        signal: AbortSignal.any([
+  const loadTickets = useCallback(
+    async (force = false): Promise<boolean> => {
+      if ((loadRequest.current || pendingActions.current > 0) && !force)
+        return false;
+      loadRequest.current?.abort();
+      const controller = new AbortController();
+      loadRequest.current = controller;
+      const version = ++loadVersion.current;
+      setRefreshing(true);
+      try {
+        const signal = AbortSignal.any([
           controller.signal,
           AbortSignal.timeout(12000),
-        ]),
-      });
-      if (version !== loadVersion.current) return false;
-      setTickets(queue.items);
-      setQueueHasMore(queue.hasMore);
-      setQueueLimit(queue.limit);
-      setError(null);
-      setLastUpdatedAt(new Date());
-      return true;
-    } catch (caught) {
-      if (version !== loadVersion.current) return false;
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Oshxona buyurtmalari yuklanmadi",
-      );
-      return false;
-    } finally {
-      if (loadRequest.current === controller) loadRequest.current = null;
-      if (version === loadVersion.current) {
-        setIsLoading(false);
-        setRefreshing(false);
+        ]);
+        let queue: KitchenQueueResponse;
+        if (window.mazettoDesktop?.api && user?.branchId) {
+          const snapshot = await apiFetch<unknown>(
+            "/realtime/bootstrap?branchId=" +
+              encodeURIComponent(user.branchId) +
+              "&panel=kitchen",
+            { cache: "no-store", signal },
+          );
+          const restored = readOfflineKitchenSnapshot(snapshot, user.branchId);
+          if (!restored) {
+            throw new Error("Filialning oshxona snapshot ma'lumoti topilmadi.");
+          }
+          queue = restored;
+        } else {
+          queue = await apiFetch<KitchenQueueResponse>("/kitchen/orders", {
+            cache: "no-store",
+            signal,
+          });
+        }
+        if (version !== loadVersion.current) return false;
+        setTickets(queue.items);
+        setQueueHasMore(queue.hasMore);
+        setQueueLimit(queue.limit);
+        setError(null);
+        setLastUpdatedAt(new Date());
+        return true;
+      } catch (caught) {
+        if (version !== loadVersion.current) return false;
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Oshxona buyurtmalari yuklanmadi",
+        );
+        return false;
+      } finally {
+        if (loadRequest.current === controller) loadRequest.current = null;
+        if (version === loadVersion.current) {
+          setIsLoading(false);
+          setRefreshing(false);
+        }
       }
-    }
-  }, []);
+    },
+    [user?.branchId],
+  );
 
   const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,

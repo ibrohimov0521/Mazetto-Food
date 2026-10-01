@@ -418,4 +418,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Staff panel refresh state is now visible while requests are in progress, including when cached data remains on screen; stale-cache refreshes are distinguished from fresh-cache refreshes.
 - This is operator feedback, not a freshness guarantee. Offline writes still depend on each command's authorization, cached data and idempotency contract.
-- Verification: focused offline-freshness tests 9/9 and full monorepo CI passed. Windows release, Dokploy deployment and production smoke are tracked in this checkpoint's PR.
+- Verification: focused offline-freshness tests 9/9 and full monorepo CI passed. Windows release, Dokploy deployment and production smoke passed in PR #173.
+- Desktop bundle version: 0.1.81.
+
+## D2 offline kitchen queue snapshot (2026-10-01)
+
+- The Desktop kitchen panel now loads its active queue from a branch-bound, repeatable-read bootstrap snapshot. The response is capped at 250 tickets and selects only kitchen display fields; customer phone and address fields are not requested.
+- The browser-based kitchen panel keeps using the existing `/kitchen/orders` endpoint. The Desktop path validates snapshot version, timestamp, queue shape and each ticket's branch before rendering.
+- Verification: backend bootstrap tests 3/3, POS snapshot tests 2/2, focused typecheck/lint passed, and full monorepo CI passed (including all 33 operations validators).
+- Desktop bundle version: 0.1.82. Windows release, Dokploy deployment and production smoke remain pending for this checkpoint.
+- This improves cached reads only. Offline kitchen actions still depend on their existing idempotency/replay rules; uncached data, expired sessions and unsupported operations are not made available offline by this change.

@@ -13,12 +13,17 @@ export class RealtimeController {
     private readonly bootstrapService: RealtimeBootstrapService,
   ) {}
   @Get("bootstrap")
-  @PermissionsAny(PERMISSIONS.POS_USE, PERMISSIONS.TABLE_VIEW)
+  @PermissionsAny(
+    PERMISSIONS.POS_USE,
+    PERMISSIONS.TABLE_VIEW,
+    PERMISSIONS.KITCHEN_VIEW,
+  )
   bootstrap(
     @Query("branchId") branchId: string | undefined,
+    @Query("panel") panel: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.bootstrapService.create(branchId, user);
+    return this.bootstrapService.create(branchId, user, panel);
   }
 
   @Get("events")
