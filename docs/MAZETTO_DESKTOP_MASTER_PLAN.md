@@ -455,5 +455,12 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Before returning an offline queued response for a kitchen action, Desktop now requires a cached kitchen ticket from the active branch and an exact expected version. Missing version/cache/ticket, cross-branch data and stale versions are rejected without creating an outbox command.
 - Valid sequential kitchen actions remain optimistically projected and are rebased on server acknowledgements during replay.
-- Verification: Desktop tests 98/98, typecheck and scoped lint passed. Full monorepo CI, Desktop 0.1.86 release and Dokploy production smoke are pending.
+- Verification: Desktop tests 98/98, typecheck and scoped lint passed. PR CI 36861661935 and main CI 36862128678 passed; Desktop 0.1.86 release 36862128424 succeeded; Dokploy deploy 36862537591 succeeded. Production smoke was skipped because this change modified no server services.
 - This closes one unsafe queue path; it does not make unsupported admin/configuration writes, first-time login, uncached data, card payments or every role fully offline.
+
+## D6 waiter order version gate (2026-10-01)
+
+- Offline waiter supplemental item additions require the order to exist in the current branch's cached bootstrap and the request's expected version to match its optimistically projected version. Sequential additions build on prior queued additions. Item edits and cancellations remain online-only until their local projections are implemented.
+- Missing/stale versions, missing orders/items and cross-branch snapshots fail closed without adding an outbox command.
+- Verification: Desktop tests 100/100, typecheck and scoped ESLint passed. Pull request CI, Windows release and Dokploy deploy are pending.
+- Desktop bundle version: 0.1.87.

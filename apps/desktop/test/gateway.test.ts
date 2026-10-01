@@ -1792,6 +1792,172 @@ test("gateway queues waiter table orders offline and replays the local order cha
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("waiter offline item writes require a branch-bound order and current version", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-waiter-version-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("waiter-version-gate", "branch-1");
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ success: true });
+      if (url.endsWith("/realtime/bootstrap?branchId=branch-1")) {
+        return jsonResponse({
+          success: true,
+          data: {
+            schemaVersion: 2,
+            generatedAt: new Date().toISOString(),
+            branchId: "branch-1",
+            menu: {
+              categories: [],
+              products: [
+                {
+                  id: "product-1",
+                  name: "Lavash",
+                  sellingPrice: "12000.00",
+                  variants: [],
+                  modifiers: [],
+                },
+              ],
+            },
+            tables: [
+              {
+                id: "table-1",
+                branchId: "branch-1",
+                name: "1-stol",
+                status: "OCCUPIED",
+                orders: [
+                  {
+                    id: "server-order-1",
+                    branchId: "branch-1",
+                    version: 4,
+                    status: "CONFIRMED",
+                    total: "12000.00",
+                    items: [],
+                  },
+                ],
+              },
+              {
+                id: "foreign-table",
+                branchId: "branch-2",
+                name: "B-filial",
+                status: "OCCUPIED",
+                orders: [
+                  {
+                    id: "foreign-order",
+                    branchId: "branch-2",
+                    version: 1,
+                    status: "CONFIRMED",
+                    items: [],
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const warm = await fetch(
+      "http://127.0.0.1:" + port +
+        "/api/v1/realtime/bootstrap?branchId=branch-1",
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(warm.status, 200);
+
+    online = false;
+    const request = (
+      orderId: string,
+      body: Record<string, unknown>,
+      key: string,
+    ) =>
+      fetch(
+        "http://127.0.0.1:" + port + "/api/v1/orders/" +
+          orderId + "/items",
+        {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            "Idempotency-Key": key,
+          },
+          body: JSON.stringify(body),
+        },
+      );
+    const stale = await request(
+      "server-order-1",
+      {
+        productId: "product-1",
+        quantity: 1,
+        expectedVersion: 3,
+      },
+      "waiter-stale-version",
+    );
+    assert.equal(stale.status, 503);
+    assert.match((await stale.json()).error.message, /yangilangan/);
+    assert.equal(store.summary().pendingCommands, 0);
+
+    const missingVersion = await request(
+      "server-order-1",
+      { productId: "product-1", quantity: 1 },
+      "waiter-missing-version",
+    );
+    assert.equal(missingVersion.status, 503);
+    assert.equal(store.summary().pendingCommands, 0);
+
+    const foreign = await request(
+      "foreign-order",
+      {
+        productId: "product-1",
+        quantity: 1,
+        expectedVersion: 1,
+      },
+      "waiter-foreign-order",
+    );
+    assert.equal(foreign.status, 503);
+    assert.equal(store.summary().pendingCommands, 0);
+
+    const first = await request(
+      "server-order-1",
+      {
+        productId: "product-1",
+        quantity: 1,
+        expectedVersion: 4,
+      },
+      "waiter-current-version",
+    );
+    assert.equal(first.status, 202);
+    const second = await request(
+      "server-order-1",
+      {
+        productId: "product-1",
+        quantity: 1,
+        expectedVersion: 5,
+      },
+      "waiter-rebased-version",
+    );
+    assert.equal(second.status, 202);
+    assert.equal(store.summary().pendingCommands, 2);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("waiter offline writes reject a bootstrap snapshot owned by another branch", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-waiter-tenant-"),
@@ -1882,7 +2048,7 @@ test("queued writes for one order rebase versions after every server acknowledge
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("waiter-rebase", "branch-1");
   const sentVersions: number[] = [];
-  let online = false;
+  let online = true;
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: 0,
@@ -1894,6 +2060,82 @@ test("queued writes for one order rebase versions after every server acknowledge
       const url = String(input);
       if (url.endsWith("/health")) {
         return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (url.endsWith("/realtime/bootstrap?branchId=branch-1")) {
+        return jsonResponse({
+          success: true,
+          data: {
+            schemaVersion: 2,
+            generatedAt: new Date().toISOString(),
+            branchId: "branch-1",
+            menu: {
+              categories: [],
+              products: [0, 1, 2].map((index) => ({
+                id: "product-" + index,
+                name: "Mahsulot " + index,
+                sellingPrice: "1000.00",
+                variants: [],
+                modifiers: [],
+              })),
+            },
+            tables: [
+              {
+                id: "table-1",
+                branchId: "branch-1",
+                name: "1-stol",
+                status: "OCCUPIED",
+                orders: [
+                  {
+                    id: "order-rebase",
+                    branchId: "branch-1",
+                    version: 10,
+                    status: "CONFIRMED",
+                    total: "0.00",
+                    items: [],
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
+      if (url.endsWith("/realtime/bootstrap?branchId=branch-1")) {
+        return jsonResponse({
+          success: true,
+          data: {
+            schemaVersion: 2,
+            generatedAt: new Date().toISOString(),
+            branchId: "branch-1",
+            menu: {
+              categories: [],
+              products: [0, 1, 2].map((index) => ({
+                id: "product-" + index,
+                name: "Mahsulot " + index,
+                sellingPrice: "1000.00",
+                variants: [],
+                modifiers: [],
+              })),
+            },
+            tables: [
+              {
+                id: "table-1",
+                branchId: "branch-1",
+                name: "1-stol",
+                status: "OCCUPIED",
+                orders: [
+                  {
+                    id: "order-rebase",
+                    branchId: "branch-1",
+                    version: 10,
+                    status: "CONFIRMED",
+                    total: "0.00",
+                    items: [],
+                  },
+                ],
+              },
+            ],
+          },
+        });
       }
       if (init?.method === "POST") {
         const body = JSON.parse(String(init.body ?? "{}")) as {
@@ -1911,6 +2153,14 @@ test("queued writes for one order rebase versions after every server acknowledge
 
   try {
     const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const warm = await fetch(
+      "http://127.0.0.1:" + port +
+        "/api/v1/realtime/bootstrap?branchId=branch-1",
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(warm.status, 200);
+    online = false;
     for (let index = 0; index < 3; index += 1) {
       const response = await fetch(
         `http://127.0.0.1:${port}/api/v1/orders/order-rebase/items`,
@@ -1924,7 +2174,7 @@ test("queued writes for one order rebase versions after every server acknowledge
           body: JSON.stringify({
             productId: `product-${index}`,
             quantity: 1,
-            expectedVersion: 10,
+            expectedVersion: 10 + index,
           }),
         },
       );

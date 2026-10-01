@@ -347,6 +347,7 @@ export class DesktopGateway {
           }
           const waiterItemError = offlineWaiterMutationQueueError(
             this.store,
+            authScope,
             cacheScope,
             identity?.branchId,
             method,
@@ -565,6 +566,7 @@ export class DesktopGateway {
         }
         const waiterItemError = offlineWaiterMutationQueueError(
           this.store,
+          authScope,
           cacheScope,
           identity?.branchId,
           method,
@@ -2984,6 +2986,7 @@ function offlineCourierMutationQueueError(
 
 function offlineWaiterMutationQueueError(
   store: DesktopStore,
+  authScope: string,
   cacheScope: string,
   branchId: string | null | undefined,
   method: string,
@@ -3001,34 +3004,129 @@ function offlineWaiterMutationQueueError(
     return "Stolning shu filialga tegishli keshlangan ma'lumoti topilmadi. Internet borida zalni yangilang.";
   }
 
-  if (
-    method !== "POST" ||
-    !/^\/api\/v1\/orders\/[^/]+\/items$/.test(pathname)
-  ) {
+  const itemMutation = pathname.match(
+    /^\/api\/v1\/orders\/([^/]+)\/items(?:\/([^/]+)(?:\/actions\/cancel)?)?$/,
+  );
+  if (!itemMutation) {
     return null;
   }
-  const orderId = pathname.match(/^\/api\/v1\/orders\/([^/]+)\/items$/)?.[1];
-  if (!orderId?.startsWith("local-")) return null;
   if (!body || !branchId) {
     return "Internet uzilganda oflayn menyu va filial aniqlanmadi. Buyurtma navbatga olinmadi.";
   }
   const parsedBody = parseJsonObject(Buffer.from(body).toString("utf8"));
-  const product = cachedWaiterMenuProduct(
+  const expectedVersion = numberField(parsedBody, "expectedVersion");
+  if (expectedVersion === null) {
+    return "Buyurtma versiyasi aniqlanmadi. Internet ulang va buyurtmani yangilang.";
+  }
+  let orderId: string;
+  try {
+    orderId = decodeURIComponent(itemMutation[1] ?? "");
+  } catch {
+    return "Buyurtma identifikatori yaroqsiz. Oflayn amal navbatga olinmadi.";
+  }
+  const order = cachedWaiterOrderRecord(
     store,
+    authScope,
     cacheScope,
     branchId,
-    stringField(parsedBody, "productId"),
+    orderId,
   );
-  if (!product) {
-    return "Mahsulotning shu filial uchun keshlangan narxi topilmadi. Internet borida menyuni yangilang.";
+  if (!order) {
+    return "Buyurtma shu filialning keshlangan stol ro'yxatida topilmadi. Internet borida zalni yangilang.";
   }
-  if (
-    !parsedBody ||
-    !buildOfflineWaiterItemSnapshot(product, parsedBody, "local-check")
-  ) {
-    return "Mahsulot, turi yoki qo'shimchalar keshda to'liq emas. Buyurtma navbatga olinmadi.";
+  if (numberField(order, "version") !== expectedVersion) {
+    return "Buyurtma yangilangan bo'lishi mumkin. Internet ulang va stolni qayta yuklang.";
+  }
+
+  const itemId = itemMutation[2];
+  if (itemId) {
+    let decodedItemId: string;
+    try {
+      decodedItemId = decodeURIComponent(itemId);
+    } catch {
+      return "Buyurtma qatori identifikatori yaroqsiz. Amal navbatga olinmadi.";
+    }
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (
+      !items.some(
+        (item) => isRecord(item) && item.id === decodedItemId,
+      )
+    ) {
+      return "Buyurtma qatori keshlangan holatda topilmadi. Internet ulang va stolni yangilang.";
+    }
+  } else if (method === "POST") {
+    const product = cachedWaiterMenuProduct(
+      store,
+      cacheScope,
+      branchId,
+      stringField(parsedBody, "productId"),
+    );
+    if (!product) {
+      return "Mahsulotning shu filial uchun keshlangan narxi topilmadi. Internet borida menyuni yangilang.";
+    }
+    if (
+      !parsedBody ||
+      !buildOfflineWaiterItemSnapshot(product, parsedBody, "local-check")
+    ) {
+      return "Mahsulot, turi yoki qo'shimchalar keshda to'liq emas. Buyurtma navbatga olinmadi.";
+    }
   }
   return null;
+}
+
+function cachedWaiterOrderRecord(
+  store: DesktopStore,
+  authScope: string,
+  cacheScope: string,
+  branchId: string,
+  orderId: string,
+): Record<string, unknown> | null {
+  const bootstrap = cachedWaiterBootstrap(store, cacheScope, branchId);
+  const cached = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/realtime/bootstrap",
+  );
+  if (!bootstrap || !cached || !Array.isArray(bootstrap.tables)) return null;
+
+  const matches: Record<string, unknown>[] = [];
+  for (const value of bootstrap.tables) {
+    if (
+      !isRecord(value) ||
+      value.branchId !== branchId ||
+      typeof value.id !== "string"
+    ) {
+      continue;
+    }
+    let tableUrl: URL;
+    try {
+      tableUrl = new URL(cached.requestUrl);
+      tableUrl.pathname =
+        "/api/v1/tables/" + encodeURIComponent(value.id);
+      tableUrl.search = "?branchId=" + encodeURIComponent(branchId);
+    } catch {
+      return null;
+    }
+    const base = JSON.stringify({ success: true, data: value });
+    const projected = applyOptimisticProjection(
+      base,
+      tableUrl.toString(),
+      store.listActiveMutations(authScope),
+    );
+    const table = recordField(
+      parseJsonObject(projected?.body ?? base),
+      "data",
+    );
+    const orders = Array.isArray(table?.orders) ? table.orders : [];
+    const order = orders.find(
+      (candidate) =>
+        isRecord(candidate) &&
+        candidate.id === orderId &&
+        (candidate.branchId === undefined ||
+          candidate.branchId === branchId),
+    );
+    if (isRecord(order)) matches.push(order);
+  }
+  return matches.length === 1 ? (matches[0] ?? null) : null;
 }
 
 function cachedWaiterBootstrap(
