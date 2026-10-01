@@ -76,9 +76,21 @@ type LocalPrintQueue = {
   complete: (id: string) => void;
   fail: (id: string, error: string, ambiguous?: boolean) => void;
   wasPrinted: (serverOrderId: string, documentType: string) => boolean;
-  wasTargetPrinted?: (scope: "local" | "server", jobId: string, printerName: string) => boolean;
-  markTargetPrinted?: (scope: "local" | "server", jobId: string, printerName: string) => void;
-  markTargetAmbiguous?: (scope: "local" | "server", jobId: string, printerName: string) => void;
+  wasTargetPrinted?: (
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ) => boolean;
+  markTargetPrinted?: (
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ) => void;
+  markTargetAmbiguous?: (
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ) => void;
 };
 
 export type DesktopPrintWorkerOptions = {
@@ -103,6 +115,7 @@ export type DesktopPrintWorkerOptions = {
 
 const MAX_LOCAL_PRINT_JOBS_PER_TICK = 5;
 const MAX_SERVER_PRINT_JOBS_PER_TICK = 5;
+const MAX_CONCURRENT_PRINTER_TARGETS = 4;
 const SERVER_REQUEST_TIMEOUT_MS = 5_000;
 const PRINTER_OPERATION_TIMEOUT_MS = 45_000;
 const SERVER_RETRY_BASE_MS = 1_000;
@@ -325,28 +338,7 @@ export class DesktopPrintWorker {
           throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
         await this.send(commands, host, port, paperWidthMm);
       } else if (systemTargets.length > 0 && this.printSystem) {
-        for (const target of systemTargets) {
-          if (this.localQueue?.wasTargetPrinted?.("server", job.id, target.name)) {
-            continue;
-          }
-          try {
-            await this.printToSystem(
-              target,
-              receipt,
-              normalizeWindowsPaperSettings(target),
-            );
-          } catch (error) {
-            if (isPrintOutcomeUnknown(error)) {
-              this.localQueue?.markTargetAmbiguous?.(
-                "server",
-                job.id,
-                target.name,
-              );
-            }
-            throw error;
-          }
-          this.localQueue?.markTargetPrinted?.("server", job.id, target.name);
-        }
+        await this.printSystemTargets("server", job.id, systemTargets, receipt);
       } else if (this.printerHost && !job.printer) {
         const printable = receipt.escpos?.commands?.length
           ? receipt
@@ -465,29 +457,7 @@ export class DesktopPrintWorker {
         documentType: job.documentType,
         content,
       };
-      for (const target of targets) {
-        if (this.localQueue.wasTargetPrinted?.("local", job.id, target.name)) {
-          continue;
-        }
-        try {
-          await this.printToSystem(
-            target,
-            receipt,
-            normalizeWindowsPaperSettings(target),
-          );
-          this.localQueue.markTargetPrinted?.("local", job.id, target.name);
-        } catch (error) {
-          const ambiguous = isPrintOutcomeUnknown(error);
-          if (ambiguous) {
-            this.localQueue.markTargetAmbiguous?.(
-              "local",
-              job.id,
-              target.name,
-            );
-          }
-          throw error;
-        }
-      }
+      await this.printSystemTargets("local", job.id, targets, receipt);
       this.localQueue.complete(job.id);
     } catch (error) {
       this.localQueue.fail(
@@ -500,6 +470,56 @@ export class DesktopPrintWorker {
     return true;
   }
 
+  private async printSystemTargets(
+    scope: "local" | "server",
+    jobId: string,
+    targets: SystemPrinterTarget[],
+    receipt: PrintableReceipt,
+  ): Promise<void> {
+    let nextTargetIndex = 0;
+    const failures: Array<{ detail: string; ambiguous: boolean }> = [];
+    const dispatch = async () => {
+      while (nextTargetIndex < targets.length) {
+        const target = targets[nextTargetIndex++];
+        if (!target) continue;
+        if (this.localQueue?.wasTargetPrinted?.(scope, jobId, target.name)) {
+          continue;
+        }
+
+        try {
+          await this.printToSystem(
+            target,
+            receipt,
+            normalizeWindowsPaperSettings(target),
+          );
+          this.localQueue?.markTargetPrinted?.(scope, jobId, target.name);
+        } catch (error) {
+          const ambiguous = isPrintOutcomeUnknown(error);
+          if (ambiguous) {
+            this.localQueue?.markTargetAmbiguous?.(scope, jobId, target.name);
+          }
+          failures.push({
+            detail: target.displayName + ": " + message(error),
+            ambiguous,
+          });
+        }
+      }
+    };
+
+    const workerCount = Math.min(
+      MAX_CONCURRENT_PRINTER_TARGETS,
+      targets.length,
+    );
+    await Promise.all(Array.from({ length: workerCount }, () => dispatch()));
+
+    if (failures.length > 0) {
+      const details = failures.map((failure) => failure.detail).join("; ");
+      if (failures.some((failure) => failure.ambiguous)) {
+        throw new PrintOutcomeUnknownError(details);
+      }
+      throw new Error(details);
+    }
+  }
   private async completeServerJob(job: PrintJob): Promise<void> {
     await this.request(
       `/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`,
@@ -515,7 +535,8 @@ export class DesktopPrintWorker {
     receipt: PrintableReceipt,
     paperSettings: WindowsPaperSettings,
   ): Promise<void> {
-    if (!this.printSystem) throw new Error("Windows printer adapter sozlanmagan");
+    if (!this.printSystem)
+      throw new Error("Windows printer adapter sozlanmagan");
     await withTimeout(
       Promise.resolve().then(() =>
         this.printSystem!(
@@ -526,9 +547,9 @@ export class DesktopPrintWorker {
       ),
       this.printTimeoutMs,
       () =>
-          new PrintOutcomeUnknownError(
-            `"${target.displayName}" printerida chop etish ${Math.ceil(this.printTimeoutMs / 1_000)} soniyada tasdiqlanmadi. Qog'ozni tekshirib, keyin qo'lda qayta yuboring.`,
-          ),
+        new PrintOutcomeUnknownError(
+          `"${target.displayName}" printerida chop etish ${Math.ceil(this.printTimeoutMs / 1_000)} soniyada tasdiqlanmadi. Qog'ozni tekshirib, keyin qo'lda qayta yuboring.`,
+        ),
     );
   }
 
@@ -703,7 +724,7 @@ export class DesktopPrintWorker {
           this.socketImpl(host, port, payload),
           this.printTimeoutMs,
           () =>
-          new PrintOutcomeUnknownError(
+            new PrintOutcomeUnknownError(
               `TCP printerga yuborish ${this.printTimeoutMs / 1_000} soniyada tugamadi; qog'ozni tekshiring.`,
             ),
         );
@@ -736,14 +757,12 @@ export class DesktopPrintWorker {
             ? new PrintOutcomeUnknownError(
                 "TCP printer ma'lumotni qabul qilgan-qilmagani 8 soniyada tasdiqlanmadi; qog'ozni tekshiring.",
               )
-          : new Error("Printer 8 soniyada ulanmadi"),
+            : new Error("Printer 8 soniyada ulanmadi"),
         );
       }, 8_000);
       socket.once("error", (error) => {
         finish(
-          payloadStarted
-            ? new PrintOutcomeUnknownError(error.message)
-            : error,
+          payloadStarted ? new PrintOutcomeUnknownError(error.message) : error,
         );
       });
       socket.connect(port, host, () => {

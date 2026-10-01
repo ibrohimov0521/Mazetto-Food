@@ -318,4 +318,12 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Internet uzilib turgan paytda Desktop outbox'ga saqlangan amal qayta ulanishda HTTP 401 olsa, endi konfliktga yoki yo'qolgan holatga o'tmaydi: "Kirish sessiyasini yangilash kutilmoqda" holatida diskdagi navbatda qoladi va eski token bilan takror-takror yuborilmaydi.
 - Foydalanuvchi qayta autentifikatsiyalanganda yangi token bilan sinxronlash davom etadi. Token yangilanishi replay bilan bir vaqtda kelgan poyga holati ham qamraldi: eski so'rov 401 bo'lsa, navbat yangilangan token bilan qayta davom etadi.
 - Tekshiruv: Desktop 107/107 test, TypeScript typecheck, ESLint va Desktop/preload build o'tdi. Bu offline buyurtma yo'qolmasligi uchun kod darajasidagi regression isboti; restorandagi haqiqiy printer qog'ozi chiqishi hali alohida acceptance sinovini talab qiladi.
-- Desktop package 0.1.91; hosted CI, GitHub Windows relizi va production tarqatish PR merge'dan keyin qayd qilinadi. Birinchi login/enrollment va tokenni yangilash uchun internet baribir kerak; internetga hech qachon ulanmaydigan sessiya/offline autentifikatsiya bu bosqichda va'da qilinmaydi.
+- Desktop package 0.1.91; PR #184 merge commit 0ab6850. Hosted [CI](https://github.com/ibrohimov0521/Mazetto-Food/actions/runs/36888888490) o'tdi, [Windows release](https://github.com/ibrohimov0521/Mazetto-Food/actions/runs/36888888432) installer va updater manifestini chiqardi, [Dokploy deploy](https://github.com/ibrohimov0521/Mazetto-Food/actions/runs/36889352502) muvaffaqiyatli tugadi. Production smoke: API health 200, mazettofood.uz 200, POS 307 bilan /login'ga yo'naltirdi.
+
+## 28. Printer fan-out va navbat unumdorligi (2026-10-01)
+
+- Bir rolga biriktirilgan Windows printerlar bitta chek uchun ko'pi bilan 4 ta parallel yo'nalishda ishlaydi; lokal offline va server print job'lari bir xil himoyadan foydalanadi.
+- Bir printer xato qilsa, qolgan tanlangan printerlarga yuborish to'xtamaydi. Har printer natijasi alohida saqlanadi; qayta urinishda tasdiqlangan nusxalar takrorlanmaydi.
+- Tekshiruv: Desktop to'liq TAP suite 108/108, TypeScript, scoped ESLint, desktop compile, preload build va diff tekshiruvi o'tdi. Yetti printerli test 4 ta concurrency chegarasini, nosoz printerni ajratishni va retry'da nusxa takrorlanmasligini tasdiqlaydi.
+- Desktop package 0.1.92; hosted CI, release va deploy ushbu PR'dan keyin kuzatiladi. Har bir filialdagi haqiqiy printer, qog'oz va Windows drayveri bilan acceptance sinovi hanuz kerak.
+- Admin'da printer soniga sun'iy limit qo'yilmagan; amaliy moslik Windows drayveri yoki mos ESC/POS tarmoq printeriga bog'liq. Barcha apparat modellari sinovsiz ishlaydi deb kafolat bermaymiz.
