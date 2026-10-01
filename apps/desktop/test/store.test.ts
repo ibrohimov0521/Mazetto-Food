@@ -45,6 +45,67 @@ test("desktop store persists scoped API snapshots without storing bearer tokens"
   }
 });
 
+test("cache compaction is amortized while expired snapshots fail closed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const store = new DesktopStore(path);
+  const authScope = DesktopStore.authScope("Bearer compaction");
+  const freshUrl = "https://api.example.test/api/v1/fresh";
+  const expiredUrl = "https://api.example.test/api/v1/expired";
+  const probe = new DatabaseSync(path);
+
+  try {
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(freshUrl, authScope),
+      requestUrl: freshUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: '{"success":true,"data":"fresh"}',
+      cachedAt: new Date().toISOString(),
+    });
+    const expiredKey = DesktopStore.cacheKey(expiredUrl, authScope);
+    store.putCachedResponse({
+      cacheKey: expiredKey,
+      requestUrl: expiredUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: '{"success":true,"data":"expired"}',
+      cachedAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    assert.equal(store.getCachedResponse(expiredKey), null);
+    assert.equal(store.getLatestCachedResponse(authScope, "/api/v1/expired"), null);
+    const beforeCompaction = probe
+      .prepare("SELECT COUNT(*) AS count FROM api_cache WHERE auth_scope = ?")
+      .get(authScope) as { count: number | bigint };
+    assert.equal(Number(beforeCompaction.count), 2);
+
+    for (let index = 0; index < 63; index += 1) {
+      const requestUrl = `https://api.example.test/api/v1/resource-${index}`;
+      store.putCachedResponse({
+        cacheKey: DesktopStore.cacheKey(requestUrl, authScope),
+        requestUrl,
+        authScope,
+        status: 200,
+        contentType: "application/json",
+        body: "{}",
+        cachedAt: new Date().toISOString(),
+      });
+    }
+
+    const afterCompaction = probe
+      .prepare("SELECT COUNT(*) AS count FROM api_cache WHERE auth_scope = ?")
+      .get(authScope) as { count: number | bigint };
+    assert.equal(Number(afterCompaction.count), 64);
+  } finally {
+    probe.close();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("desktop store selects an exact cached endpoint before newer nested routes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));

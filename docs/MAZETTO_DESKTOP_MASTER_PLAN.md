@@ -383,6 +383,15 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Offline order snapshots now use a cached POS catalog only when its branch ID matches the authenticated branch and its product/table collections are present. An invalid cached catalog falls back only to a valid same-branch versioned realtime bootstrap.
 - Regression test reproduced a different-branch product and variant leaking into the offline order snapshot; it now fails closed instead.
-- Verification: Desktop tests 90/90, typecheck and lint passed. Full CI, Windows release and production deployment checks remain release gates.
+- Verification: Desktop tests 90/90, typecheck/lint, full monorepo CI, Windows Desktop 0.1.77 release and production tag passed. Dokploy completed without rebuilding server apps; production web smoke was skipped because no server service changed.
 - This hardens offline display snapshots only; it does not replace server authorization or complete offline POS, cross-device reconciliation, printer hardware testing, or a 100% offline guarantee.
 - Desktop bundle version: `0.1.77`.
+
+## D2 amortized offline cache compaction (2026-10-01)
+
+- Successful cached responses no longer trigger full per-scope SQLite compaction on every write. Cleanup runs on the first write for a scope, every 64 subsequent cache writes, or at least hourly when writes continue.
+- Reads still reject entries older than the 30-day retention window immediately, even while physical cleanup is deferred; periodic cleanup remains scoped to the active authorization identity.
+- Added regression coverage that verifies stale snapshots fail closed before compaction and expired rows are removed at the next scheduled batch.
+- Verification: Desktop tests 91/91, typecheck/lint and full monorepo CI with 33/33 validators passed. Windows Desktop 0.1.78 release and production deployment checks remain release gates.
+- This reduces repeated SQLite cleanup work on read-heavy/online refresh paths; it does not guarantee zero UI stalls on every device or complete the outstanding multi-terminal/offline and physical printer acceptance.
+- Desktop bundle version: 0.1.78.
