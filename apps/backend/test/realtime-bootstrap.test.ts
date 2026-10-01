@@ -248,3 +248,113 @@ test("POS bootstrap fails closed while the legacy catalog tenant is ambiguous", 
   await assert.rejects(service.create("branch-a", owner));
   assert.equal(catalogReads, 0);
 });
+
+test("kitchen bootstrap returns a bounded, branch-scoped queue without customer data", async () => {
+  let kitchenQuery: Record<string, unknown> | undefined;
+  let transactionOptions: unknown;
+  const branch = {
+    id: "branch-a",
+    code: "A",
+    name: "Mazetto",
+    timezone: "Asia/Tashkent",
+    isActive: true,
+    isTemporarilyClosed: false,
+    acceptsOrders: true,
+    deliveryEnabled: true,
+    pickupEnabled: true,
+    realtimeRevision: 9n,
+  };
+  const ticket = {
+    id: "ticket-a",
+    ticketNumber: "K-101",
+    status: "COOKING",
+    priority: 1,
+    version: 2,
+    revisionNumber: 1,
+    isSupplement: false,
+    createdAt: new Date("2026-10-01T08:00:00.000Z"),
+    acceptedAt: new Date("2026-10-01T08:01:00.000Z"),
+    items: [
+      {
+        id: "ticket-item-a",
+        productName: "Lavash",
+        variantName: null,
+        quantity: "1",
+        notes: null,
+        modifierSnapshot: [],
+        stationRouting: "KITCHEN",
+        printerNameSnapshot: "Oshxona",
+      },
+    ],
+    order: {
+      id: "order-a",
+      branchId: "branch-a",
+      version: 3,
+      total: "12000",
+      orderNumber: "A-101",
+      displayOrderNumber: "101",
+      source: "POS",
+      type: "DINE_IN",
+      isSupplemental: false,
+      supplementNumber: null,
+      notes: null,
+      kitchenComment: null,
+      branch: { name: "Mazetto" },
+      table: { number: 3, name: "3-stol" },
+      items: [],
+    },
+  };
+  const service = new RealtimeBootstrapService({
+    $transaction: async (
+      callback: (transaction: object) => Promise<unknown>,
+      options: unknown,
+    ) => {
+      transactionOptions = options;
+      return callback({
+        restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+        branch: {
+          findFirst: async (args: { select: Record<string, boolean> }) =>
+            "realtimeRevision" in args.select ? branch : { id: "branch-a" },
+        },
+        kitchenTicket: {
+          findMany: async (args: Record<string, unknown>) => {
+            kitchenQuery = args;
+            return [ticket];
+          },
+        },
+      });
+    },
+  } as never);
+  const cook = {
+    ...owner,
+    id: "cook-a",
+    employeeId: "employee-a",
+    roles: ["KITCHEN"],
+    permissions: ["KITCHEN_VIEW"],
+  };
+
+  await assert.rejects(service.create("branch-a", cook));
+  const snapshot = await service.create("branch-a", cook, "kitchen");
+
+  assert.equal(snapshot.branchId, "branch-a");
+  assert.equal(snapshot.schemaVersion, 2);
+  assert.deepEqual(snapshot.kitchenQueue, {
+    items: [ticket],
+    hasMore: false,
+    limit: 250,
+  });
+  assert.equal(kitchenQuery?.take, 251);
+  const where = kitchenQuery?.where as {
+    order: { branchId: string };
+  };
+  assert.equal(where.order.branchId, "branch-a");
+  const select = kitchenQuery?.select as {
+    order: { select: Record<string, unknown> };
+  };
+  assert.equal("customerName" in select.order.select, false);
+  assert.equal("customerPhone" in select.order.select, false);
+  assert.equal(
+    (transactionOptions as { isolationLevel: string }).isolationLevel,
+    "RepeatableRead",
+  );
+});

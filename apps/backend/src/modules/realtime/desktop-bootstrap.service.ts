@@ -4,13 +4,22 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import {
+  KitchenTicketStatus,
+  OrderItemStatus,
+  OrderStatus,
+  Prisma,
+} from "@prisma/client";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   resolveRestaurantScope,
   resolveSoleActiveTenantId,
 } from "../../common/auth/tenant-scope";
 import { activeTableOrderStatuses } from "../tables/table-order-state";
+import {
+  MAX_ACTIVE_KITCHEN_TICKETS,
+  trimKitchenQueue,
+} from "../kitchen/kitchen-queue-window";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
@@ -21,7 +30,15 @@ import { encodeBranchRevisionCursor } from "./realtime.service";
 export class RealtimeBootstrapService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(branchId: string | undefined, user: AuthenticatedUser) {
+  async create(
+    branchId: string | undefined,
+    user: AuthenticatedUser,
+    panel?: string,
+  ) {
+    if (panel !== undefined && panel !== "kitchen") {
+      throw new BadRequestException("Snapshot panel noto'g'ri.");
+    }
+    const kitchenPanel = panel === "kitchen";
     if (branchId !== undefined && !branchId.trim()) {
       throw new BadRequestException("Filial tanlanishi shart.");
     }
@@ -33,15 +50,31 @@ export class RealtimeBootstrapService {
           throw new BadRequestException("Filial tanlanishi shart.");
         }
 
-        const canUsePosCatalog = user.permissions.includes(PERMISSIONS.POS_USE);
+        const canViewKitchen = user.permissions.includes(
+          PERMISSIONS.KITCHEN_VIEW,
+        );
+        if (kitchenPanel && !canViewKitchen) {
+          throw new ForbiddenException("Oshxona snapshoti uchun ruxsat yo'q.");
+        }
+        if (kitchenPanel && !user.employeeId) {
+          throw new ForbiddenException(
+            "Oshxona xodimi foydalanuvchiga ulanmagan.",
+          );
+        }
+        const canUsePosCatalog =
+          !kitchenPanel && user.permissions.includes(PERMISSIONS.POS_USE);
         const canViewMenu =
-          canUsePosCatalog || user.permissions.includes(PERMISSIONS.MENU_VIEW);
+          !kitchenPanel &&
+          (canUsePosCatalog ||
+            user.permissions.includes(PERMISSIONS.MENU_VIEW));
         const canViewTables =
-          canUsePosCatalog || user.permissions.includes(PERMISSIONS.TABLE_VIEW);
+          !kitchenPanel &&
+          (canUsePosCatalog ||
+            user.permissions.includes(PERMISSIONS.TABLE_VIEW));
         const canViewTableOrders = user.permissions.includes(
           PERMISSIONS.TABLE_VIEW,
         );
-        if (!canViewMenu && !canViewTables) {
+        if (!kitchenPanel && !canViewMenu && !canViewTables) {
           throw new ForbiddenException("Offline snapshot uchun ruxsat yo'q.");
         }
 
@@ -272,6 +305,90 @@ export class RealtimeBootstrapService {
               : Promise.resolve([]),
           ]);
 
+        const kitchenQueue = kitchenPanel
+          ? trimKitchenQueue(
+              await tx.kitchenTicket.findMany({
+                where: {
+                  order: {
+                    branchId: scope.branchId,
+                    status: {
+                      notIn: [
+                        OrderStatus.SERVED,
+                        OrderStatus.COMPLETED,
+                        OrderStatus.CANCELLED,
+                      ],
+                    },
+                  },
+                  status: {
+                    in: [
+                      KitchenTicketStatus.NEW,
+                      KitchenTicketStatus.ACCEPTED,
+                      KitchenTicketStatus.COOKING,
+                      KitchenTicketStatus.READY,
+                    ],
+                  },
+                },
+                orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+                take: MAX_ACTIVE_KITCHEN_TICKETS + 1,
+                select: {
+                  id: true,
+                  ticketNumber: true,
+                  status: true,
+                  priority: true,
+                  version: true,
+                  revisionNumber: true,
+                  isSupplement: true,
+                  createdAt: true,
+                  acceptedAt: true,
+                  items: {
+                    where: { status: OrderItemStatus.ACTIVE },
+                    orderBy: { createdAt: "asc" },
+                    select: {
+                      id: true,
+                      productName: true,
+                      variantName: true,
+                      quantity: true,
+                      notes: true,
+                      modifierSnapshot: true,
+                      stationRouting: true,
+                      printerNameSnapshot: true,
+                    },
+                  },
+                  order: {
+                    select: {
+                      id: true,
+                      branchId: true,
+                      version: true,
+                      total: true,
+                      orderNumber: true,
+                      displayOrderNumber: true,
+                      source: true,
+                      type: true,
+                      isSupplemental: true,
+                      supplementNumber: true,
+                      notes: true,
+                      kitchenComment: true,
+                      branch: { select: { name: true } },
+                      table: { select: { number: true, name: true } },
+                      items: {
+                        where: { status: OrderItemStatus.ACTIVE },
+                        orderBy: { createdAt: "asc" },
+                        select: {
+                          id: true,
+                          productName: true,
+                          variantName: true,
+                          quantity: true,
+                          notes: true,
+                          modifierSnapshot: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              }),
+            )
+          : undefined;
+
         const seenPaymentMethodCodes = new Set<string>();
         const paymentMethods = configuredPaymentMethods
           .filter((method) => {
@@ -300,6 +417,7 @@ export class RealtimeBootstrapService {
           },
           ...(canViewMenu ? { menu: { categories, products } } : {}),
           ...(canViewTables ? { halls, tables } : {}),
+          ...(kitchenQueue ? { kitchenQueue } : {}),
           ...(canUsePosCatalog
             ? {
                 catalog: {
