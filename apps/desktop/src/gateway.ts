@@ -254,6 +254,18 @@ export class DesktopGateway {
           this.sendCachedResponse(response, cached, targetUrl, authScope);
           return;
         }
+        if (
+          method === "GET" &&
+          this.sendCachedWaiterTableSnapshot(
+            response,
+            targetUrl,
+            cacheScope,
+            authScope,
+            identity?.branchId,
+          )
+        ) {
+          return;
+        }
 
         const commandDefinition = resolveOfflineCommand(method, url.pathname);
         const isPaymentCommand =
@@ -295,7 +307,7 @@ export class DesktopGateway {
             });
             return;
           }
-          const waiterItemError = offlineWaiterItemQueueError(
+          const waiterItemError = offlineWaiterMutationQueueError(
             this.store,
             cacheScope,
             identity?.branchId,
@@ -306,7 +318,10 @@ export class DesktopGateway {
           if (waiterItemError) {
             this.sendJson(response, 503, {
               success: false,
-              error: { code: "OFFLINE_MENU_CACHE_MISSING", message: waiterItemError },
+              error: {
+                code: "OFFLINE_WAITER_CACHE_MISSING",
+                message: waiterItemError,
+              },
             });
             return;
           }
@@ -401,6 +416,18 @@ export class DesktopGateway {
         this.sendCachedResponse(response, cached, targetUrl, authScope);
         return;
       }
+      if (
+        method === "GET" &&
+        this.sendCachedWaiterTableSnapshot(
+          response,
+          targetUrl,
+          cacheScope,
+          authScope,
+          identity?.branchId,
+        )
+      ) {
+        return;
+      }
 
       if (method === "GET" && isCashRegisterShiftReadPath(url.pathname)) {
         const optimistic = applyOptimisticProjection(
@@ -460,7 +487,7 @@ export class DesktopGateway {
           });
           return;
         }
-        const waiterItemError = offlineWaiterItemQueueError(
+        const waiterItemError = offlineWaiterMutationQueueError(
           this.store,
           cacheScope,
           identity?.branchId,
@@ -471,7 +498,10 @@ export class DesktopGateway {
         if (waiterItemError) {
           this.sendJson(response, 503, {
             success: false,
-            error: { code: "OFFLINE_MENU_CACHE_MISSING", message: waiterItemError },
+            error: {
+              code: "OFFLINE_WAITER_CACHE_MISSING",
+              message: waiterItemError,
+            },
           });
           return;
         }
@@ -506,12 +536,71 @@ export class DesktopGateway {
                     url.pathname,
                   )
                 ? "Pul topshiruvini qabul qilish yoki rad etish uchun internet kerak. Ikki kassa holatini tekshirmasdan bu amal navbatga olinmaydi."
-              : method === "GET"
-                ? "Internet yo'q va bu ma'lumot hali qurilmada saqlanmagan."
-                : "Bu amal hozircha internet ulanishini talab qiladi.",
+                : method === "GET"
+                  ? "Internet yo'q va bu ma'lumot hali qurilmada saqlanmagan."
+                  : "Bu amal hozircha internet ulanishini talab qiladi.",
         },
       });
     }
+  }
+
+  private sendCachedWaiterTableSnapshot(
+    response: ServerResponse,
+    targetUrl: string,
+    cacheScope: string,
+    authScope: string,
+    branchId: string | null | undefined,
+  ): boolean {
+    let target: URL;
+    try {
+      target = new URL(targetUrl);
+    } catch {
+      return false;
+    }
+    const match = target.pathname.match(/^\/api\/v1\/tables\/([^/]+)$/);
+    if (
+      !match?.[1] ||
+      !branchId ||
+      (target.searchParams.has("branchId") &&
+        target.searchParams.get("branchId") !== branchId)
+    ) {
+      return false;
+    }
+
+    const tableId = decodeURIComponent(match[1]);
+    const table = cachedWaiterTableRecord(
+      this.store,
+      cacheScope,
+      branchId,
+      tableId,
+    );
+    const snapshot = cachedWaiterBootstrap(this.store, cacheScope, branchId);
+    const cachedAt = stringField(snapshot, "generatedAt");
+    if (
+      !table ||
+      !Array.isArray(table.orders) ||
+      typeof table.status !== "string" ||
+      !cachedAt
+    ) {
+      return false;
+    }
+
+    const body = JSON.stringify({ success: true, data: table });
+    const optimistic = applyOptimisticProjection(
+      body,
+      targetUrl,
+      this.store.listActiveMutations(authScope),
+    );
+    response.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "X-Mazetto-Desktop": optimistic ? "offline-optimistic" : "offline-cache",
+      "X-Mazetto-Cached-At": cachedAt,
+      ...(optimistic
+        ? { "X-Mazetto-Optimistic-Commands": optimistic.commandIds.join(",") }
+        : {}),
+    });
+    response.end(optimistic?.body ?? body);
+    return true;
   }
 
   private sendCachedResponse(
@@ -1318,14 +1407,16 @@ function acknowledgedCashTransactionCache(
   const transactionPath = pathname.match(
     /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
   );
-  const cashTransferPath = /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/;
+  const cashTransferPath =
+    /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/;
   const envelope = parseJsonObject(responseText);
   const responseData = recordField(envelope, "data");
   const isCashTransfer =
     commandType === "cash.transfer.create" && cashTransferPath.test(pathname);
-  const transaction = isCashTransfer && responseData
-    ? cashTransferLedgerEntry(responseData)
-    : responseData;
+  const transaction =
+    isCashTransfer && responseData
+      ? cashTransferLedgerEntry(responseData)
+      : responseData;
   if (
     (!isCashTransfer && commandType !== "cash.transaction.create") ||
     (!isCashTransfer && !transactionPath?.[1]) ||
@@ -1363,9 +1454,7 @@ function acknowledgedCashTransactionCache(
       const hasServerLedgerEntry =
         Array.isArray(shift.cashTransactions) &&
         shift.cashTransactions.some(
-          (entry) =>
-            isRecord(entry) &&
-            entry.cashTransferId === transferId,
+          (entry) => isRecord(entry) && entry.cashTransferId === transferId,
         );
       if (hasServerLedgerEntry) {
         appendUniqueRecord(shift, "outgoingCashTransfers", responseData);
@@ -1447,7 +1536,8 @@ function optimisticCashTransfer(
     fromShiftId,
     toShiftId,
     amount: String(amount),
-    reason: stringField(body, "reason") ?? "Xodim naqd pulni kassirga topshirdi",
+    reason:
+      stringField(body, "reason") ?? "Xodim naqd pulni kassirga topshirdi",
     status: "PENDING_SYNC",
     createdAt: stringField(payload, "queuedAt") ?? new Date().toISOString(),
     pendingSync: true,
@@ -1476,7 +1566,8 @@ function validateOfflineCashTransfer(
     const cachedShift = store.getCachedResponse(
       DesktopStore.cacheKey(shiftUrl.toString(), cacheScope),
     );
-    const source = cachedShift?.body ?? JSON.stringify({ success: true, data: null });
+    const source =
+      cachedShift?.body ?? JSON.stringify({ success: true, data: null });
     const projected = applyOptimisticProjection(
       source,
       shiftUrl.toString(),
@@ -1543,7 +1634,8 @@ function validateOfflineShiftClose(
     const cachedShift = store.getCachedResponse(
       DesktopStore.cacheKey(shiftUrl.toString(), cacheScope),
     );
-    const source = cachedShift?.body ?? JSON.stringify({ success: true, data: null });
+    const source =
+      cachedShift?.body ?? JSON.stringify({ success: true, data: null });
     const projected = applyOptimisticProjection(
       source,
       shiftUrl.toString(),
@@ -2009,7 +2101,8 @@ function optimisticOrder(
   commandPath: string,
 ): Record<string, unknown> {
   const id = command.aggregateId ?? command.id;
-  const source = command.commandType === "table.order.create" ? "WAITER" : "POS";
+  const source =
+    command.commandType === "table.order.create" ? "WAITER" : "POS";
   const tableId =
     stringField(body, "tableId") ??
     commandPath.match(/^\/api\/v1\/tables\/([^/]+)\/orders$/)?.[1];
@@ -2020,7 +2113,10 @@ function optimisticOrder(
         ? offlineWaiterInternalOrderNumber(id)
         : offlinePosInternalOrderNumber(id),
     ...(source === "POS"
-      ? { displayOrderNumber: numberField(body, "offlineDisplayOrderSequence") ?? 101 }
+      ? {
+          displayOrderNumber:
+            numberField(body, "offlineDisplayOrderSequence") ?? 101,
+        }
       : {}),
     version: numberField(body, "expectedVersion") ?? 0,
     status: "NEW",
@@ -2032,7 +2128,9 @@ function optimisticOrder(
     ...(numberField(body, "guestCount") !== null
       ? { guestCount: numberField(body, "guestCount") }
       : {}),
-    ...(stringField(body, "notes") ? { notes: stringField(body, "notes") } : {}),
+    ...(stringField(body, "notes")
+      ? { notes: stringField(body, "notes") }
+      : {}),
     items: [],
     createdAt: new Date().toISOString(),
     pendingSync: true,
@@ -2145,7 +2243,8 @@ function patchOrderItemProjection(
   const itemTotal = finiteAmount(item.totalPrice);
   if (!order || itemTotal === null) return false;
   const items = Array.isArray(order.items) ? order.items : [];
-  if (items.some((value) => isRecord(value) && value.id === item.id)) return false;
+  if (items.some((value) => isRecord(value) && value.id === item.id))
+    return false;
   items.push(item);
   order.items = items;
   order.total = ((finiteAmount(order.total) ?? 0) + itemTotal).toFixed(2);
@@ -2262,7 +2361,10 @@ function queuedResponseData(
     stringField(queuedPayload, "body") ?? Buffer.from(body).toString("utf8"),
   );
   const commandPath = stringField(queuedPayload, "pathname") ?? pathname;
-  const waiterItemSnapshot = recordField(queuedPayload, "offlineWaiterItemSnapshot");
+  const waiterItemSnapshot = recordField(
+    queuedPayload,
+    "offlineWaiterItemSnapshot",
+  );
   const total = paymentTotal(parsedBody);
   const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
   const offlineNumber = offlinePosInternalOrderNumber(
@@ -2288,9 +2390,7 @@ function queuedResponseData(
     };
   }
 
-  const waiterItemPath = pathname.match(
-    /^\/api\/v1\/orders\/([^/]+)\/items$/,
-  );
+  const waiterItemPath = pathname.match(/^\/api\/v1\/orders\/([^/]+)\/items$/);
   if (
     command.commandType === "order.items.update" &&
     stringField(queuedPayload, "method") === "POST" &&
@@ -2317,7 +2417,8 @@ function queuedResponseData(
       amount: amount === null ? "0" : String(amount),
       toShiftId,
       status: "PENDING_SYNC",
-      createdAt: stringField(queuedPayload, "queuedAt") ?? new Date().toISOString(),
+      createdAt:
+        stringField(queuedPayload, "queuedAt") ?? new Date().toISOString(),
       pendingSync: true,
     };
   }
@@ -2581,7 +2682,7 @@ function hasStableIdempotencyKey(
   return Boolean(stringField(parsedBody, "idempotencyKey"));
 }
 
-function offlineWaiterItemQueueError(
+function offlineWaiterMutationQueueError(
   store: DesktopStore,
   cacheScope: string,
   branchId: string | null | undefined,
@@ -2589,6 +2690,17 @@ function offlineWaiterItemQueueError(
   pathname: string,
   body: ArrayBuffer | undefined,
 ): string | null {
+  const tableId =
+    method === "POST"
+      ? pathname.match(/^\/api\/v1\/tables\/([^/]+)\/orders$/)?.[1]
+      : null;
+  if (
+    tableId &&
+    !cachedWaiterTableRecord(store, cacheScope, branchId, tableId)
+  ) {
+    return "Stolning shu filialga tegishli keshlangan ma'lumoti topilmadi. Internet borida zalni yangilang.";
+  }
+
   if (
     method !== "POST" ||
     !/^\/api\/v1\/orders\/[^/]+\/items$/.test(pathname)
@@ -2610,10 +2722,41 @@ function offlineWaiterItemQueueError(
   if (!product) {
     return "Mahsulotning shu filial uchun keshlangan narxi topilmadi. Internet borida menyuni yangilang.";
   }
-  if (!parsedBody || !buildOfflineWaiterItemSnapshot(product, parsedBody, "local-check")) {
+  if (
+    !parsedBody ||
+    !buildOfflineWaiterItemSnapshot(product, parsedBody, "local-check")
+  ) {
     return "Mahsulot, turi yoki qo'shimchalar keshda to'liq emas. Buyurtma navbatga olinmadi.";
   }
   return null;
+}
+
+function cachedWaiterBootstrap(
+  store: DesktopStore,
+  cacheScope: string,
+  branchId: string | null | undefined,
+): Record<string, unknown> | null {
+  if (!branchId) return null;
+  const cached = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/realtime/bootstrap",
+  );
+  const snapshot = cached
+    ? recordField(parseJsonObject(cached.body), "data")
+    : null;
+  const generatedAt = stringField(snapshot, "generatedAt");
+  const generatedAtMs = generatedAt ? Date.parse(generatedAt) : NaN;
+  if (
+    !snapshot ||
+    snapshot.schemaVersion !== 2 ||
+    snapshot.branchId !== branchId ||
+    !Array.isArray(snapshot.tables) ||
+    !Number.isFinite(generatedAtMs) ||
+    generatedAtMs > Date.now() + 5 * 60_000
+  ) {
+    return null;
+  }
+  return snapshot;
 }
 
 function cachedWaiterMenuProduct(
@@ -2623,6 +2766,14 @@ function cachedWaiterMenuProduct(
   productId: string | null,
 ): Record<string, unknown> | null {
   if (!branchId || !productId) return null;
+  const bootstrap = cachedWaiterBootstrap(store, cacheScope, branchId);
+  const menu = recordField(bootstrap, "menu");
+  const bootstrapProducts = Array.isArray(menu?.products) ? menu.products : [];
+  const bootstrapProduct = bootstrapProducts.find(
+    (candidate) => isRecord(candidate) && candidate.id === productId,
+  );
+  if (isRecord(bootstrapProduct)) return bootstrapProduct;
+
   const cached = store.getLatestCachedResponse(
     cacheScope,
     "/api/v1/menu/products",
@@ -2650,13 +2801,24 @@ function cachedWaiterMenuProduct(
   return isRecord(product) ? product : null;
 }
 
-function cachedWaiterTable(
+function cachedWaiterTableRecord(
   store: DesktopStore,
   cacheScope: string,
   branchId: string | null | undefined,
   tableId: string,
 ): Record<string, unknown> | null {
   if (!branchId) return null;
+  const bootstrap = cachedWaiterBootstrap(store, cacheScope, branchId);
+  const snapshotTables = Array.isArray(bootstrap?.tables)
+    ? bootstrap.tables
+    : [];
+  const snapshotTable = snapshotTables.find(
+    (candidate) => isRecord(candidate) && candidate.id === tableId,
+  );
+  if (isRecord(snapshotTable) && snapshotTable.branchId === branchId) {
+    return snapshotTable;
+  }
+
   const cached = store.getLatestCachedResponse(
     cacheScope,
     `/api/v1/tables/${tableId}`,
@@ -2672,8 +2834,20 @@ function cachedWaiterTable(
   }
 
   const table = recordField(parseJsonObject(cached.body), "data");
-  if (!table || table.id !== tableId || table.branchId !== branchId)
+  if (!table || table.id !== tableId || table.branchId !== branchId) {
     return null;
+  }
+  return table;
+}
+
+function cachedWaiterTable(
+  store: DesktopStore,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  tableId: string,
+): Record<string, unknown> | null {
+  const table = cachedWaiterTableRecord(store, cacheScope, branchId, tableId);
+  if (!table) return null;
   const number = numberField(table, "number");
   return {
     id: tableId,

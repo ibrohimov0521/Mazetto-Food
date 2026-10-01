@@ -8,13 +8,23 @@ const owner: AuthenticatedUser = {
   id: "owner-a",
   isGlobalScope: true,
   roles: ["SUPER_ADMIN"],
-  permissions: [],
+  permissions: ["POS_USE", "MENU_VIEW", "TABLE_VIEW"],
 };
 
 test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read snapshot", async () => {
   let transactionOptions: unknown;
   let productSelect: Record<string, unknown> | undefined;
   let categoryWhere: Record<string, unknown> | undefined;
+  const reads = {
+    categories: 0,
+    products: 0,
+    paymentMethods: 0,
+    tables: 0,
+    halls: 0,
+  };
+  let tableSelect: Record<string, unknown> | undefined;
+  let tableWhere: Record<string, unknown> | undefined;
+  let tableOrdersQuery: Record<string, unknown> | undefined;
   const configuredPaymentMethods = [
     {
       branchId: "branch-a",
@@ -33,12 +43,15 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
   const tables = [
     {
       id: "table-a",
+      branchId: "branch-a",
+      hallId: "hall-a",
       code: "T1",
       name: "1-stol",
       number: 1,
       capacity: 4,
       status: "AVAILABLE",
       hall: { id: "hall-a", name: "Asosiy zal" },
+      orders: [],
     },
   ];
   const branch = {
@@ -67,27 +80,77 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
         },
         category: {
           findMany: async (args: { where: Record<string, unknown> }) => {
+            reads.categories += 1;
             categoryWhere = args.where;
             return [{ id: "category-a", name: "Lavash" }];
           },
         },
         product: {
           findMany: async (args: { select: Record<string, unknown> }) => {
+            reads.products += 1;
             productSelect = args.select;
             return [{ id: "product-a", sellingPrice: 1000 }];
           },
         },
         paymentMethod: {
-          findMany: async () => configuredPaymentMethods,
+          findMany: async () => {
+            reads.paymentMethods += 1;
+            return configuredPaymentMethods;
+          },
         },
         restaurantTable: {
-          findMany: async () => tables,
+          findMany: async (args: {
+            where: Record<string, unknown>;
+            select: Record<string, unknown>;
+          }) => {
+            reads.tables += 1;
+            tableSelect = args.select;
+            tableWhere = args.where;
+            const ordersQuery = args.select.orders;
+            if (ordersQuery && typeof ordersQuery === "object") {
+              tableOrdersQuery = ordersQuery as Record<string, unknown>;
+            }
+            return "orders" in args.select
+              ? tables
+              : tables.map((table) =>
+                  Object.fromEntries(
+                    Object.entries(table).filter(([key]) => key !== "orders"),
+                  ),
+                );
+          },
+        },
+        hall: {
+          findMany: async () => {
+            reads.halls += 1;
+            return [
+              {
+                id: "hall-a",
+                branchId: "branch-a",
+                code: "MAIN",
+                name: "Asosiy zal",
+                isActive: true,
+                sortOrder: 1,
+              },
+            ];
+          },
         },
       });
     },
   } as never);
 
   const snapshot = await service.create("branch-a", owner);
+  const waiterSnapshot = await service.create("branch-a", {
+    ...owner,
+    permissions: ["TABLE_VIEW", "MENU_VIEW"],
+  });
+  const tableOnlySnapshot = await service.create("branch-a", {
+    ...owner,
+    permissions: ["TABLE_VIEW"],
+  });
+  const posOnlySnapshot = await service.create("branch-a", {
+    ...owner,
+    permissions: ["POS_USE"],
+  });
 
   assert.equal(snapshot.tenantId, "tenant-a");
   assert.equal(snapshot.branchId, "branch-a");
@@ -96,6 +159,9 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
     version: 2,
     branches: { "branch-a": "44" },
   });
+  assert.ok(snapshot.catalog);
+  assert.ok(snapshot.offlineCapabilities);
+  assert.ok(waiterSnapshot.menu);
   assert.deepEqual(snapshot.offlineCapabilities.queuedPaymentMethods, ["CASH"]);
   assert.equal(snapshot.schemaVersion, 2);
   assert.deepEqual(snapshot.catalog.categories, [
@@ -106,6 +172,38 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
     { code: "CARD", name: "Karta", active: true },
   ]);
   assert.deepEqual(snapshot.catalog.tables, tables);
+  assert.deepEqual(snapshot.tables, tables);
+  assert.deepEqual(snapshot.halls, [
+    {
+      id: "hall-a",
+      branchId: "branch-a",
+      code: "MAIN",
+      name: "Asosiy zal",
+      isActive: true,
+      sortOrder: 1,
+    },
+  ]);
+  assert.deepEqual(waiterSnapshot.menu.categories, [
+    { id: "category-a", name: "Lavash" },
+  ]);
+  assert.equal("catalog" in waiterSnapshot, false);
+  assert.equal("offlineCapabilities" in waiterSnapshot, false);
+  assert.deepEqual(tableOnlySnapshot.tables, tables);
+  assert.ok(posOnlySnapshot.catalog);
+  assert.equal("orders" in (posOnlySnapshot.catalog.tables[0] ?? {}), false);
+  assert.equal("orders" in (tableSelect ?? {}), false);
+  assert.deepEqual(tableWhere, { branchId: "branch-a", isActive: true });
+  assert.ok(tableOrdersQuery);
+  assert.equal("take" in tableOrdersQuery, false);
+  assert.equal("menu" in tableOnlySnapshot, false);
+  assert.equal("catalog" in tableOnlySnapshot, false);
+  assert.deepEqual(reads, {
+    categories: 3,
+    products: 3,
+    paymentMethods: 2,
+    tables: 4,
+    halls: 4,
+  });
   assert.equal(
     (transactionOptions as { isolationLevel: string }).isolationLevel,
     "RepeatableRead",

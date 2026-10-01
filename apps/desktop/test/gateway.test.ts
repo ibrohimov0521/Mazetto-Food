@@ -475,7 +475,9 @@ test("offline POS order does not use a catalog cached for another branch", async
       body: JSON.stringify({
         idempotencyKey: "branch-cache-sale",
         type: "TAKEAWAY",
-        items: [{ productId: "product-1", variantId: "variant-1", quantity: 1 }],
+        items: [
+          { productId: "product-1", variantId: "variant-1", quantity: 1 },
+        ],
         payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
       }),
     });
@@ -491,9 +493,18 @@ test("offline POS order does not use a catalog cached for another branch", async
         items?: Array<{ productName?: string; variantName?: string | null }>;
       };
     };
-    assert.equal(payload.offlineOrderSnapshot?.items?.[0]?.productName, "Mahsulot");
-    assert.notEqual(payload.offlineOrderSnapshot?.items?.[0]?.productName, "Boshqa filial mahsuloti");
-    assert.notEqual(payload.offlineOrderSnapshot?.items?.[0]?.variantName, "Chet filial varianti");
+    assert.equal(
+      payload.offlineOrderSnapshot?.items?.[0]?.productName,
+      "Mahsulot",
+    );
+    assert.notEqual(
+      payload.offlineOrderSnapshot?.items?.[0]?.productName,
+      "Boshqa filial mahsuloti",
+    );
+    assert.notEqual(
+      payload.offlineOrderSnapshot?.items?.[0]?.variantName,
+      "Chet filial varianti",
+    );
   } finally {
     await gateway.stop();
     store.close();
@@ -1591,17 +1602,20 @@ test("gateway queues waiter table orders offline and replays the local order cha
         return jsonResponse({ success: true, data: { ok: true } });
       }
       if (!online) throw new Error("offline");
-      if (init?.method === "GET" && url.endsWith("/tables?branchId=branch-1")) {
-        return jsonResponse({ success: true, data: [table] });
-      }
-      if (init?.method === "GET" && url.endsWith("/tables/table-1")) {
-        return jsonResponse({ success: true, data: table });
-      }
       if (
         init?.method === "GET" &&
-        url.endsWith("/menu/products?branchId=branch-1")
+        url.endsWith("/realtime/bootstrap?branchId=branch-1")
       ) {
-        return jsonResponse({ success: true, data: [product] });
+        return jsonResponse({
+          success: true,
+          data: {
+            schemaVersion: 2,
+            generatedAt: new Date().toISOString(),
+            branchId: "branch-1",
+            menu: { categories: [], products: [product] },
+            tables: [table],
+          },
+        });
       }
       if (init?.method === "GET" && url.endsWith("/kitchen/orders")) {
         return jsonResponse({
@@ -1624,7 +1638,11 @@ test("gateway queues waiter table orders offline and replays the local order cha
         if (url.endsWith("/orders/server-order-1/items")) {
           return jsonResponse({
             success: true,
-            data: { id: "server-order-1", version: 1, items: [{ id: "server-item-1" }] },
+            data: {
+              id: "server-order-1",
+              version: 1,
+              items: [{ id: "server-item-1" }],
+            },
           });
         }
       }
@@ -1636,9 +1654,7 @@ test("gateway queues waiter table orders offline and replays the local order cha
     const port = await gateway.start();
     await waitFor(() => gateway.status().mode === "online");
     for (const path of [
-      "/api/v1/tables?branchId=branch-1",
-      "/api/v1/tables/table-1",
-      "/api/v1/menu/products?branchId=branch-1",
+      "/api/v1/realtime/bootstrap?branchId=branch-1",
       "/api/v1/kitchen/orders",
     ]) {
       const response = await fetch("http://127.0.0.1:" + port + path, {
@@ -1750,13 +1766,19 @@ test("gateway queues waiter table orders offline and replays the local order cha
 
     online = true;
     await waitFor(() => gateway.status().mode === "online");
-    const trigger = await fetch("http://127.0.0.1:" + port + "/api/v1/branches", {
-      headers: { Authorization: authorization },
-    });
+    const trigger = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/branches",
+      {
+        headers: { Authorization: authorization },
+      },
+    );
     assert.equal(trigger.status, 200);
     await waitFor(() => store.summary().pendingCommands === 0, 3_000);
     assert.equal(sent.length, 2);
-    assert.equal(sent[0]?.url, "https://api.example.test/api/v1/tables/table-1/orders");
+    assert.equal(
+      sent[0]?.url,
+      "https://api.example.test/api/v1/tables/table-1/orders",
+    );
     assert.equal(sent[0]?.key, "waiter-open-key");
     assert.equal(
       sent[1]?.url,
@@ -1770,6 +1792,89 @@ test("gateway queues waiter table orders offline and replays the local order cha
     await rm(directory, { recursive: true, force: true });
   }
 });
+test("waiter offline writes reject a bootstrap snapshot owned by another branch", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-waiter-tenant-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("waiter-cross-branch", "branch-1");
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        if (!online) throw new Error("offline");
+        return jsonResponse({ success: true });
+      }
+      if (!online) throw new Error("offline");
+      if (
+        init?.method === "GET" &&
+        url.endsWith("/realtime/bootstrap?branchId=branch-1")
+      ) {
+        return jsonResponse({
+          success: true,
+          data: {
+            schemaVersion: 2,
+            generatedAt: new Date().toISOString(),
+            branchId: "branch-2",
+            tables: [
+              {
+                id: "table-2",
+                branchId: "branch-2",
+                name: "B-filial stoli",
+                status: "AVAILABLE",
+                orders: [],
+              },
+            ],
+          },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const warm = await fetch(
+      "http://127.0.0.1:" +
+        port +
+        "/api/v1/realtime/bootstrap?branchId=branch-1",
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(warm.status, 200);
+
+    online = false;
+    const response = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/tables/table-2/orders",
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "wrong-branch-table-open",
+        },
+        body: JSON.stringify({ guestCount: 2 }),
+      },
+    );
+    assert.equal(response.status, 503);
+    assert.equal(
+      (await response.json()).error.code,
+      "OFFLINE_WAITER_CACHE_MISSING",
+    );
+    assert.equal(store.summary().pendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("queued writes for one order rebase versions after every server acknowledgement", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-order-rebase-"),
@@ -2440,8 +2545,7 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
         transferNumber++;
         const id = `server-transfer-${transferNumber}`;
         const amount = Number(body.amount);
-        const nextBalance =
-          Number(serverShift.expectedCash) - amount;
+        const nextBalance = Number(serverShift.expectedCash) - amount;
         const transfer = {
           id,
           fromShiftId: "server-shift-transfer-1",
@@ -2492,9 +2596,11 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
       200,
     );
     assert.equal(
-      (await fetch(`${baseUrl}/transfers/receivers`, {
-        headers: { Authorization: authorization },
-      })).status,
+      (
+        await fetch(`${baseUrl}/transfers/receivers`, {
+          headers: { Authorization: authorization },
+        })
+      ).status,
       200,
     );
     online = false;
@@ -2514,7 +2620,8 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
     const duplicate = await fetch(`${baseUrl}/transfers`, firstRequest);
     assert.equal(duplicate.status, 202);
     assert.equal(
-      ((await duplicate.json()) as { data: { commandId: string } }).data.commandId,
+      ((await duplicate.json()) as { data: { commandId: string } }).data
+        .commandId,
       firstData.data.commandId,
     );
     const staleReceiver = await fetch(`${baseUrl}/transfers`, {
