@@ -1944,6 +1944,56 @@ test("queued writes for one order rebase versions after every server acknowledge
   }
 });
 
+test("offline kitchen actions are blocked when no authorized queue snapshot is cached", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-kitchen-cache-missing-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("kitchen-cache-missing", "branch-1");
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      throw new Error("offline");
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const baseUrl = `http://127.0.0.1:${port}/api/v1`;
+    const disconnected = await fetch(`${baseUrl}/branches`, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(disconnected.status, 503);
+
+    const response = await fetch(
+      `${baseUrl}/kitchen/orders/ticket-not-cached/ready`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-kitchen-no-snapshot",
+        },
+        body: JSON.stringify({ expectedVersion: 1 }),
+      },
+    );
+
+    assert.equal(response.status, 409);
+    assert.equal(
+      ((await response.json()) as { error: { code: string } }).error.code,
+      "OFFLINE_KITCHEN_MUTATION_UNSAFE",
+    );
+    assert.equal(store.summary().pendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("offline kitchen actions project status and rebase versions during replay", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-kitchen-rebase-"),
@@ -1975,7 +2025,13 @@ test("offline kitchen actions project status and rebase versions during replay",
               id: "ticket-rebase",
               status: "NEW",
               version: 5,
-              order: { id: "order-rebase" },
+              order: { id: "order-rebase", branchId: "branch-1" },
+            },
+            {
+              id: "ticket-other-branch",
+              status: "NEW",
+              version: 5,
+              order: { id: "order-other-branch", branchId: "branch-2" },
             },
           ],
         });
@@ -2007,6 +2063,66 @@ test("offline kitchen actions project status and rebase versions during replay",
     });
     assert.equal(initial.status, 200);
     online = false;
+
+    const staleVersion = await fetch(
+      `${kitchenPath}/ticket-rebase/accept`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-kitchen-stale",
+        },
+        body: JSON.stringify({ expectedVersion: 99 }),
+      },
+    );
+    assert.equal(staleVersion.status, 409);
+    assert.equal(
+      ((await staleVersion.json()) as { error: { code: string } }).error.code,
+      "OFFLINE_KITCHEN_MUTATION_UNSAFE",
+    );
+
+    const missingVersion = await fetch(
+      `${kitchenPath}/ticket-rebase/accept`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-kitchen-no-version",
+        },
+        body: JSON.stringify({}),
+      },
+    );
+    assert.equal(missingVersion.status, 409);
+
+    const missingTicket = await fetch(
+      `${kitchenPath}/ticket-not-cached/accept`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-kitchen-missing-ticket",
+        },
+        body: JSON.stringify({ expectedVersion: 5 }),
+      },
+    );
+    assert.equal(missingTicket.status, 409);
+
+    const crossBranchTicket = await fetch(
+      `${kitchenPath}/ticket-other-branch/accept`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-kitchen-cross-branch",
+        },
+        body: JSON.stringify({ expectedVersion: 5 }),
+      },
+    );
+    assert.equal(crossBranchTicket.status, 409);
 
     for (const [index, action] of ["accept", "start", "ready"].entries()) {
       const queued = await fetch(`${kitchenPath}/ticket-rebase/${action}`, {
