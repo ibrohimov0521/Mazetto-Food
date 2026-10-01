@@ -511,3 +511,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Verification: Desktop tests 117/117, POS tests 28/28, typecheck, lint, desktop build, bundled POS UI build and POS production build passed locally. GitHub CI passed in run 36935854523; Windows Desktop release 0.1.95 was published in run 36935854632; Dokploy deployment and production smoke passed in run 36936146882. The live update manifest reports version 0.1.95.
 - Desktop bundle version 0.1.95 is released and deployed.
 - Field acceptance remains required for the restaurant's actual printer models, paper output, app termination/power-loss timing, and staff reprint workflow. Physical printing cannot be guaranteed exactly once across an unobservable hardware failure; ambiguous results are exposed for human review instead of silently retried.
+
+## Customer-domain login routing (2026-10-02)
+
+- Production customer-web requests from `mazettofood.uz` and `www.mazettofood.uz` now use the verified `api.mazettofood.uz` API origin. POS/admin production routing was fixed in the preceding tenant-routing release; development proxy behavior remains unchanged.
+- PR #195 passed full CI (run 36938914483), merged as `3f180fd`, then Dokploy deployment and production smoke passed (run 36939610689). The live customer bundle contains the verified API origin; both customer-domain CORS preflights return 204 with credentials enabled.
+
+## D6 sensitive offline action boundary (2026-10-02)
+
+- Gateway regression coverage now forces an upstream outage and confirms refunds, cash-transfer acceptance, courier assignment, forced shift close, receipt reprint and staff creation remain online-only even when an idempotency key is supplied.
+- The test also confirms no pending or sending outbox command is created. No new offline action was enabled by this test-only checkpoint.
+- Verification: Desktop tests 118/118, typecheck and scoped ESLint passed locally. No application runtime code changed, so this checkpoint does not require a new Desktop installer; production release gates still run independently.
