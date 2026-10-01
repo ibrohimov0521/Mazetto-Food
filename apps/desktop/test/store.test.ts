@@ -91,12 +91,17 @@ test("desktop store removes expired cache entries without touching another scope
   }
 });
 
-test("rotated JWTs for the same user and branch share one cache scope", () => {
+test("rotated JWTs for the same authorization share one cache scope", () => {
   const payload = Buffer.from(
     JSON.stringify({
       id: "user-1",
       branchId: "branch-1",
       isGlobalScope: false,
+      credentialVersion: 7,
+      tenantId: "tenant-1",
+      membershipId: "membership-1",
+      roles: ["cashier", "pos"],
+      permissions: ["POS_USE", "ORDER_VIEW"],
     }),
   ).toString("base64url");
   const first = DesktopStore.authScope(
@@ -107,6 +112,64 @@ test("rotated JWTs for the same user and branch share one cache scope", () => {
   );
 
   assert.equal(first, rotated);
+});
+
+test("desktop cache scope follows membership and effective permissions", async () => {
+  const authorization = (claims: Record<string, unknown>) =>
+    `Bearer header.${Buffer.from(
+      JSON.stringify({
+        id: "user-1",
+        branchId: "branch-1",
+        isGlobalScope: false,
+        credentialVersion: 7,
+        tenantId: "tenant-1",
+        membershipId: "membership-1",
+        roles: ["cashier", "pos"],
+        permissions: ["POS_USE", "ORDER_VIEW"],
+        ...claims,
+      }),
+    ).toString("base64url")}.signature`;
+  const fullAccess = authorization({});
+  const reorderedAccess = authorization({
+    roles: ["pos", "cashier"],
+    permissions: ["ORDER_VIEW", "POS_USE"],
+  });
+  const reducedAccess = authorization({ permissions: ["POS_USE"] });
+  const otherMembership = authorization({ membershipId: "membership-2" });
+  const otherTenant = authorization({ tenantId: "tenant-2" });
+  const changedCredentials = authorization({ credentialVersion: 8 });
+  const fullScope = DesktopStore.authScope(fullAccess);
+  const reducedScope = DesktopStore.authScope(reducedAccess);
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const requestUrl = "https://api.example.test/api/v1/staff";
+
+  try {
+    assert.equal(fullScope, DesktopStore.authScope(reorderedAccess));
+    assert.notEqual(fullScope, reducedScope);
+    assert.notEqual(fullScope, DesktopStore.authScope(otherMembership));
+    assert.notEqual(fullScope, DesktopStore.authScope(otherTenant));
+    assert.notEqual(fullScope, DesktopStore.authScope(changedCredentials));
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(requestUrl, fullScope),
+      requestUrl,
+      authScope: fullScope,
+      status: 200,
+      contentType: "application/json",
+      body: '{"success":true,"data":[{"id":"privileged-staff"}]}',
+      cachedAt: new Date().toISOString(),
+    });
+
+    assert.equal(
+      store.getCachedResponse(
+        DesktopStore.cacheKey(requestUrl, reducedScope),
+      ),
+      null,
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("desktop store creates one stable device identity", async () => {

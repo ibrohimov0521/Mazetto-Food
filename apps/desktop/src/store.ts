@@ -1348,5 +1348,44 @@ function readJwtIdentity(authorization: string): string | null {
     return null;
   }
 
-  return `user:${context.actorId}:branch:${context.branchId}:global:${context.isGlobalScope}`;
+  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  const payload = token?.split(".")[1];
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const claims = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    const credentialVersion = claims.credentialVersion;
+    return JSON.stringify({
+      actorId: context.actorId,
+      branchId: context.branchId,
+      isGlobalScope: context.isGlobalScope,
+      tenantId: typeof claims.tenantId === "string" ? claims.tenantId : null,
+      membershipId:
+        typeof claims.membershipId === "string" ? claims.membershipId : null,
+      credentialVersion:
+        typeof credentialVersion === "number" &&
+        Number.isInteger(credentialVersion)
+          ? credentialVersion
+          : null,
+      roles: normalizeIdentityClaims(claims.roles),
+      permissions: normalizeIdentityClaims(claims.permissions),
+    });
+  } catch {
+    return null;
+  }
+}
+
+function normalizeIdentityClaims(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const claims = value.filter(
+    (item): item is string => typeof item === "string",
+  );
+  return [...new Set(claims)].sort();
 }

@@ -213,6 +213,12 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Verification: a reconnect integration test checks that an offline queued sale retains product, variant and table labels from the bootstrap snapshot; full CI, Windows release and production smoke are release gates.
 - Desktop bundle version: 0.1.70.
 
+## D1 offline cache follows current authorization (2026-10-01)
+
+- Desktop API-cache scopes fingerprint branch, tenant, membership, credential version, roles and effective permissions without persisting the bearer token.
+- Reordered but equivalent role/permission claims share the cache; reduced access or another tenant membership receives a separate cache and cannot read the earlier scope.
+- Desktop bundle version: 0.1.71. Full CI, Windows release and production smoke remain required before rollout.
+
 ## D3 ambiguous-request idempotency gate (2026-09-30)
 
 - A command may be queued without a caller-provided idempotency key only when the Desktop gateway had already marked the upstream offline and therefore did not send that request.
