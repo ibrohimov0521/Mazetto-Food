@@ -509,7 +509,7 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Each physical print attempt is committed to SQLite before the printer is called. If the audit row cannot be persisted, the worker does not send paper.
 - Attempt outcomes are linked to the job with stable attempt IDs and stored as printed, failed, or ambiguous. Restart recovery records interrupted work as ambiguous in the same transaction as the job-state change.
-- Manual retries append an operator-action record. The POS/desktop outbox displays recent attempt history and requires explicit confirmation before retrying a job whose result is uncertain.
-- Verification: Desktop tests 116/116, POS tests 28/28, typecheck, lint, desktop build, bundled POS UI build and POS production build passed locally. GitHub CI for this Desktop change is still pending.
+- A failure to persist the successful printer result is also recorded as ambiguous, because paper may already have printed. Manual retries append an operator-action record; the POS/desktop outbox displays recent attempt history and requires explicit confirmation before retrying an uncertain job.
+- Verification: Desktop tests 117/117, POS tests 28/28, typecheck, lint, desktop build, bundled POS UI build and POS production build passed locally. GitHub CI for this Desktop change is still pending.
 - Desktop bundle version 0.1.95. Windows release and production rollout are pending this stage's merge.
 - Field acceptance remains required for the restaurant's actual printer models, paper output, app termination/power-loss timing, and staff reprint workflow. Physical printing cannot be guaranteed exactly once across an unobservable hardware failure; ambiguous results are exposed for human review instead of silently retried.

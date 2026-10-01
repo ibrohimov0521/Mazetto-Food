@@ -462,6 +462,16 @@ export class DesktopPrintWorker {
         content,
       };
       await this.printSystemTargets("local", job.id, targets, receipt);
+    } catch (error) {
+      this.localQueue.fail(
+        job.id,
+        message(error),
+        isPrintOutcomeUnknown(error),
+        typeof attemptId === "string" ? attemptId : undefined,
+      );
+      return true;
+    }
+    try {
       this.localQueue.complete(
         job.id,
         typeof attemptId === "string" ? attemptId : undefined,
@@ -470,7 +480,7 @@ export class DesktopPrintWorker {
       this.localQueue.fail(
         job.id,
         message(error),
-        isPrintOutcomeUnknown(error),
+        true,
         typeof attemptId === "string" ? attemptId : undefined,
       );
       return true;

@@ -50,6 +50,60 @@ test("local print attempt is persisted before sending data to the printer", asyn
   assert.deepEqual(completedAttempts, ["attempt-1"]);
 });
 
+test("a printed receipt with failed result persistence is treated as ambiguous", async () => {
+  let claimed = false;
+  let printCalls = 0;
+  const failures: Array<{
+    message: string;
+    ambiguous?: boolean;
+    attemptId?: string;
+  }> = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Till A", displayName: "Till A", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      printCalls += 1;
+    },
+    localQueue: {
+      claim: () => {
+        if (claimed) return null;
+        claimed = true;
+        return {
+          id: "local-print-result-write-failed",
+          logicalKey: "local-print-result-write-failed:RECEIPT",
+          branchId: "branch-1",
+          documentType: "RECEIPT",
+          payloadJson: JSON.stringify({ orderId: "local-print-result-write-failed" }),
+          attempts: 1,
+        };
+      },
+      markPrinting: () => "attempt-1",
+      complete: () => {
+        throw new Error("SQLite result write failed");
+      },
+      fail: (_id, error, ambiguous, attemptId) => {
+        failures.push({ message: error, ambiguous, attemptId });
+      },
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+  assert.equal(printCalls, 1);
+  assert.deepEqual(failures, [
+    {
+      message: "SQLite result write failed",
+      ambiguous: true,
+      attemptId: "attempt-1",
+    },
+  ]);
+});
+
 test("a local printer job is not sent if its durable attempt cannot be recorded", async () => {
   let claimed = false;
   let printCalls = 0;
