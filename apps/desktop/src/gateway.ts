@@ -74,6 +74,7 @@ export class DesktopGateway {
   private mode: DesktopGatewayStatus["mode"] = "starting";
   private readonly activeAuthorizations = new Map<string, string>();
   private readonly syncingScopes = new Set<string>();
+  private readonly authBlockedScopes = new Set<string>();
   private readonly backgroundTasks = new Set<Promise<void>>();
   private stopping = false;
   private readonly adoptedMutationScopes = new Set<string>();
@@ -208,6 +209,10 @@ export class DesktopGateway {
       this.adoptedMutationScopes.add(authScope);
     }
     if (authorization) {
+      const previousAuthorization = this.activeAuthorizations.get(authScope);
+      if (previousAuthorization && previousAuthorization !== authorization) {
+        this.authBlockedScopes.delete(authScope);
+      }
       this.activeAuthorizations.set(authScope, authorization);
       this.onAuthorization?.(authorization);
     }
@@ -913,7 +918,12 @@ export class DesktopGateway {
     authorization: string,
     authScope: string,
   ): Promise<void> {
-    if (this.syncingScopes.has(authScope)) {
+    const currentAuthorization = this.activeAuthorizations.get(authScope);
+    if (
+      this.syncingScopes.has(authScope) ||
+      this.authBlockedScopes.has(authScope) ||
+      (currentAuthorization && currentAuthorization !== authorization)
+    ) {
       return;
     }
 
@@ -921,6 +931,10 @@ export class DesktopGateway {
     try {
       let flushed = 0;
       while (flushed < 100) {
+        if (
+          this.authBlockedScopes.has(authScope) ||
+          this.activeAuthorizations.get(authScope) !== authorization
+        ) break;
         const due = this.store.dueMutations(authScope, 25);
         if (!due.length) {
           break;
@@ -929,10 +943,25 @@ export class DesktopGateway {
         for (const command of due) {
           await this.sendQueuedMutation(command, authorization);
           flushed++;
+          if (
+            this.authBlockedScopes.has(authScope) ||
+            this.activeAuthorizations.get(authScope) !== authorization
+          ) break;
         }
       }
     } finally {
       this.syncingScopes.delete(authScope);
+      const latestAuthorization = this.activeAuthorizations.get(authScope);
+      if (
+        !this.stopping &&
+        latestAuthorization &&
+        latestAuthorization !== authorization &&
+        !this.authBlockedScopes.has(authScope)
+      ) {
+        this.trackBackgroundTask(
+          this.flushPendingMutations(latestAuthorization, authScope),
+        );
+      }
     }
   }
 
@@ -1014,6 +1043,16 @@ export class DesktopGateway {
       });
       const responseText = await response.text();
       const cacheScope = DesktopStore.authScope(authorization);
+
+      if (response.status === 401) {
+        if (
+          this.activeAuthorizations.get(command.authScope) === authorization
+        ) {
+          this.authBlockedScopes.add(command.authScope);
+        }
+        this.store.markMutationAwaitingAuth(command.id);
+        return;
+      }
 
       if (response.ok) {
         const serverId = extractServerId(responseText);

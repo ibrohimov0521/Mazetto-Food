@@ -853,6 +853,187 @@ test("gateway fast-fails to local cache and outbox while offline, then replays o
   }
 });
 
+test("queued mutations wait for refreshed auth after replay receives 401", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-auth-replay-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-expired-replay", "branch-1");
+  const refreshedAuthorization = desktopJwt(
+    "cashier-expired-replay",
+    "branch-1",
+    { iat: 2 },
+  );
+  let networkAvailable = false;
+  const replayAuthorizations: string[] = [];
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (!networkAvailable) throw new Error("offline");
+      const requestAuthorization = new Headers(init?.headers).get("authorization");
+      if (url.endsWith("/pos/orders") && init?.method === "POST") {
+        replayAuthorizations.push(requestAuthorization ?? "");
+        if (requestAuthorization === authorization) {
+          return jsonResponse(
+            { success: false, error: { message: "Access token expired" } },
+            401,
+          );
+        }
+        return jsonResponse({ success: true, data: { id: "server-order-1" } });
+      }
+      return jsonResponse(
+        { success: true, data: [] },
+        requestAuthorization === authorization ? 401 : 200,
+      );
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const baseUrl = "http://127.0.0.1:" + port + "/api/v1";
+    const queued = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "expired-auth-offline-sale",
+      },
+      body: JSON.stringify({
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      }),
+    });
+    assert.equal(queued.status, 202);
+    assert.equal(store.summary().pendingCommands, 1);
+
+    networkAvailable = true;
+    await waitFor(() => gateway.status().mode === "online", 4_000);
+    const expiredSessionRead = await fetch(baseUrl + "/orders", {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(expiredSessionRead.status, 401);
+    await waitFor(() => replayAuthorizations.length === 1);
+    await waitFor(
+      () => store.listOutbox()[0]?.lastError === "Kirish sessiyasini yangilash kutilmoqda",
+    );
+    assert.equal(store.summary().conflictCommands, 0);
+
+    await new Promise((resolve) => setTimeout(resolve, 1_050));
+    assert.equal(replayAuthorizations.length, 1);
+    assert.equal(store.summary().pendingCommands, 1);
+
+    const refreshedRead = await fetch(baseUrl + "/orders", {
+      headers: { Authorization: refreshedAuthorization },
+    });
+    assert.equal(refreshedRead.status, 200);
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+    );
+    assert.deepEqual(replayAuthorizations, [
+      authorization,
+      refreshedAuthorization,
+    ]);
+    assert.equal(store.summary().conflictCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("expired replay racing a session refresh resumes with the newest token", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-auth-race-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-auth-race", "branch-1");
+  const refreshedAuthorization = desktopJwt(
+    "cashier-auth-race",
+    "branch-1",
+    { iat: 2 },
+  );
+  let networkAvailable = false;
+  let releaseOldReplay: ((response: Response) => void) | null = null;
+  let announceOldReplay: (() => void) | null = null;
+  const oldReplayStarted = new Promise<void>((resolve) => {
+    announceOldReplay = resolve;
+  });
+  const replayAuthorizations: string[] = [];
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (!networkAvailable) throw new Error("offline");
+      const requestAuthorization = new Headers(init?.headers).get("authorization");
+      if (url.endsWith("/pos/orders") && init?.method === "POST") {
+        replayAuthorizations.push(requestAuthorization ?? "");
+        if (requestAuthorization === authorization) {
+          announceOldReplay?.();
+          return new Promise<Response>((resolve) => {
+            releaseOldReplay = resolve;
+          });
+        }
+        return jsonResponse({ success: true, data: { id: "server-order-race" } });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const baseUrl = "http://127.0.0.1:" + port + "/api/v1";
+    const queued = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "auth-race-offline-sale",
+      },
+      body: JSON.stringify({
+        payments: [{ paymentMethodCode: "CASH", amount: 8_000 }],
+      }),
+    });
+    assert.equal(queued.status, 202);
+
+    networkAvailable = true;
+    await waitFor(() => gateway.status().mode === "online", 4_000);
+    await oldReplayStarted;
+    const refreshedRead = await fetch(baseUrl + "/orders", {
+      headers: { Authorization: refreshedAuthorization },
+    });
+    assert.equal(refreshedRead.status, 200);
+
+    assert.ok(releaseOldReplay);
+    releaseOldReplay(jsonResponse(
+      { success: false, error: { message: "Access token expired" } },
+      401,
+    ));
+    await waitFor(
+      () =>
+        replayAuthorizations.length === 2 &&
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+    );
+    assert.deepEqual(replayAuthorizations, [
+      authorization,
+      refreshedAuthorization,
+    ]);
+    assert.equal(store.summary().conflictCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway preserves a queued sale across permission refresh without reusing private cache", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
