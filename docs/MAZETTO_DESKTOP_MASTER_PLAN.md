@@ -124,15 +124,13 @@ changes remain online-only until a dedicated conflict-safe protocol is approved.
 
 #### Desktop update contract
 
-The Electron shell uses `electron-updater` with a generic HTTPS feed. The feed
-is configured at runtime with `MAZETTO_DESKTOP_UPDATE_URL`; an absent URL keeps
-development and not-yet-provisioned installations stable with updates disabled.
-The release directory must publish the installer, its generated update
-metadata, and the matching blockmap under the same feed path. Updates are
-never downloaded automatically: the user sees an available version, starts the
-download, and explicitly restarts to install it. The updater is disabled for
-unpacked development runs, and update failures leave the current installation
-usable.
+The Electron shell uses GitHub Releases by default; `MAZETTO_DESKTOP_UPDATE_URL` can override the feed.
+Unpacked development builds do not check for updates. Packaged builds check at
+startup and every six hours. Updates are never downloaded automatically: the
+user starts the download and explicitly restarts to install it. For generic
+feeds, the installer, generated update metadata and matching blockmap must be
+published under the same feed path. Update failures leave the current
+installation usable.
 
 Before production rollout, the release pipeline must add code signing, a
 minimum-supported-version policy, staged channels, checksum monitoring and a
@@ -510,6 +508,6 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Each physical print attempt is committed to SQLite before the printer is called. If the audit row cannot be persisted, the worker does not send paper.
 - Attempt outcomes are linked to the job with stable attempt IDs and stored as printed, failed, or ambiguous. Restart recovery records interrupted work as ambiguous in the same transaction as the job-state change.
 - A failure to persist the successful printer result is also recorded as ambiguous, because paper may already have printed. Manual retries append an operator-action record; the POS/desktop outbox displays recent attempt history and requires explicit confirmation before retrying an uncertain job.
-- Verification: Desktop tests 117/117, POS tests 28/28, typecheck, lint, desktop build, bundled POS UI build and POS production build passed locally. GitHub CI for this Desktop change is still pending.
-- Desktop bundle version 0.1.95. Windows release and production rollout are pending this stage's merge.
+- Verification: Desktop tests 117/117, POS tests 28/28, typecheck, lint, desktop build, bundled POS UI build and POS production build passed locally. GitHub CI passed in run 36935854523; Windows Desktop release 0.1.95 was published in run 36935854632; Dokploy deployment and production smoke passed in run 36936146882. The live update manifest reports version 0.1.95.
+- Desktop bundle version 0.1.95 is released and deployed.
 - Field acceptance remains required for the restaurant's actual printer models, paper output, app termination/power-loss timing, and staff reprint workflow. Physical printing cannot be guaranteed exactly once across an unobservable hardware failure; ambiguous results are exposed for human review instead of silently retried.
