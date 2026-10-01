@@ -16,6 +16,9 @@ export type AuthUser = {
   phone?: string;
   employeeId?: string;
   branchId?: string;
+  tenantId?: string;
+  membershipId?: string;
+  credentialVersion?: number;
   isGlobalScope?: boolean;
   roles: string[];
   permissions: string[];

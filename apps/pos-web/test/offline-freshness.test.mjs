@@ -143,15 +143,23 @@ test("freshness cache scope separates users and their effective permissions", ()
   clearApiFreshness();
   const userA = getApiFreshnessScope({
     id: "user-a",
+    employeeId: "employee-1",
+    tenantId: "tenant-a",
+    membershipId: "membership-1",
+    credentialVersion: 3,
     branchId: "branch-1",
     roles: ["CASHIER", "POS"],
     permissions: ["orders.read", "orders.create"],
   });
   const userAReordered = getApiFreshnessScope({
     id: "user-a",
+    employeeId: "employee-1",
+    tenantId: "tenant-a",
+    membershipId: "membership-1",
+    credentialVersion: 3,
     branchId: "branch-1",
-    roles: ["POS", "CASHIER"],
-    permissions: ["orders.create", "orders.read"],
+    roles: ["POS", "CASHIER", "POS"],
+    permissions: ["orders.create", "orders.read", "orders.read"],
   });
   const userB = getApiFreshnessScope({
     id: "user-b",
@@ -184,5 +192,51 @@ test("freshness cache scope separates users and their effective permissions", ()
   recordApiResponseFreshness("/orders", "online", null, "/pos", userA);
   assert.equal(getApiFreshnessSnapshot(now, "/pos", userA).cachedResponses, 0);
   assert.equal(getApiFreshnessSnapshot(now, "/pos", userB).cachedResponses, 1);
+  clearApiFreshness();
+});
+
+test("freshness scope isolates tenant, membership, employee and credential changes", () => {
+  clearApiFreshness();
+  const base = {
+    id: "same-user",
+    employeeId: "employee-1",
+    tenantId: "tenant-a",
+    membershipId: "membership-1",
+    credentialVersion: 3,
+    branchId: "branch-1",
+    roles: ["CASHIER"],
+    permissions: ["orders.read"],
+  };
+  const baseScope = getApiFreshnessScope(base);
+
+  for (const changes of [
+    { tenantId: "tenant-b" },
+    { membershipId: "membership-2" },
+    { employeeId: "employee-2" },
+    { credentialVersion: 4 },
+  ]) {
+    assert.notEqual(getApiFreshnessScope({ ...base, ...changes }), baseScope);
+  }
+
+  recordApiResponseFreshness(
+    "/orders",
+    "offline-cache",
+    "2026-09-30T06:10:00.000Z",
+    "/pos",
+    baseScope,
+  );
+  const now = Date.parse("2026-09-30T06:12:00.000Z");
+  assert.equal(
+    getApiFreshnessSnapshot(now, "/pos", baseScope).cachedResponses,
+    1,
+  );
+  assert.equal(
+    getApiFreshnessSnapshot(
+      now,
+      "/pos",
+      getApiFreshnessScope({ ...base, membershipId: "membership-2" }),
+    ).cachedResponses,
+    0,
+  );
   clearApiFreshness();
 });

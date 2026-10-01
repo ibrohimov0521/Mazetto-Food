@@ -125,15 +125,20 @@ function notifyFreshnessSubscribers() {
 }
 
 /**
- * @param {{ id: string; branchId?: string; isGlobalScope?: boolean; roles?: string[]; permissions?: string[] } | null} user
+ * @param {{ id: string; employeeId?: string; tenantId?: string; membershipId?: string; credentialVersion?: number; branchId?: string; isGlobalScope?: boolean; roles?: string[]; permissions?: string[] } | null} user
  */
 export function getApiFreshnessScope(user) {
   if (!user) return "anonymous";
+  const normalize = (values = []) => [...new Set(values)].sort();
   return JSON.stringify([
     user.id,
+    user.employeeId ?? null,
+    user.tenantId ?? null,
+    user.membershipId ?? null,
+    user.credentialVersion ?? null,
     user.branchId ?? null,
     user.isGlobalScope === true,
-    [...(user.roles ?? [])].sort(),
-    [...(user.permissions ?? [])].sort(),
+    normalize(user.roles),
+    normalize(user.permissions),
   ]);
 }

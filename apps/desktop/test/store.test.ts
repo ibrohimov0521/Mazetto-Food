@@ -269,7 +269,7 @@ test("desktop store recovers interrupted sending mutations on reopen", async () 
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const path = join(directory, "test.sqlite");
   const first = new DesktopStore(path);
-test("desktop store adopts legacy outbox rows only for the matching actor and branch", async () => {
+await test("desktop store adopts legacy outbox rows only for the matching actor and branch", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
 

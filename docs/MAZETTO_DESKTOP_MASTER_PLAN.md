@@ -354,3 +354,10 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - The Desktop queue continues with other due jobs after a printer failure or timeout; retries for definitely failed jobs retain their bounded backoff.
 - The Windows Desktop bundle version for this stage is 0.1.61.
 - Verification: Desktop tests 77/77, print-queue service tests 3/3, full monorepo typecheck/lint/test/build and 33/33 validators passed; production deploy and 24/24 smoke succeeded. Restaurant-specific physical printer tests remain required; this does not claim support for every printer model or a 100% offline guarantee.
+
+## D2 freshness identity isolation (2026-10-01)
+
+- Staff-panel cache freshness indicators are now scoped by user, employee, tenant, membership, credential version, branch, global scope and normalized effective roles/permissions. A membership or credential change no longer inherits another session's cached/live indicator for the same endpoint.
+- This scopes status metadata only; the Desktop gateway remains responsible for tenant/branch authorization and cached response isolation.
+- Verification: freshness tests cover tenant, membership, employee and credential-version changes, plus order-independent duplicate-free role/permission sets. Full monorepo CI, Desktop release, deployment smoke and production smoke are required before rollout.
+- Desktop bundle version: `0.1.73`. Atomic offline projections, per-role field coverage, physical printer/power-loss acceptance and universal printer protocol support remain open; this is not a 100% offline guarantee.
