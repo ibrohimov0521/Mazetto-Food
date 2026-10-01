@@ -368,5 +368,13 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - The local table becomes occupied in the optimistic projection, and its order/item appear immediately with a visible pending-sync state. Reconnect replays table creation before item creation and substitutes the server order ID.
 - A stable idempotency key is retained for ambiguous retries. Waiter line edits, quantity changes and removal stay disabled until the local line has a server-confirmed identity.
 - Kitchen Display offline projection now follows the real API envelope with nested data.items. Waiter-created tickets include cached table name and DINE_IN type; added items update ticket.items and the nested order without duplicating lines.
-- Verification: Desktop tests 88/88, Desktop typecheck and lint passed. POS checks, full monorepo CI, release workflow and production smoke remain release gates; physical offline tests across separate terminals remain open.
+- Verification: Desktop tests 88/88, Desktop typecheck and lint, full monorepo CI, Windows Desktop 0.1.75 release and production tag passed. Dokploy completed without rebuilding server apps; production web smoke was skipped because this change did not modify a server service. Physical offline tests across separate terminals remain open.
 - Desktop bundle version: 0.1.75.
+
+## D2 exact cached endpoint matching (2026-10-01)
+
+- Offline fallback lookups now verify the cached URL pathname exactly, so a newer detail route such as `/orders/:id` cannot replace a collection response such as `/orders`. Query variants of the exact endpoint still use the newest response.
+- Added regression coverage for overlapping collection and detail routes.
+- Verification: Desktop tests 89/89, typecheck and lint passed. Full CI, Windows release and production deployment checks remain release gates.
+- This does not complete D2: atomic grouped snapshots, per-role field coverage, outage drills and physical printer acceptance remain open.
+- Desktop bundle version: `0.1.76`.

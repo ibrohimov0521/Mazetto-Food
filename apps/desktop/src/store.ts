@@ -267,7 +267,7 @@ export class DesktopStore {
     authScope: string,
     pathname: string,
   ): CachedResponse | null {
-    const row = this.database
+    const rows = this.database
       .prepare(
         `SELECT cache_key AS cacheKey, request_url AS requestUrl,
                 auth_scope AS authScope, status, content_type AS contentType,
@@ -275,10 +275,19 @@ export class DesktopStore {
          FROM api_cache
          WHERE auth_scope = ? AND request_url LIKE ?
          ORDER BY cached_at DESC
-         LIMIT 1`,
+         `,
       )
-      .get(authScope, `%${pathname}%`) as CachedResponse | undefined;
-    return row ? { ...row } : null;
+      .all(authScope, `%${pathname}%`) as CachedResponse[];
+    const expectedPath = pathname.replace(/\/+$/, "") || "/";
+    for (const row of rows) {
+      try {
+        const cachedPath = new URL(row.requestUrl).pathname.replace(/\/+$/, "") || "/";
+        if (cachedPath === expectedPath) return { ...row };
+      } catch {
+        continue;
+      }
+    }
+    return null;
   }
 
   enqueueLocalPrintJob(input: {
