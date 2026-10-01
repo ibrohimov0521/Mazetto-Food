@@ -20,7 +20,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  detect-runtime-changes:
+    name: Detect packaged runtime changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.filter.outputs.should_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decide whether a Windows release is needed
+        id: filter
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.before }}"
+          if [[ "$base" =~ ^0+$ ]]; then base="${{ github.sha }}^"; fi
+          changed_files="$(git diff --name-only "$base" "${{ github.sha }}")"
+          runtime_files="$(printf '%s\n' "$changed_files" | grep -Ev '(^|/)(test|tests)/|(^|/)[^/]+\.(test|spec)\.[^/]+$|\.md$' || true)"
+          if printf '%s\n' "$runtime_files" | grep -Eq '^(apps/desktop/|apps/pos-web/|packages/|pnpm-lock\.yaml$|package\.json$)'; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
   release:
+    needs: detect-runtime-changes
+    if: needs.detect-runtime-changes.outputs.should_release == 'true'
     name: build and publish Windows app
     runs-on: windows-latest
     timeout-minutes: 30
