@@ -393,6 +393,76 @@ test("desktop store migrates existing databases for local printer retry timing",
   }
 });
 
+test("interrupted printer submissions require review after app restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const path = join(directory, "test.sqlite");
+  const first = new DesktopStore(path);
+
+  try {
+    first.enqueueLocalPrintJob({
+      logicalKey: "restart-printed:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payload: { orderId: "restart-printed" },
+    });
+    const inFlight = first.claimLocalPrintJob(
+      ["RECEIPT"],
+      new Date("2026-10-02T10:00:00.000Z"),
+    );
+    assert.ok(inFlight);
+    assert.equal(
+      first.markLocalPrintJobPrinting(
+        inFlight.id,
+        new Date("2026-10-02T10:00:01.000Z"),
+      ),
+      true,
+    );
+  } finally {
+    first.close();
+  }
+
+  const reopened = new DesktopStore(path);
+  try {
+    const [job] = reopened.listLocalPrintJobs();
+    assert.equal(job?.state, "dead_letter");
+    assert.match(job?.lastError ?? "", /qog'ozni tekshiring/i);
+    assert.equal(reopened.claimLocalPrintJob(["RECEIPT"]), null);
+
+    assert.equal(reopened.retryLocalPrintJob(job!.id), true);
+    assert.ok(reopened.claimLocalPrintJob(["RECEIPT"]));
+  } finally {
+    reopened.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a lease that expired before printing starts is safely reclaimed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const claimedAt = new Date("2026-10-02T10:00:00.000Z");
+
+  try {
+    store.enqueueLocalPrintJob({
+      logicalKey: "restart-leased:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payload: { orderId: "restart-leased" },
+    });
+    const first = store.claimLocalPrintJob(["RECEIPT"], claimedAt);
+    assert.ok(first);
+
+    const reclaimed = store.claimLocalPrintJob(
+      ["RECEIPT"],
+      new Date(claimedAt.getTime() + 61_000),
+    );
+    assert.equal(reclaimed?.id, first.id);
+    assert.equal(reclaimed?.attempts, first.attempts + 1);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("offline mutation and local print jobs commit atomically", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));

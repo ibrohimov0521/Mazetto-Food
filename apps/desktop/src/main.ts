@@ -163,6 +163,7 @@ async function startDesktop(): Promise<void> {
     printSystem: silentPrintReceipt,
     localQueue: {
       claim: (documentTypes) => store?.claimLocalPrintJob(documentTypes) ?? null,
+      markPrinting: (id) => store?.markLocalPrintJobPrinting(id) ?? false,
       complete: (id) => store?.completeLocalPrintJob(id),
       fail: (id, error, ambiguous) =>
         store?.failLocalPrintJob(id, error, new Date(), ambiguous),
