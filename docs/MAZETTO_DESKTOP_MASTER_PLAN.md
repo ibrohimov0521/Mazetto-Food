@@ -361,3 +361,11 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - This scopes status metadata only; the Desktop gateway remains responsible for tenant/branch authorization and cached response isolation.
 - Verification: freshness tests cover tenant, membership, employee and credential-version changes, plus order-independent duplicate-free role/permission sets. Full monorepo CI, Desktop release, deployment smoke and production smoke are required before rollout.
 - Desktop bundle version: `0.1.73`. Atomic offline projections, per-role field coverage, physical printer/power-loss acceptance and universal printer protocol support remain open; this is not a 100% offline guarantee.
+
+## D3 offline waiter table orders (2026-10-01)
+
+- Waiters can open a table and add an item while offline when the authorized table, same-branch menu price, selected variant and modifiers are present in the local cache. The gateway refuses incomplete or uncached pricing instead of inventing a total.
+- The local table becomes occupied in the optimistic projection, and its order/item appear immediately with a visible pending-sync state. Reconnect replays table creation before item creation and substitutes the server order ID.
+- A stable idempotency key is retained for ambiguous retries. Waiter line edits, quantity changes and removal stay disabled until the local line has a server-confirmed identity.
+- Verification for this slice: Desktop 88 tests, POS 14 tests, both apps typecheck/lint, and POS production build passed. Full CI, validators, Desktop release and production smoke remain release gates.
+- Desktop bundle version: 0.1.74.

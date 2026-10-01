@@ -295,6 +295,21 @@ export class DesktopGateway {
             });
             return;
           }
+          const waiterItemError = offlineWaiterItemQueueError(
+            this.store,
+            cacheScope,
+            identity?.branchId,
+            method,
+            url.pathname,
+            body,
+          );
+          if (waiterItemError) {
+            this.sendJson(response, 503, {
+              success: false,
+              error: { code: "OFFLINE_MENU_CACHE_MISSING", message: waiterItemError },
+            });
+            return;
+          }
           const queued = this.queueMutation({
             authorization,
             authScope,
@@ -445,6 +460,21 @@ export class DesktopGateway {
           });
           return;
         }
+        const waiterItemError = offlineWaiterItemQueueError(
+          this.store,
+          cacheScope,
+          identity?.branchId,
+          method,
+          url.pathname,
+          body,
+        );
+        if (waiterItemError) {
+          this.sendJson(response, 503, {
+            success: false,
+            error: { code: "OFFLINE_MENU_CACHE_MISSING", message: waiterItemError },
+          });
+          return;
+        }
         const queued = this.queueMutation({
           authorization,
           authScope,
@@ -546,6 +576,24 @@ export class DesktopGateway {
     const localAggregateId = createsLocalAggregate(input.definition.commandType)
       ? `local-${randomUUID()}`
       : null;
+    const localItemId =
+      input.definition.commandType === "order.items.update" &&
+      input.method === "POST" &&
+      /^\/api\/v1\/orders\/[^/]+\/items$/.test(input.pathname)
+        ? `local-${randomUUID()}`
+        : null;
+    const waiterProduct = localItemId
+      ? cachedWaiterMenuProduct(
+          this.store,
+          input.cacheScope,
+          context?.branchId,
+          stringField(parsedBody, "productId"),
+        )
+      : null;
+    const offlineWaiterItemSnapshot =
+      localItemId && waiterProduct && parsedBody
+        ? buildOfflineWaiterItemSnapshot(waiterProduct, parsedBody, localItemId)
+        : null;
     if (
       input.definition.commandType === "pos.order.create" &&
       localAggregateId &&
@@ -593,7 +641,9 @@ export class DesktopGateway {
         targetUrl: input.targetUrl,
         pathname: input.pathname,
         ...(localAggregateId ? { localAggregateId } : {}),
+        ...(localItemId ? { localItemId } : {}),
         ...(offlineOrderSnapshot ? { offlineOrderSnapshot } : {}),
+        ...(offlineWaiterItemSnapshot ? { offlineWaiterItemSnapshot } : {}),
         headers: {
           "content-type":
             headerValue(input.request.headers["content-type"]) ??
@@ -1717,6 +1767,7 @@ function applyOptimisticProjection(
     const commandBody = parseJsonObject(stringField(payload, "body") ?? "");
     const snapshot = recordField(payload, "offlineOrderSnapshot");
 
+    const waiterItemSnapshot = recordField(payload, "offlineWaiterItemSnapshot");
     if (
       command.commandType === "pos.order.create" ||
       command.commandType === "table.order.create"
@@ -1729,7 +1780,7 @@ function applyOptimisticProjection(
             pendingSync: true,
             offlineQueued: true,
           }
-        : optimisticOrder(command, commandBody ?? {});
+        : optimisticOrder(command, commandBody ?? {}, commandPath);
       const orderId = command.aggregateId ?? command.id;
       const orderPath = `/api/v1/orders/${orderId}`;
       if (pathname === "/api/v1/orders") {
@@ -1743,7 +1794,8 @@ function applyOptimisticProjection(
         )?.[1];
         if (
           tableId &&
-          pathname === "/api/v1/tables" &&
+          (pathname === "/api/v1/tables" ||
+            pathname === `/api/v1/tables/${tableId}`) &&
           patchTableProjection(projected, tableId, order)
         ) {
           applied.push(command.id);
@@ -1752,6 +1804,31 @@ function applyOptimisticProjection(
       if (pathname === "/api/v1/kitchen/orders") {
         const ticket = optimisticKitchenTicket(command, order);
         if (prependProjection(projected, ticket)) applied.push(command.id);
+      }
+      continue;
+    }
+
+    const waiterItemPath = commandPath.match(
+      /^\/api\/v1\/orders\/([^/]+)\/items$/,
+    );
+    if (
+      command.commandType === "order.items.update" &&
+      stringField(payload, "method") === "POST" &&
+      waiterItemPath?.[1]
+    ) {
+      if (
+        waiterItemSnapshot &&
+        (pathname === "/api/v1/orders/" + waiterItemPath[1] ||
+          pathname === "/api/v1/tables" ||
+          /^\/api\/v1\/tables\/[^/]+$/.test(pathname)) &&
+        patchOrderItemProjection(
+          projected,
+          waiterItemPath[1],
+          waiterItemSnapshot,
+          numberField(commandBody, "expectedVersion"),
+        )
+      ) {
+        applied.push(command.id);
       }
       continue;
     }
@@ -1901,20 +1978,34 @@ function applyOptimisticProjection(
 function optimisticOrder(
   command: PendingOutboxCommand,
   body: Record<string, unknown>,
+  commandPath: string,
 ): Record<string, unknown> {
   const id = command.aggregateId ?? command.id;
-  const total = paymentTotal(body);
-  const tableId = stringField(body, "tableId") ?? undefined;
+  const source = command.commandType === "table.order.create" ? "WAITER" : "POS";
+  const tableId =
+    stringField(body, "tableId") ??
+    commandPath.match(/^\/api\/v1\/tables\/([^/]+)\/orders$/)?.[1];
   return {
     id,
-    orderNumber: offlinePosInternalOrderNumber(id),
-    displayOrderNumber: numberField(body, "offlineDisplayOrderSequence") ?? 101,
+    orderNumber:
+      source === "WAITER"
+        ? offlineWaiterInternalOrderNumber(id)
+        : offlinePosInternalOrderNumber(id),
+    ...(source === "POS"
+      ? { displayOrderNumber: numberField(body, "offlineDisplayOrderSequence") ?? 101 }
+      : {}),
+    version: numberField(body, "expectedVersion") ?? 0,
     status: "NEW",
     orderState: "PLACED",
     paymentStatus: "PENDING",
-    total: String(total),
-    source: command.commandType === "table.order.create" ? "WAITER" : "POS",
+    total: String(paymentTotal(body)),
+    source,
     ...(tableId ? { tableId } : {}),
+    ...(numberField(body, "guestCount") !== null
+      ? { guestCount: numberField(body, "guestCount") }
+      : {}),
+    ...(stringField(body, "notes") ? { notes: stringField(body, "notes") } : {}),
+    items: [],
     createdAt: new Date().toISOString(),
     pendingSync: true,
     offlineQueued: true,
@@ -2010,6 +2101,25 @@ function patchTableProjection(
   return true;
 }
 
+function patchOrderItemProjection(
+  projected: unknown,
+  orderId: string,
+  item: Record<string, unknown>,
+  expectedVersion: number | null,
+): boolean {
+  const order = findRecordById(projected, orderId);
+  const itemTotal = finiteAmount(item.totalPrice);
+  if (!order || itemTotal === null) return false;
+  const items = Array.isArray(order.items) ? order.items : [];
+  if (items.some((value) => isRecord(value) && value.id === item.id)) return false;
+  items.push(item);
+  order.items = items;
+  order.total = ((finiteAmount(order.total) ?? 0) + itemTotal).toFixed(2);
+  order.version = (expectedVersion ?? finiteAmount(order.version) ?? 0) + 1;
+  order.pendingSync = true;
+  order.offlineQueued = true;
+  return true;
+}
 function findRecordById(
   value: unknown,
   id: string,
@@ -2068,6 +2178,8 @@ function queuedResponseData(
   const parsedBody = parseJsonObject(
     stringField(queuedPayload, "body") ?? Buffer.from(body).toString("utf8"),
   );
+  const commandPath = stringField(queuedPayload, "pathname") ?? pathname;
+  const waiterItemSnapshot = recordField(queuedPayload, "offlineWaiterItemSnapshot");
   const total = paymentTotal(parsedBody);
   const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
   const offlineNumber = offlinePosInternalOrderNumber(
@@ -2082,6 +2194,34 @@ function queuedResponseData(
     idempotencyKey: command.idempotencyKey,
     message: "Internet qaytganda avtomatik yuboriladi.",
   };
+
+  if (
+    command.commandType === "table.order.create" &&
+    /^\/api\/v1\/tables\/[^/]+\/orders$/.test(pathname)
+  ) {
+    return {
+      ...base,
+      ...optimisticOrder(command, parsedBody ?? {}, commandPath),
+    };
+  }
+
+  const waiterItemPath = pathname.match(
+    /^\/api\/v1\/orders\/([^/]+)\/items$/,
+  );
+  if (
+    command.commandType === "order.items.update" &&
+    stringField(queuedPayload, "method") === "POST" &&
+    waiterItemPath?.[1] &&
+    waiterItemSnapshot
+  ) {
+    return {
+      ...base,
+      id: waiterItemSnapshot.id,
+      item: waiterItemSnapshot,
+      pendingSync: true,
+      version: (numberField(parsedBody, "expectedVersion") ?? 0) + 1,
+    };
+  }
 
   if (
     /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/.test(pathname)
@@ -2358,6 +2498,168 @@ function hasStableIdempotencyKey(
   return Boolean(stringField(parsedBody, "idempotencyKey"));
 }
 
+function offlineWaiterItemQueueError(
+  store: DesktopStore,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  method: string,
+  pathname: string,
+  body: ArrayBuffer | undefined,
+): string | null {
+  if (
+    method !== "POST" ||
+    !/^\/api\/v1\/orders\/[^/]+\/items$/.test(pathname)
+  ) {
+    return null;
+  }
+  const orderId = pathname.match(/^\/api\/v1\/orders\/([^/]+)\/items$/)?.[1];
+  if (!orderId?.startsWith("local-")) return null;
+  if (!body || !branchId) {
+    return "Internet uzilganda oflayn menyu va filial aniqlanmadi. Buyurtma navbatga olinmadi.";
+  }
+  const parsedBody = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const product = cachedWaiterMenuProduct(
+    store,
+    cacheScope,
+    branchId,
+    stringField(parsedBody, "productId"),
+  );
+  if (!product) {
+    return "Mahsulotning shu filial uchun keshlangan narxi topilmadi. Internet borida menyuni yangilang.";
+  }
+  if (!parsedBody || !buildOfflineWaiterItemSnapshot(product, parsedBody, "local-check")) {
+    return "Mahsulot, turi yoki qo'shimchalar keshda to'liq emas. Buyurtma navbatga olinmadi.";
+  }
+  return null;
+}
+
+function cachedWaiterMenuProduct(
+  store: DesktopStore,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  productId: string | null,
+): Record<string, unknown> | null {
+  if (!branchId || !productId) return null;
+  const cached = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/menu/products",
+  );
+  if (!cached) return null;
+  try {
+    if (new URL(cached.requestUrl).searchParams.get("branchId") !== branchId) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const data = parseJsonObject(cached.body)?.data;
+  const products = Array.isArray(data)
+    ? data
+    : isRecord(data) && Array.isArray(data.products)
+      ? data.products
+      : isRecord(data) && Array.isArray(data.items)
+        ? data.items
+        : [];
+  const product = products.find(
+    (candidate) => isRecord(candidate) && candidate.id === productId,
+  );
+  return isRecord(product) ? product : null;
+}
+
+function buildOfflineWaiterItemSnapshot(
+  product: Record<string, unknown>,
+  body: Record<string, unknown>,
+  localItemId: string,
+): Record<string, unknown> | null {
+  const productId = stringField(body, "productId");
+  const productName = stringField(product, "name");
+  const quantity = finiteAmount(body.quantity);
+  if (
+    product.isAvailable === false ||
+    !productId ||
+    !productName ||
+    quantity === null ||
+    quantity <= 0
+  ) {
+    return null;
+  }
+
+  const variantId = stringField(body, "variantId");
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const variant = variantId
+    ? variants.find(
+        (candidate) => isRecord(candidate) && candidate.id === variantId,
+      )
+    : null;
+  if (variantId && (!isRecord(variant) || variant.isAvailable === false)) {
+    return null;
+  }
+  const unitPrice = finiteAmount(
+    isRecord(variant) ? variant.sellingPrice : product.sellingPrice,
+  );
+  if (unitPrice === null) return null;
+
+  const modifierLinks = Array.isArray(product.modifiers)
+    ? product.modifiers
+    : [];
+  const requestedModifiers = Array.isArray(body.modifiers)
+    ? body.modifiers
+    : [];
+  const selectedModifierIds = new Set<string>();
+  let modifierTotal = 0;
+  const modifierSnapshot: Record<string, unknown>[] = [];
+  for (const value of requestedModifiers) {
+    if (!isRecord(value)) return null;
+    const modifierId = stringField(value, "modifierId");
+    const modifierQuantity = finiteAmount(value.quantity) ?? 1;
+    if (!modifierId || modifierQuantity <= 0) return null;
+    const link = modifierLinks.find((candidate) => {
+      if (!isRecord(candidate)) return false;
+      return recordField(candidate, "modifier")?.id === modifierId;
+    });
+    const modifier = isRecord(link) ? recordField(link, "modifier") : null;
+    const price = finiteAmount(modifier?.price);
+    const name = stringField(modifier, "name");
+    if (!modifier || price === null || !name) return null;
+    selectedModifierIds.add(modifierId);
+    const totalPrice = price * modifierQuantity;
+    modifierTotal += totalPrice;
+    modifierSnapshot.push({
+      id: modifierId,
+      name,
+      quantity: modifierQuantity.toFixed(3),
+      unitPrice: price.toFixed(2),
+      totalPrice: totalPrice.toFixed(2),
+    });
+  }
+  for (const link of modifierLinks) {
+    if (!isRecord(link)) continue;
+    const modifier = recordField(link, "modifier");
+    if (
+      modifier?.isRequired === true &&
+      typeof modifier.id === "string" &&
+      !selectedModifierIds.has(modifier.id)
+    ) {
+      return null;
+    }
+  }
+
+  return {
+    id: localItemId,
+    productId,
+    variantId,
+    productName,
+    variantName: isRecord(variant) ? stringField(variant, "name") : null,
+    quantity: quantity.toString(),
+    unitPrice: unitPrice.toFixed(2),
+    totalPrice: ((unitPrice + modifierTotal) * quantity).toFixed(2),
+    status: "ACTIVE",
+    notes: stringField(body, "notes"),
+    modifierSnapshot,
+    pendingSync: true,
+  };
+}
 function cachedCatalog(
   store: DesktopStore,
   authScope: string,
@@ -2526,6 +2828,10 @@ function buildOfflinePrintDocument(
     ),
     offline: true,
   };
+}
+
+function offlineWaiterInternalOrderNumber(localOrderId: string): string {
+  return `WAIT-${localOrderId.slice(-6).toUpperCase()}`;
 }
 
 function offlinePosInternalOrderNumber(localOrderId: string): string {

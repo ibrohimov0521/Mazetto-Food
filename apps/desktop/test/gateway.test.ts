@@ -1479,6 +1479,188 @@ async function waitFor(
   assert.equal(predicate(), true);
 }
 
+test("gateway queues waiter table orders offline and replays the local order chain", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-waiter-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("waiter-offline", "branch-1");
+  const table = {
+    id: "table-1",
+    branchId: "branch-1",
+    name: "1-stol",
+    status: "AVAILABLE",
+    orders: [],
+  };
+  const product = {
+    id: "product-1",
+    name: "Lavash",
+    sellingPrice: "12000.00",
+    variants: [{ id: "variant-1", name: "Katta", sellingPrice: "15000.00" }],
+    modifiers: [
+      { modifier: { id: "extra-cheese", name: "Pishloq", price: "2000.00" } },
+    ],
+  };
+  const sent: Array<{ url: string; body: string; key: string | null }> = [];
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/health")) {
+        if (!online) throw new Error("offline");
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (!online) throw new Error("offline");
+      if (init?.method === "GET" && url.endsWith("/tables?branchId=branch-1")) {
+        return jsonResponse({ success: true, data: [table] });
+      }
+      if (init?.method === "GET" && url.endsWith("/tables/table-1")) {
+        return jsonResponse({ success: true, data: table });
+      }
+      if (
+        init?.method === "GET" &&
+        url.endsWith("/menu/products?branchId=branch-1")
+      ) {
+        return jsonResponse({ success: true, data: [product] });
+      }
+      if (init?.method === "POST") {
+        sent.push({
+          url,
+          body: String(init.body ?? ""),
+          key: new Headers(init.headers).get("idempotency-key"),
+        });
+        if (url.endsWith("/tables/table-1/orders")) {
+          return jsonResponse({
+            success: true,
+            data: { id: "server-order-1", version: 0, items: [] },
+          });
+        }
+        if (url.endsWith("/orders/server-order-1/items")) {
+          return jsonResponse({
+            success: true,
+            data: { id: "server-order-1", version: 1, items: [{ id: "server-item-1" }] },
+          });
+        }
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    for (const path of [
+      "/api/v1/tables?branchId=branch-1",
+      "/api/v1/tables/table-1",
+      "/api/v1/menu/products?branchId=branch-1",
+    ]) {
+      const response = await fetch("http://127.0.0.1:" + port + path, {
+        headers: { Authorization: authorization },
+      });
+      assert.equal(response.status, 200);
+    }
+
+    online = false;
+    const opened = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/tables/table-1/orders",
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "waiter-open-key",
+        },
+        body: JSON.stringify({ guestCount: 2, notes: "Deraza yonida" }),
+      },
+    );
+    assert.equal(opened.status, 202);
+    const openedData = (await opened.json()).data as {
+      id: string;
+      pendingSync: boolean;
+    };
+    assert.match(openedData.id, /^local-/);
+    assert.equal(openedData.pendingSync, true);
+
+    const readDetail = async () => {
+      const response = await fetch(
+        "http://127.0.0.1:" + port + "/api/v1/tables/table-1",
+        { headers: { Authorization: authorization } },
+      );
+      assert.equal(response.status, 200);
+      return (await response.json()).data as {
+        status: string;
+        orders: Array<{
+          id: string;
+          version: number;
+          guestCount: number;
+          total: string;
+          items: Array<Record<string, unknown>>;
+        }>;
+      };
+    };
+    const openedDetail = await readDetail();
+    assert.equal(openedDetail.status, "OCCUPIED");
+    assert.equal(openedDetail.orders[0]?.id, openedData.id);
+    assert.equal(openedDetail.orders[0]?.guestCount, 2);
+
+    const added = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/orders/" + openedData.id + "/items",
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "waiter-item-key",
+        },
+        body: JSON.stringify({
+          productId: "product-1",
+          variantId: "variant-1",
+          quantity: 2,
+          expectedVersion: 0,
+          modifiers: [{ modifierId: "extra-cheese", quantity: 1 }],
+        }),
+      },
+    );
+    assert.equal(added.status, 202);
+    const addedData = (await added.json()).data as {
+      id: string;
+      item: { productName: string; totalPrice: string };
+    };
+    assert.match(addedData.id, /^local-/);
+    assert.equal(addedData.item.productName, "Lavash");
+    assert.equal(addedData.item.totalPrice, "34000.00");
+
+    const projected = await readDetail();
+    assert.equal(projected.orders[0]?.version, 1);
+    assert.equal(projected.orders[0]?.total, "34000.00");
+    assert.equal(projected.orders[0]?.items[0]?.id, addedData.id);
+    assert.equal(store.summary().pendingCommands, 2);
+
+    online = true;
+    await waitFor(() => gateway.status().mode === "online");
+    const trigger = await fetch("http://127.0.0.1:" + port + "/api/v1/branches", {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(trigger.status, 200);
+    await waitFor(() => store.summary().pendingCommands === 0, 3_000);
+    assert.equal(sent.length, 2);
+    assert.equal(sent[0]?.url, "https://api.example.test/api/v1/tables/table-1/orders");
+    assert.equal(sent[0]?.key, "waiter-open-key");
+    assert.equal(
+      sent[1]?.url,
+      "https://api.example.test/api/v1/orders/server-order-1/items",
+    );
+    assert.equal(sent[1]?.key, "waiter-item-key");
+    assert.equal(JSON.parse(sent[1]?.body ?? "{}").expectedVersion, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("queued writes for one order rebase versions after every server acknowledgement", async () => {
   const directory = await mkdtemp(
     join(tmpdir(), "mazetto-gateway-order-rebase-"),
