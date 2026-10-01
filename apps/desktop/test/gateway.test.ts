@@ -1526,6 +1526,12 @@ test("gateway queues waiter table orders offline and replays the local order cha
       ) {
         return jsonResponse({ success: true, data: [product] });
       }
+      if (init?.method === "GET" && url.endsWith("/kitchen/orders")) {
+        return jsonResponse({
+          success: true,
+          data: { items: [], hasMore: false, limit: 80 },
+        });
+      }
       if (init?.method === "POST") {
         sent.push({
           url,
@@ -1556,6 +1562,7 @@ test("gateway queues waiter table orders offline and replays the local order cha
       "/api/v1/tables?branchId=branch-1",
       "/api/v1/tables/table-1",
       "/api/v1/menu/products?branchId=branch-1",
+      "/api/v1/kitchen/orders",
     ]) {
       const response = await fetch("http://127.0.0.1:" + port + path, {
         headers: { Authorization: authorization },
@@ -1637,6 +1644,31 @@ test("gateway queues waiter table orders offline and replays the local order cha
     assert.equal(projected.orders[0]?.version, 1);
     assert.equal(projected.orders[0]?.total, "34000.00");
     assert.equal(projected.orders[0]?.items[0]?.id, addedData.id);
+    const kitchen = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/kitchen/orders",
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(kitchen.status, 200);
+    const kitchenBody = (await kitchen.json()) as {
+      data: { items: Array<Record<string, unknown>> };
+    };
+    assert.equal(kitchenBody.data.items.length, 1);
+    const ticket = kitchenBody.data.items[0];
+    assert.equal(ticket?.pendingSync, true);
+    const ticketItems = ticket?.items as Array<Record<string, unknown>>;
+    const kitchenOrder = ticket?.order as Record<string, unknown>;
+    assert.equal(ticketItems.length, 1);
+    assert.equal(ticketItems[0]?.id, addedData.id);
+    assert.equal(ticketItems[0]?.productName, "Lavash");
+    assert.equal(ticketItems[0]?.variantName, "Katta");
+    assert.equal(ticketItems[0]?.quantity, "2");
+    assert.equal(kitchenOrder.id, openedData.id);
+    assert.equal(kitchenOrder.source, "POS");
+    assert.equal(kitchenOrder.type, "DINE_IN");
+    assert.equal(
+      (kitchenOrder.table as Record<string, unknown> | undefined)?.name,
+      "1-stol",
+    );
     assert.equal(store.summary().pendingCommands, 2);
 
     online = true;
