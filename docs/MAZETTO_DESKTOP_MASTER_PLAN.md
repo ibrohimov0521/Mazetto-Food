@@ -462,5 +462,12 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Offline waiter supplemental item additions require the order to exist in the current branch's cached bootstrap and the request's expected version to match its optimistically projected version. Sequential additions build on prior queued additions. Item edits and cancellations remain online-only until their local projections are implemented.
 - Missing/stale versions, missing orders/items and cross-branch snapshots fail closed without adding an outbox command.
-- Verification: Desktop tests 100/100, typecheck and scoped ESLint passed. Pull request CI, Windows release and Dokploy deploy are pending.
+- Verification: Desktop tests 100/100, typecheck and scoped ESLint passed. PR #180 merged to main as dae3a1b; Windows Desktop 0.1.87 was published and Dokploy deploy succeeded. Production smoke was skipped because the change modified no server services.
 - Desktop bundle version: 0.1.87.
+
+
+## D7 Desktop cold-start cache cleanup (2026-10-01)
+
+- Desktop no longer scans and compacts every cached user scope synchronously during startup. Cache entries are still freshness-checked on reads; the existing bounded compaction runs when that scope is next written. This avoids doing unrelated cleanup work before the staff UI can open.
+- Verification: pending focused Desktop tests, typecheck, lint, Windows release and Dokploy workflow.
+- Desktop bundle version: 0.1.88.
