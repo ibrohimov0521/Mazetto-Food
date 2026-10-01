@@ -52,6 +52,7 @@ import {
   SessionExpiredError,
 } from "../../../lib/api";
 import { formatMoney } from "../../../lib/order-display";
+import { readOfflineWaiterSnapshot } from "../../../lib/offline-waiter-bootstrap.mjs";
 
 type PendingTableOrderIntent = {
   signature: string;
@@ -190,6 +191,31 @@ function WaiterFloor() {
           controller.signal,
           AbortSignal.timeout(15000),
         ]);
+        if (window.mazettoDesktop?.api) {
+          const snapshot = await apiFetch<unknown>(
+            `/realtime/bootstrap${branchQuery}`,
+            { cache: "no-store", signal },
+          );
+          const restored = readOfflineWaiterSnapshot(
+            snapshot,
+            user?.branchId ?? null,
+            includeMenu,
+          );
+          if (!restored) {
+            throw new Error("Filialning oflayn snapshot ma'lumoti topilmadi.");
+          }
+          if (version !== floorVersion.current) return false;
+
+          setTables(restored.tables as WaiterTable[]);
+          if (includeMenu) {
+            setCategories(restored.categories as MenuCategory[]);
+            setProducts(restored.products as MenuProduct[]);
+          }
+          setLoadError(null);
+          setLastUpdatedAt(new Date(restored.generatedAt));
+          return true;
+        }
+
         const [nextTables, menu] = await Promise.all([
           apiFetch<WaiterTable[]>(`/tables${branchQuery}`, {
             cache: "no-store",
@@ -246,7 +272,7 @@ function WaiterFloor() {
         }
       }
     },
-    [branchQuery, logout],
+    [branchQuery, logout, user?.branchId],
   );
 
   /*

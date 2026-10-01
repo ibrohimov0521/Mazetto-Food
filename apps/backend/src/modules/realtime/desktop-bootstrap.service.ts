@@ -5,10 +5,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   resolveRestaurantScope,
   resolveSoleActiveTenantId,
 } from "../../common/auth/tenant-scope";
+import { activeTableOrderStatuses } from "../tables/table-order-state";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
@@ -31,11 +33,25 @@ export class RealtimeBootstrapService {
           throw new BadRequestException("Filial tanlanishi shart.");
         }
 
-        // Catalog rows without a branch are still shared legacy data. Keep
-        // bootstrap closed until those rows are tenant-owned.
-        if ((await resolveSoleActiveTenantId(tx)) !== scope.tenantId) {
+        const canUsePosCatalog = user.permissions.includes(PERMISSIONS.POS_USE);
+        const canViewMenu =
+          canUsePosCatalog || user.permissions.includes(PERMISSIONS.MENU_VIEW);
+        const canViewTables =
+          canUsePosCatalog || user.permissions.includes(PERMISSIONS.TABLE_VIEW);
+        const canViewTableOrders = user.permissions.includes(
+          PERMISSIONS.TABLE_VIEW,
+        );
+        if (!canViewMenu && !canViewTables) {
+          throw new ForbiddenException("Offline snapshot uchun ruxsat yo'q.");
+        }
+
+        // Shared legacy menu rows are safe only while one active tenant exists.
+        if (
+          canViewMenu &&
+          (await resolveSoleActiveTenantId(tx)) !== scope.tenantId
+        ) {
           throw new ForbiddenException(
-            "Offline POS katalogi hali tenantlar bo'yicha ajratilmagan.",
+            "Umumiy menyu katalogi hali restoranlar bo'yicha ajratilmagan.",
           );
         }
 
@@ -56,138 +72,204 @@ export class RealtimeBootstrapService {
         });
         if (!branch) throw new NotFoundException("Branch not found");
 
-        const [categories, products, configuredPaymentMethods, tables] =
+        const [categories, products, configuredPaymentMethods, tables, halls] =
           await Promise.all([
-            tx.category.findMany({
-              where: {
-                isActive: true,
-                OR: [{ branchId: scope.branchId }, { branchId: null }],
-                products: {
-                  some: {
+            canViewMenu
+              ? tx.category.findMany({
+                  where: {
+                    isActive: true,
+                    OR: [{ branchId: scope.branchId }, { branchId: null }],
+                    products: {
+                      some: {
+                        ...customerVisibleProductWhere(),
+                        isAvailable: true,
+                        OR: [{ branchId: scope.branchId }, { branchId: null }],
+                        ...unavailableProductWhere(scope.branchId),
+                      },
+                    },
+                  },
+                  orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+                  select: {
+                    id: true,
+                    branchId: true,
+                    parentId: true,
+                    code: true,
+                    name: true,
+                    description: true,
+                    imageUrl: true,
+                    sortOrder: true,
+                  },
+                })
+              : Promise.resolve([]),
+            canViewMenu
+              ? tx.product.findMany({
+                  where: {
                     ...customerVisibleProductWhere(),
                     isAvailable: true,
                     OR: [{ branchId: scope.branchId }, { branchId: null }],
                     ...unavailableProductWhere(scope.branchId),
                   },
-                },
-              },
-              orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-              select: {
-                id: true,
-                branchId: true,
-                parentId: true,
-                code: true,
-                name: true,
-                description: true,
-                imageUrl: true,
-                sortOrder: true,
-              },
-            }),
-            tx.product.findMany({
-              where: {
-                ...customerVisibleProductWhere(),
-                isAvailable: true,
-                OR: [{ branchId: scope.branchId }, { branchId: null }],
-                ...unavailableProductWhere(scope.branchId),
-              },
-              orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-              select: {
-                id: true,
-                branchId: true,
-                categoryId: true,
-                code: true,
-                name: true,
-                description: true,
-                imageUrl: true,
-                preparationTime: true,
-                sellingPrice: true,
-                isAvailable: true,
-                isRecommended: true,
-                isCombo: true,
-                sortOrder: true,
-                printerRouting: true,
-                category: {
-                  select: { id: true, code: true, name: true },
-                },
-                variants: {
-                  where: { isAvailable: true },
                   orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                   select: {
                     id: true,
+                    branchId: true,
+                    categoryId: true,
                     code: true,
                     name: true,
+                    description: true,
+                    imageUrl: true,
+                    preparationTime: true,
                     sellingPrice: true,
-                    isDefault: true,
                     isAvailable: true,
+                    isRecommended: true,
+                    isCombo: true,
                     sortOrder: true,
-                  },
-                },
-                bundleItems: {
-                  orderBy: { sortOrder: "asc" },
-                  select: {
-                    id: true,
-                    componentCode: true,
-                    componentName: true,
-                    quantity: true,
-                    unitLabel: true,
-                    sortOrder: true,
-                    componentProduct: {
+                    printerRouting: true,
+                    category: {
                       select: { id: true, code: true, name: true },
                     },
-                  },
-                },
-                modifiers: {
-                  where: { modifier: { isActive: true } },
-                  orderBy: { sortOrder: "asc" },
-                  select: {
-                    isRequired: true,
-                    minSelect: true,
-                    maxSelect: true,
-                    sortOrder: true,
-                    modifier: {
+                    variants: {
+                      where: { isAvailable: true },
+                      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                       select: {
                         id: true,
                         code: true,
                         name: true,
-                        description: true,
-                        price: true,
+                        sellingPrice: true,
+                        isDefault: true,
+                        isAvailable: true,
                         sortOrder: true,
                       },
                     },
+                    bundleItems: {
+                      orderBy: { sortOrder: "asc" },
+                      select: {
+                        id: true,
+                        componentCode: true,
+                        componentName: true,
+                        quantity: true,
+                        unitLabel: true,
+                        sortOrder: true,
+                        componentProduct: {
+                          select: { id: true, code: true, name: true },
+                        },
+                      },
+                    },
+                    modifiers: {
+                      where: { modifier: { isActive: true } },
+                      orderBy: { sortOrder: "asc" },
+                      select: {
+                        isRequired: true,
+                        minSelect: true,
+                        maxSelect: true,
+                        sortOrder: true,
+                        modifier: {
+                          select: {
+                            id: true,
+                            code: true,
+                            name: true,
+                            description: true,
+                            price: true,
+                            sortOrder: true,
+                          },
+                        },
+                      },
+                    },
                   },
-                },
-              },
-            }),
-            tx.paymentMethod.findMany({
-              where: {
-                isActive: true,
-                OR: [{ branchId: scope.branchId }, { branchId: null }],
-              },
-              orderBy: [
-                { branchId: "desc" },
-                { sortOrder: "asc" },
-                { name: "asc" },
-              ],
-              select: {
-                branchId: true,
-                code: true,
-                name: true,
-                sortOrder: true,
-              },
-            }),
-            tx.restaurantTable.findMany({
-              where: { branchId: scope.branchId, isActive: true },
-              orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                number: true,
-                capacity: true,
-                status: true,
-                hall: { select: { id: true, name: true } },
-              },
-            }),
+                })
+              : Promise.resolve([]),
+            canUsePosCatalog
+              ? tx.paymentMethod.findMany({
+                  where: {
+                    isActive: true,
+                    OR: [{ branchId: scope.branchId }, { branchId: null }],
+                  },
+                  orderBy: [
+                    { branchId: "desc" },
+                    { sortOrder: "asc" },
+                    { name: "asc" },
+                  ],
+                  select: {
+                    branchId: true,
+                    code: true,
+                    name: true,
+                    sortOrder: true,
+                  },
+                })
+              : Promise.resolve([]),
+            canViewTables
+              ? tx.restaurantTable.findMany({
+                  where: { branchId: scope.branchId, isActive: true },
+                  orderBy: [
+                    { hall: { sortOrder: "asc" } },
+                    { sortOrder: "asc" },
+                    { number: "asc" },
+                  ],
+                  select: {
+                    id: true,
+                    branchId: true,
+                    hallId: true,
+                    code: true,
+                    name: true,
+                    number: true,
+                    capacity: true,
+                    status: true,
+                    hall: { select: { id: true, name: true } },
+                    ...(canViewTableOrders
+                      ? {
+                          orders: {
+                            where: { status: { in: activeTableOrderStatuses } },
+                            orderBy: { createdAt: "desc" },
+                            select: {
+                              id: true,
+                              version: true,
+                              orderNumber: true,
+                              displayOrderNumber: true,
+                              status: true,
+                              isSupplemental: true,
+                              parentOrderId: true,
+                              supplementNumber: true,
+                              total: true,
+                              guestCount: true,
+                              notes: true,
+                              createdAt: true,
+                              items: {
+                                orderBy: { createdAt: "asc" },
+                                select: {
+                                  id: true,
+                                  productId: true,
+                                  variantId: true,
+                                  productName: true,
+                                  variantName: true,
+                                  quantity: true,
+                                  unitPrice: true,
+                                  totalPrice: true,
+                                  status: true,
+                                  notes: true,
+                                  modifierSnapshot: true,
+                                },
+                              },
+                            },
+                          },
+                        }
+                      : {}),
+                  },
+                })
+              : Promise.resolve([]),
+            canViewTables
+              ? tx.hall.findMany({
+                  where: { branchId: scope.branchId, isActive: true },
+                  orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+                  select: {
+                    id: true,
+                    branchId: true,
+                    code: true,
+                    name: true,
+                    isActive: true,
+                    sortOrder: true,
+                  },
+                })
+              : Promise.resolve([]),
           ]);
 
         const seenPaymentMethodCodes = new Set<string>();
@@ -216,25 +298,34 @@ export class RealtimeBootstrapService {
             deliveryEnabled: branch.deliveryEnabled,
             pickupEnabled: branch.pickupEnabled,
           },
-          menu: { categories, products },
-          catalog: {
-            branchId: branch.id,
-            categories: categories.map(({ id, name }) => ({ id, name })),
-            products,
-            paymentMethods,
-            tables,
-          },
+          ...(canViewMenu ? { menu: { categories, products } } : {}),
+          ...(canViewTables ? { halls, tables } : {}),
+          ...(canUsePosCatalog
+            ? {
+                catalog: {
+                  branchId: branch.id,
+                  categories: categories.map(({ id, name }) => ({ id, name })),
+                  products,
+                  paymentMethods,
+                  tables,
+                },
+              }
+            : {}),
           cursor: encodeBranchRevisionCursor({
             [branch.id]: branch.realtimeRevision,
           }),
-          offlineCapabilities: {
-            queuedPaymentMethods: ["CASH"],
-            requiresServer: [
-              "card-payment",
-              "menu-changes",
-              "staff-management",
-            ],
-          },
+          ...(canUsePosCatalog
+            ? {
+                offlineCapabilities: {
+                  queuedPaymentMethods: ["CASH"],
+                  requiresServer: [
+                    "card-payment",
+                    "menu-changes",
+                    "staff-management",
+                  ],
+                },
+              }
+            : {}),
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },

@@ -402,5 +402,14 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - The contract now covers POS, payment queue, kitchen, waiter floor/detail, courier, online-order/admin order lists and order detail. Waiter actions, overlapping loads and API failures explicitly defer cursor advancement.
 - The shared resource loader now has an awaited refresh path that reports success or failure for realtime checkpoint decisions without changing existing manual reload behavior.
 - Added regression tests proving persistence waits for refresh completion and is skipped when refresh is deferred or fails.
-- Verification: POS tests 16/16, typecheck and lint passed. Full monorepo CI, Desktop 0.1.79 release, production web build/smoke and post-deploy cursor check remain release gates.
+- Verification: POS tests 16/16, typecheck and lint passed; full monorepo CI, Desktop 0.1.79 release, Dokploy deployment and production smoke passed in PR #171. The grouped waiter snapshot is delivered separately in the following D2 checkpoint.
 - The checkpoint prevents losing events before a screen refresh; it does not make all cached screens atomic snapshots or prove restaurant-device offline operation. Separate offline snapshot and hardware outage acceptance remain open.
+
+## D2 atomic waiter floor and order snapshot (2026-10-01)
+
+- The authenticated realtime/bootstrap response now provides halls, active tables and their active orders/items from one repeatable-read snapshot to authorized waiter/table roles. POS-only sessions retain a lightweight table catalog without fetching waiter order details.
+- Menu, payment-method, floor and order reads are permission-gated at the database query as well as at response serialization. Shared legacy menu data remains fail-closed when multiple active tenants make its ownership ambiguous.
+- The Desktop waiter screen validates and loads its menu/floor from this single branch-bound snapshot; empty but valid floors are supported. A table detail request can be reconstructed from the same snapshot during an outage, and offline table-order creation requires a cached table belonging to the authenticated branch.
+- Gateway integration coverage uses only the grouped bootstrap cache for offline waiter order creation and detail reads, and rejects a deliberately cross-branch snapshot. Verification so far: backend 489/489 tests plus the focused bootstrap checks, Desktop 92/92 tests, POS 20/20 tests, and backend/Desktop/POS typechecks passed. Full monorepo CI, Windows release, Dokploy deploy and production smoke remain release gates.
+- Desktop bundle version: 0.1.80.
+- This is a stronger cached-read and waiter-order slice, not a 100% offline guarantee. First-time setup/login, uncached data, card payments, unsupported/admin operations and some cross-device changes still need internet. Power-loss and restaurant hardware/printer acceptance must still be performed at the restaurant.
