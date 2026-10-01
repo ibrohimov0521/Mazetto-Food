@@ -24,7 +24,7 @@ jobs:
     name: Detect packaged runtime changes
     runs-on: ubuntu-latest
     outputs:
-      should_release: ${{ steps.filter.outputs.should_release }}
+      should_release: ${{ steps.skip-published.outputs.should_release }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +47,17 @@ jobs:
           else
             echo "should_release=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Skip already published Desktop versions
+        id: skip-published
+        shell: bash
+        run: |
+          should_release="${{ steps.filter.outputs.should_release }}"
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          if [[ "$should_release" == "true" ]] && git show-ref --verify --quiet "refs/tags/desktop-v$version"; then
+            echo "::notice::Desktop $version is already published; skipping duplicate release."
+            should_release=false
+          fi
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
   release:
     needs: detect-runtime-changes
     if: needs.detect-runtime-changes.outputs.should_release == 'true'

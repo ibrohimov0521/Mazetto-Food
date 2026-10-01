@@ -1,5 +1,8 @@
 "use client";
-import { isMazettoFoodHost } from "./mazetto-food-host.mjs";
+import {
+  getMazettoFoodApiBaseUrl,
+  isMazettoFoodHost,
+} from "./mazetto-food-host.mjs";
 
 export type MazettoRole =
   | "SUPER_ADMIN"
@@ -100,8 +103,14 @@ const adminWorkspacePermissions = customAdminRedirects.map(
 export function getApiBaseUrl(): string {
   const hostname = typeof window === "undefined" ? "" : window.location.hostname;
 
-  // Restaurant domains use the same-origin proxy so the backend can resolve
-  // the tenant from the original browser hostname.
+  // Use the restaurant's verified API hostname in production. This gives the
+  // backend an unambiguous tenant Host instead of relying on an internal
+  // Next.js rewrite to preserve the browser-facing hostname.
+  const tenantApiBaseUrl = getMazettoFoodApiBaseUrl(hostname);
+  if (tenantApiBaseUrl && process.env.NODE_ENV === "production") {
+    return tenantApiBaseUrl;
+  }
+
   if (isMazettoFoodHost(hostname)) {
     return "/api/v1";
   }
