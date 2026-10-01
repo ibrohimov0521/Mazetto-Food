@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { DesktopGateway } from "../src/gateway.js";
+import { DesktopPrintWorker } from "../src/print-worker.js";
 import { DesktopStore } from "../src/store.js";
 
 test("gateway serves the last successful JSON snapshot when upstream is offline", async () => {
@@ -846,6 +847,150 @@ test("gateway fast-fails to local cache and outbox while offline, then replays o
         store.summary().sendingCommands === 0,
     );
     assert.equal(orderRequests, 1);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+test("offline sale prints locally, syncs once, and skips duplicate server receipt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-e2e-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-offline-e2e", "branch-1");
+  let online = false;
+  let replayedSales = 0;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (!online) throw new Error("offline");
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/pos/orders")) {
+        replayedSales += 1;
+        return jsonResponse({ order: { id: "server-order-e2e" } });
+      }
+      return jsonResponse({ ok: true });
+    },
+  });
+  const printed: string[] = [];
+  const localQueue = {
+    claim: (types: string[]) => store.claimLocalPrintJob(types),
+    complete: (id: string) => store.completeLocalPrintJob(id),
+    fail: (id: string, error: string, ambiguous?: boolean) =>
+      store.failLocalPrintJob(id, error, new Date(), ambiguous),
+    wasPrinted: (id: string, type: string) =>
+      store.wasLocalDocumentPrinted(id, type),
+    wasTargetPrinted: (scope: "local" | "server", id: string, name: string) =>
+      store.wasPrintTargetPrinted(scope, id, name),
+    markTargetPrinted: (scope: "local" | "server", id: string, name: string) =>
+      store.recordPrintTarget(scope, id, name, "printed"),
+    markTargetAmbiguous: (
+      scope: "local" | "server",
+      id: string,
+      name: string,
+    ) => store.recordPrintTarget(scope, id, name, "ambiguous"),
+  };
+
+  try {
+    const port = await gateway.start();
+    const response = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/pos/orders",
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-e2e-sale",
+        },
+        body: JSON.stringify({
+          idempotencyKey: "offline-e2e-sale",
+          items: [{ productId: "product-1", quantity: 1 }],
+          payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+        }),
+      },
+    );
+    assert.equal(response.status, 202);
+    assert.equal(store.summary().pendingCommands, 1);
+    const offlinePrinter = new DesktopPrintWorker({
+      apiUrl: "https://api.example.test/api/v1",
+      printerHost: null,
+      agentId: "desktop-device-1",
+      deviceId: store.deviceId(),
+      systemPrinters: [
+        { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
+        { name: "Kitchen", displayName: "Kitchen", roles: ["KITCHEN"] },
+      ],
+      printSystem: async (_name, receipt) => {
+        printed.push(receipt.documentType ?? "unknown");
+      },
+      localQueue,
+    });
+    await offlinePrinter.tick();
+    assert.deepEqual(printed.sort(), ["KITCHEN", "RECEIPT"]);
+    online = true;
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0,
+      2_500,
+    );
+    assert.equal(replayedSales, 1);
+    assert.equal(
+      store.wasLocalDocumentPrinted("server-order-e2e", "RECEIPT"),
+      true,
+    );
+    let claimed = false;
+    let completed = 0;
+    const reconnectedPrinter = new DesktopPrintWorker({
+      apiUrl: "https://api.example.test/api/v1",
+      printerHost: null,
+      agentId: "desktop-device-1",
+      deviceId: store.deviceId(),
+      systemPrinters: [
+        { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
+      ],
+      printSystem: async (_name, receipt) => {
+        printed.push(receipt.documentType ?? "unknown");
+      },
+      localQueue,
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/printers")) return jsonResponse([]);
+        if (url.endsWith("/print-jobs/claim")) {
+          if (claimed) return jsonResponse(null);
+          claimed = true;
+          return jsonResponse({
+            id: "server-job-1",
+            receiptId: "receipt-1",
+            leaseToken: "lease-1",
+            receipt: {
+              receiptNumber: "R-1",
+              documentType: "RECEIPT",
+              orderId: "server-order-e2e",
+            },
+            payload: {
+              documentType: "RECEIPT",
+              orderNumber: "POS-1",
+              items: [{ productName: "Item" }],
+            },
+          });
+        }
+        if (url.endsWith("/complete")) {
+          completed += 1;
+          return jsonResponse({ ok: true });
+        }
+        throw new Error("Unexpected printer request: " + url);
+      },
+    });
+    reconnectedPrinter.setAuthorization(authorization);
+    await reconnectedPrinter.tick();
+    assert.equal(completed, 1);
+    assert.equal(printed.filter((type) => type === "RECEIPT").length, 1);
+    assert.equal(printed.filter((type) => type === "KITCHEN").length, 1);
   } finally {
     await gateway.stop();
     store.close();
