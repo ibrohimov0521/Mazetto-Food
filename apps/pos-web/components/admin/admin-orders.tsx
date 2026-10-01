@@ -391,6 +391,7 @@ export function AdminOrdersPage() {
     isLoading,
     error: loadError,
     reload: load,
+    reloadAndWait,
   } = useApiResource(
     () => {
       const params = new URLSearchParams();
@@ -451,9 +452,10 @@ export function AdminOrdersPage() {
     accessToken: session?.tokens.accessToken,
     branchId: branchId || undefined,
     cursorScope: `${user?.id ?? "staff"}:${branchId || "all"}`,
-    onEvent: () => {
-      setRealtimeUpdatedAt(new Date());
-      void load();
+    onEvent: async () => {
+      const refreshed = await reloadAndWait();
+      if (refreshed) setRealtimeUpdatedAt(new Date());
+      return refreshed;
     },
   });
   /*
@@ -1152,7 +1154,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     null,
   );
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<boolean> => {
     setIsLoading(true);
     setError("");
 
@@ -1165,9 +1167,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
       setOrder(nextOrder);
       setEvents(nextEvents);
       setDomainActions(nextActions);
+      return true;
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
-        return;
+        return false;
       }
 
       setError(
@@ -1175,6 +1178,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           ? caught.message
           : "Buyurtmani yuklab bo'lmadi.",
       );
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -1184,9 +1188,10 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
     accessToken: session?.tokens.accessToken,
     branchId: order?.branch?.id,
     cursorScope: (user?.id ?? "staff") + ":order-detail:" + orderId,
-    onEvent: () => {
-      setRealtimeUpdatedAt(new Date());
-      void load();
+    onEvent: async () => {
+      const refreshed = await load();
+      if (refreshed) setRealtimeUpdatedAt(new Date());
+      return refreshed;
     },
   });
 

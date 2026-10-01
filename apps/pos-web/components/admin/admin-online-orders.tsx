@@ -155,6 +155,7 @@ export function AdminOnlineOrdersPage() {
     isLoading,
     error,
     reload: load,
+    reloadAndWait,
   } = useApiResource(
     () => {
       const params = new URLSearchParams({
@@ -180,9 +181,10 @@ export function AdminOnlineOrdersPage() {
     accessToken: session?.tokens.accessToken,
     branchId: branchId || undefined,
     cursorScope: `${user?.id ?? "staff"}:online:${branchId || "all"}`,
-    onEvent: () => {
-      setRealtimeUpdatedAt(new Date());
-      void load();
+    onEvent: async () => {
+      const refreshed = await reloadAndWait();
+      if (refreshed) setRealtimeUpdatedAt(new Date());
+      return refreshed;
     },
   });
 

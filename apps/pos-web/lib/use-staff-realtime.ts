@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { getApiBaseUrl } from "./auth";
 import { apiFetch } from "./api";
+import { refreshBeforeCursorCheckpoint } from "./realtime-cursor-checkpoint.mjs";
 
 export type StaffRealtimeEvent = {
   id: string;
@@ -32,7 +33,7 @@ const realtimeEventNames = [
 
 export function useStaffRealtime(options: {
   accessToken: string | undefined;
-  onEvent: (event?: StaffRealtimeEvent) => void;
+  onEvent: (event?: StaffRealtimeEvent) => void | boolean | Promise<void | boolean>;
   /** Cursorni boshqa xodim yoki filial sessiyasidan ajratib turadi. */
   cursorScope?: string | undefined;
   /** Global admin tanlagan filial. Xodim uchun backend o'zi scope qiladi. */
@@ -72,6 +73,7 @@ export function useStaffRealtime(options: {
     const catchUp = async (notify = true): Promise<void> => {
       if (stopped || running) return;
       running = true;
+      let checkpointCursor = cursor;
       try {
         if (desktopSync && !cursorLoaded) {
           try {
@@ -119,6 +121,7 @@ export function useStaffRealtime(options: {
           }
         }
         let hasMore = true;
+        checkpointCursor = cursor;
         let lastEvent: StaffRealtimeEvent | undefined;
 
         while (!stopped && hasMore) {
@@ -132,23 +135,6 @@ export function useStaffRealtime(options: {
           );
 
           const nextCursor = next.cursor;
-          if (
-            nextCursor &&
-            desktopSync &&
-            cursorPersistenceAvailable &&
-            (!cursorPersisted || nextCursor !== cursor)
-          ) {
-            try {
-              await desktopSync.saveCursor({
-                stream: cursorStream,
-                cursor: nextCursor,
-              });
-              cursorPersisted = true;
-            } catch {
-              cursorPersistenceAvailable = false;
-            }
-          }
-          if (nextCursor !== cursor) writeCursor(cursorStream, nextCursor);
           cursor = nextCursor;
           lastEvent = next.events.at(-1) ?? lastEvent;
           hasMore = next.hasMore;
@@ -158,9 +144,41 @@ export function useStaffRealtime(options: {
           }
         }
 
+        if (stopped) {
+          cursor = checkpointCursor;
+          return;
+        }
+        const checkpointed = await refreshBeforeCursorCheckpoint(
+          () =>
+            notify && lastEvent
+              ? onEventRef.current(lastEvent)
+              : undefined,
+          async () => {
+            if (
+              cursor &&
+              desktopSync &&
+              cursorPersistenceAvailable &&
+              (!cursorPersisted || cursor !== checkpointCursor)
+            ) {
+              try {
+                await desktopSync.saveCursor({ stream: cursorStream, cursor });
+                cursorPersisted = true;
+              } catch {
+                cursorPersistenceAvailable = false;
+              }
+            }
+            if (cursor) writeCursor(cursorStream, cursor);
+          },
+          () => !stopped,
+        );
+        if (!checkpointed) {
+          cursor = checkpointCursor;
+          setState("online");
+          return;
+        }
         setState("online");
-        if (notify && lastEvent) onEventRef.current(lastEvent);
       } catch {
+        cursor = checkpointCursor;
         setState("offline");
       } finally {
         running = false;

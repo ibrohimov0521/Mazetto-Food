@@ -212,7 +212,7 @@ function PosTerminal() {
   const cartRestored = useRef<string | null>(null);
   const draftRestorePending = useRef<string | null>(null);
 
-  const loadTerminal = useCallback(async () => {
+  const loadTerminal = useCallback(async (): Promise<boolean> => {
     loadRequest.current?.abort();
     const controller = new AbortController();
     loadRequest.current = controller;
@@ -227,11 +227,11 @@ function PosTerminal() {
         "/cash-register/shift",
         { signal },
       );
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
       if (!shift || shift.status !== "OPEN") {
         setCurrentShift(null);
         router.replace("/shift");
-        return;
+        return true;
       }
       setCurrentShift(shift);
       let data: Catalog;
@@ -267,16 +267,18 @@ function PosTerminal() {
         setCatalog(data);
         setLastUpdatedAt(catalogUpdatedAt);
       }
+      return true;
     } catch (caught) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
       if (
         caught instanceof Error &&
         /invalid or expired access token|unauthorized|jwt/i.test(caught.message)
       ) {
         void logout();
-        return;
+        return false;
       }
       setError(caught instanceof Error ? caught.message : "Katalog yuklanmadi");
+      return false;
     } finally {
       if (!controller.signal.aborted) setIsCheckingShift(false);
     }
@@ -291,7 +293,7 @@ function PosTerminal() {
     accessToken: session?.tokens.accessToken,
     cursorScope: (user?.id ?? "staff") + ":pos",
     bootstrapSnapshot: true,
-    onEvent: () => undefined,
+    onEvent: () => loadTerminal(),
   });
 
   function historyActor(entry: StatusHistoryEntry): string {

@@ -392,6 +392,15 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Successful cached responses no longer trigger full per-scope SQLite compaction on every write. Cleanup runs on the first write for a scope, every 64 subsequent cache writes, or at least hourly when writes continue.
 - Reads still reject entries older than the 30-day retention window immediately, even while physical cleanup is deferred; periodic cleanup remains scoped to the active authorization identity.
 - Added regression coverage that verifies stale snapshots fail closed before compaction and expired rows are removed at the next scheduled batch.
-- Verification: Desktop tests 91/91, typecheck/lint and full monorepo CI with 33/33 validators passed. Windows Desktop 0.1.78 release and production deployment checks remain release gates.
+- Verification: Desktop tests 91/91, typecheck/lint and full monorepo CI with 33/33 validators passed. Windows Desktop 0.1.78 was published; the production tag advanced. Dokploy completed without rebuilding server apps and web smoke was skipped because no server service changed.
 - This reduces repeated SQLite cleanup work on read-heavy/online refresh paths; it does not guarantee zero UI stalls on every device or complete the outstanding multi-terminal/offline and physical printer acceptance.
 - Desktop bundle version: 0.1.78.
+
+## D2 realtime refresh checkpoint (2026-10-01)
+
+- Realtime catch-up no longer persists its event cursor while pages are being read. It waits for the subscribed panel refresh to complete, then persists the cursor; a failed, cancelled or deliberately deferred refresh keeps the previous checkpoint so the events are retried.
+- The contract now covers POS, payment queue, kitchen, waiter floor/detail, courier, online-order/admin order lists and order detail. Waiter actions, overlapping loads and API failures explicitly defer cursor advancement.
+- The shared resource loader now has an awaited refresh path that reports success or failure for realtime checkpoint decisions without changing existing manual reload behavior.
+- Added regression tests proving persistence waits for refresh completion and is skipped when refresh is deferred or fails.
+- Verification: POS tests 16/16, typecheck and lint passed. Full monorepo CI, Desktop 0.1.79 release, production web build/smoke and post-deploy cursor check remain release gates.
+- The checkpoint prevents losing events before a screen refresh; it does not make all cached screens atomic snapshots or prove restaurant-device offline operation. Separate offline snapshot and hardware outage acceptance remain open.

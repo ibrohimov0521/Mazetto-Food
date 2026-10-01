@@ -178,7 +178,7 @@ export function AdminKitchenMonitor() {
   const request = useRef(0);
   const actionKeys = useRef(new Map<string, string>());
 
-  const load = useCallback(async (options?: { silent?: boolean }) => {
+  const load = useCallback(async (options?: { silent?: boolean }): Promise<boolean> => {
     const version = ++request.current;
 
     if (options?.silent) {
@@ -193,7 +193,7 @@ export function AdminKitchenMonitor() {
       }>("/kitchen/orders");
 
       if (version !== request.current) {
-        return;
+        return false;
       }
 
       setTickets(next.items);
@@ -202,12 +202,13 @@ export function AdminKitchenMonitor() {
       setError("");
       setLastUpdatedAt(Date.now());
       setNowMs(Date.now());
+      return true;
     } catch (caught) {
       if (
         caught instanceof SessionExpiredError ||
         version !== request.current
       ) {
-        return;
+        return false;
       }
 
       setError(
@@ -215,6 +216,7 @@ export function AdminKitchenMonitor() {
           ? caught.message
           : "Oshxona holatini yuklab bo'lmadi.",
       );
+      return false;
     } finally {
       if (version === request.current) {
         setIsLoading(false);
@@ -227,9 +229,10 @@ export function AdminKitchenMonitor() {
     accessToken: session?.tokens.accessToken,
     cursorScope: `${user?.id ?? "staff"}:kitchen`,
     branchId: user?.branchId,
-    onEvent: () => {
-      setRealtimeUpdatedAt(new Date());
-      void load({ silent: true });
+    onEvent: async () => {
+      const refreshed = await load({ silent: true });
+      if (refreshed) setRealtimeUpdatedAt(new Date());
+      return refreshed;
     },
   });
 

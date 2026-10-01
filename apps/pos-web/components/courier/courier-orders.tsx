@@ -218,8 +218,8 @@ export function CourierOrdersPage() {
     if (courierShift && cashPanelOpen) void loadTransferReceivers();
   }, [courierShift?.id, cashPanelOpen, loadTransferReceivers]);
 
-  const load = useCallback(async (force = false) => {
-    if (!force && (request.current || actionLock.current)) return;
+  const load = useCallback(async (force = false): Promise<boolean> => {
+    if (!force && (request.current || actionLock.current)) return false;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -236,16 +236,18 @@ export function CourierOrdersPage() {
           ]),
         },
       );
-      if (current !== version.current) return;
+      if (current !== version.current) return false;
       setOrders(data);
       setUpdatedAt(new Date());
       setError("");
+      return true;
     } catch (caught) {
       if (current !== version.current || caught instanceof SessionExpiredError)
-        return;
+        return false;
       setError(
         caught instanceof Error ? caught.message : "Buyurtmalar yuklanmadi.",
       );
+      return false;
     } finally {
       if (request.current === controller) request.current = null;
       if (current === version.current) {
@@ -258,7 +260,7 @@ export function CourierOrdersPage() {
   const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,
     cursorScope: `${user?.id ?? "staff"}:courier`,
-    onEvent: () => void load(),
+    onEvent: () => load(),
   });
 
   const loadHistory = useCallback(async () => {
