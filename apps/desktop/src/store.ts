@@ -868,6 +868,19 @@ export class DesktopStore {
       .run(nextAttemptAt, error, id);
   }
 
+  markMutationAwaitingAuth(id: string): void {
+    this.database
+      .prepare(
+        `
+      UPDATE mutation_outbox
+      SET state = 'pending', next_attempt_at = NULL,
+          last_error = 'Kirish sessiyasini yangilash kutilmoqda'
+      WHERE id = ? AND state = 'sending'
+    `,
+      )
+      .run(id);
+  }
+
   markMutationConflict(id: string, error: string): void {
     this.database
       .prepare(
