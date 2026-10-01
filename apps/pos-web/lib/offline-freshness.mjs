@@ -42,6 +42,33 @@ export function getApiFreshnessSnapshot(
   };
 }
 
+/**
+ * @param {{ cachedResponses: number; freshnessState: ApiFreshnessState; isOffline: boolean; isConnecting: boolean; refreshing: boolean }} state
+ */
+export function getApiSyncStatusLabel({
+  cachedResponses,
+  freshnessState,
+  isOffline,
+  isConnecting,
+  refreshing,
+}) {
+  const usesCachedData = cachedResponses > 0;
+  if (refreshing && !isOffline) {
+    if (!usesCachedData) return "Yangilanmoqda";
+    return freshnessState === "stale"
+      ? "Eski kesh yangilanmoqda"
+      : "Kesh yangilanmoqda";
+  }
+  if (usesCachedData) {
+    if (freshnessState === "stale") {
+      return isOffline ? "Oflayn · kesh eski" : "Kesh eskirgan";
+    }
+    return isOffline ? "Oflayn · kesh" : "Keshdan o'qildi";
+  }
+  if (isOffline) return "Aloqa uzildi";
+  return isConnecting ? "Ulanmoqda" : "Ulangan";
+}
+
 /** @param {string | null} timestamp @param {number} [now] */
 export function formatApiFreshnessAge(timestamp, now = Date.now()) {
   const cachedAt = timestamp === null ? Number.NaN : Date.parse(timestamp);

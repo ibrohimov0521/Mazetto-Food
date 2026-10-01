@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   clearApiFreshness,
   formatApiFreshnessAge,
+  getApiSyncStatusLabel,
   getApiFreshnessScope,
   getApiFreshnessSnapshot,
   recordApiResponseFreshness,
@@ -239,4 +240,45 @@ test("freshness scope isolates tenant, membership, employee and credential chang
     0,
   );
   clearApiFreshness();
+});
+
+test("sync status distinguishes refreshes from live, cached, stale and offline data", () => {
+  const status = (overrides) =>
+    getApiSyncStatusLabel({
+      cachedResponses: 0,
+      freshnessState: "live",
+      isOffline: false,
+      isConnecting: false,
+      refreshing: false,
+      ...overrides,
+    });
+
+  assert.equal(status({ refreshing: true }), "Yangilanmoqda");
+  assert.equal(
+    status({ cachedResponses: 2, refreshing: true }),
+    "Kesh yangilanmoqda",
+  );
+  assert.equal(
+    status({
+      cachedResponses: 2,
+      freshnessState: "stale",
+      refreshing: true,
+    }),
+    "Eski kesh yangilanmoqda",
+  );
+  assert.equal(status({ isConnecting: true }), "Ulanmoqda");
+  assert.equal(status({}), "Ulangan");
+  assert.equal(status({ isOffline: true }), "Aloqa uzildi");
+  assert.equal(
+    status({ cachedResponses: 2, isOffline: true }),
+    "Oflayn · kesh",
+  );
+  assert.equal(
+    status({
+      cachedResponses: 2,
+      freshnessState: "stale",
+      isOffline: true,
+    }),
+    "Oflayn · kesh eski",
+  );
 });

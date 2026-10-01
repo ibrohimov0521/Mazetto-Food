@@ -410,6 +410,12 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - The authenticated realtime/bootstrap response now provides halls, active tables and their active orders/items from one repeatable-read snapshot to authorized waiter/table roles. POS-only sessions retain a lightweight table catalog without fetching waiter order details.
 - Menu, payment-method, floor and order reads are permission-gated at the database query as well as at response serialization. Shared legacy menu data remains fail-closed when multiple active tenants make its ownership ambiguous.
 - The Desktop waiter screen validates and loads its menu/floor from this single branch-bound snapshot; empty but valid floors are supported. A table detail request can be reconstructed from the same snapshot during an outage, and offline table-order creation requires a cached table belonging to the authenticated branch.
-- Gateway integration coverage uses only the grouped bootstrap cache for offline waiter order creation and detail reads, and rejects a deliberately cross-branch snapshot. Verification so far: backend 489/489 tests plus the focused bootstrap checks, Desktop 92/92 tests, POS 20/20 tests, and backend/Desktop/POS typechecks passed. Full monorepo CI, Windows release, Dokploy deploy and production smoke remain release gates.
+- Gateway integration coverage uses only the grouped bootstrap cache for offline waiter order creation and detail reads, and rejects a deliberately cross-branch snapshot. Verification so far: backend 489/489 tests plus the focused bootstrap checks, Desktop 92/92 tests, POS 20/20 tests, and backend/Desktop/POS typechecks passed. Full monorepo CI, Windows Desktop 0.1.80 release, Dokploy deployment and production smoke passed in PR #172.
 - Desktop bundle version: 0.1.80.
 - This is a stronger cached-read and waiter-order slice, not a 100% offline guarantee. First-time setup/login, uncached data, card payments, unsupported/admin operations and some cross-device changes still need internet. Power-loss and restaurant hardware/printer acceptance must still be performed at the restaurant.
+
+## D2 visible staff refresh state (2026-10-01)
+
+- Staff panel refresh state is now visible while requests are in progress, including when cached data remains on screen; stale-cache refreshes are distinguished from fresh-cache refreshes.
+- This is operator feedback, not a freshness guarantee. Offline writes still depend on each command's authorization, cached data and idempotency contract.
+- Verification: focused offline-freshness tests 9/9 and full monorepo CI passed. Windows release, Dokploy deployment and production smoke are tracked in this checkpoint's PR.
