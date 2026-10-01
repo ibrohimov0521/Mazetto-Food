@@ -207,7 +207,7 @@ test("gateway stop waits for a durable mutation sync before the store closes", a
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-1", "branch-1");
-  const authScope = DesktopStore.authScope(authorization);
+  const authScope = DesktopStore.mutationScope(authorization);
   let beginPost: () => void = () => undefined;
   let releasePost: () => void = () => undefined;
   const postStarted = new Promise<void>((resolve) => {
@@ -765,6 +765,140 @@ test("gateway fast-fails to local cache and outbox while offline, then replays o
   }
 });
 
+test("gateway preserves a queued sale across permission refresh without reusing private cache", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const commonClaims = {
+    credentialVersion: 3,
+    tenantId: "tenant-1",
+    membershipId: "membership-1",
+  };
+  const fullAuthorization = desktopJwt(
+    "cashier-permission-refresh",
+    "branch-1",
+    {
+      ...commonClaims,
+      roles: ["cashier", "pos", "staff-viewer"],
+      permissions: ["POS_USE", "ORDER_VIEW", "STAFF_VIEW"],
+    },
+  );
+  const reducedAuthorization = desktopJwt(
+    "cashier-permission-refresh",
+    "branch-1",
+    {
+      ...commonClaims,
+      roles: ["cashier", "pos"],
+      permissions: ["POS_USE", "ORDER_VIEW"],
+    },
+  );
+  const oldPermissionScope = DesktopStore.authScope(fullAuthorization);
+  const cacheScope = DesktopStore.authScope(fullAuthorization);
+  const staffUrl = "https://api.example.test/api/v1/staff";
+  store.putCachedResponse({
+    cacheKey: DesktopStore.cacheKey(staffUrl, cacheScope),
+    requestUrl: staffUrl,
+    authScope: cacheScope,
+    status: 200,
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify({
+      success: true,
+      data: [{ id: "private-staff-record" }],
+    }),
+    cachedAt: new Date().toISOString(),
+  });
+  store.enqueueMutation({
+    idempotencyKey: "permission-refresh-sale",
+    commandType: "pos.order.create",
+    aggregateType: "orders",
+    aggregateId: "local-permission-refresh-order",
+    actorId: "cashier-permission-refresh",
+    branchId: "branch-1",
+    authScope: oldPermissionScope,
+    payload: {
+      commandType: "pos.order.create",
+      method: "POST",
+      pathname: "/api/v1/pos/orders",
+      targetUrl: "https://api.example.test/api/v1/pos/orders",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "permission-refresh-sale",
+      },
+      body: JSON.stringify({
+        idempotencyKey: "permission-refresh-sale",
+        payments: [{ paymentMethodCode: "CASH", amount: 19_000 }],
+      }),
+      queuedAt: new Date().toISOString(),
+    },
+  });
+  assert.equal(store.summary().pendingCommands, 1);
+  let online = false;
+  let replayAuthorization: string | null = null;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 25,
+    fetchImpl: async (input, init) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/staff")) {
+        return jsonResponse({
+          success: true,
+          data: [{ id: "private-staff-record" }],
+        });
+      }
+      if (url.endsWith("/pos/orders") && init?.method === "POST") {
+        replayAuthorization = new Headers(init.headers).get("authorization");
+        return jsonResponse({ success: true, data: { id: "server-order-1" } });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const baseUrl = `http://127.0.0.1:${gatewayPort}/api/v1`;
+    const privateRead = await fetch(baseUrl + "/staff", {
+      headers: { Authorization: fullAuthorization },
+    });
+    assert.equal(privateRead.status, 200);
+    assert.equal(privateRead.headers.get("x-mazetto-desktop"), "offline-cache");
+    await waitFor(() => gateway.status().mode === "offline");
+
+    const reducedPrivateRead = await fetch(baseUrl + "/staff", {
+      headers: { Authorization: reducedAuthorization },
+    });
+    assert.equal(
+      store.listActiveMutations(
+        DesktopStore.mutationScope(reducedAuthorization),
+      ).length,
+      1,
+    );
+    assert.equal(reducedPrivateRead.status, 503);
+    assert.equal(
+      (await reducedPrivateRead.text()).includes("private-staff-record"),
+      false,
+    );
+
+    online = true;
+    await fetch(baseUrl + "/orders", {
+      headers: { Authorization: reducedAuthorization },
+    });
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().sendingCommands === 0 &&
+        replayAuthorization === reducedAuthorization,
+    );
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway exposes and manages the desktop outbox", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
@@ -863,7 +997,7 @@ test("gateway sends server version conflicts to the conflict inbox", async () =>
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-conflict", "branch-1");
-  const authScope = DesktopStore.authScope(authorization);
+  const authScope = DesktopStore.mutationScope(authorization);
   store.enqueueMutation({
     idempotencyKey: "conflict-key",
     commandType: "kitchen.action",
@@ -1140,7 +1274,7 @@ test("gateway compares a conflicted command with the current server resource", a
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-compare", "branch-1");
-  const authScope = DesktopStore.authScope(authorization);
+  const authScope = DesktopStore.mutationScope(authorization);
   const command = store.enqueueMutation({
     idempotencyKey: "compare-key",
     commandType: "kitchen.action",
@@ -1307,9 +1441,18 @@ test("gateway projects pending POS orders into cached order reads and compensate
   }
 });
 
-function desktopJwt(userId: string, branchId: string): string {
+function desktopJwt(
+  userId: string,
+  branchId: string,
+  claims: Record<string, unknown> = {},
+): string {
   const payload = Buffer.from(
-    JSON.stringify({ id: userId, branchId, isGlobalScope: false }),
+    JSON.stringify({
+      id: userId,
+      branchId,
+      isGlobalScope: false,
+      ...claims,
+    }),
   ).toString("base64url");
   return `Bearer header.${payload}.signature`;
 }
@@ -2050,8 +2193,11 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
       "Content-Type": "application/json",
     };
     assert.equal(
-      (await fetch(`${baseUrl}/shift`, { headers: { Authorization: authorization } }))
-        .status,
+      (
+        await fetch(`${baseUrl}/shift`, {
+          headers: { Authorization: authorization },
+        })
+      ).status,
       200,
     );
     assert.equal(
@@ -2082,11 +2228,14 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
     );
     const staleReceiver = await fetch(`${baseUrl}/transfers`, {
       method: "POST",
-      headers: { ...headers, "Idempotency-Key": "offline-transfer-stale-receiver" },
+      headers: {
+        ...headers,
+        "Idempotency-Key": "offline-transfer-stale-receiver",
+      },
       body: JSON.stringify({ amount: 500, toShiftId: "closed-receiver-shift" }),
     });
     assert.equal(staleReceiver.status, 409);
-    assert.match((await staleReceiver.text()), /ochiq smenasi.*topilmadi/i);
+    assert.match(await staleReceiver.text(), /ochiq smenasi.*topilmadi/i);
 
     const second = await fetch(`${baseUrl}/transfers`, {
       method: "POST",
@@ -2100,25 +2249,31 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
       body: JSON.stringify({ amount: 6_000, toShiftId: "receiver-shift-1" }),
     });
     assert.equal(overdraw.status, 409);
-    assert.match((await overdraw.text()), /mavjud naqd puldan oshib/);
+    assert.match(await overdraw.text(), /mavjud naqd puldan oshib/);
 
-    const accept = await fetch(`${baseUrl}/transfers/server-transfer-1/accept`, {
-      method: "POST",
-      headers: { ...headers, "Idempotency-Key": "offline-transfer-accept" },
-    });
+    const accept = await fetch(
+      `${baseUrl}/transfers/server-transfer-1/accept`,
+      {
+        method: "POST",
+        headers: { ...headers, "Idempotency-Key": "offline-transfer-accept" },
+      },
+    );
     assert.equal(accept.status, 503);
-    assert.match((await accept.text()), /ikki kassa holatini tekshirmasdan/i);
+    assert.match(await accept.text(), /ikki kassa holatini tekshirmasdan/i);
     assert.equal(store.summary().pendingCommands, 2);
     const close = await fetch(
       `${baseUrl}/shift/server-shift-transfer-1/close`,
       {
         method: "POST",
-        headers: { ...headers, "Idempotency-Key": "offline-close-with-pending-transfer" },
+        headers: {
+          ...headers,
+          "Idempotency-Key": "offline-close-with-pending-transfer",
+        },
         body: JSON.stringify({ closingBalance: 5_000 }),
       },
     );
     assert.equal(close.status, 409);
-    assert.match((await close.text()), /oldin pul topshiruvi qabul qilinishi/i);
+    assert.match(await close.text(), /oldin pul topshiruvi qabul qilinishi/i);
     assert.equal(store.summary().pendingCommands, 2);
 
     const projected = await fetch(`${baseUrl}/shift`, {
@@ -2134,7 +2289,11 @@ test("offline cash transfers debit the shift once, enforce the cached balance, a
     assert.equal(projectedData.data.expectedCash, "5000");
     assert.equal(projectedData.data.cashTransactions.length, 2);
     assert.equal(projectedData.data.outgoingCashTransfers.length, 2);
-    assert.ok(projectedData.data.outgoingCashTransfers.every((item) => item.pendingSync));
+    assert.ok(
+      projectedData.data.outgoingCashTransfers.every(
+        (item) => item.pendingSync,
+      ),
+    );
 
     online = true;
     const reconnect = await fetch(`http://127.0.0.1:${port}/api/v1/branches`, {
