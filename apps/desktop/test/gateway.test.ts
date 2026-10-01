@@ -160,7 +160,9 @@ test("gateway queues an upstream-unavailable cash sale only with a stable idempo
 });
 
 test("offline mode refuses to queue sensitive staff actions even with idempotency keys", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-sensitive-offline-"));
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-sensitive-offline-"),
+  );
   const store = new DesktopStore(join(directory, "test.sqlite"));
   let upstreamOnline = true;
   const gateway = new DesktopGateway({
@@ -203,7 +205,11 @@ test("offline mode refuses to queue sensitive staff actions even with idempotenc
       });
 
       assert.equal(response.status, 503, pathname);
-      assert.equal((await response.json()).error.code, "DESKTOP_OFFLINE", pathname);
+      assert.equal(
+        (await response.json()).error.code,
+        "DESKTOP_OFFLINE",
+        pathname,
+      );
     }
 
     assert.equal(store.summary().pendingCommands, 0);
