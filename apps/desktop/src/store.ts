@@ -28,6 +28,11 @@ export type KitchenTicketCacheUpdate = {
   version: number;
 };
 
+export type CourierOrderCacheUpdate = {
+  status: string;
+  version: number;
+};
+
 export type DesktopStoreSummary = {
   deviceId: string;
   cachedResponses: number;
@@ -670,10 +675,11 @@ export class DesktopStore {
     id: string,
     authScope: string,
     cacheScope: string,
-    aggregateType: "orders" | "kitchen",
+    aggregateType: "orders" | "kitchen" | "courier",
     aggregateId: string,
     serverVersion: number,
     kitchenTicketUpdate?: KitchenTicketCacheUpdate,
+    courierOrderUpdate?: CourierOrderCacheUpdate,
   ): void {
     this.database.exec("BEGIN IMMEDIATE");
     try {
@@ -742,6 +748,9 @@ export class DesktopStore {
           kitchenTicketUpdate,
         );
       }
+      if (aggregateType === "courier" && courierOrderUpdate) {
+        this.reconcileCourierOrderCache(cacheScope, aggregateId, courierOrderUpdate);
+      }
 
       this.database.exec("COMMIT");
     } catch (error) {
@@ -780,6 +789,63 @@ export class DesktopStore {
           .run(JSON.stringify(body), row.cacheKey, authScope);
       } catch {
         // Keep malformed cached responses unchanged; the next online read replaces them.
+      }
+    }
+  }
+
+  private reconcileCourierOrderCache(
+    authScope: string,
+    orderId: string,
+    update: CourierOrderCacheUpdate,
+  ): void {
+    const rows = this.database.prepare(
+      "SELECT cache_key AS cacheKey, request_url AS requestUrl, body FROM api_cache WHERE auth_scope = ? AND request_url LIKE '%/courier/orders%'",
+    ).all(authScope) as Array<{ cacheKey: string; requestUrl: string; body: string }>;
+
+    for (const row of rows) {
+      try {
+        const pathname = new URL(row.requestUrl).pathname.replace(/\/+$/, "");
+        if (!pathname.endsWith("/courier/orders")) continue;
+        const body = JSON.parse(row.body) as unknown;
+        const records = Array.isArray(body)
+          ? body
+          : body && typeof body === "object" && !Array.isArray(body) &&
+              Array.isArray((body as Record<string, unknown>).data)
+            ? (body as { data: unknown[] }).data
+            : null;
+        if (!records) continue;
+        const index = records.findIndex((value) => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+          const item = value as Record<string, unknown>;
+          const order = item.order;
+          return item.id === orderId ||
+            (order && typeof order === "object" && !Array.isArray(order) &&
+              (order as Record<string, unknown>).id === orderId);
+        });
+        if (index < 0) continue;
+        const item = records[index];
+        if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+        const record = item as Record<string, unknown>;
+        const nestedOrder = record.order;
+        const order = nestedOrder && typeof nestedOrder === "object" && !Array.isArray(nestedOrder)
+          ? nestedOrder as Record<string, unknown>
+          : record;
+        if (update.status === "COMPLETED" || update.status === "CANCELLED") {
+          records.splice(index, 1);
+        } else {
+          order.status = update.status;
+          order.version = update.version;
+          delete order.pendingSync;
+          if (order !== record) {
+            record.status = update.status === "SERVED" ? "READY" : update.status;
+            delete record.pendingSync;
+          }
+        }
+        this.database.prepare(
+          "UPDATE api_cache SET body = ? WHERE cache_key = ? AND auth_scope = ?",
+        ).run(JSON.stringify(body), row.cacheKey, authScope);
+      } catch {
+        // Keep malformed cached responses unchanged; a later online read replaces them.
       }
     }
   }

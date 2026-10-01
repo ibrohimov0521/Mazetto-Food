@@ -307,6 +307,25 @@ export class DesktopGateway {
             });
             return;
           }
+          const courierMutationError = offlineCourierMutationQueueError(
+            this.store,
+            authScope,
+            cacheScope,
+            identity?.branchId,
+            method,
+            url.pathname,
+            body,
+          );
+          if (courierMutationError) {
+            this.sendJson(response, 409, {
+              success: false,
+              error: {
+                code: "OFFLINE_COURIER_MUTATION_UNSAFE",
+                message: courierMutationError,
+              },
+            });
+            return;
+          }
           const waiterItemError = offlineWaiterMutationQueueError(
             this.store,
             cacheScope,
@@ -483,6 +502,25 @@ export class DesktopGateway {
             error: {
               code: "OFFLINE_CASH_MUTATION_UNSAFE",
               message: mutationError,
+            },
+          });
+          return;
+        }
+        const courierMutationError = offlineCourierMutationQueueError(
+          this.store,
+          authScope,
+          cacheScope,
+          identity?.branchId,
+          method,
+          url.pathname,
+          body,
+        );
+        if (courierMutationError) {
+          this.sendJson(response, 409, {
+            success: false,
+            error: {
+              code: "OFFLINE_COURIER_MUTATION_UNSAFE",
+              message: courierMutationError,
             },
           });
           return;
@@ -913,18 +951,26 @@ export class DesktopGateway {
         const versionedAggregateType =
           command.aggregateType === "kitchen"
             ? "kitchen"
-            : command.aggregateType === "orders" ||
-                (payload.localAggregateId &&
-                  ["pos.order.create", "table.order.create"].includes(
-                    command.commandType,
-                  ))
-              ? "orders"
-              : null;
+            : command.aggregateType === "courier"
+              ? "courier"
+              : command.aggregateType === "orders" ||
+                  (payload.localAggregateId &&
+                    ["pos.order.create", "table.order.create"].includes(
+                      command.commandType,
+                    ))
+                ? "orders"
+                : null;
+        const responsePayload = parseJsonObject(responseText);
         const kitchenTicket =
           versionedAggregateType === "kitchen" && orderAggregateId
-            ? findRecordById(parseJsonObject(responseText), orderAggregateId)
+            ? findRecordById(responsePayload, orderAggregateId)
             : null;
-        const ticketVersion = kitchenTicket?.version;
+        const courierOrder =
+          versionedAggregateType === "courier" && orderAggregateId
+            ? findRecordById(responsePayload, orderAggregateId)
+            : null;
+        const ticketVersion =
+          kitchenTicket?.version ?? recordField(courierOrder, "order")?.version;
         const serverVersion =
           typeof ticketVersion === "number" &&
           Number.isInteger(ticketVersion) &&
@@ -945,6 +991,15 @@ export class DesktopGateway {
             serverVersion,
             kitchenTicket && typeof kitchenTicket.status === "string"
               ? { status: kitchenTicket.status, version: serverVersion }
+              : undefined,
+            versionedAggregateType === "courier" && courierOrder
+              ? {
+                  status:
+                    stringField(parseJsonObject(payload.body ?? ""), "status") ??
+                    stringField(recordField(courierOrder, "order"), "status") ??
+                    "",
+                  version: serverVersion,
+                }
               : undefined,
           );
         } else {
@@ -2058,6 +2113,23 @@ function applyOptimisticProjection(
       applied.push(command.id);
     }
 
+    const courierAction = commandPath.match(
+      /^\/api\/v1\/courier\/orders\/([^/]+)\/status$/,
+    );
+    if (
+      command.commandType === "courier.status.update" &&
+      courierAction?.[1] &&
+      expectedVersion !== null &&
+      nextStatus &&
+      pathname === "/api/v1/courier/orders" &&
+      patchCourierOrderProjection(projected, courierAction[1], {
+        status: nextStatus,
+        version: expectedVersion + 1,
+      })
+    ) {
+      applied.push(command.id);
+    }
+
     if (pathname === "/api/v1/cash-register/shift") {
       if (
         command.commandType === "shift.open" &&
@@ -2187,6 +2259,39 @@ function patchKitchenTicketProjection(
   const ticket = findRecordById(projected, ticketId);
   if (!ticket) return false;
   Object.assign(ticket, patch);
+  return true;
+}
+
+function patchCourierOrderProjection(
+  projected: unknown,
+  customerOrderId: string,
+  update: { status: string; version: number },
+): boolean {
+  const envelope = isRecord(projected) ? projected : null;
+  const records = Array.isArray(projected)
+    ? projected
+    : Array.isArray(envelope?.data)
+      ? envelope.data
+      : null;
+  if (!records) return false;
+  const index = records.findIndex((value) => {
+    if (!isRecord(value)) return false;
+    const order = recordField(value, "order");
+    return value.id === customerOrderId || order?.id === customerOrderId;
+  });
+  if (index < 0) return false;
+  const value = records[index];
+  if (!isRecord(value)) return false;
+  const order = recordField(value, "order") ?? value;
+  if (update.status === "COMPLETED" || update.status === "CANCELLED") {
+    records.splice(index, 1);
+    return true;
+  }
+  order.status = update.status;
+  order.version = update.version;
+  order.pendingSync = true;
+  value.pendingSync = true;
+  value.status = update.status === "SERVED" ? "READY" : update.status;
   return true;
 }
 
@@ -2680,6 +2785,88 @@ function hasStableIdempotencyKey(
   if (headerValue(request.headers["idempotency-key"])) return true;
   const parsedBody = parseJsonObject(Buffer.from(body).toString("utf8"));
   return Boolean(stringField(parsedBody, "idempotencyKey"));
+}
+
+function offlineCourierMutationQueueError(
+  store: DesktopStore,
+  authScope: string,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  method: string,
+  pathname: string,
+  body: ArrayBuffer | undefined,
+): string | null {
+  const match = pathname.match(/^\/api\/v1\/courier\/orders\/([^/]+)\/status$/);
+  if (!match || method !== "PATCH") return null;
+  if (!body || !branchId) {
+    return "Kuryer buyurtmasi va filiali aniqlanmadi. Oflayn holatda status o'zgartirilmadi.";
+  }
+  const request = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const status = stringField(request, "status");
+  const expectedVersion = numberField(request, "expectedVersion");
+  if (
+    !status ||
+    !["READY", "SERVED", "COMPLETED", "CANCELLED"].includes(status) ||
+    expectedVersion === null
+  ) {
+    return "Buyurtma statusi yoki versiyasi aniq emas. Oflayn o'zgarish navbatga olinmadi.";
+  }
+  const cached = store.getLatestCachedResponse(cacheScope, "/api/v1/courier/orders");
+  if (!cached) {
+    return "Kuryer buyurtmalarining filiallarga mos keshi yo'q. Internet borida ro'yxatni yangilang.";
+  }
+  const snapshot = parseJsonObject(cached.body);
+  const base = Array.isArray(snapshot?.data) ? snapshot.data : Array.isArray(snapshot) ? snapshot : null;
+  if (!base) {
+    return "Kuryer buyurtmalarining keshlangan shakli yaroqsiz. Internet borida ro'yxatni yangilang.";
+  }
+  const pendingProjection = applyOptimisticProjection(
+    cached.body,
+    cached.requestUrl,
+    store.listActiveMutations(authScope),
+  );
+  const projected = pendingProjection
+    ? parseJsonObject(pendingProjection.body)
+    : snapshot;
+  const records = Array.isArray(projected?.data)
+    ? projected.data
+    : Array.isArray(projected)
+      ? projected
+      : base;
+  const customerOrderId = decodeURIComponent(match[1] ?? "");
+  const item = records.find((value: unknown) =>
+    isRecord(value) &&
+    (value.id === customerOrderId || recordField(value, "order")?.id === customerOrderId),
+  );
+  if (!isRecord(item)) {
+    return "Buyurtma shu kuryer va filial keshlangan ro'yxatida topilmadi. Status o'zgartirilmadi.";
+  }
+  const branch = recordField(item, "branch");
+  if ((stringField(branch, "id") ?? stringField(item, "branchId")) !== branchId) {
+    return "Keshlangan buyurtma tanlangan filialga tegishli emas. Status o'zgartirilmadi.";
+  }
+  const order = recordField(item, "order") ?? item;
+  if (numberField(order, "version") !== expectedVersion) {
+    return "Buyurtma versiyasi keshlangan holatga mos emas. Internet borida yangilang.";
+  }
+  const currentStatus = stringField(order, "status");
+  if (status === "SERVED" && currentStatus !== "READY") {
+    return "Faqat tayyor buyurtmani yo'lga chiqarish mumkin. Internet borida holatini tekshiring.";
+  }
+  if (status === "COMPLETED") {
+    const outstanding = finiteAmount(order.outstandingAmount);
+    if (outstanding === null || outstanding !== 0) {
+      return "Naqd qoldiq bor yoki aniq emas. Internetni ulang va yakunlash vaqtida to'lovni kuryer smenasiga kiriting.";
+    }
+    if (
+      request?.amount !== undefined ||
+      request?.paymentMethodCode !== undefined ||
+      request?.shiftId !== undefined
+    ) {
+      return "To'lov ma'lumotini internet uzilganda yakunlash bilan birga yuborib bo'lmaydi.";
+    }
+  }
+  return null;
 }
 
 function offlineWaiterMutationQueueError(
