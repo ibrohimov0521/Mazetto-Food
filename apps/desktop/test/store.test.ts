@@ -45,6 +45,49 @@ test("desktop store persists scoped API snapshots without storing bearer tokens"
   }
 });
 
+test("desktop store selects an exact cached endpoint before newer nested routes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authScope = DesktopStore.authScope("Bearer endpoint-path");
+  const collectionUrl =
+    "https://api.example.test/api/v1/orders?branchId=branch-1&status=READY";
+  const detailUrl =
+    "https://api.example.test/api/v1/orders/order-1?branchId=branch-1";
+
+  try {
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(collectionUrl, authScope),
+      requestUrl: collectionUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: '{"success":true,"data":[{"id":"order-1"}]}',
+      cachedAt: "2026-10-01T10:00:00.000Z",
+    });
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(detailUrl, authScope),
+      requestUrl: detailUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: '{"success":true,"data":{"id":"order-1","items":[]}}',
+      cachedAt: "2026-10-01T11:00:00.000Z",
+    });
+
+    assert.equal(
+      store.getLatestCachedResponse(authScope, "/api/v1/orders")?.body,
+      '{"success":true,"data":[{"id":"order-1"}]}',
+    );
+    assert.equal(
+      store.getLatestCachedResponse(authScope, "/api/v1/orders/order-1")?.body,
+      '{"success":true,"data":{"id":"order-1","items":[]}}',
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("desktop store removes expired cache entries without touching another scope", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const path = join(directory, "test.sqlite");
