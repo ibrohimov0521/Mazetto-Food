@@ -594,6 +594,19 @@ export class DesktopGateway {
       localItemId && waiterProduct && parsedBody
         ? buildOfflineWaiterItemSnapshot(waiterProduct, parsedBody, localItemId)
         : null;
+    const waiterTableId =
+      input.definition.commandType === "table.order.create"
+        ? (input.pathname.match(/^\/api\/v1\/tables\/([^/]+)\/orders$/)?.[1] ??
+          null)
+        : null;
+    const offlineWaiterTableSnapshot = waiterTableId
+      ? cachedWaiterTable(
+          this.store,
+          input.cacheScope,
+          context?.branchId,
+          waiterTableId,
+        )
+      : null;
     if (
       input.definition.commandType === "pos.order.create" &&
       localAggregateId &&
@@ -644,6 +657,7 @@ export class DesktopGateway {
         ...(localItemId ? { localItemId } : {}),
         ...(offlineOrderSnapshot ? { offlineOrderSnapshot } : {}),
         ...(offlineWaiterItemSnapshot ? { offlineWaiterItemSnapshot } : {}),
+        ...(offlineWaiterTableSnapshot ? { offlineWaiterTableSnapshot } : {}),
         headers: {
           "content-type":
             headerValue(input.request.headers["content-type"]) ??
@@ -1767,7 +1781,14 @@ function applyOptimisticProjection(
     const commandBody = parseJsonObject(stringField(payload, "body") ?? "");
     const snapshot = recordField(payload, "offlineOrderSnapshot");
 
-    const waiterItemSnapshot = recordField(payload, "offlineWaiterItemSnapshot");
+    const waiterItemSnapshot = recordField(
+      payload,
+      "offlineWaiterItemSnapshot",
+    );
+    const waiterTableSnapshot = recordField(
+      payload,
+      "offlineWaiterTableSnapshot",
+    );
     if (
       command.commandType === "pos.order.create" ||
       command.commandType === "table.order.create"
@@ -1802,7 +1823,11 @@ function applyOptimisticProjection(
         }
       }
       if (pathname === "/api/v1/kitchen/orders") {
-        const ticket = optimisticKitchenTicket(command, order);
+        const ticket = optimisticKitchenTicket(
+          command,
+          order,
+          waiterTableSnapshot,
+        );
         if (prependProjection(projected, ticket)) applied.push(command.id);
       }
       continue;
@@ -1820,8 +1845,11 @@ function applyOptimisticProjection(
         waiterItemSnapshot &&
         (pathname === "/api/v1/orders/" + waiterItemPath[1] ||
           pathname === "/api/v1/tables" ||
-          /^\/api\/v1\/tables\/[^/]+$/.test(pathname)) &&
-        patchOrderItemProjection(
+          /^\/api\/v1\/tables\/[^/]+$/.test(pathname) ||
+          pathname === "/api/v1/kitchen/orders") &&
+        (pathname === "/api/v1/kitchen/orders"
+          ? patchKitchenOrderItemProjection
+          : patchOrderItemProjection)(
           projected,
           waiterItemPath[1],
           waiterItemSnapshot,
@@ -2032,6 +2060,12 @@ function prependProjection(
       collection.unshift(item);
       return true;
     }
+    if (
+      key === "data" &&
+      isRecord(collection) &&
+      prependProjection(collection, item)
+    )
+      return true;
   }
   return false;
 }
@@ -2119,6 +2153,55 @@ function patchOrderItemProjection(
   order.pendingSync = true;
   order.offlineQueued = true;
   return true;
+}
+function patchKitchenOrderItemProjection(
+  projected: unknown,
+  orderId: string,
+  item: Record<string, unknown>,
+  expectedVersion: number | null,
+): boolean {
+  const ticket = findKitchenTicketByOrderId(projected, orderId);
+  const order = ticket ? recordField(ticket, "order") : null;
+  if (!ticket || !order || finiteAmount(item.totalPrice) === null) return false;
+
+  const ticketItems = Array.isArray(ticket.items) ? ticket.items : [];
+  const ticketHasItem = ticketItems.some(
+    (value) => isRecord(value) && value.id === item.id,
+  );
+  const orderHasItem =
+    Array.isArray(order.items) &&
+    order.items.some((value) => isRecord(value) && value.id === item.id);
+  if (
+    !orderHasItem &&
+    !patchOrderItemProjection(ticket, orderId, item, expectedVersion)
+  ) {
+    return false;
+  }
+  if (!ticketHasItem) ticketItems.push(item);
+  ticket.items = ticketItems;
+  ticket.pendingSync = true;
+  return true;
+}
+
+function findKitchenTicketByOrderId(
+  value: unknown,
+  orderId: string,
+): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const found = findKitchenTicketByOrderId(child, orderId);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  const order = recordField(value, "order");
+  if (order?.id === orderId && Array.isArray(value.items)) return value;
+  for (const child of Object.values(value)) {
+    const found = findKitchenTicketByOrderId(child, orderId);
+    if (found) return found;
+  }
+  return null;
 }
 function findRecordById(
   value: unknown,
@@ -2567,6 +2650,37 @@ function cachedWaiterMenuProduct(
   return isRecord(product) ? product : null;
 }
 
+function cachedWaiterTable(
+  store: DesktopStore,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  tableId: string,
+): Record<string, unknown> | null {
+  if (!branchId) return null;
+  const cached = store.getLatestCachedResponse(
+    cacheScope,
+    `/api/v1/tables/${tableId}`,
+  );
+  if (!cached) return null;
+
+  try {
+    if (new URL(cached.requestUrl).pathname !== `/api/v1/tables/${tableId}`) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const table = recordField(parseJsonObject(cached.body), "data");
+  if (!table || table.id !== tableId || table.branchId !== branchId)
+    return null;
+  const number = numberField(table, "number");
+  return {
+    id: tableId,
+    ...(stringField(table, "name") ? { name: stringField(table, "name") } : {}),
+    ...(number !== null ? { number } : {}),
+  };
+}
 function buildOfflineWaiterItemSnapshot(
   product: Record<string, unknown>,
   body: Record<string, unknown>,
@@ -2777,8 +2891,18 @@ function buildOfflineOrderSnapshot(
 function optimisticKitchenTicket(
   command: PendingOutboxCommand,
   order: Record<string, unknown>,
+  tableSnapshot: Record<string, unknown> | null,
 ): Record<string, unknown> {
-  const items = Array.isArray(order.items) ? order.items : [];
+  const isWaiterTableOrder = command.commandType === "table.order.create";
+  const ticketOrder = isWaiterTableOrder
+    ? {
+        ...order,
+        source: "POS",
+        type: "DINE_IN",
+        ...(tableSnapshot ? { table: tableSnapshot } : {}),
+      }
+    : order;
+  const items = Array.isArray(ticketOrder.items) ? [...ticketOrder.items] : [];
   return {
     id: `offline-ticket-${command.id}`,
     ticketNumber: `OFF-${command.id.slice(0, 8).toUpperCase()}`,
@@ -2787,9 +2911,10 @@ function optimisticKitchenTicket(
     version: 1,
     revisionNumber: 1,
     isSupplement: false,
-    createdAt: stringField(order, "createdAt") ?? new Date().toISOString(),
+    createdAt:
+      stringField(ticketOrder, "createdAt") ?? new Date().toISOString(),
     items,
-    order,
+    order: ticketOrder,
     pendingSync: true,
   };
 }
