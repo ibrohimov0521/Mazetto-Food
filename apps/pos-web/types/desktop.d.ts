@@ -77,6 +77,12 @@ type DesktopBridge = {
   };
   auth?: {
     login: (input: { identifier: string; password: string }) => Promise<unknown>;
+    credentials: {
+      list: () => Promise<string[]>;
+      get: (identifier: string) => Promise<{ identifier: string; password: string } | null>;
+      save: (input: { identifier: string; password: string }) => Promise<string[]>;
+      remove: (identifier: string) => Promise<string[]>;
+    };
   };
   api?: {
     request: (input: {

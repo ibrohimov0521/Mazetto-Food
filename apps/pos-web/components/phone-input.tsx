@@ -16,10 +16,14 @@ export function PhoneInput({
   value,
   onChange,
   disabled = false,
+  name,
+  autoComplete = "tel-national",
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  name?: string;
+  autoComplete?: string;
 }) {
   return (
     <label className="grid min-w-0 gap-2 text-sm font-semibold text-[#07373a]">
@@ -37,7 +41,8 @@ export function PhoneInput({
         </span>
         <input
           aria-label="Telefon raqam"
-          autoComplete="tel-national"
+          autoComplete={autoComplete}
+          name={name}
           inputMode="tel"
           type="tel"
           required

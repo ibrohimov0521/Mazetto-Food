@@ -19,12 +19,20 @@ import {
 import { PrintOutcomeUnknownError, withTimeout } from "./print-errors.js";
 import { realtimeSocketOrigin } from "./realtime-origin.js";
 import { resolveDesktopUpdateFeed } from "./update-feed.js";
+import {
+  normalizeSavedCredentialIdentifier,
+  parseSavedDesktopCredentials,
+  removeSavedDesktopCredential,
+  upsertSavedDesktopCredential,
+  type SavedDesktopCredential,
+} from "./saved-credentials.js";
 
 const require = createRequire(import.meta.url);
 const { autoUpdater } =
   require("electron-updater") as typeof import("electron-updater");
 
 const GATEWAY_PORT = 7359;
+const SAVED_LOGIN_CREDENTIALS_KEY = "saved_login_credentials_encrypted";
 const UPSTREAM_API_URL =
   process.env.MAZETTO_API_URL?.trim() || "https://api.mazettofood.uz/api/v1";
 const LOCAL_GATEWAY_API_URL = `http://127.0.0.1:${GATEWAY_PORT}/api/v1`;
@@ -567,6 +575,48 @@ function setupPrinterControls(): void {
 }
 
 function setupAuthControls(): void {
+  ipcMain.removeHandler("desktop:auth:credentials:list");
+  ipcMain.removeHandler("desktop:auth:credentials:get");
+  ipcMain.removeHandler("desktop:auth:credentials:save");
+  ipcMain.removeHandler("desktop:auth:credentials:remove");
+  ipcMain.handle("desktop:auth:credentials:list", () =>
+    readSavedDesktopCredentials().map(({ identifier }) => identifier),
+  );
+  ipcMain.handle("desktop:auth:credentials:get", (_event, value: unknown) => {
+    const identifier = typeof value === "string"
+      ? normalizeSavedCredentialIdentifier(value)
+      : "";
+    return readSavedDesktopCredentials().find(
+      (entry) => normalizeSavedCredentialIdentifier(entry.identifier) === identifier,
+    ) ?? null;
+  });
+  ipcMain.handle(
+    "desktop:auth:credentials:save",
+    (_event, input: { identifier?: unknown; password?: unknown }) => {
+      if (typeof input?.identifier !== "string" || typeof input.password !== "string") {
+        throw new Error("Saqlanadigan login ma'lumoti noto'g'ri");
+      }
+      const credentials = upsertSavedDesktopCredential(
+        readSavedDesktopCredentials(),
+        input.identifier,
+        input.password,
+      );
+      saveProtectedSetting(SAVED_LOGIN_CREDENTIALS_KEY, JSON.stringify(credentials));
+      return credentials.map(({ identifier }) => identifier);
+    },
+  );
+  ipcMain.handle("desktop:auth:credentials:remove", (_event, value: unknown) => {
+    if (typeof value !== "string") {
+      throw new Error("O'chiriladigan login ma'lumoti noto'g'ri");
+    }
+    const credentials = removeSavedDesktopCredential(
+      readSavedDesktopCredentials(),
+      value,
+    );
+    saveProtectedSetting(SAVED_LOGIN_CREDENTIALS_KEY, JSON.stringify(credentials));
+    return credentials.map(({ identifier }) => identifier);
+  });
+
   ipcMain.removeHandler("desktop:auth:login");
   ipcMain.handle(
     "desktop:auth:login",
@@ -893,6 +943,12 @@ function syncPrinterAuthorization(serialized: string | null): void {
 
 function readProtectedDeviceToken(): string | null {
   return readProtectedSetting("device_auth_token_encrypted");
+}
+
+function readSavedDesktopCredentials(): SavedDesktopCredential[] {
+  return parseSavedDesktopCredentials(
+    readProtectedSetting(SAVED_LOGIN_CREDENTIALS_KEY),
+  );
 }
 
 function readProtectedSetting(key: string): string | null {
