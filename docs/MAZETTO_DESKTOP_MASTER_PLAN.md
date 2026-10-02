@@ -528,3 +528,9 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Added a two-gateway regression with separate SQLite stores for two terminals in one branch. Each records a cash sale while offline, then reconnects and replays its distinct idempotency key once.
 - Verification: focused gateway tests 43/43, full Desktop suite 119/119, Desktop typecheck and scoped ESLint passed locally.
 - This simulates independent local queues against a shared upstream stub. Actual restaurant network outages, production database contention and physical-printer behavior still require field acceptance; this does not claim 100% offline operation.
+
+## D3 offline sale restart recovery (2026-10-02)
+
+- Extended the offline sale e2e regression to stop the gateway, close and reopen its SQLite store, confirm the device identity plus pending sale and both local print jobs survive, then reconnect and replay the same idempotency key exactly once.
+- Verification: focused restart regression passed; full Desktop suite 119/119, typecheck, scoped ESLint and diff checks passed locally.
+- This validates a graceful application restart with queued data, not power loss during a physical SQLite write or a real printer outage. Restaurant hardware and network field acceptance remain open; no 100% offline guarantee is claimed.
