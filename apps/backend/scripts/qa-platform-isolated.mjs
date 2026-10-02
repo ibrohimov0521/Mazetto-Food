@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import net from "node:net";
 import { Buffer } from "node:buffer";
 import http from "node:http";
@@ -445,6 +446,52 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
   await liveStatus.waitFor();
   assert.match(await liveStatus.getAttribute("title"), /Ma'lumotlar bazasi: ok; Redis:/);
   await page.getByText("QA Restaurant").first().waitFor();
+  const visualState = await page.evaluate(() => {
+    const background = globalThis.getComputedStyle(globalThis.document.body, "::before");
+    const surface = globalThis.getComputedStyle(globalThis.document.querySelector(".metric"));
+    const logo = globalThis.document.querySelector(".brand-mark img");
+    return {
+      backgroundImage: background.backgroundImage,
+      backgroundPosition: background.position,
+      surfaceBackground: surface.backgroundColor,
+      logoObjectFit: logo ? globalThis.getComputedStyle(logo).objectFit : "missing",
+      logoLoaded: Boolean(logo && logo.tagName === "IMG" && logo.complete && logo.naturalWidth > 0),
+    };
+  });
+  assert.match(visualState.backgroundImage, /bestteam-background\.webp/);
+  assert.equal(visualState.backgroundPosition, "fixed");
+  assert.match(visualState.surfaceBackground, /0\.82\)/);
+  assert.equal(visualState.logoObjectFit, "contain");
+  assert.ok(visualState.logoLoaded, "The complete BestTeam logo must load without cropping.");
+  assert.equal(await page.locator(".metric-link").count(), 4, "Every overview metric must be actionable.");
+  const screenshotDir = process.env.BESTTEAM_QA_SCREENSHOT_DIR;
+  if (screenshotDir) {
+    mkdirSync(screenshotDir, { recursive: true });
+    await page.screenshot({ path: join(screenshotDir, "owner-desktop.png"), fullPage: true });
+  }
+  await page.locator(".metric-link").first().click();
+  await page.getByRole("heading", { name: "Monitoring xizmatlari" }).waitFor();
+  await page.getByRole("link", { name: "Umumiy holat" }).click();
+  await page.getByRole("heading", { name: "Umumiy holat" }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(250);
+  const mobileState = await page.evaluate(() => {
+    const sidebar = globalThis.document.querySelector(".sidebar");
+    return {
+      width: globalThis.innerWidth,
+      sidebarOpen: Boolean(sidebar?.classList.contains("sidebar-open")),
+      sidebarRight: sidebar?.getBoundingClientRect().right ?? 0,
+      overflow: globalThis.document.documentElement.scrollWidth > globalThis.innerWidth,
+    };
+  });
+  assert.equal(mobileState.width, 390, `Unexpected mobile viewport: ${JSON.stringify(mobileState)}`);
+  assert.equal(mobileState.sidebarOpen, false, `Mobile navigation must start closed: ${JSON.stringify(mobileState)}`);
+  assert.ok(mobileState.sidebarRight <= 1, `Closed mobile sidebar remains visible: ${JSON.stringify(mobileState)}`);
+  assert.equal(mobileState.overflow, false, "BestTeam owner dashboard must not overflow horizontally on mobile.");
+  if (screenshotDir) {
+    await page.screenshot({ path: join(screenshotDir, "owner-mobile.png"), fullPage: true });
+  }
+  await page.setViewportSize({ width: 1366, height: 850 });
   await page.getByRole("link", { name: "Hodisalar" }).click();
   await page.getByText("Printerda xato").waitFor();
   const alertRow = page.locator(".global-event").filter({ hasText: "Printerda xato" });
@@ -453,8 +500,20 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
   await page.getByRole("button", { name: "Ko'rib chiqilgan" }).click();
   await page.getByText("Printerda xato").waitFor();
   assert.equal(await page.locator(".global-event").filter({ hasText: "Printerda xato" }).getByRole("button", { name: "Ko'rib chiqildi" }).count(), 0);
-  await page.getByRole("button", { name: "Ochiq", exact: true }).click();
-  await page.locator(".empty").filter({ hasText: "Ochiq hodisalar topilmadi." }).waitFor({ state: "attached" });
+  const openFilter = page.getByRole("button", { name: "Ochiq", exact: true });
+  await openFilter.click();
+  try {
+    await page.locator(".empty").filter({ hasText: "Ochiq hodisalar topilmadi." }).waitFor({ state: "attached", timeout: 8_000 });
+  } catch {
+    const filterState = await page.evaluate(() => ({
+      selectedFilter: globalThis.document.querySelector('.segmented button[aria-pressed="true"]')?.textContent?.trim() || "missing",
+      eventCount: globalThis.document.querySelectorAll(".global-event").length,
+      eventTitles: Array.from(globalThis.document.querySelectorAll(".global-event-copy strong"), item => item.textContent?.trim()),
+      alertVisible: Boolean(globalThis.document.querySelector(".alert")),
+      loading: Boolean(globalThis.document.querySelector(".global-events .skeleton")),
+    }));
+    throw new Error(`Owner activity filter did not settle: ${JSON.stringify(filterState)}`);
+  }
   assert.equal(await page.locator(".global-event").count(), 0, "Acknowledged incidents should not appear in the open filter.");
   await page.getByRole("link", { name: "Boshqaruv jurnali" }).click();
   await page.getByRole("heading", { name: "Boshqaruv jurnali" }).waitFor();

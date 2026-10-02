@@ -94,3 +94,10 @@ body{position:relative;isolation:isolate}
 @media(max-width:1050px){.tenant-membership-create{grid-template-columns:minmax(200px,1fr) minmax(260px,1.2fr)}.tenant-membership-create>.button{justify-self:start}.tenant-membership-edit{grid-template-columns:1fr 1fr}.tenant-membership-edit>.tenant-membership-actions{grid-column:1/-1}}
 @media(max-width:680px){.tenant-membership-create,.tenant-membership-edit{grid-template-columns:1fr}.tenant-membership-edit>.tenant-membership-actions{grid-column:auto}.tenant-membership-actions{min-width:0}}
 .sr-only{position:fixed;left:0;top:0;clip-path:inset(50%);white-space:nowrap}
+
+/* Let the supplied BestTeam artwork remain visible without sacrificing text contrast. */
+.sidebar,.topbar{background:rgba(245,249,255,.92)}
+.metric,.attention-list,.table-wrap,.service-item,.service-strip,.events-list,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton{background:rgba(245,249,255,.82)}
+.modal,.login-panel{background:rgba(250,252,255,.97)}
+.table-wrap th{background:rgba(255,255,255,.78)}
+.attention-row:hover,.global-event:hover{background:rgba(255,255,255,.65)}
