@@ -6,6 +6,7 @@ import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { ApiResponseInterceptor } from "./common/interceptors/api-response.interceptor";
 import { correlationIdMiddleware } from "./common/request/correlation-id.middleware";
+import { jsonBigIntReplacer } from "./common/serialization/json-bigint-replacer";
 import { resolveAllowedOrigins } from "./config/cors.config";
 import { loadEnvironmentFile, validateEnvironment } from "./config/env";
 
@@ -21,6 +22,8 @@ async function bootstrap(): Promise<void> {
   const env = validateEnvironment();
 
   const app = await NestFactory.create(AppModule);
+  // Prisma revisions use BigInt; keep every API response JSON-safe without losing precision.
+  app.getHttpAdapter().getInstance().set("json replacer", jsonBigIntReplacer);
   const port = env.BACKEND_PORT;
   const host = env.BACKEND_HOST;
 

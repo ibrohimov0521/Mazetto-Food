@@ -25,7 +25,12 @@ type AuthContextValue = {
   isReady: boolean;
   session: AuthSession | null;
   user: AuthUser | null;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (
+    identifier: string,
+    password: string,
+    rememberDesktopCredentials?: boolean,
+    selectedSavedIdentifier?: string | null,
+  ) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -72,10 +77,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const login = useCallback(
-    async (identifier: string, password: string) => {
-      const desktopLogin = window.mazettoDesktop?.auth?.login;
+    async (
+      identifier: string,
+      password: string,
+      rememberDesktopCredentials = false,
+      selectedSavedIdentifier: string | null = null,
+    ) => {
+      const desktopAuth = window.mazettoDesktop?.auth;
+      const desktopLogin = desktopAuth?.login;
       if (desktopLogin) {
-        const session = await desktopLogin({ identifier, password }) as AuthSession;
+        let session: AuthSession;
+        try {
+          session = await desktopLogin({ identifier, password }) as AuthSession;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.toLowerCase().includes("invalid credentials")) {
+            throw new Error(
+              "Login yoki parol noto'g'ri. Saqlangan hisobni tanlang yoki ma'lumotlarni qayta kiriting.",
+            );
+          }
+          throw new Error(
+            message.replace(/^Error invoking remote method '[^']+': Error:\s*/i, ""),
+          );
+        }
+
+        if (desktopAuth.credentials) {
+          try {
+            if (rememberDesktopCredentials) {
+              await desktopAuth.credentials.save({ identifier, password });
+            } else if (selectedSavedIdentifier) {
+              await desktopAuth.credentials.remove(selectedSavedIdentifier);
+            }
+          } catch {
+            console.warn("Desktop login ma'lumotini xavfsiz saqlash imkoni bo'lmadi.");
+          }
+        }
         writeSession(session);
         router.replace(getPrimaryRedirect(session.user));
         return;

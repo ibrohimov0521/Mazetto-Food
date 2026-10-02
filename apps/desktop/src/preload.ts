@@ -35,6 +35,16 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
   auth: {
     login: (input: { identifier: string; password: string }) =>
       ipcRenderer.invoke("desktop:auth:login", input),
+    credentials: {
+      list: (): Promise<string[]> =>
+        ipcRenderer.invoke("desktop:auth:credentials:list"),
+      get: (identifier: string): Promise<{ identifier: string; password: string } | null> =>
+        ipcRenderer.invoke("desktop:auth:credentials:get", identifier),
+      save: (input: { identifier: string; password: string }): Promise<string[]> =>
+        ipcRenderer.invoke("desktop:auth:credentials:save", input),
+      remove: (identifier: string): Promise<string[]> =>
+        ipcRenderer.invoke("desktop:auth:credentials:remove", identifier),
+    },
   },
   api: {
     request: (input: {
