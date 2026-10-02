@@ -59,6 +59,7 @@ enum PrintJobStatus {
   PENDING
   PROCESSING
   PRINTED
+  SUBMITTED
   DEAD_LETTER
   CANCELLED
 }
@@ -1691,6 +1692,7 @@ model PrintJob {
   leaseExpiresAt DateTime?
   lastError      String?
   printedAt      DateTime?
+  submittedAt    DateTime?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 

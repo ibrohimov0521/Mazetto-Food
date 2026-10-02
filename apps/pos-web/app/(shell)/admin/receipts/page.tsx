@@ -12,7 +12,7 @@ export default function AdminReceiptsPageRoute() {
           { label: "Kassa va moliya" },
           { label: "Cheklar" },
         ]}
-        description="Chop etilgan va chop etilmagan cheklar"
+        description="Chek holati va printer drayveri javobi"
         title="Cheklar"
       />
       <AdminReceiptsPage />

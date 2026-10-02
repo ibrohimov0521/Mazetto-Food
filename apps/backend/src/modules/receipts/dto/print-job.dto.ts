@@ -35,7 +35,7 @@ export class FailPrintJobDto extends CompletePrintJobDto {
   @IsIn(["FAILED", "AMBIGUOUS"])
   outcome?: "FAILED" | "AMBIGUOUS";
 }
-const printJobStatuses = ["PENDING", "PROCESSING", "PRINTED", "DEAD_LETTER", "CANCELLED"] as const;
+const printJobStatuses = ["PENDING", "PROCESSING", "PRINTED", "SUBMITTED", "DEAD_LETTER", "CANCELLED"] as const;
 
 export class ListPrintJobsDto {
   @IsOptional()

@@ -123,3 +123,69 @@ test("ambiguous printer timeout goes to dead letter without automatic reprint", 
   assert.equal(attemptUpdate?.outcome, "AMBIGUOUS");
   assert.match(String(attemptUpdate?.error), /timed out/);
 });
+
+test("driver acceptance is recorded as submitted, not as paper printed", async () => {
+  let jobUpdate: Record<string, unknown> | undefined;
+  let attemptUpdate: Record<string, unknown> | undefined;
+  let receiptUpdated = false;
+  const job = {
+    id: "job-submitted",
+    branchId: "branch-1",
+    receiptId: "receipt-1",
+    status: "PROCESSING",
+    attemptCount: 1,
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+  };
+  const tx = {
+    printJob: {
+      updateMany: async (args: { data: Record<string, unknown> }) => {
+        jobUpdate = args.data;
+        return { count: 1 };
+      },
+    },
+    printAttempt: {
+      update: async (args: { data: Record<string, unknown> }) => {
+        attemptUpdate = args.data;
+      },
+    },
+    receipt: { update: async () => { receiptUpdated = true; } },
+  };
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    printJob: {
+      findFirst: async () => job,
+      findUnique: async () => ({ ...job, status: "SUBMITTED" }),
+    },
+    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+  } as never);
+
+  await service.completePrintJob(job.id, "lease-token-with-enough-length", actor);
+
+  assert.equal(jobUpdate?.status, "SUBMITTED");
+  assert.ok(jobUpdate?.submittedAt instanceof Date);
+  assert.equal(jobUpdate?.printedAt, null);
+  assert.equal(attemptUpdate?.outcome, "SUBMITTED");
+  assert.equal(receiptUpdated, false);
+});
+
+test("driver-submitted print jobs cannot be automatically retried", async () => {
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    printJob: {
+      findFirst: async () => ({
+        id: "job-submitted",
+        branchId: "branch-1",
+        receiptId: "receipt-1",
+        status: "SUBMITTED",
+        attemptCount: 1,
+        leaseExpiresAt: null,
+      }),
+    },
+  } as never);
+
+  await assert.rejects(
+    () => service.retryPrintJob("job-submitted", actor),
+    /Completed print job cannot be retried/,
+  );
+});

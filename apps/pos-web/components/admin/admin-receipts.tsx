@@ -53,6 +53,7 @@ import { moneyCell, numberCell } from "./admin-report-views";
  */
 
 type Branch = { id: string; code: string; name: string };
+type PrintJobStatus = "PENDING" | "PROCESSING" | "PRINTED" | "SUBMITTED" | "DEAD_LETTER" | "CANCELLED";
 
 type Receipt = {
   id: string;
@@ -61,6 +62,7 @@ type Receipt = {
   total: string;
   printed: boolean;
   printedAt?: string | null;
+  printJobs?: { status: PrintJobStatus; submittedAt?: string | null }[];
   createdAt: string;
   orderId: string;
   branch?: { id: string; code: string; name: string } | null;
@@ -100,13 +102,14 @@ type ReceiptDetail = Receipt & {
 
 type PrintJob = {
   id: string;
-  status: "PENDING" | "PROCESSING" | "PRINTED" | "DEAD_LETTER" | "CANCELLED";
+  status: PrintJobStatus;
   attemptCount: number;
   maxAttempts: number;
   nextAttemptAt: string;
   leaseExpiresAt?: string | null;
   lastError?: string | null;
   printedAt?: string | null;
+  submittedAt?: string | null;
   createdAt: string;
   branch: { id: string; name: string; code: string };
   receipt: { id: string; receiptNumber: string; total: string; content?: unknown; order?: { orderNumber: string; displayOrderNumber?: string | null } | null };
@@ -115,15 +118,31 @@ type PrintJob = {
 };
 
 const printJobStatusLabels: Record<PrintJob["status"], string> = {
-  PENDING: "Navbatda", PROCESSING: "Printerda", PRINTED: "Chop etildi", DEAD_LETTER: "Xato bilan to'xtadi", CANCELLED: "Bekor qilingan",
+  PENDING: "Navbatda", PROCESSING: "Printerda", PRINTED: "Eski chop holati", SUBMITTED: "Drayver qabul qildi", DEAD_LETTER: "Xato bilan to'xtadi", CANCELLED: "Bekor qilingan",
 };
 
 function printJobTone(status: PrintJob["status"]): "success" | "warning" | "danger" | "info" | "neutral" {
-  if (status === "PRINTED") return "success";
+  if (status === "SUBMITTED") return "info";
+  if (status === "PRINTED") return "warning";
   if (status === "DEAD_LETTER") return "danger";
   if (status === "PROCESSING") return "info";
   if (status === "PENDING") return "warning";
   return "neutral";
+}
+
+function receiptPrintState(receipt: Receipt) {
+  const jobs = receipt.printJobs ?? [];
+  if (jobs.some((job) => job.status === "PENDING" || job.status === "PROCESSING")) {
+    return { label: "Printer navbatida", tone: "info" as const };
+  }
+  if (jobs.some((job) => job.status === "SUBMITTED")) {
+    return { label: "Drayver qabul qildi", note: "Qog'ozni tekshiring", tone: "warning" as const };
+  }
+  if (jobs.some((job) => job.status === "PRINTED")) {
+    return { label: "Eski holat", note: "Qog'oz tasdiqlanmagan", tone: "warning" as const };
+  }
+  if (receipt.printed) return { label: "Qo'lda belgilangan", tone: "neutral" as const };
+  return { label: "Tasdiq yo'q", tone: "neutral" as const };
 }
 const pageSize = 25;
 
@@ -232,7 +251,7 @@ export function AdminReceiptsPage() {
     { key: "attempts", header: "Urinish", hideOnMobile: true, render: (job) => `${job.attemptCount}/${job.maxAttempts}` },
     { key: "printer", header: "Printer", hideOnMobile: true, render: (job) => job.printer?.name ?? "Zaxira printer" },
     { key: "agent", header: "Agent", hideOnMobile: true, render: (job) => job.attempts[0]?.agentId ?? "—" },
-    { key: "next", header: "Keyingi amal", hideOnMobile: true, render: (job) => job.status === "PRINTED" && job.printedAt ? formatDateTime(job.printedAt) : formatDateTime(job.nextAttemptAt) },
+    { key: "next", header: "Holat vaqti", hideOnMobile: true, render: (job) => job.status === "SUBMITTED" ? formatDateTime(job.submittedAt) : job.status === "PRINTED" && job.printedAt ? formatDateTime(job.printedAt) : formatDateTime(job.nextAttemptAt) },
   ];
 
   async function retryPrintJob(job: PrintJob): Promise<void> {
@@ -293,7 +312,9 @@ export function AdminReceiptsPage() {
   }
 
   const stats = useMemo(() => {
-    const printedCount = receipts.filter((receipt) => receipt.printed).length;
+    const printedCount = receipts.filter((receipt) =>
+      receipt.printed && !receipt.printJobs?.some((job) => job.status === "PRINTED" || job.status === "SUBMITTED"),
+    ).length;
     const amount = receipts.reduce(
       (sum, receipt) => sum + Number(receipt.total ?? 0),
       0,
@@ -366,12 +387,16 @@ export function AdminReceiptsPage() {
     },
     {
       key: "printed",
-      header: "Chop etilgan",
-      render: (receipt) => (
-        <Badge tone={receipt.printed ? "success" : "neutral"} withDot>
-          {receipt.printed ? "Ha" : "Yo'q"}
-        </Badge>
-      ),
+      header: "Chop holati",
+      render: (receipt) => {
+        const state = receiptPrintState(receipt);
+        return (
+          <span className="grid justify-items-start gap-1">
+            <Badge tone={state.tone} withDot>{state.label}</Badge>
+            {state.note ? <span className="text-xs text-mz-text-muted">{state.note}</span> : null}
+          </span>
+        );
+      },
     },
     {
       key: "total",
@@ -398,14 +423,14 @@ export function AdminReceiptsPage() {
         <InfoBox
           description="Shu sahifada"
           icon="printer"
-          label="Chop etilgan"
+        label="Qo'lda belgilangan"
           tone="success"
           value={`${stats.printedCount} ta`}
         />
         <InfoBox
           description="Shu sahifada"
           icon="alert"
-          label="Chop etilmagan"
+          label="Qog'oz tasdig'i yo'q"
           tone={stats.total - stats.printedCount > 0 ? "warning" : "neutral"}
           value={`${stats.total - stats.printedCount} ta`}
         />
@@ -420,10 +445,10 @@ export function AdminReceiptsPage() {
       <Card>
         <CardHeader
           actions={<Button onClick={() => void reloadPrintJobs()} size="sm" variant="secondary">Yangilash</Button>}
-          description="Yangi printer agentining navbati va oxirgi urinishlari"
+          description="Drayver qabul qilgani qog'oz chiqqanini bildirmaydi; natijani printerdan tekshiring."
           title="Chop navbati"
         />
-        <FilterBar><div className="w-56"><FormField label="Navbat holati">{(props) => <Select {...props} value={printJobStatus} onChange={(event) => setPrintJobStatus(event.target.value)}><option value="">Barcha holatlar</option><option value="PENDING">Navbatda</option><option value="PROCESSING">Printerda</option><option value="PRINTED">Chop etildi</option><option value="DEAD_LETTER">Xato bilan to'xtadi</option></Select>}</FormField></div></FilterBar>
+        <FilterBar><div className="w-56"><FormField label="Navbat holati">{(props) => <Select {...props} value={printJobStatus} onChange={(event) => setPrintJobStatus(event.target.value)}><option value="">Barcha holatlar</option><option value="PENDING">Navbatda</option><option value="PROCESSING">Printerda</option><option value="SUBMITTED">Drayver qabul qildi</option><option value="PRINTED">Eski chop holati</option><option value="DEAD_LETTER">Xato bilan to'xtadi</option></Select>}</FormField></div></FilterBar>
         {printJobsError ? <ErrorState message={printJobsError} onRetry={() => void reloadPrintJobs()} /> : <DataTable caption="Chop etish ishlari" columns={printJobColumns} emptyDescription="Yangi chek yaratilganda u shu yerda ko‘rinadi." emptyTitle="Chop navbati bo‘sh" getRowKey={(job) => job.id} isLoading={isPrintJobsLoading} rowActions={(job) => job.status === "DEAD_LETTER" || job.status === "PENDING" || (job.status === "PROCESSING" && Boolean(job.leaseExpiresAt) && new Date(job.leaseExpiresAt!).getTime() <= Date.now()) ? <RowAction icon="send" label={busyPrintJobId === job.id ? "Qayta yuborilmoqda" : `${job.receipt.receiptNumber} — qayta navbatga yuborish`} onClick={() => void retryPrintJob(job)} /> : null} rows={printJobs} />}
       </Card>
       <Card>
@@ -593,9 +618,10 @@ export function AdminReceiptsPage() {
         ) : (
           <div className="grid gap-4 text-sm">
             <div className="flex flex-wrap gap-2">
-              <Badge tone={detail.printed ? "success" : "warning"} withDot>
-                {detail.printed ? "Chop etilgan" : "Chop etilmagan"}
+              <Badge tone={receiptPrintState(detail).tone} withDot>
+                {receiptPrintState(detail).label}
               </Badge>
+              {receiptPrintState(detail).note ? <p className="text-sm text-mz-text-muted">{receiptPrintState(detail).note}</p> : null}
               {detail.branch ? (
                 <Badge tone="neutral">{detail.branch.name}</Badge>
               ) : null}
@@ -619,9 +645,9 @@ export function AdminReceiptsPage() {
                   {formatDateTime(detail.createdAt)}
                 </dd>
               </div>
-              {detail.printedAt ? (
+              {detail.printedAt && !detail.printJobs?.some((job) => job.status === "PRINTED" || job.status === "SUBMITTED") ? (
                 <div className="flex justify-between gap-4">
-                  <dt className="text-mz-text-muted">Chop etilgan</dt>
+                  <dt className="text-mz-text-muted">Qo'lda belgilangan vaqt</dt>
                   <dd className="text-mz-text">
                     {formatDateTime(detail.printedAt)}
                   </dd>

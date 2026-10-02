@@ -15,11 +15,13 @@ try {
   await client.query(`
     DO $$
     BEGIN
-      CREATE TYPE "PrintJobStatus" AS ENUM ('PENDING', 'PROCESSING', 'PRINTED', 'DEAD_LETTER', 'CANCELLED');
+      CREATE TYPE "PrintJobStatus" AS ENUM ('PENDING', 'PROCESSING', 'PRINTED', 'SUBMITTED', 'DEAD_LETTER', 'CANCELLED');
     EXCEPTION
       WHEN duplicate_object THEN NULL;
     END
     $$;
+
+    ALTER TYPE "PrintJobStatus" ADD VALUE IF NOT EXISTS 'SUBMITTED';
 
     CREATE TABLE IF NOT EXISTS "print_jobs" (
       "id" TEXT NOT NULL,
@@ -55,6 +57,8 @@ try {
       CONSTRAINT "print_attempts_pkey" PRIMARY KEY ("id"),
       CONSTRAINT "print_attempts_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "print_jobs"("id") ON DELETE CASCADE ON UPDATE CASCADE
     );
+
+    ALTER TABLE "print_jobs" ADD COLUMN IF NOT EXISTS "submittedAt" TIMESTAMP(3);
 
     CREATE UNIQUE INDEX IF NOT EXISTS "print_attempts_jobId_leaseToken_key" ON "print_attempts"("jobId", "leaseToken");
     CREATE INDEX IF NOT EXISTS "print_jobs_branchId_status_nextAttemptAt_idx" ON "print_jobs"("branchId", "status", "nextAttemptAt");

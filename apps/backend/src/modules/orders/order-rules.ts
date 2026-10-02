@@ -362,6 +362,11 @@ export function orderInclude() {
         printed: true,
         printedAt: true,
         createdAt: true,
+        printJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { status: true, submittedAt: true },
+        },
       },
     },
     statusHistory: {
