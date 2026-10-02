@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Banknote,
   Check,
+  Delete,
   Clock3,
   History,
   Minus,
@@ -27,6 +28,11 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { ApiRequestError, apiFetch } from "../../../lib/api";
+import {
+  appendCashInput,
+  removeCashDigit,
+  sanitizeCashInput,
+} from "../../../lib/cash-entry.mjs";
 import { readOfflinePosCatalogSnapshot } from "../../../lib/offline-pos-bootstrap.mjs";
 import {
   parsePosCheckoutDraft,
@@ -1061,15 +1067,76 @@ function PosTerminal() {
                   <input
                     className={styles.input}
                     inputMode="numeric"
-                    type="number"
-                    min="0"
-                    step="1"
+                    type="text"
+                    maxLength={12}
+                    pattern="[0-9]*"
                     placeholder="0"
                     disabled={isSubmitting}
                     value={cashReceived}
-                    onChange={(event) => setCashReceived(event.target.value)}
+                    onChange={(event) =>
+                      setCashReceived(sanitizeCashInput(event.target.value))
+                    }
                   />
                 </label>
+                <div
+                  className={styles.cashKeypad}
+                  role="group"
+                  aria-label="Naqd pul raqamlari"
+                >
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map(
+                    (key) => (
+                      <button
+                        className={styles.cashKey}
+                        disabled={isSubmitting}
+                        key={key}
+                        onClick={() =>
+                          setCashReceived((current) =>
+                            appendCashInput(current, key),
+                          )
+                        }
+                        type="button"
+                      >
+                        {key}
+                      </button>
+                    ),
+                  )}
+                  <button
+                    className={styles.cashKey}
+                    disabled={isSubmitting}
+                    onClick={() =>
+                      setCashReceived((current) =>
+                        appendCashInput(current, "000"),
+                      )
+                    }
+                    type="button"
+                  >
+                    000
+                  </button>
+                  <button
+                    className={styles.cashKey}
+                    disabled={isSubmitting}
+                    onClick={() =>
+                      setCashReceived((current) =>
+                        appendCashInput(current, "0"),
+                      )
+                    }
+                    type="button"
+                  >
+                    0
+                  </button>
+                  <button
+                    aria-label="Oxirgi raqamni o'chirish"
+                    className={`${styles.cashKey} ${styles.cashKeyBackspace}`}
+                    disabled={isSubmitting || !cashReceived}
+                    onClick={() =>
+                      setCashReceived((current) => removeCashDigit(current))
+                    }
+                    title="Oxirgi raqamni o'chirish"
+                    type="button"
+                  >
+                    <Delete size={19} aria-hidden="true" />
+                  </button>
+                </div>
                 <div className={styles.quickCash}>
                   <button
                     disabled={isSubmitting}

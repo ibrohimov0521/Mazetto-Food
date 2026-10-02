@@ -327,3 +327,11 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Tekshiruv: Desktop to'liq TAP suite 108/108, TypeScript, scoped ESLint, desktop compile, preload build va diff tekshiruvi o'tdi. Yetti printerli test 4 ta concurrency chegarasini, nosoz printerni ajratishni va retry'da nusxa takrorlanmasligini tasdiqlaydi.
 - Desktop package 0.1.92; hosted CI, release va deploy ushbu PR'dan keyin kuzatiladi. Har bir filialdagi haqiqiy printer, qog'oz va Windows drayveri bilan acceptance sinovi hanuz kerak.
 - Admin'da printer soniga sun'iy limit qo'yilmagan; amaliy moslik Windows drayveri yoki mos ESC/POS tarmoq printeriga bog'liq. Barcha apparat modellari sinovsiz ishlaydi deb kafolat bermaymiz.
+
+## 29. Parallel POS checkout idempotency (2026-10-02)
+
+- CI-only PostgreSQL 18 `cash_qa` integration test submits the same cash POS checkout concurrently with one idempotency key.
+- It verifies both requests resolve to one order and that the payment operation, payment, kitchen ticket and kitchen events are created exactly once; balance changes once.
+- PR #200 merged as `610948202c6252602e828e67225acfbde48e5248`. PR CI and main CI passed, including the disposable DB integration and production-startup smoke. Dokploy deploy and production smoke passed; production tag matches main. No runtime source changed in this test-only stage.
+- The earlier CI attempt exposed a test-only kitchen wrapper that omitted a method; the wrapper was corrected before merge and the full PostgreSQL run passed.
+- Remaining real-world gates are unchanged: exact hostname/account needed to reproduce the staff-login denial, and physical 58/80 mm printer acceptance on the restaurant hardware.
