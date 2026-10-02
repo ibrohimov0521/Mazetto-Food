@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
 import { ExpressAdapter } from "@nestjs/platform-express";
+import type { Request, Response } from "express";
 import { jsonBigIntReplacer } from "../src/common/serialization/json-bigint-replacer";
 
 test("JSON responses serialize BigInt revisions as precision-safe strings", () => {
@@ -27,7 +28,7 @@ test("JSON responses serialize BigInt revisions as precision-safe strings", () =
 test("Express JSON responses use the BigInt replacer for nested Prisma records", async () => {
   const app = new ExpressAdapter().getInstance();
   app.set("json replacer", jsonBigIntReplacer);
-  app.get("/", (_request, response) => {
+  app.get("/", (_request: Request, response: Response) => {
     response.json({ data: { order: { branch: { realtimeRevision: 42n } } } });
   });
   const server = app.listen(0, "127.0.0.1");
@@ -43,7 +44,9 @@ test("Express JSON responses use the BigInt replacer for nested Prisma records",
     });
   } finally {
     await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
+      server.close((error: Error | undefined) =>
+        error ? reject(error) : resolve(),
+      );
     });
   }
 });
