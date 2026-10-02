@@ -159,6 +159,68 @@ test("gateway queues an upstream-unavailable cash sale only with a stable idempo
   }
 });
 
+test("offline mode refuses to queue sensitive staff actions even with idempotency keys", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-sensitive-offline-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  let upstreamOnline = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      if (!upstreamOnline) throw new Error("network unavailable");
+      return jsonResponse({ ok: true });
+    },
+  });
+
+  const blockedActions = [
+    "/api/v1/payments/payment-1/refund",
+    "/api/v1/cash-register/transfers/transfer-1/accept",
+    "/api/v1/courier/orders/order-1/assign",
+    "/api/v1/shifts/shift-1/force-close",
+    "/api/v1/receipts/receipt-1/reprint",
+    "/api/v1/staff",
+  ];
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    upstreamOnline = false;
+
+    for (const [index, pathname] of blockedActions.entries()) {
+      const response = await fetch(`http://127.0.0.1:${port}${pathname}`, {
+        method: "POST",
+        headers: {
+          Authorization: desktopJwt("cashier-sensitive-offline", "branch-1"),
+          "Content-Type": "application/json",
+          "Idempotency-Key": `sensitive-offline-${index}`,
+        },
+        body: JSON.stringify({
+          idempotencyKey: `sensitive-offline-${index}`,
+          amount: 1_000,
+        }),
+      });
+
+      assert.equal(response.status, 503, pathname);
+      assert.equal(
+        (await response.json()).error.code,
+        "DESKTOP_OFFLINE",
+        pathname,
+      );
+    }
+
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.summary().sendingCommands, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway does not queue an ambiguous upstream-unavailable write without idempotency", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
