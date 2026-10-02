@@ -915,6 +915,96 @@ test("gateway fast-fails to local cache and outbox while offline, then replays o
     await rm(directory, { recursive: true, force: true });
   }
 });
+test("independent offline terminals replay each cash sale once", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-multi-terminal-"));
+  let online = false;
+  const replayedIdempotencyKeys: string[] = [];
+  const terminals = ["terminal-a", "terminal-b"].map((terminalId) => {
+    const store = new DesktopStore(join(directory, `${terminalId}.sqlite`));
+    const gateway = new DesktopGateway({
+      host: "127.0.0.1",
+      port: 0,
+      upstreamApiUrl: "https://api.example.test/api/v1",
+      store,
+      probeIntervalMs: 25,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (!online) throw new Error("offline");
+        if (url.endsWith("/health")) return jsonResponse({ ok: true });
+        if (url.endsWith("/pos/orders")) {
+          const idempotencyKey = new Headers(init?.headers).get(
+            "Idempotency-Key",
+          );
+          assert.ok(idempotencyKey);
+          replayedIdempotencyKeys.push(idempotencyKey);
+          return jsonResponse({ order: { id: `server-${idempotencyKey}` } });
+        }
+        return jsonResponse({ ok: true });
+      },
+    });
+    return { terminalId, store, gateway };
+  });
+
+  const authorization = desktopJwt("cashier-multi-terminal", "branch-1");
+  assert.notEqual(terminals[0]?.store.deviceId(), terminals[1]?.store.deviceId());
+
+  try {
+    const ports = await Promise.all(
+      terminals.map(({ gateway }) => gateway.start()),
+    );
+    const offlineSales = await Promise.all(
+      terminals.map(({ terminalId }, index) => {
+        const port = ports[index];
+        assert.ok(port);
+        return fetch(`http://127.0.0.1:${port}/api/v1/pos/orders`, {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            "Idempotency-Key": `${terminalId}-sale-1`,
+          },
+          body: JSON.stringify({
+            idempotencyKey: `${terminalId}-sale-1`,
+            items: [{ productId: "product-1", quantity: 1 }],
+            payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+          }),
+        });
+      }),
+    );
+
+    assert.deepEqual(
+      offlineSales.map((response) => response.status),
+      [202, 202],
+    );
+    assert.deepEqual(
+      terminals.map(({ store }) => store.summary().pendingCommands),
+      [1, 1],
+    );
+
+    online = true;
+    await Promise.all(
+      terminals.map(({ store }) =>
+        waitFor(
+          () =>
+            store.summary().pendingCommands === 0 &&
+            store.summary().sendingCommands === 0,
+          2_500,
+        ),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.deepEqual(replayedIdempotencyKeys.sort(), [
+      "terminal-a-sale-1",
+      "terminal-b-sale-1",
+    ]);
+    assert.equal(new Set(replayedIdempotencyKeys).size, 2);
+  } finally {
+    await Promise.all(terminals.map(({ gateway }) => gateway.stop()));
+    for (const { store } of terminals) store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("offline sale prints locally, syncs once, and skips duplicate server receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-e2e-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
