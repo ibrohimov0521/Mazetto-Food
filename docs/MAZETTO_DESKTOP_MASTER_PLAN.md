@@ -521,4 +521,10 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 
 - Gateway regression coverage now forces an upstream outage and confirms refunds, cash-transfer acceptance, courier assignment, forced shift close, receipt reprint and staff creation remain online-only even when an idempotency key is supplied.
 - The test also confirms no pending or sending outbox command is created. No new offline action was enabled by this test-only checkpoint.
-- Verification: Desktop tests 118/118, typecheck and scoped ESLint passed locally. No application runtime code changed, so this checkpoint does not require a new Desktop installer; production release gates still run independently.
+- Verification: Desktop tests 118/118, typecheck and scoped ESLint passed locally. PR #196 merged as `7fbc744`; main CI (run 36962274660), Desktop Release gate (run 36962274654), and Dokploy deploy (run 36962469951) succeeded. Production smoke was skipped because no server service changed; this test-only checkpoint does not change Desktop runtime behavior.
+
+## D6 independent offline terminal replay (2026-10-02)
+
+- Added a two-gateway regression with separate SQLite stores for two terminals in one branch. Each records a cash sale while offline, then reconnects and replays its distinct idempotency key once.
+- Verification: focused gateway tests 43/43, full Desktop suite 119/119, Desktop typecheck and scoped ESLint passed locally.
+- This simulates independent local queues against a shared upstream stub. Actual restaurant network outages, production database contention and physical-printer behavior still require field acceptance; this does not claim 100% offline operation.
