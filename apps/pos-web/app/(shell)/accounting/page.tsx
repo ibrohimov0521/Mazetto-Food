@@ -56,7 +56,7 @@ const moneyLinks: MoneyLink[] = [
   {
     href: "/admin/receipts",
     title: "Cheklar",
-    description: "Chop etilgan va chop etilmagan cheklar",
+    description: "Chek holati va printer drayveri javobi",
     roles: [SUPER, MANAGER, ACCOUNTANT],
     permission: "RECEIPT_VIEW",
   },

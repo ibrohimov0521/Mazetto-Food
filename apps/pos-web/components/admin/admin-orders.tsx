@@ -135,6 +135,7 @@ type OrderReceipt = {
   printed: boolean;
   printedAt?: string | null;
   createdAt?: string;
+  printJobs?: { status: "PENDING" | "PROCESSING" | "PRINTED" | "SUBMITTED" | "DEAD_LETTER" | "CANCELLED"; submittedAt?: string | null }[];
 };
 
 type BulkOrderStatusResult = {
@@ -1413,9 +1414,15 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                     Chek {receipt.receiptNumber}
                   </p>
                   <p className="text-xs text-mz-text-muted">
-                    {receipt.printed
-                      ? `Chop etilgan · ${formatDateTime(receipt.printedAt)}`
-                      : "Hali chop etilmagan"}
+                    {receipt.printJobs?.some((job) => job.status === "PENDING" || job.status === "PROCESSING")
+                      ? "Printer navbatida"
+                      : receipt.printJobs?.some((job) => job.status === "SUBMITTED")
+                        ? "Drayver qabul qildi; qog'ozni tekshiring"
+                        : receipt.printJobs?.some((job) => job.status === "PRINTED")
+                          ? "Eski holat; qog'ozni tekshiring"
+                          : receipt.printed
+                            ? `Qo'lda belgilangan · ${formatDateTime(receipt.printedAt)}`
+                            : "Qog'oz tasdig'i yo'q"}
                   </p>
                 </div>
                 {canSeeReceipt ? (

@@ -55,6 +55,11 @@ export class ReceiptsService {
         total: true,
         printed: true,
         printedAt: true,
+        printJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { status: true, submittedAt: true },
+        },
         createdAt: true,
         orderId: true,
         branch: { select: { id: true, code: true, name: true } },
@@ -96,6 +101,7 @@ export class ReceiptsService {
         leaseExpiresAt: true,
         lastError: true,
         printedAt: true,
+        submittedAt: true,
         createdAt: true,
         branch: { select: { id: true, name: true, code: true } },
         receipt: { select: { id: true, receiptNumber: true, total: true, content: true, order: { select: { orderNumber: true, displayOrderNumber: true } } } },
@@ -166,6 +172,16 @@ export class ReceiptsService {
             items: true,
             payments: { include: { method: true, acceptedBy: true } },
             closedBy: true,
+          },
+        },
+        printJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 10,
+          select: {
+            status: true,
+            printedAt: true,
+            submittedAt: true,
+            updatedAt: true,
           },
         },
       },
@@ -327,26 +343,19 @@ export class ReceiptsService {
           leaseToken,
           leaseExpiresAt: { gt: now },
         },
-        data: { status: "PRINTED", printedAt: now, leaseToken: null, leaseExpiresAt: null },
+        data: {
+          status: "SUBMITTED",
+          submittedAt: now,
+          printedAt: null,
+          leaseToken: null,
+          leaseExpiresAt: null,
+        },
       });
       if (completed.count !== 1) throw new BadRequestException("Print lease is no longer valid");
       await tx.printAttempt.update({
         where: { jobId_leaseToken: { jobId: id, leaseToken } },
-        data: { outcome: "PRINTED", completedAt: now },
+        data: { outcome: "SUBMITTED", completedAt: now },
       });
-      const remaining = await tx.printJob.count({
-        where: {
-          receiptId: job.receiptId,
-          id: { not: id },
-          status: { notIn: ["PRINTED", "CANCELLED"] },
-        },
-      });
-      if (remaining === 0) {
-        await tx.receipt.update({
-          where: { id: job.receiptId },
-          data: { printed: true, printedAt: now },
-        });
-      }
     });
     return this.prisma.printJob.findUnique({ where: { id } });
   }
@@ -417,7 +426,11 @@ export class ReceiptsService {
     if (!job) throw new NotFoundException("Print job not found");
     resolveBranchScope(user, job.branchId);
 
-    if (job.status === "PRINTED" || job.status === "CANCELLED") {
+    if (
+      job.status === "PRINTED" ||
+      job.status === "SUBMITTED" ||
+      job.status === "CANCELLED"
+    ) {
       throw new BadRequestException("Completed print job cannot be retried");
     }
     const now = new Date();
@@ -448,6 +461,7 @@ export class ReceiptsService {
           leaseExpiresAt: null,
           lastError: null,
           printedAt: null,
+          submittedAt: null,
         },
       });
       if (retried.count !== 1) {

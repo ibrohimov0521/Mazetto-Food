@@ -29,6 +29,7 @@ import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
 import { createSettingsStub } from "./settings-stub";
 import { createDeadLetterStub } from "./dead-letter-stub";
+import { IdempotencyService } from "../src/common/idempotency/idempotency.service";
 import { TelegramCustomerScreenService } from "../src/modules/telegram/telegram-customer-screen.service";
 import { TelegramCheckoutSessionService } from "../src/modules/telegram/telegram-checkout-session.service";
 import { TelegramCartService } from "../src/modules/telegram/telegram-cart.service";
@@ -233,7 +234,13 @@ function createServices(prisma: PrismaService) {
   const branchesService = new BranchesService(prisma);
   const inventoryService = new InventoryService(prisma);
   const kitchenService = new KitchenService(prisma, gateway as never);
-  const ordersService = new OrdersService(prisma, inventoryService, kitchenService);
+  const ordersService = new OrdersService(
+    prisma,
+    inventoryService,
+    kitchenService,
+    undefined,
+    new IdempotencyService(prisma),
+  );
   const orderEngine = new CustomerOrderEngineService(
     prisma,
     branchesService,

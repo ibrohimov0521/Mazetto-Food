@@ -1202,7 +1202,7 @@ test("virtual ESC/POS printer receives cancellation once and job completes", asy
       }
       if (url.endsWith("/complete")) {
         completed += 1;
-        return jsonResponse({ id: "job-1", status: "PRINTED" });
+        return jsonResponse({ id: "job-1", status: "SUBMITTED" });
       }
       throw new Error(`Unexpected request: ${url}`);
     },

@@ -22,6 +22,12 @@ type Receipt = {
   total: string;
   printed: boolean;
   printedAt?: string | null;
+  printJobs?: {
+    status: "PENDING" | "PROCESSING" | "PRINTED" | "SUBMITTED" | "DEAD_LETTER" | "CANCELLED";
+    printedAt?: string | null;
+    submittedAt?: string | null;
+    updatedAt: string;
+  }[];
   createdAt: string;
   content?: {
     branchName?: string;
@@ -58,6 +64,26 @@ type Receipt = {
     }[];
   };
 };
+
+function receiptOutputState(receipt: Receipt) {
+  const jobs = receipt.printJobs ?? [];
+  if (jobs.some((job) => job.status === "PENDING" || job.status === "PROCESSING")) {
+    return { label: "Printer navbatida", tone: "waiting", note: "Printer holati tekshirilmoqda." };
+  }
+  if (jobs.some((job) => job.status === "SUBMITTED")) {
+    return { label: "Drayver qabul qildi", tone: "waiting", note: "Bu qog'oz chiqqanini tasdiqlamaydi. Printerdan tekshiring." };
+  }
+  if (jobs.some((job) => job.status === "PRINTED")) {
+    return { label: "Eski printer holati", tone: "waiting", note: "Qog'oz chiqqanini alohida tekshiring." };
+  }
+  if (jobs.some((job) => job.status === "DEAD_LETTER")) {
+    return { label: "Printerda xato", tone: "waiting", note: "Navbatdagi xatoni ko'rib, printer sozlamasini tekshiring." };
+  }
+  if (receipt.printed) {
+    return { label: "Qo'lda belgilangan", tone: "ready", note: "Bu tizimdagi belgi; qog'ozni ko'z bilan tekshiring." };
+  }
+  return { label: "Tasdiq yo'q", tone: "waiting", note: "" };
+}
 
 export default function ReceiptPage() {
   const params = useParams<{ id?: string | string[] }>();
@@ -128,8 +154,25 @@ function ReceiptPreview({ id }: { id: string }) {
         });
         if (!active) return;
         setReceipt(latest);
+        const jobs = latest.printJobs ?? [];
+        const hasActiveJobs = jobs.some((job) => job.status === "PENDING" || job.status === "PROCESSING");
         if (latest.printed) {
-          setPrintNotice("Chek printer navbatiga muvaffaqiyatli uzatildi.");
+          setPrintNotice("Chop holati belgilandi. Qog'ozni printerdan tekshiring.");
+          setIsWaitingForPrint(false);
+          return;
+        }
+        if (!hasActiveJobs && jobs.some((job) => job.status === "SUBMITTED")) {
+          setPrintNotice("Printer drayveri chekni qabul qildi. Qog'oz chiqqanini tekshiring.");
+          setIsWaitingForPrint(false);
+          return;
+        }
+        if (!hasActiveJobs && jobs.some((job) => job.status === "PRINTED")) {
+          setPrintNotice("Eski printer holati olindi. Qog'oz chiqqanini printerdan tekshiring.");
+          setIsWaitingForPrint(false);
+          return;
+        }
+        if (!hasActiveJobs && jobs.some((job) => job.status === "DEAD_LETTER")) {
+          setPrintNotice("Printer ishini bajara olmadi. Navbatdagi xatoni va printerni tekshiring.");
           setIsWaitingForPrint(false);
           return;
         }
@@ -187,7 +230,8 @@ function ReceiptPreview({ id }: { id: string }) {
       ? "BUYURTMA BEKOR QILINDI"
       : isRefund
         ? "TO'LOV QAYTARILDI"
-        : "MIJOZ CHEKI";
+      : "MIJOZ CHEKI";
+  const outputState = receipt ? receiptOutputState(receipt) : null;
   const reason = isCancellation
     ? receipt?.content?.cancellationReason
     : isRefund
@@ -337,15 +381,16 @@ function ReceiptPreview({ id }: { id: string }) {
               <h3 className={styles.subheading}>Chop etish holati</h3>
               <div
                 className={styles.badge}
-                data-tone={receipt.printed ? "ready" : "waiting"}
+                data-tone={outputState?.tone ?? "waiting"}
               >
-                {receipt.printed ? "Chop etilgan" : "Chop etilmagan"}
+                {outputState?.label ?? "Tekshirilmoqda"}
               </div>
-              {receipt.printed && receipt.printedAt ? (
+              {receipt.printed && receipt.printedAt && !receipt.printJobs?.some((job) => job.status === "PRINTED" || job.status === "SUBMITTED") ? (
                 <p className={styles.muted}>
                   {formatDateTime(receipt.printedAt)}
                 </p>
               ) : null}
+              {outputState?.note ? <p className={styles.muted}>{outputState.note}</p> : null}
               {printNotice ? <p className={styles.note} role="status">{printNotice}</p> : null}
               <div className={styles.receiptActions}>
                 <button

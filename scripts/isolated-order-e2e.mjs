@@ -39,6 +39,7 @@ const admin = new Client({ connectionString: adminUrl.toString() });
 await admin.connect();
 try {
   await admin.query(`CREATE DATABASE "${databaseName}"`);
+  run(["--filter", "backend", "prisma:generate"]);
   run(["--filter", "backend", "prisma:migrate:deploy"]);
   run(["--filter", "backend", "exec", "prisma", "db", "seed"]);
   run([
