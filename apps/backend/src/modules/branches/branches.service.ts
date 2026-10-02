@@ -395,8 +395,11 @@ export class BranchesService {
   }
 
   private toAdminBranch<T extends BranchWithHours>(branch: T) {
+    const { realtimeRevision, ...branchData } = branch;
+
     return {
-      ...branch,
+      ...branchData,
+      realtimeRevision: realtimeRevision.toString(),
       coordinates: this.coordinates(branch),
       isOpen: this.isBranchOpen(branch),
     };

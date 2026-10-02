@@ -29,6 +29,51 @@ test("global branch list is restricted to the actor's sole active tenant", async
   assert.deepEqual(where, { tenantId: "tenant-a" });
 });
 
+test("admin branch responses serialize realtime revisions as JSON-safe strings", async () => {
+  const service = new BranchesService({
+    branch: {
+      findMany: async () => [
+        {
+          id: "branch-a",
+          code: "branch-a",
+          tenantId: "tenant-a",
+          realtimeRevision: 42n,
+          name: "Branch A",
+          address: null,
+          phone: null,
+          latitude: null,
+          longitude: null,
+          timezone: "Asia/Tashkent",
+          isActive: true,
+          isTemporarilyClosed: false,
+          acceptsOrders: true,
+          deliveryEnabled: true,
+          pickupEnabled: true,
+          sortOrder: 0,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+          workingHours: [],
+          _count: {
+            employees: 0,
+            printers: 0,
+            devices: 0,
+            products: 0,
+          },
+        },
+      ],
+    },
+    restaurantTenant: {
+      findMany: async () => [{ id: "tenant-a" }],
+    },
+  } as never);
+
+  const [branch] = await service.listBranches(owner);
+
+  assert.ok(branch);
+  assert.equal(branch.realtimeRevision, "42");
+  assert.doesNotThrow(() => JSON.stringify(branch));
+});
+
 test("foreign tenant branch IDs resolve as not found", async () => {
   let where: unknown;
   const service = new BranchesService({

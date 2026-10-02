@@ -1,5 +1,10 @@
 import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
@@ -596,18 +601,31 @@ export class TelegramCustomerAuthService {
     chatId: string,
     code: string,
   ): Promise<void> {
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: [
-        "MAZETTO FOOD tasdiqlash kodi:",
-        "",
-        `<b>${this.escapeHtml(code)}</b>`,
-        "",
-        "Kod 10 daqiqa amal qiladi. Uni web sahifadagi tasdiqlash oynasiga kiriting.",
-      ].join("\n"),
-      parse_mode: "HTML",
-      reply_markup: { remove_keyboard: true },
-    });
+    try {
+      await this.telegramRequest(
+        "sendMessage",
+        {
+          chat_id: chatId,
+          text: [
+            "MAZETTO FOOD tasdiqlash kodi:",
+            "",
+            `<b>${this.escapeHtml(code)}</b>`,
+            "",
+            "Kod 10 daqiqa amal qiladi. Uni web sahifadagi tasdiqlash oynasiga kiriting.",
+          ].join("\n"),
+          parse_mode: "HTML",
+          reply_markup: { remove_keyboard: true },
+        },
+        { maxAttempts: 2, timeoutMs: 5_000 },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Customer verification code delivery failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+      throw new ServiceUnavailableException(
+        "Telegram orqali tasdiqlash kodi hozir yuborilmadi. Bir ozdan keyin qayta urinib ko'ring.",
+      );
+    }
   }
 
   private async sendCustomerAuthError(
@@ -662,6 +680,7 @@ export class TelegramCustomerAuthService {
   private async telegramRequest(
     method: string,
     payload: unknown,
+    options: { maxAttempts?: number; timeoutMs?: number } = {},
   ): Promise<void> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -669,22 +688,62 @@ export class TelegramCustomerAuthService {
       return;
     }
 
-    const response = await fetch(
-      `https://api.telegram.org/bot${token}/${method}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(8_000),
-      },
-    );
+    const maxAttempts = options.maxAttempts ?? 1;
+    const timeoutMs = options.timeoutMs ?? 8_000;
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(
-        `Telegram ${method} failed with ${response.status}: ${body}`,
-      );
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(
+          `https://api.telegram.org/bot${token}/${method}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+
+        if (!response.ok) {
+          const body = await response.text();
+          throw new Error(
+            `Telegram ${method} failed with ${response.status}: ${body}`,
+          );
+        }
+
+        return;
+      } catch (error) {
+        if (attempt >= maxAttempts || !this.isTransientNetworkError(error)) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
     }
+  }
+
+  private isTransientNetworkError(error: unknown): boolean {
+    if (
+      error instanceof TypeError ||
+      (error instanceof Error &&
+        ["AbortError", "TimeoutError"].includes(error.name))
+    ) {
+      return true;
+    }
+
+    const cause = error instanceof Error
+      ? (error as Error & { cause?: unknown }).cause
+      : null;
+    if (!cause || typeof cause !== "object" || !("code" in cause)) {
+      return false;
+    }
+
+    return [
+      "EAI_AGAIN",
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "ENETUNREACH",
+      "EHOSTUNREACH",
+    ].includes(String(cause.code));
   }
 
   private async answerCustomerCallbackError(
