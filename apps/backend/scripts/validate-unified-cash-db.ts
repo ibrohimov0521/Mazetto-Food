@@ -45,7 +45,26 @@ async function main() {
     const kitchen = new KitchenService(prisma, { emitOrderCreated() {}, emitOrderConfirmed() {}, emitOrderSentToKitchen() {}, emitOrderStatusChanged() {} } as never);
     const payments = new PaymentsService(prisma);
     const courier = new CustomerCourierService(prisma, kitchen, payments);
-    const orders = new OrdersService(prisma, new InventoryService(prisma), kitchen);
+    const posEvents: string[] = [];
+    const observedKitchen = {
+      emitOrderCreated(payload: unknown) {
+        posEvents.push("created");
+        kitchen.emitOrderCreated(payload);
+      },
+      emitOrderConfirmed(payload: unknown) {
+        posEvents.push("confirmed");
+        kitchen.emitOrderConfirmed(payload);
+      },
+      emitOrderSentToKitchen(payload: unknown) {
+        posEvents.push("sent-to-kitchen");
+        kitchen.emitOrderSentToKitchen(payload);
+      },
+    };
+    const orders = new OrdersService(
+      prisma,
+      new InventoryService(prisma),
+      observedKitchen as never,
+    );
     const sourceShift = await shifts.openShift({ openingBalance: 0 }, worker);
     const targetShift = await shifts.openShift({ openingBalance: 0 }, receiver);
     await assert.rejects(() => shifts.openCourierShift({ openingBalance: 0 }, worker));
@@ -56,7 +75,23 @@ async function main() {
       return { order, link };
     };
 
-    const pos = await orders.createPosCheckout({ idempotencyKey: "cash-qa-pos-" + id, cashReceived: 10000, items: [{ productId: product.id, quantity: 1 }] }, worker);
+    const posIdempotencyKey = "cash-qa-pos-race-" + id;
+    const posInput = {
+      idempotencyKey: posIdempotencyKey,
+      cashReceived: 10000,
+      items: [{ productId: product.id, quantity: 1 }],
+    };
+    const posRetries = await Promise.all([
+      orders.createPosCheckout(posInput, worker),
+      orders.createPosCheckout(posInput, worker),
+    ]);
+    const pos = posRetries[0]!;
+    assert.equal(posRetries[1]!.order.id, pos.order.id);
+    assert.deepEqual(posEvents, ["created", "confirmed", "sent-to-kitchen"]);
+    assert.equal(await prisma.order.count({ where: { id: pos.order.id } }), 1);
+    assert.equal(await prisma.paymentOperation.count({ where: { idempotencyKey: "POS_CHECKOUT:" + posIdempotencyKey } }), 1);
+    assert.equal(await prisma.payment.count({ where: { orderId: pos.order.id } }), 1);
+    assert.equal(await prisma.kitchenTicket.count({ where: { orderId: pos.order.id } }), 1);
     assert.equal(await balance(), 10000);
     const pickup = await online("TAKEAWAY", 20000);
     const ticket = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: pickup.order.id } });
