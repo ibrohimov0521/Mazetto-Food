@@ -71,3 +71,71 @@ test("completed POS checkout replay does not republish order side effects", asyn
   assert.deepEqual(emitted, []);
   assert.equal(notificationLookups, 0);
 });
+
+test("POS checkout replays a committed order after an idempotency collision", async () => {
+  const user: AuthenticatedUser = {
+    id: "user-1",
+    employeeId: "employee-1",
+    branchId: "branch-1",
+    roles: ["CASHIER"],
+    permissions: ["POS_USE"],
+  };
+  const dto: CreatePosCheckoutDto = {
+    idempotencyKey: "parallel-terminal-sale",
+    cashReceived: 25000,
+    items: [{ productId: "product-1", quantity: 1 }],
+  };
+  const idempotencyKey = createPosIdempotencyKey(dto.idempotencyKey);
+  const operation = {
+    id: "operation-1",
+    orderId: "committed-order",
+    requestHash: createPosCheckoutRequestHash(dto, "branch-1", "employee-1"),
+    status: "COMPLETED",
+  };
+  const order = { id: "committed-order", total: new Prisma.Decimal(25000) };
+  const uniqueCollision = new Prisma.PrismaClientKnownRequestError(
+    "Unique constraint failed",
+    { code: "P2002", clientVersion: Prisma.prismaVersion.client },
+  );
+  let transactionAttempts = 0;
+  let operationReads = 0;
+  let orderReads = 0;
+  const prisma = {
+    $transaction: async () => {
+      transactionAttempts += 1;
+      throw uniqueCollision;
+    },
+    paymentOperation: {
+      findUnique: async () => {
+        operationReads += 1;
+        return operation;
+      },
+    },
+    order: {
+      findUnique: async () => {
+        orderReads += 1;
+        return order;
+      },
+    },
+  };
+  const emitted: string[] = [];
+  const service = new OrdersService(
+    prisma as never,
+    {} as never,
+    {
+      emitOrderCreated: () => emitted.push("created"),
+      emitOrderConfirmed: () => emitted.push("confirmed"),
+      emitOrderSentToKitchen: () => emitted.push("sent-to-kitchen"),
+    } as never,
+    { notifyNewOrder: async () => emitted.push("telegram") } as never,
+  );
+
+  const result = await service.createPosCheckout(dto, user);
+
+  assert.equal(transactionAttempts, 1);
+  assert.equal(operationReads, 2);
+  assert.equal(orderReads, 1);
+  assert.equal(result.order.id, order.id);
+  assert.equal(idempotencyKey, "POS_CHECKOUT:parallel-terminal-sale");
+  assert.deepEqual(emitted, []);
+});
