@@ -1691,6 +1691,34 @@
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
+.cashKeypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+}
+.cashKey {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  border: 1px solid #d5e2dd;
+  border-radius: 6px;
+  background: #f8fbf9;
+  color: #07373a;
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.cashKey:hover:not(:disabled) {
+  background: #edf5f0;
+  border-color: #91b8aa;
+}
+.cashKey:active:not(:disabled) {
+  background: #dbece2;
+}
+.cashKeyBackspace {
+  color: #245e55;
+}
 .quickCash {
   display: flex;
   flex-wrap: wrap;
