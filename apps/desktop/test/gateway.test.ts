@@ -1005,29 +1005,36 @@ test("independent offline terminals replay each cash sale once", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
-test("offline sale prints locally, syncs once, and skips duplicate server receipt", async () => {
+test("offline sale and print jobs survive restart before one-time replay", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-e2e-"));
-  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const storePath = join(directory, "test.sqlite");
+  let store = new DesktopStore(storePath);
   const authorization = desktopJwt("cashier-offline-e2e", "branch-1");
   let online = false;
   let replayedSales = 0;
-  const gateway = new DesktopGateway({
-    host: "127.0.0.1",
-    port: 0,
-    upstreamApiUrl: "https://api.example.test/api/v1",
-    store,
-    probeIntervalMs: 25,
-    fetchImpl: async (input) => {
-      const url = String(input);
-      if (!online) throw new Error("offline");
-      if (url.endsWith("/health")) return jsonResponse({ ok: true });
-      if (url.endsWith("/pos/orders")) {
-        replayedSales += 1;
-        return jsonResponse({ order: { id: "server-order-e2e" } });
-      }
-      return jsonResponse({ ok: true });
-    },
-  });
+  const createGateway = (activeStore: DesktopStore) =>
+    new DesktopGateway({
+      host: "127.0.0.1",
+      port: 0,
+      upstreamApiUrl: "https://api.example.test/api/v1",
+      store: activeStore,
+      probeIntervalMs: 25,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (!online) throw new Error("offline");
+        if (url.endsWith("/health")) return jsonResponse({ ok: true });
+        if (url.endsWith("/pos/orders")) {
+          replayedSales += 1;
+          assert.equal(
+            new Headers(init?.headers).get("Idempotency-Key"),
+            "offline-e2e-sale",
+          );
+          return jsonResponse({ order: { id: "server-order-e2e" } });
+        }
+        return jsonResponse({ ok: true });
+      },
+    });
+  let gateway = createGateway(store);
   const printed: string[] = [];
   const localQueue = {
     claim: (types: string[]) => store.claimLocalPrintJob(types),
@@ -1068,6 +1075,16 @@ test("offline sale prints locally, syncs once, and skips duplicate server receip
     );
     assert.equal(response.status, 202);
     assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.summary().pendingPrintJobs, 2);
+    const deviceId = store.deviceId();
+    await gateway.stop();
+    store.close();
+    store = new DesktopStore(storePath);
+    assert.equal(store.deviceId(), deviceId);
+    assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.summary().pendingPrintJobs, 2);
+    gateway = createGateway(store);
+    const restartedPort = await gateway.start();
     const offlinePrinter = new DesktopPrintWorker({
       apiUrl: "https://api.example.test/api/v1",
       printerHost: null,
@@ -1085,6 +1102,12 @@ test("offline sale prints locally, syncs once, and skips duplicate server receip
     await offlinePrinter.tick();
     assert.deepEqual(printed.sort(), ["KITCHEN", "RECEIPT"]);
     online = true;
+    await waitFor(() => gateway.status().mode === "online", 2_500);
+    const reconnectedRead = await fetch(
+      `http://127.0.0.1:${restartedPort}/api/v1/orders`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(reconnectedRead.status, 200);
     await waitFor(
       () =>
         store.summary().pendingCommands === 0 &&
