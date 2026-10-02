@@ -3,6 +3,10 @@ import {
   getMazettoFoodCustomerApiBaseUrl,
   isMazettoFoodHost,
 } from "./mazetto-food-host.mjs";
+import {
+  fetchPublicDataWithRetry,
+  logCatalogUpstreamEvent,
+} from "./public-fetch.mjs";
 
 export type ApiEnvelope<T> = {
   success: boolean;
@@ -73,15 +77,48 @@ async function requestApi<T>(path: string, init?: ApiFetchInit): Promise<T> {
   const signal = requestInit.signal ? AbortSignal.any([requestInit.signal, timeout]) : timeout;
   let response: Response;
   let payload: ApiEnvelope<T>;
+  const isPublicCatalogRequest = init === undefined &&
+    /^\/customer\/(?:home|menu\/(?:categories|products)(?:\/[^/?]+)?)(?:\?[^#]*)?$/.test(path);
+  const startedAt = Date.now();
 
   try {
-    response = await fetch(`${getApiBaseUrl()}${path}`, {
+    const requestUrl = `${getApiBaseUrl()}${path}`;
+    const requestOptions = {
       ...requestInit,
       cache: requestInit.cache ?? "no-store",
       headers: requestHeaders,
       credentials: "include",
       signal,
-    });
+    } satisfies RequestInit;
+    if (isPublicCatalogRequest) {
+      const result = await fetchPublicDataWithRetry(requestUrl, requestOptions, {
+        maxAttempts: 3,
+        retryDelayMs: 200,
+        timeoutMs: 4000,
+      });
+      if (result.response === null) {
+        logCatalogUpstreamEvent({
+          path,
+          status: null,
+          attempts: result.attempts,
+          elapsedMs: Date.now() - startedAt,
+          ...(result.error instanceof Error ? { reason: result.error.name } : {}),
+        });
+        throw result.error;
+      }
+      response = result.response;
+      if (result.attempts > 1 || (!response.ok && response.status !== 404)) {
+        logCatalogUpstreamEvent({
+          path,
+          status: response.status,
+          attempts: result.attempts,
+          elapsedMs: Date.now() - startedAt,
+          recovered: response.ok && result.attempts > 1,
+        });
+      }
+    } else {
+      response = await fetch(requestUrl, requestOptions);
+    }
     payload = await parseEnvelope<T>(response);
   } catch {
     if (requestInit.signal?.aborted) throw requestInit.signal.reason;
