@@ -534,3 +534,9 @@ lifecycle, but it remains inactive until an HTTPS feed is provisioned.
 - Extended the offline sale e2e regression to stop the gateway, close and reopen its SQLite store, confirm the device identity plus pending sale and both local print jobs survive, then reconnect and replay the same idempotency key exactly once.
 - Verification: focused restart regression passed; full Desktop suite 119/119, typecheck, scoped ESLint and diff checks passed locally.
 - This validates a graceful application restart with queued data, not power loss during a physical SQLite write or a real printer outage. Restaurant hardware and network field acceptance remain open; no 100% offline guarantee is claimed.
+
+## D3 POS idempotency collision recovery (2026-10-02)
+
+- Added a backend regression for the unique-key collision path: when a matching completed checkout is already committed, the retry returns that order and emits no duplicate kitchen or Telegram side effects.
+- Verification: backend test suite 495/495, backend typecheck, scoped ESLint and diff checks passed locally.
+- The service-level test simulates the database unique-collision result; it is not a two-transaction PostgreSQL concurrency stress test. No runtime code changed, and deployed multi-terminal/database field acceptance remains open.
