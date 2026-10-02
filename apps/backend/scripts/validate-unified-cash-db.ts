@@ -46,20 +46,29 @@ async function main() {
     const payments = new PaymentsService(prisma);
     const courier = new CustomerCourierService(prisma, kitchen, payments);
     const posEvents: string[] = [];
-    const observedKitchen = {
-      emitOrderCreated(payload: unknown) {
-        posEvents.push("created");
-        kitchen.emitOrderCreated(payload);
+    const observedKitchen = new Proxy(kitchen, {
+      get(target, property) {
+        const value = Reflect.get(target, property, target);
+        if (typeof value === "function") {
+          const event =
+            property === "emitOrderCreated"
+              ? "created"
+              : property === "emitOrderConfirmed"
+                ? "confirmed"
+                : property === "emitOrderSentToKitchen"
+                  ? "sent-to-kitchen"
+                  : null;
+          if (event) {
+            return (...args: unknown[]) => {
+              posEvents.push(event);
+              return Reflect.apply(value, target, args);
+            };
+          }
+          return value.bind(target);
+        }
+        return value;
       },
-      emitOrderConfirmed(payload: unknown) {
-        posEvents.push("confirmed");
-        kitchen.emitOrderConfirmed(payload);
-      },
-      emitOrderSentToKitchen(payload: unknown) {
-        posEvents.push("sent-to-kitchen");
-        kitchen.emitOrderSentToKitchen(payload);
-      },
-    };
+    });
     const orders = new OrdersService(
       prisma,
       new InventoryService(prisma),
