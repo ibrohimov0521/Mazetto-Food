@@ -46,7 +46,7 @@ for (const [name, source] of [
 ] as const) {
   assert.match(
     source,
-    /error\?: \{ message: string \| string\[\] \}/,
+    /error\?: \{ message: string \| string\[\](?:; requestId\?: string)? \}/,
     `${name} konvert tipida "string[]" yo'q — TypeScript yolg'on xavfsizlik beradi.`,
   );
   assert.match(
@@ -56,4 +56,16 @@ for (const [name, source] of [
   );
 }
 
+assert.match(
+  posApi,
+  /error\?: \{ message: string \| string\[\]; requestId\?: string \}/,
+  "pos-web server xatosiga murojaat ID'sini biriktira olmayapti.",
+);
+assert.match(
+  posApi,
+  /withApiErrorReference\(message, response\.status, requestId\)/,
+  "pos-web server xato xabarida murojaat ID'sini ko'rsatmayapti.",
+);
+
 console.log("API konverti validatsiyasi o'tdi");
+
