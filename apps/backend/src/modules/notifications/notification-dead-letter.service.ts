@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { PrismaService } from "../../prisma/prisma.service";
 import { RedisService } from "../../redis/redis.service";
 
 /*
@@ -23,7 +24,7 @@ import { RedisService } from "../../redis/redis.service";
  * esa ikkinchi adapter paydo bo'lganda quriladi.
  */
 
-/** Redis ro'yxati cheksiz o'smasin. */
+/** Redis va PostgreSQL zaxira ro'yxatlari cheksiz o'smasin. */
 const MAX_ENTRIES = 500;
 const REDIS_KEY_PREFIX = "notify:dead:";
 
@@ -42,12 +43,16 @@ export type DeadLetter = {
 export class NotificationDeadLetterService {
   private readonly logger = new Logger(NotificationDeadLetterService.name);
   /*
-   * Redis yo'q bo'lganda ham yo'qotish KO'RINSIN. Chegaralangan: Redis
-   * uzoq vaqt tushib turganda xotira to'lib ketmasligi kerak.
+   * PostgreSQL ham mavjud bo'lmagandagi oxirgi zaxira. Oddiy Redis nosozligi
+   * yozuvni doimiy bazada saqlaydi; bu xarita faqat ikkala ombor ham
+   * ishlamagandagina kerak.
    */
   private readonly fallback = new Map<string, DeadLetter[]>();
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(
+    private readonly redis: RedisService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async record(input: {
     tenantId: string;
@@ -101,11 +106,7 @@ export class NotificationDeadLetterService {
       }
     }
 
-    const entries = this.fallbackEntries(input.tenantId);
-    entries.unshift(entry);
-    if (entries.length > MAX_ENTRIES) {
-      entries.length = MAX_ENTRIES;
-    }
+    await this.recordDatabaseFallback(entry);
     return entry;
   }
 
@@ -113,14 +114,17 @@ export class NotificationDeadLetterService {
     const safeLimit = Math.min(Math.max(limit, 1), MAX_ENTRIES);
     const key = REDIS_KEY_PREFIX + tenantId;
     const client = this.redis.getClient();
+    let redisEntries: DeadLetter[] = [];
 
     if (client) {
       try {
         const rows = await client.lrange(key, 0, MAX_ENTRIES - 1);
-        const redisEntries = rows
+        redisEntries = rows
           .map((row) => this.parse(row))
-          .filter((row): row is DeadLetter => row !== null && row.tenantId === tenantId);
-        return this.mergeEntries(redisEntries, this.fallback.get(tenantId) ?? [], safeLimit);
+          .filter(
+            (row): row is DeadLetter =>
+              row !== null && row.tenantId === tenantId,
+          );
       } catch (error) {
         this.logger.warn(
           `O'lik xatlarni o'qib bo'lmadi: ${
@@ -130,7 +134,27 @@ export class NotificationDeadLetterService {
       }
     }
 
-    return this.fallbackEntries(tenantId).slice(0, safeLimit);
+    let databaseEntries: DeadLetter[] = [];
+    try {
+      const rows = await this.prisma.notificationDeadLetter.findMany({
+        where: { tenantId },
+        orderBy: [{ failedAt: "desc" }, { id: "desc" }],
+        take: MAX_ENTRIES,
+      });
+      databaseEntries = rows.map((row) => this.fromDatabase(row));
+    } catch (error) {
+      this.logger.warn(
+        `O'lik xatlarni bazadan o'qib bo'lmadi: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return this.mergeEntries(
+      redisEntries,
+      [...databaseEntries, ...(this.fallback.get(tenantId) ?? [])],
+      safeLimit,
+    );
   }
 
   /**
@@ -140,6 +164,7 @@ export class NotificationDeadLetterService {
   async take(tenantId: string, messageId: string): Promise<DeadLetter | null> {
     const key = REDIS_KEY_PREFIX + tenantId;
     const client = this.redis.getClient();
+    let removedEntry: DeadLetter | null = null;
 
     if (client) {
       try {
@@ -153,10 +178,7 @@ export class NotificationDeadLetterService {
              * indeks siljib, boshqa yozuv o'chib ketardi.
              */
             const removed = await client.lrem(key, 1, row);
-            if (removed > 0) {
-              this.removeFallback(tenantId, messageId);
-              return entry;
-            }
+            if (removed > 0) removedEntry = entry;
             break;
           }
         }
@@ -169,9 +191,76 @@ export class NotificationDeadLetterService {
       }
     }
 
-    return this.removeFallback(tenantId, messageId);
+    try {
+      const entry = await this.prisma.notificationDeadLetter.findFirst({
+        where: { tenantId, messageId },
+      });
+      if (entry) {
+        const result = await this.prisma.notificationDeadLetter.deleteMany({
+          where: { tenantId, messageId },
+        });
+        if (result.count > 0) removedEntry ??= this.fromDatabase(entry);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `O'lik xatni bazadan o'chirib bo'lmadi: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return this.removeFallback(tenantId, messageId) ?? removedEntry;
   }
 
+  private async recordDatabaseFallback(entry: DeadLetter): Promise<void> {
+    try {
+      await this.prisma.notificationDeadLetter.create({
+        data: {
+          tenantId: entry.tenantId,
+          messageId: entry.messageId,
+          kind: entry.kind,
+          orderId: entry.orderId,
+          error: entry.error,
+          failedAt: new Date(entry.failedAt),
+          attempts: entry.attempts,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `O'lik xatni bazada saqlab bo'lmadi, faqat xotira zaxirasi ishlatildi: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      const entries = this.fallbackEntries(entry.tenantId);
+      entries.unshift(entry);
+      if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES;
+      return;
+    }
+
+    try {
+      const expired = await this.prisma.notificationDeadLetter.findMany({
+        where: { tenantId: entry.tenantId },
+        orderBy: [{ failedAt: "desc" }, { id: "desc" }],
+        skip: MAX_ENTRIES,
+        take: MAX_ENTRIES,
+        select: { id: true },
+      });
+      if (expired.length > 0) {
+        await this.prisma.notificationDeadLetter.deleteMany({
+          where: {
+            tenantId: entry.tenantId,
+            id: { in: expired.map(({ id }) => id) },
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `O'lik xat zaxirasini cheklab bo'lmadi: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
   private mergeEntries(
     primary: DeadLetter[],
     fallback: DeadLetter[],
@@ -186,7 +275,10 @@ export class NotificationDeadLetterService {
       .slice(0, limit);
   }
 
-  private removeFallback(tenantId: string, messageId: string): DeadLetter | null {
+  private removeFallback(
+    tenantId: string,
+    messageId: string,
+  ): DeadLetter | null {
     const entries = this.fallbackEntries(tenantId);
     const index = entries.findIndex((entry) => entry.messageId === messageId);
     if (index === -1) return null;
@@ -202,6 +294,25 @@ export class NotificationDeadLetterService {
     return entries;
   }
 
+  private fromDatabase(row: {
+    tenantId: string;
+    messageId: string;
+    kind: string;
+    orderId: string;
+    error: string;
+    failedAt: Date;
+    attempts: number;
+  }): DeadLetter {
+    return {
+      tenantId: row.tenantId,
+      messageId: row.messageId,
+      kind: row.kind,
+      orderId: row.orderId,
+      error: row.error,
+      failedAt: row.failedAt.toISOString(),
+      attempts: row.attempts,
+    };
+  }
   private parse(row: string): DeadLetter | null {
     try {
       return JSON.parse(row) as DeadLetter;
