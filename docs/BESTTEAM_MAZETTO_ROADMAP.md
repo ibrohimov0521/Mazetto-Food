@@ -341,4 +341,11 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Telegram HTTP 200 responses with API-level `ok: false` are now treated as failures; Telegram-confirmed `ok: true` is required before a retry record is removed.
 - A retry with Telegram configuration missing or an order that can no longer be resolved leaves the original dead-letter visible. A failed send returns HTTP 503; missing or unsupported records remain HTTP 404.
 - Verification: backend suite 503/503, backend typecheck, scoped ESLint, retry/controller regressions, and backend production build passed. No schema or migration changed.
-- This is not a durable queue: dead letters remain Redis-backed with process-memory fallback, and per-restaurant Telegram credentials/webhooks are not implemented. Hosted CI and backend production deploy are still pending; no live Telegram or staging side effects were sent. Keep the second-tenant activation gate closed.
+- PR #206 merged as `c4e0d8cd17d281036e34d22ad31a616b3fc32d25`; hosted CI passed, backend production deploy completed, and production smoke passed 24/24. `main` and the `production` tag were verified at the same commit. No live Telegram or staging side effects were sent.
+- This is not a durable queue: dead letters remain Redis-backed with process-memory fallback, and per-restaurant Telegram credentials/webhooks are not implemented. Keep the second-tenant activation gate closed.
+
+## 31. Dead-letter visibility after Redis recovery (2026-10-03)
+
+- Redis pipeline command-level failures now enter the fallback path even when `exec()` itself resolves. Once Redis is available again, tenant-scoped listings merge Redis and process-memory entries by message ID and newest failure time; a successful retry removes both copies.
+- Tests cover Redis reconnect, partial pipeline success/deduplication, and cleanup after retry. Local verification: backend suite 505/505, HTTP retry suite 3/3, backend typecheck, and scoped ESLint passed.
+- This only fixes visibility within the current process. Process-memory fallback is still lost on process restart; a separately persisted queue/worker and tenant-specific bot/webhook configuration remain release gates. No schema or migration changed, and no second tenant was activated.

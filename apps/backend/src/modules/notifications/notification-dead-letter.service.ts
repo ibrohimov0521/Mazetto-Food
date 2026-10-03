@@ -81,11 +81,16 @@ export class NotificationDeadLetterService {
          * Ikkalasi bitta pipeline'da: orasida uzilish bo'lsa ro'yxat
          * chegaradan oshib ketardi.
          */
-        await client
+        const results = await client
           .pipeline()
           .lpush(REDIS_KEY_PREFIX + input.tenantId, JSON.stringify(entry))
           .ltrim(REDIS_KEY_PREFIX + input.tenantId, 0, MAX_ENTRIES - 1)
           .exec();
+        if (!results || results.length !== 2) {
+          throw new Error("Redis did not confirm all dead-letter commands");
+        }
+        const pipelineError = results.find(([error]) => error)?.[0];
+        if (pipelineError) throw pipelineError;
         return entry;
       } catch (error) {
         this.logger.warn(
@@ -111,10 +116,11 @@ export class NotificationDeadLetterService {
 
     if (client) {
       try {
-        const rows = await client.lrange(key, 0, safeLimit - 1);
-        return rows
+        const rows = await client.lrange(key, 0, MAX_ENTRIES - 1);
+        const redisEntries = rows
           .map((row) => this.parse(row))
           .filter((row): row is DeadLetter => row !== null && row.tenantId === tenantId);
+        return this.mergeEntries(redisEntries, this.fallback.get(tenantId) ?? [], safeLimit);
       } catch (error) {
         this.logger.warn(
           `O'lik xatlarni o'qib bo'lmadi: ${
@@ -146,11 +152,14 @@ export class NotificationDeadLetterService {
              * o'qish va o'chirish orasida ro'yxatga yangi yozuv qo'shilsa,
              * indeks siljib, boshqa yozuv o'chib ketardi.
              */
-            await client.lrem(key, 1, row);
-            return entry;
+            const removed = await client.lrem(key, 1, row);
+            if (removed > 0) {
+              this.removeFallback(tenantId, messageId);
+              return entry;
+            }
+            break;
           }
         }
-        return null;
       } catch (error) {
         this.logger.warn(
           `O'lik xatni o'chirib bo'lmadi: ${
@@ -160,6 +169,24 @@ export class NotificationDeadLetterService {
       }
     }
 
+    return this.removeFallback(tenantId, messageId);
+  }
+
+  private mergeEntries(
+    primary: DeadLetter[],
+    fallback: DeadLetter[],
+    limit: number,
+  ): DeadLetter[] {
+    const entries = new Map<string, DeadLetter>();
+    for (const entry of [...primary, ...fallback]) {
+      entries.set(entry.messageId, entry);
+    }
+    return [...entries.values()]
+      .sort((left, right) => right.failedAt.localeCompare(left.failedAt))
+      .slice(0, limit);
+  }
+
+  private removeFallback(tenantId: string, messageId: string): DeadLetter | null {
     const entries = this.fallbackEntries(tenantId);
     const index = entries.findIndex((entry) => entry.messageId === messageId);
     if (index === -1) return null;

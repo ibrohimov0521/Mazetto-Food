@@ -10,6 +10,42 @@ function withoutRedis(): NotificationDeadLetterService {
   } as unknown as RedisService);
 }
 
+function fakeRedisClient(lists: Map<string, string[]>, failPipeline = false) {
+  return {
+    pipeline() {
+      const operations: (() => void)[] = [];
+      return {
+        lpush(key: string, value: string) {
+          operations.push(() => { const rows = lists.get(key) ?? []; rows.unshift(value); lists.set(key, rows); });
+          return this;
+        },
+        ltrim(key: string, start: number, end: number) {
+          operations.push(() => lists.set(key, (lists.get(key) ?? []).slice(start, end + 1)));
+          return this;
+        },
+        async exec() {
+          operations.forEach((operation) => operation());
+          return failPipeline
+            ? [[new Error("simulated Redis command failure"), null], [null, "OK"]]
+            : operations.map(() => [null, "OK"]);
+        },
+      };
+    },
+    async lrange(key: string, start: number, end: number) {
+      return (lists.get(key) ?? []).slice(start, end + 1);
+    },
+    async lrem(key: string, count: number, value: string) {
+      const rows = lists.get(key) ?? [];
+      let removed = 0;
+      for (let index = rows.length - 1; index >= 0 && removed < count; index -= 1) {
+        if (rows[index] === value) { rows.splice(index, 1); removed += 1; }
+      }
+      lists.set(key, rows);
+      return removed;
+    },
+  };
+}
+
 test("yuborilmagan bildirishnoma yozib olinadi", async () => {
   const service = withoutRedis();
   const entry = await service.record({ tenantId: "tenant-a",
@@ -138,7 +174,10 @@ test("Redis dead letters use isolated tenant keys", async () => {
           operations.push(() => lists.set(key, (lists.get(key) ?? []).slice(start, end + 1)));
           return this;
         },
-        async exec() { operations.forEach((operation) => operation()); return []; },
+        async exec() {
+          operations.forEach((operation) => operation());
+          return operations.map(() => [null, "OK"]);
+        },
       };
     },
     async lrange(key: string, start: number, end: number) {
@@ -162,4 +201,41 @@ test("Redis dead letters use isolated tenant keys", async () => {
   assert.equal((await service.list("tenant-b"))[0]?.messageId, entryB.messageId);
   assert.equal(await service.take("tenant-b", entryA.messageId), null);
   assert.equal((await service.take("tenant-a", entryA.messageId))?.tenantId, "tenant-a");
+});
+
+test("Redis tiklangach fallback dead letter ko'rinadi va o'chiriladi", async () => {
+  const lists = new Map<string, string[]>();
+  const client = fakeRedisClient(lists);
+  const state: { client: unknown | null } = { client: null };
+  const service = new NotificationDeadLetterService({ getClient: () => state.client } as never);
+  const entry = await service.record({
+    tenantId: "tenant-a",
+    kind: "staff_new_order",
+    orderId: "order-a",
+    error: "Redis vaqtincha uzildi",
+    attempts: 3,
+  });
+
+  state.client = client;
+  assert.equal((await service.list("tenant-a"))[0]?.messageId, entry.messageId);
+  assert.equal((await service.take("tenant-a", entry.messageId))?.messageId, entry.messageId);
+  assert.equal((await service.list("tenant-a")).length, 0);
+});
+
+test("Redis pipeline ichki xatosi fallback yozuvini yashirmaydi yoki takrorlamaydi", async () => {
+  const client = fakeRedisClient(new Map(), true);
+  const service = new NotificationDeadLetterService({ getClient: () => client } as never);
+  const entry = await service.record({
+    tenantId: "tenant-a",
+    kind: "staff_new_order",
+    orderId: "order-a",
+    error: "Telegram yuborilmadi",
+    attempts: 3,
+  });
+
+  const listed = await service.list("tenant-a");
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0]?.messageId, entry.messageId);
+  assert.equal((await service.take("tenant-a", entry.messageId))?.messageId, entry.messageId);
+  assert.equal((await service.list("tenant-a")).length, 0);
 });
