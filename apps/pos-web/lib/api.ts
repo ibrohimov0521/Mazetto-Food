@@ -5,6 +5,7 @@ import {
   getApiFreshnessScope,
   recordApiResponseFreshness,
 } from "./offline-freshness.mjs";
+import { withApiErrorReference } from "./api-error-reference.mjs";
 import { readSession, writeSession } from "./session";
 
 /*
@@ -19,7 +20,7 @@ import { readSession, writeSession } from "./session";
 type ApiEnvelope<T> = {
   success: boolean;
   data?: T;
-  error?: { message: string | string[] };
+  error?: { message: string | string[]; requestId?: string };
 };
 
 /** Massiv bo'lsa o'qiladigan qilib birlashtiradi. */
@@ -37,6 +38,7 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = "ApiRequestError";
@@ -115,9 +117,13 @@ export async function apiFetch<T>(
   const payload = await parseEnvelope<T>(response);
 
   if (!response.ok || !payload.success || payload.data === undefined) {
+    const message =
+      readEnvelopeMessage(payload.error?.message) ?? "Request failed";
+    const requestId = payload.error?.requestId;
     throw new ApiRequestError(
-      readEnvelopeMessage(payload.error?.message) ?? "Request failed",
+      withApiErrorReference(message, response.status, requestId),
       response.status,
+      requestId,
     );
   }
 
@@ -246,3 +252,4 @@ async function parseEnvelope<T>(response: Response): Promise<ApiEnvelope<T>> {
     };
   }
 }
+
