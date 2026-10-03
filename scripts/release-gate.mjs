@@ -110,13 +110,16 @@ function describeChanges(base, sha, label) {
     "customer-web",
     "pos-web",
     "telegram-bot",
+    "telegram-staff-bot",
     "print-agent",
     "media",
-  ].filter(
-    (app) =>
-      changed.some((file) => file.startsWith(`apps/${app}/`)) ||
-      (shared && app !== "media"),
-  );
+  ].filter((app) => {
+    const sourceApp = app === "telegram-staff-bot" ? "telegram-bot" : app;
+    return (
+      changed.some((file) => file.startsWith(`apps/${sourceApp}/`)) ||
+      (shared && app !== "media")
+    );
+  });
 
   const migrations = [
     ...new Set(

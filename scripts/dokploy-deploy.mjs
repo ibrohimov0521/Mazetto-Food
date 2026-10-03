@@ -28,6 +28,7 @@ const ORDER = [
   "pos-web",
   "platform-web",
   "telegram-bot",
+  "telegram-staff-bot",
   "media",
 ];
 
@@ -37,6 +38,7 @@ const APP_ID_ENV = {
   "pos-web": "DOKPLOY_APP_POS_WEB",
   "platform-web": "DOKPLOY_APP_PLATFORM_WEB",
   "telegram-bot": "DOKPLOY_APP_TELEGRAM_BOT",
+  "telegram-staff-bot": "DOKPLOY_APP_TELEGRAM_STAFF_BOT",
   media: "DOKPLOY_APP_MEDIA",
 };
 
