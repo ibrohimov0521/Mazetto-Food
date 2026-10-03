@@ -6,10 +6,14 @@ production state.
 
 ## Deployed and verified
 
-- Production is on `main` commit `c0047f80b32178671dea9ee11fddced03e3bc03e`.
+- The running application images are from `c0047f80b32178671dea9ee11fddced03e3bc03e`.
   Deploy workflow run [#249](https://github.com/ibrohimov0521/Mazetto-Food/actions/runs/37137394204)
-  completed successfully.
-- The read-only production release smoke passed **27/27**. It checks API and
+  completed successfully for that application revision.
+- Later production-tag advances to `0b24fa0` and `23b0504` contained
+  documentation only; the deploy planner did not rebuild application images.
+  The latest docs-only deploy
+  [completed successfully](https://github.com/ibrohimov0521/Mazetto-Food/actions/runs/37140408262).
+- The read-only production release smoke passed **27/27** after that deploy. It checks API and
   database health, public menu/settings, unauthenticated access controls,
   customer routes on the root and `www` hostnames, checkout auth URL, POS
   health/login/admin routes, owner-console login, media health, and every
