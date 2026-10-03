@@ -156,3 +156,10 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Customer A/B socketlari ulandi; A logout A sessiyasini darhol uzdi, B socket faol qoldi, A access token bilan qayta ulanish rad etildi.
 - Yakuniy cleanup'dan so'ng A/B test tenant, branch, user, membership, domain, customer/session, setting, order, order event/outbox, role/permission fixture'lari yo'q qilindi; DB boshlang'ich baseline'i va health qayta tasdiqlandi. Synthetic .invalid hostlar ishlatildi; real SMS, bot yoki production ma'lumotlariga tegilmadi.
 - Bu realtime/auth-cache darvozasini staging uchun yopadi; Mazetto Food production va ikkinchi tenant holatiga tegilmagan. Keyingi tartib: durable worker/queue va idempotency + bot mapping audit; keyin offline/online order, POS, kitchen, courier va receipt/printer regression; undan keyin backup restore/rollback hamda har production domen uchun read-only login/refresh smoke. Har bir release gate alohida staging'da o'tmaguncha production deploy/migration yoki ikkinchi tenant activation yo'q.
+## Telegram dead-letter durable fallback migration (2026-10-04)
+
+- PR #218 commit `a04ebd0b7382931c3b48c0f2fd58f82222223f04`; hosted CI run #594 passed, including applying all migrations to a clean PostgreSQL database.
+- Before staging migration, a verified backup was created at `/home/javohir/backups/mazetto-staging/mazetto-20261003-184541644.dump`; SHA-256: `11961d026032934290073c2ea06d785f7c268f1c8e2ca41f1efd5ef8e13a9996`. The archive contained 675 entries and passed `pg_restore --list`.
+- Staging database `mazetto_staging` was at 54 migrations before the change. Migration `20261003190000_notification_dead_letters` was applied with `prisma migrate deploy`; afterward 55/55 migrations were up to date.
+- The new `notification_dead_letters` table exists and contains 0 rows. Staging API health returned HTTP 200 with PostgreSQL `ok` and Redis `connected`.
+- This verifies the additive schema migration only. The backend code from PR #218 has not yet been deployed to staging; production database, services, Telegram, and restaurant orders were untouched.

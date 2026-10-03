@@ -3,11 +3,89 @@ import test from "node:test";
 import { NotificationDeadLetterService } from "../src/modules/notifications/notification-dead-letter.service";
 import type { RedisService } from "../src/redis/redis.service";
 
-/** Redis yo'q — zaxira (xotira) yo'li sinaladi. */
-function withoutRedis(): NotificationDeadLetterService {
-  return new NotificationDeadLetterService({
-    getClient: () => null,
-  } as unknown as RedisService);
+type StoredDeadLetter = {
+  id: number;
+  tenantId: string;
+  messageId: string;
+  kind: string;
+  orderId: string;
+  error: string;
+  failedAt: Date;
+  attempts: number;
+};
+
+function memoryDatabase(failPrune = false) {
+  const rows = new Map<string, StoredDeadLetter>();
+  let nextId = 1;
+  const notificationDeadLetter = {
+    async create({ data }: { data: Omit<StoredDeadLetter, "id"> }) {
+      const row = { ...data, id: nextId++ };
+      rows.set(`${data.tenantId}:${data.messageId}`, row);
+      return row;
+    },
+    async findMany({
+      where,
+      skip = 0,
+      take,
+    }: {
+      where: { tenantId: string };
+      skip?: number;
+      take?: number;
+    }) {
+      if (failPrune && skip > 0) throw new Error("simulated prune failure");
+      const matching = [...rows.values()]
+        .filter((row) => row.tenantId === where.tenantId)
+        .sort(
+          (left, right) =>
+            right.failedAt.getTime() - left.failedAt.getTime() ||
+            right.id - left.id,
+        );
+      return matching.slice(skip, take === undefined ? undefined : skip + take);
+    },
+    async findFirst({
+      where,
+    }: {
+      where: { tenantId: string; messageId: string };
+    }) {
+      return rows.get(`${where.tenantId}:${where.messageId}`) ?? null;
+    },
+    async deleteMany({
+      where,
+    }: {
+      where: {
+        tenantId: string;
+        messageId?: string;
+        id?: { in: number[] };
+      };
+    }) {
+      let count = 0;
+      for (const [key, row] of rows) {
+        const matches =
+          row.tenantId === where.tenantId &&
+          (where.messageId ? row.messageId === where.messageId : true) &&
+          (where.id ? where.id.in.includes(row.id) : true);
+        if (matches) {
+          rows.delete(key);
+          count += 1;
+        }
+      }
+      return { count };
+    },
+  };
+  return {
+    rows,
+    client: { notificationDeadLetter },
+  };
+}
+
+/** Redis yo'q — xat yozuvlari PostgreSQL zaxirasiga tushadi. */
+function withoutRedis(
+  database = memoryDatabase(),
+): NotificationDeadLetterService {
+  return new NotificationDeadLetterService(
+    { getClient: () => null } as unknown as RedisService,
+    database.client as never,
+  );
 }
 
 function fakeRedisClient(lists: Map<string, string[]>, failPipeline = false) {
@@ -94,14 +172,16 @@ test("eng yangisi ro'yxat boshida", async () => {
   assert.equal(listed[0]?.orderId, "yangi");
 });
 
-test("ro'yxat chegaralangan — xotira to'lib ketmaydi", async () => {
+test("ro'yxat chegaralangan — PostgreSQL zaxirasi to'lib ketmaydi", async () => {
   /*
    * Redis uzoq vaqt tushib turganda har buyurtma zaxira ro'yxatga
-   * tushadi. Chegarasiz bu jarayonni yeb qo'yardi.
+   * tushadi. Chegarasiz bu jarayon bazani to'ldirib yuborardi.
    */
-  const service = withoutRedis();
+  const database = memoryDatabase();
+  const service = withoutRedis(database);
   for (let i = 0; i < 600; i += 1) {
-    await service.record({ tenantId: "tenant-a",
+    await service.record({
+      tenantId: "tenant-a",
       kind: "k",
       orderId: `order-${i}`,
       error: "x",
@@ -110,8 +190,23 @@ test("ro'yxat chegaralangan — xotira to'lib ketmaydi", async () => {
   }
   const listed = await service.list("tenant-a", 500);
   assert.equal(listed.length, 500);
+  assert.equal(database.rows.size, 500);
   // Chegara eng ESKISINI tashlaydi, eng yangisini emas.
   assert.equal(listed[0]?.orderId, "order-599");
+});
+
+test("zaxirani tozalash xatosi yangi dead letter yozuvini yo'qotmaydi", async () => {
+  const database = memoryDatabase(true);
+  const service = withoutRedis(database);
+  const entry = await service.record({
+    tenantId: "tenant-a",
+    kind: "staff_new_order",
+    orderId: "order-a",
+    error: "Telegram 502",
+    attempts: 3,
+  });
+
+  assert.equal((await service.list("tenant-a"))[0]?.messageId, entry.messageId);
 });
 
 test("take yozuvni olib tashlaydi va ikkinchi marta null qaytaradi", async () => {
@@ -193,7 +288,7 @@ test("Redis dead letters use isolated tenant keys", async () => {
       return removed;
     },
   };
-  const service = new NotificationDeadLetterService({ getClient: () => client } as never);
+  const service = new NotificationDeadLetterService({ getClient: () => client } as never, memoryDatabase().client as never);
   const entryA = await service.record({ tenantId: "tenant-a", kind: "staff_new_order", orderId: "order-a", error: "x", attempts: 1 });
   const entryB = await service.record({ tenantId: "tenant-b", kind: "staff_new_order", orderId: "order-b", error: "x", attempts: 1 });
   assert.deepEqual([...lists.keys()].sort(), ["notify:dead:tenant-a", "notify:dead:tenant-b"]);
@@ -203,11 +298,15 @@ test("Redis dead letters use isolated tenant keys", async () => {
   assert.equal((await service.take("tenant-a", entryA.messageId))?.tenantId, "tenant-a");
 });
 
-test("Redis tiklangach fallback dead letter ko'rinadi va o'chiriladi", async () => {
+test("Redis uzilganda yozuv restartdan keyin PostgreSQL'dan tiklanadi", async () => {
   const lists = new Map<string, string[]>();
   const client = fakeRedisClient(lists);
+  const database = memoryDatabase();
   const state: { client: unknown | null } = { client: null };
-  const service = new NotificationDeadLetterService({ getClient: () => state.client } as never);
+  const service = new NotificationDeadLetterService(
+    { getClient: () => state.client } as never,
+    database.client as never,
+  );
   const entry = await service.record({
     tenantId: "tenant-a",
     kind: "staff_new_order",
@@ -216,15 +315,25 @@ test("Redis tiklangach fallback dead letter ko'rinadi va o'chiriladi", async () 
     attempts: 3,
   });
 
+  const restartedService = new NotificationDeadLetterService(
+    { getClient: () => state.client } as never,
+    database.client as never,
+  );
   state.client = client;
-  assert.equal((await service.list("tenant-a"))[0]?.messageId, entry.messageId);
-  assert.equal((await service.take("tenant-a", entry.messageId))?.messageId, entry.messageId);
-  assert.equal((await service.list("tenant-a")).length, 0);
+  assert.equal(
+    (await restartedService.list("tenant-a"))[0]?.messageId,
+    entry.messageId,
+  );
+  assert.equal(
+    (await restartedService.take("tenant-a", entry.messageId))?.messageId,
+    entry.messageId,
+  );
+  assert.equal((await restartedService.list("tenant-a")).length, 0);
 });
 
 test("Redis pipeline ichki xatosi fallback yozuvini yashirmaydi yoki takrorlamaydi", async () => {
   const client = fakeRedisClient(new Map(), true);
-  const service = new NotificationDeadLetterService({ getClient: () => client } as never);
+  const service = new NotificationDeadLetterService({ getClient: () => client } as never, memoryDatabase().client as never);
   const entry = await service.record({
     tenantId: "tenant-a",
     kind: "staff_new_order",

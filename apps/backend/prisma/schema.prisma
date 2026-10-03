@@ -282,6 +282,7 @@ model RestaurantTenant {
   domains                        TenantDomain[]
   platformSites                  PlatformSite[]
   memberships                    TenantMembership[]
+  notificationDeadLetters        NotificationDeadLetter[]
   auditLogs                      AuditLog[]
   customers                      Customer[]
   customerVerificationChallenges CustomerVerificationChallenge[]
@@ -305,6 +306,24 @@ model TenantDomain {
 
   @@index([tenantId, status])
   @@map("tenant_domains")
+}
+
+model NotificationDeadLetter {
+  id        Int      @id @default(autoincrement())
+  tenantId  String
+  messageId String
+  kind      String
+  orderId   String
+  error     String
+  failedAt  DateTime
+  attempts  Int
+  createdAt DateTime @default(now())
+
+  tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, messageId])
+  @@index([tenantId, failedAt])
+  @@map("notification_dead_letters")
 }
 
 model BranchWorkingHour {

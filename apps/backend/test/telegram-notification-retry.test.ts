@@ -47,9 +47,67 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
       },
     },
   };
-  const deadLetters = new NotificationDeadLetterService({
-    getClient: () => null,
-  } as never);
+  type StoredDeadLetter = {
+    id: number;
+    tenantId: string;
+    messageId: string;
+    kind: string;
+    orderId: string;
+    error: string;
+    failedAt: Date;
+    attempts: number;
+  };
+  const persistedDeadLetters = new Map<string, StoredDeadLetter>();
+  let nextDeadLetterId = 1;
+  const notificationDeadLetter = {
+    async create({ data }: { data: Omit<StoredDeadLetter, "id"> }) {
+      const row = { ...data, id: nextDeadLetterId++ };
+      persistedDeadLetters.set(`${row.tenantId}:${row.messageId}`, row);
+      return row;
+    },
+    async findMany({
+      where,
+      skip = 0,
+      take,
+    }: {
+      where: { tenantId: string };
+      skip?: number;
+      take?: number;
+    }) {
+      return [...persistedDeadLetters.values()]
+        .filter((row) => row.tenantId === where.tenantId)
+        .sort(
+          (left, right) =>
+            right.failedAt.getTime() - left.failedAt.getTime() ||
+            right.id - left.id,
+        )
+        .slice(skip, take === undefined ? undefined : skip + take);
+    },
+    async findFirst({
+      where,
+    }: {
+      where: { tenantId: string; messageId: string };
+    }) {
+      return (
+        persistedDeadLetters.get(`${where.tenantId}:${where.messageId}`) ?? null
+      );
+    },
+    async deleteMany({
+      where,
+    }: {
+      where: { tenantId: string; messageId: string };
+    }) {
+      const key = `${where.tenantId}:${where.messageId}`;
+      const row = persistedDeadLetters.get(key);
+      if (!row) return { count: 0 };
+      persistedDeadLetters.delete(key);
+      return { count: 1 };
+    },
+  };
+  const deadLetters = new NotificationDeadLetterService(
+    { getClient: () => null } as never,
+    { notificationDeadLetter } as never,
+  );
   const service = new TelegramOrderNotificationService(
     prisma as never,
     {} as never,
