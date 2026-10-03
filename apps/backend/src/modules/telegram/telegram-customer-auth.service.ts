@@ -49,6 +49,10 @@ type TelegramUpdate = {
   callback_query?: TelegramCallbackQuery;
   message?: TelegramMessage;
 };
+type TelegramApiResponse = {
+  ok?: boolean;
+  description?: string;
+};
 
 type VerificationDelivery =
   | {
@@ -707,6 +711,13 @@ export class TelegramCustomerAuthService {
           const body = await response.text();
           throw new Error(
             `Telegram ${method} failed with ${response.status}: ${body}`,
+          );
+        }
+
+        const result = (await response.json().catch(() => null)) as TelegramApiResponse | null;
+        if (result?.ok !== true) {
+          throw new Error(
+            `Telegram ${method} rejected the request: ${result?.description ?? "invalid API response"}`,
           );
         }
 

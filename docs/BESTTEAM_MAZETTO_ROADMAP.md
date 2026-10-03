@@ -348,4 +348,11 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 
 - Redis pipeline command-level failures now enter the fallback path even when `exec()` itself resolves. Once Redis is available again, tenant-scoped listings merge Redis and process-memory entries by message ID and newest failure time; a successful retry removes both copies.
 - Tests cover Redis reconnect, partial pipeline success/deduplication, and cleanup after retry. Local verification: backend suite 505/505, HTTP retry suite 3/3, backend typecheck, and scoped ESLint passed.
+- PR #208 merged as `b5085ee213e0fb9957a8874a5ccf9faa49d95020`; hosted CI, backend production deploy, and production smoke passed. `main` and `production` were verified at the same commit.
 - This only fixes visibility within the current process. Process-memory fallback is still lost on process restart; a separately persisted queue/worker and tenant-specific bot/webhook configuration remain release gates. No schema or migration changed, and no second tenant was activated.
+
+## 32. Telegram customer-code delivery confirmation (2026-10-03)
+
+- Customer-code delivery now parses Telegram's JSON result and only reports success when the API returns `ok: true`; HTTP 200 with `ok: false` becomes a sanitized service-unavailable response instead of a false success.
+- A mock regression covers Telegram rejection without exposing its raw description to the customer. This does not identify the cause of prior production 500s; request-level backend logs and staging access are still needed for that diagnosis.
+- Local verification: backend suite 506/506, HTTP retry suite 3/3, backend typecheck/build, and scoped ESLint passed. No schema or migration changed.

@@ -15,6 +15,13 @@ function createService() {
   );
 }
 
+function telegramResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 async function withTelegramEnvironment(run: () => Promise<void>) {
   const previousToken = process.env.TELEGRAM_BOT_TOKEN;
   const previousFetch = globalThis.fetch;
@@ -38,7 +45,7 @@ test("customer verification retries a transient Telegram network failure once", 
     globalThis.fetch = (async () => {
       attempts += 1;
       if (attempts === 1) throw new TypeError("fetch failed");
-      return new Response(null, { status: 200 });
+      return telegramResponse({ ok: true, result: { message_id: 1 } });
     }) as typeof fetch;
 
     const result = await createService().deliverVerificationCode({
@@ -49,6 +56,29 @@ test("customer verification retries a transient Telegram network failure once", 
 
     assert.equal(result.status, "SENT");
     assert.equal(attempts, 2);
+  });
+});
+
+test("HTTP 200 with Telegram ok=false is treated as failed code delivery", async () => {
+  await withTelegramEnvironment(async () => {
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts += 1;
+      return telegramResponse({ ok: false, description: "chat not found" });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      createService().deliverVerificationCode({
+        tenantId: "tenant-a",
+        phone: "+998901234567",
+        code: "123456",
+      }),
+      (error: unknown) =>
+        error instanceof ServiceUnavailableException &&
+        error.message.includes("Bir ozdan keyin qayta urinib") &&
+        !error.message.includes("chat not found"),
+    );
+    assert.equal(attempts, 1);
   });
 });
 
