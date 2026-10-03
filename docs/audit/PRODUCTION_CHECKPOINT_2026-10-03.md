@@ -54,11 +54,13 @@ production state.
   made.
 - The production smoke is a read-only HTTP check, not authenticated business
   acceptance.
-- A full local monorepo test run was not repeated from the server worktree:
-  its installed Corepack/pnpm launcher currently fails before starting pnpm
-  under the server's Node runtime. CI on the deployed commit was green in the
-  preceding release check; fix the server-side toolchain before relying on local
-  package-level verification again.
+- A full local monorepo test run was not repeated on the production host,
+  to avoid running CPU- and memory-heavy builds beside live services. The
+  non-interactive SSH PATH selects Node 22.22.1/Corepack 0.24.0, which fails
+  before pnpm starts. The installed NVM toolchain works when explicitly loaded:
+  `source /home/javohir/.nvm/nvm.sh && nvm use 22.23.2` (Node 22.23.2,
+  Corepack 0.34.6). Full package verification should run in GitHub CI; the
+  deployed application commit had a green CI run.
 - A separate customer monitoring agent still lacks its own bot credentials.
   Those secrets must not be copied from another service without the owner's
   explicit approval; the primary customer webhook is a distinct, healthy path.
