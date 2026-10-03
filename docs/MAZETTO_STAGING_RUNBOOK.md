@@ -160,6 +160,17 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 
 - PR #218 commit `a04ebd0b7382931c3b48c0f2fd58f82222223f04`; hosted CI run #594 passed, including applying all migrations to a clean PostgreSQL database.
 - Before staging migration, a verified backup was created at `/home/javohir/backups/mazetto-staging/mazetto-20261003-184541644.dump`; SHA-256: `11961d026032934290073c2ea06d785f7c268f1c8e2ca41f1efd5ef8e13a9996`. The archive contained 675 entries and passed `pg_restore --list`.
-- Staging database `mazetto_staging` was at 54 migrations before the change. Migration `20261003190000_notification_dead_letters` was applied with `prisma migrate deploy`; afterward 55/55 migrations were up to date.
+- The previously deployed staging image reported 54 migrations before the DLQ migration. After `20261003190000_notification_dead_letters` was applied, that older image reported 55/55. The merged `main` image contains two earlier migrations absent from that image; its first status check correctly surfaced them as pending. See the rollout record below.
 - The new `notification_dead_letters` table exists and contains 0 rows. Staging API health returned HTTP 200 with PostgreSQL `ok` and Redis `connected`.
-- This verifies the additive schema migration only. The backend code from PR #218 has not yet been deployed to staging; production database, services, Telegram, and restaurant orders were untouched.
+- Production database and services, real Telegram delivery, and restaurant orders were untouched.
+
+## Staging backend rollout (2026-10-04)
+
+- PR #218 was squash-merged to `main` as `2ed50cd121889c79b2754544a5a43ba4df55a9f1`; hosted CI passed before merge. The staging backend image was built from that merged tree: tag `mazetto-staging-api-crmkze:2ed50cd`, image ID `sha256:b39703709682274be78d5a563035988493cf579d811ef6b9f24e7adacb845f0a`.
+- Before changing the staging service, the previous image `sha256:80ad57427f01486a39aa141ccdab450eaf2c6f7f049b6ebe79a6969fdc2c2087` was retained as `mazetto-staging-api-crmkze:rollback-2ed50cd`.
+- The new image was deployed only to Swarm service `mazetto-staging-api-crmkze`. The Dokploy browser session was unauthenticated, so this was a direct staging-only Swarm update, not a Dokploy UI deployment. No production service was changed.
+- Before resolving the two pending historical migrations, a fresh staging-only backup was created at `/home/javohir/backups/mazetto-staging/mazetto-20261004-before-pending-staging-migrations.dump`; SHA-256: `4c5526c18b188aac783597595782534246d7c7fa7d0074a80a1925708e6d5bee`. `pg_restore --list` succeeded and returned 700 archive entries.
+- The merged image reported 57 migrations, with `20260930130000_branch_realtime_revision` and `20261002180000_print_driver_submission_status` pending. Both were applied to staging using the image's Prisma CLI and `prisma migrate deploy`; final status: 57/57 up to date.
+- The new task is running the expected image. `/api/v1/health` returned HTTP 200 with PostgreSQL `ok` and Redis `connected`; `notification_dead_letters` contains 0 rows.
+- The post-rollout staging A/B harness passed: tenant membership/cache isolation, order event delivery/reconnect, customer logout revocation, verified/unknown host handling, report/audit scope, OTP sessions, and media isolation. Synthetic `.invalid` host fixtures were cleaned up; no real Telegram/SMS delivery occurred. After cleanup, health remained 200 and migrations remained 57/57.
+- The rollback image remains available locally. This rollout validates startup, schema compatibility, and health; it does not prove live Telegram delivery or all restaurant workflows. Production migration/deploy, public staging access, and second-tenant activation remain closed.

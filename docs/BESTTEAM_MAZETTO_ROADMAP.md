@@ -356,3 +356,12 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Customer-code delivery now parses Telegram's JSON result and only reports success when the API returns `ok: true`; HTTP 200 with `ok: false` becomes a sanitized service-unavailable response instead of a false success.
 - A mock regression covers Telegram rejection without exposing its raw description to the customer. This does not identify the cause of prior production 500s; request-level backend logs and staging access are still needed for that diagnosis.
 - Local verification: backend suite 506/506, HTTP retry suite 3/3, backend typecheck/build, and scoped ESLint passed. No schema or migration changed.
+
+## 33. Telegram dead-letter durable fallback (2026-10-04)
+
+- Telegram dead letters now fall back to tenant-scoped PostgreSQL storage when Redis is unavailable or fails to confirm the pipeline; process memory is the final fallback only if both stores fail.
+- Database fallback and Redis lists are bounded to 500 records per tenant. Listings merge the stores by message ID, and a retry removes the record only after Telegram confirms `ok: true`.
+- PR #218 merged to `main` as `2ed50cd121889c79b2754544a5a43ba4df55a9f1`; hosted CI #595 passed, including migration and production-startup checks. Migration `20261003190000_notification_dead_letters` is additive.
+- The merged backend image is running on the isolated staging API. After a verified staging-only backup, the two older pending migrations were also applied; the staging database now reports 57/57 migrations, API health 200, PostgreSQL OK, and Redis connected. Full evidence is in `docs/MAZETTO_STAGING_RUNBOOK.md`.
+- This preserves and exposes failed notifications; it does not add an automatic queue worker or guarantee delivery. No real Telegram message was sent, and the dead-letter table remains empty.
+- Remaining: design and test an ordered, tenant-scoped durable sender with retry/backoff, idempotency, worker lease/recovery, per-restaurant bot/webhook configuration, and staging mock delivery. Then continue POS/KDS/courier/offline/receipt regressions, physical printer acceptance, restore/rollback rehearsal, and production-domain login smoke. Keep production migrations and second-tenant activation gated.
