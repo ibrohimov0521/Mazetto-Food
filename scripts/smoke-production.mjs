@@ -20,6 +20,7 @@ import { fetchWithTransientRetry } from "./http-with-transient-retry.mjs";
 
 const api = process.env.MAZETTO_API_URL ?? "https://api.mazettofood.uz/api/v1";
 const web = process.env.MAZETTO_WEB_URL ?? "https://mazettofood.uz";
+const www = process.env.MAZETTO_WWW_URL ?? "https://www.mazettofood.uz";
 const pos = process.env.MAZETTO_POS_URL ?? "https://pos.mazettofood.uz";
 const platform = process.env.MAZETTO_PLATFORM_URL ?? "https://admin.mazetto.uz";
 const media = process.env.MAZETTO_MEDIA_URL ?? "https://media.mazettofood.uz";
@@ -91,6 +92,7 @@ const checks = [
     status: [401],
   },
   { name: "customer-web health", url: `${web}/api/health`, status: [200] },
+  { name: "www customer-web health", url: `${www}/api/health`, status: [200] },
   ...["/", "/menu", "/cart", "/checkout", "/orders", "/profile"].map(
     (path) => ({
       name: `customer-web ${path}`,
@@ -98,8 +100,18 @@ const checks = [
       status: [200],
     }),
   ),
+  {
+    name: "www customer-web checkout auth",
+    url: `${www}/checkout?auth=1`,
+    status: [200],
+  },
   { name: "pos-web health", url: `${pos}/api/health`, status: [200] },
   { name: "pos-web /login", url: `${pos}/login`, status: [200] },
+  {
+    name: "pos-web /admin/dashboard",
+    url: `${pos}/admin/dashboard`,
+    status: [200],
+  },
   { name: "BestTeam owner login", url: `${platform}/login`, status: [200] },
   /*
    * Yangi admin sahifasi. 404 qaytarsa pos-web `main` dan ORQADA qolgan —
@@ -114,9 +126,13 @@ const checks = [
   {
     name: "customer catalog media assets",
     custom: async () => {
-      const response = await fetchWithTransientRetry(`${api}/customer/menu/products`, {
-        headers: { "User-Agent": "mazetto-release-smoke" },
-      }, { timeoutMs: 30000 });
+      const response = await fetchWithTransientRetry(
+        `${api}/customer/menu/products`,
+        {
+          headers: { "User-Agent": "mazetto-release-smoke" },
+        },
+        { timeoutMs: 30000 },
+      );
       if (!response.ok) return `${response.status}, katalog olinmadi`;
 
       const payload = await response.json();
@@ -129,7 +145,10 @@ const checks = [
         while (nextProduct < products.length) {
           const index = nextProduct++;
           const product = products[index];
-          const image = typeof product?.imageUrl === "string" ? product.imageUrl.trim() : "";
+          const image =
+            typeof product?.imageUrl === "string"
+              ? product.imageUrl.trim()
+              : "";
           if (!image) {
             failures[index] = `${product?.name ?? "noma'lum"}: imageUrl yo'q`;
             continue;
@@ -139,10 +158,14 @@ const checks = [
             ? image
             : `${media}/${image.replace(/^\/+/, "")}`;
           try {
-            const imageResponse = await fetchWithTransientRetry(imageUrl, {
-              method: "HEAD",
-              redirect: "manual",
-            }, { timeoutMs: 30000 });
+            const imageResponse = await fetchWithTransientRetry(
+              imageUrl,
+              {
+                method: "HEAD",
+                redirect: "manual",
+              },
+              { timeoutMs: 30000 },
+            );
             if (imageResponse.status !== 200) {
               failures[index] =
                 `${product?.name ?? "noma'lum"}: HTTP ${imageResponse.status}`;
@@ -155,9 +178,8 @@ const checks = [
         }
       };
       await Promise.all(
-        Array.from(
-          { length: Math.min(2, products.length) },
-          () => checkNextProduct(),
+        Array.from({ length: Math.min(2, products.length) }, () =>
+          checkNextProduct(),
         ),
       );
 
@@ -179,11 +201,15 @@ async function run(check) {
   }
 
   try {
-    const response = await fetchWithTransientRetry(check.url, {
-      headers: { "User-Agent": "mazetto-release-smoke" },
-      // Yo'naltirish ham xato: masalan /orders login'ga otib yuborsa, 200 emas.
-      redirect: "manual",
-    }, { timeoutMs: 15000 });
+    const response = await fetchWithTransientRetry(
+      check.url,
+      {
+        headers: { "User-Agent": "mazetto-release-smoke" },
+        // Yo'naltirish ham xato: masalan /orders login'ga otib yuborsa, 200 emas.
+        redirect: "manual",
+      },
+      { timeoutMs: 15000 },
+    );
     const text = await response.text();
 
     if (!check.status.includes(response.status)) {
