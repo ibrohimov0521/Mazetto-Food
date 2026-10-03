@@ -335,3 +335,10 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - PR #200 merged as `610948202c6252602e828e67225acfbde48e5248`. PR CI and main CI passed, including the disposable DB integration and production-startup smoke. Dokploy deploy and production smoke passed; production tag matches main. No runtime source changed in this test-only stage.
 - The earlier CI attempt exposed a test-only kitchen wrapper that omitted a method; the wrapper was corrected before merge and the full PostgreSQL run passed.
 - Remaining real-world gates are unchanged: exact hostname/account needed to reproduce the staff-login denial, and physical 58/80 mm printer acceptance on the restaurant hardware.
+
+## 30. Telegram dead-letter retry result accuracy (2026-10-03)
+
+- Telegram HTTP 200 responses with API-level `ok: false` are now treated as failures; Telegram-confirmed `ok: true` is required before a retry record is removed.
+- A retry with Telegram configuration missing or an order that can no longer be resolved leaves the original dead-letter visible. A failed send returns HTTP 503; missing or unsupported records remain HTTP 404.
+- Verification: backend suite 503/503, backend typecheck, scoped ESLint, retry/controller regressions, and backend production build passed. No schema or migration changed.
+- This is not a durable queue: dead letters remain Redis-backed with process-memory fallback, and per-restaurant Telegram credentials/webhooks are not implemented. Hosted CI and backend production deploy are still pending; no live Telegram or staging side effects were sent. Keep the second-tenant activation gate closed.
