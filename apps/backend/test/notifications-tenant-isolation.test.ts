@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NotFoundException } from "@nestjs/common";
+import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { NotificationsController } from "../src/modules/notifications/notifications.controller";
 
 const actors = {
@@ -12,7 +12,7 @@ function rowsFor(tenantId: "tenant-a" | "tenant-b") {
   return [{ tenantId, messageId: tenantId === "tenant-a" ? "message-a" : "message-b" }];
 }
 
-function createController() {
+function createController(retryResult: "sent" | "failed" = "sent") {
   const calls = { list: [] as string[], retry: [] as string[] };
   const prisma = {
     restaurantTenant: { findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }) },
@@ -26,7 +26,9 @@ function createController() {
   const telegramNotifications = {
     retryDeadLetter: async (tenantId: string, messageId: string) => {
       calls.retry.push(tenantId + ":" + messageId);
-      return messageId === "message-a" && tenantId === "tenant-a";
+      return messageId === "message-a" && tenantId === "tenant-a"
+        ? retryResult
+        : "not-found";
     },
   };
   return {
@@ -50,4 +52,12 @@ test("dead-letter retry passes the authenticated tenant and hides another tenant
   });
   await assert.rejects(() => controller.retry(actors["tenant-b"] as never, "message-a"), NotFoundException);
   assert.deepEqual(calls.retry, ["tenant-a:message-a", "tenant-b:message-a"]);
+});
+
+test("failed dead-letter delivery is reported as unavailable, not as not found", async () => {
+  const { controller } = createController("failed");
+  await assert.rejects(
+    () => controller.retry(actors["tenant-a"] as never, "message-a"),
+    ServiceUnavailableException,
+  );
 });

@@ -78,11 +78,20 @@ type StaffTransitionResult = {
 };
 type TelegramResponse = {
   ok?: boolean;
+  description?: string;
+  error_code?: number;
   result?: {
     message_id?: number;
     chat?: { id?: number | string };
   };
 };
+type NewOrderDeliveryResult = "sent" | "failed" | "skipped";
+export type DeadLetterRetryResult =
+  | "sent"
+  | "failed"
+  | "unavailable"
+  | "not-found"
+  | "not-retryable";
 
 const callbackPrefix = "mazetto_order";
 const staffTelegramRoleCodes = ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "KITCHEN"];
@@ -106,12 +115,13 @@ const legacyStatusToAction: Record<LegacyCallbackStatus, StaffOrderAction> = {
 export class TelegramOrderNotificationService implements OnModuleDestroy {
   private readonly messageUpdates = new Map<string, Promise<void>>();
 
-  private enqueueMessage(orderId: string, work: () => Promise<void>): Promise<void> {
+  private enqueueMessage<T>(orderId: string, work: () => Promise<T>): Promise<T> {
     const previous = this.messageUpdates.get(orderId) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(work);
-    this.messageUpdates.set(orderId, next);
-    void next.finally(() => {
-      if (this.messageUpdates.get(orderId) === next) this.messageUpdates.delete(orderId);
+    const tracked = next.then(() => undefined, () => undefined);
+    this.messageUpdates.set(orderId, tracked);
+    void tracked.finally(() => {
+      if (this.messageUpdates.get(orderId) === tracked) this.messageUpdates.delete(orderId);
     }).catch(() => undefined);
     return next;
   }
@@ -133,21 +143,27 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
   }
 
   async notifyNewOrder(orderId: string): Promise<void> {
-    return this.enqueueMessage(orderId, () => this.sendNewOrder(orderId));
+    return this.enqueueMessage(orderId, async () => {
+      await this.sendNewOrder(orderId);
+    });
   }
 
-  private async sendNewOrder(orderId: string, expectedTenantId?: string): Promise<void> {
+  private async sendNewOrder(
+    orderId: string,
+    expectedTenantId?: string,
+    recordFailure = true,
+  ): Promise<NewOrderDeliveryResult> {
     let tenantId: string | null = null;
     if (!this.isConfigured()) {
       this.logger.warn("Telegram order notifications are disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_STAFF_CHAT_ID is missing");
-      return;
+      return "skipped";
     }
 
     try {
       tenantId = await this.resolveOrderTenantId(orderId);
       if (!tenantId) {
         this.logger.warn(`Telegram notification skipped: order ${orderId} has no tenant branch`);
-        return;
+        return "skipped";
       }
       if (expectedTenantId && expectedTenantId !== tenantId) {
         throw new ForbiddenException("Notification order does not belong to the requested tenant");
@@ -156,7 +172,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
 
       if (!order) {
         this.logger.warn(`Telegram notification skipped: order ${orderId} was not found`);
-        return;
+        return "skipped";
       }
 
       const response = await this.telegramRequest("sendMessage", {
@@ -165,6 +181,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         parse_mode: "HTML",
       });
       await this.rememberStaffMessage(order.id, response);
+      return "sent";
     } catch (error) {
       this.logger.error(
         `Telegram order notification failed for order ${orderId}`,
@@ -174,13 +191,14 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
        * ENG MUHIM YO'QOTISH: yangi buyurtma xabari yetib bormasa, oshxona
        * buyurtma haqda umuman bilmaydi. Ilgari bu yerda faqat log qolardi.
        */
-      if (tenantId) await this.deadLetters.record({
+      if (recordFailure && tenantId) await this.deadLetters.record({
         tenantId,
         kind: "staff_new_order",
         orderId,
         error,
         attempts: telegramRequestMaxAttempts,
       });
+      return "failed";
     }
   }
 
@@ -191,12 +209,15 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
    * urinish ham yiqilsa, u ko'rinib turishi kerak. Aks holda "qayta
    * yuborish" tugmasi muammoni yashirib qo'yardi.
    */
-  async retryDeadLetter(tenantId: string, messageId: string): Promise<boolean> {
+  async retryDeadLetter(
+    tenantId: string,
+    messageId: string,
+  ): Promise<DeadLetterRetryResult> {
     const entries = await this.deadLetters.list(tenantId, 500);
     const entry = entries.find((row) => row.messageId === messageId);
 
     if (!entry) {
-      return false;
+      return "not-found";
     }
 
     /*
@@ -207,25 +228,27 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
      * buyurtmaning JORIY holati o'qiladi.
      */
     if (entry.kind !== "staff_new_order") {
-      return false;
+      return "not-retryable";
     }
 
     const activeTenantId = await resolveSoleActiveTenantId(this.prisma);
     if (activeTenantId !== tenantId) {
       throw new ForbiddenException("Telegram qayta yuborish tenantiga mos kelmadi");
     }
-    await this.enqueueMessage(entry.orderId, () =>
-      this.sendNewOrder(entry.orderId, tenantId),
+    const deliveryResult = await this.enqueueMessage(entry.orderId, () =>
+      this.sendNewOrder(entry.orderId, tenantId, false),
     );
 
-    /*
-     * `sendNewOrder` xatoni o'zi yutadi va YANGI o'lik xat yozadi, ya'ni
-     * muvaffaqiyatni javob bo'yicha aniqlab bo'lmaydi. Shuning uchun
-     * eskisi olib tashlanadi: agar yana yiqilgan bo'lsa, o'rniga yangi
-     * yozuv paydo bo'lgan.
-     */
+    if (deliveryResult === "failed") {
+      return "failed";
+    }
+    if (deliveryResult === "skipped") {
+      return "unavailable";
+    }
+
+    // Keep the failed record until Telegram confirms delivery with `ok: true`.
     await this.deadLetters.take(tenantId, messageId);
-    return true;
+    return "sent";
   }
 
   private async refreshStaffOrderMessageFromKitchen(event: KitchenOrderStatusChangedEvent): Promise<void> {
@@ -704,17 +727,31 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         });
 
         if (response.ok) {
-          return (await response.json()) as TelegramResponse;
+          const result = (await response.json()) as TelegramResponse;
+          if (result.ok === true) {
+            return result;
+          }
+
+          const error = new Error(
+            `Telegram ${method} rejected the request: ${result.description ?? "unknown error"}`,
+          );
+          if (
+            !this.shouldRetryTelegramRequest(error, result.error_code) ||
+            attempt === telegramRequestMaxAttempts
+          ) {
+            throw error;
+          }
+          lastError = error;
+        } else {
+          const body = await response.text();
+          const error = new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
+
+          if (!this.shouldRetryTelegramRequest(error, response.status) || attempt === telegramRequestMaxAttempts) {
+            throw error;
+          }
+
+          lastError = error;
         }
-
-        const body = await response.text();
-        const error = new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
-
-        if (!this.shouldRetryTelegramRequest(error, response.status) || attempt === telegramRequestMaxAttempts) {
-          throw error;
-        }
-
-        lastError = error;
       } catch (error) {
         if (!this.shouldRetryTelegramRequest(error) || attempt === telegramRequestMaxAttempts) {
           throw error;

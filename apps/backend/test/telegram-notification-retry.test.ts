@@ -89,6 +89,38 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     assert.equal((await deadLetters.list("tenant-a")).length, 1);
 
     activeTenantIds.splice(0, activeTenantIds.length, "tenant-a");
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
+      "unavailable",
+    );
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "missing bot configuration must preserve the failed delivery",
+    );
+    process.env.TELEGRAM_BOT_TOKEN = "staging-mock-token";
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 400,
+          description: "chat not found",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
+      "failed",
+      "Telegram API errors in an HTTP 200 response must be treated as failures",
+    );
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "a failed retry must leave its original dead letter available",
+    );
+
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -100,7 +132,7 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
 
     assert.equal(
       await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
-      true,
+      "sent",
     );
     assert.equal(updates.length, 1);
     assert.equal((await deadLetters.list("tenant-a")).length, 0);

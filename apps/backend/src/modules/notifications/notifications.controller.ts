@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Query,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { resolveRestaurantTenantId } from "../../common/auth/tenant-scope";
@@ -50,7 +51,15 @@ export class NotificationsController {
     const retried =
       await this.telegramNotifications.retryDeadLetter(tenantId, messageId);
 
-    if (!retried) {
+    if (retried === "failed" || retried === "unavailable") {
+      throw new ServiceUnavailableException(
+        retried === "failed"
+          ? "Telegram xabari yuborilmadi; qayta urinish yozuvi saqlandi."
+          : "Telegram hozir sozlanmagan yoki buyurtma topilmadi.",
+      );
+    }
+
+    if (retried === "not-found" || retried === "not-retryable") {
       /*
        * Yozuv topilmadi yoki turi qayta yuborilmaydi (holat yangilanishi
        * eskirgan hodisaga bog'liq — uni qayta yuborish hozirgi holatni
@@ -61,6 +70,6 @@ export class NotificationsController {
       );
     }
 
-    return { messageId, retried };
+    return { messageId, retried: true };
   }
 }
