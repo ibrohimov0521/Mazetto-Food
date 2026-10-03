@@ -80,6 +80,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Manual release guard tests
+        run: node --test scripts/manual-release-guard.test.mjs
+
       # pnpm versiyasi package.json dagi `packageManager` dan olinadi —
       # Dockerfile'lar bilan bir xil, ya'ni versiya ikki joyda yozilmaydi.
       - name: Enable pnpm
