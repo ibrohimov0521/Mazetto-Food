@@ -43,7 +43,7 @@ No Redis environment variables are currently read by application code. `docker-c
 
 ### TELEGRAM BOT
 
-No Telegram bot environment variables are currently read. `apps/telegram-bot/src/main.ts` only starts a placeholder service and does not read bot tokens, webhook URLs, or API URLs yet.
+Telegram buyurtma va webhook mantiqi backenddagi `TelegramModule` ichida. `apps/telegram-bot` esa token va webhook secret bilan ishlaydigan customer/staff nazorat agenti: webhook holati, navbat va backend health'ni tekshiradi. Har ikki botning tokeni backend service'da, lekin agent servislariga ham o'zining mos token/secret env'lari berilishi kerak.
 
 ### PRINT SERVICE
 
@@ -51,15 +51,15 @@ No print-agent environment variables are currently read. `apps/print-agent/src/m
 
 ## Integrations Not Yet Environment-Backed
 
-| Area | Current status |
-| --- | --- |
-| Redis config | Redis service exists in compose, but application code does not use it. |
-| WebSocket config | Backend gateway allows `origin: "*"`, and clients derive socket origin from `NEXT_PUBLIC_API_BASE_URL`. No dedicated socket env exists. |
-| CORS config | Backend HTTP CORS is not explicitly enabled in `main.ts`. No CORS env exists. |
-| Telegram bot config | No token, webhook, or API URL env is used. |
-| Printer/receipt config | No printer host, queue, or agent key env is used. |
-| Instagram integrations | No Instagram env is used. |
-| Payment integrations | Click, Payme, Uzcard, Humo, card, and online methods exist as business values only. No provider secret/env is used. |
+| Area                   | Current status                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Redis config           | Redis service exists in compose, but application code does not use it.                                                                  |
+| WebSocket config       | Backend gateway allows `origin: "*"`, and clients derive socket origin from `NEXT_PUBLIC_API_BASE_URL`. No dedicated socket env exists. |
+| CORS config            | Backend HTTP CORS is not explicitly enabled in `main.ts`. No CORS env exists.                                                           |
+| Telegram bot config    | Backend TelegramModule bot webhooklarini qabul qiladi; alohida agent servislar token, webhook secret va API URL env'larini o'qiydi.     |
+| Printer/receipt config | No printer host, queue, or agent key env is used.                                                                                       |
+| Instagram integrations | No Instagram env is used.                                                                                                               |
+| Payment integrations   | Click, Payme, Uzcard, Humo, card, and online methods exist as business values only. No provider secret/env is used.                     |
 
 ## Dokploy Service Order
 
@@ -69,7 +69,7 @@ No print-agent environment variables are currently read. `apps/print-agent/src/m
 4. Customer web
 5. POS web
 6. Print agent, optional placeholder until printer service logic is implemented
-7. Telegram bot, optional placeholder until bot integration logic is implemented
+7. Customer Telegram agent and staff Telegram agent (same image, separate Dokploy services and credentials)
 
 Run Prisma migrations from the backend service after PostgreSQL is reachable and before opening traffic to the web apps.
 

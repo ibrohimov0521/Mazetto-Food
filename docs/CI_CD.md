@@ -118,7 +118,7 @@ tugagach ishga tushadi:
    - `production` tegi yo'q;
    - `main` bu orada oldinga ketgan → o'sha commit o'z CI'sidan keyin keladi.
 4. O'zgargan ilovalar Dokploy API orqali **navbat bilan** deploy qilinadi:
-   backend → customer-web → pos-web → platform-web → telegram-bot → media. Har biri tugashi
+   backend → customer-web → pos-web → platform-web → telegram-bot → telegram-staff-bot → media. Har biri tugashi
    kutiladi. Har biridan oldin `main` hamon shu commit'da ekani qayta
    tekshiriladi, chunki Dokploy aniq commit'ni emas, branch uchini yig'adi.
 5. `release:smoke` — konteyner ko'tarilishini kutib, 4 urinishgacha.
@@ -139,7 +139,7 @@ qilmaydi.
 **1. Dokploy'da**
 
 - Settings → Profile → API/CLI → API kalit yarating.
-- backend, customer-web, pos-web, platform-web (kerak bo'lsa media, telegram-bot) ilovalarida
+- backend, customer-web, pos-web, platform-web (kerak bo'lsa media, telegram-bot, telegram-staff-bot) ilovalarida
   **Autodeploy'ni o'chiring.** Aks holda Dokploy CI'ni kutmasdan har push'da
   o'zi deploy qiladi va bu darvoza ma'nosiz bo'ladi.
 - Ilova ID'larini oling:
@@ -151,17 +151,20 @@ qilmaydi.
 
 **2. GitHub → Settings → Secrets and variables → Actions**
 
-| Nomi                       | Turi     | Qiymat                                                               |
-| -------------------------- | -------- | -------------------------------------------------------------------- |
-| `DOKPLOY_URL`              | secret   | Dokploy panel manzili                                                |
-| `DOKPLOY_API_KEY`          | secret   | 1-qadamdagi kalit                                                    |
-| `DOKPLOY_APP_BACKEND`      | variable | backend `applicationId` — **majburiy**                               |
-| `DOKPLOY_APP_CUSTOMER_WEB` | variable | customer-web `applicationId`                                         |
-| `DOKPLOY_APP_POS_WEB`      | variable | pos-web `applicationId`                                              |
-| `DOKPLOY_APP_PLATFORM_WEB` | variable | BestTeam owner `platform-web` `applicationId`                         |
-| `DOKPLOY_APP_MEDIA`        | variable | ixtiyoriy                                                            |
-| `DOKPLOY_APP_TELEGRAM_BOT` | variable | ixtiyoriy                                                            |
-| `AUTO_DEPLOY`              | variable | `true` — yoqadi; o'chirish uchun o'chiring yoki boshqa qiymat bering |
+| Nomi                             | Turi     | Qiymat                                                               |
+| -------------------------------- | -------- | -------------------------------------------------------------------- |
+| `DOKPLOY_URL`                    | secret   | Dokploy panel manzili                                                |
+| `DOKPLOY_API_KEY`                | secret   | 1-qadamdagi kalit                                                    |
+| `DOKPLOY_APP_BACKEND`            | variable | backend `applicationId` — **majburiy**                               |
+| `DOKPLOY_APP_CUSTOMER_WEB`       | variable | customer-web `applicationId`                                         |
+| `DOKPLOY_APP_POS_WEB`            | variable | pos-web `applicationId`                                              |
+| `DOKPLOY_APP_PLATFORM_WEB`       | variable | BestTeam owner `platform-web` `applicationId`                        |
+| `DOKPLOY_APP_MEDIA`              | variable | ixtiyoriy                                                            |
+| `DOKPLOY_APP_TELEGRAM_BOT`       | variable | mijoz Telegram agenti `applicationId`                                |
+| `DOKPLOY_APP_TELEGRAM_STAFF_BOT` | variable | xodimlar Telegram agenti `applicationId`                             |
+| `AUTO_DEPLOY`                    | variable | `true` — yoqadi; o'chirish uchun o'chiring yoki boshqa qiymat bering |
+
+Telegram agent kodi o'zgarganda ikkala agentning Dokploy ID'si ham berilgan bo'lishi kerak; aks holda bitta agent deploy qilinmaydi va `production` tegi surilmaydi.
 
 ID berilmagan ilova Dokploy'da emas deb hisoblanadi: avtomatik deploy
 qilinmaydi, job summary'da "qo'lda" deb chiqadi. Backend bundan mustasno —

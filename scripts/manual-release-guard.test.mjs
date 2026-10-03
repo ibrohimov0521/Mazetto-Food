@@ -26,6 +26,18 @@ test("allows a changed app only after the migration confirmation", () => {
   });
 });
 
+test("allows the staff Telegram agent as a migration release phase", () => {
+  assert.deepEqual(
+    validateManualRelease(
+      input({
+        phase: "telegram-staff-bot",
+        apps: "backend telegram-staff-bot",
+      }),
+    ),
+    { mode: "migration-release" },
+  );
+});
+
 test("allows an explicit same-SHA redeploy when nothing remains in the diff", () => {
   assert.deepEqual(
     validateManualRelease(

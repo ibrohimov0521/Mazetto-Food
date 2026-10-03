@@ -1,4 +1,10 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
+import { startRetryLoop } from "./retry-loop.js";
+import {
+  publicAgentStatus,
+  safeWebhookUrl,
+  type AgentState,
+} from "./status.js";
 
 type TelegramApiResponse<T> = {
   ok: boolean;
@@ -31,19 +37,6 @@ type TelegramBotConfig = {
   mode: "customer" | "staff";
 };
 
-type AgentState = {
-  startedAt: string;
-  mode: "idle" | "checking" | "ready" | "degraded";
-  tokenConfigured: boolean;
-  secretConfigured: boolean;
-  webhookUrl: string | null;
-  pendingUpdates: number | null;
-  lastTelegramError: string | null;
-  backendOk: boolean | null;
-  lastCheckedAt: string | null;
-  lastError: string | null;
-};
-
 const config = readConfig();
 const state: AgentState = {
   startedAt: new Date().toISOString(),
@@ -61,11 +54,19 @@ const state: AgentState = {
 void main(config).catch((error) => {
   state.mode = "degraded";
   state.lastError = errorMessage(error);
-  console.error("MAZETTO Telegram Bot agent failed", error);
+  console.error("MAZETTO Telegram Bot agent failed");
   process.exitCode = 1;
 });
 
 async function main(botConfig: TelegramBotConfig): Promise<void> {
+  if (botConfig.setWebhook && !botConfig.deleteWebhook) {
+    await requireToken(botConfig);
+    if (!botConfig.webhookSecret) {
+      throw new Error(
+        "TELEGRAM_WEBHOOK_SECRET is required when using --set-webhook",
+      );
+    }
+  }
   const healthServer = startHealthServer(botConfig, state);
 
   console.log("MAZETTO Telegram Bot agent started", {
@@ -77,36 +78,56 @@ async function main(botConfig: TelegramBotConfig): Promise<void> {
   });
 
   if (botConfig.deleteWebhook) {
-    await requireToken(botConfig);
-    await telegramRequest<boolean>(botConfig, "deleteWebhook", {
-      drop_pending_updates: false,
-    });
-    console.log("Telegram webhook deleted");
-    await refreshState(botConfig, state);
-    healthServer.close();
+    try {
+      await requireToken(botConfig);
+      await telegramRequest<boolean>(botConfig, "deleteWebhook", {
+        drop_pending_updates: false,
+      });
+      console.log("Telegram webhook deleted");
+      await refreshState(botConfig, state);
+    } finally {
+      healthServer.close();
+    }
     return;
   }
-
-  if (botConfig.setWebhook) {
-    await setWebhook(botConfig);
-  }
-
-  await configureBotInterface(botConfig);
-
-  await refreshState(botConfig, state);
 
   if (botConfig.once) {
-    healthServer.close();
+    try {
+      if (botConfig.setWebhook) {
+        await setWebhook(botConfig);
+      }
+      await configureBotInterface(botConfig);
+      await refreshState(botConfig, state);
+    } finally {
+      healthServer.close();
+    }
     return;
   }
 
-  setInterval(() => {
-    void refreshState(botConfig, state).catch((error) => {
+  let webhookConfigured = !botConfig.setWebhook;
+  let interfaceConfigured = !botConfig.token;
+
+  startRetryLoop(
+    async () => {
+      if (botConfig.token && !webhookConfigured) {
+        await setWebhook(botConfig);
+        webhookConfigured = true;
+      }
+
+      if (botConfig.token && !interfaceConfigured) {
+        await configureBotInterface(botConfig);
+        interfaceConfigured = true;
+      }
+
+      await refreshState(botConfig, state);
+    },
+    botConfig.checkMs,
+    (error) => {
       state.mode = "degraded";
       state.lastError = errorMessage(error);
-      console.error("Telegram health refresh failed", error);
-    });
-  }, botConfig.checkMs).unref();
+      console.error("Telegram health check failed; will retry");
+    },
+  );
 
   await keepAlive();
 }
@@ -126,7 +147,7 @@ async function setWebhook(botConfig: TelegramBotConfig): Promise<void> {
     allowed_updates: ["message", "callback_query"],
     drop_pending_updates: false,
   });
-  console.log(`Telegram webhook set to ${url}`);
+  console.log("Telegram webhook configured");
 }
 
 async function configureBotInterface(
@@ -209,9 +230,9 @@ async function refreshState(
   console.log("Telegram status", {
     mode: agentState.mode,
     backendOk: agentState.backendOk,
-    webhook: info.url || "not set",
+    webhook: safeWebhookUrl(info.url) ?? "not set",
     pendingUpdates: info.pending_update_count,
-    lastTelegramError: info.last_error_message ?? null,
+    hasTelegramError: Boolean(info.last_error_message),
   });
 }
 
@@ -219,6 +240,7 @@ async function checkBackend(url: string): Promise<boolean> {
   try {
     const response = await fetch(url, {
       headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
     });
     return response.ok;
   } catch {
@@ -243,6 +265,7 @@ async function telegramRequest<T>(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
     },
   );
 
@@ -281,11 +304,23 @@ function startHealthServer(
     }
 
     if (url.pathname === "/status") {
-      sendJson(response, 200, agentState);
+      sendJson(response, 200, publicAgentStatus(agentState));
       return;
     }
 
-    sendHtml(response, renderStatusPage(agentState));
+    sendHtml(
+      response,
+      renderStatusPage({
+        ...agentState,
+        webhookUrl: safeWebhookUrl(agentState.webhookUrl),
+        lastTelegramError: agentState.lastTelegramError
+          ? "Telegram webhook xatosi bor"
+          : null,
+        lastError: agentState.lastError
+          ? "Agent tekshiruvida xato bor"
+          : null,
+      }),
+    );
   });
 
   server.listen(botConfig.healthPort, botConfig.healthHost);

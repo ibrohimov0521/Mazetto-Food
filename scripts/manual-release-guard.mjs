@@ -8,6 +8,7 @@ const RELEASE_PHASES = new Set([
   "pos-web",
   "platform-web",
   "telegram-bot",
+  "telegram-staff-bot",
   "media",
 ]);
 

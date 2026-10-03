@@ -28,6 +28,12 @@ Staff webhook manzili:
 
 `https://api.mazettofood.uz/api/v1/telegram/staff-webhook/<TELEGRAM_STAFF_WEBHOOK_SECRET>`
 
+## Agent tiklanishi
+
+Doimiy rejimda agent Telegram API sozlamasi yoki status tekshiruvi vaqtinchalik yiqilsa jarayonni to'xtatmaydi: health server ochiq qoladi va keyingi `MAZETTO_TELEGRAM_CHECK_MS` oralig'ida qayta urinadi. Tekshiruvlar ustma-ust bajarilmaydi. Backend health so'rovi 5 soniyada, Telegram API so'rovi 10 soniyada timeout bo'ladi. `--once` rejimi esa bir martalik bo'lib, xato bo'lsa muvaffaqiyatsiz yakunlanadi.
+
+`--set-webhook` odatiy rejimda muvaffaqiyatli o'rnatilmaguncha qayta urinadi. U pending update'larni o'chirmaydi.
+
 Staff xodimlari admin paneldagi profilida Telegram foydalanuvchi ID bilan bog'lanadi. Botga `/myid` yuborib olingan ID shu maydonga yoziladi. Bitta xodim bir nechta rolga ega bo'lsa, staff bot panelida barcha ruxsatli bo'limlar ko'rinadi; amallar backend permission va filial doirasi bilan tekshiriladi.
 
 ## Ishlatish
