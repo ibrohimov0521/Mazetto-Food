@@ -44,10 +44,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exceptionResponse
         : "Internal server error");
     const code = normalizedResponse?.error ?? HttpStatus[statusCode] ?? "Error";
+    const requestId = requireCorrelationId(request);
 
     if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
       const stack = exception instanceof Error ? exception.stack : undefined;
-      this.logger.error(`${request.method} ${request.url} failed`, stack);
+      this.logger.error(
+        `[requestId=${requestId}] ${request.method} ${request.url} failed`,
+        stack,
+      );
     }
 
     const body: ApiErrorResponse = {
@@ -60,7 +64,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           ? { details: normalizedResponse.details }
           : {}),
         path: request.url,
-        requestId: requireCorrelationId(request),
+        requestId,
         timestamp: new Date().toISOString(),
       },
     };
@@ -68,3 +72,4 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(statusCode).json(body);
   }
 }
+
