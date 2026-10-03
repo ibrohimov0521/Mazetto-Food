@@ -231,7 +231,10 @@ va `production` tegi allaqachon ko'rsatayotgan SHA uchun `targeted_redeploy=true
 belgilang. Bu bitta tanlangan servisni Dokploy'da qayta deploy qiladi; boshqa
 servislarni chetlab o'tmaydi va production tegini o'zgartirmaydi. SHA hali
 release qilinmagan yoki unda pending migration bo'lsa, targeted redeploy rad
-etiladi. Oddiy migratsiya relizi uchun bu belgini o'chirilgan qoldiring.
+etiladi. Bu rejimda backup yo'li va migration tasdig'i talab qilinmaydi;
+oddiy migration relizida backup yo'li va `migrations_applied=true` majburiy.
+Oddiy migratsiya relizi uchun `targeted_redeploy` belgisini o'chirilgan
+qoldiring.
 Prisma `node_modules/.bin` dan to'g'ridan-to'g'ri chaqiriladi va sozlamani
 `prisma.config.ts` dan oladi. O'sha config ATAYLAB o'zi-yetarli: image'ga faqat
 `dist` ko'chiriladi, `src` yo'q, shuning uchun u `src/` dan hech narsa import

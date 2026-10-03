@@ -33,6 +33,8 @@ test("allows an explicit same-SHA redeploy when nothing remains in the diff", ()
         since: sha,
         apps: "",
         migrations: "",
+        backupPath: "",
+        migrationsApplied: false,
         targetedRedeploy: true,
       }),
     ),
