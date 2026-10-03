@@ -224,6 +224,14 @@ mos bo'lishi shart. Har uch buyruq muvaffaqiyatli tugamaguncha backend yoki
 boshqa ilovani deploy qilmang. So'ng manual migration release workflow'ida
 `migrations_applied=true` belgilab, avval backendni, keyin qolgan o'zgargan
 ilovalarni navbat bilan deploy qiling.
+
+`production` tegi shu reliz SHA'ga oldindan surilgan bo'lsa, workflow odatiy
+diff bo'yicha servisni topa olmaydi. Faqat aynan `main` uchidagi, CI'dan o'tgan
+va `production` tegi allaqachon ko'rsatayotgan SHA uchun `targeted_redeploy=true`
+belgilang. Bu bitta tanlangan servisni Dokploy'da qayta deploy qiladi; boshqa
+servislarni chetlab o'tmaydi va production tegini o'zgartirmaydi. SHA hali
+release qilinmagan yoki unda pending migration bo'lsa, targeted redeploy rad
+etiladi. Oddiy migratsiya relizi uchun bu belgini o'chirilgan qoldiring.
 Prisma `node_modules/.bin` dan to'g'ridan-to'g'ri chaqiriladi va sozlamani
 `prisma.config.ts` dan oladi. O'sha config ATAYLAB o'zi-yetarli: image'ga faqat
 `dist` ko'chiriladi, `src` yo'q, shuning uchun u `src/` dan hech narsa import

@@ -10,6 +10,7 @@ import { appendFileSync } from "node:fs";
  *
  *   DOKPLOY_URL=https://... DOKPLOY_API_KEY=... DOKPLOY_APP_BACKEND=<id> \
  *     node scripts/dokploy-deploy.mjs --sha <to'liq sha> backend pos-web
+ *   The guarded release workflow may pass --redeploy for a single same-SHA recovery.
  *
  * Ilovalar NAVBAT bilan deploy qilinadi, backend birinchi — web'lar uning
  * API'siga tayanadi.
@@ -21,7 +22,14 @@ import { appendFileSync } from "node:fs";
  * deploy qilinadi.
  */
 
-const ORDER = ["backend", "customer-web", "pos-web", "platform-web", "telegram-bot", "media"];
+const ORDER = [
+  "backend",
+  "customer-web",
+  "pos-web",
+  "platform-web",
+  "telegram-bot",
+  "media",
+];
 
 const APP_ID_ENV = {
   backend: "DOKPLOY_APP_BACKEND",
@@ -145,7 +153,13 @@ async function deploymentDetails(deploymentId) {
     return null;
   }
 }
-async function deployAndWait(app, applicationId, sha, subject) {
+async function deployAndWait(
+  app,
+  applicationId,
+  sha,
+  subject,
+  { force = false } = {},
+) {
   /*
    * Yangi deploy yozuvi eskilaridan ID bo'yicha ajratiladi, vaqt bo'yicha
    * EMAS: runner va Dokploy server soatlari bir-biridan farq qilishi mumkin.
@@ -166,7 +180,7 @@ async function deployAndWait(app, applicationId, sha, subject) {
   // Dokploy GitHub webhook'i shu commitni oldinroq chiqarib bo'lgan bo'lishi
   // mumkin. Uni ikkinchi marta yuborish Dokploy'da yolg'on `error` holatini
   // qoldiradi, shuning uchun mavjud muvaffaqiyatli deployni qabul qilamiz.
-  if (alreadyDeployed) {
+  if (alreadyDeployed && !force) {
     return "already-deployed";
   }
 
@@ -174,7 +188,7 @@ async function deployAndWait(app, applicationId, sha, subject) {
 
   await dokploy("POST", "application.deploy", {
     applicationId,
-    title: `CI ${sha.slice(0, 7)}`,
+    title: force ? `CI redeploy ${sha.slice(0, 7)}` : `CI ${sha.slice(0, 7)}`,
     description: subject,
   });
 
@@ -218,12 +232,24 @@ async function main() {
   const args = process.argv.slice(2);
   const shaAt = args.indexOf("--sha");
   const sha = shaAt >= 0 ? args[shaAt + 1] : undefined;
+  const force = args.includes("--redeploy");
+  const unknownOptions = args.filter(
+    (arg) => arg.startsWith("--") && !["--sha", "--redeploy"].includes(arg),
+  );
   const requested = args.filter(
     (arg, index) => !arg.startsWith("--") && (shaAt < 0 || index !== shaAt + 1),
   );
 
   if (!sha || !/^[0-9a-f]{40}$/.test(sha)) {
     throw new DeployFailed("--sha ga to'liq (40 belgili) commit SHA kerak");
+  }
+
+  if (unknownOptions.length > 0) {
+    throw new DeployFailed(`noma'lum parametr: ${unknownOptions.join(", ")}`);
+  }
+
+  if (force && requested.length !== 1) {
+    throw new DeployFailed("--redeploy faqat bitta ilova uchun ishlaydi");
   }
 
   if (!baseUrl || !apiKey) {
@@ -294,7 +320,7 @@ async function main() {
     console.log(`  ...  ${app} navbatga qo'yildi`);
 
     try {
-      await deployAndWait(app, applicationId, sha, subject);
+      await deployAndWait(app, applicationId, sha, subject, { force });
     } catch (error) {
       summary(`| ${app} | ❌ ${error.message} |`);
       throw error;
