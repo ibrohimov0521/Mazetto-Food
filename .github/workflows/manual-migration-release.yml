@@ -19,8 +19,8 @@ on:
           - telegram-bot
           - media
       verified_backup_path:
-        description: Path of the independently verified production PostgreSQL dump
-        required: true
+        description: Required for migration releases; leave empty for a targeted redeploy
+        required: false
         type: string
       migrations_applied:
         description: Confirm production prisma migrate deploy completed before any app deployment
@@ -69,7 +69,6 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Full SHA required'; exit 1; }
-          [[ "$BACKUP_PATH" == /*.dump ]] || { echo 'Verified dump path required'; exit 1; }
           git fetch --quiet --force origin refs/tags/production:refs/tags/production
           node scripts/release-gate.mjs "$SHA" --github-output
 

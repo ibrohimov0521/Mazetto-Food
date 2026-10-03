@@ -28,12 +28,6 @@ export function validateManualRelease({
   if (!RELEASE_PHASES.has(phase)) {
     throw new Error(`Unknown release phase: ${phase || "(empty)"}`);
   }
-  if (!/^\/.+\.dump$/.test(backupPath ?? "")) {
-    throw new Error("Verified absolute PostgreSQL dump path required");
-  }
-  if (migrationsApplied !== true && migrationsApplied !== "true") {
-    throw new Error("Apply and verify production migrations before deployment");
-  }
   if (mainSha !== sha) {
     throw new Error(
       "main moved or does not point to the release SHA; release stopped",
@@ -58,6 +52,13 @@ export function validateManualRelease({
       );
     }
     return { mode: "targeted-redeploy" };
+  }
+
+  if (!/^\/.+\.dump$/.test(backupPath ?? "")) {
+    throw new Error("Verified absolute PostgreSQL dump path required");
+  }
+  if (migrationsApplied !== true && migrationsApplied !== "true") {
+    throw new Error("Apply and verify production migrations before deployment");
   }
 
   if (pendingMigrations && changedApps.includes(phase)) {
@@ -86,14 +87,20 @@ function runFromEnvironment() {
 
     appendFileSync(process.env.GITHUB_OUTPUT, `mode=${mode}\n`);
     const migrationList = process.env.MIGRATIONS || "none";
+    const backupSummary =
+      mode === "targeted-redeploy"
+        ? "Not required for targeted redeploy"
+        : process.env.BACKUP_PATH;
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `### Manual release ${process.env.SHA}\n\n- Phase: ${process.env.PHASE}\n- Mode: ${mode}\n- Backup path supplied by operator: ${process.env.BACKUP_PATH}\n- Pending migrations in gate: ${migrationList}\n`,
+      `### Manual release ${process.env.SHA}\n\n- Phase: ${process.env.PHASE}\n- Mode: ${mode}\n- Backup path supplied by operator: ${backupSummary}\n- Pending migrations in gate: ${migrationList}\n`,
     );
     console.log(`Release phase approved: ${mode}`);
-    console.log(
-      "The workflow records the backup path but cannot independently verify the remote archive.",
-    );
+    if (mode === "migration-release") {
+      console.log(
+        "The workflow records the backup path but cannot independently verify the remote archive.",
+      );
+    }
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
