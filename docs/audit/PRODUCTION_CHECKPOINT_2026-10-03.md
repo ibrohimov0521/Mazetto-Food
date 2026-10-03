@@ -11,8 +11,9 @@ production state.
   completed successfully for that application revision.
 - Later production-tag advances to `0b24fa0` and `23b0504` contained
   documentation only; the deploy planner did not rebuild application images.
-  The latest docs-only deploy
-  [completed successfully](https://github.com/ibrohimov0521/Mazetto-Food/actions/runs/37140408262).
+  Docs-only deploy run
+  [#](https://github.com/ibrohimov0521/Mazetto-Food/actions/runs/37140408262)
+  completed successfully.
 - The read-only production release smoke passed **27/27** after that deploy.
   It checks API and database health, public menu/settings, unauthenticated access controls,
   customer routes on the root and `www` hostnames, checkout auth URL, POS
