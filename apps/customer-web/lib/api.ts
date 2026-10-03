@@ -1,4 +1,5 @@
 "use client";
+import { customerServerErrorMessage } from "./api-error-reference.mjs";
 import {
   getMazettoFoodCustomerApiBaseUrl,
   isMazettoFoodHost,
@@ -11,7 +12,7 @@ import {
 export type ApiEnvelope<T> = {
   success: boolean;
   data?: T;
-  error?: { message: string | string[] };
+  error?: { message: string | string[]; requestId?: string };
 };
 
 export function getApiBaseUrl(): string {
@@ -134,6 +135,10 @@ async function requestApi<T>(path: string, init?: ApiFetchInit): Promise<T> {
 }
 
 function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>): string {
+  if (response.status >= 500) {
+    return customerServerErrorMessage(payload.error?.requestId);
+  }
+
   const backendMessage = Array.isArray(payload.error?.message) ? payload.error.message.join(", ") : payload.error?.message;
 
   if (backendMessage) {
