@@ -95,9 +95,15 @@ body{position:relative;isolation:isolate}
 @media(max-width:680px){.tenant-membership-create,.tenant-membership-edit{grid-template-columns:1fr}.tenant-membership-edit>.tenant-membership-actions{grid-column:auto}.tenant-membership-actions{min-width:0}}
 .sr-only{position:fixed;left:0;top:0;clip-path:inset(50%);white-space:nowrap}
 
-/* Let the supplied BestTeam artwork remain visible without sacrificing text contrast. */
-.sidebar,.topbar{background:rgba(245,249,255,.92)}
-.metric,.attention-list,.table-wrap,.service-item,.service-strip,.events-list,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton{background:rgba(245,249,255,.82)}
+/* Keep the BestTeam artwork visible while giving operational text enough contrast. */
+.sidebar,.topbar{background:rgba(245,249,255,.9)}
+.metric,.attention-list,.table-wrap,.service-item,.service-strip,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton{background:rgba(245,249,255,.72)}
+.events-list{display:grid;gap:6px;background:transparent;border:0}
+.events-list .event-row{background:rgba(240,247,255,.66);border:1px solid rgba(215,229,245,.82);border-radius:6px}
+.events-list .event-row:hover{background:rgba(240,247,255,.82)}
+.events-list .event-row strong{color:#142d49}
+.events-list .event-row small,.events-list .event-row time{color:#365574}
+.events-list .diagnostic-code{color:#244c76}
 .modal,.login-panel{background:rgba(250,252,255,.97)}
-.table-wrap th{background:rgba(255,255,255,.78)}
-.attention-row:hover,.global-event:hover{background:rgba(255,255,255,.65)}
+.table-wrap th{background:rgba(255,255,255,.9)}
+.attention-row:hover,.global-event:hover{background:rgba(255,255,255,.82)}
