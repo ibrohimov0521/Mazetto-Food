@@ -96,6 +96,7 @@ jobs:
           DOKPLOY_APP_TELEGRAM_STAFF_BOT: ${{ vars.DOKPLOY_APP_TELEGRAM_STAFF_BOT }}
           DOKPLOY_APP_MEDIA: ${{ vars.DOKPLOY_APP_MEDIA }}
           RELEASE_MODE: ${{ steps.confirm.outputs.mode }}
+          DOKPLOY_APP_TIMEOUT_MS: 2100000
         run: |
           if [[ "$RELEASE_MODE" == targeted-redeploy ]]; then
             node scripts/dokploy-deploy.mjs --sha "$SHA" "$PHASE" --redeploy
