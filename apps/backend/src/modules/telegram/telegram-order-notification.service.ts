@@ -280,6 +280,29 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     }
 
     // Keep the failed record until Telegram confirms delivery with `ok: true`.
+    if (entry.messageId.startsWith("outbox-")) {
+      const outboxId = Number(entry.messageId.slice("outbox-".length));
+      if (Number.isSafeInteger(outboxId) && outboxId > 0) {
+        try {
+          await this.prisma.notificationOutbox.updateMany({
+            where: {
+              id: outboxId,
+              tenantId,
+              status: { in: ["UNCERTAIN", "FAILED"] },
+            },
+            data: {
+              status: "DELIVERED",
+              deliveredAt: new Date(),
+              lastError: null,
+            },
+          });
+        } catch (error) {
+          this.logger.warn(
+            `Telegram delivery succeeded but outbox status could not be updated: ${error instanceof Error ? error.message : "unknown error"}`,
+          );
+        }
+      }
+    }
     await this.deadLetters.take(tenantId, messageId);
     return "sent";
   }
