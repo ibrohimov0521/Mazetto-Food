@@ -128,6 +128,26 @@ test("outbox worker moves an unconfirmed send to uncertain and dead-letter atomi
   assert.match((entry.create as { error: string }).error, /automatic resend is disabled/);
 });
 
+test("outbox worker never retries before an excessive provider retry-after", async () => {
+  const harness = createHarness({
+    kind: "retryable",
+    retryAfterSeconds: 24 * 60 * 60 + 1,
+  });
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.equal(harness.updates.length, 1);
+  assert.equal(
+    (harness.updates[0]!.data as { status: string }).status,
+    "FAILED",
+  );
+  assert.equal(harness.deadLetters.length, 1);
+  assert.match(
+    (harness.deadLetters[0]!.create as { error: string }).error,
+    /exceeds the automatic retry window/,
+  );
+});
+
 test("expired worker lease is made uncertain without calling Telegram again", async () => {
   const harness = createHarness("sent", true);
   await harness.worker.dispatchPending();
