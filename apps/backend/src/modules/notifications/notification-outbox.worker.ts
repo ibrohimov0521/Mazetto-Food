@@ -49,6 +49,29 @@ export class NotificationOutboxWorker {
     }
   }
 
+  @Cron("0 15 3 * * *")
+  async pruneDeliveredHistory(): Promise<void> {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000);
+    try {
+      for (let batch = 0; batch < 5; batch += 1) {
+        const stale = await this.prisma.notificationOutbox.findMany({
+          where: { status: "DELIVERED", deliveredAt: { lt: cutoff } },
+          orderBy: [{ deliveredAt: "asc" }, { id: "asc" }],
+          take: 1_000,
+          select: { id: true },
+        });
+        if (stale.length === 0) return;
+        await this.prisma.notificationOutbox.deleteMany({
+          where: { id: { in: stale.map(({ id }) => id) }, status: "DELIVERED" },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Delivered notification history cleanup failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+  }
+
   private async recoverExpiredLeases(): Promise<void> {
     const now = new Date();
     const expired = await this.prisma.notificationOutbox.findMany({
