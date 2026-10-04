@@ -3,7 +3,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { adminNavGroups } from "../../pos-web/lib/admin-nav";
-import { resolveRouteAccess, routeAccessRules } from "../../pos-web/lib/route-access";
+import {
+  resolveRouteAccess,
+  routeAccessRules,
+} from "../../pos-web/lib/route-access";
 import { resolveRouteIntent } from "../../pos-web/lib/route-intent";
 
 /*
@@ -39,7 +42,7 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 const permissionsSource = readSource(
   "apps/backend/src/common/auth/permissions.ts",
 );
-const iconSource = readSource("apps/pos-web/components/admin-ui/icon.tsx");
+const iconSource = readSource("packages/ui/src/icon.tsx");
 const sidebarSource = readSource(
   "apps/pos-web/components/admin-shell/admin-sidebar.tsx",
 );

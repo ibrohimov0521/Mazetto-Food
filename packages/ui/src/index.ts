@@ -1,4 +1,4 @@
-export { Badge, type BadgeTone } from "@mazetto/ui";
+export { Badge, type BadgeTone } from "./badge";
 export {
   Button,
   ButtonLink,
@@ -8,17 +8,16 @@ export {
   type ButtonSize,
   type ButtonVariant,
 } from "./button";
-export { Card, CardBody, CardFooter, CardHeader } from "@mazetto/ui";
+export { Card, CardBody, CardFooter, CardHeader } from "./card";
 export {
   DataTable,
   RowAction,
   type DataTableColumn,
   type DataTableSort,
   type SortDirection,
-} from "@mazetto/ui";
-export { Icon, iconNames, type IconName } from "@mazetto/ui";
-export { ImageDropzone } from "./image-dropzone";
-export { EmptyState, ErrorState, Skeleton, SkeletonRows } from "@mazetto/ui";
+} from "./data-table";
+export { Icon, iconNames, type IconName } from "./icon";
+export { EmptyState, ErrorState, Skeleton, SkeletonRows } from "./feedback";
 export {
   Checkbox,
   CheckboxGroup,
@@ -28,11 +27,11 @@ export {
   Select,
   Textarea,
   TextInput,
-} from "@mazetto/ui";
-export { Modal } from "@mazetto/ui";
-export { Pagination } from "@mazetto/ui";
-export { ChipGroup, Tabs, type TabItem } from "@mazetto/ui";
-export { Toggle } from "@mazetto/ui";
+} from "./form";
+export { Modal } from "./modal";
+export { Pagination } from "./pagination";
+export { ChipGroup, Tabs, type TabItem } from "./tabs";
+export { Toggle } from "./toggle";
 export {
   InfoBox,
   StatBox,
@@ -46,4 +45,5 @@ export {
   type ToastAction,
   type ToastOptions,
   type ToastTone,
-} from "@mazetto/ui";
+} from "./toast";
+export { type UiLinkComponent, type UiLinkProps } from "./link";

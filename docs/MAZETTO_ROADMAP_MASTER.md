@@ -1,11 +1,24 @@
 # MAZETTO FOOD — Bosh yo'l xaritasi
 
 Tuzilgan sana: 2026-09-10
-Holat sanasi: HEAD `f7168ff`, branch `admin-redesign-phase-5` (`main` dan **34 commit oldinda**, deploy qilinmagan)
+Holat sanasi: 2026-10-04; production main/tag = 4f0ee58a482e15b1ea2cd0ecaa5809f23d3ee2f0
 
 Bu hujjat barcha mavjud rejalarni **bitta bajarilish tartibiga** joylashtiradi.
 
 ---
+
+## Amaldagi holat (2026-10-04)
+
+- Production main/tag: 4f0ee58a482e15b1ea2cd0ecaa5809f23d3ee2f0; PR #221 deployed, migration backup va yakuniy smoke 27/27.
+- Ikkinchi restoran faollashtirilmagan.
+- Q1-Q4 uchun settings, maintenance scheduler, env/Swagger va media upload kodlari bor; to'liq qabul mezonlari hali audit qilinadi.
+- Q5 useApiResource eski javoblarni tashlaydi; umumiy cache/write invalidation yo'q.
+- Q6 Telegram notification outbox production'da; SMS va in-app kanallar qolgan.
+- Q7.1 POS admin presentational komponentlari @mazetto/ui paketiga ko'chirilgan; eski import wrapper'lari saqlangan.
+- 35 POS testi, full workspace verify va 33/33 ops validator o'tgan.
+- Q8 localization boshlanmagan.
+- Joriy repo /home/javohir/dev/mazetto-food-live-20261003; qolgan wave/lokal muhit bo'limlari 2026-09-10 dagi tarixiy snapshot.
+- Navbatdagi production relizga yangi PR CI va alohida tasdiq kerak.
 
 ## 1. Rejalar inventari
 
@@ -20,7 +33,7 @@ Bu hujjat barcha mavjud rejalarni **bitta bajarilish tartibiga** joylashtiradi.
 
 ---
 
-## 2. Hozirgi holat — muhit tayyor, faqat brauzer QA qolgan
+## 2. Tarixiy snapshot (2026-09-10)
 
 Lokal ma'lumotlar bazasi bloklovchisi **yopilgan**. 2026-09-07 da muhit Docker'ga ko'chirildi:
 
@@ -56,7 +69,7 @@ Bular har seans boshida bilinishi kerak:
 
 ---
 
-## 3. To'lqinlar
+## 3. Tarixiy to'lqinlar rejasi (2026-09-10)
 
 Ish 6 ta to'lqinga bo'lingan. Har to'lqin oldingisidan mustaqil natija beradi.
 
@@ -317,7 +330,7 @@ Loyihaning mavjud intizomiga muvofiq ([`MAZETTO_RELEASE_READINESS_CHECKLIST.md`]
 
 ---
 
-## 7. Keyingi qadam
+## 7. Tarixiy keyingi qadam (2026-09-10)
 
 Bloklovchi yo'q — uchta ish darhol boshlanishi mumkin:
 
