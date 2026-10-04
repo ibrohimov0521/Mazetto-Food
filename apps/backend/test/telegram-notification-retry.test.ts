@@ -125,14 +125,14 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     await service.notifyNewOrder("order-a");
     assert.equal(
       fetchCalls,
-      3,
-      "transient Telegram errors should use all attempts",
+      1,
+      "ambiguous sendMessage failure must not retry because Telegram may already have accepted the first request",
     );
 
     const [failedDelivery] = await deadLetters.list("tenant-a");
     assert.ok(failedDelivery);
     assert.equal(failedDelivery.orderId, "order-a");
-    assert.equal(failedDelivery.attempts, 3);
+    assert.equal(failedDelivery.attempts, 1);
     assert.deepEqual(await deadLetters.list("tenant-b"), []);
 
     activeTenantIds.push("tenant-b");
