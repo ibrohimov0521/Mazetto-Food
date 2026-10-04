@@ -131,6 +131,15 @@ jobs:
           pnpm --filter backend prisma:migrate:deploy
           pnpm --filter backend exec node --import tsx scripts/validate-unified-cash-db.ts
 
+      - name: Customer checkout and Telegram outbox integration
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/step8_qa
+          MAZETTO_E2E_ISOLATED_DB: "1"
+        run: |
+          docker exec ${{ job.services.postgres.id }} createdb -U ci step8_qa
+          pnpm --filter backend prisma:migrate:deploy
+          pnpm --filter backend exec node --import tsx scripts/validate-customer-order-e2e-db.ts
+
       # typecheck va build Nest'ning DI xatolarini, env tekshiruvini va
       # ishga tushishdagi yiqilishlarni ko'rmaydi — ular faqat real boot'da
       # chiqadi. Sirlar faqat CI uchun, hech qayerda ishlatilmaydi.
