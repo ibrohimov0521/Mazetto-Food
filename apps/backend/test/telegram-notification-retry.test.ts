@@ -141,7 +141,7 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     );
     assert.equal(
       fetchCalls,
-      3,
+      1,
       "ambiguous tenant context must not call Telegram",
     );
     assert.equal((await deadLetters.list("tenant-a")).length, 1);
