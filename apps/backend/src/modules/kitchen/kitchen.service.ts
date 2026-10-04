@@ -661,6 +661,10 @@ export class KitchenService {
         order: await this.findOrderForTransition(tx, orderId, scope),
         ticket: await this.findTicketById(tx, ticket.id),
       };
+      if (!changed.order || !changed.ticket) {
+        throw new NotFoundException("Order or kitchen ticket not found");
+      }
+
       const customerStatusCanBeSent =
         changed.order.status === OrderStatus.CONFIRMED ||
         changed.order.status === OrderStatus.PREPARING ||
