@@ -25,7 +25,6 @@ test("Telegram order notification refuses an ambiguous tenant before reading an 
     await assert.rejects(service.findOrderForMessage("order-a"), ForbiddenException);
     assert.equal(orderReads, 0);
   } finally {
-    service.onModuleDestroy();
   }
 });
 
@@ -36,7 +35,6 @@ test("Telegram order notification rejects an expected tenant that is not the act
     await assert.rejects(service.findOrderForMessage("order-b", undefined, "tenant-b"), ForbiddenException);
     assert.equal(orderReads, 0);
   } finally {
-    service.onModuleDestroy();
   }
 });
 
@@ -56,6 +54,5 @@ test("Telegram order notification query is constrained to the sole tenant branch
       },
     });
   } finally {
-    service.onModuleDestroy();
   }
 });
