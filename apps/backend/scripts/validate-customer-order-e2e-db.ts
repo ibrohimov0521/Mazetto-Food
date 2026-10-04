@@ -1256,6 +1256,7 @@ async function proveOrderGraph(
       attempt: true,
       order: {
         include: {
+          branch: { select: { tenantId: true } },
           items: true,
           kitchenTickets: true,
           statusHistory: { orderBy: { createdAt: "asc" } },
@@ -1272,6 +1273,17 @@ async function proveOrderGraph(
   assert.equal(customerOrder.order.kitchenTickets.length, 1);
   assert.ok(customerOrder.order.statusHistory.length >= 2);
   assert.equal(customerOrder.attempt?.status, "COMPLETED");
+  const notification = await prisma.notificationOutbox.findUniqueOrThrow({
+    where: {
+      tenantId_dedupeKey: {
+        tenantId: customerOrder.order.branch.tenantId,
+        dedupeKey: `staff_new_order:${customerOrder.order.id}`,
+      },
+    },
+  });
+  assert.equal(notification.kind, "staff_new_order");
+  assert.equal(notification.orderId, customerOrder.order.id);
+  assert.equal(notification.status, "PENDING");
   assert.equal(
     customerOrder.order.deliveryFeeTotal.toFixed(2),
     expected.expectedDeliveryFee.toFixed(2),
@@ -1394,6 +1406,7 @@ async function orderGraphCounts(prisma: PrismaService) {
     orderItems,
     statusHistory,
     kitchenTickets,
+    notificationOutbox,
   ] = await Promise.all([
     prisma.order.count(),
     prisma.customerOrder.count(),
@@ -1401,9 +1414,18 @@ async function orderGraphCounts(prisma: PrismaService) {
     prisma.orderItem.count(),
     prisma.orderStatusHistory.count(),
     prisma.kitchenTicket.count(),
+    prisma.notificationOutbox.count(),
   ]);
 
-  return { attempts, customerOrders, kitchenTickets, orderItems, orders, statusHistory };
+  return {
+    attempts,
+    customerOrders,
+    kitchenTickets,
+    notificationOutbox,
+    orderItems,
+    orders,
+    statusHistory,
+  };
 }
 
 function assertIsolatedDatabase(): void {
