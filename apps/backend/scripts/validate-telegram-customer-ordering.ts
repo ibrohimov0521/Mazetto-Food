@@ -38,10 +38,6 @@ type EngineCall = {
   };
   source?: OrderSource;
 };
-type StaffNotificationCall = {
-  orderId: string;
-};
-
 const customer = {
   id: "customer_1",
   name: "Ali",
@@ -1010,7 +1006,7 @@ async function testBranchLocation(): Promise<void> {
 async function testDeliveryFlow(): Promise<void> {
   sentTelegramPayloads.length = 0;
   const prisma = new InMemoryPrisma();
-  const { service, engineCalls, staffNotificationCalls, callbackBase } = createService(prisma);
+  const { service, engineCalls, callbackBase } = createService(prisma);
 
   await seedCart(service, prisma, callbackBase);
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:checkout" });
@@ -1060,21 +1056,18 @@ async function testDeliveryFlow(): Promise<void> {
   ]);
   assert.equal(prisma.cartRecord?.items.length, 0);
   assert.equal(prisma.checkoutSession, null);
-  assert.deepEqual(staffNotificationCalls, [{ orderId: "order_telegram_1" }]);
-
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:confirm:cart_1" });
-  assert.equal(engineCalls.length, 1, "stale duplicate confirm must not create another order");
   assert.equal(
-    staffNotificationCalls.length,
+    engineCalls.length,
     1,
-    "stale duplicate confirm must not send another staff notification",
+    "stale duplicate confirm must not create another order or outbox event",
   );
 }
 
 async function testPickupRegression(): Promise<void> {
   sentTelegramPayloads.length = 0;
   const prisma = new InMemoryPrisma();
-  const { service, engineCalls, staffNotificationCalls, callbackBase } = createService(prisma);
+  const { service, engineCalls, callbackBase } = createService(prisma);
 
   await seedCart(service, prisma, callbackBase);
   await service.handleCustomerCallback({ ...callbackBase, data: "cust:checkout" });
@@ -1087,7 +1080,6 @@ async function testPickupRegression(): Promise<void> {
   assert.equal(engineCalls[0]?.dto.type, "PICKUP");
   assert.equal(engineCalls[0]?.dto.address, undefined);
   assert.equal(engineCalls[0]?.dto.paymentMethod, "CASH");
-  assert.deepEqual(staffNotificationCalls, [{ orderId: "order_telegram_1" }]);
 }
 
 async function testDeliveryNoteFlow(): Promise<void> {
@@ -1169,7 +1161,6 @@ async function seedCart(
 
 function createService(prisma: InMemoryPrisma) {
   const engineCalls: EngineCall[] = [];
-  const staffNotificationCalls: StaffNotificationCall[] = [];
   const orderEngine = {
     quoteCheckout: async () => ({
       subtotal: product.sellingPrice.toFixed(2),
@@ -1193,15 +1184,8 @@ function createService(prisma: InMemoryPrisma) {
       };
     },
   };
-  const staffNotifications = {
-    notifyNewOrder: async (orderId: string) => {
-      staffNotificationCalls.push({ orderId });
-    },
-  };
   const service = new TelegramCustomerOrderingService(
     prisma as never,
-    orderEngine as never,
-    staffNotifications as never,
     new TelegramCustomerScreenService(),
     new TelegramCheckoutSessionService(prisma as never),
     new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
@@ -1225,7 +1209,7 @@ function createService(prisma: InMemoryPrisma) {
     from: { id: "tg_1" },
   };
 
-  return { service, engineCalls, staffNotificationCalls, callbackBase };
+  return { service, engineCalls, callbackBase };
 }
 
 function lastText(): string {
