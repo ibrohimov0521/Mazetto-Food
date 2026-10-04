@@ -1,4 +1,5 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
 import { useEffect, useRef, useState } from "react";
 
@@ -15,6 +16,7 @@ export const MotionButton = "button";
 const countDuration = 180;
 
 export function AnimatedNumber({ value }: { value: number }) {
+  const locale = useLocale();
   const [display, setDisplay] = useState(value);
   const fromRef = useRef(value);
   const frameRef = useRef(0);
@@ -44,14 +46,14 @@ export function AnimatedNumber({ value }: { value: number }) {
     return () => cancelAnimationFrame(frameRef.current);
   }, [value]);
 
-  return <span>{Math.round(display).toLocaleString("uz-UZ")}</span>;
+  return <span>{Math.round(display).toLocaleString(locale === "ru" ? "ru-RU" : "uz-UZ")}</span>;
 }
 
 export function AnimatedMoney({ value }: { value: number }) {
+  const t = useTranslations("Customer");
   return (
     <>
-      <AnimatedNumber value={value} /> so'm
-    </>
+      <AnimatedNumber value={value} /> {t("so_m_ea86286f")}</>
   );
 }
 

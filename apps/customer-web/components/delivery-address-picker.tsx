@@ -1,4 +1,5 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCheckoutRuntime } from "../lib/checkout-runtime";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 
 import {
   deliveryAddressText,
@@ -27,12 +29,13 @@ import type {
 
 const DeliveryMap = dynamic(() => import("./delivery-map"), {
   ssr: false,
-  loading: () => (
-    <div className="mf-map-placeholder" role="status">
-      Xarita yuklanmoqda...
-    </div>
-  ),
+  loading: MapLoading,
 });
+function MapLoading() {
+  const t = useTranslations("Customer");
+  return <div className="mf-map-placeholder" role="status">{t("xarita_yuklanmoqda_096f31db")}</div>;
+}
+
 const emptyDetails = {
   address: "",
   house: "",
@@ -61,6 +64,8 @@ export function DeliveryAddressPicker({
   onBusyChange?: (busy: boolean) => void;
   onRemove?: (location: DeliveryLocation) => void;
 }) {
+  const t = useTranslations("Customer");
+  const locale = useLocale();
   const { customer, refreshCustomer, request: apiFetch } = useCheckoutRuntime();
   const [saved, setSaved] = useState<SavedAddress[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +75,7 @@ export function DeliveryAddressPicker({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [details, setDetails] = useState<Details>(emptyDetails);
   const [point, setPoint] = useState<DeliveryPoint | null>(null);
-  const [label, setLabel] = useState("Uy");
+  const [label, setLabel] = useState(locale === "ru" ? "Дом" : "Uy");
   const [save, setSave] = useState(true);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -466,28 +471,26 @@ export function DeliveryAddressPicker({
     >
       {loadError ? (
         <div className="mf-location-notice" role="alert">
-          {loadError}
+          {localizeCustomerCopy(loadError, locale)}
           <button
             type="button"
             className="mf-text-command"
             onClick={() => void load()}
           >
             <RotateCw size={16} />
-            Qayta urinish
-          </button>
+            {t("qayta_urinish_422d2790")}</button>
         </div>
       ) : null}
       {loading ? (
         <div className="mf-address-loading" role="status">
-          Manzillar yuklanmoqda...
-        </div>
+          {t("manzillar_yuklanmoqda_3a8dd281")}</div>
       ) : null}
       {!loading && !editing && entries.length > 0 ? (
         <div className="mf-saved-addresses">
-          <p className="mf-address-question">Yetkazish manzili</p>
+          <p className="mf-address-question">{t("yetkazish_manzili_1de1c8d6")}</p>
           <div
             role="radiogroup"
-            aria-label="Saqlangan manzillar"
+            aria-label={t("saqlangan_manzillar_68b720a3")}
             className="mf-saved-list"
           >
             {entries.map((entry) => (
@@ -518,8 +521,8 @@ export function DeliveryAddressPicker({
                   <button
                     type="button"
                     className="mf-icon-control"
-                    aria-label={entry.label + " manzilini tahrirlash"}
-                    title="Tahrirlash"
+                    aria-label={localizeCustomerCopy(entry.label + " manzilini tahrirlash", locale)}
+                    title={t("tahrirlash_d68b026b")}
                     onClick={() => edit(entry)}
                   >
                     <Pencil size={16} />
@@ -527,8 +530,8 @@ export function DeliveryAddressPicker({
                   <button
                     type="button"
                     className="mf-icon-control"
-                    aria-label={entry.label + " manzilini o'chirish"}
-                    title="O'chirish"
+                    aria-label={localizeCustomerCopy(entry.label + " manzilini o'chirish", locale)}
+                    title={t("o_chirish_85f07602")}
                     onClick={() => setDeleteId(entry.id)}
                   >
                     <Trash2 size={16} />
@@ -536,21 +539,19 @@ export function DeliveryAddressPicker({
                 </div>
                 {deleteId === entry.id ? (
                   <div className="mf-address-delete" role="alert">
-                    <span>Bu manzil o'chirilsinmi?</span>
+                    <span>{t("bu_manzil_o_chirilsinmi_17884afd")}</span>
                     <button
                       type="button"
                       className="mf-text-command"
                       onClick={() => void remove(entry.id)}
                     >
-                      O'chirish
-                    </button>
+                      {t("o_chirish_85f07602")}</button>
                     <button
                       type="button"
                       className="mf-text-command"
                       onClick={() => setDeleteId(null)}
                     >
-                      Bekor qilish
-                    </button>
+                      {t("bekor_qilish_7e0b9a83")}</button>
                   </div>
                 ) : null}
               </div>
@@ -568,16 +569,14 @@ export function DeliveryAddressPicker({
               }}
             >
               <Check size={18} />
-              Shu manzilga
-            </button>
+              {t("shu_manzilga_c7f850c2")}</button>
             <button
               type="button"
               className="mf-location-button"
               onClick={() => edit()}
             >
               <Plus size={18} />
-              Yangi manzil
-            </button>
+              {t("yangi_manzil_00542a18")}</button>
           </div>
         </div>
       ) : null}
@@ -594,18 +593,16 @@ export function DeliveryAddressPicker({
           />
           {invalidField === "point" ? (
             <p className="mf-field-error mf-map-field-error" role="alert">
-              {formError}
+              {localizeCustomerCopy(formError, locale)}
             </p>
           ) : null}
           {locatingAddress ? (
             <p className="mf-location-notice" role="status">
-              Manzil aniqlanmoqda...
-            </p>
+              {t("manzil_aniqlanmoqda_0e9fa3cc")}</p>
           ) : null}
           <div className="mf-address-fields">
             <label className="mf-checkout-field mf-field-wide">
-              Ko'cha yoki mahalla
-              <input
+              {t("ko_cha_yoki_mahalla_605c9fea")}<input
                 ref={addressInputRef}
                 className="mf-input"
                 aria-invalid={invalidField === "address"}
@@ -615,7 +612,7 @@ export function DeliveryAddressPicker({
                     : undefined
                 }
                 autoComplete="address-line1"
-                placeholder="Masalan, Amir Temur ko'chasi"
+                placeholder={t("masalan_amir_temur_ko_chasi_037f2a14")}
                 maxLength={200}
                 value={details.address}
                 onChange={(event) => {
@@ -633,13 +630,12 @@ export function DeliveryAddressPicker({
                   className="mf-field-error"
                   role="alert"
                 >
-                  {formError}
+                  {localizeCustomerCopy(formError, locale)}
                 </span>
               ) : null}
             </label>
             <label className="mf-checkout-field">
-              Uy / bino
-              <input
+              {t("uy_bino_34635c72")}<input
                 ref={houseInputRef}
                 className="mf-input"
                 aria-invalid={invalidField === "house"}
@@ -647,7 +643,7 @@ export function DeliveryAddressPicker({
                   invalidField === "house" ? "delivery-house-error" : undefined
                 }
                 autoComplete="address-line2"
-                placeholder="12A"
+                placeholder={t("12a_46a548c4")}
                 maxLength={40}
                 value={details.house}
                 onChange={(event) => {
@@ -665,15 +661,14 @@ export function DeliveryAddressPicker({
                   className="mf-field-error"
                   role="alert"
                 >
-                  {formError}
+                  {localizeCustomerCopy(formError, locale)}
                 </span>
               ) : null}
             </label>
             <label className="mf-checkout-field">
-              Xonadon
-              <input
+              {t("xonadon_8a4bbf1f")}<input
                 className="mf-input"
-                placeholder="Ixtiyoriy"
+                placeholder={t("ixtiyoriy_df2dc5bc")}
                 maxLength={20}
                 value={details.apartment}
                 onChange={(event) =>
@@ -684,13 +679,11 @@ export function DeliveryAddressPicker({
           </div>
           <details className="mf-address-extra">
             <summary>
-              Mo'ljal va kirish tafsilotlari
-              <ChevronDown size={17} />
+              {t("mo_ljal_va_kirish_tafsilotlari_8492ceef")}<ChevronDown size={17} />
             </summary>
             <div className="mf-address-fields">
               <label className="mf-checkout-field">
-                Kirish yo'lagi
-                <input
+                {t("kirish_yo_lagi_79a62381")}<input
                   className="mf-input"
                   placeholder="2"
                   maxLength={20}
@@ -701,8 +694,7 @@ export function DeliveryAddressPicker({
                 />
               </label>
               <label className="mf-checkout-field">
-                Qavat
-                <input
+                {t("qavat_1a1772dd")}<input
                   className="mf-input"
                   placeholder="3"
                   maxLength={20}
@@ -713,10 +705,9 @@ export function DeliveryAddressPicker({
                 />
               </label>
               <label className="mf-checkout-field mf-field-wide">
-                Mo'ljal
-                <input
+                {t("mo_ljal_4700a7dc")}<input
                   className="mf-input"
-                  placeholder="Masalan, dorixona yonidagi kirish"
+                  placeholder={t("masalan_dorixona_yonidagi_kirish_08a3cf60")}
                   maxLength={120}
                   value={details.landmark}
                   onChange={(event) =>
@@ -732,7 +723,7 @@ export function DeliveryAddressPicker({
               checked={save}
               onChange={(event) => setSave(event.target.checked)}
             />
-            <span>Keyingi buyurtmalar uchun saqlash</span>
+            <span>{t("keyingi_buyurtmalar_uchun_saqlash_8f0944c2")}</span>
           </label>
           {save ? (
             <div className="mf-address-labels">
@@ -752,7 +743,7 @@ export function DeliveryAddressPicker({
                 <input
                   ref={labelInputRef}
                   className="mf-input"
-                  aria-label="Manzil nomi"
+                  aria-label={t("manzil_nomi_0ef85300")}
                   aria-invalid={invalidField === "label"}
                   aria-describedby={
                     invalidField === "label"
@@ -768,7 +759,7 @@ export function DeliveryAddressPicker({
                       setFormError(null);
                     }
                   }}
-                  placeholder="Manzil nomi"
+                  placeholder={t("manzil_nomi_0ef85300")}
                 />
                 {invalidField === "label" ? (
                   <span
@@ -776,7 +767,7 @@ export function DeliveryAddressPicker({
                     className="mf-field-error"
                     role="alert"
                   >
-                    {formError}
+                    {localizeCustomerCopy(formError, locale)}
                   </span>
                 ) : null}
               </div>
@@ -787,7 +778,7 @@ export function DeliveryAddressPicker({
               className="mf-checkout-error mf-address-action-error"
               role="alert"
             >
-              {formError}
+              {localizeCustomerCopy(formError, locale)}
             </p>
           ) : null}
           <div className="mf-address-bottom">
@@ -797,7 +788,7 @@ export function DeliveryAddressPicker({
               onClick={() => void confirm()}
             >
               <Check size={18} />
-              {busy ? "Saqlanmoqda..." : "Manzilni tasdiqlash"}
+              {busy ? t("saqlanmoqda_b3818694") : t("manzilni_tasdiqlash_a5ab403c")}
             </button>
             {entries.length ? (
               <button
@@ -808,15 +799,14 @@ export function DeliveryAddressPicker({
                   setFormError(null);
                 }}
               >
-                Saqlangan manzillar
-              </button>
+                {t("saqlangan_manzillar_68b720a3")}</button>
             ) : null}
           </div>
         </div>
       ) : null}
       {(!editing && formError) || error ? (
         <p className="mf-checkout-error" role="alert">
-          {(!editing && formError) || error}
+          {localizeCustomerCopy((!editing && formError) || error, locale)}
         </p>
       ) : null}
     </fieldset>

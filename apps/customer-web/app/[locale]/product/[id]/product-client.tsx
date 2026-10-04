@@ -1,17 +1,19 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Heart } from "lucide-react";
 import styles from "./product-detail.module.css";
-import { CustomerMenuSections } from "../../../components/customer-menu-sections";
-import { MediaImage } from "../../../components/media-image";
-import { hapticTap } from "../../../components/motion-primitives";
-import { SiteShell } from "../../../components/site-shell";
-import { apiFetch } from "../../../lib/api";
-import { displayProduct } from "../../../lib/customer-display";
-import { formatMoney, useCart } from "../../../lib/cart";
-import type { Product } from "../../../lib/types";
+import { CustomerMenuSections } from "@/components/customer-menu-sections";
+import { MediaImage } from "@/components/media-image";
+import { hapticTap } from "@/components/motion-primitives";
+import { SiteShell } from "@/components/site-shell";
+import { apiFetch } from "@/lib/api";
+import { displayProduct } from "@/lib/customer-display";
+import { localizeCustomerCopy } from "@/lib/customer-copy.mjs";
+import { formatMoney, useCart } from "@/lib/cart";
+import type { Product } from "@/lib/types";
 
 export default function ProductPage({
   id,
@@ -34,10 +36,12 @@ function ProductDetails({
   id: string;
   initialProduct: Product;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, toggleFavorite, triggerCartFlight } = useCart();
   const [product, setProduct] = useState<Product | null>(() =>
-    displayProduct(initialProduct),
+    displayProduct(initialProduct, locale),
   );
   const [variantId, setVariantId] = useState<string | undefined>(
     () =>
@@ -62,7 +66,7 @@ function ProductDetails({
     void apiFetch<Product>(`/customer/menu/products/${id}${query}`)
       .then((data) => {
         if (!active) return;
-        setProduct(displayProduct(data));
+        setProduct(displayProduct(data, locale));
         setVariantId(
           data.variants.find((variant) => variant.isDefault)?.id ??
             data.variants[0]?.id,
@@ -82,7 +86,7 @@ function ProductDetails({
     return () => {
       active = false;
     };
-  }, [attempt, id]);
+  }, [attempt, id, initialProduct, locale]);
 
   const variant = useMemo(
     () => product?.variants.find((item) => item.id === variantId),
@@ -104,18 +108,16 @@ function ProductDetails({
     return (
       <section className="mx-auto max-w-3xl px-4 py-6">
         <div className="mf-card p-6 text-center" role="alert">
-          <h1 className="text-2xl font-black">Mahsulot ochilmadi</h1>
-          <p className="mt-3 text-sm">{error}</p>
+          <h1 className="text-2xl font-black">{t("mahsulot_ochilmadi_6468bdee")}</h1>
+          <p className="mt-3 text-sm">{localizeCustomerCopy(error, locale)}</p>
           <button
             className="mf-button-primary mt-5 px-5 py-3 font-bold"
             onClick={() => setAttempt((value) => value + 1)}
             type="button"
           >
-            Qayta urinish
-          </button>
+            {t("qayta_urinish_422d2790")}</button>
           <Link className="mt-4 block font-bold" href="/menu">
-            Menyuga qaytish
-          </Link>
+            {t("menyuga_qaytish_1bc4a9f0")}</Link>
         </div>
       </section>
     );
@@ -124,7 +126,7 @@ function ProductDetails({
     return (
       <section
         aria-busy="true"
-        aria-label="Mahsulot yuklanmoqda"
+        aria-label={t("mahsulot_yuklanmoqda_ab5f42c8")}
         className="mf-product-detail-stage mx-auto w-full max-w-6xl px-3 py-4 sm:px-4"
       >
         <div className="mf-product-config p-4 sm:p-6">
@@ -148,24 +150,24 @@ function ProductDetails({
         <div className={`mf-product-config ${styles.layout}`}>
           <div className={styles.toolbar}>
             <Link
-              aria-label="Menyuga qaytish"
+              aria-label={t("menyuga_qaytish_1bc4a9f0")}
               className={styles.backButton}
               href="/menu"
             >
               <ArrowLeft aria-hidden="true" size={20} />
-              <span>Menyu</span>
+              <span>{t("menyu_e4bc6451")}</span>
             </Link>
             <button
               aria-label={
                 favorite
-                  ? "Sevimlilardan olib tashlash"
-                  : "Sevimlilarga qo'shish"
+                  ? localizeCustomerCopy("Sevimlilardan olib tashlash", locale)
+                  : localizeCustomerCopy("Sevimlilarga qo'shish", locale)
               }
               aria-pressed={favorite}
               title={
                 favorite
-                  ? "Sevimlilardan olib tashlash"
-                  : "Sevimlilarga qo'shish"
+                  ? localizeCustomerCopy("Sevimlilardan olib tashlash", locale)
+                  : localizeCustomerCopy("Sevimlilarga qo'shish", locale)
               }
               className={styles.favoriteButton}
               onClick={() => toggleFavorite(product.id)}
@@ -203,19 +205,18 @@ function ProductDetails({
                 </p>
               ) : null}
               <p className="mf-product-detail-price mt-4 font-black text-[#087d78]">
-                {formatMoney(unitTotal)}
+                {formatMoney(unitTotal, locale)}
               </p>
               {product.preparationTime != null ? (
                 <p className="mt-2 text-xs font-semibold text-[#07373a]/70">
-                  {product.preparationTime} daq
-                </p>
+                  {product.preparationTime} {t("daq_0ff9d687")}</p>
               ) : null}
             </div>
           </div>
           <div className={styles.options}>
             {product.variants.length ? (
               <fieldset>
-                <legend className="text-sm font-bold">Turini tanlang</legend>
+                <legend className="text-sm font-bold">{t("turini_tanlang_93395dc9")}</legend>
                 <div className="mf-product-variants mt-2">
                   {product.variants.map((item) => (
                     <label
@@ -232,7 +233,7 @@ function ProductDetails({
                       <span className="min-w-0">
                         <span className="block font-bold">{item.name}</span>
                         <span className="mt-1 block text-xs text-[#087d78]">
-                          {formatMoney(item.sellingPrice)}
+                          {formatMoney(item.sellingPrice, locale)}
                         </span>
                       </span>
                     </label>
@@ -242,7 +243,7 @@ function ProductDetails({
             ) : null}
             {product.modifiers.length ? (
               <fieldset>
-                <legend className="text-sm font-bold">Qo'shimchalar</legend>
+                <legend className="text-sm font-bold">{t("qo_shimchalar_1fe8c7f3")}</legend>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {product.modifiers.map(({ modifier, isRequired }) => (
                     <label
@@ -266,10 +267,10 @@ function ProductDetails({
                       <span className="min-w-0">
                         <span className="block break-words font-semibold">
                           {modifier.name}
-                          {isRequired ? " (majburiy)" : ""}
+                          {isRequired ? t("majburiy_bb39de69") : ""}
                         </span>
                         <span className="mt-1 block text-xs text-[#087d78]">
-                          +{formatMoney(modifier.price)}
+                          +{formatMoney(modifier.price, locale)}
                         </span>
                       </span>
                     </label>
@@ -278,18 +279,17 @@ function ProductDetails({
               </fieldset>
             ) : null}
             <label className="grid gap-2 text-sm font-bold">
-              Izoh (ixtiyoriy)
-              <textarea
+              {t("izoh_ixtiyoriy_18cf5a79")}<textarea
                 className="mf-input min-h-20 resize-y px-3 py-3 font-normal"
-                placeholder="Oshxonaga izoh"
+                placeholder={t("oshxonaga_izoh_36b0eaf6")}
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
               />
             </label>
             <div className="mf-product-action">
-              <div aria-label="Mahsulot miqdori" className="mf-detail-quantity">
+              <div aria-label={t("mahsulot_miqdori_40e73cc3")} className="mf-detail-quantity">
                 <button
-                  aria-label="Miqdorni kamaytirish"
+                  aria-label={t("miqdorni_kamaytirish_41a2d3d1")}
                   className="mf-quantity-button"
                   disabled={quantity <= 1}
                   onClick={() => setQuantity((value) => Math.max(1, value - 1))}
@@ -299,7 +299,7 @@ function ProductDetails({
                 </button>
                 <output aria-live="polite">{quantity}</output>
                 <button
-                  aria-label="Miqdorni oshirish"
+                  aria-label={t("miqdorni_oshirish_9159d17d")}
                   className="mf-quantity-button"
                   onClick={() => setQuantity((value) => value + 1)}
                   type="button"
@@ -331,8 +331,8 @@ function ProductDetails({
                 }}
                 type="button"
               >
-                <span>Savatchaga qo'shish</span>
-                <span>{formatMoney(total)}</span>
+                <span>{t("savatchaga_qo_shish_87a3b40d")}</span>
+                <span>{formatMoney(total, locale)}</span>
               </button>
             </div>
           </div>
@@ -341,7 +341,7 @@ function ProductDetails({
       <CustomerMenuSections
         compactTop
         intro={false}
-        title="Yana nimalar buyurtma qilamiz?"
+        title={t("yana_nimalar_buyurtma_qilamiz_009c8887")}
       />
     </>
   );

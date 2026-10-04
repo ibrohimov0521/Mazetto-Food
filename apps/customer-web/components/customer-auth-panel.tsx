@@ -1,8 +1,10 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 import { useCart, type CustomerSession } from "../lib/cart";
 import { hapticTap } from "./motion-primitives";
 import { PhoneInput, nationalPhoneValue } from "./phone-input";
@@ -22,6 +24,8 @@ export function CustomerAuthPanel({
   onAuthenticated?: () => void;
   title?: string;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   const { customer, setCustomer, showToast } = useCart();
   const [name, setName] = useState(customer?.name ?? "");
   const [phone, setPhone] = useState(nationalPhoneValue(customer?.phone ?? ""));
@@ -161,7 +165,7 @@ export function CustomerAuthPanel({
   if (customer?.accessToken) {
     return (
       <div className="mf-card-soft p-4">
-        <p className="text-sm font-black text-[#17314A]">Profil ulangan</p>
+        <p className="text-sm font-black text-[#17314A]">{t("profil_ulangan_817fff34")}</p>
         <p className="mt-1 text-sm font-semibold text-[#586B7D]">
           {customer.name} · {customer.phone}
         </p>
@@ -169,8 +173,7 @@ export function CustomerAuthPanel({
           className="pressable ripple mf-button-secondary mt-4 inline-flex px-4 py-3 text-sm font-black"
           href="/orders"
         >
-          Buyurtmalarim
-        </Link>
+          {t("buyurtmalarim_44dff903")}</Link>
       </div>
     );
   }
@@ -191,17 +194,16 @@ export function CustomerAuthPanel({
       }}
     >
       <div>
-        <h2 className="text-2xl font-black text-[#17314A]">{title}</h2>
+        <h2 className="text-2xl font-black text-[#17314A]">{localizeCustomerCopy(title, locale)}</h2>
         <p className="mt-2 text-sm font-semibold leading-6 text-[#586B7D]">
-          {description}
+          {localizeCustomerCopy(description, locale)}
         </p>
       </div>
       <label className="grid gap-1.5 text-sm font-semibold">
-        Ismingiz
-        <input
+        {t("ismingiz_4e44737c")}<input
           autoComplete="name"
           className="mf-input px-4 py-3"
-          placeholder="Ismingiz"
+          placeholder={t("ismingiz_4e44737c")}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -222,12 +224,12 @@ export function CustomerAuthPanel({
       {pendingVerification ? (
         <>
           <input
-            aria-label="Telegram tasdiqlash kodi"
+            aria-label={t("telegram_tasdiqlash_kodi_178fce51")}
             autoComplete="one-time-code"
             className="mf-input px-4 py-3"
             inputMode="numeric"
             maxLength={6}
-            placeholder="Telegram tasdiqlash kodi"
+            placeholder={t("telegram_tasdiqlash_kodi_178fce51")}
             ref={codeField}
             value={code}
             onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
@@ -239,7 +241,7 @@ export function CustomerAuthPanel({
             >
               {expiresInSeconds > 0
                 ? `Kod ${expiresInSeconds} soniya amal qiladi`
-                : "Kod muddati tugadi. Yangi kod oling."}
+                : t("kod_muddati_tugadi_yangi_kod_oling_6d33b9ca")}
             </p>
           ) : null}
           <button
@@ -247,7 +249,7 @@ export function CustomerAuthPanel({
             disabled={phone.length !== 9 || !code || verifyingCode}
             type="submit"
           >
-            {verifyingCode ? "Tekshirilmoqda..." : "Kodni tasdiqlash"}
+            {verifyingCode ? t("tekshirilmoqda_3188ab9c") : t("kodni_tasdiqlash_f6d4a11c")}
           </button>
           {telegramBotUrl ? (
             <Link
@@ -255,8 +257,7 @@ export function CustomerAuthPanel({
               href={telegramBotUrl}
               target="_blank"
             >
-              Telegram botga o'tish
-            </Link>
+              {t("telegram_botga_o_tish_5fb84bc4")}</Link>
           ) : null}
           {/*
             Qayta yuborish CHEKLANGAN: har bosish serverda yangi kod
@@ -272,10 +273,10 @@ export function CustomerAuthPanel({
             type="button"
           >
             {requestingCode
-              ? "Yuborilmoqda..."
+              ? t("yuborilmoqda_4b39854a")
               : resendInSeconds > 0
                 ? `Qayta yuborish (${resendInSeconds})`
-                : "Kodni qayta yuborish"}
+                : t("kodni_qayta_yuborish_cbe3b9d4")}
           </button>
         </>
       ) : (
@@ -284,7 +285,7 @@ export function CustomerAuthPanel({
           disabled={phone.length !== 9 || requestingCode}
           type="submit"
         >
-          {requestingCode ? "Yuborilmoqda..." : "Kod olish"}
+          {requestingCode ? t("yuborilmoqda_4b39854a") : t("kod_olish_f7d391dc")}
         </button>
       )}
       {message ? (
@@ -292,7 +293,7 @@ export function CustomerAuthPanel({
           role="status"
           className="mf-surface-note rounded-xl px-4 py-3 text-sm font-bold"
         >
-          {message}
+          {localizeCustomerCopy(message, locale)}
         </p>
       ) : null}
     </form>

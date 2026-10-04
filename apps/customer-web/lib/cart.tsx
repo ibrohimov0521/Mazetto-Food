@@ -531,9 +531,10 @@ export function useCart() {
   return value;
 }
 
-export function formatMoney(value: string | number): string {
-  // Use stable separators across the server and browser ICU locale versions.
-  return `${Number(value || 0).toLocaleString("en-US")} so'm`;
+export function formatMoney(value: string | number, locale = "uz"): string {
+  const numberLocale = locale === "ru" ? "ru-RU" : "en-US";
+  const currency = locale === "ru" ? "сум" : "so" + String.fromCharCode(39) + "m";
+  return Number(value || 0).toLocaleString(numberLocale) + " " + currency;
 }
 
 export function cartItemKey(item: {

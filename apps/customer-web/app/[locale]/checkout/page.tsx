@@ -1,8 +1,9 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -17,23 +18,24 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { deliveryAddressText } from "../../lib/delivery-location";
+import { deliveryAddressText } from "@/lib/delivery-location";
 
 import "leaflet/dist/leaflet.css";
 import "./checkout.css";
-import "../../components/fulfillment-dialog.css";
+import "@/components/fulfillment-dialog.css";
 
-import { CustomerAuthPanel } from "../../components/customer-auth-panel";
-import { AnimatedMoney, hapticTap } from "../../components/motion-primitives";
-import { MediaImage } from "../../components/media-image";
-import { SiteShell } from "../../components/site-shell";
-import { OrderActionBar } from "../../components/order-action-bar";
-import { useCheckoutRuntime } from "../../lib/checkout-runtime";
-import { localizeMenuName } from "../../lib/customer-display";
+import { CustomerAuthPanel } from "@/components/customer-auth-panel";
+import { AnimatedMoney, hapticTap } from "@/components/motion-primitives";
+import { MediaImage } from "@/components/media-image";
+import { SiteShell } from "@/components/site-shell";
+import { OrderActionBar } from "@/components/order-action-bar";
+import { useCheckoutRuntime } from "@/lib/checkout-runtime";
+import { localizeMenuName } from "@/lib/customer-display";
+import { localizeCustomerCopy } from "@/lib/customer-copy.mjs";
 
-import type { Branch } from "../../lib/types";
-import { normalizePhone } from "../../lib/phone";
-import { PhoneInput, nationalPhoneValue } from "../../components/phone-input";
+import type { Branch } from "@/lib/types";
+import { normalizePhone } from "@/lib/phone";
+import { PhoneInput, nationalPhoneValue } from "@/components/phone-input";
 
 type OrderResult = {
   customerOrder: { id: string };
@@ -128,6 +130,9 @@ export default function CheckoutPage() {
 }
 
 function CheckoutFlow() {
+  const locale = useLocale();
+  const meta = useTranslations("CustomerMeta");
+  const t = useTranslations("Customer");
   const router = useRouter();
   const {
     clearCart,
@@ -531,19 +536,17 @@ function CheckoutFlow() {
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-checkout-card p-8">
           <p className="text-sm font-black uppercase text-[#0A7168]">
-            Rasmiylashtirish
-          </p>
+            {t("rasmiylashtirish_28dca60c")}</p>
           <CustomerAuthPanel
-            description="Buyurtmani yakunlash uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
-            title="Telefonni tasdiqlang"
+            description={meta("verifyCheckout")}
+            title={t("telefonni_tasdiqlang_517d50f6")}
           />
           {process.env.NODE_ENV === "development" ? (
             <Link
               className="mf-location-button is-primary mt-5"
               href="/checkout/preview"
             >
-              Dizaynni loginsiz ko'rish
-              <ArrowRight size={18} />
+              {t("dizaynni_loginsiz_ko_rish_5f7ddfd9")}<ArrowRight size={18} />
             </Link>
           ) : null}
         </div>
@@ -561,10 +564,9 @@ function CheckoutFlow() {
     return (
       <section className="mf-checkout-empty">
         <ShoppingBag size={40} />
-        <h1>Savatingiz bo'sh</h1>
+        <h1>{t("savatingiz_bo_sh_c7cdb9f8")}</h1>
         <Link className="mf-location-button is-primary" href="/menu">
-          Menyuga o'tish
-          <ArrowRight size={18} />
+          {t("menyuga_o_tish_cd33f01c")}<ArrowRight size={18} />
         </Link>
       </section>
     );
@@ -583,21 +585,20 @@ function CheckoutFlow() {
       <header className="mf-checkout-heading">
         <Link href="/cart" className="mf-checkout-back">
           <ArrowLeft size={18} />
-          Savatcha
-        </Link>
-        <h1>Buyurtmani rasmiylashtirish</h1>
-        <ol className="mf-checkout-progress" aria-label="Buyurtma bosqichlari">
+          {t("savatcha_7a2af186")}</Link>
+        <h1>{t("buyurtmani_rasmiylashtirish_b7827cb2")}</h1>
+        <ol className="mf-checkout-progress" aria-label={t("buyurtma_bosqichlari_93ff8b5e")}>
           <li className="is-complete">
             <Check size={15} />
-            <span>Savatcha</span>
+            <span>{t("savatcha_7a2af186")}</span>
           </li>
           <li aria-current="step">
             <span className="mf-progress-number">2</span>
-            <span>Rasmiylashtirish</span>
+            <span>{t("rasmiylashtirish_28dca60c")}</span>
           </li>
           <li>
             <span className="mf-progress-number">3</span>
-            <span>Tayyor</span>
+            <span>{t("tayyor_6c016196")}</span>
           </li>
         </ol>
       </header>
@@ -615,7 +616,7 @@ function CheckoutFlow() {
               ) : (
                 <Truck size={21} />
               )}
-              {type === "PICKUP" ? "Olib ketish" : "Yetkazish manzili"}
+              {type === "PICKUP" ? t("olib_ketish_903d19bf") : t("yetkazish_manzili_1de1c8d6")}
             </h2>
             {fulfillment ? (
               <div className="mf-selected-fulfillment">
@@ -637,8 +638,7 @@ function CheckoutFlow() {
                   {fulfillmentConfirmed ? (
                     <small>
                       <Check size={14} />
-                      Manzil tanlangan
-                    </small>
+                      {t("manzil_tanlangan_aea24384")}</small>
                   ) : null}
                 </div>
                 <button
@@ -649,8 +649,8 @@ function CheckoutFlow() {
                 >
                   <Pencil size={17} aria-hidden="true" />
                   {fulfillmentConfirmed
-                    ? "O'zgartirish"
-                    : "Manzilni tasdiqlash"}
+                    ? t("o_zgartirish_f0d93509")
+                    : t("manzilni_tasdiqlash_a5ab403c")}
                 </button>
               </div>
             ) : (
@@ -660,8 +660,7 @@ function CheckoutFlow() {
                 onClick={openFulfillment}
               >
                 <MapPin size={18} />
-                Qabul qilish usulini tanlash
-              </button>
+                {t("qabul_qilish_usulini_tanlash_f3462386")}</button>
             )}
             <FieldError message={errors.address ?? errors.branchId} />
             {branchError ? (
@@ -672,8 +671,7 @@ function CheckoutFlow() {
                   onClick={() => void loadBranches()}
                   type="button"
                 >
-                  Qayta urinish
-                </button>
+                  {t("qayta_urinish_422d2790")}</button>
               </div>
             ) : null}
           </section>
@@ -681,12 +679,11 @@ function CheckoutFlow() {
           <fieldset disabled={submitting} className="mf-checkout-section">
             <legend className="mf-checkout-section-title">
               <UserRound size={21} />
-              <span>Aloqa ma'lumotlari</span>
+              <span>{t("aloqa_ma_lumotlari_2303a04e")}</span>
             </legend>
             <div className="mf-contact-fields">
               <label className="mf-checkout-field">
-                Ism va familiya
-                <input
+                {t("ism_va_familiya_70769198")}<input
                   id="checkout-name"
                   autoComplete="name"
                   maxLength={120}
@@ -695,7 +692,7 @@ function CheckoutFlow() {
                     ? { "aria-describedby": "checkout-name-error" }
                     : {})}
                   className="mf-input"
-                  placeholder="Ismingiz"
+                  placeholder={t("ismingiz_4e44737c")}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                 />
@@ -722,11 +719,10 @@ function CheckoutFlow() {
               </div>
             </div>
             <label className="mf-checkout-field mf-order-comment">
-              Buyurtmaga izoh
-              <textarea
+              {t("buyurtmaga_izoh_5a1636c5")}<textarea
                 className="mf-input"
                 maxLength={1000}
-                placeholder="Qo'shimcha istaklar (ixtiyoriy)"
+                placeholder={t("qo_shimcha_istaklar_ixtiyoriy_44a9b21f")}
                 rows={2}
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
@@ -737,7 +733,7 @@ function CheckoutFlow() {
           <fieldset disabled={submitting} className="mf-checkout-section">
             <legend className="mf-checkout-section-title">
               <Banknote size={21} />
-              <span>To'lov usuli</span>
+              <span>{t("to_lov_usuli_63f773cf")}</span>
             </legend>
             {paymentAvailability.map((option) => (
               <label
@@ -748,15 +744,15 @@ function CheckoutFlow() {
               >
                 <option.icon size={24} aria-hidden="true" />
                 <span>
-                  <strong>{option.label}</strong>
+                  <strong>{localizeCustomerCopy(option.label, locale)}</strong>
                   <small>
                     {!option.available
-                      ? option.hint
+                      ? localizeCustomerCopy(option.hint, locale)
                       : option.value === "CASH"
                         ? type === "DELIVERY"
-                          ? "Buyurtmani olganda kuryerga"
-                          : "Buyurtmani olganda kassada"
-                        : option.hint}
+                          ? t("buyurtmani_olganda_kuryerga_580d090a")
+                          : t("buyurtmani_olganda_kassada_88ac0fc0")
+                        : localizeCustomerCopy(option.hint, locale)}
                   </small>
                 </span>
                 {option.available ? (
@@ -773,7 +769,7 @@ function CheckoutFlow() {
                    * ko'rinadi va foydalanuvchi uni bosib, hech narsa
                    * bo'lmaganidan chalkashadi.
                    */
-                  <span className="mf-payment-soon">Tez kunda</span>
+                  <span className="mf-payment-soon">{t("tez_kunda_9e2eba19")}</span>
                 )}
               </label>
             ))}
@@ -782,10 +778,9 @@ function CheckoutFlow() {
 
         <aside className="mf-checkout-summary" aria-labelledby="summary-title">
           <div className="mf-summary-heading">
-            <h2 id="summary-title">Sizning buyurtmangiz</h2>
+            <h2 id="summary-title">{t("sizning_buyurtmangiz_9f54a8a4")}</h2>
             <Link href="/cart" className="mf-text-command">
-              Tahrirlash
-            </Link>
+              {t("tahrirlash_d68b026b")}</Link>
           </div>
           <div className="mf-checkout-items">
             {items.map((item) => (
@@ -798,11 +793,10 @@ function CheckoutFlow() {
                   src={item.imageUrl}
                 />
                 <div>
-                  <strong>{localizeMenuName(item.productName)}</strong>
+                  <strong>{localizeMenuName(item.productName, locale)}</strong>
                   <small>
-                    {item.quantity} dona
-                    {item.variantName
-                      ? " / " + localizeMenuName(item.variantName)
+                    {item.quantity} {t("dona_f4145289")}{item.variantName
+                      ? " / " + localizeMenuName(item.variantName, locale)
                       : ""}
                   </small>
                 </div>
@@ -823,7 +817,7 @@ function CheckoutFlow() {
           </div>
           <dl className="mf-checkout-totals">
             <div>
-              <dt>Mahsulotlar</dt>
+              <dt>{t("mahsulotlar_66e73a67")}</dt>
               <dd>
                 <AnimatedMoney
                   value={quote ? Number(quote.subtotal) : subtotal}
@@ -831,21 +825,21 @@ function CheckoutFlow() {
               </dd>
             </div>
             <div>
-              <dt>{type === "DELIVERY" ? "Yetkazib berish" : "Olib ketish"}</dt>
+              <dt>{type === "DELIVERY" ? t("yetkazib_berish_199c427a") : t("olib_ketish_903d19bf")}</dt>
               <dd>
                 {loadingQuote ? (
-                  "Hisoblanmoqda..."
+                  t("hisoblanmoqda_82915ab1")
                 ) : !quote ? (
-                  "Hisoblanmagan"
+                  t("hisoblanmagan_de975acb")
                 ) : deliveryFee ? (
                   <AnimatedMoney value={deliveryFee} />
                 ) : (
-                  "Bepul"
+                  t("bepul_e462cc49")
                 )}
               </dd>
             </div>
             <div className="mf-checkout-grand-total">
-              <dt>Jami</dt>
+              <dt>{t("jami_52cea6a5")}</dt>
               <dd>
                 <AnimatedMoney value={total} />
               </dd>
@@ -861,31 +855,30 @@ function CheckoutFlow() {
           ) : null}
           {submitError ? (
             <p role="alert" className="mf-checkout-error">
-              {submitError}
+              {localizeCustomerCopy(submitError, locale)}
             </p>
           ) : null}
           {offlineMessage && !submitError ? (
             <p role="alert" className="mf-checkout-error">
-              {offlineMessage}
+              {localizeCustomerCopy(offlineMessage, locale)}
             </p>
           ) : null}
           {quoteError ? (
             <div role="alert" className="mf-checkout-error">
-              <p>{quoteError}</p>
+              <p>{localizeCustomerCopy(quoteError, locale)}</p>
               <button
                 className="mf-text-command"
                 onClick={() => void loadQuote()}
                 type="button"
               >
-                Qayta hisoblash
-              </button>
+                {t("qayta_hisoblash_f0405583")}</button>
             </div>
           ) : null}
           <p className="mf-summary-payment">
             <selectedPayment.icon size={18} aria-hidden="true" />{" "}
             {type === "PICKUP"
-              ? selectedPayment.summary.pickup
-              : selectedPayment.summary.delivery}
+              ? localizeCustomerCopy(selectedPayment.summary.pickup, locale)
+              : localizeCustomerCopy(selectedPayment.summary.delivery, locale)}
           </p>
         </aside>
       </div>
@@ -897,7 +890,7 @@ function CheckoutFlow() {
         label={submitting ? "Yuborilmoqda..." : "Tasdiqlash"}
         disabled={locked}
         busy={submitting || loadingQuote}
-        notice={offlineMessage ?? submitError ?? quoteError}
+        notice={localizeCustomerCopy(offlineMessage ?? submitError ?? quoteError, locale) ?? null}
         onConfirm={() => void submitOrder()}
       />
     </div>
@@ -911,9 +904,10 @@ function FieldError({
   message: string | undefined;
   id?: string;
 }) {
+  const locale = useLocale();
   return message ? (
     <p className="mf-checkout-error" {...(id ? { id } : {})}>
-      {message}
+      {localizeCustomerCopy(message, locale)}
     </p>
   ) : null;
 }

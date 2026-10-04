@@ -1,22 +1,25 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ContactFooter } from "../components/contact-footer";
-import { HomepageHeroSlider, PromotionSlider } from "../components/homepage-sliders";
-import { MediaImage } from "../components/media-image";
-import { MotionDiv, pageMotion, sectionMotion } from "../components/motion-primitives";
-import { ProductCard } from "../components/product-card";
-import { SiteShell } from "../components/site-shell";
-import { apiFetch } from "../lib/api";
-import { displayCategory, displayCustomerHome, displayProducts, selectHomeProducts } from "../lib/customer-display";
-import type { Category, CustomerHome, Product } from "../lib/types";
+import { ContactFooter } from "@/components/contact-footer";
+import { HomepageHeroSlider, PromotionSlider } from "@/components/homepage-sliders";
+import { MediaImage } from "@/components/media-image";
+import { MotionDiv, pageMotion, sectionMotion } from "@/components/motion-primitives";
+import { ProductCard } from "@/components/product-card";
+import { SiteShell } from "@/components/site-shell";
+import { apiFetch } from "@/lib/api";
+import { displayCategory, displayCustomerHome, displayProducts, selectHomeProducts } from "@/lib/customer-display";
+import type { Category, CustomerHome, Product } from "@/lib/types";
 
 export default function Home({ initial }: { initial?: { categories: Category[]; products: Product[]; home: CustomerHome } }) {
-  const [categories, setCategories] = useState<Category[]>(() => sortSetsFirst((initial?.categories ?? []).map(displayCategory)));
-  const [products, setProducts] = useState<Product[]>(() => displayProducts(initial?.products ?? []));
-  const [home, setHome] = useState<CustomerHome>(() => displayCustomerHome(initial?.home ?? { heroSlides: [], promotions: [] }));
+  const locale = useLocale();
+  const t = useTranslations("Customer");
+  const [categories, setCategories] = useState<Category[]>(() => sortSetsFirst((initial?.categories ?? []).map((category) => displayCategory(category, locale))));
+  const [products, setProducts] = useState<Product[]>(() => displayProducts(initial?.products ?? [], locale));
+  const [home, setHome] = useState<CustomerHome>(() => displayCustomerHome(initial?.home ?? { heroSlides: [], promotions: [] }, locale));
   const [loading, setLoading] = useState(!initial);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadVersion = useRef(0);
@@ -42,16 +45,16 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
       const next = snapshot(nextCategories, homeProducts, nextHome);
       if (next === renderedRef.current) return;
       renderedRef.current = next;
-      setCategories(sortSetsFirst(nextCategories.map(displayCategory)));
-      setProducts(displayProducts(homeProducts));
-      setHome(displayCustomerHome(nextHome));
+      setCategories(sortSetsFirst(nextCategories.map((category) => displayCategory(category, locale))));
+      setProducts(displayProducts(homeProducts, locale));
+      setHome(displayCustomerHome(nextHome, locale));
     } catch (error) {
       if (version !== loadVersion.current) return;
       setLoadError(error instanceof Error ? error.message : "Ma'lumotlarni yuklab bo'lmadi.");
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, [initial]);
+  }, [initial, locale]);
 
   useEffect(() => {
     if (!initial) {
@@ -87,22 +90,21 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
       {loadError ? (
         <section className="mx-auto max-w-6xl px-4 pb-6">
           <div className="mf-card p-6 text-center">
-            <h2 className="text-2xl font-black text-white">Ma'lumotlar yuklanmadi</h2>
+            <h2 className="text-2xl font-black text-white">{t("ma_lumotlar_yuklanmadi_797bb4d2")}</h2>
             <p className="mt-2 text-sm font-semibold text-white/60">{loadError}</p>
             <button className="pressable ripple mf-button-primary mt-5 px-5 py-3 font-black" onClick={() => void load()} type="button">
-              Qayta urinish
-            </button>
+              {t("qayta_urinish_422d2790")}</button>
           </div>
         </section>
       ) : null}
 
       <PromotionSlider promotions={home.promotions} />
 
-      {loading ? <SkeletonProductSection title="Tavsiya qilamiz" /> : <ProductSection eager products={featured.length ? featured : popular.slice(0, 4)} title="Tavsiya qilamiz" />}
+      {loading ? <SkeletonProductSection title={t("tavsiya_qilamiz_d9d499c9")} /> : <ProductSection eager products={featured.length ? featured : popular.slice(0, 4)} title={t("tavsiya_qilamiz_d9d499c9")} />}
 
       <MotionDiv {...sectionMotion} className="mx-auto w-full max-w-6xl px-4 pb-8">
         <div className="mf-home-category-shell">
-          <button aria-label="Oldingi kategoriyalar" className="mf-home-category-arrow mf-home-category-arrow-prev" onClick={() => scrollCategories(categoryScrollerRef.current, -1)} type="button">
+          <button aria-label={t("oldingi_kategoriyalar_8b994d94")} className="mf-home-category-arrow mf-home-category-arrow-prev" onClick={() => scrollCategories(categoryScrollerRef.current, -1)} type="button">
             <ChevronLeft aria-hidden="true" size={20} />
           </button>
           <div className="no-scrollbar mf-home-category-row flex max-w-full gap-2.5 overflow-x-auto pb-2 sm:gap-3" ref={categoryScrollerRef}>
@@ -120,7 +122,7 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
               </Link>
             ))}
           </div>
-          <button aria-label="Keyingi kategoriyalar" className="mf-home-category-arrow mf-home-category-arrow-next" onClick={() => scrollCategories(categoryScrollerRef.current, 1)} type="button">
+          <button aria-label={t("keyingi_kategoriyalar_0132aad5")} className="mf-home-category-arrow mf-home-category-arrow-next" onClick={() => scrollCategories(categoryScrollerRef.current, 1)} type="button">
             <ChevronRight aria-hidden="true" size={20} />
           </button>
         </div>
@@ -128,12 +130,12 @@ export default function Home({ initial }: { initial?: { categories: Category[]; 
 
       {loading ? (
         <>
-          <SkeletonProductSection title="Ko'p buyurtma qilinadi" />
+          <SkeletonProductSection title={t("ko_p_buyurtma_qilinadi_997b31e0")} />
         </>
       ) : (
         <>
-          <ProductSection products={popular} title="Ko'p buyurtma qilinadi" />
-          <ProductSection products={combos} title="Foydali setlar" />
+          <ProductSection products={popular} title={t("ko_p_buyurtma_qilinadi_997b31e0")} />
+          <ProductSection products={combos} title={t("foydali_setlar_4e009779")} />
         </>
       )}
 
@@ -179,6 +181,7 @@ function getCategoryRank(category: Category): number {
 }
 
 function ProductSection({ products, title, eager = false }: { products: Product[]; title: string; eager?: boolean }) {
+  const t = useTranslations("Customer");
   if (!products.length) {
     return null;
   }
@@ -187,7 +190,7 @@ function ProductSection({ products, title, eager = false }: { products: Product[
     <MotionDiv {...sectionMotion} className="mf-home-products mx-auto max-w-6xl px-4 pb-7">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="mf-section-heading border-l-[3px] border-[#f5cf00] pl-3">{title}</h2>
-        <Link className="pressable mf-section-link text-sm font-black" href="/menu">Menyuni ko'rish</Link>
+        <Link className="pressable mf-section-link text-sm font-black" href="/menu">{t("menyuni_ko_rish_cdf1cbe5")}</Link>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
         {products.map((product, index) => <ProductCard compact eager={eager && index < 4} key={product.id} product={product} />)}

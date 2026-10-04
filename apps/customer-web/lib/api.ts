@@ -46,6 +46,14 @@ const catalogCache = new Map<string, { expiresAt: number; data: unknown }>();
 const catalogRequests = new Map<string, Promise<unknown>>();
 const catalogTtl = 30_000;
 
+function isRussianCustomerPage(): boolean {
+  return typeof window !== "undefined" && (window.location.pathname === "/ru" || window.location.pathname.startsWith("/ru/"));
+}
+
+function customerError(uz: string, ru: string): string {
+  return isRussianCustomerPage() ? ru : uz;
+}
+
 export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
   // Cache only public browsing data. Quotes, branch availability, auth and orders stay fresh.
   const cacheable = typeof window !== "undefined" && init === undefined &&
@@ -123,8 +131,8 @@ async function requestApi<T>(path: string, init?: ApiFetchInit): Promise<T> {
     payload = await parseEnvelope<T>(response);
   } catch {
     if (requestInit.signal?.aborted) throw requestInit.signal.reason;
-    if (timeout.aborted) throw new Error("Server javobi kechikmoqda. Qayta urinib ko'ring.");
-    throw new Error("Server bilan aloqa uzildi. Qayta urinib ko'ring.");
+    if (timeout.aborted) throw new Error(customerError("Server javobi kechikmoqda. Qayta urinib ko'ring.", "Ответ сервера задерживается. Попробуйте ещё раз."));
+    throw new Error(customerError("Server bilan aloqa uzildi. Qayta urinib ko'ring.", "Соединение с сервером прервано. Попробуйте ещё раз."));
   }
 
   if (!response.ok || !payload.success || payload.data === undefined) {
@@ -136,14 +144,14 @@ async function requestApi<T>(path: string, init?: ApiFetchInit): Promise<T> {
 
 function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>): string {
   if (response.status >= 500) {
-    return customerServerErrorMessage(payload.error?.requestId);
+    return customerServerErrorMessage(payload.error?.requestId, isRussianCustomerPage() ? "ru" : "uz");
   }
 
   const backendMessage = Array.isArray(payload.error?.message) ? payload.error.message.join(", ") : payload.error?.message;
 
   if (backendMessage) {
     if (backendMessage.includes("Too many")) {
-      return "Juda ko'p urinish bo'ldi. Bir oz kutib qayta urinib ko'ring.";
+      return customerError("Juda ko'p urinish bo'ldi. Bir oz kutib qayta urinib ko'ring.", "Слишком много попыток. Подождите немного и попробуйте ещё раз.");
     }
 
     if (
@@ -151,38 +159,38 @@ function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>)
       backendMessage.includes("customer bearer token") ||
       backendMessage.includes("customer token")
     ) {
-      return "Sessiya muddati tugagan. Telefon raqamingizni qayta tasdiqlang.";
+      return customerError("Sessiya muddati tugagan. Telefon raqamingizni qayta tasdiqlang.", "Срок действия сессии истёк. Подтвердите номер телефона ещё раз.");
     }
 
     if (backendMessage === "Branch is not accepting orders now") {
-      return "Tanlangan filial hozir buyurtma qabul qilmayapti. Iltimos, boshqa filial yoki vaqtni tanlang.";
+      return customerError("Tanlangan filial hozir buyurtma qabul qilmayapti. Iltimos, boshqa filial yoki vaqtni tanlang.", "Выбранный филиал сейчас не принимает заказы. Выберите другой филиал или время.");
     }
 
     if (backendMessage === "Delivery is not available for this branch") {
-      return "Tanlangan filialda yetkazib berish mavjud emas.";
+      return customerError("Tanlangan filialda yetkazib berish mavjud emas.", "В выбранном филиале доставка недоступна.");
     }
 
     if (backendMessage === "Pickup is not available for this branch") {
-      return "Tanlangan filialdan olib ketish hozir mavjud emas.";
+      return customerError("Tanlangan filialdan olib ketish hozir mavjud emas.", "Самовывоз из выбранного филиала сейчас недоступен.");
     }
 
     if (backendMessage === "Product not found or unavailable") {
-      return "Savatdagi mahsulotlardan biri hozir mavjud emas. Savatni yangilab ko'ring.";
+      return customerError("Savatdagi mahsulotlardan biri hozir mavjud emas. Savatni yangilab ko'ring.", "Один из товаров в корзине больше недоступен. Обновите корзину.");
     }
 
     if (backendMessage === "Modifier is not available for this product") {
-      return "Tanlangan qo'shimchalardan biri bu mahsulot uchun mavjud emas.";
+      return customerError("Tanlangan qo'shimchalardan biri bu mahsulot uchun mavjud emas.", "Одна из выбранных добавок недоступна для этого товара.");
     }
 
     if (backendMessage === "Payment method is not available for customer orders") {
-      return "Bu to'lov turi hozircha mavjud emas. Iltimos, naqd to'lovni tanlang.";
+      return customerError("Bu to'lov turi hozircha mavjud emas. Iltimos, naqd to'lovni tanlang.", "Этот способ оплаты сейчас недоступен. Выберите оплату наличными.");
     }
 
     if (backendMessage === "Checkout attempt is already being processed") {
-      return "Buyurtma allaqachon yuborilmoqda. Iltimos, bir necha soniya kuting.";
+      return customerError("Buyurtma allaqachon yuborilmoqda. Iltimos, bir necha soniya kuting.", "Заказ уже отправляется. Подождите несколько секунд.");
     }
 
-    return backendMessage;
+    return isRussianCustomerPage() ? "Не удалось выполнить запрос. Попробуйте ещё раз." : backendMessage;
   }
 
   if (response.status === 401) {
@@ -190,14 +198,14 @@ function getCustomerErrorMessage<T>(response: Response, payload: ApiEnvelope<T>)
   }
 
   if (response.status === 404) {
-    return "So'ralgan ma'lumot topilmadi.";
+    return customerError("So'ralgan ma'lumot topilmadi.", "Запрошенные данные не найдены.");
   }
 
   if (response.status >= 500) {
-    return "Serverda vaqtinchalik muammo bor. Bir ozdan keyin urinib ko'ring.";
+    return customerError("Serverda vaqtinchalik muammo bor. Bir ozdan keyin urinib ko'ring.", "На сервере временная проблема. Попробуйте ещё раз позже.");
   }
 
-  return "So'rov bajarilmadi. Qayta urinib ko'ring.";
+  return customerError("So'rov bajarilmadi. Qayta urinib ko'ring.", "Не удалось выполнить запрос. Попробуйте ещё раз.");
 }
 
 async function parseEnvelope<T>(response: Response): Promise<ApiEnvelope<T>> {

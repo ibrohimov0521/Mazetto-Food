@@ -1,21 +1,24 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { OrderProgress } from "../../components/order-progress";
+import { OrderProgress } from "@/components/order-progress";
 import {
+  orderTypeLabel,
   trackingLabel,
   trackingStatus,
   trackingTone,
-} from "../../lib/order-tracking";
-import { useOrderUpdates } from "../../lib/use-order-updates";
-import { CustomerAuthPanel } from "../../components/customer-auth-panel";
-import { MotionDiv, AnimatedNumber, pageMotion, sectionMotion } from "../../components/motion-primitives";
-import { MediaImage } from "../../components/media-image";
-import { SiteShell } from "../../components/site-shell";
-import { apiFetch } from "../../lib/api";
-import { localizeMenuName } from "../../lib/customer-display";
-import { formatMoney, useCart } from "../../lib/cart";
+} from "@/lib/order-tracking";
+import { useOrderUpdates } from "@/lib/use-order-updates";
+import { CustomerAuthPanel } from "@/components/customer-auth-panel";
+import { MotionDiv, AnimatedNumber, pageMotion, sectionMotion } from "@/components/motion-primitives";
+import { MediaImage } from "@/components/media-image";
+import { SiteShell } from "@/components/site-shell";
+import { apiFetch } from "@/lib/api";
+import { localizeMenuName } from "@/lib/customer-display";
+import { localizeCustomerCopy } from "@/lib/customer-copy.mjs";
+import { formatMoney, useCart } from "@/lib/cart";
 
 type Dashboard = {
   id: string;
@@ -49,11 +52,6 @@ type CustomerOrder = {
     }[];
   };
 };
-const typeLabels: Record<string, string> = {
-  DELIVERY: "Yetkazib berish",
-  PICKUP: "Olib ketish",
-};
-
 export default function OrdersPage() {
   return (
     <SiteShell>
@@ -63,6 +61,9 @@ export default function OrdersPage() {
 }
 
 function OrdersDashboard() {
+  const locale = useLocale();
+  const meta = useTranslations("CustomerMeta");
+  const t = useTranslations("Customer");
   const { customer, refreshCustomer } = useCart();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
@@ -127,8 +128,8 @@ function OrdersDashboard() {
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-card p-8">
           <CustomerAuthPanel
-            description="Buyurtmalar tarixi va bonuslarni ko'rish uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
-            title="Telefonni tasdiqlang"
+            description={meta("verifyOrderHistory")}
+            title={t("telefonni_tasdiqlang_517d50f6")}
           />
         </div>
       </section>
@@ -139,27 +140,27 @@ function OrdersDashboard() {
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-5 px-3 py-5 sm:px-4 sm:py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid min-w-0 gap-5">
         <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
-          <p className="text-sm font-black uppercase text-[#0A7168]">Buyurtmani kuzatish</p>
-          <h1 className="mt-1 text-[1.65rem] font-black leading-tight text-[#17314A] sm:text-3xl">Buyurtmalarim</h1>
+          <p className="text-sm font-black uppercase text-[#0A7168]">{t("buyurtmani_kuzatish_909196a4")}</p>
+          <h1 className="mt-1 text-[1.65rem] font-black leading-tight text-[#17314A] sm:text-3xl">{t("buyurtmalarim_44dff903")}</h1>
           {activeOrder ? (
             <div className="mf-active-order-card mt-4 min-w-0 pt-4">
               <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                 <div className="min-w-0">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[#0A7168]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-[#0A7168]">Faol buyurtma</span>
+                    <span className="rounded-full bg-[#0A7168]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-[#0A7168]">{t("faol_buyurtma_2f3192b0")}</span>
                     <StatusChip status={trackingStatus(activeOrder)} type={activeOrder.type} />
                   </div>
                   <Link className="mt-3 block break-words text-2xl font-black leading-tight text-[#07373A] transition hover:text-[#0A7168] sm:text-3xl" href={`/orders/${activeOrder.id}`}>
                     {customerOrderNumber(activeOrder.order)}
                   </Link>
                   <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-                    <InfoChip label={typeLabels[activeOrder.type] ?? activeOrder.type} />
+                    <InfoChip label={orderTypeLabel(activeOrder.type, locale)} />
                     {activeOrder.branch ? <InfoChip label={activeOrder.branch.name} /> : null}
                   </div>
                 </div>
                 <div className="mf-active-order-total flex min-w-0 items-center justify-between gap-3 py-2 lg:block lg:text-right">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-[#07373A]/58">Jami</p>
-                  <p className="whitespace-nowrap text-xl font-black text-[#07373A]">{formatMoney(activeOrder.order.total)}</p>
+                  <p className="text-[10px] font-black uppercase tracking-wide text-[#07373A]/58">{t("jami_52cea6a5")}</p>
+                  <p className="whitespace-nowrap text-xl font-black text-[#07373A]">{formatMoney(activeOrder.order.total, locale)}</p>
                 </div>
               </div>
               <OrderProgress value={activeOrder} />
@@ -168,7 +169,7 @@ function OrdersDashboard() {
                   <div className="mf-active-order-item grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-3 text-sm text-[#17314A]" key={item.id}>
                     <div className="min-w-0">
                       <p className="break-words font-black leading-snug">
-                        <span className="text-[#0A7168]">{Number(item.quantity)}x</span> {localizeMenuName(item.productName)}
+                        <span className="text-[#0A7168]">{Number(item.quantity)}{t("x_11f6ad8e")}</span> {localizeMenuName(item.productName, locale)}
                       </p>
                       {item.variantName || item.modifierSnapshot?.length ? (
                         <p className="mt-1 break-words text-xs font-semibold leading-5 text-[#586B7D]">
@@ -176,26 +177,25 @@ function OrdersDashboard() {
                         </p>
                       ) : null}
                     </div>
-                    <span className="shrink-0 whitespace-nowrap text-right font-black text-[#0A7168]">{formatMoney(item.totalPrice)}</span>
+                    <span className="shrink-0 whitespace-nowrap text-right font-black text-[#0A7168]">{formatMoney(item.totalPrice, locale)}</span>
                   </div>
                 ))}
               </div>
             </div>
           ) : loading ? <div className="skeleton mt-4 h-28 rounded-xl" /> : !error ? (
-            <div className="mf-cart-row mt-5 p-6 text-sm font-semibold text-[#586B7D]">Hozir faol buyurtma yo'q.</div>
+            <div className="mf-cart-row mt-5 p-6 text-sm font-semibold text-[#586B7D]">{t("hozir_faol_buyurtma_yo_q_fc800e1f")}</div>
           ) : null}
         </div>
 
         <MotionDiv {...sectionMotion} className="mf-checkout-card min-w-0 p-4 sm:p-5">
-          <h2 className="text-[1.35rem] font-black leading-tight text-[#17314A] sm:text-2xl">Buyurtmalar tarixi</h2>
+          <h2 className="text-[1.35rem] font-black leading-tight text-[#17314A] sm:text-2xl">{t("buyurtmalar_tarixi_a538931b")}</h2>
           <div className="mt-4 grid gap-3">
             {error ? (
               <div className="mf-card-soft p-8 text-center">
-                <h3 className="text-2xl font-black text-[#17314A]">Buyurtmalar yuklanmadi</h3>
-                <p className="mt-2 text-sm font-semibold text-[#586B7D]">{error}</p>
+                <h3 className="text-2xl font-black text-[#17314A]">{t("buyurtmalar_yuklanmadi_5dac6964")}</h3>
+                <p className="mt-2 text-sm font-semibold text-[#586B7D]">{localizeCustomerCopy(error, locale)}</p>
                 <button className="pressable ripple mf-button-primary mt-5 px-5 py-3 font-black" onClick={() => void load()} type="button">
-                  Qayta urinish
-                </button>
+                  {t("qayta_urinish_422d2790")}</button>
               </div>
             ) : loading ? (
               Array.from({ length: 3 }, (_, index) => <div className="skeleton h-24 rounded-2xl" key={index} />)
@@ -205,21 +205,20 @@ function OrdersDashboard() {
                   <div className="min-w-0">
                     <p className="break-words font-black leading-tight text-[#17314A]">{customerOrderNumber(order.order)}</p>
                     <p className="mt-1 text-sm leading-5 text-[#586B7D]">
-                      {new Date(order.createdAt).toLocaleString("uz-UZ")} · {trackingLabel(trackingStatus(order), order.type)}
+                      {new Date(order.createdAt).toLocaleString(locale === "ru" ? "ru-RU" : "uz-UZ")} · {trackingLabel(trackingStatus(order), order.type, locale)}
                       {order.branch ? ` · ${order.branch.name}` : ""}
                     </p>
-                    <p className="mt-2 break-words text-sm font-semibold leading-5 text-[#586B7D]">{orderSummary(order)}</p>
+                    <p className="mt-2 break-words text-sm font-semibold leading-5 text-[#586B7D]">{orderSummary(order, locale)}</p>
                   </div>
-                  <span className="shrink-0 whitespace-nowrap font-black text-[#0A7168] sm:text-right">{formatMoney(order.order.total)}</span>
+                  <span className="shrink-0 whitespace-nowrap font-black text-[#0A7168] sm:text-right">{formatMoney(order.order.total, locale)}</span>
                 </div>
               </Link>
             )) : (
               <div className="mf-card-soft p-8 text-center">
-                <h3 className="text-2xl font-black text-[#17314A]">Hali buyurtmalaringiz yo'q</h3>
-                <p className="mt-2 text-sm font-semibold text-[#586B7D]">Birinchi buyurtmangiz shu yerda tarixi bilan ko'rinadi.</p>
+                <h3 className="text-2xl font-black text-[#17314A]">{t("hali_buyurtmalaringiz_yo_q_6a76c94d")}</h3>
+                <p className="mt-2 text-sm font-semibold text-[#586B7D]">{t("birinchi_buyurtmangiz_shu_yerda_tarixi_cb2f456d")}</p>
                 <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/menu">
-                  Menyuni ko'rish
-                </Link>
+                  {t("menyuni_ko_rish_cdf1cbe5")}</Link>
               </div>
             )}
           </div>
@@ -228,11 +227,11 @@ function OrdersDashboard() {
 
       <aside className="grid min-w-0 content-start gap-5">
         <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
-          <p className="text-sm font-bold text-[#0A7168]">Bonuslar</p>
-          <p className="mt-2 break-words text-3xl font-black text-[#17314A] sm:text-4xl"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> so'm</p>
+          <p className="text-sm font-bold text-[#0A7168]">{t("bonuslar_27e9996e")}</p>
+          <p className="mt-2 break-words text-3xl font-black text-[#17314A] sm:text-4xl"><AnimatedNumber value={Number(dashboard?.bonusBalance ?? 0)} /> {t("so_m_ea86286f")}</p>
         </div>
         <div className="mf-checkout-card min-w-0 p-4 sm:p-5">
-          <h2 className="text-xl font-black text-[#17314A]">Sevimlilar</h2>
+          <h2 className="text-xl font-black text-[#17314A]">{t("sevimlilar_23030420")}</h2>
           <div className="mt-4 grid gap-3">
             {dashboard?.favorites.length ? dashboard.favorites.map(({ product }) => (
               <Link className="pressable grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-2xl bg-[#0A7168]/7 p-2" href={`/product/${product.id}`} key={product.id}>
@@ -244,11 +243,11 @@ function OrdersDashboard() {
                   src={product.imageUrl}
                 />
                 <div className="min-w-0">
-                  <p className="break-words font-bold leading-tight text-[#17314A]">{localizeMenuName(product.name)}</p>
-                  <p className="mt-1 whitespace-nowrap text-sm text-[#0A7168]">{formatMoney(product.sellingPrice)}</p>
+                  <p className="break-words font-bold leading-tight text-[#17314A]">{localizeMenuName(product.name, locale)}</p>
+                  <p className="mt-1 whitespace-nowrap text-sm text-[#0A7168]">{formatMoney(product.sellingPrice, locale)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm text-[#586B7D]">Saqlangan mahsulotlar shu yerda ko'rinadi.</p>}
+            )) : <p className="text-sm text-[#586B7D]">{t("saqlangan_mahsulotlar_shu_yerda_ko_rin_78242c01")}</p>}
           </div>
         </div>
       </aside>
@@ -256,17 +255,18 @@ function OrdersDashboard() {
   );
 }
 
-function orderSummary(order: CustomerOrder): string {
+function orderSummary(order: CustomerOrder, locale: string): string {
   return order.order.items
     .slice(0, 3)
-    .map((item) => `${Number(item.quantity)}x ${localizeMenuName(item.productName)}`)
+    .map((item) => `${Number(item.quantity)}x ${localizeMenuName(item.productName, locale)}`)
     .join(", ");
 }
 
 function StatusChip({ status, type }: { status: string; type: string }) {
+  const locale = useLocale();
   return (
     <span className="mf-status-chip" data-tone={trackingTone(status)}>
-      {trackingLabel(status, type)}
+      {trackingLabel(status, type, locale)}
     </span>
   );
 }

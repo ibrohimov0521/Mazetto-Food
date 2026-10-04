@@ -1,8 +1,9 @@
 "use client";
+import { useTranslations } from "next-intl";
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { ArrowRight, LoaderCircle } from "lucide-react";
 import { AnimatedMoney } from "./motion-primitives";
 import "./order-action-bar.css";
@@ -28,6 +29,7 @@ export function OrderActionBar({
   totalLabel = "Jami",
   notice,
 }: Props) {
+  const t = useTranslations("Customer");
   const [host, setHost] = useState<HTMLElement | null>(null);
   useEffect(() => {
     // Keep the viewport bar outside animated page containers.
@@ -49,7 +51,7 @@ export function OrderActionBar({
     <div
       className="mf-order-action"
       role="region"
-      aria-label="Buyurtmani yakunlash"
+      aria-label={t("buyurtmani_yakunlash_52e18c4a")}
     >
       {notice ? (
         <p className="mf-order-action-notice" role="status">

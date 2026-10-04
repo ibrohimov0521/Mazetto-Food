@@ -1,6 +1,7 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -12,25 +13,27 @@ import {
   XCircle,
   UserRound,
 } from "lucide-react";
-import { CustomerAuthPanel } from "../../../components/customer-auth-panel";
-import { MotionDiv, pageMotion, sectionMotion } from "../../../components/motion-primitives";
-import { SiteShell } from "../../../components/site-shell";
-import { apiFetch } from "../../../lib/api";
-import { OrderProgress } from "../../../components/order-progress";
+import { CustomerAuthPanel } from "@/components/customer-auth-panel";
+import { MotionDiv, pageMotion, sectionMotion } from "@/components/motion-primitives";
+import { SiteShell } from "@/components/site-shell";
+import { apiFetch } from "@/lib/api";
+import { OrderProgress } from "@/components/order-progress";
 import {
+  orderTypeLabel,
+  paymentMethodLabel,
   paymentStatusLabel,
   trackingLabel,
   trackingStatus,
-} from "../../../lib/order-tracking";
-import { useOrderUpdates } from "../../../lib/use-order-updates";
-import { localizeMenuName } from "../../../lib/customer-display";
-import { formatMoney, useCart } from "../../../lib/cart";
-import { buildReorderItems, reorderMessage } from "../../../lib/reorder";
+} from "@/lib/order-tracking";
+import { useOrderUpdates } from "@/lib/use-order-updates";
+import { localizeMenuName } from "@/lib/customer-display";
+import { formatMoney, useCart } from "@/lib/cart";
+import { buildReorderItems, reorderMessage } from "@/lib/reorder";
 import {
   isSupportPhoneValid,
   supportLinks,
   supportPhone,
-} from "../../../lib/contact";
+} from "@/lib/contact";
 
 type ModifierSnapshot = {
   /* Modifikator id'si — qayta buyurtmada aynan shu qo'shimchani tiklash uchun. */
@@ -86,17 +89,6 @@ type CustomerOrderDetail = {
   };
 };
 
-const typeLabels: Record<string, string> = {
-  DELIVERY: "Yetkazib berish",
-  PICKUP: "Olib ketish",
-};
-const paymentLabels: Record<string, string> = {
-  CASH: "Naqd",
-  CLICK: "Click",
-  PAYME: "Payme",
-  CARD: "Karta",
-};
-
 export default function OrderDetailPage() {
   return (
     <SiteShell>
@@ -106,6 +98,9 @@ export default function OrderDetailPage() {
 }
 
 function OrderDetail() {
+  const locale = useLocale();
+  const meta = useTranslations("CustomerMeta");
+  const t = useTranslations("Customer");
   const params = useParams<{ id: string }>();
   const { addItem, customer, refreshCustomer, showToast } = useCart();
   const [reordering, setReordering] = useState(false);
@@ -219,8 +214,8 @@ function OrderDetail() {
       <section className="mx-auto max-w-3xl px-4 py-10">
         <div className="mf-card p-8">
           <CustomerAuthPanel
-            description="Buyurtma tafsilotlarini ko'rish uchun telefon raqamingizni Telegram kodi bilan tasdiqlang."
-            title="Telefonni tasdiqlang"
+            description={meta("verifyOrderDetails")}
+            title={t("telefonni_tasdiqlang_517d50f6")}
           />
         </div>
       </section>
@@ -247,11 +242,10 @@ function OrderDetail() {
     return (
       <section className="mx-auto max-w-3xl px-4 py-10 text-center">
         <div className="mf-card p-8">
-          <h1 className="text-3xl font-black text-white">Buyurtma topilmadi</h1>
-          <p className="mt-3 text-white/60">Bu buyurtma sizning profilingizga tegishli bo'lmasligi yoki mavjud bo'lmasligi mumkin.</p>
+          <h1 className="text-3xl font-black text-white">{t("buyurtma_topilmadi_e0d00e0d")}</h1>
+          <p className="mt-3 text-white/60">{t("bu_buyurtma_sizning_profilingizga_tegi_ffbd7d84")}</p>
           <Link className="pressable ripple mf-button-primary mt-5 inline-flex px-5 py-3 font-black" href="/orders">
-            Buyurtmalarim
-          </Link>
+            {t("buyurtmalarim_44dff903")}</Link>
         </div>
       </section>
     );
@@ -261,15 +255,15 @@ function OrderDetail() {
     <MotionDiv {...pageMotion} className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid min-w-0 gap-5">
         <section className="mf-checkout-card p-5">
-          <p className="text-sm font-black uppercase text-[#0A7168]">Buyurtma tafsiloti</p>
+          <p className="text-sm font-black uppercase text-[#0A7168]">{t("buyurtma_tafsiloti_d70f85a0")}</p>
           <h1 className="mt-2 break-words text-3xl font-black text-[#17314A]">{customerOrderNumber(order.order)}</h1>
           <p className="mt-2 text-sm font-semibold text-[#586B7D]">
-            {new Date(order.createdAt).toLocaleString("uz-UZ")} · {typeLabels[order.type] ?? order.type}
+            {new Date(order.createdAt).toLocaleString(locale === "ru" ? "ru-RU" : "uz-UZ")} · {orderTypeLabel(order.type, locale)}
           </p>
           <div className="mf-order-metrics mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Metric label="Holat" value={trackingLabel(trackingStatus(order), order.type)} />
-            <Metric label="Mahsulot" value={`${itemCount} dona`} />
-            <Metric label="Jami" value={formatMoney(order.order.total)} />
+            <Metric label={meta("status")} value={trackingLabel(trackingStatus(order), order.type, locale)} />
+            <Metric label={meta("product")} value={`${itemCount} ${meta("itemUnit")}`} />
+            <Metric label={meta("total")} value={formatMoney(order.order.total, locale)} />
           </div>
           <OrderProgress value={order} />
           {/*
@@ -292,7 +286,7 @@ function OrderDetail() {
               type="button"
             >
               <RotateCcw aria-hidden="true" size={17} />
-              {reordering ? "Qo'shilmoqda..." : "Qayta buyurtma"}
+              {reordering ? t("qo_shilmoqda_5abdc1bc") : t("qayta_buyurtma_3180ac19")}
             </button>
             <a
               className="pressable mf-button-secondary inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-bold"
@@ -301,8 +295,7 @@ function OrderDetail() {
               rel="noopener noreferrer"
             >
               <MessageCircle aria-hidden="true" size={17} />
-              Yordam
-            </a>
+              {t("yordam_2e430e2e")}</a>
             {isSupportPhoneValid ? (
               <a
                 className="pressable mf-button-secondary inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-bold"
@@ -327,7 +320,7 @@ function OrderDetail() {
                 type="button"
               >
                 <XCircle aria-hidden="true" size={17} />
-                {cancelling ? "Bekor qilinmoqda..." : "Bekor qilish"}
+                {cancelling ? t("bekor_qilinmoqda_529af05c") : t("bekor_qilish_7e0b9a83")}
               </button>
             ) : null}
           </div>
@@ -338,16 +331,15 @@ function OrderDetail() {
           */}
           {showCallToCancel ? (
             <p className="mt-3 text-xs font-semibold leading-5 text-[#586B7D]">
-              Oshxona tayyorlashni boshladi. Bekor qilish uchun{" "}
+              {t("oshxona_tayyorlashni_boshladi_bekor_qi_44e7e094")}{" "}
               {isSupportPhoneValid ? (
                 <a className="font-black underline" href={`tel:${supportPhone.href}`}>
                   {supportPhone.display}
                 </a>
               ) : (
-                "biz bilan"
+                t("biz_bilan_c36e3722")
               )}{" "}
-              raqamiga qo'ng'iroq qiling.
-            </p>
+              {t("raqamiga_qo_ng_iroq_qiling_d3ab2be2")}</p>
           ) : null}
           {cancelError ? (
             <p role="alert" className="mt-3 text-sm font-bold text-[#A3231D]">
@@ -359,27 +351,27 @@ function OrderDetail() {
         <StatusHistory entries={order.order.statusHistory ?? []} type={order.type} />
 
         <MotionDiv {...sectionMotion} className="mf-checkout-card p-5">
-          <h2 className="text-2xl font-black text-[#17314A]">Mahsulotlar</h2>
+          <h2 className="text-2xl font-black text-[#17314A]">{t("mahsulotlar_66e73a67")}</h2>
           <div className="mt-4 grid gap-3">
             {order.order.items.map((item) => (
               <article className="mf-cart-row min-w-0 p-4" key={item.id}>
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="break-words font-black text-[#17314A]">{Number(item.quantity)}x {localizeMenuName(item.productName)}</h3>
-                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-[#586B7D]">{localizeMenuName(item.variantName)}</p> : null}
+                    <h3 className="break-words font-black text-[#17314A]">{Number(item.quantity)}{t("x_11f6ad8e")}{" "}{localizeMenuName(item.productName, locale)}</h3>
+                    {item.variantName ? <p className="mt-1 text-sm font-semibold text-[#586B7D]">{localizeMenuName(item.variantName, locale)}</p> : null}
                   </div>
-                  <span className="shrink-0 font-black text-[#0A7168]">{formatMoney(item.totalPrice)}</span>
+                  <span className="shrink-0 font-black text-[#0A7168]">{formatMoney(item.totalPrice, locale)}</span>
                 </div>
                 {modifiersFor(item.modifierSnapshot).length ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {modifiersFor(item.modifierSnapshot).map((modifier, index) => (
                       <span className="rounded-full bg-[#0A7168]/10 px-3 py-1 text-xs font-black text-[#0A7168]" key={`${modifier.name}-${index}`}>
-                        {localizeMenuName(modifier.name)}
+                        {localizeMenuName(modifier.name, locale)}
                       </span>
                     ))}
                   </div>
                 ) : null}
-                {item.notes ? <p className="mt-3 text-sm font-semibold text-[#586B7D]">Izoh: {item.notes}</p> : null}
+                {item.notes ? <p className="mt-3 text-sm font-semibold text-[#586B7D]">{t("izoh_70aacec3")}{" "}{item.notes}</p> : null}
               </article>
             ))}
           </div>
@@ -388,28 +380,28 @@ function OrderDetail() {
 
       <aside className="grid min-w-0 content-start gap-5">
         <section className="mf-checkout-card p-5">
-          <h2 className="text-2xl font-black text-[#17314A]">Xulosa</h2>
+          <h2 className="text-2xl font-black text-[#17314A]">{t("xulosa_39195b11")}</h2>
           <div className="mt-4 grid gap-3 text-sm font-bold text-[#586B7D]">
-            <SummaryRow label="Filial" value={order.branch?.name ?? "Ko'rsatilmagan"} />
-            {order.branch?.address ? <SummaryRow label="Manzil" value={order.branch.address} /> : null}
-            <SummaryRow label="Turi" value={typeLabels[order.type] ?? order.type} />
-            {order.deliveryAddress ? <SummaryRow label="Yetkazish" value={order.deliveryAddress} /> : null}
-            <SummaryRow label="To'lov" value={paymentLabels[order.paymentMethod ?? ""] ?? order.paymentMethod ?? "Ko'rsatilmagan"} />
+            <SummaryRow label={meta("branch")} value={order.branch?.name ?? meta("notSpecified")} />
+            {order.branch?.address ? <SummaryRow label={meta("address")} value={order.branch.address} /> : null}
+            <SummaryRow label={meta("type")} value={orderTypeLabel(order.type, locale)} />
+            {order.deliveryAddress ? <SummaryRow label={meta("delivery")} value={order.deliveryAddress} /> : null}
+            <SummaryRow label={meta("payment")} value={paymentMethodLabel(order.paymentMethod, locale)} />
           </div>
         </section>
 
         <section className="mf-checkout-card p-5">
-          <h2 className="text-xl font-black text-[#17314A]">To'lov holati</h2>
+          <h2 className="text-xl font-black text-[#17314A]">{t("to_lov_holati_61d2857b")}</h2>
           <div className="mt-4 grid gap-2">
             {order.order.payments?.length ? order.order.payments.map((payment) => (
               <div className="mf-cart-row p-3 text-sm font-bold text-[#17314A]" key={payment.id}>
                 <div className="flex justify-between gap-3">
-                  <span>{payment.method?.name ?? payment.methodCode ?? "To'lov"}</span>
-                  <span className="text-[#0A7168]">{formatMoney(payment.amount)}</span>
+                  <span>{payment.method?.name ?? payment.methodCode ?? t("to_lov_c9187857")}</span>
+                  <span className="text-[#0A7168]">{formatMoney(payment.amount, locale)}</span>
                 </div>
-                <p className="mt-1 text-xs text-[#586B7D]">{paymentStatusLabel(payment.status)}</p>
+                <p className="mt-1 text-xs text-[#586B7D]">{paymentStatusLabel(payment.status, locale)}</p>
               </div>
-            )) : <p className="text-sm font-semibold text-[#586B7D]">Buyurtmani olganda to'lanadi.</p>}
+            )) : <p className="text-sm font-semibold text-[#586B7D]">{t("buyurtmani_olganda_to_lanadi_bf9044c4")}</p>}
           </div>
         </section>
       </aside>
@@ -447,6 +439,7 @@ function CancelDialog({
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const t = useTranslations("Customer");
   const dialog = useRef<HTMLDialogElement | null>(null);
 
   useEffect(() => {
@@ -469,18 +462,14 @@ function CancelDialog({
       aria-labelledby="cancel-order-title"
     >
       <h2 className="text-xl font-black text-[#17314A]" id="cancel-order-title">
-        Buyurtmani bekor qilasizmi?
-      </h2>
+        {t("buyurtmani_bekor_qilasizmi_faaa646c")}</h2>
       <p className="mt-2 text-sm font-semibold leading-6 text-[#586B7D]">
-        Bekor qilingandan keyin buyurtma qaytarilmaydi. Kerak bo'lsa yangi
-        buyurtma berishingiz mumkin.
-      </p>
+        {t("bekor_qilingandan_keyin_buyurtma_qayta_5b1dd0cd")}</p>
       <label className="mt-4 grid gap-1.5 text-sm font-semibold text-[#17314A]">
-        Sabab (ixtiyoriy)
-        <textarea
+        {t("sabab_ixtiyoriy_b5f0b2bc")}<textarea
           className="mf-input px-4 py-3"
           maxLength={300}
-          placeholder="Masalan: adashib buyurtma berdim"
+          placeholder={t("masalan_adashib_buyurtma_berdim_66bdf590")}
           rows={2}
           value={reason}
           onChange={(event) => onReasonChange(event.target.value)}
@@ -493,8 +482,7 @@ function CancelDialog({
           onClick={onClose}
           type="button"
         >
-          Ortga
-        </button>
+          {t("ortga_61846123")}</button>
         <button
           className="pressable mf-button-cancel is-solid inline-flex min-h-11 items-center gap-2 px-5 py-3 text-sm font-black"
           disabled={busy}
@@ -502,7 +490,7 @@ function CancelDialog({
           type="button"
         >
           <XCircle aria-hidden="true" size={17} />
-          {busy ? "Bekor qilinmoqda..." : "Ha, bekor qilaman"}
+          {busy ? t("bekor_qilinmoqda_529af05c") : t("ha_bekor_qilaman_f94c794d")}
         </button>
       </div>
     </dialog>
@@ -516,16 +504,16 @@ function StatusHistory({
   entries: NonNullable<CustomerOrderDetail["order"]["statusHistory"]>;
   type: string;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   return (
     <section className="mf-checkout-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.16em] text-[#0A7168]">
-            Buyurtma jurnali
-          </p>
+            {t("buyurtma_jurnali_878230f7")}</p>
           <h2 className="mt-1 text-2xl font-black text-[#17314A]">
-            Holatlar tarixi
-          </h2>
+            {t("holatlar_tarixi_3ccda5b8")}</h2>
         </div>
         <Clock3 className="mt-1 text-[#0A7168]" size={22} aria-hidden="true" />
       </div>
@@ -548,13 +536,13 @@ function StatusHistory({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                     <p className="font-black text-[#17314A]">
-                      {trackingLabel(entry.toStatus, type)}
+                      {trackingLabel(entry.toStatus, type, locale)}
                     </p>
                     <time
                       className="text-xs font-semibold text-[#586B7D]"
                       dateTime={entry.createdAt}
                     >
-                      {new Date(entry.createdAt).toLocaleString("uz-UZ")}
+                      {new Date(entry.createdAt).toLocaleString(locale === "ru" ? "ru-RU" : "uz-UZ")}
                     </time>
                   </div>
                   <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-[#586B7D]">
@@ -571,8 +559,7 @@ function StatusHistory({
         </ol>
       ) : (
         <p className="mt-4 text-sm font-semibold text-[#586B7D]">
-          Holatlar tarixi hali shakllanmagan.
-        </p>
+          {t("holatlar_tarixi_hali_shakllanmagan_c408df23")}</p>
       )}
     </section>
   );

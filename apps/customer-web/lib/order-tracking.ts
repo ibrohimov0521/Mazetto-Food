@@ -9,16 +9,31 @@ export function trackingStatus(value: TrackedOrder): string {
   return status === "COOKING" ? "PREPARING" : status === "ACCEPTED" ? "CONFIRMED" : status;
 }
 
-export function trackingLabel(status: string, type: string): string {
-  if (status === "SERVED") return type === "DELIVERY" ? "Kuryer yo'lda" : "Topshirildi";
-  if (status === "COMPLETED") return type === "DELIVERY" ? "Yetkazildi" : "Yakunlandi";
-  return ({
-    NEW: "Yangi buyurtma",
-    CONFIRMED: "Qabul qilindi",
-    PREPARING: "Tayyorlanmoqda",
-    READY: "Tayyor",
-    CANCELLED: "Bekor qilindi",
-  } as Record<string, string>)[status] ?? "Holat tekshirilmoqda";
+export function trackingLabel(status: string, type: string, locale = "uz"): string {
+  const ru = locale === "ru";
+  if (status === "SERVED") return type === "DELIVERY" ? (ru ? "Курьер в пути" : "Kuryer yo'lda") : (ru ? "Выдан" : "Topshirildi");
+  if (status === "COMPLETED") return type === "DELIVERY" ? (ru ? "Доставлен" : "Yetkazildi") : (ru ? "Завершён" : "Yakunlandi");
+  const labels = ru
+    ? { NEW: "Новый заказ", CONFIRMED: "Принят", PREPARING: "Готовится", READY: "Готов", CANCELLED: "Отменён" }
+    : { NEW: "Yangi buyurtma", CONFIRMED: "Qabul qilindi", PREPARING: "Tayyorlanmoqda", READY: "Tayyor", CANCELLED: "Bekor qilindi" };
+  return (labels as Record<string, string>)[status] ?? (ru ? "Статус уточняется" : "Holat tekshirilmoqda");
+}
+
+export function orderTypeLabel(type: string, locale = "uz"): string {
+  const ru = locale === "ru";
+  if (type === "DELIVERY") return ru ? "Доставка" : "Yetkazib berish";
+  if (type === "PICKUP") return ru ? "Самовывоз" : "Olib ketish";
+  return type;
+}
+
+export function paymentMethodLabel(method: string | null | undefined, locale = "uz"): string {
+  const ru = locale === "ru";
+  if (!method) return ru ? "Не указано" : "Ko'rsatilmagan";
+  if (method === "CASH") return ru ? "Наличные" : "Naqd";
+  if (method === "CLICK") return "Click";
+  if (method === "PAYME") return "Payme";
+  if (method === "CARD") return ru ? "Карта" : "Karta";
+  return method;
 }
 
 /*
@@ -51,14 +66,10 @@ export function trackingTone(status: string): TrackingTone {
  * biriktirilmagan" deb yozilardi — mijoz buni muammo deb o'qirdi,
  * holbuki naqd buyurtmada bu normal holat.
  */
-export function paymentStatusLabel(status: string): string {
-  return (
-    {
-      PENDING: "Kutilmoqda",
-      SUCCESS: "To'langan",
-      PAID: "To'langan",
-      FAILED: "O'tmadi",
-      REFUNDED: "Qaytarilgan",
-    } as Record<string, string>
-  )[status] ?? "Holat aniqlanmadi";
+export function paymentStatusLabel(status: string, locale = "uz"): string {
+  const ru = locale === "ru";
+  const labels = ru
+    ? { PENDING: "Ожидает оплаты", SUCCESS: "Оплачен", PAID: "Оплачен", FAILED: "Не прошла", REFUNDED: "Возвращена" }
+    : { PENDING: "Kutilmoqda", SUCCESS: "To'langan", PAID: "To'langan", FAILED: "O'tmadi", REFUNDED: "Qaytarilgan" };
+  return (labels as Record<string, string>)[status] ?? (ru ? "Статус не определён" : "Holat aniqlanmadi");
 }

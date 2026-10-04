@@ -1,1 +1,1 @@
-export function customerServerErrorMessage(requestId?: string): string;
+export function customerServerErrorMessage(requestId?: string, locale?: "uz" | "ru"): string;

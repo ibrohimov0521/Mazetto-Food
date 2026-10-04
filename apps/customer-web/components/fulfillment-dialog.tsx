@@ -1,14 +1,16 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, MapPin, RotateCw, ShoppingBag, Truck, X } from "lucide-react";
 import { DeliveryAddressPicker } from "./delivery-address-picker";
 import { useCheckoutRuntime } from "../lib/checkout-runtime";
 import type { Fulfillment } from "../lib/fulfillment";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 import type { Branch } from "../lib/types";
 import type { DeliveryLocation } from "../lib/delivery-location";
 import "leaflet/dist/leaflet.css";
-import "../app/checkout/checkout.css";
+import "../app/[locale]/checkout/checkout.css";
 import "./fulfillment-dialog.css";
 
 export default function FulfillmentDialog({
@@ -22,6 +24,8 @@ export default function FulfillmentDialog({
   onClose: () => void;
   onInvalidate?: () => void;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   const { request: apiFetch, customer, preview } = useCheckoutRuntime();
   const dialog = useRef<HTMLDialogElement>(null);
   const close = useRef(onClose);
@@ -125,14 +129,14 @@ export default function FulfillmentDialog({
     >
       <header className="mf-fulfillment-header">
         <div>
-          <span>Buyurtma manzili</span>
-          <h2 id="fulfillment-title">Qabul qilish turini tanlang</h2>
+          <span>{t("buyurtma_manzili_eb056d0c")}</span>
+          <h2 id="fulfillment-title">{t("qabul_qilish_turini_tanlang_66d88c82")}</h2>
         </div>
         <button
           type="button"
           className="mf-icon-control"
-          aria-label="Oynani yopish"
-          title="Yopish"
+          aria-label={t("oynani_yopish_f73f6497")}
+          title={t("yopish_483046a0")}
           disabled={saving}
           onClick={onClose}
         >
@@ -142,7 +146,7 @@ export default function FulfillmentDialog({
       <div
         className="mf-delivery-segment mf-fulfillment-modes"
         role="group"
-        aria-label="Qabul qilish usuli"
+        aria-label={t("qabul_qilish_usuli_24c2e8dd")}
       >
         <button
           type="button"
@@ -151,7 +155,7 @@ export default function FulfillmentDialog({
           onClick={() => setType("DELIVERY")}
         >
           <Truck size={20} />
-          <span>Yetkazib berish</span>
+          <span>{t("yetkazib_berish_199c427a")}</span>
         </button>
         <button
           type="button"
@@ -160,32 +164,30 @@ export default function FulfillmentDialog({
           onClick={() => setType("PICKUP")}
         >
           <ShoppingBag size={20} />
-          <span>Olib ketish</span>
+          <span>{t("olib_ketish_903d19bf")}</span>
         </button>
       </div>
       <div className="mf-fulfillment-body">
         {loading ? (
           <p className="mf-address-loading" role="status">
-            Filiallar yuklanmoqda...
-          </p>
+            {t("filiallar_yuklanmoqda_7a670325")}</p>
         ) : null}
         {error ? (
           <div className="mf-checkout-error" role="alert">
-            {error}
+            {localizeCustomerCopy(error, locale)}
             <button
               type="button"
               className="mf-text-command"
               onClick={() => void load()}
             >
               <RotateCw size={16} />
-              Qayta urinish
-            </button>
+              {t("qayta_urinish_422d2790")}</button>
           </div>
         ) : null}
         {!loading && !error ? (
           <fieldset className="mf-fulfillment-branches" disabled={saving}>
             <legend>
-              {type === "PICKUP" ? "Qaysi filialdan olasiz?" : "Filial"}
+              {type === "PICKUP" ? t("qaysi_filialdan_olasiz_b366994a") : t("filial_71af259b")}
             </legend>
             {branches.map((item) => (
               <label
@@ -209,9 +211,9 @@ export default function FulfillmentDialog({
                   <small>
                     {item.address ?? ""}
                     {!available(item)
-                      ? " - bu usul mavjud emas"
+                      ? t("bu_usul_mavjud_emas_f414335a")
                       : isClosedNow(item)
-                        ? " - hozir yopiq"
+                        ? t("hozir_yopiq_64536a5f")
                         : ""}
                   </small>
                 </span>
@@ -219,8 +221,7 @@ export default function FulfillmentDialog({
             ))}
             {!branches.length ? (
               <p className="mf-checkout-error">
-                Hozir buyurtma qabul qiladigan filial yo'q.
-              </p>
+                {t("hozir_buyurtma_qabul_qiladigan_filial_d1d4aa45")}</p>
             ) : null}
           </fieldset>
         ) : null}
@@ -265,8 +266,7 @@ export default function FulfillmentDialog({
             onClick={() => confirm(null)}
           >
             <Check size={18} />
-            Shu filialdan olaman
-          </button>
+            {t("shu_filialdan_olaman_94d66c59")}</button>
         </footer>
       ) : null}
     </dialog>
