@@ -1208,7 +1208,6 @@ function createService(prisma: InMemoryPrisma) {
     new TelegramCheckoutService(
       prisma as never,
       orderEngine as never,
-      staffNotifications as never,
       new TelegramCustomerScreenService(),
       new TelegramCheckoutSessionService(prisma as never),
       new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
