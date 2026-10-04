@@ -95,11 +95,28 @@ async function main(): Promise<void> {
         },
       } as never,
     );
-    await notificationWorker.dispatchPending();
-    assert.deepEqual(mockDeliveries, [{
-      orderId: webOrder.customerOrder.orderId,
-      tenantId: fixture.branch.tenantId,
-    }]);
+    const dueNotificationCount = await prisma.notificationOutbox.count({
+      where: { status: "PENDING", scheduledAt: { lte: new Date() } },
+    });
+    for (let pass = 0; pass < dueNotificationCount; pass += 1) {
+      await notificationWorker.dispatchPending();
+      const current = await prisma.notificationOutbox.findUniqueOrThrow({
+        where: { id: queuedNotification.id },
+        select: { status: true },
+      });
+      if (current.status === "DELIVERED") break;
+    }
+    assert.equal(
+      mockDeliveries.filter(
+        ({ orderId }) => orderId === webOrder.customerOrder.orderId,
+      ).length,
+      1,
+      "worker must deliver the target order once even when earlier queue items exist",
+    );
+    assert.ok(
+      mockDeliveries.every(({ tenantId }) => tenantId === fixture.branch.tenantId),
+      "worker deliveries must remain tenant-scoped",
+    );
     const deliveredNotification =
       await prisma.notificationOutbox.findUniqueOrThrow({
         where: { id: queuedNotification.id },
