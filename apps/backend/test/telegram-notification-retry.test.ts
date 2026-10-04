@@ -172,6 +172,17 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
       "a safe rate limit stays scheduled rather than being marked uncertain",
     );
 
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
+      "failed",
+      "an explicit 429 response is not a successful manual retry",
+    );
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "a 429 response must preserve the dead letter for a later retry",
+    );
+
     delete process.env.TELEGRAM_BOT_TOKEN;
     assert.equal(
       await service.retryDeadLetter("tenant-a", failedDelivery.messageId),

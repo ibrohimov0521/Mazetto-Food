@@ -279,6 +279,14 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       return "unavailable";
     }
 
+    if (
+      typeof deliveryResult === "object" &&
+      deliveryResult.kind === "retryable"
+    ) {
+      // Telegram explicitly rejected the request; keep the dead letter visible.
+      return "failed";
+    }
+
     // Keep the failed record until Telegram confirms delivery with `ok: true`.
     if (entry.messageId.startsWith("outbox-")) {
       const outboxId = Number(entry.messageId.slice("outbox-".length));
