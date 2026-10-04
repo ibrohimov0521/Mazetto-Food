@@ -247,6 +247,7 @@ test("kitchen status and customer Telegram outbox commit atomically", async () =
     { expectedVersion: 1 },
   );
 
+  assert.ok(result.order);
   assert.equal(result.order.status, OrderStatus.CONFIRMED);
   assert.deepEqual(state.notificationJobs, [
     {
