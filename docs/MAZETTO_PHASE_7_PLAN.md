@@ -300,7 +300,10 @@ Amalga oshirish reja diagrammasidan ataylab farq qiladi: Redis queue o'rniga Pos
 
 Q6 bo'yicha qolgan ishlar:
 - Boshqa kanallar yoki ikkinchi tenant yoqilmaydi; tenantga xos bot sozlamasi alohida dizayn va xavfsizlik tekshiruvi talab qiladi.
-- Migration faqat disposable CI PostgreSQL'da sinalgan. Staging/production qo'llash uchun credential rotation, tasdiqlangan backup, migration smoke va rollback mashqi shart.
+- 2026-10-04 staging tekshiruvi: staging PostgreSQL'dan alohida dump olindi (/home/javohir/secure-backups/mazetto/mazetto-staging-pre-staff-status-20261004T01.dump, 289666 bayt); `pg_restore --list` muvaffaqiyatli.
+- Shu dump PostgreSQL 18 disposable instance'ga ikki marta tiklandi; migratsiya ikki marta qo'llanib idempotentligi, asosiy jadval qatorlari esa restore oldi/keyingi holat bilan solishtirildi.
+- Staging DB'ga `20261004100000_telegram_notification_outbox` qo'llandi va `migrate status` schema up-to-date deb tasdiqladi. Mavjud staging backend health 200, DB va Redis holati OK; staging hali oldingi backend image'da, yangi image feature smoke'i keyingi qadam.
+- Production migration/deploy qilinmadi. Production uchun alohida yangi verified backup, release-gate/preflight, PR main'ga tasdiqlangan merge va release smoke hanuz shart.
 
 ## Q7 — Umumiy UI paketi
 
