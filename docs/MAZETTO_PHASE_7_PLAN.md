@@ -286,6 +286,22 @@ RabbitMQ **kerak emas** — 2–3 kanal uchun Redis list yetarli. QueenFood'da 5
 
 ---
 
+### Q6.4 — 2026-10-04 amalga oshirish holati
+
+PR #221 doirasida bajarilgan:
+- Web va Telegram mijoz buyurtmalarida tenant-scoped PostgreSQL outbox yozuvi buyurtma tranzaksiyasi bilan birga yaratiladi.
+- Worker `FOR UPDATE SKIP LOCKED`, qisqa lease va deduplikatsiya bilan ishlaydi; faqat Telegram tasdiqlagan 429 javobi avtomatik qayta uriniladi.
+- Noaniq tarmoq/5xx natijasi yoki muddati o'tgan lease `UNCERTAIN` bo'ladi; ko'r-ko'rona qayta yuborilmaydi.
+- O'lik xabarlar egasi uchun `/admin/notifications` sahifasi qo'shildi. Qayta yuborish faqat yangi buyurtma xabariga ruxsat, tasdiqlash oynasi dublikat ehtimolini ogohlantiradi.
+- CI'da toza PostgreSQL migratsiyasi, buyurtma + outbox atomikligi, replay deduplikatsiyasi va parallel worker lock'i tekshiriladi.
+
+Amalga oshirish reja diagrammasidan ataylab farq qiladi: Redis queue o'rniga PostgreSQL outbox tanlandi; hozircha faqat mavjud Telegram kanali va yangi buyurtma xabari qamrab olingan. SMS, in-app kanal, umumiy `RecipientResolver`/shablonlar va `staffAudience` abstraksiyasi bu PR'da yo'q.
+
+Keyingi Q6 ishi:
+- Xodim holati lifecycle xabarlari (`NEW → PREPARING → READY`) hozircha jarayon ichidagi ketma-ketlik bilan Telegram xabarini tahrirlaydi. Ular yangi outbox oqimiga ko'chirilmagan; ko'p backend nusxasi yoki restart holatida ishonchlilikni alohida tekshirish kerak.
+- Boshqa kanallar yoki ikkinchi tenant yoqilmaydi; tenantga xos bot sozlamasi alohida dizayn va xavfsizlik tekshiruvi talab qiladi.
+- Migration faqat disposable CI PostgreSQL'da sinalgan. Staging/production qo'llash uchun credential rotation, tasdiqlangan backup, migration smoke va rollback mashqi shart.
+
 ## Q7 — Umumiy UI paketi
 
 ### Muammo
