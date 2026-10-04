@@ -78,7 +78,7 @@ export class NotificationOutboxWorker {
     const leaseExpiresAt = new Date(now.getTime() + LEASE_DURATION_MS);
     const leaseToken = randomUUID();
 
-    return this.prisma.$queryRaw<ClaimedNotification[]>\`
+    return this.prisma.$queryRaw<ClaimedNotification[]>`
       WITH candidates AS (
         SELECT "id"
         FROM "notification_outbox"
@@ -97,7 +97,7 @@ export class NotificationOutboxWorker {
       WHERE job."id" = candidates."id"
       RETURNING job."id", job."tenantId", job."orderId",
                 job."attempts", job."leaseToken"
-    \`;
+    `;
   }
 
   private async deliver(job: ClaimedNotification): Promise<void> {
