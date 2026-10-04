@@ -14,7 +14,6 @@ import {} from "../../config/auth.config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { TelegramCustomerAuthService } from "../telegram/telegram-customer-auth.service";
-import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
 import { SettingsService } from "../settings/settings.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
 import {
@@ -61,7 +60,6 @@ export class CustomersService {
     private readonly jwtService: JwtService,
     private readonly customerOrderEngine: CustomerOrderEngineService,
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
-    private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
     private readonly settingsService: SettingsService,
   ) {}
 
@@ -168,12 +166,6 @@ export class CustomersService {
       customerId,
       dto,
     );
-
-    if (result.order?.id) {
-      void this.telegramOrderNotificationService.notifyNewOrder(
-        result.order.id,
-      );
-    }
 
     return result;
   }
