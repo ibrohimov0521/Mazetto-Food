@@ -337,13 +337,32 @@ async function createFixture(prisma: PrismaService) {
     },
   });
 
-  const configurable = await prisma.product.findFirstOrThrow({
-    where: {
-      isAvailable: true,
-      variants: { some: { isAvailable: true } },
-      modifiers: { some: { modifier: { isActive: true } } },
+  const configurableBase = await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "STEP8_CONFIGURABLE",
+    "STEP 8 Configurable item",
+    12000,
+  );
+  const modifier = await prisma.modifier.create({
+    data: {
+      code: `STEP8_ADDON_${runId}`,
+      name: "STEP 8 test add-on",
+      price: 2500,
     },
+  });
+  await prisma.productModifier.create({
+    data: {
+      productId: configurableBase.id,
+      modifierId: modifier.id,
+      maxSelect: 1,
+    },
+  });
+  const configurable = await prisma.product.findUniqueOrThrow({
+    where: { id: configurableBase.id },
     include: {
+      category: true,
       variants: {
         where: { isAvailable: true },
         orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
@@ -356,45 +375,22 @@ async function createFixture(prisma: PrismaService) {
     },
   });
   const variant = configurable.variants[0]!;
-  const modifier = configurable.modifiers[0]!.modifier;
   const expectedConfigurableTotal = variant.sellingPrice.add(modifier.price);
-  let recipe = await prisma.recipe.findUnique({
-    where: { variantId: variant.id },
+  const ingredient = await prisma.ingredient.create({
+    data: {
+      name: `STEP 8 test ingredient ${runId}`,
+      unit: "GRAM",
+    },
+  });
+  const recipe = await prisma.recipe.create({
+    data: {
+      variantId: variant.id,
+      items: {
+        create: { ingredientId: ingredient.id, quantity: 1, unit: "GRAM" },
+      },
+    },
     include: { items: true },
   });
-  if (!recipe || recipe.items.length === 0) {
-    const ingredient = await prisma.ingredient.create({
-      data: {
-        name: "STEP 8 test ingredient",
-        unit: "GRAM",
-      },
-    });
-    if (recipe) {
-      await prisma.recipeItem.create({
-        data: {
-          recipeId: recipe.id,
-          ingredientId: ingredient.id,
-          quantity: 1,
-          unit: "GRAM",
-        },
-      });
-      recipe = await prisma.recipe.findUniqueOrThrow({
-        where: { id: recipe.id },
-        include: { items: true },
-      });
-    } else {
-      recipe = await prisma.recipe.create({
-        data: {
-          variantId: variant.id,
-          items: {
-            create: { ingredientId: ingredient.id, quantity: 1, unit: "GRAM" },
-          },
-        },
-        include: { items: true },
-      });
-    }
-  }
-  assert.ok(recipe);
   for (const item of recipe.items) {
     await prisma.stock.upsert({
       where: {
@@ -456,10 +452,31 @@ async function createFixture(prisma: PrismaService) {
       metadata: { printRoles: ["RECEIPT", "CANCELLATION", "REFUND"] },
     },
   });
-  const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH");
-  const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER");
-  const simple = await findCatalogProduct(prisma, "KETCHUP");
-  const set = await findCatalogProduct(prisma, "SET_CHEESEBURGER");
+  const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH", branch.id);
+  const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER", branch.id);
+  const simple = await findCatalogProduct(prisma, "KETCHUP", branch.id);
+  const setBase = await findCatalogProduct(prisma, "SET_CHEESEBURGER", branch.id);
+  await prisma.productBundleItem.create({
+    data: {
+      bundleProductId: setBase.id,
+      componentCode: "CLASSIC_BURGER",
+      componentName: "Classic burger",
+      componentProductId: burger.id,
+      quantity: 1,
+      unitLabel: "set",
+    },
+  });
+  const set = await prisma.product.findUniqueOrThrow({
+    where: { id: setBase.id },
+    include: {
+      category: true,
+      variants: {
+        where: { isAvailable: true },
+        orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
+      },
+      bundleItems: true,
+    },
+  });
   const webCustomer = await prisma.customer.create({
     data: {
       tenantId: branch.tenantId,
@@ -512,9 +529,57 @@ async function createFixture(prisma: PrismaService) {
   };
 }
 
-async function findCatalogProduct(prisma: PrismaService, code: string) {
+async function createTestCatalogProduct(
+  prisma: PrismaService,
+  branchId: string,
+  runId: string,
+  code: string,
+  name: string,
+  price: number,
+  isCombo = false,
+) {
+  const category = await prisma.category.create({
+    data: {
+      branchId,
+      code: `STEP8_${code}_${runId}`,
+      name: `STEP 8 ${name} category`,
+    },
+  });
+  return prisma.product.create({
+    data: {
+      branchId,
+      categoryId: category.id,
+      code,
+      name,
+      sellingPrice: new Prisma.Decimal(price),
+      isCombo,
+      variants: {
+        create: {
+          code: "DEFAULT",
+          name: "Standard",
+          sellingPrice: new Prisma.Decimal(price),
+          isDefault: true,
+        },
+      },
+    },
+    include: {
+      category: true,
+      variants: {
+        where: { isAvailable: true },
+        orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
+      },
+      bundleItems: true,
+    },
+  });
+}
+
+async function findCatalogProduct(
+  prisma: PrismaService,
+  code: string,
+  branchId: string,
+) {
   return prisma.product.findFirstOrThrow({
-    where: { code, isAvailable: true },
+    where: { code, branchId, isAvailable: true },
     include: {
       category: true,
       variants: {
