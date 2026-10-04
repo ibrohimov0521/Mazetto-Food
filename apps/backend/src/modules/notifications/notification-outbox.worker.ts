@@ -111,14 +111,14 @@ export class NotificationOutboxWorker {
         FROM "notification_outbox" AS job
         WHERE job."status" = 'PENDING' AND job."scheduledAt" <= ${now}
           AND (
-            job."kind" <> 'customer_status'
+            job."kind" NOT IN ('customer_status', 'staff_status_refresh')
             OR (
               NOT EXISTS (
                 SELECT 1
                 FROM "notification_outbox" AS active
                 WHERE active."tenantId" = job."tenantId"
                   AND active."orderId" = job."orderId"
-                  AND active."kind" = 'customer_status'
+                  AND active."kind" = job."kind"
                   AND active."status" = 'PROCESSING'
               )
               AND NOT EXISTS (
@@ -126,7 +126,7 @@ export class NotificationOutboxWorker {
                 FROM "notification_outbox" AS earlier
                 WHERE earlier."tenantId" = job."tenantId"
                   AND earlier."orderId" = job."orderId"
-                  AND earlier."kind" = 'customer_status'
+                  AND earlier."kind" = job."kind"
                   AND earlier."status" = 'PENDING'
                   AND (earlier."createdAt", earlier."id") < (job."createdAt", job."id")
               )
@@ -159,10 +159,15 @@ export class NotificationOutboxWorker {
               job.tenantId,
               job.payload,
             )
-          : {
-              kind: "rejected" as const,
-              reason: `Unsupported notification outbox kind: ${job.kind}`,
-            };
+          : job.kind === "staff_status_refresh"
+            ? await this.telegram.deliverOutboxStaffStatusRefresh(
+                job.orderId,
+                job.tenantId,
+              )
+            : {
+                kind: "rejected" as const,
+                reason: `Unsupported notification outbox kind: ${job.kind}`,
+              };
 
     if (result === "sent" || result === "ignored") {
       await this.prisma.notificationOutbox.updateMany({

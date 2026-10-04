@@ -66,9 +66,11 @@ export function AdminNotificationsPage() {
       render: (entry) =>
         entry.kind === "staff_new_order"
           ? "Yangi buyurtma"
-          : entry.kind === "customer_status"
-            ? "Mijozga status"
-            : "Boshqa xabar",
+          : entry.kind === "staff_status_refresh"
+            ? "Xodim statusi"
+            : entry.kind === "customer_status"
+              ? "Mijozga status"
+              : "Boshqa xabar",
     },
     {
       key: "error",
@@ -150,7 +152,7 @@ export function AdminNotificationsPage() {
               emptyTitle="Yetkazilmagan xabar yo'q"
               emptyDescription="Yangi xabar xatolari shu yerda ko'rinadi."
               rowActions={(entry) =>
-                ["staff_new_order", "customer_status"].includes(entry.kind) &&
+                ["staff_new_order", "staff_status_refresh", "customer_status"].includes(entry.kind) &&
                 !retryingId ? (
                   <RowAction
                     icon="send"

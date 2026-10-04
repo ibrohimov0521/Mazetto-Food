@@ -296,10 +296,9 @@ PR #221 doirasida bajarilgan:
 - Mijoz statusidagi `sendMessage` endi noaniq xatoda avtomatik takrorlanmaydi; xato dead-letter'ga yoziladi va kerak bo'lsa admin hozirgi statusni qayta yuboradi.
 - CI'da toza PostgreSQL migratsiyasi, buyurtma + outbox atomikligi, replay deduplikatsiyasi, parallel worker lock'i va qayta yuborish xatolari tekshiriladi.
 
-Amalga oshirish reja diagrammasidan ataylab farq qiladi: Redis queue o'rniga PostgreSQL outbox tanlandi. Yangi buyurtma va mijoz status xabarlari tranzaksion yoziladi; status xabarlari tenant + order bo'yicha navbat tartibini saqlaydi. SMS, in-app kanal, umumiy `RecipientResolver`/shablonlar va `staffAudience` abstraksiyasi bu PR'da yo'q.
+Amalga oshirish reja diagrammasidan ataylab farq qiladi: Redis queue o'rniga PostgreSQL outbox tanlandi. Yangi buyurtma, mijoz statusi va xodim xabarini yangilash job'lari tegishli buyurtma tranzaksiyasi ichida yoziladi; mijoz va staff statuslari tenant + order + kanal bo'yicha ketma-ket qayta ishlanadi. Staff retry eski eventni emas, buyurtmaning joriy holatini qayta chizadi. SMS, in-app kanal, umumiy `RecipientResolver`/shablonlar va `staffAudience` abstraksiyasi bu PR'da yo'q.
 
 Q6 bo'yicha qolgan ishlar:
-- Xodim lifecycle xabarini joyida tahrirlash hanuz process-local event orqali; server restarti yoki ko'p instance holatida staff ko'rinishini yangilash yo'qolishi mumkin. Buni alohida durable refresh job bilan qoplash kerak.
 - Boshqa kanallar yoki ikkinchi tenant yoqilmaydi; tenantga xos bot sozlamasi alohida dizayn va xavfsizlik tekshiruvi talab qiladi.
 - Migration faqat disposable CI PostgreSQL'da sinalgan. Staging/production qo'llash uchun credential rotation, tasdiqlangan backup, migration smoke va rollback mashqi shart.
 

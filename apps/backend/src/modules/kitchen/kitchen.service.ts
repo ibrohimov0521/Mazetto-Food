@@ -32,10 +32,6 @@ import {
   orderStateForLegacyStatus,
   recordOrderEvent,
 } from "../orders/order-events";
-import {
-  kitchenEvents,
-  kitchenOrderStatusChangedEvent,
-} from "./kitchen-events";
 import { KitchenGateway } from "./kitchen.gateway";
 import { orderStatusAfterKitchenHandoff } from "./kitchen-status-sync";
 
@@ -50,7 +46,6 @@ type KitchenTransitionActor = {
   user?: AuthenticatedUser;
   reasonPrefix: string;
   cancellationReason?: string;
-  suppressTelegramStaffRefresh?: boolean;
   expectedVersion?: number;
   correlationId?: string;
   idempotencyKey?: string;
@@ -686,6 +681,19 @@ export class KitchenService {
         });
       }
 
+      await tx.notificationOutbox.create({
+        data: {
+          tenantId: scope.tenantId,
+          dedupeKey: `staff_status_refresh:kitchen:${orderId}:${changed.ticket.version}`,
+          kind: "staff_status_refresh",
+          orderId,
+          payload: {
+            status: changed.order.status,
+            ticketStatus: changed.ticket.status,
+          },
+        },
+      });
+
       await actor.completeIdempotency?.(tx, changed.ticket);
       return changed;
     });
@@ -696,9 +704,6 @@ export class KitchenService {
         order: result.order,
         ticket: result.ticket,
       });
-      if (!actor.suppressTelegramStaffRefresh) {
-        kitchenEvents.emit(kitchenOrderStatusChangedEvent, { action, orderId });
-      }
     }
 
     return result;

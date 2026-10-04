@@ -35,6 +35,7 @@ ON "notification_outbox"("status", "leaseExpiresAt");
 CREATE INDEX "notification_outbox_tenantId_status_createdAt_idx"
 ON "notification_outbox"("tenantId", "status", "createdAt");
 
-CREATE UNIQUE INDEX "notification_outbox_customer_order_processing_key"
-ON "notification_outbox"("tenantId", "orderId")
-WHERE "kind" = 'customer_status' AND "status" = 'PROCESSING';
+CREATE UNIQUE INDEX "notification_outbox_serialized_order_processing_key"
+ON "notification_outbox"("tenantId", "orderId", "kind")
+WHERE "kind" IN ('customer_status', 'staff_status_refresh')
+  AND "status" = 'PROCESSING';

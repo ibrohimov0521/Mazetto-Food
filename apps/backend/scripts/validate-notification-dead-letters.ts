@@ -26,6 +26,8 @@ const telegram = read(
   "apps/backend/src/modules/telegram/telegram-order-notification.service.ts",
 );
 const kitchen = read("apps/backend/src/modules/kitchen/kitchen.service.ts");
+const orders = read("apps/backend/src/modules/orders/orders.service.ts");
+const courier = read("apps/backend/src/modules/customers/customer-courier.service.ts");
 const worker = read("apps/backend/src/modules/notifications/notification-outbox.worker.ts");
 const appModule = read("apps/backend/src/app.module.ts");
 const permissions = read("apps/backend/src/common/auth/permissions.ts");
@@ -41,7 +43,7 @@ assert.match(
  * ENG MUHIM SHART. Ilgari `catch` bloki xatoni logga yozib, bildirishnomani
  * TASHLAB YUBORARDI. Har ikkala yo'l ham yozuv qoldirishi kerak.
  */
-for (const kind of ["staff_new_order", "staff_status_refresh"]) {
+for (const kind of ["staff_new_order"]) {
   assert.match(
     telegram,
     new RegExp(`deadLetters\\.record\\(\\{[\\s\\S]{0,80}kind: "${kind}"`),
@@ -52,6 +54,26 @@ assert.match(
   kitchen,
   /notificationOutbox\.create\(\{[\s\S]{0,350}kind: "customer_status"[\s\S]{0,180}payload: \{ status: changed\.order\.status \}/,
   "Mijoz statusi oshxona tranzaksiyasida outbox'ga yozilmayapti.",
+);
+assert.match(
+  kitchen,
+  /kind: "staff_status_refresh"[\s\S]{0,180}ticketStatus: changed\.ticket\.status/,
+  "Oshxona staff-refresh'i status tranzaksiyasida saqlanmayapti.",
+);
+assert.match(
+  orders,
+  /kind: "staff_status_refresh"[\s\S]{0,180}confirmedOrder\.status/,
+  "POS/admin status refresh tranzaksiyada saqlanmayapti.",
+);
+assert.match(
+  courier,
+  /kind: "staff_status_refresh"[\s\S]{0,180}payload: \{ status: nextStatus \}/,
+  "Courier status refresh tranzaksiyada saqlanmayapti.",
+);
+assert.match(
+  worker,
+  /job\."kind" NOT IN \('customer_status', 'staff_status_refresh'\)[\s\S]{0,500}active\."kind" = job\."kind"/,
+  "Status outbox bir order uchun ketma-ket ishlamaydi.",
 );
 assert.match(
   worker,
@@ -127,21 +149,20 @@ assert.match(
 
 // --- Qayta yuborish ---
 const retryBody =
-  telegram.match(/async retryDeadLetter\([\s\S]*?\n {2}private /)?.[0] ?? "";
+  telegram.match(/async retryDeadLetter\([\s\S]*?\n {2}async deliverOutboxStaffStatusRefresh/)?.[0] ?? "";
 assert.ok(retryBody, "retryDeadLetter topilmadi.");
 /*
- * Faqat qayta qurish mumkin bo'lgan xabarlar qayta yuboriladi:
- * lifecycle event'i eskirishi mumkin, mijoz statusi esa orderning joriy
- * holatidan tuziladi.
+ * Qayta yuborish eski lifecycle event'ini takrorlamaydi; staff va
+ * mijoz xabarlari orderning joriy holatidan qayta quriladi.
  */
 assert.match(
   retryBody,
-  /!\["staff_new_order",\s*"customer_status"\]\.includes\(entry\.kind\)/,
+  /!\["staff_new_order",\s*"staff_status_refresh",\s*"customer_status"\]\.includes\(entry\.kind\)/,
   "Qayta yuboriladigan bildirishnoma turlari aniq cheklanmagan.",
 );
 assert.match(
   retryBody,
-  /entry\.kind === "staff_new_order"[\s\S]*resendCurrentCustomerStatus/,
+  /entry\.kind === "staff_status_refresh"[\s\S]*deliverOutboxStaffStatusRefresh[\s\S]*resendCurrentCustomerStatus/,
   "Mijoz statusi buyurtmaning joriy holatidan qayta tuzilmayapti.",
 );
 
@@ -155,7 +176,7 @@ assert.match(
 );
 assert.match(
   adminUi,
-  /\["staff_new_order",\s*"customer_status"\]\.includes\(entry\.kind\)/,
+  /\["staff_new_order",\s*"staff_status_refresh",\s*"customer_status"\]\.includes\(entry\.kind\)/,
   "Admin UI mijoz status dead-letter'ini qayta yuborishga ruxsat bermaydi.",
 );
 

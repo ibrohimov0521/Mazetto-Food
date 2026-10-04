@@ -257,8 +257,18 @@ test("kitchen status and customer Telegram outbox commit atomically", async () =
       orderId: "order-1",
       payload: { status: OrderStatus.CONFIRMED },
     },
+    {
+      tenantId: "tenant-a",
+      dedupeKey: "staff_status_refresh:kitchen:order-1:2",
+      kind: "staff_status_refresh",
+      orderId: "order-1",
+      payload: {
+        status: OrderStatus.CONFIRMED,
+        ticketStatus: KitchenTicketStatus.ACCEPTED,
+      },
+    },
   ]);
-  assert.deepEqual(state.notificationJobTransactionStates, [true]);
+  assert.deepEqual(state.notificationJobTransactionStates, [true, true]);
 });
 
 test("duplicate accept from two devices creates only one ticket event", async () => {

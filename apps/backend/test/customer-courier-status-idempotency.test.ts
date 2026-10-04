@@ -98,6 +98,7 @@ test("courier payment, status event, and idempotency completion share one transa
   let paymentInput: Record<string, unknown> | undefined;
   let paymentTransaction: object | undefined;
   let eventInput: Record<string, unknown> | undefined;
+  let notificationInput: Record<string, unknown> | undefined;
   const existing = {
     id: "customer-order-b",
     orderId: "order-b",
@@ -137,6 +138,13 @@ test("courier payment, status event, and idempotency completion share one transa
       },
     },
     outboxEvent: { create: async () => ({ id: "outbox-a" }) },
+    notificationOutbox: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        assert.equal(transactionActive, true);
+        notificationInput = data;
+        return data;
+      },
+    },
     kitchenTicket: { updateMany: async () => ({ count: 1 }) },
     orderStatusHistory: { create: async () => ({ id: "history-a" }) },
   };
@@ -207,6 +215,13 @@ test("courier payment, status event, and idempotency completion share one transa
   assert.equal(completedInsideTransaction, true);
   assert.equal(eventInput?.idempotencyKey, "courier-status-key-b");
   assert.equal(eventInput?.correlationId, "request-b");
+  assert.deepEqual(notificationInput, {
+    tenantId: "tenant-a",
+    dedupeKey: "staff_status_refresh:courier:order-b:2",
+    kind: "staff_status_refresh",
+    orderId: "order-b",
+    payload: { status: OrderStatus.COMPLETED },
+  });
 });
 
 test("courier idempotency rejects payload changes before a second mutation", async () => {

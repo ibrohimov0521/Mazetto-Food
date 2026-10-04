@@ -1,8 +1,6 @@
 import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
-import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { CustomerOrderType, EmployeeStatus, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
-import type { KitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
-import { kitchenEvents, kitchenOrderStatusChangedEvent } from "../kitchen/kitchen-events";
 import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
 import { kitchenStatusForOrder } from "../kitchen/kitchen-status-sync";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -130,7 +128,7 @@ const legacyStatusToAction: Record<LegacyCallbackStatus, StaffOrderAction> = {
 };
 
 @Injectable()
-export class TelegramOrderNotificationService implements OnModuleDestroy {
+export class TelegramOrderNotificationService {
   private readonly messageUpdates = new Map<string, Promise<void>>();
 
   private enqueueMessage<T>(orderId: string, work: () => Promise<T>): Promise<T> {
@@ -144,22 +142,11 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     return next;
   }
   private readonly logger = new Logger(TelegramOrderNotificationService.name);
-  private readonly statusChangedListener = (event: KitchenOrderStatusChangedEvent) => {
-    void this.refreshStaffOrderMessageFromKitchen(event);
-  };
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
     private readonly deadLetters: NotificationDeadLetterService,
-  ) {
-    kitchenEvents.on(kitchenOrderStatusChangedEvent, this.statusChangedListener);
-  }
-
-  onModuleDestroy(): void {
-    kitchenEvents.off(kitchenOrderStatusChangedEvent, this.statusChangedListener);
-  }
-
+  ) {}
   async notifyNewOrder(orderId: string): Promise<void> {
     return this.enqueueMessage(orderId, async () => {
       await this.sendNewOrder(orderId);
@@ -316,13 +303,10 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     }
 
     /*
-     * `staff_status_refresh` qayta yuborilmaydi: u KITCHEN hodisasiga
-     * bog'liq va o'sha hodisa allaqachon o'tib ketgan. Uni "qayta
-     * yuborish" eskirgan holatni yozib, hozirgi holatni buzardi.
-     * Yangi buyurtma xabari esa holatdan mustaqil — u qayta chizilganda
-     * buyurtmaning JORIY holati o'qiladi.
+     * Status-refresh job'lari hodisaning eski payload'ini takrorlamaydi:
+     * xodim xabari buyurtmaning joriy holatidan qayta chiziladi.
      */
-    if (!["staff_new_order", "customer_status"].includes(entry.kind)) {
+    if (!["staff_new_order", "staff_status_refresh", "customer_status"].includes(entry.kind)) {
       return "not-retryable";
     }
 
@@ -330,17 +314,27 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     if (activeTenantId !== tenantId) {
       throw new ForbiddenException("Telegram qayta yuborish tenantiga mos kelmadi");
     }
-    const deliveryResult = await this.enqueueMessage(entry.orderId, () =>
-      entry.kind === "staff_new_order"
-        ? this.sendNewOrder(entry.orderId, tenantId, false)
-        : this.resendCurrentCustomerStatus(entry.orderId, tenantId),
-    );
+    const deliveryResult =
+      entry.kind === "staff_status_refresh"
+        ? await this.deliverOutboxStaffStatusRefresh(entry.orderId, tenantId)
+        : await this.enqueueMessage(entry.orderId, () =>
+            entry.kind === "staff_new_order"
+              ? this.sendNewOrder(entry.orderId, tenantId, false)
+              : this.resendCurrentCustomerStatus(entry.orderId, tenantId),
+          );
 
     if (deliveryResult === "failed") {
       return "failed";
     }
-    if (deliveryResult === "skipped") {
+    if (deliveryResult === "skipped" || deliveryResult === "ignored") {
       return "unavailable";
+    }
+
+    if (
+      typeof deliveryResult === "object" &&
+      deliveryResult.kind === "rejected"
+    ) {
+      return "failed";
     }
 
     if (
@@ -379,40 +373,37 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     return "sent";
   }
 
-  private async refreshStaffOrderMessageFromKitchen(event: KitchenOrderStatusChangedEvent): Promise<void> {
-    return this.enqueueMessage(event.orderId, () => this.refreshLatestStaffMessage(event));
-  }
+  async deliverOutboxStaffStatusRefresh(
+    orderId: string,
+    tenantId: string,
+  ): Promise<OutboxDeliveryResult> {
+    if (!this.isConfigured()) return "skipped";
 
-  private async refreshLatestStaffMessage(event: KitchenOrderStatusChangedEvent): Promise<void> {
-    if (!this.isConfigured()) {
-      return;
-    }
-
-    let tenantId: string | null = null;
-    try {
-      tenantId = await this.resolveOrderTenantId(event.orderId);
-      if (!tenantId) return;
-      const order = await this.findOrderForMessage(event.orderId, this.prisma, tenantId);
-
-      if (!order || !order.staffTelegramMessageId) {
-        return;
+    return this.enqueueMessage(orderId, async () => {
+      const actualTenantId = await this.resolveOrderTenantId(orderId);
+      if (!actualTenantId) {
+        return { kind: "rejected", reason: "Staff-status order has no tenant." };
+      }
+      if (actualTenantId !== tenantId) {
+        return { kind: "rejected", reason: "Staff-status tenant does not match the order." };
       }
 
-      await this.renderStoredStaffOrderMessage(order);
-    } catch (error) {
-      this.logger.warn(
-        `Telegram staff status refresh failed for order ${event.orderId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      if (tenantId) await this.deadLetters.record({
-        tenantId,
-        kind: "staff_status_refresh",
-        orderId: event.orderId,
-        error,
-        attempts: telegramRequestMaxAttempts,
-      });
-    }
+      const order = await this.findOrderForMessage(orderId, this.prisma, tenantId);
+      if (!order) {
+        return { kind: "rejected", reason: "Staff-status order was not found." };
+      }
+      if (!order.staffTelegramMessageId) return "ignored";
+
+      try {
+        await this.renderStoredStaffOrderMessage(order);
+        return "sent";
+      } catch (error) {
+        this.logger.warn(
+          `Telegram staff status refresh failed for order ${orderId}: ${error instanceof Error ? error.message : "unknown error"}`,
+        );
+        return "failed";
+      }
+    });
   }
 
   async handleWebhook(secret: string, update: unknown) {
@@ -466,7 +457,6 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     const transition = await this.kitchenService.applyOrderAction(orderId, action, {
       reasonPrefix: "Telegram staff",
       cancellationReason: "Telegram staff orqali bekor qilindi",
-      suppressTelegramStaffRefresh: true,
     });
     const order = await this.findOrderForMessage(orderId);
 

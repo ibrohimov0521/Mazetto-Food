@@ -27,10 +27,6 @@ import {
   orderStateForLegacyStatus,
   recordOrderEvent,
 } from "../orders/order-events";
-import {
-  kitchenEvents,
-  kitchenOrderStatusChangedEvent,
-} from "../kitchen/kitchen-events";
 import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
 import { KitchenService } from "../kitchen/kitchen.service";
 import {
@@ -592,6 +588,15 @@ export class CustomerCourierService {
               reason: `Courier status requested: ${dto.status}`,
             },
           });
+          await tx.notificationOutbox.create({
+            data: {
+              tenantId: scope.tenantId,
+              dedupeKey: `staff_status_refresh:courier:${existing.orderId}:${updated.version}`,
+              kind: "staff_status_refresh",
+              orderId: existing.orderId,
+              payload: { status: nextStatus },
+            },
+          });
         }
 
         const result = await tx.customerOrder.findUniqueOrThrow({
@@ -630,10 +635,6 @@ export class CustomerCourierService {
 
     this.kitchenService.emitOrderStatusChanged({
       orderId: customerOrder.orderId,
-    });
-    kitchenEvents.emit(kitchenOrderStatusChangedEvent, {
-      orderId: customerOrder.orderId,
-      action: "refresh",
     });
     return withDerivedCustomerOrderStatus(customerOrder);
   }

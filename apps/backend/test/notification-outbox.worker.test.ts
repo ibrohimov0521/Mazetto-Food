@@ -5,7 +5,7 @@ import { NotificationOutboxWorker } from "../src/modules/notifications/notificat
 function createHarness(
   delivery: "sent" | "failed" | "skipped" | { kind: "retryable"; retryAfterSeconds: number | null },
   expired: boolean = false,
-  kind: "staff_new_order" | "customer_status" = "staff_new_order",
+  kind: "staff_new_order" | "customer_status" | "staff_status_refresh" = "staff_new_order",
 ) {
   const job = {
     id: 7,
@@ -74,6 +74,11 @@ function createHarness(
       telegramCalls += 1;
       deliveryRoutes.push("customer_status");
       customerPayloads.push(payload);
+      return delivery;
+    },
+    deliverOutboxStaffStatusRefresh: async () => {
+      telegramCalls += 1;
+      deliveryRoutes.push("staff_status_refresh");
       return delivery;
     },
   };
@@ -185,9 +190,22 @@ test("customer-status jobs preserve their payload, ordering guard, and dead-lett
   assert.deepEqual(harness.customerPayloads, [{ status: "CONFIRMED" }]);
   assert.match(harness.rawQueries.join("\n"), /NOT EXISTS/);
   assert.match(harness.rawQueries.join("\n"), /earlier\."status" = 'PENDING'/);
+  assert.match(harness.rawQueries.join("\n"), /active\."kind" = job\."kind"/);
   assert.equal(
     (harness.deadLetters[0]!.create as { kind: string }).kind,
     "customer_status",
+  );
+});
+
+test("staff refresh jobs use the current-state adapter and preserve their dead-letter kind", async () => {
+  const harness = createHarness("failed", false, "staff_status_refresh");
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.deepEqual(harness.deliveryRoutes, ["staff_status_refresh"]);
+  assert.equal(
+    (harness.deadLetters[0]!.create as { kind: string }).kind,
+    "staff_status_refresh",
   );
 });
 
