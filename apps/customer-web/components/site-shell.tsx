@@ -1,25 +1,31 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname } from "@/i18n/navigation";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 import { BrandLogo } from "./brand-logo";
+import { LocaleSwitcher } from "./locale-switcher";
 import { BrandBotanical } from "./brand-botanical";
 import { useCart, type CartFlight } from "../lib/cart";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("Customer");
+  const navigation = useTranslations("Navigation");
+  const locale = useLocale();
   const pathname = usePathname();
   const { cartFlight, finishCartFlight, items, subtotal, toastMessage } = useCart();
   const itemCount = items.reduce((count, item) => count + item.quantity, 0);
   const navItems = useMemo(
     () => [
-      { href: "/", label: "Bosh sahifa", icon: HomeIcon },
-      { href: "/menu", label: "Menyu", icon: MenuIcon },
-      { href: "/cart", label: "Savat", icon: CartIcon },
-      { href: "/orders", label: "Buyurtmalar", icon: OrdersIcon },
-      { href: "/profile", label: "Profil", icon: ProfileIcon },
+      { href: "/", label: navigation("home"), shortLabel: navigation("homeShort"), icon: HomeIcon },
+      { href: "/menu", label: navigation("menu"), shortLabel: navigation("menu"), icon: MenuIcon },
+      { href: "/cart", label: navigation("cart"), shortLabel: navigation("cart"), icon: CartIcon },
+      { href: "/orders", label: navigation("orders"), shortLabel: navigation("orderShort"), icon: OrdersIcon },
+      { href: "/profile", label: navigation("profile"), shortLabel: navigation("profile"), icon: ProfileIcon },
     ],
-    [],
+    [navigation],
   );
 
   return (
@@ -27,30 +33,33 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
         <BrandBotanical />
         <header className="mf-topbar inset-x-0 top-0 z-20 border-b pt-[env(safe-area-inset-top)] md:fixed">
           <div className="relative mx-auto flex h-[3.75rem] max-w-6xl items-center justify-center px-4 md:h-14 md:justify-between md:gap-3">
-            <Link aria-label="MAZETTO FOOD bosh sahifa" className="mf-header-logo shrink-0" href="/">
+            <Link aria-label={t("mazetto_food_bosh_sahifa_2182bd78")} className="mf-header-logo shrink-0" href="/">
               <BrandLogo className="h-full w-full" priority sizes="(max-width: 767px) 240px, 220px" />
             </Link>
             <nav className="hidden min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden text-xs font-black text-white/72 md:flex md:gap-2 md:text-sm">
-              <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">Menyu</Link>
-              <Link aria-current={isNavActive(pathname, "/orders") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/orders"))} href="/orders">Buyurtmalar</Link>
-              <Link aria-current={isNavActive(pathname, "/profile") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/profile"))} href="/profile">Profil</Link>
-              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} aria-label={cartAriaLabel(itemCount, subtotal)} data-cart-target="true" className="pressable ripple mf-button-primary grid min-w-[9.75rem] shrink-0 grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 whitespace-nowrap px-4 py-2" href="/cart">
+              <Link aria-current={isNavActive(pathname, "/menu") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/menu"))} href="/menu">{navigation("menu")}</Link>
+              <Link aria-current={isNavActive(pathname, "/orders") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/orders"))} href="/orders">{navigation("orders")}</Link>
+              <Link aria-current={isNavActive(pathname, "/profile") ? "page" : undefined} className={topNavClass(isNavActive(pathname, "/profile"))} href="/profile">{navigation("profile")}</Link>
+              <Link aria-current={isNavActive(pathname, "/cart") ? "page" : undefined} aria-label={cartAriaLabel(itemCount, subtotal, locale)} data-cart-target="true" className="pressable ripple mf-button-primary grid min-w-[9.75rem] shrink-0 grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 whitespace-nowrap px-4 py-2" href="/cart">
                 <CartIcon />
-                <span className="block min-w-0 text-center">{items.length ? formatCompact(subtotal) : "Savat"}</span>
+                <span className="block min-w-0 text-center">{items.length ? formatCompact(subtotal, locale) : navigation("cart")}</span>
               </Link>
             </nav>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 md:static md:translate-y-0">
+              <LocaleSwitcher />
+            </div>
           </div>
         </header>
         <div aria-hidden="true" className="mf-header-spacer hidden md:block" />
         <div className="mf-route-content">{children}</div>
-          <nav aria-label="Asosiy navigatsiya" className="mf-bottom-nav mazetto-glass-nav fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-gap)+env(safe-area-inset-bottom))] z-40 h-[var(--mf-bottom-nav-height)] rounded-[1.25rem] px-1 py-1 md:hidden">
+          <nav aria-label={t("asosiy_navigatsiya_e68de837")} className="mf-bottom-nav mazetto-glass-nav fixed inset-x-3 bottom-[calc(var(--mf-bottom-nav-gap)+env(safe-area-inset-bottom))] z-40 h-[var(--mf-bottom-nav-height)] rounded-[1.25rem] px-1 py-1 md:hidden">
             <div className="grid h-full grid-cols-5 gap-0.5">
               {navItems.map((item) => {
                 const active = isNavActive(pathname, item.href);
                 const Icon = item.icon;
 
                 return (
-                  <Link aria-current={active ? "page" : undefined} aria-label={item.href === "/cart" ? cartAriaLabel(itemCount, subtotal) : item.label} className={`pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1rem] px-0.5 text-[11px] font-black leading-tight text-white/82 ${item.href === "/cart" ? "mf-nav-cart" : ""}`} data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
+                  <Link aria-current={active ? "page" : undefined} aria-label={item.href === "/cart" ? cartAriaLabel(itemCount, subtotal, locale) : item.label} className={`pressable relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-[1rem] px-0.5 text-[11px] font-black leading-tight text-white/82 ${item.href === "/cart" ? "mf-nav-cart" : ""}`} data-cart-target={item.href === "/cart" ? "true" : undefined} href={item.href} key={item.href}>
                     {active ? (
                       <span
                         className="mazetto-liquid-active absolute inset-0 rounded-[1rem]"
@@ -59,7 +68,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
                     <span className={`mf-nav-icon relative ${item.href === "/cart" ? "grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-[#F5CF00] to-[#FFD83D] text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.28)]" : active ? "text-[#FFE86B]" : ""}`} data-active={active ? "true" : "false"} data-cart={item.href === "/cart" ? "true" : "false"}>
                       <Icon />
                     </span>
-                    <span className={`relative max-w-full whitespace-nowrap ${active ? "text-[#FFE86B]" : ""}`}>{item.href === "/cart" && items.length ? subtotal.toLocaleString("uz-UZ") : mobileNavLabel(item.href)}</span>
+                    <span className={`relative max-w-full whitespace-nowrap ${active ? "text-[#FFE86B]" : ""}`}>{item.href === "/cart" && items.length ? formatCompact(subtotal, locale) : item.shortLabel}</span>
                     {item.href === "/cart" && items.length ? (
                       <span className="absolute right-1 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#F5CF00] px-1 text-[10px] font-black leading-none text-[#07373A] shadow-[0_8px_18px_rgba(245,207,0,0.24)]">
                         {formatCartCount(itemCount)}
@@ -76,39 +85,31 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
             role="status"
             className="mf-toast mf-toast-enter fixed inset-x-4 bottom-[calc(var(--mf-bottom-nav-space)+env(safe-area-inset-bottom)+0.5rem)] z-50 mx-auto max-w-sm rounded-xl px-4 py-3 text-sm font-bold md:bottom-5"
           >
-            {toastMessage}
+            {localizeCustomerCopy(toastMessage, locale)}
           </div>
         ) : null}
       </main>
   );
 }
 
-function formatCompact(value: number): string {
-  return `${value.toLocaleString("uz-UZ")} so'm`;
+function formatCompact(value: number, locale: string): string {
+  const numberLocale = locale === "ru" ? "ru-RU" : "uz-UZ";
+  const currency = locale === "ru" ? "сум" : "so" + String.fromCharCode(39) + "m";
+  return value.toLocaleString(numberLocale) + " " + currency;
 }
 
 function formatCartCount(count: number): string {
   return count > 99 ? "99+" : String(count);
 }
 
-function cartAriaLabel(itemCount: number, subtotal: number): string {
-  if (!itemCount) {
-    return "Savat";
-  }
-
-  return `Savat, jami ${formatCompact(subtotal)}, ${formatCartCount(itemCount)} ta mahsulot`;
-}
-
-function mobileNavLabel(href: string): string {
-  const labels: Record<string, string> = {
-    "/": "Bosh",
-    "/menu": "Menyu",
-    "/cart": "Savat",
-    "/orders": "Buyurtma",
-    "/profile": "Profil",
-  };
-
-  return labels[href] ?? href;
+function cartAriaLabel(itemCount: number, subtotal: number, locale: string): string {
+  const numberLocale = locale === "ru" ? "ru-RU" : "uz-UZ";
+  const currency = locale === "ru" ? "сум" : "so" + String.fromCharCode(39) + "m";
+  if (!itemCount) return locale === "ru" ? "Корзина" : "Savat";
+  const plural = new Intl.PluralRules("ru").select(itemCount);
+  const quantity = locale === "ru" ? plural === "one" ? "товар" : plural === "few" ? "товара" : "товаров" : "ta mahsulot";
+  const total = subtotal.toLocaleString(numberLocale) + " " + currency;
+  return (locale === "ru" ? "Корзина, итого " : "Savat, jami ") + total + ", " + formatCartCount(itemCount) + " " + quantity;
 }
 
 function isNavActive(pathname: string, href: string): boolean {

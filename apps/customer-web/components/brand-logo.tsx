@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 
 import { useState } from "react";
 import Image from "next/image";
@@ -14,22 +15,22 @@ export function BrandLogo({
   priority = false,
   sizes = "180px",
 }: BrandLogoProps) {
+  const t = useTranslations("Customer");
   const [failed, setFailed] = useState(false);
 
   if (failed) {
     return (
       <span
-        aria-label="MAZETTO FOOD"
+        aria-label={t("mazetto_food_2300a7ce")}
         className={`inline-flex items-center font-black uppercase leading-none text-[#FFE86B] drop-shadow-[0_8px_18px_rgba(0,0,0,0.32)] ${className}`}
       >
-        MAZETTO FOOD
-      </span>
+        {t("mazetto_food_2300a7ce")}</span>
     );
   }
 
   return (
     <Image
-      alt="MAZETTO FOOD"
+      alt={t("mazetto_food_2300a7ce")}
       className={`object-contain ${className}`}
       priority={priority}
       height={227}

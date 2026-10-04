@@ -1,34 +1,37 @@
 import { notFound } from "next/navigation";
 import ProductPage from "./product-client";
-import { getPublicProduct } from "../../../lib/public-catalog";
-import { displayProduct } from "../../../lib/customer-display";
-import { jsonLd, pageMetadata, siteUrl } from "../../../lib/seo";
+import { getPublicProduct } from "@/lib/public-catalog";
+import { displayProduct } from "@/lib/customer-display";
+import { jsonLd, pageMetadata, siteUrl } from "@/lib/seo";
 
 export const revalidate = 300;
-type Props = { params: Promise<{ id: string }> };
+type Props = { params: Promise<{ id: string; locale: "uz" | "ru" }> };
 export async function generateMetadata({ params }: Props) {
-  const { id } = await params;
+  const { id, locale } = await params;
   const data = await getPublicProduct(id);
   if (!data) notFound();
-  const product = displayProduct(data);
+  const product = displayProduct(data, locale);
   return pageMetadata(
     product.name,
     product.description ||
-      `${product.name} - Mazetto Food. Narxi, tarkibi va onlayn buyurtma.`,
-    "/product/" + encodeURIComponent(id),
+      (locale === "ru"
+        ? `${product.name} — Mazetto Food. Состав, цена и онлайн-заказ.`
+        : `${product.name} - Mazetto Food. Narxi, tarkibi va onlayn buyurtma.`),
+    (locale === "ru" ? "/ru" : "") + "/product/" + encodeURIComponent(id),
     product.imageUrl,
+    locale,
   );
 }
 export default async function ProductRoute({ params }: Props) {
-  const { id } = await params;
+  const { id, locale } = await params;
   const initialProduct = await getPublicProduct(id);
   if (!initialProduct) notFound();
-  const product = displayProduct(initialProduct);
+  const product = displayProduct(initialProduct, locale);
   const price =
     product.variants.find((variant) => variant.isDefault)?.sellingPrice ??
     product.variants[0]?.sellingPrice ??
     product.sellingPrice;
-  const url = siteUrl + "/product/" + encodeURIComponent(id);
+  const url = siteUrl + (locale === "ru" ? "/ru" : "") + "/product/" + encodeURIComponent(id);
   return (
     <>
       <script

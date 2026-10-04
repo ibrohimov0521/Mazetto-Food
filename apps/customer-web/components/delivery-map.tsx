@@ -1,8 +1,10 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
 import { useEffect, useRef, useState } from "react";
 import { LocateFixed, MapPin, Minus, Plus, RotateCw } from "lucide-react";
 import type { Map as LeafletMap } from "leaflet";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 import type { DeliveryPoint } from "../lib/delivery-location";
 import {
   OUTSIDE_TASHKENT_MESSAGE,
@@ -18,6 +20,8 @@ type Props = {
 };
 
 export default function DeliveryMap({ point, center, onChange }: Props) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<LeafletMap | null>(null);
   const emit = useRef<(next: DeliveryPoint) => void>(() => {});
@@ -281,12 +285,11 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
         <div
           className="mf-map-canvas"
           ref={container}
-          aria-label="Yetkazish manzili xaritasi"
+          aria-label={t("yetkazish_manzili_xaritasi_90bc6c05")}
         />
         {!ready && !mapError ? (
           <div className="mf-map-loading" role="status">
-            Xarita yuklanmoqda...
-          </div>
+            {t("xarita_yuklanmoqda_096f31db")}</div>
         ) : null}
         <MapPin
           className={"mf-map-pin" + (point ? " is-selected" : "")}
@@ -298,8 +301,8 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
           <button
             type="button"
             className="mf-icon-control"
-            aria-label="Xaritani yaqinlashtirish"
-            title="Yaqinlashtirish"
+            aria-label={t("xaritani_yaqinlashtirish_bf6b9d84")}
+            title={t("yaqinlashtirish_a033e83a")}
             onClick={() => map.current?.zoomIn()}
           >
             <Plus size={20} />
@@ -307,8 +310,8 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
           <button
             type="button"
             className="mf-icon-control"
-            aria-label="Xaritani uzoqlashtirish"
-            title="Uzoqlashtirish"
+            aria-label={t("xaritani_uzoqlashtirish_6f408cd7")}
+            title={t("uzoqlashtirish_ce9f9381")}
             onClick={() => map.current?.zoomOut()}
           >
             <Minus size={20} />
@@ -323,42 +326,40 @@ export default function DeliveryMap({ point, center, onChange }: Props) {
           disabled={locating}
         >
           <LocateFixed size={18} />
-          <span>{locating ? "Aniqlanmoqda..." : "Joylashuvimni aniqlash"}</span>
+          <span>{locating ? t("aniqlanmoqda_619e2559") : t("joylashuvimni_aniqlash_374e3e6b")}</span>
         </button>
         <span
           className={"mf-point-status" + (point ? " is-selected" : "")}
           role="status"
         >
           <MapPin size={15} />
-          {point ? "Nuqta belgilandi" : "Nuqta tanlanmagan"}
+          {point ? t("nuqta_belgilandi_4b0cbd7d") : t("nuqta_tanlanmagan_dd2c1006")}
         </span>
       </div>
       {point?.source === "gps" && (point.accuracyMeters ?? 0) > 100 ? (
         <p className="mf-location-notice">
-          GPS aniqligi past. Bino joyini xaritada tekshiring.
-        </p>
+          {t("gps_aniqligi_past_bino_joyini_xaritada_d617e0fe")}</p>
       ) : null}
       {zoneError ? (
         <p className="mf-location-notice" role="alert">
-          {zoneError}
+          {localizeCustomerCopy(zoneError, locale)}
         </p>
       ) : null}
       {gpsError ? (
         <p className="mf-location-notice" role="alert">
-          {gpsError}
+          {localizeCustomerCopy(gpsError, locale)}
         </p>
       ) : null}
       {mapError ? (
         <div className="mf-location-notice" role="alert">
-          <span>{mapError}</span>
+          <span>{localizeCustomerCopy(mapError, locale)}</span>
           <button
             type="button"
             className="mf-text-command"
             onClick={() => setAttempt((value) => value + 1)}
           >
             <RotateCw size={16} />
-            Qayta yuklash
-          </button>
+            {t("qayta_yuklash_16bddda2")}</button>
         </div>
       ) : null}
     </div>

@@ -1,8 +1,10 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Branch } from "../lib/types";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 
 type OrderType = "DELIVERY" | "PICKUP";
 
@@ -21,6 +23,8 @@ export function BranchPicker({
   orderType?: OrderType;
   value: string;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -103,8 +107,8 @@ export function BranchPicker({
       >
         <span className="mf-branch-icon grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-lg" aria-hidden="true">⌖</span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-[#0A7168]">{label}</span>
-          <span className="mt-0.5 block break-words text-[15px] font-black leading-tight text-[#17314A]">{selectedBranch?.name ?? "Filial tanlang"}</span>
+          <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-[#0A7168]">{localizeCustomerCopy(label, locale)}</span>
+          <span className="mt-0.5 block break-words text-[15px] font-black leading-tight text-[#17314A]">{selectedBranch?.name ?? t("filial_tanlang_5c7edf5a")}</span>
           {selectedBranch?.address ? <span className="mt-0.5 block break-words text-[11px] font-bold leading-tight text-[#586B7D]">{selectedBranch.address}</span> : null}
         </span>
         <span className={`mf-branch-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
@@ -119,11 +123,11 @@ export function BranchPicker({
               id={panelId}
               ref={panelRef}
               role="dialog"
-              aria-label="Filial tanlash"
+              aria-label={t("filial_tanlash_0ab2f13f")}
             >
               <div className="flex items-center justify-between px-3 py-1">
-                <span className="text-sm font-black">Filial tanlash</span>
-                <button aria-label="Filial oynasini yopish" className="grid h-11 w-11 place-items-center text-xl" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} type="button">×</button>
+                <span className="text-sm font-black">{t("filial_tanlash_0ab2f13f")}</span>
+                <button aria-label={t("filial_oynasini_yopish_d42e90b0")} className="grid h-11 w-11 place-items-center text-xl" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} type="button">×</button>
               </div>
               <div className="max-h-[calc(70vh-4.5rem)] overflow-y-auto pr-1">
                 {branches.map((branch) => {
@@ -141,7 +145,7 @@ export function BranchPicker({
                       <span className="min-w-0">
                         <span className="block break-words font-black text-[#17314A]">{branch.name}</span>
                         {branch.address ? <span className="mt-1 block break-words text-xs font-semibold text-[#586B7D]">{branch.address}</span> : null}
-                        <span className="mt-2 block text-xs font-black text-[#0A7168]">{branchStatus(branch, orderType)}</span>
+                        <span className="mt-2 block text-xs font-black text-[#0A7168]">{localizeCustomerCopy(branchStatus(branch, orderType), locale)}</span>
                       </span>
                       {active ? <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#F5CF00] text-sm font-black text-[#07373A]">✓</span> : null}
                     </button>

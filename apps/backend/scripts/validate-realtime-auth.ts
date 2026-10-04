@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 
 const gateway = readSource("apps/backend/src/modules/kitchen/kitchen.gateway.ts");
-const customerOrdersPage = readSource("apps/customer-web/app/orders/page.tsx");
+const customerOrdersPage = readSource("apps/customer-web/app/[locale]/orders/page.tsx");
 const customerOrderUpdates = readSource("apps/customer-web/lib/use-order-updates.ts");
 const waiterPage = readSource("apps/pos-web/app/(fullscreen)/waiter/page.tsx");
 const staffRealtimeHook = readSource("apps/pos-web/lib/use-staff-realtime.ts");

@@ -1,10 +1,12 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ProductCard } from "./product-card";
 import { MotionDiv, pageMotion } from "./motion-primitives";
 import { apiFetch } from "../lib/api";
 import { displayCategory, displayProducts } from "../lib/customer-display";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 import type { Category, Product } from "../lib/types";
 
 export function CustomerMenuSections({
@@ -18,8 +20,10 @@ export function CustomerMenuSections({
   title?: string;
   initial?: { categories: Category[]; products: Product[] };
 }) {
-  const [categories, setCategories] = useState<Category[]>(() => sortSetsFirst((initial?.categories ?? []).map(displayCategory)));
-  const [products, setProducts] = useState<Product[]>(() => displayProducts(initial?.products ?? []));
+  const locale = useLocale();
+  const t = useTranslations("Customer");
+  const [categories, setCategories] = useState<Category[]>(() => sortSetsFirst((initial?.categories ?? []).map((category) => displayCategory(category, locale))));
+  const [products, setProducts] = useState<Product[]>(() => displayProducts(initial?.products ?? [], locale));
   const [activeCategoryId, setActiveCategoryId] = useState<string>("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(!initial);
@@ -40,16 +44,16 @@ export function CustomerMenuSections({
         apiFetch<Category[]>("/customer/menu/categories"),
         apiFetch<Product[]>("/customer/menu/products"),
       ]);
-      const localizedCategories = sortSetsFirst(nextCategories.map(displayCategory));
+      const localizedCategories = sortSetsFirst(nextCategories.map((category) => displayCategory(category, locale)));
       setCategories(localizedCategories);
-      setProducts(displayProducts(nextProducts));
+      setProducts(displayProducts(nextProducts, locale));
       setActiveCategoryId((current) => current || localizedCategories[0]?.id || "");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Menyuni yuklab bo'lmadi.");
     } finally {
       setLoading(false);
     }
-  }, [initial]);
+  }, [initial, locale]);
 
   useEffect(() => {
     if (!initial) {
@@ -194,8 +198,8 @@ export function CustomerMenuSections({
         <MotionDiv {...pageMotion} className="mf-menu-intro mf-organic px-4 pb-4 pt-3 sm:p-5">
           <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,360px)] lg:items-end">
             <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">MAZETTO FOOD menyusi</p>
-              <h1 className="mt-1 text-[1.65rem] font-black leading-[1.02] text-white sm:text-4xl">{title}</h1>
+              <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">{t("mazetto_food_menyusi_74b998f5")}</p>
+              <h1 className="mt-1 text-[1.65rem] font-black leading-[1.02] text-white sm:text-4xl">{localizeCustomerCopy(title, locale)}</h1>
             </div>
             <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
           </div>
@@ -203,8 +207,8 @@ export function CustomerMenuSections({
       ) : (
         <div className={`${compactTop ? "mb-3" : "mb-4"} grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,320px)] sm:items-end`}>
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase text-[#F5CF00]">To'liq menyu</p>
-            <h2 className="mt-1 text-2xl font-black text-white">{title}</h2>
+            <p className="text-xs font-black uppercase text-[#F5CF00]">{t("to_liq_menyu_91432d5c")}</p>
+            <h2 className="mt-1 text-2xl font-black text-white">{localizeCustomerCopy(title, locale)}</h2>
           </div>
           <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
         </div>
@@ -231,18 +235,17 @@ export function CustomerMenuSections({
 
       {error && !products.length ? (
         <div className="mf-card mt-5 p-6 text-center">
-          <h2 className="text-2xl font-black text-white">Menyu yuklanmadi</h2>
-          <p className="mt-2 text-sm font-semibold text-white/60">{error}</p>
+          <h2 className="text-2xl font-black text-white">{t("menyu_yuklanmadi_14ee1280")}</h2>
+          <p className="mt-2 text-sm font-semibold text-white/60">{localizeCustomerCopy(error, locale)}</p>
           <button className="pressable ripple mf-button-primary mt-5 px-5 py-3 font-black" onClick={() => void load()} type="button">
-            Qayta urinish
-          </button>
+            {t("qayta_urinish_422d2790")}</button>
         </div>
       ) : null}
 
       {error && products.length > 0 ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-white/20 py-3 text-sm text-white" role="status">
-          <span>Menyu yangilanmadi. Oxirgi yuklangan mahsulotlar ko'rsatilmoqda.</span>
-          <button className="pressable mf-button-primary px-4 py-2 font-bold" onClick={() => void load()} type="button">Qayta urinish</button>
+          <span>{t("menyu_yangilanmadi_oxirgi_yuklangan_ma_cb4f7af2")}</span>
+          <button className="pressable mf-button-primary px-4 py-2 font-bold" onClick={() => void load()} type="button">{t("qayta_urinish_422d2790")}</button>
         </div>
       ) : null}
 
@@ -262,7 +265,7 @@ export function CustomerMenuSections({
               >
                 <div className="mb-3 flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">{products.length} ta mahsulot</p>
+                    <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">{products.length} {t("ta_mahsulot_27250bf2")}</p>
                     <h2 className="mf-menu-section-heading text-2xl font-black text-white">{categoryLabel(category)}</h2>
                   </div>
                   {category.description ? <p className="mf-menu-section-description hidden max-w-md text-right text-sm font-semibold text-white/56 md:block">{category.description}</p> : null}
@@ -276,8 +279,7 @@ export function CustomerMenuSections({
 
       {!loading && !error && !menuSections.length ? (
         <div className="mf-card mt-5 p-6 text-center text-sm font-bold text-white/60">
-          Bu tanlov bo'yicha mahsulot topilmadi.
-        </div>
+          {t("bu_tanlov_bo_yicha_mahsulot_topilmadi_758be3e7")}</div>
       ) : null}
     </div>
   );
@@ -294,14 +296,15 @@ function SearchBox({
   query: string;
   setQuery: (value: string) => void;
 }) {
+  const t = useTranslations("Customer");
   return (
     <div className="relative min-w-0">
       <input
-        aria-label="Menyudan qidirish"
+        aria-label={t("menyudan_qidirish_6a70cb6e")}
         type="search"
         autoComplete="off"
         className="mf-input w-full px-12 py-3.5 font-semibold"
-        placeholder="Taom yoki ichimlik qidiring..."
+        placeholder={t("taom_yoki_ichimlik_qidiring_1f1190e2")}
         ref={inputRef}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
@@ -311,13 +314,12 @@ function SearchBox({
       </span>
       {query ? (
         <button
-          aria-label="Qidiruvni tozalash"
+          aria-label={t("qidiruvni_tozalash_03215a8f")}
           className="pressable absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-[#0A7168]/10 text-lg font-black text-[#0A7168]"
           onClick={onClear}
           type="button"
         >
-          x
-        </button>
+          {t("x_11f6ad8e")}</button>
       ) : null}
     </div>
   );

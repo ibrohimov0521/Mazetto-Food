@@ -22,3 +22,11 @@ test("does not expose malformed request id values", () => {
     "Serverda vaqtinchalik muammo bor. Bir ozdan keyin qayta urinib ko'ring.",
   );
 });
+
+
+test("localizes the safe server error for Russian pages", () => {
+  assert.equal(
+    customerServerErrorMessage("req-123", "ru"),
+    "На сервере временная проблема. Попробуйте ещё раз немного позже. Код обращения: req-123.",
+  );
+});

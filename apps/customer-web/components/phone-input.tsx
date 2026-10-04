@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 import { Phone } from "lucide-react";
 
 export function nationalPhoneValue(raw: string, previous = ""): string {
@@ -34,10 +35,10 @@ export function PhoneInput({
   invalid?: boolean;
   describedBy?: string;
 }) {
+  const t = useTranslations("Customer");
   return (
     <label className="grid min-w-0 gap-2 text-sm font-semibold text-[#07373a]">
-      Telefon raqam
-      <span
+      {t("telefon_raqam_bf9c4c5d")}<span
         className="flex min-w-0 items-center overflow-hidden rounded-lg border border-[#b8d3cb] bg-white shadow-sm transition focus-within:border-[#007a68] focus-within:ring-2 focus-within:ring-[#007a68]/20"
         style={{ minHeight: 52, opacity: disabled ? 0.65 : 1 }}
       >
@@ -49,7 +50,7 @@ export function PhoneInput({
           <span>+998</span>
         </span>
         <input
-          aria-label="Telefon raqam"
+          aria-label={t("telefon_raqam_bf9c4c5d")}
           autoComplete="tel-national"
           inputMode="tel"
           type="tel"

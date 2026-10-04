@@ -1,27 +1,30 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { CustomerAuthPanel } from "../../components/customer-auth-panel";
-import { ContactFooter } from "../../components/contact-footer";
+import { CustomerAuthPanel } from "@/components/customer-auth-panel";
+import { ContactFooter } from "@/components/contact-footer";
 import styles from "./profile.module.css";
-import { MotionDiv, pageMotion, sectionMotion } from "../../components/motion-primitives";
-import { MediaImage } from "../../components/media-image";
-import { SiteShell } from "../../components/site-shell";
-import { apiFetch } from "../../lib/api";
-import { localizeMenuName } from "../../lib/customer-display";
-import { formatMoney, useCart } from "../../lib/cart";
+import { MotionDiv, pageMotion, sectionMotion } from "@/components/motion-primitives";
+import { MediaImage } from "@/components/media-image";
+import { SiteShell } from "@/components/site-shell";
+import { apiFetch } from "@/lib/api";
+import { localizeMenuName } from "@/lib/customer-display";
+import { localizeCustomerCopy } from "@/lib/customer-copy.mjs";
+import { formatMoney, useCart } from "@/lib/cart";
 import {
+  orderTypeLabel,
   trackingLabel,
   trackingStatus,
   trackingTone,
-} from "../../lib/order-tracking";
+} from "@/lib/order-tracking";
 import { MapPin, Trash2 } from "lucide-react";
 import {
   deliveryAddressText,
   isDeliveryLocation,
   type SavedAddress,
-} from "../../lib/delivery-location";
+} from "@/lib/delivery-location";
 
 type Dashboard = {
   id: string;
@@ -50,11 +53,6 @@ type Dashboard = {
   }[];
   favorites: { product: { id: string; name: string; imageUrl?: string | null; sellingPrice: string } }[];
 };
-const typeLabels: Record<string, string> = {
-  DELIVERY: "Yetkazib berish",
-  PICKUP: "Olib ketish",
-};
-
 export default function ProfilePage() {
   return (
     <SiteShell>
@@ -69,6 +67,9 @@ export default function ProfilePage() {
 }
 
 function Profile() {
+  const locale = useLocale();
+  const meta = useTranslations("CustomerMeta");
+  const t = useTranslations("Customer");
   const {
     customer,
     favoriteIds,
@@ -162,8 +163,8 @@ function Profile() {
       <section className="mx-auto max-w-xl px-4 py-6">
         <div className="mf-card p-5 sm:p-6">
           <CustomerAuthPanel
-            description="Sevimlilarni saqlang va buyurtmani kuzating. Telefon raqamingizni Telegram kodi bilan tasdiqlang."
-            title="Telefon orqali profil"
+            description={meta("verifyFavorites")}
+            title={t("telefon_orqali_profil_eadc1cfb")}
           />
         </div>
       </section>
@@ -174,31 +175,29 @@ function Profile() {
     <MotionDiv {...pageMotion} className="mx-auto max-w-6xl px-4 py-5">
       {loadError ? (
         <div className="mf-card mb-4 p-4" role="alert">
-          <p className="text-sm font-bold">{loadError}</p>
-          <button className="pressable mf-button-primary mt-3 px-4 py-2 text-sm font-black" onClick={() => void load()} type="button">Qayta urinish</button>
+          <p className="text-sm font-bold">{localizeCustomerCopy(loadError, locale)}</p>
+          <button className="pressable mf-button-primary mt-3 px-4 py-2 text-sm font-black" onClick={() => void load()} type="button">{t("qayta_urinish_422d2790")}</button>
         </div>
       ) : null}
       <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,320px)]">
         <div className={`${styles.identity} min-w-0 p-4 sm:p-5`}>
-          <p className="text-xs font-black uppercase text-[#0A7168]">Telefon orqali profil</p>
+          <p className="text-xs font-black uppercase text-[#0A7168]">{t("telefon_orqali_profil_eadc1cfb")}</p>
           <h1 className="mt-1 break-words text-2xl font-black text-[#17314A]">{dashboard?.name ?? customer.name}</h1>
           <p className="mt-1 text-sm font-bold text-[#586B7D]">{dashboard?.phone ?? customer.phone}</p>
           <div className="mt-3 inline-flex rounded-full bg-[#0A7168]/10 px-3 py-1 text-xs font-black text-[#0A7168]">
-            Profil ulangan
-          </div>
+            {t("profil_ulangan_817fff34")}</div>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <Stat label="Buyurtmalar" value={`${dashboard?.customerOrders.length ?? 0}`} />
-            <Stat label="Sevimlilar" value={`${favorites.length || favoriteIds.length}`} />
-            <Stat label="Bonus" value={formatMoney(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0)} />
+            <Stat label={meta("orders")} value={`${dashboard?.customerOrders.length ?? 0}`} />
+            <Stat label={meta("favorites")} value={`${favorites.length || favoriteIds.length}`} />
+            <Stat label={meta("bonus")} value={formatMoney(dashboard?.bonusBalance ?? customer.bonusBalance ?? 0, locale)} />
           </div>
         </div>
 
         <div className={`${styles.actions} h-fit p-4 text-[#07373A]`}>
           <div className="grid gap-2">
             <Link className="pressable mf-button-primary px-4 py-3 text-center text-sm font-bold" href="/orders">
-              Buyurtmalarim
-            </Link>
+              {t("buyurtmalarim_44dff903")}</Link>
             <button
               className="pressable mf-button-secondary px-4 py-3 text-sm font-bold"
               onClick={() => {
@@ -207,14 +206,13 @@ function Profile() {
               }}
               type="button"
             >
-              Chiqish
-            </button>
+              {t("chiqish_84f3032f")}</button>
           </div>
         </div>
       </div>
 
       <MotionDiv {...sectionMotion} className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Panel title="So'nggi buyurtmalar">
+        <Panel title={t("so_nggi_buyurtmalar_d8239dae")}>
           <div className="grid gap-3">
             {dashboard?.customerOrders.length ? (
               dashboard.customerOrders.slice(0, 5).map((order) => (
@@ -222,19 +220,19 @@ function Profile() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-black text-[#17314A]">{order.order.displayOrderNumber ?? order.order.orderNumber}</p>
-                      <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold leading-5 text-[#586B7D]"><span className="mf-status-chip" data-tone={trackingTone(trackingStatus(order))}>{trackingLabel(trackingStatus(order), order.type)}</span><span>{typeLabels[order.type] ?? order.type}</span></p>
+                      <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold leading-5 text-[#586B7D]"><span className="mf-status-chip" data-tone={trackingTone(trackingStatus(order))}>{trackingLabel(trackingStatus(order), order.type, locale)}</span><span>{orderTypeLabel(order.type, locale)}</span></p>
                     </div>
-                    <span className="shrink-0 font-black text-[#0A7168]">{formatMoney(order.order.total)}</span>
+                    <span className="shrink-0 font-black text-[#0A7168]">{formatMoney(order.order.total, locale)}</span>
                   </div>
                 </Link>
               ))
             ) : (
-              <p className="text-sm font-semibold text-[#586B7D]">Buyurtmalar rasmiylashtirilgandan keyin shu yerda ko'rinadi.</p>
+              <p className="text-sm font-semibold text-[#586B7D]">{t("buyurtmalar_rasmiylashtirilgandan_keyi_eda360f4")}</p>
             )}
           </div>
         </Panel>
 
-        <Panel title="Sevimlilar">
+        <Panel title={t("sevimlilar_23030420")}>
           <div className="grid gap-3">
             {favorites.length ? favorites.map(({ product }) => (
               <Link className="pressable grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-xl bg-[#0A7168]/7 p-2 transition hover:bg-[#0A7168]/10" href={`/product/${product.id}`} key={product.id}>
@@ -246,16 +244,16 @@ function Profile() {
                   src={product.imageUrl}
                 />
                 <div className="min-w-0">
-                  <p className="break-words font-bold text-[#17314A]">{localizeMenuName(product.name)}</p>
-                  <p className="mt-1 text-sm font-bold text-[#0A7168]">{formatMoney(product.sellingPrice)}</p>
+                  <p className="break-words font-bold text-[#17314A]">{localizeMenuName(product.name, locale)}</p>
+                  <p className="mt-1 text-sm font-bold text-[#0A7168]">{formatMoney(product.sellingPrice, locale)}</p>
                 </div>
               </Link>
-            )) : <p className="text-sm font-semibold text-[#586B7D]">Mahsulot kartasidagi yurakchani bosing, sevimlilar shu yerda saqlanadi.</p>}
+            )) : <p className="text-sm font-semibold text-[#586B7D]">{t("mahsulot_kartasidagi_yurakchani_bosing_230fc4f3")}</p>}
           </div>
         </Panel>
       </MotionDiv>
 
-      <Panel title="Saqlangan manzillar">
+      <Panel title={t("saqlangan_manzillar_68b720a3")}>
         {addressError ? (
           <p role="alert" className="mb-3 text-sm font-bold text-[#A3231D]">
             {addressError}
@@ -277,7 +275,7 @@ function Profile() {
                   </p>
                 </div>
                 <button
-                  aria-label={`${address.label || address.location.address} manzilini o'chirish`}
+                  aria-label={localizeCustomerCopy((address.label || address.location.address) + " manzilini o'chirish", locale)}
                   className="mf-icon-control shrink-0"
                   disabled={removingAddressId === address.id}
                   onClick={() => void removeAddress(address.id)}
@@ -289,9 +287,7 @@ function Profile() {
             ))
           ) : (
             <p className="text-sm font-semibold text-[#586B7D]">
-              Hali saqlangan manzil yo'q. Yetkazib berishni tanlaganingizda
-              manzil shu yerda saqlanadi.
-            </p>
+              {t("hali_saqlangan_manzil_yo_q_yetkazib_be_c1121169")}</p>
           )}
           <button
             className="mf-button-secondary justify-self-start"
@@ -299,8 +295,7 @@ function Profile() {
             type="button"
           >
             <MapPin aria-hidden="true" size={17} />
-            Manzil qo'shish yoki o'zgartirish
-          </button>
+            {t("manzil_qo_shish_yoki_o_zgartirish_beca1c6d")}</button>
         </div>
       </Panel>
     </MotionDiv>

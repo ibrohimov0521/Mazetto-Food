@@ -1,6 +1,7 @@
 "use client";
+import { useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { MapPin, Phone, UserRound, ReceiptText } from "lucide-react";
 import { useCart } from "../lib/cart";
 import styles from "./contact-footer.module.css";
@@ -12,18 +13,19 @@ import {
 } from "../lib/contact";
 
 export function ContactFooter({ showProfile = false }: { showProfile?: boolean }) {
+  const t = useTranslations("Customer");
   const { customer } = useCart();
   return (
-    <footer className={styles.footer} role="contentinfo" aria-label="Mazetto Food aloqa">
+    <footer className={styles.footer} role="contentinfo" aria-label={t("mazetto_food_aloqa_71b8bdad")}>
       <div className={styles.row}>
         <div className={styles.contacts}>
-          <p className={styles.heading}>Biz bilan bog'laning</p>
+          <p className={styles.heading}>{t("biz_bilan_bog_laning_d72e6366")}</p>
           <div className={styles.links}>
             <a className={styles.link} href={supportLinks.instagram} target="_blank" rel="noopener noreferrer">
-              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" /></svg><span>Instagram</span>
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" /></svg><span>{t("instagram_5721bbef")}</span>
             </a>
             <a className={styles.link} href={supportLinks.telegram} target="_blank" rel="noopener noreferrer">
-              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.4 3.6 18.2 20c-.2 1.2-.9 1.5-1.8.9l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.4-5 9.1-8.2c.4-.4-.1-.6-.6-.2L5.8 13.8 1 12.3c-1-.3-1.1-1 .2-1.5L20 3.5c.9-.3 1.7.2 1.4.1Z" /></svg><span>Telegram</span>
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21.4 3.6 18.2 20c-.2 1.2-.9 1.5-1.8.9l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.4-5 9.1-8.2c.4-.4-.1-.6-.6-.2L5.8 13.8 1 12.3c-1-.3-1.1-1 .2-1.5L20 3.5c.9-.3 1.7.2 1.4.1Z" /></svg><span>{t("telegram_edbea9ff")}</span>
             </a>
             {/*
               Raqam yaroqsiz bo'lsa (hozir shunday: +998 dan keyin 8
@@ -46,10 +48,10 @@ export function ContactFooter({ showProfile = false }: { showProfile?: boolean }
               ochilmadi" holatini butunlay yo'q qiladi.
             */}
             <a className={styles.link} href={branchMapLinks.yandex} target="_blank" rel="noopener noreferrer">
-              <MapPin aria-hidden="true" size={17} /><span>Yandex xarita</span>
+              <MapPin aria-hidden="true" size={17} /><span>{t("yandex_xarita_ae7e848a")}</span>
             </a>
             <a className={styles.link} href={branchMapLinks.google} target="_blank" rel="noopener noreferrer">
-              <MapPin aria-hidden="true" size={17} /><span>Google xarita</span>
+              <MapPin aria-hidden="true" size={17} /><span>{t("google_xarita_6ccca36b")}</span>
             </a>
           </div>
         </div>
@@ -57,20 +59,20 @@ export function ContactFooter({ showProfile = false }: { showProfile?: boolean }
           <div className={styles.profile}>
             <UserRound className={styles.userIcon} aria-hidden="true" size={20} />
             <div className={styles.identity}>
-              <p className={styles.heading}>{customer?.accessToken ? "Profil ulangan" : "Mening profilim"}</p>
+              <p className={styles.heading}>{customer?.accessToken ? t("profil_ulangan_817fff34") : t("mening_profilim_d0a7ca97")}</p>
               {customer?.accessToken ? <p className={styles.details}>{customer.name}<span>{customer.phone}</span></p> : null}
             </div>
             <Link className={styles.link} href={customer?.accessToken ? "/orders" : "/profile"}>
               <ReceiptText aria-hidden="true" size={17} />
-              <span>{customer?.accessToken ? "Buyurtmalarim" : "Kirish"}</span>
+              <span>{customer?.accessToken ? t("buyurtmalarim_44dff903") : t("kirish_623383aa")}</span>
             </Link>
           </div>
         ) : null}
       </div>
       <div className={styles.creditRow}>
-        <a className={styles.credit} href="https://t.me/BESTteamuzbot" target="_blank" rel="noopener noreferrer" aria-label="Created by BT, Telegram bot">
-          <img src="/brand/bt-mark-v1.webp" alt="BT" width={24} height={24} loading="lazy" decoding="async" />
-          <span>created by BT</span>
+        <a className={styles.credit} href="https://t.me/BESTteamuzbot" target="_blank" rel="noopener noreferrer" aria-label={t("created_by_bt_telegram_bot_d674193c")}>
+          <img src="/brand/bt-mark-v1.webp" alt={t("bt_95355e8d")} width={24} height={24} loading="lazy" decoding="async" />
+          <span>{t("created_by_bt_634058fd")}</span>
         </a>
       </div>
     </footer>

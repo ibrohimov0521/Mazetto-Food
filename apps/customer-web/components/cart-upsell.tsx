@@ -1,11 +1,13 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MediaImage } from "./media-image";
 import { MotionButton, MotionDiv, buttonMotion, hapticTap, sectionMotion } from "./motion-primitives";
 import { apiFetch } from "../lib/api";
-import { displayCategory, displayProducts } from "../lib/customer-display";
+import { displayCategory, displayProducts, localizeMenuName } from "../lib/customer-display";
+import { localizeCustomerCopy } from "../lib/customer-copy.mjs";
 import { formatMoney, useCart } from "../lib/cart";
 import type { Category, Product } from "../lib/types";
 
@@ -18,6 +20,8 @@ type CartUpsellProps = {
 };
 
 export function CartUpsell({ categories: providedCategories, loading: providedLoading, products: providedProducts }: CartUpsellProps = {}) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   const { addItem, items, triggerCartFlight } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -44,15 +48,15 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
         apiFetch<Category[]>("/customer/menu/categories"),
         apiFetch<Product[]>("/customer/menu/products"),
       ]);
-      setCategories(nextCategories.map(displayCategory));
-      setProducts(displayProducts(nextProducts));
+      setCategories(nextCategories.map((category) => displayCategory(category, locale)));
+      setProducts(displayProducts(nextProducts, locale));
     } catch {
       setProducts([]);
       setCategories([]);
     } finally {
       setLoading(false);
     }
-  }, [items.length, shouldLoadCatalog]);
+  }, [items.length, locale, shouldLoadCatalog]);
 
   useEffect(() => {
     void loadUpsell();
@@ -96,13 +100,13 @@ export function CartUpsell({ categories: providedCategories, loading: providedLo
     <MotionDiv {...sectionMotion} className="mt-5">
       <div className="mb-2.5 flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black text-[#17314A] sm:text-2xl">Hech narsa qolib ketmadimi?</h2>
-          <p className="mt-0.5 text-xs font-semibold text-[#586B7D] sm:text-sm">Sous, ichimlik yoki gazak qo'shing.</p>
+          <h2 className="text-xl font-black text-[#17314A] sm:text-2xl">{t("hech_narsa_qolib_ketmadimi_8b2f80d0")}</h2>
+          <p className="mt-0.5 text-xs font-semibold text-[#586B7D] sm:text-sm">{t("sous_ichimlik_yoki_gazak_qo_shing_9da8955d")}</p>
         </div>
-        <Link className="hidden text-sm font-black text-[#0A7168] sm:inline" href="/menu">Menyu</Link>
+        <Link className="hidden text-sm font-black text-[#0A7168] sm:inline" href="/menu">{t("menyu_e4bc6451")}</Link>
       </div>
       <div
-        aria-label="Qo'shimcha mahsulotlar"
+        aria-label={t("qo_shimcha_mahsulotlar_02bd5846")}
         className="mf-upsell-grid"
         data-upsell-rail
         role="region"
@@ -124,6 +128,9 @@ function UpsellCard({
   product: Product;
   triggerCartFlight: ReturnType<typeof useCart>["triggerCartFlight"];
 }) {
+  const locale = useLocale();
+  const meta = useTranslations("CustomerMeta");
+  const displayName = localizeMenuName(product.name, locale);
   const imageRef = useRef<HTMLDivElement | null>(null);
   const variant = product.variants.find((candidate) => candidate.isDefault) ?? product.variants[0];
   const price = variant?.sellingPrice ?? product.sellingPrice;
@@ -132,20 +139,20 @@ function UpsellCard({
   return (
     <article className="mf-cart-upsell-card grid min-w-0 overflow-hidden rounded-2xl">
       <MediaImage
-        alt={product.name}
+        alt={displayName}
         aspectClassName="h-24 sm:h-[6.5rem]"
         ref={imageRef}
         sizes="168px"
         src={product.imageUrl}
       />
       <div className="grid min-w-0 gap-2 p-2.5">
-        <h3 className="line-clamp-2 min-h-[2.25rem] text-sm font-black leading-tight text-[#17314A]">{product.name}</h3>
+        <h3 className="line-clamp-2 min-h-[2.25rem] text-sm font-black leading-tight text-[#17314A]">{displayName}</h3>
         <div className="flex min-w-0 items-center justify-between gap-1.5">
-          <span className="min-w-0 truncate text-xs font-black text-[#0A7168]">{formatMoney(price)}</span>
+          <span className="min-w-0 truncate text-xs font-black text-[#0A7168]">{formatMoney(price, locale)}</span>
           {canQuickAdd ? (
             <MotionButton
               {...buttonMotion}
-              aria-label={`${product.name} savatga qo'shish`}
+              aria-label={meta("addToCart", { product: displayName })}
               className="pressable ripple mf-button-primary grid h-9 w-9 shrink-0 place-items-center rounded-xl text-base font-black"
               onClick={() => {
                 const rect = imageRef.current?.getBoundingClientRect();
@@ -169,7 +176,7 @@ function UpsellCard({
             </MotionButton>
           ) : (
             <Link
-              aria-label={`${product.name} tanlash`}
+              aria-label={localizeCustomerCopy(product.name + " tanlash", locale)}
               className="mf-button-primary grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sm font-black"
               href={`/product/${product.id}`}
             >

@@ -1,13 +1,19 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MediaImage } from "./media-image";
 import { hapticTap } from "./motion-primitives";
 import { cartItemKey, formatMoney, useCart } from "../lib/cart";
 import type { Product } from "../lib/types";
+import { localizeMenuName } from "../lib/customer-display";
 
 export function ProductCard({ compact = false, eager = false, product }: { compact?: boolean; eager?: boolean; product: Product }) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
+  const meta = useTranslations("CustomerMeta");
+  const displayName = localizeMenuName(product.name, locale);
   const imageRef = useRef<HTMLDivElement | null>(null);
   const { addItem, isFavorite, items, toggleFavorite, triggerCartFlight, updateQuantity } = useCart();
   const variant = product.variants.find((candidate) => candidate.isDefault) ?? product.variants[0];
@@ -33,16 +39,16 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
         hapticTap(8);
         updateQuantity(cartLine.key, cartLine.quantity + 1);
       }}
-      productName={product.name}
+      productName={displayName}
       quantity={cartLine.quantity}
     />
   ) : requiresConfiguration ? (
-    <Link aria-label={`${product.name} turini tanlash`} className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
-      {compact ? "+" : "Tanlash"}
+    <Link aria-label={meta("chooseVariant", { product: displayName })} className="pressable ripple mf-button-primary mf-product-plus justify-self-end text-center font-black" href={`/product/${product.id}`}>
+      {compact ? "+" : t("tanlash_9c8e93d8")}
     </Link>
   ) : (
     <button
-      aria-label={`${product.name} savatga qo'shish`}
+      aria-label={meta("addToCart", { product: displayName })}
       className="pressable ripple mf-button-primary mf-product-plus justify-self-end font-black"
       onClick={() => {
         const rect = imageRef.current?.getBoundingClientRect();
@@ -62,7 +68,7 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
       }}
       type="button"
     >
-      {compact ? "+" : "Qo'shish"}
+      {compact ? "+" : t("qo_shish_50bbede6")}
     </button>
   );
 
@@ -75,7 +81,7 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
       <div className="mf-product-media-shell relative">
         <Link href={`/product/${product.id}`}>
           <MediaImage
-            alt={product.name}
+            alt={displayName}
             aspectClassName={compact ? "aspect-[1.22/1]" : "aspect-[4/3]"}
             className="mf-product-media"
             ref={imageRef}
@@ -85,9 +91,9 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
           />
         </Link>
         <button
-          aria-label={`${product.name}: ${isFavorite(product.id) ? "sevimlilardan olib tashlash" : "sevimlilarga qo'shish"}`}
+          aria-label={isFavorite(product.id) ? meta("removeFavorite", { product: displayName }) : meta("addFavorite", { product: displayName })}
           aria-pressed={isFavorite(product.id)}
-          title={isFavorite(product.id) ? "Sevimlilardan olib tashlash" : "Sevimlilarga qo'shish"}
+          title={isFavorite(product.id) ? meta("removeFavorite", { product: displayName }) : meta("addFavorite", { product: displayName })}
           className={`pressable mf-favorite-button absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-xl text-lg ${isFavorite(product.id) ? "is-active" : ""}`}
           onClick={() => {
             hapticTap(8);
@@ -99,8 +105,7 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
         </button>
         {product.isCombo ? (
           <span className="absolute left-2.5 top-2.5 rounded-full bg-[#F5CF00] px-2.5 py-1 text-[11px] font-black uppercase text-[#07373A] shadow-[0_10px_22px_rgba(245,207,0,0.28)]">
-            Set
-          </span>
+            {t("set_448ab73b")}</span>
         ) : null}
         <div className="mf-product-action-slot">
           {actionControl}
@@ -109,18 +114,18 @@ export function ProductCard({ compact = false, eager = false, product }: { compa
       <div className={compact ? "mf-product-copy grid min-h-0 gap-1.5 p-2.5" : "grid gap-2 p-4"}>
         <div className="relative min-w-0">
           <Link className={`${compact ? "line-clamp-2 text-[13px] sm:text-sm" : "text-lg"} mf-product-title min-w-0 break-words font-black leading-tight text-white transition hover:text-[#F5CF00]`} href={`/product/${product.id}`}>
-            {product.name}
+            {displayName}
           </Link>
           <span className={`${compact ? "hidden" : "inline-flex mt-1"} mf-product-badge shrink-0 rounded-full bg-white/12 px-2 py-1 text-[11px] font-black text-[#DDFCF3] sm:px-3 sm:text-xs`}>
-            {product.preparationTime != null ? `${product.preparationTime} daq` : ""}
+            {product.preparationTime != null ? meta("minutes", { minutes: product.preparationTime }) : ""}
           </span>
         </div>
         <p className={`${compact ? "line-clamp-2 text-[12px] leading-4" : "line-clamp-2 min-h-11 text-sm leading-5"} mf-product-description text-white/80`}>
-          {product.description?.trim() || "Buyurtmadan keyin issiq tayyorlanadi."}
+          {product.description?.trim() || t("buyurtmadan_keyin_issiq_tayyorlanadi_7d962529")}
         </p>
         <div className="mf-product-price-row flex min-w-0 items-center justify-between gap-2 sm:gap-3">
           <span className={`${compact ? "text-[14px] min-[390px]:text-[15px] sm:text-base" : "text-lg"} mf-product-price min-w-0 font-black text-[#F5CF00]`}>
-            {formatMoney(price)}
+            {formatMoney(price, locale)}
           </span>
         </div>
       </div>
@@ -139,6 +144,7 @@ function ProductQuantityControl({
   productName: string;
   quantity: number;
 }) {
+  const meta = useTranslations("CustomerMeta");
   const [expanded, setExpanded] = useState(false);
   const stepperRef = useRef<HTMLDivElement | null>(null);
   const collapseTimer = useRef<number | null>(null);
@@ -181,7 +187,7 @@ function ProductQuantityControl({
     >
       <div aria-hidden={!expanded} className="mf-stepper-face grid h-full w-full grid-cols-3 items-center" data-visible={expanded ? "true" : "false"}>
         <button
-          aria-label={`${productName} kamaytirish`}
+          aria-label={meta("decreaseQuantity", { product: productName })}
           className="pressable h-full w-full"
           onClick={() => {
             onDecrease();
@@ -196,7 +202,7 @@ function ProductQuantityControl({
           {quantity}
         </span>
         <button
-          aria-label={`${productName} qo'shish`}
+          aria-label={meta("increaseQuantity", { product: productName })}
           className="pressable h-full w-full"
           onClick={() => {
             onIncrease();
@@ -210,7 +216,7 @@ function ProductQuantityControl({
       </div>
       <button
         aria-hidden={expanded}
-        aria-label={`${productName} miqdori ${quantity}. O'zgartirish`}
+        aria-label={meta("changeQuantity", { product: productName, quantity })}
         className="mf-stepper-face pressable grid h-full w-full place-items-center"
         data-visible={expanded ? "false" : "true"}
         onClick={expand}

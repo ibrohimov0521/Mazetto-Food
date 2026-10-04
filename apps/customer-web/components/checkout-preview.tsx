@@ -1,8 +1,9 @@
 "use client";
+import { useTranslations } from "next-intl";
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-const CheckoutPage = dynamic(() => import("../app/checkout/page"), {
+const CheckoutPage = dynamic(() => import("../app/[locale]/checkout/page"), {
   ssr: false,
 });
 import "./checkout-preview.css";
@@ -52,6 +53,7 @@ const branch = {
 };
 
 export function CheckoutPreview() {
+  const t = useTranslations("Customer");
   const [message, setMessage] = useState<string | null>(null);
   const selection = useFulfillmentState(customer.id, true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -158,11 +160,9 @@ export function CheckoutPreview() {
     <CheckoutRuntimeContext.Provider value={runtime}>
       <div className="mf-checkout-preview">
         <div className="mf-preview-notice">
-          <strong>Sinov sahifasi</strong>
+          <strong>{t("sinov_sahifasi_20ffd9f6")}</strong>
           <span>
-            Login kerak emas. Manzillar shu brauzerda saqlanadi. Haqiqiy
-            buyurtma yuborilmaydi.
-          </span>
+            {t("login_kerak_emas_manzillar_shu_brauzer_0dfd189e")}</span>
           {message ? <p role="status">{message}</p> : null}
         </div>
         <div
@@ -180,13 +180,13 @@ export function CheckoutPreview() {
         >
           <MediaImage
             src={items[0]!.imageUrl}
-            alt="Big lavash"
+            alt={t("big_lavash_9f7aeac6")}
             aspectClassName="h-14 w-14"
             sizes="56px"
           />
           <div style={{ flex: 1 }}>
-            <strong>Big lavash</strong>
-            <p>36 000 so'm</p>
+            <strong>{t("big_lavash_9f7aeac6")}</strong>
+            <p>{t("36_000_so_m_ee435405")}</p>
           </div>
           <button
             type="button"
@@ -194,8 +194,7 @@ export function CheckoutPreview() {
             onClick={openFulfillment}
           >
             <Plus size={18} />
-            Savatga qo'shish
-          </button>
+            {t("savatga_qo_shish_ec503d5d")}</button>
         </div>
         <CheckoutPage />
         {dialogOpen ? (
@@ -212,8 +211,7 @@ export function CheckoutPreview() {
           <div className="mf-preview-feedback" role="status">
             {message}
             <button type="button" onClick={() => setMessage(null)}>
-              Yopish
-            </button>
+              {t("yopish_483046a0")}</button>
           </div>
         ) : null}
       </div>

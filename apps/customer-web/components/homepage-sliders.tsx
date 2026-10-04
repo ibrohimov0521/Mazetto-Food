@@ -1,6 +1,7 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { useMemo, useRef, useState } from "react";
 import { MediaImage } from "./media-image";
 import { MotionDiv, sectionMotion } from "./motion-primitives";
@@ -13,6 +14,8 @@ export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading 
   menuHref: string;
   loading: boolean;
 }) {
+  const locale = useLocale();
+  const t = useTranslations("Customer");
   const [activeIndex, setActiveIndex] = useState(0);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const safeSlides = useMemo(() => slides.filter((slide) => slide.title), [slides]);
@@ -30,16 +33,16 @@ export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading 
   const href = activeIndex === 0 ? menuHref : activeSlide?.targetUrl ?? (product ? `/product/${product.id}` : menuHref);
 
   return (
-    <section aria-label="MAZETTO taomlari" aria-roledescription="karusel" className="mf-home-hero mf-hero-restored" data-home-slider>
+    <section aria-label={t("mazetto_taomlari_c11c4a49")} aria-roledescription={t("karusel_89b47e15")} className="mf-home-hero mf-hero-restored" data-home-slider>
       <div className="mf-hero-copy">
-        <p className="mf-hero-eyebrow">{activeSlide?.badge || "MAZETTO FOOD"}</p>
+        <p className="mf-hero-eyebrow">{activeSlide?.badge || t("mazetto_food_2300a7ce")}</p>
         <h1>{title}</h1>
         {subtitle ? <p className="mf-hero-description">{subtitle}</p> : null}
         <div className="mf-hero-actions">
         <Link className="pressable mf-button-primary mf-home-order-cta" href={href}>
-          {activeSlide?.ctaLabel ?? "Buyurtma berish"}
+          {activeSlide?.ctaLabel ?? t("buyurtma_berish_35f24ff1")}
         </Link>
-        {product ? <p className="mf-hero-price">{formatMoney(product.sellingPrice)}</p> : null}
+        {product ? <p className="mf-hero-price">{formatMoney(product.sellingPrice, locale)}</p> : null}
         </div>
       </div>
       <div className="mf-home-hero-media" onTouchStart={(event) => {
@@ -74,8 +77,8 @@ export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading 
           ><span /></button>)}
         </div>
         {safeSlides.length > 1 ? <div className="flex gap-2">
-          <button aria-label="Oldingi slayd" className="pressable mf-slider-arrow grid h-11 w-11 place-items-center rounded-full" onClick={() => goTo(activeIndex - 1)} type="button">‹</button>
-          <button aria-label="Keyingi slayd" className="pressable mf-slider-arrow grid h-11 w-11 place-items-center rounded-full" onClick={() => goTo(activeIndex + 1)} type="button">›</button>
+          <button aria-label={t("oldingi_slayd_f6129426")} className="pressable mf-slider-arrow grid h-11 w-11 place-items-center rounded-full" onClick={() => goTo(activeIndex - 1)} type="button">‹</button>
+          <button aria-label={t("keyingi_slayd_98327368")} className="pressable mf-slider-arrow grid h-11 w-11 place-items-center rounded-full" onClick={() => goTo(activeIndex + 1)} type="button">›</button>
         </div> : null}
       </div>
     </section>
@@ -83,6 +86,7 @@ export function HomepageHeroSlider({ slides, fallbackProduct, menuHref, loading 
 }
 
 export function PromotionSlider({ promotions }: { promotions: HomepagePromotion[] }) {
+  const t = useTranslations("Customer");
   if (!promotions.length) {
     return null;
   }
@@ -91,10 +95,10 @@ export function PromotionSlider({ promotions }: { promotions: HomepagePromotion[
     <MotionDiv {...sectionMotion} className="mx-auto max-w-6xl px-4 pb-8">
       <div className="mb-4 flex items-end justify-between gap-3">
         <div>
-          <p className="mf-section-link text-sm font-black uppercase">Aksiyalar</p>
-          <h2 className="mf-section-heading">Bugungi foydali takliflar</h2>
+          <p className="mf-section-link text-sm font-black uppercase">{t("aksiyalar_0f33a44b")}</p>
+          <h2 className="mf-section-heading">{t("bugungi_foydali_takliflar_af6908f4")}</h2>
         </div>
-        <Link className="pressable mf-section-link text-sm font-black" href="/menu">Menyuga o'tish</Link>
+        <Link className="pressable mf-section-link text-sm font-black" href="/menu">{t("menyuga_o_tish_cd33f01c")}</Link>
       </div>
       <div className="no-scrollbar flex max-w-full snap-x gap-3 overflow-x-auto pb-2">
         {promotions.map((promotion) => {
@@ -109,10 +113,10 @@ export function PromotionSlider({ promotions }: { promotions: HomepagePromotion[
                 ) : null}
                 <h3 className="mt-3 text-xl font-black text-white">{promotion.title}</h3>
                 <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/60">
-                  {promotion.description ?? promotion.product?.name ?? "Cheklangan muddatli taklif."}
+                  {promotion.description ?? promotion.product?.name ?? t("cheklangan_muddatli_taklif_df44e842")}
                 </p>
                 <span className="mt-4 inline-flex text-sm font-black text-[#67E8F9]">
-                  {promotion.ctaLabel ?? "Ko'rish"}
+                  {promotion.ctaLabel ?? t("ko_rish_daae90c2")}
                 </span>
               </div>
               <MediaImage
