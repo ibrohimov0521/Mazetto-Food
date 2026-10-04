@@ -469,6 +469,14 @@ async function createFixture(prisma: PrismaService) {
       metadata: { printRoles: ["RECEIPT", "CANCELLATION", "REFUND"] },
     },
   });
+  await prisma.paymentMethod.create({
+    data: {
+      branchId: branch.id,
+      code: "CASH",
+      name: "STEP 8 cash",
+      isActive: true,
+    },
+  });
   await createTestCatalogProduct(
     prisma,
     branch.id,
