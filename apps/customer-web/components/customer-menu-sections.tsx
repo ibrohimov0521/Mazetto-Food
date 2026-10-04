@@ -12,7 +12,7 @@ import type { Category, Product } from "../lib/types";
 export function CustomerMenuSections({
   compactTop = false,
   intro = true,
-  title = "Menyu",
+  title,
   initial,
 }: {
   compactTop?: boolean;
@@ -22,6 +22,8 @@ export function CustomerMenuSections({
 }) {
   const locale = useLocale();
   const t = useTranslations("Customer");
+  const displayTitle =
+    title === undefined ? t("menyu_e4bc6451") : localizeCustomerCopy(title, locale);
   const [categories, setCategories] = useState<Category[]>(() => sortSetsFirst((initial?.categories ?? []).map((category) => displayCategory(category, locale))));
   const [products, setProducts] = useState<Product[]>(() => displayProducts(initial?.products ?? [], locale));
   const [activeCategoryId, setActiveCategoryId] = useState<string>("");
@@ -199,7 +201,7 @@ export function CustomerMenuSections({
           <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,360px)] lg:items-end">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-wide text-[#F5CF00]">{t("mazetto_food_menyusi_74b998f5")}</p>
-              <h1 className="mt-1 text-[1.65rem] font-black leading-[1.02] text-white sm:text-4xl">{localizeCustomerCopy(title, locale)}</h1>
+              <h1 className="mt-1 text-[1.65rem] font-black leading-[1.02] text-white sm:text-4xl">{displayTitle}</h1>
             </div>
             <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
           </div>
@@ -208,7 +210,7 @@ export function CustomerMenuSections({
         <div className={`${compactTop ? "mb-3" : "mb-4"} grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,320px)] sm:items-end`}>
           <div className="min-w-0">
             <p className="text-xs font-black uppercase text-[#F5CF00]">{t("to_liq_menyu_91432d5c")}</p>
-            <h2 className="mt-1 text-2xl font-black text-white">{localizeCustomerCopy(title, locale)}</h2>
+            <h2 className="mt-1 text-2xl font-black text-white">{displayTitle}</h2>
           </div>
           <SearchBox inputRef={searchInputRef} onClear={clearSearch} query={query} setQuery={setQuery} />
         </div>
