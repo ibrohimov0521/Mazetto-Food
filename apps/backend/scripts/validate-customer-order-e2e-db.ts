@@ -263,7 +263,6 @@ function createServices(prisma: PrismaService) {
     new TelegramCheckoutService(
       prisma as never,
       orderEngine as never,
-      telegramNotifications,
       new TelegramCustomerScreenService(),
       new TelegramCheckoutSessionService(prisma as never),
       new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
@@ -287,7 +286,6 @@ function createServices(prisma: PrismaService) {
     new JwtService(),
     orderEngine,
     telegramAuth,
-    telegramNotifications,
     createSettingsStub(),
   );
 
