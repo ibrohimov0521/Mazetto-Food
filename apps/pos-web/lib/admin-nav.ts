@@ -321,6 +321,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN"],
       },
       {
+        label: "Telegram xabarlari",
+        icon: "bell",
+        href: "/admin/notifications",
+        permission: "NOTIFICATION_MANAGE",
+        roles: ["SUPER_ADMIN"],
+      },
+      {
         label: "Tizim holati",
         icon: "chart",
         href: "/admin/system-health",
