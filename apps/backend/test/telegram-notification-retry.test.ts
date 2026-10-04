@@ -26,7 +26,11 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     total: 12000,
     notes: null,
     items: [],
-    customerOrder: null,
+    customerOrder: {
+      type: "PICKUP",
+      paymentMethod: null,
+      customer: { telegramChatId: "staging-customer-chat" },
+    },
     kitchenTickets: [],
   };
   let fetchCalls = 0;
@@ -125,14 +129,14 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     await service.notifyNewOrder("order-a");
     assert.equal(
       fetchCalls,
-      3,
-      "transient Telegram errors should use all attempts",
+      1,
+      "ambiguous sendMessage failure must not retry because Telegram may already have accepted the first request",
     );
 
     const [failedDelivery] = await deadLetters.list("tenant-a");
     assert.ok(failedDelivery);
     assert.equal(failedDelivery.orderId, "order-a");
-    assert.equal(failedDelivery.attempts, 3);
+    assert.equal(failedDelivery.attempts, 1);
     assert.deepEqual(await deadLetters.list("tenant-b"), []);
 
     activeTenantIds.push("tenant-b");
@@ -141,12 +145,48 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     );
     assert.equal(
       fetchCalls,
-      3,
+      1,
       "ambiguous tenant context must not call Telegram",
     );
     assert.equal((await deadLetters.list("tenant-a")).length, 1);
 
     activeTenantIds.splice(0, activeTenantIds.length, "tenant-a");
+
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 429,
+          description: "Too Many Requests",
+          parameters: { retry_after: 17 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    assert.deepEqual(
+      await service.deliverOutboxNewOrder("order-a", "tenant-a"),
+      { kind: "retryable", retryAfterSeconds: 17 },
+      "Telegram's explicit rate-limit rejection is safe to retry after its requested delay",
+    );
+    assert.equal(fetchCalls, 2);
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "a safe rate limit stays scheduled rather than being marked uncertain",
+    );
+
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
+      "failed",
+      "an explicit 429 response is not a successful manual retry",
+    );
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "a 429 response must preserve the dead letter for a later retry",
+    );
+
     delete process.env.TELEGRAM_BOT_TOKEN;
     assert.equal(
       await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
@@ -194,8 +234,68 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     );
     assert.equal(updates.length, 1);
     assert.equal((await deadLetters.list("tenant-a")).length, 0);
+
+    const statusDelivery = await deadLetters.record({
+      tenantId: "tenant-a",
+      kind: "customer_status",
+      orderId: "order-a",
+      error: "temporary failure",
+      attempts: 1,
+    });
+    const beforeCustomerRetry = fetchCalls;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response("gateway timeout", { status: 503 });
+    }) as typeof fetch;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", statusDelivery.messageId),
+      "failed",
+      "ambiguous customer send failure must not be reported as delivered",
+    );
+    assert.equal(fetchCalls, beforeCustomerRetry + 1);
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "failed customer status retry remains visible",
+    );
+
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 429,
+          description: "Too Many Requests",
+          parameters: { retry_after: 3 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", statusDelivery.messageId),
+      "failed",
+      "rate-limited customer send preserves its retry record",
+    );
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "429 customer retry must not clear the dead letter",
+    );
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          result: { message_id: 78, chat: { id: "staging-customer-chat" } },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", statusDelivery.messageId),
+      "sent",
+    );
+    assert.equal((await deadLetters.list("tenant-a")).length, 0);
   } finally {
-    service.onModuleDestroy();
     globalThis.fetch = previousFetch;
     if (previousToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = previousToken;

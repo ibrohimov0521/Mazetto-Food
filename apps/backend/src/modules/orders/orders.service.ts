@@ -1,9 +1,5 @@
 import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
 import {
-  kitchenEvents,
-  kitchenOrderStatusChangedEvent,
-} from "../kitchen/kitchen-events";
-import {
   BadRequestException,
   ConflictException,
   Injectable,
@@ -1270,9 +1266,19 @@ export class OrdersService {
               reasonCode: context?.reasonCode,
             });
 
+            const confirmedOrder = await this.findOrderById(orderId, tx);
+            await tx.notificationOutbox.create({
+              data: {
+                tenantId: await resolveRestaurantTenantId(tx, user),
+                dedupeKey: `staff_status_refresh:orders:${orderId}:${confirmedOrder.version}:${confirmed.kitchenTicket?.id ?? "none"}`,
+                kind: "staff_status_refresh",
+                orderId,
+                payload: { status: confirmedOrder.status },
+              },
+            });
             return {
               kitchenTicket: confirmed.kitchenTicket,
-              order: await this.findOrderById(orderId, tx),
+              order: confirmedOrder,
             };
           }
 
@@ -1299,9 +1305,19 @@ export class OrdersService {
             reasonCode: context?.reasonCode,
           });
 
+          const confirmedOrder = await this.findOrderById(orderId, tx);
+          await tx.notificationOutbox.create({
+            data: {
+              tenantId: await resolveRestaurantTenantId(tx, user),
+              dedupeKey: `staff_status_refresh:orders:${orderId}:${confirmedOrder.version}:${confirmed.kitchenTicket?.id ?? "none"}`,
+              kind: "staff_status_refresh",
+              orderId,
+              payload: { status: confirmedOrder.status },
+            },
+          });
           return {
             kitchenTicket: confirmed.kitchenTicket,
-            order: await this.findOrderById(orderId, tx),
+            order: confirmedOrder,
           };
         }
 
@@ -1400,6 +1416,16 @@ export class OrdersService {
           await ensureCancellationReceipt(tx, orderId, dto.reason);
         }
 
+        await tx.notificationOutbox.create({
+          data: {
+            tenantId: await resolveRestaurantTenantId(tx, user),
+            dedupeKey: `staff_status_refresh:orders:${orderId}:${updated.version}`,
+            kind: "staff_status_refresh",
+            orderId,
+            payload: { status: nextStatus },
+          },
+        });
+
         return {
           kitchenTicket: null,
           order: await this.findOrderById(orderId, tx),
@@ -1422,10 +1448,6 @@ export class OrdersService {
 
     if (!execution.replayed) {
       this.kitchenService.emitOrderStatusChanged(result.order);
-      kitchenEvents.emit(kitchenOrderStatusChangedEvent, {
-        orderId,
-        action: "refresh",
-      });
     }
     return result.order;
   }

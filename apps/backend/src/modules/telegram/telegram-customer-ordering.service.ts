@@ -7,8 +7,6 @@ import {
   customerVisibleProductCodeSet,
   customerVisibleProductWhere,
 } from "../customers/customer-catalog-visibility";
-import { CustomerOrderEngineService } from "../customers/customer-order-engine.service";
-import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 import {
   branchMapUrl,
   burgerTelegramRows,
@@ -56,8 +54,6 @@ export class TelegramCustomerOrderingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly customerOrderEngine: CustomerOrderEngineService,
-    private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
     private readonly screen: TelegramCustomerScreenService,
     private readonly checkoutSession: TelegramCheckoutSessionService,
     private readonly cart: TelegramCartService,

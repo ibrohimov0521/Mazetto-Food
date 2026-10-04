@@ -18,17 +18,16 @@ import {
 } from "../src/modules/customers/dto/customer.dto";
 import { InventoryService } from "../src/modules/inventory/inventory.service";
 import { KitchenService } from "../src/modules/kitchen/kitchen.service";
+import { NotificationOutboxWorker } from "../src/modules/notifications/notification-outbox.worker";
 import { OrdersService } from "../src/modules/orders/orders.service";
 import { PosOrderStatus } from "../src/modules/orders/dto/order-status.dto";
 import { ORDER_EVENTS } from "../src/modules/orders/order-events";
 import { PaymentsService } from "../src/modules/payments/payments.service";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
-import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
 import { createSettingsStub } from "./settings-stub";
-import { createDeadLetterStub } from "./dead-letter-stub";
 import { IdempotencyService } from "../src/common/idempotency/idempotency.service";
 import { TelegramCustomerScreenService } from "../src/modules/telegram/telegram-customer-screen.service";
 import { TelegramCheckoutSessionService } from "../src/modules/telegram/telegram-checkout-session.service";
@@ -80,6 +79,51 @@ async function main(): Promise<void> {
       expectedTotal: fixture.expectedConfigurableTotal,
       expectedModifierName: fixture.modifier.name,
     });
+    const queuedNotification = await prisma.notificationOutbox.findFirstOrThrow({
+      where: {
+        tenantId: fixture.branch.tenantId,
+        orderId: webOrder.customerOrder.orderId,
+      },
+    });
+    const mockDeliveries: Array<{ orderId: string; tenantId: string }> = [];
+    const notificationWorker = new NotificationOutboxWorker(
+      prisma,
+      {
+        deliverOutboxNewOrder: async (orderId: string, tenantId: string) => {
+          mockDeliveries.push({ orderId, tenantId });
+          return "sent";
+        },
+      } as never,
+    );
+    const dueNotificationCount = await prisma.notificationOutbox.count({
+      where: { status: "PENDING", scheduledAt: { lte: new Date() } },
+    });
+    for (let pass = 0; pass < dueNotificationCount; pass += 1) {
+      await notificationWorker.dispatchPending();
+      const current = await prisma.notificationOutbox.findUniqueOrThrow({
+        where: { id: queuedNotification.id },
+        select: { status: true },
+      });
+      if (current.status === "DELIVERED") break;
+    }
+    assert.equal(
+      mockDeliveries.filter(
+        ({ orderId }) => orderId === webOrder.customerOrder.orderId,
+      ).length,
+      1,
+      "worker must deliver the target order once even when earlier queue items exist",
+    );
+    assert.ok(
+      mockDeliveries.every(({ tenantId }) => tenantId === fixture.branch.tenantId),
+      "worker deliveries must remain tenant-scoped",
+    );
+    const deliveredNotification =
+      await prisma.notificationOutbox.findUniqueOrThrow({
+        where: { id: queuedNotification.id },
+      });
+    assert.equal(deliveredNotification.status, "DELIVERED");
+    assert.ok(deliveredNotification.deliveredAt instanceof Date);
+
     await proveOrderCashStockPrint(
       prisma,
       services.paymentsService,
@@ -248,22 +292,14 @@ function createServices(prisma: PrismaService) {
     ordersService,
     createSettingsStub(),
   );
-  const telegramNotifications = new TelegramOrderNotificationService(
-    prisma,
-    kitchenService,
-    createDeadLetterStub(),
-  );
   const telegramOrdering = new TelegramCustomerOrderingService(
     prisma,
-    orderEngine,
-    telegramNotifications,
     new TelegramCustomerScreenService(),
     new TelegramCheckoutSessionService(prisma as never),
     new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
     new TelegramCheckoutService(
       prisma as never,
       orderEngine as never,
-      telegramNotifications,
       new TelegramCustomerScreenService(),
       new TelegramCheckoutSessionService(prisma as never),
       new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
@@ -287,7 +323,6 @@ function createServices(prisma: PrismaService) {
     new JwtService(),
     orderEngine,
     telegramAuth,
-    telegramNotifications,
     createSettingsStub(),
   );
 
@@ -319,13 +354,32 @@ async function createFixture(prisma: PrismaService) {
     },
   });
 
-  const configurable = await prisma.product.findFirstOrThrow({
-    where: {
-      isAvailable: true,
-      variants: { some: { isAvailable: true } },
-      modifiers: { some: { modifier: { isActive: true } } },
+  const configurableBase = await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "STEP8_CONFIGURABLE",
+    "STEP 8 Configurable item",
+    12000,
+  );
+  const modifier = await prisma.modifier.create({
+    data: {
+      code: `STEP8_ADDON_${runId}`,
+      name: "STEP 8 test add-on",
+      price: 2500,
     },
+  });
+  await prisma.productModifier.create({
+    data: {
+      productId: configurableBase.id,
+      modifierId: modifier.id,
+      maxSelect: 1,
+    },
+  });
+  const configurable = await prisma.product.findUniqueOrThrow({
+    where: { id: configurableBase.id },
     include: {
+      category: true,
       variants: {
         where: { isAvailable: true },
         orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
@@ -338,45 +392,22 @@ async function createFixture(prisma: PrismaService) {
     },
   });
   const variant = configurable.variants[0]!;
-  const modifier = configurable.modifiers[0]!.modifier;
   const expectedConfigurableTotal = variant.sellingPrice.add(modifier.price);
-  let recipe = await prisma.recipe.findUnique({
-    where: { variantId: variant.id },
+  const ingredient = await prisma.ingredient.create({
+    data: {
+      name: `STEP 8 test ingredient ${runId}`,
+      unit: "GRAM",
+    },
+  });
+  const recipe = await prisma.recipe.create({
+    data: {
+      variantId: variant.id,
+      items: {
+        create: { ingredientId: ingredient.id, quantity: 1, unit: "GRAM" },
+      },
+    },
     include: { items: true },
   });
-  if (!recipe || recipe.items.length === 0) {
-    const ingredient = await prisma.ingredient.create({
-      data: {
-        name: "STEP 8 test ingredient",
-        unit: "GRAM",
-      },
-    });
-    if (recipe) {
-      await prisma.recipeItem.create({
-        data: {
-          recipeId: recipe.id,
-          ingredientId: ingredient.id,
-          quantity: 1,
-          unit: "GRAM",
-        },
-      });
-      recipe = await prisma.recipe.findUniqueOrThrow({
-        where: { id: recipe.id },
-        include: { items: true },
-      });
-    } else {
-      recipe = await prisma.recipe.create({
-        data: {
-          variantId: variant.id,
-          items: {
-            create: { ingredientId: ingredient.id, quantity: 1, unit: "GRAM" },
-          },
-        },
-        include: { items: true },
-      });
-    }
-  }
-  assert.ok(recipe);
   for (const item of recipe.items) {
     await prisma.stock.upsert({
       where: {
@@ -438,10 +469,72 @@ async function createFixture(prisma: PrismaService) {
       metadata: { printRoles: ["RECEIPT", "CANCELLATION", "REFUND"] },
     },
   });
-  const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH");
-  const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER");
-  const simple = await findCatalogProduct(prisma, "KETCHUP");
-  const set = await findCatalogProduct(prisma, "SET_CHEESEBURGER");
+  await prisma.paymentMethod.create({
+    data: {
+      branchId: branch.id,
+      code: "CASH",
+      name: "STEP 8 cash",
+      isActive: true,
+    },
+  });
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "CLASSIC_LAVASH",
+    "STEP 8 Classic lavash",
+    18000,
+  );
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "CLASSIC_BURGER",
+    "STEP 8 Classic burger",
+    22000,
+  );
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "KETCHUP",
+    "STEP 8 Ketchup",
+    2000,
+  );
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "SET_CHEESEBURGER",
+    "STEP 8 Cheeseburger set",
+    28000,
+    true,
+  );
+  const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH", branch.id);
+  const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER", branch.id);
+  const simple = await findCatalogProduct(prisma, "KETCHUP", branch.id);
+  const setBase = await findCatalogProduct(prisma, "SET_CHEESEBURGER", branch.id);
+  await prisma.productBundleItem.create({
+    data: {
+      bundleProductId: setBase.id,
+      componentCode: "CLASSIC_BURGER",
+      componentName: "Classic burger",
+      componentProductId: burger.id,
+      quantity: 1,
+      unitLabel: "set",
+    },
+  });
+  const set = await prisma.product.findUniqueOrThrow({
+    where: { id: setBase.id },
+    include: {
+      category: true,
+      variants: {
+        where: { isAvailable: true },
+        orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
+      },
+      bundleItems: true,
+    },
+  });
   const webCustomer = await prisma.customer.create({
     data: {
       tenantId: branch.tenantId,
@@ -494,9 +587,57 @@ async function createFixture(prisma: PrismaService) {
   };
 }
 
-async function findCatalogProduct(prisma: PrismaService, code: string) {
+async function createTestCatalogProduct(
+  prisma: PrismaService,
+  branchId: string,
+  runId: string,
+  code: string,
+  name: string,
+  price: number,
+  isCombo = false,
+) {
+  const category = await prisma.category.create({
+    data: {
+      branchId,
+      code: `STEP8_${code}_${runId}`,
+      name: `STEP 8 ${name} category`,
+    },
+  });
+  return prisma.product.create({
+    data: {
+      branchId,
+      categoryId: category.id,
+      code,
+      name,
+      sellingPrice: new Prisma.Decimal(price),
+      isCombo,
+      variants: {
+        create: {
+          code: "DEFAULT",
+          name: "Standard",
+          sellingPrice: new Prisma.Decimal(price),
+          isDefault: true,
+        },
+      },
+    },
+    include: {
+      category: true,
+      variants: {
+        where: { isAvailable: true },
+        orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }],
+      },
+      bundleItems: true,
+    },
+  });
+}
+
+async function findCatalogProduct(
+  prisma: PrismaService,
+  code: string,
+  branchId: string,
+) {
   return prisma.product.findFirstOrThrow({
-    where: { code, isAvailable: true },
+    where: { code, branchId, isAvailable: true },
     include: {
       category: true,
       variants: {
@@ -1066,6 +1207,15 @@ async function proveTelegramFlattenedCatalogFlow(
     from: { id: fixture.telegramUserId },
     data: `cust:addv:${fixture.burger.variants[0]!.id}`,
   });
+  const bundleComponentIds = fixture.set.bundleItems.flatMap((item) =>
+    item.componentProductId ? [item.componentProductId] : [],
+  );
+  const bundleComponentCountBeforeSet = await prisma.cartItem.count({
+    where: {
+      cartId: mergedCart.id,
+      productId: { in: bundleComponentIds },
+    },
+  });
   await telegramOrdering.handleCustomerCallback({
     id: "step-current-set-variant-add",
     message: { chat: { id: fixture.telegramChatId } },
@@ -1077,13 +1227,14 @@ async function proveTelegramFlattenedCatalogFlow(
     include: { items: true },
     orderBy: { updatedAt: "desc" },
   });
-  assert.equal(cartWithSet.items.filter((item) => item.productId === fixture.set.id).length, 1);
   assert.equal(
-    cartWithSet.items.filter((item) =>
-      fixture.set.bundleItems.some((bundleItem) => bundleItem.componentProductId === item.productId),
-    ).length,
-    0,
-    "set quick add must not expand bundle components into separately charged cart lines",
+    cartWithSet.items.filter((item) => item.productId === fixture.set.id).length,
+    1,
+  );
+  assert.equal(
+    cartWithSet.items.filter((item) => bundleComponentIds.includes(item.productId)).length,
+    bundleComponentCountBeforeSet,
+    "set quick add must not add bundle components as separately charged cart lines",
   );
 
   await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
@@ -1258,6 +1409,7 @@ async function proveOrderGraph(
       attempt: true,
       order: {
         include: {
+          branch: { select: { tenantId: true } },
           items: true,
           kitchenTickets: true,
           statusHistory: { orderBy: { createdAt: "asc" } },
@@ -1274,6 +1426,17 @@ async function proveOrderGraph(
   assert.equal(customerOrder.order.kitchenTickets.length, 1);
   assert.ok(customerOrder.order.statusHistory.length >= 2);
   assert.equal(customerOrder.attempt?.status, "COMPLETED");
+  const notification = await prisma.notificationOutbox.findUniqueOrThrow({
+    where: {
+      tenantId_dedupeKey: {
+        tenantId: customerOrder.order.branch.tenantId,
+        dedupeKey: `staff_new_order:${customerOrder.order.id}`,
+      },
+    },
+  });
+  assert.equal(notification.kind, "staff_new_order");
+  assert.equal(notification.orderId, customerOrder.order.id);
+  assert.equal(notification.status, "PENDING");
   assert.equal(
     customerOrder.order.deliveryFeeTotal.toFixed(2),
     expected.expectedDeliveryFee.toFixed(2),
@@ -1396,6 +1559,7 @@ async function orderGraphCounts(prisma: PrismaService) {
     orderItems,
     statusHistory,
     kitchenTickets,
+    notificationOutbox,
   ] = await Promise.all([
     prisma.order.count(),
     prisma.customerOrder.count(),
@@ -1403,9 +1567,18 @@ async function orderGraphCounts(prisma: PrismaService) {
     prisma.orderItem.count(),
     prisma.orderStatusHistory.count(),
     prisma.kitchenTicket.count(),
+    prisma.notificationOutbox.count(),
   ]);
 
-  return { attempts, customerOrders, kitchenTickets, orderItems, orders, statusHistory };
+  return {
+    attempts,
+    customerOrders,
+    kitchenTickets,
+    notificationOutbox,
+    orderItems,
+    orders,
+    statusHistory,
+  };
 }
 
 function assertIsolatedDatabase(): void {

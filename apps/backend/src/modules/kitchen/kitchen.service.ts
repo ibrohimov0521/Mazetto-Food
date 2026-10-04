@@ -32,10 +32,6 @@ import {
   orderStateForLegacyStatus,
   recordOrderEvent,
 } from "../orders/order-events";
-import {
-  kitchenEvents,
-  kitchenOrderStatusChangedEvent,
-} from "./kitchen-events";
 import { KitchenGateway } from "./kitchen.gateway";
 import { orderStatusAfterKitchenHandoff } from "./kitchen-status-sync";
 
@@ -50,7 +46,6 @@ type KitchenTransitionActor = {
   user?: AuthenticatedUser;
   reasonPrefix: string;
   cancellationReason?: string;
-  suppressTelegramStaffRefresh?: boolean;
   expectedVersion?: number;
   correlationId?: string;
   idempotencyKey?: string;
@@ -81,7 +76,10 @@ type KitchenTransitionOrder = {
   paymentStatus: PaymentStatus;
   total: Prisma.Decimal;
   payments: { amount: Prisma.Decimal; status: PaymentStatus }[];
-  customerOrder: { paymentMethod: string | null } | null;
+  customerOrder: {
+    paymentMethod: string | null;
+    customer: { telegramChatId: string | null } | null;
+  } | null;
   kitchenTickets: {
     id: string;
     orderId: string;
@@ -658,6 +656,44 @@ export class KitchenService {
         order: await this.findOrderForTransition(tx, orderId, scope),
         ticket: await this.findTicketById(tx, ticket.id),
       };
+      if (!changed.order || !changed.ticket) {
+        throw new NotFoundException("Order or kitchen ticket not found");
+      }
+
+      const customerStatusCanBeSent =
+        changed.order.status === OrderStatus.CONFIRMED ||
+        changed.order.status === OrderStatus.PREPARING ||
+        changed.order.status === OrderStatus.READY ||
+        changed.order.status === OrderStatus.CANCELLED;
+      if (
+        action !== "complete" &&
+        customerStatusCanBeSent &&
+        changed.order.customerOrder?.customer?.telegramChatId
+      ) {
+        await tx.notificationOutbox.create({
+          data: {
+            tenantId: scope.tenantId,
+            dedupeKey: `customer_status:${orderId}:${changed.ticket.version}`,
+            kind: "customer_status",
+            orderId,
+            payload: { status: changed.order.status },
+          },
+        });
+      }
+
+      await tx.notificationOutbox.create({
+        data: {
+          tenantId: scope.tenantId,
+          dedupeKey: `staff_status_refresh:kitchen:${orderId}:${changed.ticket.version}`,
+          kind: "staff_status_refresh",
+          orderId,
+          payload: {
+            status: changed.order.status,
+            ticketStatus: changed.ticket.status,
+          },
+        },
+      });
+
       await actor.completeIdempotency?.(tx, changed.ticket);
       return changed;
     });
@@ -668,9 +704,6 @@ export class KitchenService {
         order: result.order,
         ticket: result.ticket,
       });
-      if (!actor.suppressTelegramStaffRefresh) {
-        kitchenEvents.emit(kitchenOrderStatusChangedEvent, { action, orderId });
-      }
     }
 
     return result;
@@ -975,7 +1008,12 @@ export class KitchenService {
         version: true,
         paymentStatus: true,
         total: true,
-        customerOrder: { select: { paymentMethod: true } },
+        customerOrder: {
+          select: {
+            paymentMethod: true,
+            customer: { select: { telegramChatId: true } },
+          },
+        },
         payments: { select: { amount: true, status: true } },
         acceptedAt: true,
         acceptedById: true,

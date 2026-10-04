@@ -76,6 +76,14 @@ test("custom admin role permissioni berilgan bo'limni sidebar'da ko'rsatadi", ()
   );
 });
 
+test("Telegram dead-letter sahifasi alohida permission bilan himoyalanadi", () => {
+  const withoutPermission = customUser(["ADMIN_ACCESS"]);
+  assert.equal(checkRouteAccess(withoutPermission, "/admin/notifications"), "denied");
+  const notificationManager = customUser(["ADMIN_ACCESS", "NOTIFICATION_MANAGE"]);
+  assert.equal(checkRouteAccess(notificationManager, "/admin/notifications"), "allowed");
+  assert.ok(resolveAdminNav(notificationManager).some((group) => group.items.some((item) => item.href === "/admin/notifications")));
+});
+
 test("CSV qiymatlari vergul, qo'shtirnoq va yangi qatordan himoyalanadi", () => {
   assert.equal(
     toCsv(["Nomi", "Izoh"], [["Lavash, katta", 'U "maxsus"\nissiq']]),

@@ -283,6 +283,7 @@ model RestaurantTenant {
   platformSites                  PlatformSite[]
   memberships                    TenantMembership[]
   notificationDeadLetters        NotificationDeadLetter[]
+  notificationOutbox              NotificationOutbox[]
   auditLogs                      AuditLog[]
   customers                      Customer[]
   customerVerificationChallenges CustomerVerificationChallenge[]
@@ -324,6 +325,32 @@ model NotificationDeadLetter {
   @@unique([tenantId, messageId])
   @@index([tenantId, failedAt])
   @@map("notification_dead_letters")
+}
+
+model NotificationOutbox {
+  id             Int      @id @default(autoincrement())
+  tenantId       String
+  dedupeKey      String
+  kind           String
+  orderId        String
+  payload        Json?
+  status         String   @default("PENDING")
+  attempts       Int      @default(0)
+  scheduledAt    DateTime @default(now())
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dedupeKey])
+  @@index([status, scheduledAt, createdAt])
+  @@index([status, leaseExpiresAt])
+  @@index([tenantId, status, createdAt])
+  @@map("notification_outbox")
 }
 
 model BranchWorkingHour {

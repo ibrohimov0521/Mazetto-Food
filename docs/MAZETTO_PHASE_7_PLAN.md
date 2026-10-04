@@ -286,6 +286,25 @@ RabbitMQ **kerak emas** — 2–3 kanal uchun Redis list yetarli. QueenFood'da 5
 
 ---
 
+### Q6.4 — 2026-10-04 amalga oshirish holati
+
+PR #221 doirasida bajarilgan:
+- Web va Telegram mijoz buyurtmalarida tenant-scoped PostgreSQL outbox yozuvi buyurtma tranzaksiyasi bilan birga yaratiladi.
+- Worker `FOR UPDATE SKIP LOCKED`, qisqa lease va deduplikatsiya bilan ishlaydi; faqat Telegram tasdiqlagan 429 javobi avtomatik qayta uriniladi.
+- Noaniq tarmoq/5xx natijasi yoki muddati o'tgan lease `UNCERTAIN` bo'ladi; ko'r-ko'rona qayta yuborilmaydi.
+- Egasi uchun `/admin/notifications` sahifasi qo'shildi: yangi buyurtma va mijoz status dead-letterlarini ko'rish, tasdiqlash bilan qayta yuborish. 429 yoki noaniq natijada yozuv o'chirilmaydi.
+- Mijoz statusidagi `sendMessage` endi noaniq xatoda avtomatik takrorlanmaydi; xato dead-letter'ga yoziladi va kerak bo'lsa admin hozirgi statusni qayta yuboradi.
+- CI'da toza PostgreSQL migratsiyasi, buyurtma + outbox atomikligi, replay deduplikatsiyasi, parallel worker lock'i va qayta yuborish xatolari tekshiriladi.
+
+Amalga oshirish reja diagrammasidan ataylab farq qiladi: Redis queue o'rniga PostgreSQL outbox tanlandi. Yangi buyurtma, mijoz statusi va xodim xabarini yangilash job'lari tegishli buyurtma tranzaksiyasi ichida yoziladi; mijoz va staff statuslari tenant + order + kanal bo'yicha ketma-ket qayta ishlanadi. Staff retry eski eventni emas, buyurtmaning joriy holatini qayta chizadi. SMS, in-app kanal, umumiy `RecipientResolver`/shablonlar va `staffAudience` abstraksiyasi bu PR'da yo'q.
+
+Q6 bo'yicha qolgan ishlar:
+- Boshqa kanallar yoki ikkinchi tenant yoqilmaydi; tenantga xos bot sozlamasi alohida dizayn va xavfsizlik tekshiruvi talab qiladi.
+- 2026-10-04 staging tekshiruvi: staging PostgreSQL'dan alohida dump olindi (/home/javohir/secure-backups/mazetto/mazetto-staging-pre-staff-status-20261004T01.dump, 289666 bayt); `pg_restore --list` muvaffaqiyatli.
+- Shu dump PostgreSQL 18 disposable instance'ga ikki marta tiklandi; migratsiya ikki marta qo'llanib idempotentligi, asosiy jadval qatorlari esa restore oldi/keyingi holat bilan solishtirildi.
+- Staging DB'ga `20261004100000_telegram_notification_outbox` qo'llandi; `migrate status` schema up-to-date deb tasdiqladi. `f6531fc` backend image staging service'ga chiqarildi; health 200, DB/Redis OK va yangi `/api/v1/notifications/dead-letters` route autentifikatsiyasiz 401 qaytardi. Smoke order yoki Telegram xabar yaratmadi.
+- Production migration/deploy qilinmadi. Production uchun alohida yangi verified backup, release-gate/preflight, PR main'ga tasdiqlangan merge va release smoke hanuz shart.
+
 ## Q7 — Umumiy UI paketi
 
 ### Muammo

@@ -212,6 +212,11 @@ export const routeAccessRules: RouteAccessRule[] = [
     roles: [SUPER, MANAGER],
     permission: "RECEIPT_PRINT",
   },
+  {
+    pattern: "/admin/notifications",
+    roles: [SUPER],
+    permission: "NOTIFICATION_MANAGE",
+  },
   { pattern: "/admin/audit", roles: [SUPER], permission: "AUDIT_VIEW" },
   {
     pattern: "/admin/system-health",

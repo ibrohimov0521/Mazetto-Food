@@ -19,9 +19,16 @@ const service = read(
 const controller = read(
   "apps/backend/src/modules/notifications/notifications.controller.ts",
 );
+const adminUi = read(
+  "apps/pos-web/components/admin/admin-notifications.tsx",
+);
 const telegram = read(
   "apps/backend/src/modules/telegram/telegram-order-notification.service.ts",
 );
+const kitchen = read("apps/backend/src/modules/kitchen/kitchen.service.ts");
+const orders = read("apps/backend/src/modules/orders/orders.service.ts");
+const courier = read("apps/backend/src/modules/customers/customer-courier.service.ts");
+const worker = read("apps/backend/src/modules/notifications/notification-outbox.worker.ts");
 const appModule = read("apps/backend/src/app.module.ts");
 const permissions = read("apps/backend/src/common/auth/permissions.ts");
 
@@ -36,13 +43,44 @@ assert.match(
  * ENG MUHIM SHART. Ilgari `catch` bloki xatoni logga yozib, bildirishnomani
  * TASHLAB YUBORARDI. Har ikkala yo'l ham yozuv qoldirishi kerak.
  */
-for (const kind of ["staff_new_order", "staff_status_refresh"]) {
+for (const kind of ["staff_new_order"]) {
   assert.match(
     telegram,
     new RegExp(`deadLetters\\.record\\(\\{[\\s\\S]{0,80}kind: "${kind}"`),
     `"${kind}" yo'lida yo'qotish yozib olinmayapti.`,
   );
 }
+assert.match(
+  kitchen,
+  /notificationOutbox\.create\(\{[\s\S]{0,350}kind: "customer_status"[\s\S]{0,180}payload: \{ status: changed\.order\.status \}/,
+  "Mijoz statusi oshxona tranzaksiyasida outbox'ga yozilmayapti.",
+);
+assert.match(
+  kitchen,
+  /kind: "staff_status_refresh"[\s\S]{0,180}ticketStatus: changed\.ticket\.status/,
+  "Oshxona staff-refresh'i status tranzaksiyasida saqlanmayapti.",
+);
+assert.match(
+  orders,
+  /kind: "staff_status_refresh"[\s\S]{0,180}confirmedOrder\.status/,
+  "POS/admin status refresh tranzaksiyada saqlanmayapti.",
+);
+assert.match(
+  courier,
+  /kind: "staff_status_refresh"[\s\S]{0,180}payload: \{ status: nextStatus \}/,
+  "Courier status refresh tranzaksiyada saqlanmayapti.",
+);
+assert.match(
+  worker,
+  /job\."kind" NOT IN \('customer_status', 'staff_status_refresh'\)[\s\S]{0,500}active\."kind" = job\."kind"/,
+  "Status outbox bir order uchun ketma-ket ishlamaydi.",
+);
+assert.match(
+  worker,
+  /notificationDeadLetter\.upsert\([\s\S]{0,350}kind: job\.kind/,
+  "Outbox dead-letter turi original xabardan olinmayapti.",
+);
+
 /*
  * Yozuv `catch` ICHIDA bo'lishi kerak — muvaffaqiyatli yo'lda emas.
  * Aks holda har bildirishnoma o'lik xat sifatida yozilardi.
@@ -111,17 +149,35 @@ assert.match(
 
 // --- Qayta yuborish ---
 const retryBody =
-  telegram.match(/async retryDeadLetter\([\s\S]*?\n {2}private /)?.[0] ?? "";
+  telegram.match(/async retryDeadLetter\([\s\S]*?\n {2}async deliverOutboxStaffStatusRefresh/)?.[0] ?? "";
 assert.ok(retryBody, "retryDeadLetter topilmadi.");
 /*
- * Holat yangilanishi qayta yuborilmaydi: u o'tib ketgan KITCHEN hodisasiga
- * bog'liq va uni qayta o'ynatish hozirgi holatni eskirgani bilan
- * almashtirib qo'yardi.
+ * Qayta yuborish eski lifecycle event'ini takrorlamaydi; staff va
+ * mijoz xabarlari orderning joriy holatidan qayta quriladi.
  */
 assert.match(
   retryBody,
-  /entry\.kind !== "staff_new_order"/,
-  "Holat yangilanishi ham qayta yuborilyapti — eskirgan holat yoziladi.",
+  /!\["staff_new_order",\s*"staff_status_refresh",\s*"customer_status"\]\.includes\(entry\.kind\)/,
+  "Qayta yuboriladigan bildirishnoma turlari aniq cheklanmagan.",
+);
+assert.match(
+  retryBody,
+  /entry\.kind === "staff_status_refresh"[\s\S]*deliverOutboxStaffStatusRefresh[\s\S]*resendCurrentCustomerStatus/,
+  "Mijoz statusi buyurtmaning joriy holatidan qayta tuzilmayapti.",
+);
+
+const customerStatusSend =
+  telegram.match(/async deliverOutboxCustomerStatus[\s\S]*?\n {2}private customerStatusMessage/)?.[0] ?? "";
+assert.ok(customerStatusSend, "Mijoz statusi outbox delivery yo'li yo'q.");
+assert.match(
+  customerStatusSend,
+  /maxAttempts: 1/,
+  "Mijozga sendMessage noaniq xatoda avtomatik takrorlanishi mumkin.",
+);
+assert.match(
+  adminUi,
+  /\["staff_new_order",\s*"staff_status_refresh",\s*"customer_status"\]\.includes\(entry\.kind\)/,
+  "Admin UI mijoz status dead-letter'ini qayta yuborishga ruxsat bermaydi.",
 );
 
 // Qayta yuborish TASHQI xabar jo'natadi, ya'ni GET bo'lmasligi kerak.

@@ -1,0 +1,227 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { NotificationOutboxWorker } from "../src/modules/notifications/notification-outbox.worker";
+
+function createHarness(
+  delivery: "sent" | "failed" | "skipped" | { kind: "retryable"; retryAfterSeconds: number | null },
+  expired: boolean = false,
+  kind: "staff_new_order" | "customer_status" | "staff_status_refresh" = "staff_new_order",
+) {
+  const job = {
+    id: 7,
+    tenantId: "tenant-a",
+    orderId: "order-a",
+    kind,
+    payload: { status: "CONFIRMED" },
+    attempts: 1,
+    leaseToken: "lease-token",
+  };
+  const updates: Array<Record<string, unknown>> = [];
+  const deadLetters: Array<Record<string, unknown>> = [];
+  let telegramCalls = 0;
+  const deliveryRoutes: string[] = [];
+  const customerPayloads: unknown[] = [];
+  const rawQueries: string[] = [];
+  const tx = {
+    notificationOutbox: {
+      updateMany: async (args: Record<string, unknown>) => {
+        updates.push(args);
+        return { count: 1 };
+      },
+    },
+    notificationDeadLetter: {
+      upsert: async (args: Record<string, unknown>) => {
+        deadLetters.push(args);
+        return {};
+      },
+    },
+  };
+  const prisma = {
+    notificationOutbox: {
+      findMany: async () =>
+        expired
+          ? [{
+              ...job,
+              leaseExpiresAt: new Date(Date.now() - 60_000),
+            }]
+          : [],
+      updateMany: async (args: Record<string, unknown>) => {
+        updates.push(args);
+        return { count: 1 };
+      },
+    },
+    order: {
+      findFirst: async () => ({ id: "order-a" }),
+    },
+    $queryRaw: async (strings: TemplateStringsArray) => {
+      rawQueries.push(strings.join("?"));
+      return expired ? [] : [job];
+    },
+    $transaction: async (work: (client: typeof tx) => Promise<unknown>) =>
+      work(tx),
+  };
+  const telegram = {
+    deliverOutboxNewOrder: async () => {
+      telegramCalls += 1;
+      deliveryRoutes.push("staff_new_order");
+      return delivery;
+    },
+    deliverOutboxCustomerStatus: async (
+      _orderId: string,
+      _tenantId: string,
+      payload: unknown,
+    ) => {
+      telegramCalls += 1;
+      deliveryRoutes.push("customer_status");
+      customerPayloads.push(payload);
+      return delivery;
+    },
+    deliverOutboxStaffStatusRefresh: async () => {
+      telegramCalls += 1;
+      deliveryRoutes.push("staff_status_refresh");
+      return delivery;
+    },
+  };
+  const worker = new NotificationOutboxWorker(
+    prisma as never,
+    telegram as never,
+  );
+  return {
+    worker,
+    updates,
+    deadLetters,
+    deliveryRoutes,
+    customerPayloads,
+    rawQueries,
+    getTelegramCalls: () => telegramCalls,
+  };
+}
+
+test("outbox worker marks only confirmed Telegram delivery as delivered", async () => {
+  const harness = createHarness("sent");
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.equal(harness.updates.length, 1);
+  const update = harness.updates[0]!.data as {
+    status: string;
+    deliveredAt: Date;
+    leaseToken: null;
+    leaseExpiresAt: null;
+    lastError: null;
+  };
+  assert.equal(update.status, "DELIVERED");
+  assert.ok(update.deliveredAt instanceof Date);
+  assert.equal(update.leaseToken, null);
+  assert.equal(update.leaseExpiresAt, null);
+  assert.equal(update.lastError, null);
+  assert.equal(harness.deadLetters.length, 0);
+});
+
+test("outbox worker backs off only for an explicit safe Telegram rate limit", async () => {
+  const harness = createHarness({
+    kind: "retryable",
+    retryAfterSeconds: 30,
+  });
+  const before = Date.now();
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.equal(harness.updates.length, 1);
+  const update = harness.updates[0]!.data as {
+    status: string;
+    scheduledAt: Date;
+    leaseToken: null;
+    lastError: string;
+  };
+  assert.equal(update.status, "PENDING");
+  assert.ok(update.scheduledAt.getTime() >= before + 30_000);
+  assert.equal(update.leaseToken, null);
+  assert.match(update.lastError, /retry is safe/);
+  assert.equal(harness.deadLetters.length, 0);
+});
+
+test("outbox worker moves an unconfirmed send to uncertain and dead-letter atomically", async () => {
+  const harness = createHarness("failed");
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.equal(harness.updates.length, 1);
+  assert.equal(
+    (harness.updates[0]!.data as { status: string }).status,
+    "UNCERTAIN",
+  );
+  assert.equal(harness.deadLetters.length, 1);
+  const entry = harness.deadLetters[0]!;
+  assert.equal(entry.create && (entry.create as { messageId: string }).messageId, "outbox-7");
+  assert.equal(
+    (entry.create as { tenantId: string }).tenantId,
+    "tenant-a",
+  );
+  assert.match((entry.create as { error: string }).error, /automatic resend is disabled/);
+});
+
+test("outbox worker never retries before an excessive provider retry-after", async () => {
+  const harness = createHarness({
+    kind: "retryable",
+    retryAfterSeconds: 24 * 60 * 60 + 1,
+  });
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.equal(harness.updates.length, 1);
+  assert.equal(
+    (harness.updates[0]!.data as { status: string }).status,
+    "FAILED",
+  );
+  assert.equal(harness.deadLetters.length, 1);
+  assert.match(
+    (harness.deadLetters[0]!.create as { error: string }).error,
+    /exceeds the automatic retry window/,
+  );
+});
+
+test("customer-status jobs preserve their payload, ordering guard, and dead-letter kind", async () => {
+  const harness = createHarness("failed", false, "customer_status");
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.deepEqual(harness.deliveryRoutes, ["customer_status"]);
+  assert.deepEqual(harness.customerPayloads, [{ status: "CONFIRMED" }]);
+  assert.match(harness.rawQueries.join("\n"), /NOT EXISTS/);
+  assert.match(harness.rawQueries.join("\n"), /earlier\."status" = 'PENDING'/);
+  assert.match(harness.rawQueries.join("\n"), /active\."kind" = job\."kind"/);
+  assert.equal(
+    (harness.deadLetters[0]!.create as { kind: string }).kind,
+    "customer_status",
+  );
+});
+
+test("staff refresh jobs use the current-state adapter and preserve their dead-letter kind", async () => {
+  const harness = createHarness("failed", false, "staff_status_refresh");
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.deepEqual(harness.deliveryRoutes, ["staff_status_refresh"]);
+  assert.equal(
+    (harness.deadLetters[0]!.create as { kind: string }).kind,
+    "staff_status_refresh",
+  );
+});
+
+test("expired worker lease is made uncertain without calling Telegram again", async () => {
+  const harness = createHarness("sent", true);
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 0);
+  assert.equal(harness.updates.length, 1);
+  assert.equal(
+    (harness.updates[0]!.data as { status: string }).status,
+    "UNCERTAIN",
+  );
+  assert.equal(harness.deadLetters.length, 1);
+  assert.equal(
+    (harness.deadLetters[0]!.create as { messageId: string }).messageId,
+    "outbox-7",
+  );
+});

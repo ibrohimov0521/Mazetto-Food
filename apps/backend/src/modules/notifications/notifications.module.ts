@@ -3,6 +3,7 @@ import { RedisModule } from "../../redis/redis.module";
 import { TelegramModule } from "../telegram/telegram.module";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationDeadLetterService } from "./notification-dead-letter.service";
+import { NotificationOutboxWorker } from "./notification-outbox.worker";
 
 /*
  * Global: o'lik xatlarni yozish har qanday bildirishnoma yo'lidan
@@ -13,7 +14,7 @@ import { NotificationDeadLetterService } from "./notification-dead-letter.servic
 @Module({
   imports: [RedisModule, TelegramModule],
   controllers: [NotificationsController],
-  providers: [NotificationDeadLetterService],
+  providers: [NotificationDeadLetterService, NotificationOutboxWorker],
   exports: [NotificationDeadLetterService],
 })
 export class NotificationsModule {}

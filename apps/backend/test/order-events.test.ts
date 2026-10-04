@@ -201,6 +201,7 @@ test("cancel writes order state, version, history, event and outbox in one trans
       },
     },
     employee: { findFirst: async () => ({ id: "employee-1" }) },
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
     kitchenTicket: { updateMany: async () => { writes.push("ticket"); } },
     orderItem: { findMany: async () => [] },
     orderStatusHistory: { create: async () => { writes.push("history"); } },
@@ -213,6 +214,9 @@ test("cancel writes order state, version, history, event and outbox in one trans
       },
     },
     outboxEvent: { create: async () => { writes.push("outbox"); } },
+    notificationOutbox: {
+      create: async () => { writes.push("notification"); },
+    },
   };
   const prisma = {
     $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
@@ -227,7 +231,7 @@ test("cancel writes order state, version, history, event and outbox in one trans
   }, user, { expectedVersion: 1, eventType: ORDER_EVENTS.CANCELLED, reasonCode: "ADMIN_CANCELLED" });
   assert.equal(result.version, 2);
   assert.equal(result.orderState, OrderState.CANCELLED);
-  assert.deepEqual(writes, ["order", "ticket", "history", "event", "outbox"]);
+  assert.deepEqual(writes, ["order", "ticket", "history", "event", "outbox", "notification"]);
 });
 
 test("order detail uses action endpoints, timeline and a stable mutation version", () => {

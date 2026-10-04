@@ -265,6 +265,15 @@ export class CustomerOrderEngineService {
             },
           });
 
+          await tx.notificationOutbox.create({
+            data: {
+              tenantId: customer.tenantId,
+              dedupeKey: `staff_new_order:${order.id}`,
+              kind: "staff_new_order",
+              orderId: order.id,
+            },
+          });
+
           if (attempt) {
             await tx.customerOrderAttempt.update({
               where: { id: attempt.id },
