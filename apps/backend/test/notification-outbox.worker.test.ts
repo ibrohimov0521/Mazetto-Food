@@ -70,16 +70,18 @@ test("outbox worker marks only confirmed Telegram delivery as delivered", async 
 
   assert.equal(harness.getTelegramCalls(), 1);
   assert.equal(harness.updates.length, 1);
-  assert.deepEqual(harness.updates[0].data, {
-    status: "DELIVERED",
-    deliveredAt: (harness.updates[0].data as { deliveredAt: Date }).deliveredAt,
-    leaseToken: null,
-    leaseExpiresAt: null,
-    lastError: null,
-  });
-  assert.ok(
-    (harness.updates[0].data as { deliveredAt: Date }).deliveredAt instanceof Date,
-  );
+  const update = harness.updates[0]!.data as {
+    status: string;
+    deliveredAt: Date;
+    leaseToken: null;
+    leaseExpiresAt: null;
+    lastError: null;
+  };
+  assert.equal(update.status, "DELIVERED");
+  assert.ok(update.deliveredAt instanceof Date);
+  assert.equal(update.leaseToken, null);
+  assert.equal(update.leaseExpiresAt, null);
+  assert.equal(update.lastError, null);
   assert.equal(harness.deadLetters.length, 0);
 });
 
@@ -93,7 +95,7 @@ test("outbox worker backs off only for an explicit safe Telegram rate limit", as
 
   assert.equal(harness.getTelegramCalls(), 1);
   assert.equal(harness.updates.length, 1);
-  const update = harness.updates[0].data as {
+  const update = harness.updates[0]!.data as {
     status: string;
     scheduledAt: Date;
     leaseToken: null;
@@ -113,11 +115,11 @@ test("outbox worker moves an unconfirmed send to uncertain and dead-letter atomi
   assert.equal(harness.getTelegramCalls(), 1);
   assert.equal(harness.updates.length, 1);
   assert.equal(
-    (harness.updates[0].data as { status: string }).status,
+    (harness.updates[0]!.data as { status: string }).status,
     "UNCERTAIN",
   );
   assert.equal(harness.deadLetters.length, 1);
-  const entry = harness.deadLetters[0];
+  const entry = harness.deadLetters[0]!;
   assert.equal(entry.create && (entry.create as { messageId: string }).messageId, "outbox-7");
   assert.equal(
     (entry.create as { tenantId: string }).tenantId,
@@ -138,7 +140,7 @@ test("expired worker lease is made uncertain without calling Telegram again", as
   );
   assert.equal(harness.deadLetters.length, 1);
   assert.equal(
-    (harness.deadLetters[0].create as { messageId: string }).messageId,
+    (harness.deadLetters[0]!.create as { messageId: string }).messageId,
     "outbox-7",
   );
 });
