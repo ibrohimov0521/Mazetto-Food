@@ -26,7 +26,11 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     total: 12000,
     notes: null,
     items: [],
-    customerOrder: null,
+    customerOrder: {
+      type: "PICKUP",
+      paymentMethod: null,
+      customer: { telegramChatId: "staging-customer-chat" },
+    },
     kitchenTickets: [],
   };
   let fetchCalls = 0;
@@ -229,6 +233,67 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
       "sent",
     );
     assert.equal(updates.length, 1);
+    assert.equal((await deadLetters.list("tenant-a")).length, 0);
+
+    const statusDelivery = await deadLetters.record({
+      tenantId: "tenant-a",
+      kind: "customer_status",
+      orderId: "order-a",
+      error: "temporary failure",
+      attempts: 1,
+    });
+    const beforeCustomerRetry = fetchCalls;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response("gateway timeout", { status: 503 });
+    }) as typeof fetch;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", statusDelivery.messageId),
+      "failed",
+      "ambiguous customer send failure must not be reported as delivered",
+    );
+    assert.equal(fetchCalls, beforeCustomerRetry + 1);
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "failed customer status retry remains visible",
+    );
+
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 429,
+          description: "Too Many Requests",
+          parameters: { retry_after: 3 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", statusDelivery.messageId),
+      "failed",
+      "rate-limited customer send preserves its retry record",
+    );
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "429 customer retry must not clear the dead letter",
+    );
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          result: { message_id: 78, chat: { id: "staging-customer-chat" } },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+    assert.equal(
+      await service.retryDeadLetter("tenant-a", statusDelivery.messageId),
+      "sent",
+    );
     assert.equal((await deadLetters.list("tenant-a")).length, 0);
   } finally {
     service.onModuleDestroy();
