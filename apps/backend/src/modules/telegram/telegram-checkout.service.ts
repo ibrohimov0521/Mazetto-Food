@@ -13,7 +13,6 @@ import { isWithinTashkent } from "../customers/tashkent-bounds";
 import { GeocodingService } from "../geocoding/geocoding.service";
 import { TelegramCartService } from "./telegram-cart.service";
 import { TelegramCheckoutSessionService } from "./telegram-checkout-session.service";
-import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 import {
   customerCallbackPrefix,
   branchSupportsType,
@@ -153,7 +152,6 @@ export class TelegramCheckoutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly customerOrderEngine: CustomerOrderEngineService,
-    private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
     private readonly screen: TelegramCustomerScreenService,
     private readonly checkoutSession: TelegramCheckoutSessionService,
     private readonly cart: TelegramCartService,
@@ -739,12 +737,6 @@ export class TelegramCheckoutService {
         },
         { source: OrderSource.TELEGRAM, orderNumberPrefix: "TG" },
       );
-
-      if (result.order?.id) {
-        void this.telegramOrderNotificationService.notifyNewOrder(
-          result.order.id,
-        );
-      }
 
       await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
       await this.checkoutSession.clearCheckoutSession(
