@@ -661,12 +661,11 @@ export class KitchenService {
         order: await this.findOrderForTransition(tx, orderId, scope),
         ticket: await this.findTicketById(tx, ticket.id),
       };
-      const customerStatusCanBeSent = [
-        OrderStatus.CONFIRMED,
-        OrderStatus.PREPARING,
-        OrderStatus.READY,
-        OrderStatus.CANCELLED,
-      ].includes(changed.order.status);
+      const customerStatusCanBeSent =
+        changed.order.status === OrderStatus.CONFIRMED ||
+        changed.order.status === OrderStatus.PREPARING ||
+        changed.order.status === OrderStatus.READY ||
+        changed.order.status === OrderStatus.CANCELLED;
       if (
         action !== "complete" &&
         customerStatusCanBeSent &&
