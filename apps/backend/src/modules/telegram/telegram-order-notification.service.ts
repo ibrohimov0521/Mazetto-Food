@@ -80,12 +80,28 @@ type TelegramResponse = {
   ok?: boolean;
   description?: string;
   error_code?: number;
+  parameters?: { retry_after?: number };
   result?: {
     message_id?: number;
     chat?: { id?: number | string };
   };
 };
-type NewOrderDeliveryResult = "sent" | "failed" | "skipped";
+type NewOrderDeliveryResult =
+  | "sent"
+  | "failed"
+  | "skipped"
+  | { kind: "retryable"; retryAfterSeconds: number | null };
+
+class TelegramRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly retryAfterSeconds: number | null = null,
+  ) {
+    super(message);
+    this.name = "TelegramRequestError";
+  }
+}
 export type DeadLetterRetryResult =
   | "sent"
   | "failed"
@@ -148,6 +164,13 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     });
   }
 
+  async deliverOutboxNewOrder(
+    orderId: string,
+    tenantId: string,
+  ): Promise<NewOrderDeliveryResult> {
+    return this.sendNewOrder(orderId, tenantId, false);
+  }
+
   private async sendNewOrder(
     orderId: string,
     expectedTenantId?: string,
@@ -187,6 +210,12 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
       await this.rememberStaffMessage(order.id, response);
       return "sent";
     } catch (error) {
+      if (error instanceof TelegramRequestError && error.status === 429) {
+        return {
+          kind: "retryable",
+          retryAfterSeconds: error.retryAfterSeconds,
+        };
+      }
       this.logger.error(
         `Telegram order notification failed for order ${orderId}`,
         error instanceof Error ? error.stack : String(error),
@@ -741,8 +770,12 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
             return result;
           }
 
-          const error = new Error(
+          const error = new TelegramRequestError(
             `Telegram ${method} rejected the request: ${result.description ?? "unknown error"}`,
+            result.error_code,
+            typeof result.parameters?.retry_after === "number"
+              ? result.parameters.retry_after
+              : null,
           );
           if (
             !this.shouldRetryTelegramRequest(error, result.error_code) ||
@@ -753,7 +786,14 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           lastError = error;
         } else {
           const body = await response.text();
-          const error = new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
+          const headerRetryAfter = Number(response.headers.get("retry-after"));
+          const error = new TelegramRequestError(
+            `Telegram ${method} failed with ${response.status}: ${body}`,
+            response.status,
+            Number.isFinite(headerRetryAfter) && headerRetryAfter > 0
+              ? headerRetryAfter
+              : null,
+          );
 
           if (
             !this.shouldRetryTelegramRequest(error, response.status) ||
