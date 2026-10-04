@@ -24,11 +24,9 @@ import { ORDER_EVENTS } from "../src/modules/orders/order-events";
 import { PaymentsService } from "../src/modules/payments/payments.service";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
-import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
 import { createSettingsStub } from "./settings-stub";
-import { createDeadLetterStub } from "./dead-letter-stub";
 import { IdempotencyService } from "../src/common/idempotency/idempotency.service";
 import { TelegramCustomerScreenService } from "../src/modules/telegram/telegram-customer-screen.service";
 import { TelegramCheckoutSessionService } from "../src/modules/telegram/telegram-checkout-session.service";
@@ -248,15 +246,8 @@ function createServices(prisma: PrismaService) {
     ordersService,
     createSettingsStub(),
   );
-  const telegramNotifications = new TelegramOrderNotificationService(
-    prisma,
-    kitchenService,
-    createDeadLetterStub(),
-  );
   const telegramOrdering = new TelegramCustomerOrderingService(
     prisma,
-    orderEngine,
-    telegramNotifications,
     new TelegramCustomerScreenService(),
     new TelegramCheckoutSessionService(prisma as never),
     new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
