@@ -10,9 +10,9 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
-const checkout = read("apps/customer-web/app/checkout/page.tsx");
+const checkout = read("apps/customer-web/app/[locale]/checkout/page.tsx");
 const phoneLib = read("apps/customer-web/lib/phone.ts");
-const checkoutCss = read("apps/customer-web/app/checkout/checkout.css");
+const checkoutCss = read("apps/customer-web/app/[locale]/checkout/checkout.css");
 
 /*
  * 1. "Buyurtma berildi" bayrog'i.
