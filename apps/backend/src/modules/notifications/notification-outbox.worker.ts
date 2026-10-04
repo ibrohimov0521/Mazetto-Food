@@ -12,7 +12,7 @@ type ClaimedNotification = {
   leaseToken: string;
 };
 
-const CLAIM_BATCH_SIZE = 10;
+const CLAIM_BATCH_SIZE = 1;
 const LEASE_DURATION_MS = 60_000;
 const MAX_ATTEMPTS = 12;
 const RETRY_BASE_MS = 5_000;
@@ -148,6 +148,17 @@ export class NotificationOutboxWorker {
     }
 
     if (typeof result === "object" && result.kind === "retryable") {
+      const requestedDelay =
+        result.retryAfterSeconds === null
+          ? 0
+          : Math.max(0, result.retryAfterSeconds * 1000);
+      if (requestedDelay > MAX_RETRY_AFTER_MS) {
+        await this.markFailed(
+          job,
+          "Telegram rate-limit delay exceeds the automatic retry window.",
+        );
+        return;
+      }
       if (job.attempts >= MAX_ATTEMPTS) {
         await this.markFailed(
           job,
@@ -159,13 +170,7 @@ export class NotificationOutboxWorker {
         RETRY_MAX_MS,
         RETRY_BASE_MS * 2 ** Math.min(job.attempts - 1, 6),
       );
-      const providerDelay =
-        result.retryAfterSeconds === null
-          ? 0
-          : Math.min(
-              MAX_RETRY_AFTER_MS,
-              Math.max(0, result.retryAfterSeconds * 1000),
-            );
+      const providerDelay = requestedDelay;
       await this.reschedule(
         job,
         Math.max(exponentialDelay, providerDelay),
