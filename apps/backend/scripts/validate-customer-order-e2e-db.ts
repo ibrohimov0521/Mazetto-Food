@@ -1207,6 +1207,15 @@ async function proveTelegramFlattenedCatalogFlow(
     from: { id: fixture.telegramUserId },
     data: `cust:addv:${fixture.burger.variants[0]!.id}`,
   });
+  const bundleComponentIds = fixture.set.bundleItems.flatMap((item) =>
+    item.componentProductId ? [item.componentProductId] : [],
+  );
+  const bundleComponentCountBeforeSet = await prisma.cartItem.count({
+    where: {
+      cartId: mergedCart.id,
+      productId: { in: bundleComponentIds },
+    },
+  });
   await telegramOrdering.handleCustomerCallback({
     id: "step-current-set-variant-add",
     message: { chat: { id: fixture.telegramChatId } },
@@ -1218,13 +1227,14 @@ async function proveTelegramFlattenedCatalogFlow(
     include: { items: true },
     orderBy: { updatedAt: "desc" },
   });
-  assert.equal(cartWithSet.items.filter((item) => item.productId === fixture.set.id).length, 1);
   assert.equal(
-    cartWithSet.items.filter((item) =>
-      fixture.set.bundleItems.some((bundleItem) => bundleItem.componentProductId === item.productId),
-    ).length,
-    0,
-    "set quick add must not expand bundle components into separately charged cart lines",
+    cartWithSet.items.filter((item) => item.productId === fixture.set.id).length,
+    1,
+  );
+  assert.equal(
+    cartWithSet.items.filter((item) => bundleComponentIds.includes(item.productId)).length,
+    bundleComponentCountBeforeSet,
+    "set quick add must not add bundle components as separately charged cart lines",
   );
 
   await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
