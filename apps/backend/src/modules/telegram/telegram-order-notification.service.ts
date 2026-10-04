@@ -430,7 +430,10 @@ export class TelegramOrderNotificationService {
       try {
         const { orderId } = this.parseCallbackData(callback.data);
         await this.assertStaffCallback(callback, orderId);
-        await this.refreshStaffOrderMessageFromKitchen({ orderId, action: "refresh" });
+        const tenantId = await this.resolveOrderTenantId(orderId);
+        if (tenantId) {
+          await this.deliverOutboxStaffStatusRefresh(orderId, tenantId);
+        }
       } catch {
         // Unauthorized and malformed callbacks must not refresh any order.
       }
