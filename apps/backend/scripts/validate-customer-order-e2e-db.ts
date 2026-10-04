@@ -452,6 +452,39 @@ async function createFixture(prisma: PrismaService) {
       metadata: { printRoles: ["RECEIPT", "CANCELLATION", "REFUND"] },
     },
   });
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "CLASSIC_LAVASH",
+    "STEP 8 Classic lavash",
+    18000,
+  );
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "CLASSIC_BURGER",
+    "STEP 8 Classic burger",
+    22000,
+  );
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "KETCHUP",
+    "STEP 8 Ketchup",
+    2000,
+  );
+  await createTestCatalogProduct(
+    prisma,
+    branch.id,
+    runId,
+    "SET_CHEESEBURGER",
+    "STEP 8 Cheeseburger set",
+    28000,
+    true,
+  );
   const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH", branch.id);
   const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER", branch.id);
   const simple = await findCatalogProduct(prisma, "KETCHUP", branch.id);
