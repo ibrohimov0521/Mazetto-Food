@@ -175,11 +175,15 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         return "skipped";
       }
 
-      const response = await this.telegramRequest("sendMessage", {
-        chat_id: this.staffChatId(),
-        text: this.formatStaffOrderMessage(order),
-        parse_mode: "HTML",
-      });
+      const response = await this.telegramRequest(
+        "sendMessage",
+        {
+          chat_id: this.staffChatId(),
+          text: this.formatStaffOrderMessage(order),
+          parse_mode: "HTML",
+        },
+        { maxAttempts: 1 },
+      );
       await this.rememberStaffMessage(order.id, response);
       return "sent";
     } catch (error) {
@@ -708,7 +712,11 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     return messages[status] ?? null;
   }
 
-  private async telegramRequest(method: string, payload: unknown): Promise<TelegramResponse | undefined> {
+  private async telegramRequest(
+    method: string,
+    payload: unknown,
+    options: { maxAttempts?: number } = {},
+  ): Promise<TelegramResponse | undefined> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
 
     if (!token) {
@@ -716,8 +724,9 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
     }
 
     let lastError: unknown;
+    const maxAttempts = options.maxAttempts ?? telegramRequestMaxAttempts;
 
-    for (let attempt = 1; attempt <= telegramRequestMaxAttempts; attempt += 1) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
           method: "POST",
@@ -736,9 +745,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
             `Telegram ${method} rejected the request: ${result.description ?? "unknown error"}`,
           );
           if (
-            method === "sendMessage" ||
-            !this.shouldRetryTelegramRequest(error, result.error_code) ||
-            attempt === telegramRequestMaxAttempts
+                        !this.shouldRetryTelegramRequest(error, result.error_code) ||
+            attempt === maxAttempts
           ) {
             throw error;
           }
@@ -748,9 +756,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           const error = new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
 
           if (
-            method === "sendMessage" ||
-            !this.shouldRetryTelegramRequest(error, response.status) ||
-            attempt === telegramRequestMaxAttempts
+                        !this.shouldRetryTelegramRequest(error, response.status) ||
+            attempt === maxAttempts
           ) {
             throw error;
           }
@@ -759,9 +766,8 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         }
       } catch (error) {
         if (
-          method === "sendMessage" ||
-          !this.shouldRetryTelegramRequest(error) ||
-          attempt === telegramRequestMaxAttempts
+                    !this.shouldRetryTelegramRequest(error) ||
+          attempt === maxAttempts
         ) {
           throw error;
         }
