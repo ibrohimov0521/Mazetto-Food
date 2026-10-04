@@ -18,6 +18,7 @@ import {
 } from "../src/modules/customers/dto/customer.dto";
 import { InventoryService } from "../src/modules/inventory/inventory.service";
 import { KitchenService } from "../src/modules/kitchen/kitchen.service";
+import { NotificationOutboxWorker } from "../src/modules/notifications/notification-outbox.worker";
 import { OrdersService } from "../src/modules/orders/orders.service";
 import { PosOrderStatus } from "../src/modules/orders/dto/order-status.dto";
 import { ORDER_EVENTS } from "../src/modules/orders/order-events";
@@ -78,6 +79,34 @@ async function main(): Promise<void> {
       expectedTotal: fixture.expectedConfigurableTotal,
       expectedModifierName: fixture.modifier.name,
     });
+    const queuedNotification = await prisma.notificationOutbox.findFirstOrThrow({
+      where: {
+        tenantId: fixture.branch.tenantId,
+        orderId: webOrder.customerOrder.orderId,
+      },
+    });
+    const mockDeliveries: Array<{ orderId: string; tenantId: string }> = [];
+    const notificationWorker = new NotificationOutboxWorker(
+      prisma,
+      {
+        deliverOutboxNewOrder: async (orderId: string, tenantId: string) => {
+          mockDeliveries.push({ orderId, tenantId });
+          return "sent";
+        },
+      } as never,
+    );
+    await notificationWorker.dispatchPending();
+    assert.deepEqual(mockDeliveries, [{
+      orderId: webOrder.customerOrder.orderId,
+      tenantId: fixture.branch.tenantId,
+    }]);
+    const deliveredNotification =
+      await prisma.notificationOutbox.findUniqueOrThrow({
+        where: { id: queuedNotification.id },
+      });
+    assert.equal(deliveredNotification.status, "DELIVERED");
+    assert.ok(deliveredNotification.deliveredAt instanceof Date);
+
     await proveOrderCashStockPrint(
       prisma,
       services.paymentsService,
