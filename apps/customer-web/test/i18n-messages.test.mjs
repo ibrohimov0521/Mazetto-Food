@@ -19,6 +19,21 @@ function flatten(value, prefix = "") {
   );
 }
 
+test("menu headings use the locale-specific default title", async () => {
+  const [uz, ru] = await Promise.all([load("uz"), load("ru")]);
+  const component = await readFile(
+    new URL("../components/customer-menu-sections.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(uz.Customer.menyu_e4bc6451, "Menyu");
+  assert.equal(ru.Customer.menyu_e4bc6451, "Меню");
+  assert.match(
+    component,
+    /title === undefined \? t\("menyu_e4bc6451"\) : localizeCustomerCopy\(title, locale\)/,
+  );
+});
+
 test("customer locales expose the same message keys", async () => {
   const [uz, ru] = await Promise.all([load("uz"), load("ru")]);
   assert.deepEqual(flatten(ru).sort(), flatten(uz).sort());
