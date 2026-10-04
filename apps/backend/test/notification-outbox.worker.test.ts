@@ -135,7 +135,7 @@ test("expired worker lease is made uncertain without calling Telegram again", as
   assert.equal(harness.getTelegramCalls(), 0);
   assert.equal(harness.updates.length, 1);
   assert.equal(
-    (harness.updates[0].data as { status: string }).status,
+    (harness.updates[0]!.data as { status: string }).status,
     "UNCERTAIN",
   );
   assert.equal(harness.deadLetters.length, 1);
