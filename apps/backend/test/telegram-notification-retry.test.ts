@@ -296,7 +296,6 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     );
     assert.equal((await deadLetters.list("tenant-a")).length, 0);
   } finally {
-    service.onModuleDestroy();
     globalThis.fetch = previousFetch;
     if (previousToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = previousToken;

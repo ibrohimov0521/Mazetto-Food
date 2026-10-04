@@ -96,7 +96,6 @@ async function main(): Promise<void> {
     await proveConcurrentAccept(prisma, staffNotifications, fixture);
     await proveEditFallbackAndCustomerNotificationFailure(prisma, staffNotifications, fixture);
     await proveCrossChannelRecovery(prisma, kitchenService, staffNotifications, fixture);
-    staffNotifications.onModuleDestroy();
 
     console.info("Telegram staff lifecycle validation passed");
   } finally {
@@ -328,7 +327,7 @@ async function proveCrossChannelRecovery(prisma: PrismaService, kitchen: Kitchen
   await prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.PREPARING } });
   const before = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: order.id } });
   assert.equal(before.status, KitchenTicketStatus.ACCEPTED);
-  await kitchen.applyOrderAction(order.id, "mark_ready", { reasonPrefix: "Regression test", suppressTelegramStaffRefresh: true });
+  await kitchen.applyOrderAction(order.id, "mark_ready", { reasonPrefix: "Regression test" });
   await assertOrderState(prisma, order.id, OrderStatus.READY, KitchenTicketStatus.READY);
   await prisma.$transaction(async tx => {
     await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED } });
