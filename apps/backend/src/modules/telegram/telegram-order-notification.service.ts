@@ -196,7 +196,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         kind: "staff_new_order",
         orderId,
         error,
-        attempts: telegramRequestMaxAttempts,
+        attempts: 1,
       });
       return "failed";
     }
@@ -736,6 +736,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
             `Telegram ${method} rejected the request: ${result.description ?? "unknown error"}`,
           );
           if (
+            method === "sendMessage" ||
             !this.shouldRetryTelegramRequest(error, result.error_code) ||
             attempt === telegramRequestMaxAttempts
           ) {
@@ -746,14 +747,22 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           const body = await response.text();
           const error = new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
 
-          if (!this.shouldRetryTelegramRequest(error, response.status) || attempt === telegramRequestMaxAttempts) {
+          if (
+            method === "sendMessage" ||
+            !this.shouldRetryTelegramRequest(error, response.status) ||
+            attempt === telegramRequestMaxAttempts
+          ) {
             throw error;
           }
 
           lastError = error;
         }
       } catch (error) {
-        if (!this.shouldRetryTelegramRequest(error) || attempt === telegramRequestMaxAttempts) {
+        if (
+          method === "sendMessage" ||
+          !this.shouldRetryTelegramRequest(error) ||
+          attempt === telegramRequestMaxAttempts
+        ) {
           throw error;
         }
 
