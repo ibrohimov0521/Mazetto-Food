@@ -745,7 +745,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
             `Telegram ${method} rejected the request: ${result.description ?? "unknown error"}`,
           );
           if (
-                        !this.shouldRetryTelegramRequest(error, result.error_code) ||
+            !this.shouldRetryTelegramRequest(error, result.error_code) ||
             attempt === maxAttempts
           ) {
             throw error;
@@ -756,7 +756,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
           const error = new Error(`Telegram ${method} failed with ${response.status}: ${body}`);
 
           if (
-                        !this.shouldRetryTelegramRequest(error, response.status) ||
+            !this.shouldRetryTelegramRequest(error, response.status) ||
             attempt === maxAttempts
           ) {
             throw error;
@@ -766,7 +766,7 @@ export class TelegramOrderNotificationService implements OnModuleDestroy {
         }
       } catch (error) {
         if (
-                    !this.shouldRetryTelegramRequest(error) ||
+          !this.shouldRetryTelegramRequest(error) ||
           attempt === maxAttempts
         ) {
           throw error;
