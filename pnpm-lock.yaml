@@ -213,6 +213,9 @@ importers:
 
   apps/pos-web:
     dependencies:
+      '@mazetto/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       lucide-react:
         specifier: 1.41.0
         version: 1.41.0(react@19.2.8)
@@ -262,6 +265,12 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+
+  packages/ui:
+    dependencies:
+      react:
+        specifier: ^19.2.0
+        version: 19.2.8
 
 packages:
 

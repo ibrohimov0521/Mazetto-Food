@@ -12,6 +12,7 @@ const apiOrigin = (
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
+  transpilePackages: ["@mazetto/ui"],
   output: "standalone",
   outputFileTracingRoot: path.join(configDir, "../.."),
   async rewrites() {

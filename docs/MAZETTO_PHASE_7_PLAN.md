@@ -6,7 +6,19 @@ Asos: [`MAZETTO_QUEENFOOD_COMPARISON.md`](./MAZETTO_QUEENFOOD_COMPARISON.md) §6
 Oldingi bosqich: [`MAZETTO_PHASE_6_PLAN.md`](./MAZETTO_PHASE_6_PLAN.md)
 Bajarilish tartibi: [`MAZETTO_ROADMAP_MASTER.md`](./MAZETTO_ROADMAP_MASTER.md)
 
-**Kod hali yozilmagan.** Bu reja.
+**Holat 2026-10-04:** Q6 production'da; Q1-Q4 poydevorlari mavjud, lekin audit bilan yopish kerak; Q5 custom race-safe hook bilan qisman; Q7 davom etmoqda; Q8 boshlanmagan.
+
+## Amaldagi holat
+
+- Q1: Setting modeli va settings UI/API mavjud; kalitlar reestri hamda validatsiya qamrovi hali tekshiriladi.
+- Q2: maintenance scheduler bor; barcha TTL, batching va idempotency mezonlari hali solishtiriladi.
+- Q3: env validation va Swagger bor; Makefile rejasidagi maqsadlar root pnpm scripts orqali qisman ta'minlangan.
+- Q4: rasm upload endpointi va admin dropzone ishlaydi; saqlash/volume backup qarori alohida.
+- Q5: useApiResource eski javoblarni bekor qiladi; cache va write invalidation yo'q. React Query'ni majburan qo'shish shart emas.
+- Q6: PR #221 2026-10-04 kuni production'ga chiqarildi; migration backup va 27/27 read-only smoke o'tgan.
+- Q7.1: presentational admin UI paketi POS tomonidan iste'mol qilinadi; Next Link ilova adapteriga injeksiya qilingan, upload/auth komponenti POS ichida qoldi.
+- Q8: uz/ru tarjima ishlari boshlanmagan.
+- Keyingi ish: Q7 paket chegarasini accessibility, Tailwind va POS navigatsiyasi bo'yicha CI'da mustahkamlash; keyin ikkinchi iste'molchini faqat dizayn mos kelsa ko'rib chiqish.
 
 ---
 
@@ -303,11 +315,20 @@ Q6 bo'yicha qolgan ishlar:
 - 2026-10-04 staging tekshiruvi: staging PostgreSQL'dan alohida dump olindi (/home/javohir/secure-backups/mazetto/mazetto-staging-pre-staff-status-20261004T01.dump, 289666 bayt); `pg_restore --list` muvaffaqiyatli.
 - Shu dump PostgreSQL 18 disposable instance'ga ikki marta tiklandi; migratsiya ikki marta qo'llanib idempotentligi, asosiy jadval qatorlari esa restore oldi/keyingi holat bilan solishtirildi.
 - Staging DB'ga `20261004100000_telegram_notification_outbox` qo'llandi; `migrate status` schema up-to-date deb tasdiqladi. `f6531fc` backend image staging service'ga chiqarildi; health 200, DB/Redis OK va yangi `/api/v1/notifications/dead-letters` route autentifikatsiyasiz 401 qaytardi. Smoke order yoki Telegram xabar yaratmadi.
-- Production migration/deploy qilinmadi. Production uchun alohida yangi verified backup, release-gate/preflight, PR main'ga tasdiqlangan merge va release smoke hanuz shart.
+- 2026-10-04 release: PR #221 main'ga merge qilindi; production backup /mnt/storage/backups/mazetto/postgres/mazetto-20261004-104536686.dump tekshirildi, outbox migration qo'llandi, backend va POS deploy qilindi. Workflow #31 hamda yakuniy production smoke 27/27 o'tdi.
 
 ## Q7 — Umumiy UI paketi
 
-### Muammo
+**Q7.1 bajarildi (2026-10-04).**
+
+- Badge, Button, Card, DataTable, Feedback, Form, Icon, Modal, Pagination, StatBox, Tabs, Toast va Toggle @mazetto/ui paketiga ajratildi.
+- Eski POS import yo'llari moslik wrapper'lari bo'lib qoldi; ekranlardagi importlarni birdan almashtirish talab qilinmadi.
+- ButtonLink va StatBox navigatsiyasi uchun POS Next Link adapteri uzatadi; shared package Next.js'ga import qilmaydi.
+- Sessiya/API'ga bog'liq ImageDropzone ataylab POS ilovasida qoldi.
+- Tailwind package source scan va Next transpile sozlandi; ikonka validatori yangi manzilni tekshiradi.
+- 35 POS testi, full workspace verify va 33/33 ops validator o'tdi. DB/API sxemasi o'zgarmadi.
+
+### Boshlang'ich holat (2026-09-10)
 
 `packages/ui` — **1 ta tugma, 7 qator**, hech qayerda import qilinmagan. Haqiqiy komponentlar `apps/pos-web/components/admin-ui/` da (9 fayl) va `customer-web` ular bilan bo'lisha olmaydi.
 
