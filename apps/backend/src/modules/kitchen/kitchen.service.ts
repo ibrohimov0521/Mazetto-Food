@@ -81,7 +81,10 @@ type KitchenTransitionOrder = {
   paymentStatus: PaymentStatus;
   total: Prisma.Decimal;
   payments: { amount: Prisma.Decimal; status: PaymentStatus }[];
-  customerOrder: { paymentMethod: string | null } | null;
+  customerOrder: {
+    paymentMethod: string | null;
+    customer: { telegramChatId: string | null } | null;
+  } | null;
   kitchenTickets: {
     id: string;
     orderId: string;
@@ -658,6 +661,28 @@ export class KitchenService {
         order: await this.findOrderForTransition(tx, orderId, scope),
         ticket: await this.findTicketById(tx, ticket.id),
       };
+      const customerStatusCanBeSent = [
+        OrderStatus.CONFIRMED,
+        OrderStatus.PREPARING,
+        OrderStatus.READY,
+        OrderStatus.CANCELLED,
+      ].includes(changed.order.status);
+      if (
+        action !== "complete" &&
+        customerStatusCanBeSent &&
+        changed.order.customerOrder?.customer?.telegramChatId
+      ) {
+        await tx.notificationOutbox.create({
+          data: {
+            tenantId: scope.tenantId,
+            dedupeKey: `customer_status:${orderId}:${changed.ticket.version}`,
+            kind: "customer_status",
+            orderId,
+            payload: { status: changed.order.status },
+          },
+        });
+      }
+
       await actor.completeIdempotency?.(tx, changed.ticket);
       return changed;
     });
@@ -975,7 +1000,12 @@ export class KitchenService {
         version: true,
         paymentStatus: true,
         total: true,
-        customerOrder: { select: { paymentMethod: true } },
+        customerOrder: {
+          select: {
+            paymentMethod: true,
+            customer: { select: { telegramChatId: true } },
+          },
+        },
         payments: { select: { amount: true, status: true } },
         acceptedAt: true,
         acceptedById: true,

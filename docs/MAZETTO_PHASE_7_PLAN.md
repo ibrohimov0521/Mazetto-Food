@@ -296,10 +296,10 @@ PR #221 doirasida bajarilgan:
 - Mijoz statusidagi `sendMessage` endi noaniq xatoda avtomatik takrorlanmaydi; xato dead-letter'ga yoziladi va kerak bo'lsa admin hozirgi statusni qayta yuboradi.
 - CI'da toza PostgreSQL migratsiyasi, buyurtma + outbox atomikligi, replay deduplikatsiyasi, parallel worker lock'i va qayta yuborish xatolari tekshiriladi.
 
-Amalga oshirish reja diagrammasidan ataylab farq qiladi: Redis queue o'rniga PostgreSQL outbox tanlandi. Outbox hozir yangi buyurtma xabarlari uchun tranzaksion; mijoz statusining xato yozuvi saqlanadi, lekin status hodisasi buyurtma tranzaksiyasi ichida hali navbatga yozilmaydi. SMS, in-app kanal, umumiy `RecipientResolver`/shablonlar va `staffAudience` abstraksiyasi bu PR'da yo'q.
+Amalga oshirish reja diagrammasidan ataylab farq qiladi: Redis queue o'rniga PostgreSQL outbox tanlandi. Yangi buyurtma va mijoz status xabarlari tranzaksion yoziladi; status xabarlari tenant + order bo'yicha navbat tartibini saqlaydi. SMS, in-app kanal, umumiy `RecipientResolver`/shablonlar va `staffAudience` abstraksiyasi bu PR'da yo'q.
 
-Keyingi Q6 ishi:
-- Xodim lifecycle tahrirlari hamda mijoz status hodisalarini DB tranzaksiyasiga atomik ulash va ko'p worker orasida buyurtma bo'yicha tartibni kafolatlash. Hozir lifecycle xabarlari jarayon ichidagi ketma-ketlikda; status event emitter commitdan keyin ishlaydi, shuning uchun restart paytidagi uzilish xavfi qoladi.
+Q6 bo'yicha qolgan ishlar:
+- Xodim lifecycle xabarini joyida tahrirlash hanuz process-local event orqali; server restarti yoki ko'p instance holatida staff ko'rinishini yangilash yo'qolishi mumkin. Buni alohida durable refresh job bilan qoplash kerak.
 - Boshqa kanallar yoki ikkinchi tenant yoqilmaydi; tenantga xos bot sozlamasi alohida dizayn va xavfsizlik tekshiruvi talab qiladi.
 - Migration faqat disposable CI PostgreSQL'da sinalgan. Staging/production qo'llash uchun credential rotation, tasdiqlangan backup, migration smoke va rollback mashqi shart.
 

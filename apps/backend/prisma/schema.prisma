@@ -333,6 +333,7 @@ model NotificationOutbox {
   dedupeKey      String
   kind           String
   orderId        String
+  payload        Json?
   status         String   @default("PENDING")
   attempts       Int      @default(0)
   scheduledAt    DateTime @default(now())

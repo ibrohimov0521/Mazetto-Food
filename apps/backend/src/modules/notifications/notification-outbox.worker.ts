@@ -8,6 +8,8 @@ type ClaimedNotification = {
   id: number;
   tenantId: string;
   orderId: string;
+  kind: string;
+  payload: unknown;
   attempts: number;
   leaseToken: string;
 };
@@ -82,6 +84,8 @@ export class NotificationOutboxWorker {
         id: true,
         tenantId: true,
         orderId: true,
+        kind: true,
+        payload: true,
         attempts: true,
         leaseToken: true,
       },
@@ -103,11 +107,33 @@ export class NotificationOutboxWorker {
 
     return this.prisma.$queryRaw<ClaimedNotification[]>`
       WITH candidates AS (
-        SELECT "id"
-        FROM "notification_outbox"
-        WHERE "status" = 'PENDING' AND "scheduledAt" <= ${now}
-        ORDER BY "scheduledAt" ASC, "createdAt" ASC, "id" ASC
-        FOR UPDATE SKIP LOCKED
+        SELECT job."id"
+        FROM "notification_outbox" AS job
+        WHERE job."status" = 'PENDING' AND job."scheduledAt" <= ${now}
+          AND (
+            job."kind" <> 'customer_status'
+            OR (
+              NOT EXISTS (
+                SELECT 1
+                FROM "notification_outbox" AS active
+                WHERE active."tenantId" = job."tenantId"
+                  AND active."orderId" = job."orderId"
+                  AND active."kind" = 'customer_status'
+                  AND active."status" = 'PROCESSING'
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM "notification_outbox" AS earlier
+                WHERE earlier."tenantId" = job."tenantId"
+                  AND earlier."orderId" = job."orderId"
+                  AND earlier."kind" = 'customer_status'
+                  AND earlier."status" = 'PENDING'
+                  AND (earlier."createdAt", earlier."id") < (job."createdAt", job."id")
+              )
+            )
+          )
+        ORDER BY job."scheduledAt" ASC, job."createdAt" ASC, job."id" ASC
+        FOR UPDATE OF job SKIP LOCKED
         LIMIT ${CLAIM_BATCH_SIZE}
       )
       UPDATE "notification_outbox" AS job
@@ -118,18 +144,27 @@ export class NotificationOutboxWorker {
           "updatedAt" = ${now}
       FROM candidates
       WHERE job."id" = candidates."id"
-      RETURNING job."id", job."tenantId", job."orderId",
-                job."attempts", job."leaseToken"
+      RETURNING job."id", job."tenantId", job."orderId", job."kind",
+                job."payload", job."attempts", job."leaseToken"
     `;
   }
 
   private async deliver(job: ClaimedNotification): Promise<void> {
-    const result = await this.telegram.deliverOutboxNewOrder(
-      job.orderId,
-      job.tenantId,
-    );
+    const result =
+      job.kind === "staff_new_order"
+        ? await this.telegram.deliverOutboxNewOrder(job.orderId, job.tenantId)
+        : job.kind === "customer_status"
+          ? await this.telegram.deliverOutboxCustomerStatus(
+              job.orderId,
+              job.tenantId,
+              job.payload,
+            )
+          : {
+              kind: "rejected" as const,
+              reason: `Unsupported notification outbox kind: ${job.kind}`,
+            };
 
-    if (result === "sent") {
+    if (result === "sent" || result === "ignored") {
       await this.prisma.notificationOutbox.updateMany({
         where: {
           id: job.id,
@@ -144,6 +179,11 @@ export class NotificationOutboxWorker {
           lastError: null,
         },
       });
+      return;
+    }
+
+    if (typeof result === "object" && result.kind === "rejected") {
+      await this.markFailed(job, result.reason);
       return;
     }
 
@@ -243,7 +283,7 @@ export class NotificationOutboxWorker {
   }
 
   private async markTerminal(
-    job: Pick<ClaimedNotification, "id" | "tenantId" | "orderId" | "attempts" | "leaseToken">,
+    job: Pick<ClaimedNotification, "id" | "tenantId" | "orderId" | "kind" | "attempts" | "leaseToken">,
     status: "FAILED" | "UNCERTAIN",
     reason: string,
   ): Promise<void> {
@@ -272,13 +312,15 @@ export class NotificationOutboxWorker {
         create: {
           tenantId: job.tenantId,
           messageId,
-          kind: "staff_new_order",
+          kind: job.kind,
           orderId: job.orderId,
           error: reason,
           failedAt: now,
           attempts: job.attempts,
         },
         update: {
+          kind: job.kind,
+          orderId: job.orderId,
           error: reason,
           failedAt: now,
           attempts: job.attempts,

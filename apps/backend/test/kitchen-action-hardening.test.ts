@@ -235,6 +235,31 @@ test("two devices cannot advance one ticket from the same stale version", async 
   assert.equal(state.ticket.status, KitchenTicketStatus.ACCEPTED);
 });
 
+test("kitchen status and customer Telegram outbox commit atomically", async () => {
+  const state = createConcurrentKitchenState("telegram-chat-1");
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
+  const result = await service.applyTicketAction(
+    "ticket-1",
+    "accept",
+    user,
+    undefined,
+    { expectedVersion: 1 },
+  );
+
+  assert.equal(result.order.status, OrderStatus.CONFIRMED);
+  assert.deepEqual(state.notificationJobs, [
+    {
+      tenantId: "tenant-a",
+      dedupeKey: "customer_status:order-1:2",
+      kind: "customer_status",
+      orderId: "order-1",
+      payload: { status: OrderStatus.CONFIRMED },
+    },
+  ]);
+  assert.deepEqual(state.notificationJobTransactionStates, [true]);
+});
+
 test("duplicate accept from two devices creates only one ticket event", async () => {
   const state = createConcurrentKitchenState();
   const service = new KitchenService(
@@ -371,7 +396,7 @@ test("hardening migration is additive and snapshots station routing", () => {
   assert.match(migration, /kitchen_ticket_events_orderItemId_createdAt_idx/);
 });
 
-function createConcurrentKitchenState() {
+function createConcurrentKitchenState(customerTelegramChatId: string | null = null) {
   const order = {
     id: "order-1",
     branchId: "branch-1",
@@ -386,7 +411,12 @@ function createConcurrentKitchenState() {
     paymentStatus: PaymentStatus.PENDING,
     total: { sub: () => ({ lessThanOrEqualTo: () => true }) },
     payments: [],
-    customerOrder: null,
+    customerOrder: customerTelegramChatId
+      ? {
+          paymentMethod: null,
+          customer: { telegramChatId: customerTelegramChatId },
+        }
+      : null,
   };
   const ticket = {
     id: "ticket-1",
@@ -397,6 +427,9 @@ function createConcurrentKitchenState() {
     completedAt: null as Date | null,
   };
   const ticketEvents: Record<string, unknown>[] = [];
+  const notificationJobs: Record<string, unknown>[] = [];
+  const notificationJobTransactionStates: boolean[] = [];
+  let transactionOpen = false;
   let realtimeRevision = 0n;
   const tx = {
     $queryRaw: async (strings: TemplateStringsArray) => {
@@ -424,6 +457,13 @@ function createConcurrentKitchenState() {
       }),
     },
     outboxEvent: { create: async () => undefined },
+    notificationOutbox: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        notificationJobs.push(data);
+        notificationJobTransactionStates.push(transactionOpen);
+        return data;
+      },
+    },
     kitchenTicket: {
       update: async ({ data }: { data: Record<string, unknown> }) => {
         ticket.status = data.status as KitchenTicketStatus;
@@ -444,7 +484,6 @@ function createConcurrentKitchenState() {
       },
     },
   };
-  let transactionOpen = false;
   let tail = Promise.resolve();
   const prisma = {
     branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
@@ -475,6 +514,8 @@ function createConcurrentKitchenState() {
     order,
     ticket,
     ticketEvents,
+    notificationJobs,
+    notificationJobTransactionStates,
     isTransactionOpen: () => transactionOpen,
   };
 }

@@ -5,17 +5,23 @@ import { NotificationOutboxWorker } from "../src/modules/notifications/notificat
 function createHarness(
   delivery: "sent" | "failed" | "skipped" | { kind: "retryable"; retryAfterSeconds: number | null },
   expired: boolean = false,
+  kind: "staff_new_order" | "customer_status" = "staff_new_order",
 ) {
   const job = {
     id: 7,
     tenantId: "tenant-a",
     orderId: "order-a",
+    kind,
+    payload: { status: "CONFIRMED" },
     attempts: 1,
     leaseToken: "lease-token",
   };
   const updates: Array<Record<string, unknown>> = [];
   const deadLetters: Array<Record<string, unknown>> = [];
   let telegramCalls = 0;
+  const deliveryRoutes: string[] = [];
+  const customerPayloads: unknown[] = [];
+  const rawQueries: string[] = [];
   const tx = {
     notificationOutbox: {
       updateMany: async (args: Record<string, unknown>) => {
@@ -47,13 +53,27 @@ function createHarness(
     order: {
       findFirst: async () => ({ id: "order-a" }),
     },
-    $queryRaw: async () => (expired ? [] : [job]),
+    $queryRaw: async (strings: TemplateStringsArray) => {
+      rawQueries.push(strings.join("?"));
+      return expired ? [] : [job];
+    },
     $transaction: async (work: (client: typeof tx) => Promise<unknown>) =>
       work(tx),
   };
   const telegram = {
     deliverOutboxNewOrder: async () => {
       telegramCalls += 1;
+      deliveryRoutes.push("staff_new_order");
+      return delivery;
+    },
+    deliverOutboxCustomerStatus: async (
+      _orderId: string,
+      _tenantId: string,
+      payload: unknown,
+    ) => {
+      telegramCalls += 1;
+      deliveryRoutes.push("customer_status");
+      customerPayloads.push(payload);
       return delivery;
     },
   };
@@ -61,7 +81,15 @@ function createHarness(
     prisma as never,
     telegram as never,
   );
-  return { worker, updates, deadLetters, getTelegramCalls: () => telegramCalls };
+  return {
+    worker,
+    updates,
+    deadLetters,
+    deliveryRoutes,
+    customerPayloads,
+    rawQueries,
+    getTelegramCalls: () => telegramCalls,
+  };
 }
 
 test("outbox worker marks only confirmed Telegram delivery as delivered", async () => {
@@ -145,6 +173,21 @@ test("outbox worker never retries before an excessive provider retry-after", asy
   assert.match(
     (harness.deadLetters[0]!.create as { error: string }).error,
     /exceeds the automatic retry window/,
+  );
+});
+
+test("customer-status jobs preserve their payload, ordering guard, and dead-letter kind", async () => {
+  const harness = createHarness("failed", false, "customer_status");
+  await harness.worker.dispatchPending();
+
+  assert.equal(harness.getTelegramCalls(), 1);
+  assert.deepEqual(harness.deliveryRoutes, ["customer_status"]);
+  assert.deepEqual(harness.customerPayloads, [{ status: "CONFIRMED" }]);
+  assert.match(harness.rawQueries.join("\n"), /NOT EXISTS/);
+  assert.match(harness.rawQueries.join("\n"), /earlier\."status" = 'PENDING'/);
+  assert.equal(
+    (harness.deadLetters[0]!.create as { kind: string }).kind,
+    "customer_status",
   );
 });
 

@@ -25,6 +25,8 @@ const adminUi = read(
 const telegram = read(
   "apps/backend/src/modules/telegram/telegram-order-notification.service.ts",
 );
+const kitchen = read("apps/backend/src/modules/kitchen/kitchen.service.ts");
+const worker = read("apps/backend/src/modules/notifications/notification-outbox.worker.ts");
 const appModule = read("apps/backend/src/app.module.ts");
 const permissions = read("apps/backend/src/common/auth/permissions.ts");
 
@@ -39,17 +41,24 @@ assert.match(
  * ENG MUHIM SHART. Ilgari `catch` bloki xatoni logga yozib, bildirishnomani
  * TASHLAB YUBORARDI. Har ikkala yo'l ham yozuv qoldirishi kerak.
  */
-for (const kind of [
-  "staff_new_order",
-  "staff_status_refresh",
-  "customer_status",
-]) {
+for (const kind of ["staff_new_order", "staff_status_refresh"]) {
   assert.match(
     telegram,
     new RegExp(`deadLetters\\.record\\(\\{[\\s\\S]{0,80}kind: "${kind}"`),
     `"${kind}" yo'lida yo'qotish yozib olinmayapti.`,
   );
 }
+assert.match(
+  kitchen,
+  /notificationOutbox\.create\(\{[\s\S]{0,350}kind: "customer_status"[\s\S]{0,180}payload: \{ status: changed\.order\.status \}/,
+  "Mijoz statusi oshxona tranzaksiyasida outbox'ga yozilmayapti.",
+);
+assert.match(
+  worker,
+  /notificationDeadLetter\.upsert\([\s\S]{0,350}kind: job\.kind/,
+  "Outbox dead-letter turi original xabardan olinmayapti.",
+);
+
 /*
  * Yozuv `catch` ICHIDA bo'lishi kerak — muvaffaqiyatli yo'lda emas.
  * Aks holda har bildirishnoma o'lik xat sifatida yozilardi.
@@ -137,7 +146,8 @@ assert.match(
 );
 
 const customerStatusSend =
-  telegram.match(/private async notifyCustomerStatus[\s\S]*?\n {2}private customerStatusMessage/)?.[0] ?? "";
+  telegram.match(/async deliverOutboxCustomerStatus[\s\S]*?\n {2}private customerStatusMessage/)?.[0] ?? "";
+assert.ok(customerStatusSend, "Mijoz statusi outbox delivery yo'li yo'q.");
 assert.match(
   customerStatusSend,
   /maxAttempts: 1/,

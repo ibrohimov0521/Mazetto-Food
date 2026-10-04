@@ -4,6 +4,7 @@ CREATE TABLE "notification_outbox" (
     "dedupeKey" TEXT NOT NULL,
     "kind" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
+    "payload" JSONB,
     "status" TEXT NOT NULL DEFAULT 'PENDING',
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "scheduledAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -33,3 +34,7 @@ ON "notification_outbox"("status", "leaseExpiresAt");
 
 CREATE INDEX "notification_outbox_tenantId_status_createdAt_idx"
 ON "notification_outbox"("tenantId", "status", "createdAt");
+
+CREATE UNIQUE INDEX "notification_outbox_customer_order_processing_key"
+ON "notification_outbox"("tenantId", "orderId")
+WHERE "kind" = 'customer_status' AND "status" = 'PROCESSING';
