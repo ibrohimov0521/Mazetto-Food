@@ -147,6 +147,31 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     assert.equal((await deadLetters.list("tenant-a")).length, 1);
 
     activeTenantIds.splice(0, activeTenantIds.length, "tenant-a");
+
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 429,
+          description: "Too Many Requests",
+          parameters: { retry_after: 17 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    assert.deepEqual(
+      await service.deliverOutboxNewOrder("order-a", "tenant-a"),
+      { kind: "retryable", retryAfterSeconds: 17 },
+      "Telegram's explicit rate-limit rejection is safe to retry after its requested delay",
+    );
+    assert.equal(fetchCalls, 2);
+    assert.equal(
+      (await deadLetters.list("tenant-a")).length,
+      1,
+      "a safe rate limit stays scheduled rather than being marked uncertain",
+    );
+
     delete process.env.TELEGRAM_BOT_TOKEN;
     assert.equal(
       await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
