@@ -362,6 +362,21 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Telegram dead letters now fall back to tenant-scoped PostgreSQL storage when Redis is unavailable or fails to confirm the pipeline; process memory is the final fallback only if both stores fail.
 - Database fallback and Redis lists are bounded to 500 records per tenant. Listings merge the stores by message ID, and a retry removes the record only after Telegram confirms `ok: true`.
 - PR #218 merged to `main` as `2ed50cd121889c79b2754544a5a43ba4df55a9f1`; hosted CI #595 passed, including migration and production-startup checks. Migration `20261003190000_notification_dead_letters` is additive.
-- The merged backend image is running on the isolated staging API. After a verified staging-only backup, the two older pending migrations were also applied; the staging database now reports 57/57 migrations, API health 200, PostgreSQL OK, and Redis connected. Full evidence is in `docs/MAZETTO_STAGING_RUNBOOK.md`.
-- This preserves and exposes failed notifications; it does not add an automatic queue worker or guarantee delivery. No real Telegram message was sent, and the dead-letter table remains empty.
-- Remaining: design and test an ordered, tenant-scoped durable sender with retry/backoff, idempotency, worker lease/recovery, per-restaurant bot/webhook configuration, and staging mock delivery. Then continue POS/KDS/courier/offline/receipt regressions, physical printer acceptance, restore/rollback rehearsal, and production-domain login smoke. Keep production migrations and second-tenant activation gated.
+- Historical at 2026-10-04: the merged backend image was running on isolated staging; after a verified staging-only backup, the two older pending migrations were applied and staging reported 57/57 migrations, API health 200, PostgreSQL OK, and Redis connected. Full evidence is in `docs/MAZETTO_STAGING_RUNBOOK.md`.
+- Historical at 2026-10-04: this preserved and exposed failed notifications but did not yet have an automatic queue worker or guarantee delivery. No real Telegram message was sent, and the dead-letter table was empty.
+- The worker design and delivery mechanics in this section were superseded by PR #221 (see section 35). Still open: per-restaurant bot/webhook configuration and staging mock delivery. Continue POS/KDS/courier/offline/receipt regressions, physical printer acceptance, restore/rollback rehearsal, and production-domain login smoke. Keep production migrations and second-tenant activation gated.
+
+## 34. Customer web Uzbek/Russian release (2026-10-05)
+
+- PR #223 added Uzbek/Russian customer-web localization and route-validator updates. PR #224 corrected the Russian menu heading and added a regression assertion; both are merged.
+- Main CI #37230395430 and production deploy #37230607123 passed. Main and the remote production tag point to 776577b5a3c08e1eb10633bc3414be7b412638cf.
+- Post-deploy checks covered six routes in both languages at 390px and 1440px (24 combinations): successful response, correct document language, no runtime errors, and no horizontal overflow.
+- No database migration was part of this release; the Windows Desktop app was not updated. This is not authenticated transaction or human visual acceptance.
+- See docs/audit/PRODUCTION_CHECKPOINT_2026-10-05.md for current remaining gates. BestTeam Control and Mazetto Food remain separate products; keep second-tenant activation disabled until tenant isolation is proven.
+
+## 35. Tenant-scoped Telegram notification worker (2026-10-05)
+
+- Status correction to section 33: PR #221 added a persistent tenant-scoped PostgreSQL outbox and scheduled sender; the no-worker statements in section 33 are historical.
+- The worker uses locked claims, leases, per-order ordering guards, bounded safe rate-limit backoff, and dead-letter handling. Unknown delivery outcomes become UNCERTAIN to avoid blind duplicate sends.
+- Focused worker tests passed 7/7. Production and staging Prisma checks report 58/58 migrations. The Q8a release includes the worker in the deployed backend; no real Telegram message was sent for this check.
+- Remaining: real customer/staff Telegram lifecycle acceptance, per-restaurant bot/webhook credentials and configuration, operational alert ownership, and a review process for uncertain deliveries.

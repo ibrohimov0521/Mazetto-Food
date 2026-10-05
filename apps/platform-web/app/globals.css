@@ -98,6 +98,9 @@ body{position:relative;isolation:isolate}
 /* Keep the BestTeam artwork visible while giving operational text enough contrast. */
 .sidebar,.topbar{background:rgba(245,249,255,.9)}
 .metric,.attention-list,.table-wrap,.service-item,.service-strip,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton{background:rgba(245,249,255,.72)}
+.metric-label{color:#294b70}
+.metric small{color:#526d89}
+.attention-name small,.row-time{color:#526d89}
 .events-list{display:grid;gap:6px;background:transparent;border:0}
 .events-list .event-row{background:rgba(240,247,255,.66);border:1px solid rgba(215,229,245,.82);border-radius:6px}
 .events-list .event-row:hover{background:rgba(240,247,255,.82)}

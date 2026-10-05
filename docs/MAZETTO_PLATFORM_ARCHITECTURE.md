@@ -1,5 +1,7 @@
 # Mazetto Multi-Restaurant Platform
 
+Release status (2026-10-05): BestTeam owner UI/monitoring and the customer-web localization are deployed. The latest localization release made no database migration. Trusted host identity, membership enforcement across all request/async paths, and the isolated no-persistence demo remain blockers. Keep second-restaurant activation disabled. See docs/audit/PRODUCTION_CHECKPOINT_2026-10-05.md.
+
 ## Product Boundaries
 
 - `admin.mazetto.uz`: private owner console for the platform operator. It can monitor all tenants and, after provisioning is implemented, manage tenant lifecycle and configuration.

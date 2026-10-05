@@ -2,7 +2,7 @@
 
 Audit snapshot: 2026-09-21
 
-Current production state: [2026-10-03 checkpoint](./PRODUCTION_CHECKPOINT_2026-10-03.md). Use that record for deployed-release status; the dated audit files below preserve earlier evidence.
+Current production state: [2026-10-05 checkpoint](./PRODUCTION_CHECKPOINT_2026-10-05.md). Use that record for deployed-release status; the dated audit files below preserve earlier evidence.
 
 This directory is the current source of truth for the product-wide audit. Older
 phase notes in `docs/MAZETTO_WORK_STATUS.md` are historical and must not be used
