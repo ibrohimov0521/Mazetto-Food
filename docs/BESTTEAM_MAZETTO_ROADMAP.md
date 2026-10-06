@@ -372,7 +372,7 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Main CI #37230395430 and production deploy #37230607123 passed. Main and the remote production tag point to 776577b5a3c08e1eb10633bc3414be7b412638cf.
 - Post-deploy checks covered six routes in both languages at 390px and 1440px (24 combinations): successful response, correct document language, no runtime errors, and no horizontal overflow.
 - No database migration was part of this release; the Windows Desktop app was not updated. This is not authenticated transaction or human visual acceptance.
-- See docs/audit/PRODUCTION_CHECKPOINT_2026-10-05.md for current remaining gates. BestTeam Control and Mazetto Food remain separate products; keep second-tenant activation disabled until tenant isolation is proven.
+- See docs/audit/PRODUCTION_CHECKPOINT_2026-10-06.md for current remaining gates. BestTeam Control and Mazetto Food remain separate products; keep second-tenant activation disabled until tenant isolation is proven.
 
 ## 35. Tenant-scoped Telegram notification worker (2026-10-05)
 
@@ -380,3 +380,11 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - The worker uses locked claims, leases, per-order ordering guards, bounded safe rate-limit backoff, and dead-letter handling. Unknown delivery outcomes become UNCERTAIN to avoid blind duplicate sends.
 - Focused worker tests passed 7/7. Production and staging Prisma checks report 58/58 migrations. The Q8a release includes the worker in the deployed backend; no real Telegram message was sent for this check.
 - Remaining: real customer/staff Telegram lifecycle acceptance, per-restaurant bot/webhook credentials and configuration, operational alert ownership, and a review process for uncertain deliveries.
+
+## 36. Desktop diagnostics release (2026-10-06)
+
+- PR #227 adds backend request references for HTTP 5xx responses in Desktop login and device-heartbeat flows. Authentication 401 messages remain unchanged.
+- CI #661 passed and Desktop Release run #37489750845 published MAZETTO Desktop 0.1.97 and its updater assets.
+- Production Deploy run #37490302852 passed and advanced the production tag to 88340b86eedc71c47ac3da23dab317e4329b2d13. The release gate found no changed runtime services, so no backend/web/bot deploy occurred and the production smoke was skipped.
+- This release improves diagnosis of future server errors; it does not fix invalid credentials, prove non-superadmin membership, or close the reported checkout/POS failures.
+- See docs/audit/PRODUCTION_CHECKPOINT_2026-10-06.md for current remaining gates.
