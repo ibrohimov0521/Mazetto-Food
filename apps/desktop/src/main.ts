@@ -20,6 +20,10 @@ import { PrintOutcomeUnknownError, withTimeout } from "./print-errors.js";
 import { realtimeSocketOrigin } from "./realtime-origin.js";
 import { resolveDesktopUpdateFeed } from "./update-feed.js";
 import {
+  formatDesktopApiError,
+  type DesktopApiError,
+} from "./api-error-reference.js";
+import {
   normalizeSavedCredentialIdentifier,
   parseSavedDesktopCredentials,
   removeSavedDesktopCredential,
@@ -639,11 +643,14 @@ function setupAuthControls(): void {
       const payload = (await response.json().catch(() => null)) as {
         success?: boolean;
         data?: { tokens?: { accessToken?: string; tokenType?: string } };
-        error?: { message?: string | string[] };
+        error?: DesktopApiError;
       } | null;
-      const message = payload?.error?.message;
       if (!response.ok || !payload?.success || !payload.data?.tokens?.accessToken) {
-        throw new Error(Array.isArray(message) ? message.join(", ") : message || "Login amalga oshmadi");
+        throw new Error(formatDesktopApiError(
+          payload?.error,
+          response.status,
+          "Login amalga oshmadi",
+        ));
       }
 
       const heartbeat = await fetch(`${UPSTREAM_API_URL}/devices/heartbeat`, {
@@ -659,7 +666,14 @@ function setupAuthControls(): void {
         signal: AbortSignal.timeout(15_000),
       });
       if (!heartbeat.ok) {
-        throw new Error("Qurilma tasdiqlanmagan yoki ushbu foydalanuvchiga ruxsat berilmagan");
+        const heartbeatPayload = (await heartbeat.json().catch(() => null)) as {
+          error?: DesktopApiError;
+        } | null;
+        throw new Error(formatDesktopApiError(
+          heartbeatPayload?.error,
+          heartbeat.status,
+          "Qurilma tasdiqlanmagan yoki ushbu foydalanuvchiga ruxsat berilmagan",
+        ));
       }
 
       // Native login local gatewayni chetlab o'tishi mumkin. Printer worker ham
