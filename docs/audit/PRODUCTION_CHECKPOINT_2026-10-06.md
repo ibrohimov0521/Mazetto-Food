@@ -37,8 +37,9 @@ release state. Older audit records are historical and may describe older builds.
 - A reported non-superadmin Desktop login still returns `Invalid credentials`.
   The same response intentionally covers a wrong password, inactive account, or
   missing/invalid tenant membership. Read-only aggregate checks found no general
-  membership-to-employee gaps, but the specific account and its password were not
-  verified or changed.
+  membership-to-employee gaps. The reported account is active, has a password
+  hash, and has one active branch membership with a matching active employee;
+  the entered password was not inspected or changed.
 - The previously reported checkout and POS internal errors remain unreproduced.
   Capture their request references and correlate sanitized backend logs while
   testing with a non-superadmin account.
