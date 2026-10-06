@@ -1,6 +1,6 @@
 # Mazetto Multi-Restaurant Platform
 
-Release status (2026-10-05): BestTeam owner UI/monitoring and the customer-web localization are deployed. The latest localization release made no database migration. Trusted host identity, membership enforcement across all request/async paths, and the isolated no-persistence demo remain blockers. Keep second-restaurant activation disabled. See docs/audit/PRODUCTION_CHECKPOINT_2026-10-05.md.
+Release status (2026-10-06): BestTeam owner UI/monitoring and customer-web localization remain deployed; MAZETTO Desktop 0.1.97 is published. The Desktop-only release made no backend, web or database changes. Trusted host identity, complete membership enforcement and the isolated no-persistence demo remain blockers. Keep second-restaurant activation disabled. See docs/audit/PRODUCTION_CHECKPOINT_2026-10-06.md.
 
 ## Product Boundaries
 

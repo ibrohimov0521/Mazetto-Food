@@ -1,6 +1,6 @@
 # BestTeam Owner Console
 
-> Current status (2026-10-05): The owner UI and monitoring functions are deployed. The phase notes below are historical implementation context, not a current deployment ledger. Monitoring registration and DNS TXT proof do not provision a tenant or prove tenant authorization. Full tenant isolation and the no-persistence public demo remain release gates; do not activate another restaurant. See docs/audit/PRODUCTION_CHECKPOINT_2026-10-05.md.
+> Current status (2026-10-06): The owner UI and monitoring functions are deployed. The phase notes below are historical implementation context, not a current deployment ledger. Monitoring registration and DNS TXT proof do not provision a tenant or prove tenant authorization. Full tenant isolation and the no-persistence public demo remain release gates; do not activate another restaurant. See docs/audit/PRODUCTION_CHECKPOINT_2026-10-06.md.
 
 `admin.mazetto.uz` is the owner-only central control panel; `mazetto.uz` is a public, no-login demo that must not persist visitor data. `mazettofood.uz` remains one restaurant's domain. Each restaurant keeps its own branded customer/admin apps, domains, Telegram bot, and groups, while the restaurant services share one backend and PostgreSQL database. The current `PlatformSite` registry is monitoring metadata only: tenant provisioning, tenant data isolation, and demo isolation are not implemented yet.
 
