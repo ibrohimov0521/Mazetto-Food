@@ -8,6 +8,7 @@ import {
   OrderStatus,
   OrderType,
   PaymentStatus,
+  Prisma,
 } from "@prisma/client";
 import { validate } from "class-validator";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
@@ -235,6 +236,106 @@ test("two devices cannot advance one ticket from the same stale version", async 
   assert.equal(state.ticket.status, KitchenTicketStatus.ACCEPTED);
 });
 
+test("unpaid cash pickup cannot be handed off without collection confirmation", async () => {
+  const state = createConcurrentKitchenState();
+  state.order.type = OrderType.TAKEAWAY;
+  state.order.customerOrder = {
+    paymentMethod: "CASH",
+    customer: { telegramChatId: null },
+  };
+  state.order.status = OrderStatus.READY;
+  state.ticket.status = KitchenTicketStatus.READY;
+  state.ticket.version = 3;
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
+  await assert.rejects(
+    service.applyTicketAction("ticket-1", "complete", user, undefined, {
+      expectedVersion: 3,
+    }),
+    /naqd pul qabul qilinganini tasdiqlang/,
+  );
+
+  assert.equal(state.order.paymentStatus, PaymentStatus.PENDING);
+  assert.deepEqual(state.order.payments, []);
+  assert.equal(state.order.status, OrderStatus.READY);
+});
+
+test("already-paid cash pickup can be handed off without collecting again", async () => {
+  const state = createConcurrentKitchenState();
+  state.order.type = OrderType.TAKEAWAY;
+  state.order.customerOrder = {
+    paymentMethod: "CASH",
+    customer: { telegramChatId: null },
+  };
+  state.order.status = OrderStatus.READY;
+  state.order.paymentStatus = PaymentStatus.PAID;
+  state.order.payments.push({ amount: new Prisma.Decimal(100), status: PaymentStatus.PAID });
+  state.ticket.status = KitchenTicketStatus.READY;
+  state.ticket.version = 3;
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
+  await service.applyTicketAction("ticket-1", "complete", user, undefined, {
+    expectedVersion: 3,
+  });
+
+  assert.equal(state.cashWrites.length, 0);
+  assert.equal(state.order.paymentStatus, PaymentStatus.PAID);
+});
+
+test("kitchen-only role cannot confirm cash collection", async () => {
+  const state = createConcurrentKitchenState();
+  state.order.type = OrderType.TAKEAWAY;
+  state.order.customerOrder = {
+    paymentMethod: "CASH",
+    customer: { telegramChatId: null },
+  };
+  state.order.status = OrderStatus.READY;
+  state.ticket.status = KitchenTicketStatus.READY;
+  state.ticket.version = 3;
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
+  await assert.rejects(
+    service.applyTicketAction("ticket-1", "complete", user, undefined, {
+      expectedVersion: 3,
+      cashCollected: true,
+    }),
+    /kassa ruxsati/,
+  );
+  assert.equal(state.order.status, OrderStatus.READY);
+});
+
+test("confirmed pickup cash is recorded once in the cashier shift", async () => {
+  const state = createConcurrentKitchenState();
+  state.order.type = OrderType.TAKEAWAY;
+  state.order.customerOrder = {
+    paymentMethod: "CASH",
+    customer: { telegramChatId: null },
+  };
+  state.order.status = OrderStatus.READY;
+  state.ticket.status = KitchenTicketStatus.READY;
+  state.ticket.version = 3;
+  const cashier = {
+    ...user,
+    roles: ["KITCHEN", "CASHIER"],
+    permissions: [...user.permissions, "PAYMENT_CREATE", "CASH_TRANSACTION_CREATE"],
+  };
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
+  await service.applyTicketAction("ticket-1", "complete", cashier, undefined, {
+    expectedVersion: 3,
+    cashCollected: true,
+  });
+  await service.applyTicketAction("ticket-1", "complete", cashier, undefined, {
+    expectedVersion: 4,
+    cashCollected: true,
+  });
+
+  assert.equal(state.cashWrites.length, 1);
+  assert.equal(state.cashWrites[0]?.shiftId, "shift-1");
+  assert.equal(String(state.cashWrites[0]?.amount), "100");
+  assert.equal(state.order.paymentStatus, PaymentStatus.PAID);
+});
+
 test("kitchen status and customer Telegram outbox commit atomically", async () => {
   const state = createConcurrentKitchenState("telegram-chat-1");
   const service = new KitchenService(state.prisma as never, state.gateway as never);
@@ -411,7 +512,7 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
   const order = {
     id: "order-1",
     branchId: "branch-1",
-    type: OrderType.DINE_IN,
+    type: OrderType.DINE_IN as OrderType,
     status: OrderStatus.NEW as OrderStatus,
     orderState: OrderState.PLACED as OrderState,
     version: 1,
@@ -419,13 +520,13 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
     acceptedById: null as string | null,
     cancelledAt: null as Date | null,
     cancellationReason: null as string | null,
-    paymentStatus: PaymentStatus.PENDING,
-    total: { sub: () => ({ lessThanOrEqualTo: () => true }) },
-    payments: [],
+    paymentStatus: PaymentStatus.PENDING as PaymentStatus,
+    total: new Prisma.Decimal(100),
+    payments: [] as { amount: Prisma.Decimal; status: PaymentStatus }[],
     customerOrder: customerTelegramChatId
       ? {
-          paymentMethod: null,
-          customer: { telegramChatId: customerTelegramChatId },
+          paymentMethod: null as string | null,
+          customer: { telegramChatId: customerTelegramChatId as string | null },
         }
       : null,
   };
@@ -438,6 +539,7 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
     completedAt: null as Date | null,
   };
   const ticketEvents: Record<string, unknown>[] = [];
+  const cashWrites: Record<string, unknown>[] = [];
   const notificationJobs: Record<string, unknown>[] = [];
   const notificationJobTransactionStates: boolean[] = [];
   let transactionOpen = false;
@@ -455,12 +557,25 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
       update: async ({ data }: { data: Record<string, unknown> }) => {
         if (data.status) order.status = data.status as OrderStatus;
         if (data.orderState) order.orderState = data.orderState as OrderState;
+        if (data.paymentStatus) order.paymentStatus = data.paymentStatus as PaymentStatus;
         if (data.version) order.version += 1;
         if (data.acceptedAt) order.acceptedAt = data.acceptedAt as Date;
         return { ...order };
       },
     },
     orderStatusHistory: { create: async () => undefined },
+    shift: {
+      findFirst: async () => ({ id: "shift-1" }),
+      updateMany: async () => ({ count: 1 }),
+    },
+    paymentMethod: { findFirst: async () => ({ id: "cash-method", code: "CASH" }) },
+    payment: { create: async () => ({ id: "payment-1" }) },
+    revenueRecord: { create: async () => undefined },
+    cashTransaction: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        cashWrites.push(data);
+      },
+    },
     orderEvent: {
       create: async () => ({
         id: `event-${order.version}`,
@@ -525,6 +640,7 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
     order,
     ticket,
     ticketEvents,
+    cashWrites,
     notificationJobs,
     notificationJobTransactionStates,
     isTransactionOpen: () => transactionOpen,

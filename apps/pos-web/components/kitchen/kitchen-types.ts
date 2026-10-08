@@ -57,6 +57,10 @@ export type KitchenTicket = {
     displayOrderNumber?: string | null;
     source: "POS" | "WEB" | "TELEGRAM";
     type: "DINE_IN" | "TAKEAWAY" | "DELIVERY";
+    total: string;
+    paymentStatus: string;
+    payments?: { amount: string; status: string }[];
+    customerOrder?: { paymentMethod: string | null } | null;
     isSupplemental?: boolean;
     supplementNumber?: number | null;
     notes?: string | null;

@@ -101,6 +101,9 @@ export class KitchenActionService {
         dto.reason,
         {
           expectedVersion: dto.expectedVersion,
+          ...(action === "complete" && dto.cashCollected !== undefined
+            ? { cashCollected: dto.cashCollected }
+            : {}),
           correlationId: context.correlationId,
           idempotencyKey: context.idempotencyKey,
           completeIdempotency: (tx, ticket) =>

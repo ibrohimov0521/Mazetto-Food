@@ -48,6 +48,7 @@ export class ReceiptsController {
       user,
       body.printerIds,
       body.acceptUnassigned,
+      body.unassignedRoutes,
       deviceId,
     );
   }

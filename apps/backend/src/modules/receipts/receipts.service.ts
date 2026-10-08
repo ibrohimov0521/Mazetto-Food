@@ -258,6 +258,7 @@ export class ReceiptsService {
     user: AuthenticatedUser,
     printerIds: string[] = [],
     acceptUnassigned = false,
+    unassignedRoutes?: string[],
     deviceId?: string,
   ) {
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
@@ -286,7 +287,22 @@ export class ReceiptsService {
     await this.restoreMissingPrintJobs(tenantId, scopedBranchId);
     const targetFilters: Prisma.PrintJobWhereInput[] = [];
     if (printerIds.length > 0) targetFilters.push({ printerId: { in: printerIds } });
-    if (acceptUnassigned) targetFilters.push({ printerId: null });
+    if (acceptUnassigned && (!unassignedRoutes || unassignedRoutes.length > 0)) {
+      targetFilters.push({
+        printerId: null,
+        ...(unassignedRoutes
+          ? {
+              OR: unassignedRoutes.map((route) => ({
+                receipt: {
+                  documentType: route === "REFUND"
+                    ? { startsWith: "REFUND:" }
+                    : route,
+                },
+              })),
+            }
+          : {}),
+      });
+    }
     if (targetFilters.length === 0) return null;
     const now = new Date();
     const job = await this.prisma.printJob.findFirst({

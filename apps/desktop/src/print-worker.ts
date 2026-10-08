@@ -245,8 +245,13 @@ export class DesktopPrintWorker {
 
     try {
       const readyPrinters = await this.discoverReadyPrinters();
-      const acceptsUnassigned =
-        Boolean(this.printerHost) || this.systemPrinters.length > 0;
+      const unassignedRoutes = this.systemPrinters.length > 0
+        ? [...new Set(this.systemPrinters.flatMap((printer) => printer.roles))]
+            .filter((role) => ["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"].includes(role))
+        : this.printerHost
+          ? ["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"]
+          : [];
+      const acceptsUnassigned = unassignedRoutes.length > 0;
       if (readyPrinters.length === 0 && !acceptsUnassigned) {
         this.resetServerPollingBackoff();
         return;
@@ -264,6 +269,7 @@ export class DesktopPrintWorker {
                 ...this.localAssignedPrinterIds,
               ],
               acceptUnassigned: acceptsUnassigned,
+              unassignedRoutes,
             }),
           },
         );
@@ -309,11 +315,19 @@ export class DesktopPrintWorker {
           ? metadata.host.trim()
           : null;
       const paperWidthMm = printerPaperWidth(metadata.paperWidthMm);
-      const systemTargets = selectSystemPrinterTargets(
-        job,
-        route,
-        this.systemPrinters,
-      );
+      if (
+        paperWidthMm === 210 &&
+        (host ||
+          (this.printerHost &&
+            !this.systemPrinters.some((printer) => printer.roles.includes(route))))
+      ) {
+        throw new Error(
+          "A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning",
+        );
+      }
+      const systemTargets = host
+        ? []
+        : selectSystemPrinterTargets(job, route, this.systemPrinters);
       if (
         paperWidthMm === 210 &&
         (host ||
@@ -339,7 +353,7 @@ export class DesktopPrintWorker {
         await this.send(commands, host, port, paperWidthMm);
       } else if (systemTargets.length > 0 && this.printSystem) {
         await this.printSystemTargets("server", job.id, systemTargets, receipt);
-      } else if (this.printerHost && !job.printer) {
+      } else if (this.printerHost && !job.printer && this.systemPrinters.length === 0) {
         const printable = receipt.escpos?.commands?.length
           ? receipt
           : await this.request<PrintableReceipt>(
@@ -603,7 +617,12 @@ export class DesktopPrintWorker {
       return printer.isActive !== false &&
         printer.status === "ONLINE" &&
         !hasHost &&
-        roles.some((role) => localRoles.has(role))
+        roles.some((role) => localRoles.has(role)) &&
+        this.systemPrinters.some((target) =>
+          [target.name, target.displayName].some(
+            (name) => name.trim().toLocaleLowerCase() === (printer.name?.trim().toLocaleLowerCase() ?? ""),
+          ),
+        )
         ? [printer.id]
         : [];
     });
@@ -805,7 +824,7 @@ function selectSystemPrinterTargets(
   printers: SystemPrinterTarget[],
 ): SystemPrinterTarget[] {
   const targets = printers.filter((printer) => printer.roles.includes(route));
-  if (!job.printer || targets.length <= 1) return targets;
+  if (!job.printer) return targets;
 
   const expectedName = job.printer.name.trim().toLocaleLowerCase();
   const matches = targets.filter((target) =>

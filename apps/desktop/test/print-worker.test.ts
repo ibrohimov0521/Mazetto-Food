@@ -875,7 +875,7 @@ test("server-assigned Windows job never falls through to the generic TCP printer
   await worker.tick();
 
   assert.equal(socketWrites, 0);
-  assert.match(failure, /lokal printer tanlanmagan/);
+  assert.match(failure, /Windows queue topilmadi/);
 });
 test("server replay is completed without duplicate paper when local document already printed", async () => {
   let completed = 0;
@@ -993,6 +993,7 @@ test("print worker claims only jobs for ready managed printers", async () => {
       agentId: "desktop-device-1",
       printerIds: ["printer-ready"],
       acceptUnassigned: false,
+      unassignedRoutes: [],
     },
   ]);
   assert.equal(worker.status().managedPrinters, 1);
@@ -1004,6 +1005,65 @@ test("print worker claims only jobs for ready managed printers", async () => {
       port: 9100,
     },
   ]);
+});
+
+test("a kitchen-only workstation claims only unassigned kitchen documents", async () => {
+  const claims: Record<string, unknown>[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: "10.0.0.5",
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Kitchen", displayName: "Kitchen", roles: ["KITCHEN"] },
+    ],
+    printSystem: async () => undefined,
+    fetchImpl: async (input, init) => {
+      if (String(input).endsWith("/printers")) return jsonResponse([]);
+      claims.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse(null);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.deepEqual(claims, [{
+    agentId: "desktop-device-1",
+    printerIds: [],
+    acceptUnassigned: true,
+    unassignedRoutes: ["KITCHEN"],
+  }]);
+});
+
+test("a single mismatched Windows queue cannot claim an assigned printer job", async () => {
+  const claims: Record<string, unknown>[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Wrong queue", displayName: "Wrong queue", roles: ["KITCHEN"] },
+    ],
+    printSystem: async () => assert.fail("wrong queue must not print"),
+    fetchImpl: async (input, init) => {
+      if (String(input).endsWith("/printers")) return jsonResponse([{
+        id: "server-kitchen",
+        name: "Kitchen",
+        isActive: true,
+        status: "ONLINE",
+        metadata: { printRoles: ["KITCHEN"] },
+      }]);
+      claims.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse(null);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.deepEqual(claims[0]?.printerIds, []);
 });
 
 test("all managed printer connections are tested independently", async () => {
