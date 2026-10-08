@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { useAuth } from "../../../components/auth/auth-provider";
+import { hasPermission } from "../../../lib/auth";
 import { KitchenTicketCard } from "../../../components/kitchen/kitchen-ticket-card";
 import {
   readKitchenDensity,
@@ -38,6 +39,8 @@ import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
 import { readOfflineKitchenSnapshot } from "../../../lib/offline-kitchen-bootstrap.mjs";
 import { useStaffRealtime } from "../../../lib/use-staff-realtime";
+
+const cashFormatter = new Intl.NumberFormat("uz-UZ");
 
 export default function KitchenPage() {
   return (
@@ -70,6 +73,7 @@ function KitchenDisplay() {
   const [mobileStatus, setMobileStatus] = useState<string>("NEW");
   const [query, setQuery] = useState("");
   const [cancelTicket, setCancelTicket] = useState<KitchenTicket | null>(null);
+  const [handoffTicket, setHandoffTicket] = useState<KitchenTicket | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyTickets, setHistoryTickets] = useState<KitchenTicket[]>([]);
@@ -278,7 +282,11 @@ function KitchenDisplay() {
     }));
   }, [tickets, query]);
 
-  async function runAction(ticket: KitchenTicket, action: KitchenAction) {
+  async function runAction(
+    ticket: KitchenTicket,
+    action: KitchenAction,
+    cashCollected = false,
+  ) {
     if (busyTicketIds.has(ticket.id)) return;
     const reason = cancelReason.trim();
     if (action === "cancel" && !reason) {
@@ -288,7 +296,7 @@ function KitchenDisplay() {
       }));
       return;
     }
-    const fingerprint = `${ticket.id}:${ticket.version}:${action}`;
+    const fingerprint = `${ticket.id}:${ticket.version}:${action}:${cashCollected}`;
     const idempotencyKey =
       actionKeys.current.get(fingerprint) ?? crypto.randomUUID();
     actionKeys.current.set(fingerprint, idempotencyKey);
@@ -311,6 +319,7 @@ function KitchenDisplay() {
           signal: AbortSignal.timeout(12000),
           body: JSON.stringify({
             expectedVersion: ticket.version,
+            ...(cashCollected ? { cashCollected: true } : {}),
             ...(action === "cancel"
               ? { reason, reasonCode: "KITCHEN_OPERATOR_CANCELLED" }
               : {}),
@@ -328,6 +337,9 @@ function KitchenDisplay() {
         ),
       );
       setCancelTicket((current) =>
+        current?.id === ticket.id ? null : current,
+      );
+      setHandoffTicket((current) =>
         current?.id === ticket.id ? null : current,
       );
       if (action === "cancel") setCancelReason("");
@@ -542,6 +554,11 @@ function KitchenDisplay() {
                               if (action === "cancel") {
                                 setCancelReason("");
                                 setCancelTicket(ticket);
+                              } else if (
+                                action === "complete" &&
+                                pickupCashOutstanding(ticket) > 0
+                              ) {
+                                setHandoffTicket(ticket);
                               } else void runAction(ticket, action);
                             }}
                           />
@@ -693,8 +710,68 @@ function KitchenDisplay() {
           </div>
         </StaffDialog>
       )}
+      {handoffTicket && (
+        <StaffDialog
+          title="Naqd pulni qabul qilish"
+          busy={busyTicketIds.has(handoffTicket.id)}
+          onClose={() => setHandoffTicket(null)}
+        >
+          <p>
+            #{handoffTicket.order.displayOrderNumber ??
+              handoffTicket.order.orderNumber} buyurtmasi uchun{" "}
+            <strong>
+              {cashFormatter.format(pickupCashOutstanding(handoffTicket))} so'm
+            </strong>{" "}
+            naqd pulni oldingizmi?
+          </p>
+          {!hasPermission(user, "PAYMENT_CREATE") ||
+          !hasPermission(user, "CASH_TRANSACTION_CREATE") ? (
+            <p className={styles.error} role="alert">
+              Naqd pulni tasdiqlash uchun shu xodimga kassa ruxsati ham kerak.
+            </p>
+          ) : null}
+          {actionErrors[handoffTicket.id] && (
+            <p className={styles.error} role="alert">
+              {actionErrors[handoffTicket.id]}
+            </p>
+          )}
+          <div className={styles.dialogActions}>
+            <button
+              className={styles.button}
+              disabled={busyTicketIds.has(handoffTicket.id)}
+              onClick={() => setHandoffTicket(null)}
+              type="button"
+            >
+              Ortga
+            </button>
+            <button
+              className={styles.primary}
+              disabled={
+                busyTicketIds.has(handoffTicket.id) ||
+                !hasPermission(user, "PAYMENT_CREATE") ||
+                !hasPermission(user, "CASH_TRANSACTION_CREATE")
+              }
+              onClick={() => void runAction(handoffTicket, "complete", true)}
+              type="button"
+            >
+              Naqd olindi, topshirish
+            </button>
+          </div>
+        </StaffDialog>
+      )}
     </StaffShell>
   );
+}
+
+function pickupCashOutstanding(ticket: KitchenTicket): number {
+  if (
+    ticket.order.type !== "TAKEAWAY" ||
+    ticket.order.customerOrder?.paymentMethod?.toUpperCase() !== "CASH"
+  ) return 0;
+  const paid = (ticket.order.payments ?? [])
+    .filter((payment) => payment.status === "PAID" || payment.status === "SUCCESS")
+    .reduce((total, payment) => total + Number(payment.amount), 0);
+  return Math.max(0, Number(ticket.order.total) - paid);
 }
 
 function splitTicketLanes(tickets: KitchenTicket[]): KitchenTicket[][] {

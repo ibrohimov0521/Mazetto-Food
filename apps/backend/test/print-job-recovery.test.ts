@@ -10,6 +10,34 @@ const actor = {
   permissions: ["RECEIPT_PRINT"],
 };
 
+test("kitchen-only agent leaves receipt jobs for another printer", async () => {
+  let where: Record<string, unknown> | undefined;
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    receipt: { findMany: async () => [] },
+    printJob: {
+      findFirst: async (args: { where: Record<string, unknown> }) => {
+        where = args.where;
+        return null;
+      },
+    },
+  } as never);
+
+  const job = await service.claimPrintJob(
+    undefined,
+    "desktop-device-1",
+    actor,
+    [],
+    true,
+    ["KITCHEN"],
+  );
+
+  assert.equal(job, null);
+  assert.deepEqual((where?.AND as { OR: unknown[] }[])[0]?.OR, [
+    { printerId: null, OR: [{ receipt: { documentType: "KITCHEN" } }] },
+  ]);
+});
+
 test("dead-letter print job manual retryda qayta navbatga tushadi", async () => {
   let updateData: Record<string, unknown> | undefined;
   let auditAction: string | undefined;

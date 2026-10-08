@@ -16,6 +16,12 @@ export class ClaimPrintJobDto {
   @IsOptional()
   @IsBoolean()
   acceptUnassigned?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"], { each: true })
+  unassignedRoutes?: string[];
 }
 
 export class CompletePrintJobDto {

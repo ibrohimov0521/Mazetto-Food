@@ -16,6 +16,8 @@ import {
   Prisma,
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { hasPermission } from "../../common/auth/authorization";
+import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   resolveRestaurantScope,
   resolveSoleActiveTenantId,
@@ -50,6 +52,7 @@ type KitchenTransitionActor = {
   correlationId?: string;
   idempotencyKey?: string;
   reasonCode?: string;
+  cashCollected?: boolean;
   completeIdempotency?: (
     tx: Prisma.TransactionClient,
     ticket: { id: string; status: KitchenTicketStatus; version: number },
@@ -60,6 +63,7 @@ type KitchenTicketActionContext = {
   correlationId?: string;
   idempotencyKey?: string;
   reasonCode?: string;
+  cashCollected?: boolean;
   completeIdempotency?: KitchenTransitionActor["completeIdempotency"];
 };
 type KitchenTransitionOrder = {
@@ -435,6 +439,9 @@ export class KitchenService {
         ? { idempotencyKey: context.idempotencyKey }
         : {}),
       ...(context?.reasonCode ? { reasonCode: context.reasonCode } : {}),
+      ...(context?.cashCollected !== undefined
+        ? { cashCollected: context.cashCollected }
+        : {}),
       ...(context?.completeIdempotency
         ? { completeIdempotency: context.completeIdempotency }
         : {}),
@@ -515,7 +522,18 @@ export class KitchenService {
         order.type === OrderType.TAKEAWAY &&
         order.customerOrder?.paymentMethod?.toUpperCase() === "CASH"
       ) {
-        await this.capturePickupCash(tx, order, actor.user, now);
+        if (actor.cashCollected) {
+          if (
+            !actor.user ||
+            !hasPermission(actor.user, PERMISSIONS.PAYMENT_CREATE) ||
+            !hasPermission(actor.user, PERMISSIONS.CASH_TRANSACTION_CREATE)
+          ) {
+            throw new ForbiddenException(
+              "Naqd pulni faqat kassa ruxsati bor xodim tasdiqlaydi",
+            );
+          }
+          await this.capturePickupCash(tx, order, actor.user, now);
+        }
       }
 
       const orderData: Prisma.OrderUpdateInput = {};
@@ -1083,6 +1101,8 @@ export class KitchenService {
           branch: true,
           table: { include: { hall: true } },
           waiter: true,
+          customerOrder: { select: { paymentMethod: true } },
+          payments: { select: { amount: true, status: true } },
           statusHistory: {
             orderBy: { createdAt: "asc" },
             include: {
