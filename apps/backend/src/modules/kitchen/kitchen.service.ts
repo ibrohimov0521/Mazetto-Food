@@ -522,7 +522,21 @@ export class KitchenService {
         order.type === OrderType.TAKEAWAY &&
         order.customerOrder?.paymentMethod?.toUpperCase() === "CASH"
       ) {
-        if (actor.cashCollected) {
+        const paidTotal = order.payments
+          .filter((payment) =>
+            payment.status === PaymentStatus.PAID ||
+            payment.status === PaymentStatus.SUCCESS,
+          )
+          .reduce(
+            (total, payment) => total.add(payment.amount),
+            new Prisma.Decimal(0),
+          );
+        if (order.total.greaterThan(paidTotal) && !actor.cashCollected) {
+          throw new BadRequestException(
+            "Olib ketish buyurtmasini topshirishdan oldin kassada naqd pul qabul qilinganini tasdiqlang",
+          );
+        }
+        if (order.total.greaterThan(paidTotal) && actor.cashCollected) {
           if (
             !actor.user ||
             !hasPermission(actor.user, PERMISSIONS.PAYMENT_CREATE) ||

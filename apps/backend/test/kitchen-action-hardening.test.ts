@@ -236,7 +236,7 @@ test("two devices cannot advance one ticket from the same stale version", async 
   assert.equal(state.ticket.status, KitchenTicketStatus.ACCEPTED);
 });
 
-test("handing off a cash pickup does not invent a cash payment", async () => {
+test("unpaid cash pickup cannot be handed off without collection confirmation", async () => {
   const state = createConcurrentKitchenState();
   state.order.type = OrderType.TAKEAWAY;
   state.order.customerOrder = {
@@ -248,12 +248,38 @@ test("handing off a cash pickup does not invent a cash payment", async () => {
   state.ticket.version = 3;
   const service = new KitchenService(state.prisma as never, state.gateway as never);
 
+  await assert.rejects(
+    service.applyTicketAction("ticket-1", "complete", user, undefined, {
+      expectedVersion: 3,
+    }),
+    /naqd pul qabul qilinganini tasdiqlang/,
+  );
+
+  assert.equal(state.order.paymentStatus, PaymentStatus.PENDING);
+  assert.deepEqual(state.order.payments, []);
+  assert.equal(state.order.status, OrderStatus.READY);
+});
+
+test("already-paid cash pickup can be handed off without collecting again", async () => {
+  const state = createConcurrentKitchenState();
+  state.order.type = OrderType.TAKEAWAY;
+  state.order.customerOrder = {
+    paymentMethod: "CASH",
+    customer: { telegramChatId: null },
+  };
+  state.order.status = OrderStatus.READY;
+  state.order.paymentStatus = PaymentStatus.PAID;
+  state.order.payments.push({ amount: new Prisma.Decimal(100), status: PaymentStatus.PAID });
+  state.ticket.status = KitchenTicketStatus.READY;
+  state.ticket.version = 3;
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
   await service.applyTicketAction("ticket-1", "complete", user, undefined, {
     expectedVersion: 3,
   });
 
-  assert.equal(state.order.paymentStatus, PaymentStatus.PENDING);
-  assert.deepEqual(state.order.payments, []);
+  assert.equal(state.cashWrites.length, 0);
+  assert.equal(state.order.paymentStatus, PaymentStatus.PAID);
 });
 
 test("kitchen-only role cannot confirm cash collection", async () => {
@@ -496,7 +522,7 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
     cancellationReason: null as string | null,
     paymentStatus: PaymentStatus.PENDING,
     total: new Prisma.Decimal(100),
-    payments: [],
+    payments: [] as { amount: Prisma.Decimal; status: PaymentStatus }[],
     customerOrder: customerTelegramChatId
       ? {
           paymentMethod: null,
