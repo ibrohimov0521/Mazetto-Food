@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   BellRing,
   History,
@@ -74,6 +75,7 @@ function KitchenDisplay() {
   const [query, setQuery] = useState("");
   const [cancelTicket, setCancelTicket] = useState<KitchenTicket | null>(null);
   const [handoffTicket, setHandoffTicket] = useState<KitchenTicket | null>(null);
+  const [handoffRecipient, setHandoffRecipient] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyTickets, setHistoryTickets] = useState<KitchenTicket[]>([]);
@@ -285,9 +287,17 @@ function KitchenDisplay() {
   async function runAction(
     ticket: KitchenTicket,
     action: KitchenAction,
-    cashCollected = false,
+    recipientName = "",
   ) {
     if (busyTicketIds.has(ticket.id)) return;
+    const recipient = recipientName.trim();
+    if (action === "complete" && ticket.order.type === "TAKEAWAY" && !recipient) {
+      setActionErrors((current) => ({
+        ...current,
+        [ticket.id]: "Buyurtmani olgan shaxs ismini kiriting.",
+      }));
+      return;
+    }
     const reason = cancelReason.trim();
     if (action === "cancel" && !reason) {
       setActionErrors((current) => ({
@@ -296,7 +306,7 @@ function KitchenDisplay() {
       }));
       return;
     }
-    const fingerprint = `${ticket.id}:${ticket.version}:${action}:${cashCollected}`;
+    const fingerprint = `${ticket.id}:${ticket.version}:${action}:${recipient}`;
     const idempotencyKey =
       actionKeys.current.get(fingerprint) ?? crypto.randomUUID();
     actionKeys.current.set(fingerprint, idempotencyKey);
@@ -319,7 +329,9 @@ function KitchenDisplay() {
           signal: AbortSignal.timeout(12000),
           body: JSON.stringify({
             expectedVersion: ticket.version,
-            ...(cashCollected ? { cashCollected: true } : {}),
+            ...(action === "complete" && recipient
+              ? { recipientName: recipient }
+              : {}),
             ...(action === "cancel"
               ? { reason, reasonCode: "KITCHEN_OPERATOR_CANCELLED" }
               : {}),
@@ -556,8 +568,11 @@ function KitchenDisplay() {
                                 setCancelTicket(ticket);
                               } else if (
                                 action === "complete" &&
-                                pickupCashOutstanding(ticket) > 0
+                                ticket.order.type === "TAKEAWAY"
                               ) {
+                                setHandoffRecipient(
+                                  ticket.order.customerOrder?.customer?.name ?? "",
+                                );
                                 setHandoffTicket(ticket);
                               } else void runAction(ticket, action);
                             }}
@@ -621,9 +636,9 @@ function KitchenDisplay() {
             {historyLoading ? (
               <div className={styles.skeleton} />
             ) : historyTickets.length ? (
-              historyTickets.map((ticket) => (
-                <article className={styles.historyOrder} key={ticket.id}>
-                  <div>
+                historyTickets.map((ticket) => (
+                  <article className={styles.historyOrder} key={ticket.id}>
+                    <div>
                     <strong>
                       #
                       {ticket.order.displayOrderNumber ??
@@ -646,8 +661,13 @@ function KitchenDisplay() {
                     }
                   >
                     {kitchenStatusLabels[ticket.status]}
-                  </span>
-                </article>
+                    </span>
+                    {pickupHandoffSummary(ticket) ? (
+                      <span className={styles.muted}>
+                        {pickupHandoffSummary(ticket)}
+                      </span>
+                    ) : null}
+                  </article>
               ))
             ) : (
               <StaffEmpty title="Tarix bo'sh">
@@ -712,24 +732,44 @@ function KitchenDisplay() {
       )}
       {handoffTicket && (
         <StaffDialog
-          title="Naqd pulni qabul qilish"
+          title="Buyurtmani topshirish"
           busy={busyTicketIds.has(handoffTicket.id)}
           onClose={() => setHandoffTicket(null)}
         >
           <p>
             #{handoffTicket.order.displayOrderNumber ??
-              handoffTicket.order.orderNumber} buyurtmasi uchun{" "}
-            <strong>
-              {cashFormatter.format(pickupCashOutstanding(handoffTicket))} so'm
-            </strong>{" "}
-            naqd pulni oldingizmi?
+              handoffTicket.order.orderNumber}
+            {handoffTicket.order.customerOrder?.customer?.name
+              ? ` · ${handoffTicket.order.customerOrder.customer.name}`
+              : ""}
           </p>
-          {!hasPermission(user, "PAYMENT_CREATE") ||
-          !hasPermission(user, "CASH_TRANSACTION_CREATE") ? (
+          {pickupOutstanding(handoffTicket) > 0 ? (
             <p className={styles.error} role="alert">
-              Naqd pulni tasdiqlash uchun shu xodimga kassa ruxsati ham kerak.
+              {cashFormatter.format(pickupOutstanding(handoffTicket))} so'm
+              to'lanmagan. Avval kassada to'lovni qabul qiling. Oshxona pulni
+              kassaga yozmaydi.
             </p>
-          ) : null}
+          ) : (
+            <label className={styles.field}>
+              <span>Buyurtmani olgan shaxs</span>
+              <input
+                className={styles.input}
+                maxLength={120}
+                onChange={(event) => {
+                  setHandoffRecipient(event.target.value);
+                  setActionErrors((current) => {
+                    if (!(handoffTicket.id in current)) return current;
+                    const next = { ...current };
+                    delete next[handoffTicket.id];
+                    return next;
+                  });
+                }}
+                placeholder="Ism-familiyasi"
+                required
+                value={handoffRecipient}
+              />
+            </label>
+          )}
           {actionErrors[handoffTicket.id] && (
             <p className={styles.error} role="alert">
               {actionErrors[handoffTicket.id]}
@@ -744,18 +784,30 @@ function KitchenDisplay() {
             >
               Ortga
             </button>
-            <button
-              className={styles.primary}
-              disabled={
-                busyTicketIds.has(handoffTicket.id) ||
-                !hasPermission(user, "PAYMENT_CREATE") ||
-                !hasPermission(user, "CASH_TRANSACTION_CREATE")
-              }
-              onClick={() => void runAction(handoffTicket, "complete", true)}
-              type="button"
-            >
-              Naqd olindi, topshirish
-            </button>
+            {pickupOutstanding(handoffTicket) > 0 ? (
+              hasPermission(user, "PAYMENT_CREATE") ? (
+                <Link
+                  className={styles.primary}
+                  href={`/pos/payment?orderId=${encodeURIComponent(handoffTicket.order.id)}&returnTo=kitchen`}
+                >
+                  Kassada to'lovni qabul qilish
+                </Link>
+              ) : null
+            ) : (
+              <button
+                className={styles.primary}
+                disabled={
+                  busyTicketIds.has(handoffTicket.id) ||
+                  !handoffRecipient.trim()
+                }
+                onClick={() =>
+                  void runAction(handoffTicket, "complete", handoffRecipient)
+                }
+                type="button"
+              >
+                Mijozga topshirildi
+              </button>
+            )}
           </div>
         </StaffDialog>
       )}
@@ -763,15 +815,31 @@ function KitchenDisplay() {
   );
 }
 
-function pickupCashOutstanding(ticket: KitchenTicket): number {
-  if (
-    ticket.order.type !== "TAKEAWAY" ||
-    ticket.order.customerOrder?.paymentMethod?.toUpperCase() !== "CASH"
-  ) return 0;
+function pickupOutstanding(ticket: KitchenTicket): number {
+  if (ticket.order.type !== "TAKEAWAY") return 0;
   const paid = (ticket.order.payments ?? [])
     .filter((payment) => payment.status === "PAID" || payment.status === "SUCCESS")
     .reduce((total, payment) => total + Number(payment.amount), 0);
   return Math.max(0, Number(ticket.order.total) - paid);
+}
+
+function pickupHandoffSummary(ticket: KitchenTicket): string | null {
+  const handoff = [...(ticket.order.statusHistory ?? [])]
+    .reverse()
+    .find(
+      (entry) =>
+        entry.toStatus === "COMPLETED" &&
+        entry.reason?.includes("qabul qilgan:"),
+    );
+  if (!handoff?.reason) return null;
+  const recipient = handoff.reason.split("qabul qilgan:").at(-1)?.trim();
+  const employee = handoff.changedByEmployee;
+  const confirmedBy = employee
+    ? [employee.firstName, employee.lastName].filter(Boolean).join(" ")
+    : "xodim";
+  return recipient
+    ? `Olgan: ${recipient} · Tasdiqladi: ${confirmedBy}`
+    : null;
 }
 
 function splitTicketLanes(tickets: KitchenTicket[]): KitchenTicket[][] {

@@ -48,11 +48,13 @@ type Order = {
   id: string;
   orderNumber: string;
   displayOrderNumber?: string | null;
+  source?: "WEB" | "TELEGRAM" | "POS";
   status: string;
   paymentStatus: string;
   total: string;
   type?: OrderType | null;
   table?: { name?: string | null; number?: number | null } | null;
+  createdBy?: { firstName: string; lastName?: string | null } | null;
   items: {
     id: string;
     productName: string;
@@ -156,16 +158,24 @@ function PaymentTerminal() {
       const params = new URLSearchParams({
         paymentStatus: "PENDING",
         excludeStatus: "CANCELLED",
+        excludeType: "DELIVERY",
         limit: String(orderPageSize),
         offset: String(offset),
       });
       if (appliedSearch) params.set("search", appliedSearch);
-      const [nextOrders, shift] = await Promise.all([
+      const requestedOrderId = new URLSearchParams(window.location.search).get("orderId");
+      const [nextOrders, shift, requestedOrder] = await Promise.all([
         apiFetch<Order[]>(`/orders?${params.toString()}`, {
           cache: "no-store",
           signal,
         }),
         apiFetch<Shift>("/cash-register/shift", { signal }).catch(() => null),
+        requestedOrderId
+          ? apiFetch<Order>(`/orders/${encodeURIComponent(requestedOrderId)}`, {
+              cache: "no-store",
+              signal,
+            }).catch(() => null)
+          : Promise.resolve(null),
       ]);
 
       if (controller.signal.aborted) {
@@ -173,15 +183,26 @@ function PaymentTerminal() {
       }
 
       const payable = nextOrders.filter(
-        (order) => order.paymentStatus !== "PAID",
+        (order) => order.paymentStatus !== "PAID" && order.type !== "DELIVERY",
       );
+      if (
+        requestedOrder &&
+        requestedOrder.paymentStatus !== "PAID" &&
+        requestedOrder.status !== "CANCELLED" &&
+        requestedOrder.type !== "DELIVERY" &&
+        !payable.some((order) => order.id === requestedOrder.id)
+      ) {
+        payable.unshift(requestedOrder);
+      }
       setOrders(payable);
       setCurrentShift(shift);
       setUpdatedAt(new Date());
       setSelectedOrderId((current) =>
         current && payable.some((order) => order.id === current)
           ? current
-          : (payable[0]?.id ?? null),
+          : (requestedOrder && payable.some((order) => order.id === requestedOrder.id)
+              ? requestedOrder.id
+              : payable[0]?.id ?? null),
       );
       return true;
     } catch (caught) {
@@ -498,6 +519,7 @@ function PaymentTerminal() {
                         #{order.displayOrderNumber ?? order.orderNumber}
                       </strong>
                       <span className={styles.muted}>{tableLabel(order)}</span>
+                      <span className={styles.muted}>{orderOrigin(order)}</span>
                       <b>{formatMoney(order.total)}</b>
                     </button>
                   ))}
@@ -529,6 +551,9 @@ function PaymentTerminal() {
                       <h3 className={styles.payOrderNumber}>#{orderLabel}</h3>
                       <span className={styles.muted}>
                         {tableLabel(selectedOrder)}
+                      </span>
+                      <span className={styles.muted}>
+                        {orderOrigin(selectedOrder)}
                       </span>
                     </div>
                     <div className={styles.payTotalBox}>
@@ -828,6 +853,13 @@ function PaymentTerminal() {
             <strong>{formatMoney(completion.change)}</strong>
           </div>
           <div className={styles.dialogActions}>
+            {!completion.offlineQueued &&
+            new URLSearchParams(window.location.search).get("returnTo") ===
+              "kitchen" ? (
+              <Link className={styles.secondary} href="/kitchen">
+                Oshxonaga qaytish
+              </Link>
+            ) : null}
             {completion.receiptId ? (
               <Link
                 className={styles.secondary}
@@ -879,6 +911,19 @@ function tableLabel(order: Order): string {
   }
 
   return order.type ? orderTypeLabels[order.type] : "Olib ketish";
+}
+
+function orderOrigin(order: Order): string {
+  if (order.source === "WEB") return "Web buyurtma";
+  if (order.source === "TELEGRAM") return "Telegram buyurtma";
+  if (order.type === "DINE_IN") {
+    const employee = order.createdBy;
+    const name = employee
+      ? [employee.firstName, employee.lastName].filter(Boolean).join(" ")
+      : "";
+    return name ? `Zal · ${name}` : "Zal buyurtmasi";
+  }
+  return "Kassa buyurtmasi";
 }
 
 function formatQuantity(value: string): string {

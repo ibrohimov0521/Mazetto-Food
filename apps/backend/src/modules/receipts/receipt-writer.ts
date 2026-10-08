@@ -64,7 +64,7 @@ function routeMatches(
     ? metadata.printRoles.filter((role): role is string => typeof role === "string")
     : [];
   if (roles.length > 0) return roles.includes(route);
-  return route !== "CANCELLATION" && (printer.type === "THERMAL" || printer.type === "RECEIPT");
+  return route === "RECEIPT" && (printer.type === "THERMAL" || printer.type === "RECEIPT");
 }
 
 /** Creates one durable job per active printer configured for this document route. */

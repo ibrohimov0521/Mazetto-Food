@@ -1768,6 +1768,19 @@
 .shiftLink:hover {
   background: #ffffff20;
 }
+.posOnlineAlert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #d7ac35;
+  background: #fff4ce;
+  color: #213333;
+}
+.posOnlineAlert strong {
+  flex: 1 1 220px;
+}
 .shiftContent {
   max-width: 1200px;
 }

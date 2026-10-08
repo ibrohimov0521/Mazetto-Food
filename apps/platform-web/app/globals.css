@@ -18,6 +18,27 @@
 :root{color-scheme:light;--bt-ink:#142d49;--bt-muted:#607b98;--bt-blue:#3578d4;--bt-blue-dark:#215fae;--bt-blue-soft:#e8f2ff;--bt-border:#d7e5f5}
 html{min-height:100%;background:#eaf2fb}body{min-height:100vh;color:var(--bt-ink);background:transparent}
 body::before{content:"";position:fixed;inset:0;z-index:-1;background:url('/bestteam-background.webp') center center/cover no-repeat;pointer-events:none}
+
+/* Frosted BestTeam navigation and protected headings over the fixed artwork. */
+.sidebar{background:rgba(10,29,50,.84);border-right-color:rgba(219,235,255,.2);color:#f4f8ff;backdrop-filter:blur(16px) saturate(125%);-webkit-backdrop-filter:blur(16px) saturate(125%)}
+.sidebar-head,.sidebar-bottom{border-color:rgba(219,235,255,.2)}
+.sidebar .brand,.sidebar .brand strong,.sidebar .owner-copy strong{color:#f4f8ff}
+.sidebar .brand>span:last-child{color:#f4f8ff}
+.sidebar .brand>span:last-child strong{color:#9dccff}
+.sidebar .owner-copy span,.sidebar .nav-caption{color:#b5cae2}
+.sidebar .nav-link{color:#dce9f8}
+.sidebar .nav-link:hover{background:rgba(199,224,255,.14);color:#fff}
+.sidebar .nav-link.active{background:rgba(47,126,213,.48);color:#fff;box-shadow:inset 3px 0 #72b5ff}
+.sidebar .nav-count{background:rgba(232,243,255,.16);color:#f4f8ff}
+.sidebar .icon-button{color:#dce9f8}
+.sidebar .icon-button:hover{background:rgba(199,224,255,.16);color:#fff}
+.topbar{background:rgba(244,249,255,.78);backdrop-filter:blur(12px) saturate(120%);-webkit-backdrop-filter:blur(12px) saturate(120%)}
+.content>.page-heading{padding:15px 18px;border:1px solid rgba(223,238,255,.2);border-radius:7px;background:rgba(8,27,49,.58);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+.content>.page-heading h1,.content>.page-heading .eyebrow,.content>.page-heading .muted{color:#f6f9ff;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.content>.section>.section-head{padding:10px 13px;border:1px solid rgba(223,238,255,.2);border-radius:6px;background:rgba(8,27,49,.54);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+.content>.section>.section-head h2,.content>.section>.section-head .muted,.content>.section>.section-head .text-link{color:#f6f9ff;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.content>.section>.section-head .text-link{color:#a9d2ff}
+@media(max-width:760px){.sidebar{background:rgba(10,29,50,.94)}}
 .shell{background:transparent}.sidebar,.topbar,.metric,.attention-list,.table-wrap,.service-item,.service-strip,.events-list,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton,.modal,.login-panel{background:rgba(255,255,255,.96);border-color:var(--bt-border)}
 .sidebar-head,.sidebar-bottom,.topbar,.attention-row,.event-row,.global-event,.audit-row,.service-line,.setting-row{border-color:#e2ebf6}
 .brand-mark{width:34px;height:34px;overflow:hidden;background:#fff;border:1px solid #dbe7f5;border-radius:7px}.brand-mark img{width:100%;height:100%;object-fit:cover;display:block}.owner-avatar{overflow:hidden;background:#fff;border:1px solid var(--bt-border)}.owner-avatar img{width:100%;height:100%;object-fit:cover;display:block}

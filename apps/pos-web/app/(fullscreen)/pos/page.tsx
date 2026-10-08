@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Banknote,
+  BellRing,
   Check,
   Delete,
   Clock3,
@@ -20,6 +21,9 @@ import {
 } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { useAuth } from "../../../components/auth/auth-provider";
+import { hasPermission } from "../../../lib/auth";
+import { useKitchenChime } from "../../../components/kitchen/use-kitchen-chime";
+import type { KitchenQueueResponse } from "../../../components/kitchen/kitchen-types";
 import {
   StaffDialog,
   StaffEmpty,
@@ -209,6 +213,9 @@ function PosTerminal() {
   const [tableId, setTableId] = useState("");
   const [paymentCode, setPaymentCode] = useState(cashMethodCode);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [newOnlineOrders, setNewOnlineOrders] = useState(0);
+  const [onlineOrdersError, setOnlineOrdersError] = useState(false);
+  const onlineOrdersLoading = useRef(false);
   const submissionLock = useRef(false);
   const loadRequest = useRef<AbortController | null>(null);
   /*
@@ -295,11 +302,55 @@ function PosTerminal() {
     return () => loadRequest.current?.abort();
   }, [loadTerminal]);
 
+  const loadOnlineOrders = useCallback(async () => {
+    if (!hasPermission(user, "KITCHEN_VIEW") || onlineOrdersLoading.current)
+      return;
+    onlineOrdersLoading.current = true;
+    try {
+      const queue = await apiFetch<KitchenQueueResponse>("/kitchen/orders", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      });
+      setNewOnlineOrders(
+        queue.items.filter(
+          (ticket) =>
+            ticket.status === "NEW" &&
+            (ticket.order.source === "WEB" ||
+              ticket.order.source === "TELEGRAM"),
+        ).length,
+      );
+      setOnlineOrdersError(false);
+    } catch {
+      setOnlineOrdersError(true);
+    } finally {
+      onlineOrdersLoading.current = false;
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void loadOnlineOrders();
+    const refresh = () => void loadOnlineOrders();
+    const timer = window.setInterval(refresh, 5000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [loadOnlineOrders]);
+
+  const onlineChime = useKitchenChime({
+    soundOn: true,
+    alerting: newOnlineOrders > 0,
+  });
+
   const realtimeState = useStaffRealtime({
     accessToken: session?.tokens.accessToken,
     cursorScope: (user?.id ?? "staff") + ":pos",
     bootstrapSnapshot: true,
-    onEvent: () => loadTerminal(),
+    onEvent: () => {
+      void loadOnlineOrders();
+      return loadTerminal();
+    },
   });
 
   function historyActor(entry: StatusHistoryEntry): string {
@@ -718,6 +769,17 @@ function PosTerminal() {
       sidebar
       actions={
         <>
+          {hasPermission(user, "PAYMENT_CREATE") ? (
+            <button
+              className={styles.shiftLink}
+              title="To'lanmagan buyurtmalar"
+              onClick={() => router.push("/pos/payment")}
+              type="button"
+            >
+              <Banknote size={17} aria-hidden="true" />
+              <span>To'lovlar</span>
+            </button>
+          ) : null}
           <button
             className={styles.shiftLink}
             title="Smena tarixi"
@@ -754,6 +816,33 @@ function PosTerminal() {
         </>
       }
     >
+      {hasPermission(user, "KITCHEN_VIEW") &&
+      (newOnlineOrders > 0 || onlineOrdersError) ? (
+        <div className={styles.posOnlineAlert} role="status">
+          <BellRing size={20} aria-hidden="true" />
+          <strong>
+            {onlineOrdersError
+              ? "Onlayn buyurtmalar navbatini tekshirib bo'lmadi"
+              : `${newOnlineOrders} ta yangi onlayn buyurtma`}
+          </strong>
+          {newOnlineOrders > 0 && !onlineChime.unlocked ? (
+            <button
+              className={styles.button}
+              onClick={onlineChime.unlock}
+              type="button"
+            >
+              Ovozni yoqish
+            </button>
+          ) : null}
+          <button
+            className={styles.button}
+            onClick={() => router.push("/kitchen")}
+            type="button"
+          >
+            Oshxonani ochish
+          </button>
+        </div>
+      ) : null}
       {catalog && !isCheckingShift ? (
         <div className={styles.mobilePosNav}>
           <div className={styles.segments}>

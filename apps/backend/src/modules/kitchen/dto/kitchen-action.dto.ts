@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -13,9 +12,13 @@ export class KitchenTicketActionDto {
   @Min(1)
   expectedVersion!: number;
 
+}
+
+export class CompleteKitchenTicketActionDto extends KitchenTicketActionDto {
   @IsOptional()
-  @IsBoolean()
-  cashCollected?: boolean;
+  @IsString()
+  @MaxLength(120)
+  recipientName?: string;
 }
 
 export class CancelKitchenTicketActionDto extends KitchenTicketActionDto {

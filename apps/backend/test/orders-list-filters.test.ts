@@ -7,6 +7,7 @@ test("cashier queue filters unpaid orders, hides cancellations and searches serv
     {
       paymentStatus: "PENDING",
       excludeStatus: "CANCELLED",
+      excludeType: "DELIVERY",
       search: "  0042  ",
     },
     "branch-a",
@@ -15,6 +16,7 @@ test("cashier queue filters unpaid orders, hides cancellations and searches serv
   assert.equal(where.branchId, "branch-a");
   assert.equal(where.paymentStatus, "PENDING");
   assert.deepEqual(where.NOT, { status: "CANCELLED" });
+  assert.deepEqual(where.type, { not: "DELIVERY" });
   assert.ok(where.OR);
 });
 
