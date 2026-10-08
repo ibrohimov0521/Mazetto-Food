@@ -104,7 +104,13 @@ async function main() {
     assert.equal(await balance(), 10000);
     const pickup = await online("TAKEAWAY", 20000);
     const ticket = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: pickup.order.id } });
-    await kitchen.completeTicket(ticket.id, worker);
+    await assert.rejects(() => kitchen.completeTicket(ticket.id, worker), /naqd pul qabul qilinganini tasdiqlang/);
+    assert.equal(await balance(), 10000);
+    assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 0);
+    await kitchen.applyTicketAction(ticket.id, "complete", worker, undefined, {
+      expectedVersion: ticket.version,
+      cashCollected: true,
+    });
     await kitchen.completeTicket(ticket.id, worker);
     assert.equal(await balance(), 30000);
     assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 1);
