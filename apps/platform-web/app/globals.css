@@ -39,7 +39,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:url('/bestt
 .content>.section>.section-head h2,.content>.section>.section-head .muted,.content>.section>.section-head .text-link{color:#f6f9ff;text-shadow:0 1px 2px rgba(0,0,0,.3)}
 .content>.section>.section-head .text-link{color:#a9d2ff}
 @media(max-width:760px){.sidebar{background:rgba(10,29,50,.94)}}
-.shell{background:transparent}.sidebar,.topbar,.metric,.attention-list,.table-wrap,.service-item,.service-strip,.events-list,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton,.modal,.login-panel{background:rgba(255,255,255,.96);border-color:var(--bt-border)}
+.shell{background:transparent}.topbar,.metric,.attention-list,.table-wrap,.service-item,.service-strip,.events-list,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton,.modal,.login-panel{background:rgba(255,255,255,.96);border-color:var(--bt-border)}
 .sidebar-head,.sidebar-bottom,.topbar,.attention-row,.event-row,.global-event,.audit-row,.service-line,.setting-row{border-color:#e2ebf6}
 .brand-mark{width:34px;height:34px;overflow:hidden;background:#fff;border:1px solid #dbe7f5;border-radius:7px}.brand-mark img{width:100%;height:100%;object-fit:cover;display:block}.owner-avatar{overflow:hidden;background:#fff;border:1px solid var(--bt-border)}.owner-avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .brand,.login-brand,.breadcrumb,.page-heading h1,.section-head h2,.table-link strong,.strong-cell,.metric strong,.service-item strong,.event-row strong,.global-event-copy strong,.audit-copy strong{color:var(--bt-ink)}
@@ -117,7 +117,7 @@ body{position:relative;isolation:isolate}
 .sr-only{position:fixed;left:0;top:0;clip-path:inset(50%);white-space:nowrap}
 
 /* Keep the BestTeam artwork visible while giving operational text enough contrast. */
-.sidebar,.topbar{background:rgba(245,249,255,.9)}
+.topbar{background:rgba(245,249,255,.9)}
 .metric,.attention-list,.table-wrap,.service-item,.service-strip,.global-events,.audit-list,.report-chart,.backup-summary,.empty,.skeleton{background:rgba(245,249,255,.72)}
 .metric-label{color:#294b70}
 .metric small{color:#526d89}
