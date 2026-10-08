@@ -60,7 +60,18 @@ export type KitchenTicket = {
     total: string;
     paymentStatus: string;
     payments?: { amount: string; status: string }[];
-    customerOrder?: { paymentMethod: string | null } | null;
+    customerOrder?: {
+      paymentMethod: string | null;
+      customer?: { name: string } | null;
+    } | null;
+    statusHistory?: {
+      toStatus: string;
+      reason?: string | null;
+      changedByEmployee?: {
+        firstName: string;
+        lastName?: string | null;
+      } | null;
+    }[];
     isSupplemental?: boolean;
     supplementNumber?: number | null;
     notes?: string | null;

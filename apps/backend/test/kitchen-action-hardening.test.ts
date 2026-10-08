@@ -14,6 +14,7 @@ import { validate } from "class-validator";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import {
   CancelKitchenTicketActionDto,
+  CompleteKitchenTicketActionDto,
   KitchenTicketActionDto,
 } from "../src/modules/kitchen/dto/kitchen-action.dto";
 import { KitchenActionService } from "../src/modules/kitchen/kitchen-action.service";
@@ -41,6 +42,14 @@ test("kitchen actions require a ticket version and cancellation reason", async (
   assert.deepEqual(
     (await validate(invalidCancel)).map(({ property }) => property),
     ["reason"],
+  );
+  const invalidRecipient = Object.assign(new CompleteKitchenTicketActionDto(), {
+    expectedVersion: 1,
+    recipientName: "a".repeat(121),
+  });
+  assert.deepEqual(
+    (await validate(invalidRecipient)).map(({ property }) => property),
+    ["recipientName"],
   );
 });
 
@@ -236,7 +245,7 @@ test("two devices cannot advance one ticket from the same stale version", async 
   assert.equal(state.ticket.status, KitchenTicketStatus.ACCEPTED);
 });
 
-test("unpaid cash pickup cannot be handed off without collection confirmation", async () => {
+test("unpaid cash pickup cannot be handed off from kitchen", async () => {
   const state = createConcurrentKitchenState();
   state.order.type = OrderType.TAKEAWAY;
   state.order.customerOrder = {
@@ -252,7 +261,7 @@ test("unpaid cash pickup cannot be handed off without collection confirmation", 
     service.applyTicketAction("ticket-1", "complete", user, undefined, {
       expectedVersion: 3,
     }),
-    /naqd pul qabul qilinganini tasdiqlang/,
+    /kassada to'lovni qabul qiling/,
   );
 
   assert.equal(state.order.paymentStatus, PaymentStatus.PENDING);
@@ -276,35 +285,18 @@ test("already-paid cash pickup can be handed off without collecting again", asyn
 
   await service.applyTicketAction("ticket-1", "complete", user, undefined, {
     expectedVersion: 3,
+    recipientName: "Ali Valiyev",
   });
 
   assert.equal(state.cashWrites.length, 0);
   assert.equal(state.order.paymentStatus, PaymentStatus.PAID);
-});
-
-test("kitchen-only role cannot confirm cash collection", async () => {
-  const state = createConcurrentKitchenState();
-  state.order.type = OrderType.TAKEAWAY;
-  state.order.customerOrder = {
-    paymentMethod: "CASH",
-    customer: { telegramChatId: null },
-  };
-  state.order.status = OrderStatus.READY;
-  state.ticket.status = KitchenTicketStatus.READY;
-  state.ticket.version = 3;
-  const service = new KitchenService(state.prisma as never, state.gateway as never);
-
-  await assert.rejects(
-    service.applyTicketAction("ticket-1", "complete", user, undefined, {
-      expectedVersion: 3,
-      cashCollected: true,
-    }),
-    /kassa ruxsati/,
+  assert.equal(
+    (state.ticketEvents[0]?.payload as { recipientName?: string })?.recipientName,
+    "Ali Valiyev",
   );
-  assert.equal(state.order.status, OrderStatus.READY);
 });
 
-test("confirmed pickup cash is recorded once in the cashier shift", async () => {
+test("combined cashier and kitchen role still cannot record payment at handoff", async () => {
   const state = createConcurrentKitchenState();
   state.order.type = OrderType.TAKEAWAY;
   state.order.customerOrder = {
@@ -321,19 +313,15 @@ test("confirmed pickup cash is recorded once in the cashier shift", async () => 
   };
   const service = new KitchenService(state.prisma as never, state.gateway as never);
 
-  await service.applyTicketAction("ticket-1", "complete", cashier, undefined, {
-    expectedVersion: 3,
-    cashCollected: true,
-  });
-  await service.applyTicketAction("ticket-1", "complete", cashier, undefined, {
-    expectedVersion: 4,
-    cashCollected: true,
-  });
-
-  assert.equal(state.cashWrites.length, 1);
-  assert.equal(state.cashWrites[0]?.shiftId, "shift-1");
-  assert.equal(String(state.cashWrites[0]?.amount), "100");
-  assert.equal(state.order.paymentStatus, PaymentStatus.PAID);
+  await assert.rejects(
+    service.applyTicketAction("ticket-1", "complete", cashier, undefined, {
+      expectedVersion: 3,
+    }),
+    /kassada to'lovni qabul qiling/,
+  );
+  assert.equal(state.order.status, OrderStatus.READY);
+  assert.equal(state.cashWrites.length, 0);
+  assert.equal(state.order.paymentStatus, PaymentStatus.PENDING);
 });
 
 test("kitchen status and customer Telegram outbox commit atomically", async () => {

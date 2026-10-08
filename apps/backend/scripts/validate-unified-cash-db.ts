@@ -104,13 +104,19 @@ async function main() {
     assert.equal(await balance(), 10000);
     const pickup = await online("TAKEAWAY", 20000);
     const ticket = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: pickup.order.id } });
-    await assert.rejects(() => kitchen.completeTicket(ticket.id, worker), /naqd pul qabul qilinganini tasdiqlang/);
+    await assert.rejects(() => kitchen.completeTicket(ticket.id, worker), /kassada to'lovni qabul qiling/);
     assert.equal(await balance(), 10000);
     assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 0);
-    await kitchen.applyTicketAction(ticket.id, "complete", worker, undefined, {
-      expectedVersion: ticket.version,
-      cashCollected: true,
-    });
+    const pickupPayment = {
+      orderId: pickup.order.id,
+      idempotencyKey: "qa-pickup-" + id,
+      shiftId: sourceShift.id,
+      payments: [{ paymentMethodCode: "CASH", amount: 20000 }],
+    };
+    await payments.processOrderPayment(pickupPayment, worker);
+    await payments.processOrderPayment(pickupPayment, worker);
+    assert.equal(await balance(), 30000);
+    assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 1);
     await kitchen.completeTicket(ticket.id, worker);
     assert.equal(await balance(), 30000);
     assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 1);
@@ -186,7 +192,36 @@ async function main() {
     await prisma.$executeRawUnsafe(sql);
     await prisma.$executeRawUnsafe(sql);
     assert.equal(await prisma.rolePermission.count({ where: { role: { code: { in: roleCodes } }, permission: { code: { in: permissionCodes } } } }), 8);
-    console.info("PASS: unified POS/pickup/delivery cash, ownership, rollback, duplicate/race protection, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
+    const waiter = await actor("Waiter", ["WAITER"]);
+    assert.ok(waiter.employeeId);
+    assert.ok(receiver.employeeId);
+    const diningOrder = await prisma.order.create({
+      data: {
+        branchId: branch.id,
+        source: OrderSource.POS,
+        type: "DINE_IN",
+        status: OrderStatus.READY,
+        total: 7000,
+        subtotal: 7000,
+        orderNumber: "QA" + crypto.randomUUID(),
+        createdById: waiter.employeeId,
+        waiterId: waiter.employeeId,
+      },
+    });
+    const diningPayment = {
+      orderId: diningOrder.id,
+      idempotencyKey: "qa-waiter-" + id,
+      shiftId: targetShift.id,
+      payments: [{ paymentMethodCode: "CASH", amount: 7000 }],
+    };
+    await payments.processOrderPayment(diningPayment, receiver);
+    await payments.processOrderPayment(diningPayment, receiver);
+    assert.equal(await balance(receiver), 67000);
+    assert.equal(await prisma.payment.count({ where: { orderId: diningOrder.id } }), 1);
+    assert.equal(await prisma.cashTransaction.count({
+      where: { orderId: diningOrder.id, shiftId: targetShift.id, employeeId: receiver.employeeId },
+    }), 1);
+    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
   } finally { await prisma.onModuleDestroy(); }
 }
 void main();

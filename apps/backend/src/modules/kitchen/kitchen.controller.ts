@@ -7,6 +7,7 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
   CancelKitchenTicketActionDto,
+  CompleteKitchenTicketActionDto,
   KitchenTicketActionDto,
 } from "./dto/kitchen-action.dto";
 import { KitchenActionService } from "./kitchen-action.service";
@@ -89,7 +90,7 @@ export class KitchenController {
   @Permissions(PERMISSIONS.KITCHEN_STATUS_UPDATE)
   completeOrder(
     @Param("id") id: string,
-    @Body() dto: KitchenTicketActionDto,
+    @Body() dto: CompleteKitchenTicketActionDto,
     @CurrentUser() user: AuthenticatedUser,
     @CorrelationId() correlationId: string,
     @IdempotencyKey() idempotencyKey: string,

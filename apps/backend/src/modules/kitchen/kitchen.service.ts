@@ -6,7 +6,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
-  CashTransactionType,
   KitchenTicketStatus,
   OrderItemStatus,
   OrderState,
@@ -16,8 +15,6 @@ import {
   Prisma,
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
-import { hasPermission } from "../../common/auth/authorization";
-import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   resolveRestaurantScope,
   resolveSoleActiveTenantId,
@@ -52,7 +49,7 @@ type KitchenTransitionActor = {
   correlationId?: string;
   idempotencyKey?: string;
   reasonCode?: string;
-  cashCollected?: boolean;
+  recipientName?: string;
   completeIdempotency?: (
     tx: Prisma.TransactionClient,
     ticket: { id: string; status: KitchenTicketStatus; version: number },
@@ -63,7 +60,7 @@ type KitchenTicketActionContext = {
   correlationId?: string;
   idempotencyKey?: string;
   reasonCode?: string;
-  cashCollected?: boolean;
+  recipientName?: string;
   completeIdempotency?: KitchenTransitionActor["completeIdempotency"];
 };
 type KitchenTransitionOrder = {
@@ -439,8 +436,8 @@ export class KitchenService {
         ? { idempotencyKey: context.idempotencyKey }
         : {}),
       ...(context?.reasonCode ? { reasonCode: context.reasonCode } : {}),
-      ...(context?.cashCollected !== undefined
-        ? { cashCollected: context.cashCollected }
+      ...(context?.recipientName
+        ? { recipientName: context.recipientName }
         : {}),
       ...(context?.completeIdempotency
         ? { completeIdempotency: context.completeIdempotency }
@@ -517,10 +514,14 @@ export class KitchenService {
       }
 
       const now = new Date();
+      const recipientName =
+        transition.orderStatus === OrderStatus.COMPLETED &&
+        order.type === OrderType.TAKEAWAY
+          ? actor.recipientName?.trim()
+          : undefined;
       if (
         transition.orderStatus === OrderStatus.COMPLETED &&
-        order.type === OrderType.TAKEAWAY &&
-        order.customerOrder?.paymentMethod?.toUpperCase() === "CASH"
+        order.type === OrderType.TAKEAWAY
       ) {
         const paidTotal = order.payments
           .filter((payment) =>
@@ -531,22 +532,10 @@ export class KitchenService {
             (total, payment) => total.add(payment.amount),
             new Prisma.Decimal(0),
           );
-        if (order.total.greaterThan(paidTotal) && !actor.cashCollected) {
+        if (order.total.greaterThan(paidTotal)) {
           throw new BadRequestException(
-            "Olib ketish buyurtmasini topshirishdan oldin kassada naqd pul qabul qilinganini tasdiqlang",
+            "Olib ketish buyurtmasini topshirishdan oldin kassada to'lovni qabul qiling",
           );
-        }
-        if (order.total.greaterThan(paidTotal) && actor.cashCollected) {
-          if (
-            !actor.user ||
-            !hasPermission(actor.user, PERMISSIONS.PAYMENT_CREATE) ||
-            !hasPermission(actor.user, PERMISSIONS.CASH_TRANSACTION_CREATE)
-          ) {
-            throw new ForbiddenException(
-              "Naqd pulni faqat kassa ruxsati bor xodim tasdiqlaydi",
-            );
-          }
-          await this.capturePickupCash(tx, order, actor.user, now);
         }
       }
 
@@ -610,6 +599,7 @@ export class KitchenService {
               fromStatus: order.status,
               toStatus: transition.orderStatus,
               kitchenAction: action,
+              ...(recipientName ? { recipientName } : {}),
             },
             reasonCode: `KITCHEN_${action.toUpperCase()}`,
             correlationId: actor.correlationId,
@@ -626,7 +616,9 @@ export class KitchenService {
             toStatus: transition.orderStatus,
             changedByUserId: user?.id ?? null,
             changedByEmployeeId: user?.employeeId ?? null,
-            reason: `${actor.reasonPrefix}: ${this.actionLabel(action)}`,
+            reason: recipientName
+              ? `${actor.reasonPrefix}: ${this.actionLabel(action)}; qabul qilgan: ${recipientName}`
+              : `${actor.reasonPrefix}: ${this.actionLabel(action)}`,
           },
         });
       }
@@ -670,12 +662,15 @@ export class KitchenService {
             reason:
               action === "cancel"
                 ? (actor.cancellationReason ?? null)
-                : `${actor.reasonPrefix}: ${this.actionLabel(action)}`,
+                : recipientName
+                  ? `${actor.reasonPrefix}: ${this.actionLabel(action)}; qabul qilgan: ${recipientName}`
+                  : `${actor.reasonPrefix}: ${this.actionLabel(action)}`,
             correlationId: actor.correlationId ?? null,
             idempotencyKey: actor.idempotencyKey ?? null,
             payload: {
               action,
               reasonCode: actor.reasonCode ?? `KITCHEN_${action.toUpperCase()}`,
+              ...(recipientName ? { recipientName } : {}),
             },
             version: updatedTicket.version,
           },
@@ -899,126 +894,6 @@ export class KitchenService {
     throw new BadRequestException("Bu statusdan bunday amal bajarib bo'lmaydi");
   }
 
-  private async capturePickupCash(
-    tx: TransactionClient,
-    order: Pick<
-      KitchenTransitionOrder,
-      "id" | "branchId" | "paymentStatus" | "total" | "payments"
-    >,
-    actor: AuthenticatedUser | undefined,
-    occurredAt: Date,
-  ): Promise<void> {
-    const successfulStatuses: PaymentStatus[] = [
-      PaymentStatus.PAID,
-      PaymentStatus.SUCCESS,
-    ];
-    const paidTotal = order.payments
-      .filter((payment) => successfulStatuses.includes(payment.status))
-      .reduce(
-        (total, payment) => total.add(payment.amount),
-        new Prisma.Decimal(0),
-      );
-    const outstanding = order.total.sub(paidTotal);
-    if (outstanding.lessThanOrEqualTo(0)) {
-      return;
-    }
-
-    if (!actor?.employeeId) {
-      throw new ForbiddenException(
-        "Naqd pulni qabul qilish uchun xodimga biriktirilgan hisob kerak",
-      );
-    }
-
-    const shift = await tx.shift.findFirst({
-      where: {
-        branchId: order.branchId,
-        employeeId: actor.employeeId,
-        status: "OPEN",
-      },
-      orderBy: { openedAt: "desc" },
-      select: { id: true },
-    });
-    if (!shift) {
-      throw new BadRequestException(
-        "Naqd pulni qabul qilishdan oldin xodim smenasi ochiq bo'lishi shart",
-      );
-    }
-
-    const openShift = await tx.shift.updateMany({
-      where: { id: shift.id, status: "OPEN" },
-      data: { updatedAt: occurredAt },
-    });
-    if (openShift.count !== 1) {
-      throw new BadRequestException(
-        "Xodim smenasi yopilgan. Naqd pul qabul qilinmadi.",
-      );
-    }
-
-    const branchCashMethod = await tx.paymentMethod.findFirst({
-      where: {
-        branchId: order.branchId,
-        code: "CASH",
-        isActive: true,
-      },
-    });
-    const cashMethod =
-      branchCashMethod ??
-      (await tx.paymentMethod.findFirst({
-        where: { branchId: null, code: "CASH", isActive: true },
-      }));
-    if (!cashMethod) {
-      throw new BadRequestException("Naqd pul to'lov usuli mavjud emas");
-    }
-
-    const payment = await tx.payment.create({
-      data: {
-        orderId: order.id,
-        paymentMethodId: cashMethod.id,
-        acceptedById: actor.employeeId,
-        createdById: actor.id,
-        amount: outstanding,
-        status: PaymentStatus.PAID,
-        methodCode: cashMethod.code,
-        reference: "Pickup cash at kitchen handoff",
-        paidAt: occurredAt,
-      },
-    });
-
-    await tx.revenueRecord.create({
-      data: {
-        branchId: order.branchId,
-        orderId: order.id,
-        paymentId: payment.id,
-        shiftId: shift.id,
-        employeeId: actor.employeeId,
-        source: "ORDER",
-        amount: outstanding,
-        description: "Pickup cash payment",
-        recordedAt: occurredAt,
-      },
-    });
-
-    await tx.cashTransaction.create({
-      data: {
-        branchId: order.branchId,
-        shiftId: shift.id,
-        employeeId: actor.employeeId,
-        orderId: order.id,
-        paymentId: payment.id,
-        type: CashTransactionType.SALE,
-        amount: outstanding,
-        reason: "Pickup cash received at kitchen handoff",
-        createdById: actor.id,
-        occurredAt,
-      },
-    });
-
-    await tx.order.update({
-      where: { id: order.id },
-      data: { paymentStatus: PaymentStatus.PAID },
-    });
-  }
-
   private async findOrderForTransition(
     tx: TransactionClient,
     orderId: string,
@@ -1115,7 +990,12 @@ export class KitchenService {
           branch: true,
           table: { include: { hall: true } },
           waiter: true,
-          customerOrder: { select: { paymentMethod: true } },
+          customerOrder: {
+            select: {
+              paymentMethod: true,
+              customer: { select: { name: true } },
+            },
+          },
           payments: { select: { amount: true, status: true } },
           statusHistory: {
             orderBy: { createdAt: "asc" },

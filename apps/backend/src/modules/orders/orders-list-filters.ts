@@ -15,6 +15,7 @@ export function buildOrderListWhere(
     | "status"
     | "excludeStatus"
     | "type"
+    | "excludeType"
     | "paymentStatus"
     | "search"
     | "from"
@@ -31,7 +32,11 @@ export function buildOrderListWhere(
     ...(query.excludeStatus
       ? { NOT: { status: query.excludeStatus as OrderStatus } }
       : {}),
-    ...(query.type ? { type: query.type as OrderType } : {}),
+    ...(query.type
+      ? { type: query.type as OrderType }
+      : query.excludeType
+        ? { type: { not: query.excludeType as OrderType } }
+        : {}),
     ...(query.paymentStatus
       ? { paymentStatus: query.paymentStatus as PaymentStatus }
       : {}),

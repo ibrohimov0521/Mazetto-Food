@@ -29,6 +29,10 @@ export class ListOrdersDto {
   type?: OrderType;
 
   @IsOptional()
+  @IsEnum(OrderType)
+  excludeType?: OrderType;
+
+  @IsOptional()
   @IsEnum(PaymentStatus)
   paymentStatus?: PaymentStatus;
 

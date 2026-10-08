@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { queuePrintJobsForReceipt } from "../src/modules/receipts/receipt-writer";
 
 const receiptDto = readFileSync(
   "src/modules/receipts/dto/list-receipts.dto.ts",
@@ -75,6 +76,28 @@ test("customer and kitchen documents use separate durable print routes", () => {
   assert.match(receiptService, /isKitchen/);
   assert.match(receiptService, /OSHXONA BUYURTMASI/);
   assert.match(receiptService, /!isKitchen \? paymentCommands/);
+});
+
+test("kitchen ticket goes only to printers explicitly assigned the kitchen role", async () => {
+  const jobs: { printerId: string | null }[] = [];
+  const printers = [
+    { id: "legacy-cashier", type: "THERMAL", metadata: null },
+    { id: "cashier", type: "THERMAL", metadata: { printRoles: ["RECEIPT"] } },
+    { id: "kitchen", type: "THERMAL", metadata: { printRoles: ["KITCHEN"] } },
+  ];
+  const tx = {
+    printer: { findMany: async () => printers },
+    printJob: {
+      create: async ({ data }: { data: { printerId: string | null } }) => jobs.push(data),
+      createMany: async ({ data }: { data: { printerId: string | null }[] }) => jobs.push(...data),
+    },
+  };
+  await queuePrintJobsForReceipt(tx as never, {
+    id: "kitchen-receipt",
+    branchId: "branch-1",
+    content: { documentType: "KITCHEN" },
+  });
+  assert.deepEqual(jobs.map((job) => job.printerId), ["kitchen"]);
 });
 
 test("receipt output is localized for order type, time and quantities", () => {

@@ -7,6 +7,7 @@ import {
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import type {
   CancelKitchenTicketActionDto,
+  CompleteKitchenTicketActionDto,
   KitchenTicketActionDto,
 } from "./dto/kitchen-action.dto";
 import { KitchenService, type KitchenStaffAction } from "./kitchen.service";
@@ -52,7 +53,7 @@ export class KitchenActionService {
 
   complete(
     ticketId: string,
-    dto: KitchenTicketActionDto,
+    dto: CompleteKitchenTicketActionDto,
     user: AuthenticatedUser,
     context: KitchenActionContext,
   ) {
@@ -71,7 +72,7 @@ export class KitchenActionService {
   private async execute(
     ticketId: string,
     action: KitchenStaffAction,
-    dto: KitchenTicketActionDto & { reason?: string; reasonCode?: string },
+    dto: KitchenTicketActionDto & { reason?: string; reasonCode?: string; recipientName?: string },
     user: AuthenticatedUser,
     context: KitchenActionContext,
   ) {
@@ -101,8 +102,8 @@ export class KitchenActionService {
         dto.reason,
         {
           expectedVersion: dto.expectedVersion,
-          ...(action === "complete" && dto.cashCollected !== undefined
-            ? { cashCollected: dto.cashCollected }
+          ...(action === "complete" && dto.recipientName?.trim()
+            ? { recipientName: dto.recipientName.trim() }
             : {}),
           correlationId: context.correlationId,
           idempotencyKey: context.idempotencyKey,
