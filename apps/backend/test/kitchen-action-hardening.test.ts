@@ -512,7 +512,7 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
   const order = {
     id: "order-1",
     branchId: "branch-1",
-    type: OrderType.DINE_IN,
+    type: OrderType.DINE_IN as OrderType,
     status: OrderStatus.NEW as OrderStatus,
     orderState: OrderState.PLACED as OrderState,
     version: 1,
@@ -520,13 +520,13 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
     acceptedById: null as string | null,
     cancelledAt: null as Date | null,
     cancellationReason: null as string | null,
-    paymentStatus: PaymentStatus.PENDING,
+    paymentStatus: PaymentStatus.PENDING as PaymentStatus,
     total: new Prisma.Decimal(100),
     payments: [] as { amount: Prisma.Decimal; status: PaymentStatus }[],
     customerOrder: customerTelegramChatId
       ? {
-          paymentMethod: null,
-          customer: { telegramChatId: customerTelegramChatId },
+          paymentMethod: null as string | null,
+          customer: { telegramChatId: customerTelegramChatId as string | null },
         }
       : null,
   };
