@@ -458,6 +458,33 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     );
     assert.equal(queuedPayload.offlineOrderSnapshot?.table?.id, "table-1");
 
+    const hallOrder = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`,
+      {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idempotencyKey: "hall-key-1",
+          type: "DINE_IN",
+          tableId: "table-1",
+          payLater: true,
+          offlineEstimatedTotal: 30_000,
+          items: [{ productId: "product-1", quantity: 1 }],
+        }),
+      },
+    );
+    assert.equal(hallOrder.status, 202);
+    const hallData = (await hallOrder.json()).data;
+    assert.equal(hallData.order.paymentStatus, "PENDING");
+    assert.equal(hallData.order.total, "30000");
+    assert.deepEqual(hallData.payment.methods, []);
+    assert.equal(store.summary().pendingCommands, 2);
+    assert.equal(store.summary().pendingPrintJobs, 3);
+    assert.equal(
+      store.listLocalPrintJobs().filter((job) => job.documentType === "RECEIPT").length,
+      1,
+    );
+
     online = true;
     const onlineRequest = await fetch(
       `http://127.0.0.1:${gatewayPort}/api/v1/branches`,
@@ -476,10 +503,11 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
         store.summary().pendingCommands === 0 &&
         store.summary().sendingCommands === 0,
     );
-    assert.equal(sent.length, 1);
+    assert.equal(sent.length, 2);
     assert.equal(sent[0]?.url, "https://api.example.test/api/v1/pos/orders");
     assert.equal(sent[0]?.idempotencyKey, "sale-key-1");
     assert.match(sent[0]?.body ?? "", /sale-key-1/);
+    assert.match(sent[1]?.body ?? "", /"payLater":true/);
   } finally {
     await gateway.stop();
     store.close();
