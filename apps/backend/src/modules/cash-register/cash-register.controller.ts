@@ -63,7 +63,7 @@ export class CashRegisterController {
   getShiftOrders(
     @Param("id") id: string,
     @Query()
-    query: { status?: string; search?: string; limit?: string; offset?: string },
+    query: { status?: string; search?: string; sort?: string; limit?: string; offset?: string },
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.cashRegisterService.getShiftOrders(id, query, user);

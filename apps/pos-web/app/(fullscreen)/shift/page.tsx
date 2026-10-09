@@ -27,6 +27,8 @@ import {
 } from "../../../components/staff/cash-handover";
 import { CashTransferDetailButton } from "../../../components/staff/cash-transfer-detail";
 import { CashierWorkspaceNavigation } from "../../../components/staff/staff-panel-navigation";
+import { ShiftClosePrintReport } from "../../../components/staff/shift-close-print-report";
+import { readAllShiftOrders } from "../../../lib/shift-close-report.mjs";
 
 type CashTransfer = {
   id: string;
@@ -56,6 +58,7 @@ type Shift = {
   cashDifference?: string | null;
   currentBalance?: string;
   cashSales?: string;
+  salesTotal?: string | null;
   orderCount?: number;
   openedAt: string;
   closedAt?: string | null;
@@ -74,6 +77,7 @@ type ShiftSummaryOrder = {
   orderNumber: string;
   displayOrderNumber?: string | null;
   status: string;
+  createdAt?: string;
   total: string;
   items: { id: string; productName: string; quantity: string }[];
 };
@@ -213,7 +217,6 @@ function ShiftConsole() {
       active = false;
     };
   }, [isConfirmingClose, shift]);
-
   useEffect(() => {
     if (!needsBranchChoice) {
       setBranches([]);
@@ -311,7 +314,7 @@ function ShiftConsole() {
           signal: AbortSignal.timeout(15000),
         },
       );
-      setClosedShift(closed);
+      setClosedShift({ ...shift, ...closed });
       setClosedShiftOrders(closingOrders ?? []);
       setShift(null);
       setClosingCash("");
@@ -554,7 +557,17 @@ function ShiftConsole() {
                       </strong>
                     </div>
                   </div>
-                  {closedShiftOrders.length ? <ShiftOrdersSummary orders={closedShiftOrders} /> : null}
+                  <ShiftClosePrintReport
+                    shift={closedShift}
+                    autoPrint
+                    fallbackOrders={closedShiftOrders}
+                  />
+                  {closedShiftOrders.length ? (
+                    <details>
+                      <summary>Smena buyurtmalari · {closedShiftOrders.length}</summary>
+                      <ShiftOrdersSummary orders={closedShiftOrders} />
+                    </details>
+                  ) : null}
                 </>
               )}
             </section>
@@ -689,15 +702,11 @@ function money(value: number | string) {
 }
 
 async function readShiftOrders(shiftId: string): Promise<ShiftSummaryOrder[]> {
-  const orders: ShiftSummaryOrder[] = [];
-  for (let offset = 0; ; offset += 100) {
-    const page = await apiFetch<ShiftSummaryOrder[]>(
-      `/cash-register/shift/${encodeURIComponent(shiftId)}/orders?limit=100&offset=${offset}`,
+  return readAllShiftOrders(shiftId, (id: string, offset: number) =>
+    apiFetch<ShiftSummaryOrder[]>(
+      `/cash-register/shift/${encodeURIComponent(id)}/orders?limit=100&offset=${offset}`,
       { cache: "no-store", signal: AbortSignal.timeout(15000) },
-    );
-    orders.push(...page);
-    if (page.length < 100) return orders;
-  }
+    ));
 }
 
 function ShiftOrdersSummary({ orders }: { orders: ShiftSummaryOrder[] }) {

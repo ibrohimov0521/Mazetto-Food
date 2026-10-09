@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Printer, RefreshCw, Search } from "lucide-react";
 import { useAuth } from "../../../../components/auth/auth-provider";
 import { CashierWorkspaceNavigation } from "../../../../components/staff/staff-panel-navigation";
+import { ShiftClosePrintReport } from "../../../../components/staff/shift-close-print-report";
 import {
   StaffDialog,
   StaffEmpty,
@@ -98,6 +99,7 @@ export default function CashierHistoryPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingShifts, setLoadingShifts] = useState(true);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const orderRequest = useRef<AbortController | null>(null);
   const [error, setError] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [reprintingId, setReprintingId] = useState("");
@@ -197,9 +199,13 @@ export default function CashierHistoryPage() {
 
   const loadOrders = useCallback(
     async (nextOffset = 0, append = false) => {
+      orderRequest.current?.abort();
+      const controller = new AbortController();
+      orderRequest.current = controller;
       if (!shiftId) {
         setOrders([]);
         setHasMore(false);
+        setLoadingOrders(false);
         return;
       }
       setLoadingOrders(true);
@@ -207,14 +213,16 @@ export default function CashierHistoryPage() {
       const params = new URLSearchParams({
         limit: String(pageSize),
         offset: String(nextOffset),
+        sort,
       });
       if (status) params.set("status", status);
       if (appliedSearch.trim()) params.set("search", appliedSearch.trim());
       try {
         const page = await apiFetch<OrderRow[]>(
           `/cash-register/shift/${encodeURIComponent(shiftId)}/orders?${params}`,
-          { cache: "no-store", signal: AbortSignal.timeout(15000) },
+          { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) },
         );
+        if (controller.signal.aborted) return;
         setOrders((current) =>
           append
             ? [
@@ -228,18 +236,20 @@ export default function CashierHistoryPage() {
         setOffset(nextOffset);
         setHasMore(page.length === pageSize);
       } catch (caught) {
+        if (controller.signal.aborted) return;
         setError(
           caught instanceof Error ? caught.message : "Buyurtmalar yuklanmadi.",
         );
       } finally {
-        setLoadingOrders(false);
+        if (!controller.signal.aborted) setLoadingOrders(false);
       }
     },
-    [appliedSearch, shiftId, status],
+    [appliedSearch, shiftId, status, sort],
   );
 
   useEffect(() => {
     void loadOrders(0, false);
+    return () => orderRequest.current?.abort();
   }, [loadOrders]);
 
   const sortedOrders = useMemo(() => {
@@ -316,7 +326,7 @@ export default function CashierHistoryPage() {
       setMessage(
         "Mahsulot bekor qilindi; zarur naqd qaytarish smenaga yozildi.",
       );
-      await loadOrders(offset, false);
+      await loadOrders(0, false);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -363,6 +373,7 @@ export default function CashierHistoryPage() {
           </button>
         </div>
 
+        {shift?.status === "CLOSED" && <ShiftClosePrintReport key={shift.id} shift={shift} />}
         <div className={styles.historyControls}>
           <label className={styles.field}>
             <span>Smena</span>
@@ -435,7 +446,7 @@ export default function CashierHistoryPage() {
         {shift ? (
           <section className={styles.stats} aria-label="Smena xulosasi">
             <div className={styles.stat}>
-              <span>Buyurtmalar</span>
+              <span>Smenada yaratilgan</span>
               <strong>{shift.orderCount ?? sortedOrders.length}</strong>
             </div>
             <div className={styles.stat}>

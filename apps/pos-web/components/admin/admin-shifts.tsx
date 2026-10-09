@@ -30,6 +30,7 @@ import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
 import { moneyCell, numberCell } from "./admin-report-views";
 import { CashTransferDetailButton } from "../staff/cash-transfer-detail";
+import { ShiftClosePrintReport } from "../staff/shift-close-print-report";
 
 /*
  * Xodimlarning umumiy kassasi va smena solishtiruvi.
@@ -211,6 +212,7 @@ export function AdminShiftsPage() {
   const [offset, setOffset] = useState(0);
 
   const [detail, setDetail] = useState<Shift | null>(null);
+  const [autoPrintShiftId, setAutoPrintShiftId] = useState<string | null>(null);
   const [closing, setClosing] = useState<Shift | null>(null);
   const [closingBalance, setClosingBalance] = useState("");
   const [closeError, setCloseError] = useState("");
@@ -394,6 +396,7 @@ export function AdminShiftsPage() {
       );
       setClosing(null);
       setDetail(closed);
+      setAutoPrintShiftId(closed.id);
       load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
@@ -438,7 +441,7 @@ export function AdminShiftsPage() {
     },
     {
       key: "orders",
-      header: "Buyurtma",
+      header: "Smenada yaratilgan",
       align: "right",
       hideOnMobile: true,
       render: (shift) => (
@@ -686,9 +689,13 @@ export function AdminShiftsPage() {
       </Card>
 
       <ShiftDetailModal
+        autoPrintShiftId={autoPrintShiftId}
         canClose={canClose || canForceHandover}
         canForceHandover={canForceHandover}
-        onClose={() => setDetail(null)}
+        onClose={() => {
+          setDetail(null);
+          setAutoPrintShiftId(null);
+        }}
         onRequestHandover={openHandoverDialog}
         onRequestShiftClose={openCloseDialog}
         shift={detail}
@@ -891,6 +898,7 @@ function Row({
  * farq raqami bor edi va uni tekshirishning yo'li yo'q edi.
  */
 function ShiftDetailModal({
+  autoPrintShiftId,
   canClose,
   canForceHandover,
   onClose,
@@ -898,6 +906,7 @@ function ShiftDetailModal({
   onRequestShiftClose,
   shift,
 }: {
+  autoPrintShiftId: string | null;
   canClose: boolean;
   canForceHandover: boolean;
   onClose: () => void;
@@ -1045,6 +1054,9 @@ function ShiftDetailModal({
           >
             Smena buyurtmalarini ko'rish
           </Link>
+          {shift.status === "CLOSED" && (
+            <ShiftClosePrintReport key={shift.id} shift={shift} autoPrint={autoPrintShiftId === shift.id} />
+          )}
 
           {/*
            * Uchta ALOHIDA blok — MONEY_PATH: "expected, actual and
@@ -1084,7 +1096,7 @@ function ShiftDetailModal({
               numeric
               value={formatMoney(shift.openingBalance)}
             />
-            <Row label="Buyurtma" value={`${shift.orderCount} ta`} />
+            <Row label="Smenada yaratilgan" value={`${shift.orderCount} ta`} />
             <Row label="Savdo" numeric value={formatMoney(shift.salesTotal)} />
             <Row label="Naqd" numeric value={formatMoney(shift.cashTotal)} />
             <Row

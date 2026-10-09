@@ -276,3 +276,13 @@ test("saved per-kind branding overrides legacy common visibility", () => {
   assert.equal(normalized.documents.RECEIPT.businessName, "Eski nom");
   assert.equal(normalized.documents.KITCHEN.businessName, "Oshxona nomi");
 });
+
+test("dining and takeaway order types are not printed as customer notes", () => {
+  for (const orderType of ["Zal", "Olib ketish"]) {
+    const html = printableReceiptHtml({
+      content: { orderType, orderNotes: "  ", items: [{ productName: "Tea", notes: " \n\t " }] },
+    });
+    assert.doesNotMatch(html, /Izoh:/);
+    assert.ok(html.includes(orderType));
+  }
+});

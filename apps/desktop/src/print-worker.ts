@@ -720,9 +720,10 @@ export class DesktopPrintWorker {
       const total = String(command.total ?? "").trim();
       if (total)
         lines.push(...wrapEscPosPair(lines.pop() ?? "", total, columns));
-      if (command.notes)
+      const note = typeof command.notes === "string" ? command.notes.trim() : "";
+      if (note)
         lines.push(
-          ...wrapEscPosText("Izoh: " + String(command.notes), columns, "  "),
+          ...wrapEscPosText("Izoh: " + note, columns, "  "),
         );
       for (const modifier of modifierNames(command.modifiers))
         lines.push(...wrapEscPosText("+ " + modifier, columns, "  "));
