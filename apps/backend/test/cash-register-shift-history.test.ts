@@ -12,7 +12,7 @@ const cashier: AuthenticatedUser = {
 };
 
 test("cashier can read their own shift order history with requested filters", async () => {
-  let orderQuery: Record<string, unknown> | null = null;
+  const captured: { orderQuery?: Record<string, unknown> } = {};
   const service = new CashRegisterService(
     {
       branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
@@ -25,7 +25,7 @@ test("cashier can read their own shift order history with requested filters", as
       },
       order: {
         findMany: async (query: Record<string, unknown>) => {
-          orderQuery = query;
+          captured.orderQuery = query;
           return [];
         },
       },
@@ -41,11 +41,11 @@ test("cashier can read their own shift order history with requested filters", as
     ),
     [],
   );
-  assert.equal((orderQuery?.where as { shiftId: string }).shiftId, "shift-a");
-  assert.equal(orderQuery?.skip, 40);
-  assert.equal(orderQuery?.take, 20);
+  assert.equal((captured.orderQuery?.where as { shiftId: string }).shiftId, "shift-a");
+  assert.equal(captured.orderQuery?.skip, 40);
+  assert.equal(captured.orderQuery?.take, 20);
   assert.equal(
-    ((orderQuery?.where as { status: string }).status),
+    ((captured.orderQuery?.where as { status: string }).status),
     "CANCELLED",
   );
 });
@@ -80,13 +80,13 @@ test("cashier cannot read another employee's shift orders", async () => {
 });
 
 test("cashier shift history only requests their own tenant-scoped shifts", async () => {
-  let shiftQuery: Record<string, unknown> | null = null;
+  const captured: { shiftQuery?: Record<string, unknown> } = {};
   const service = new CashRegisterService(
     {
       branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
       shift: {
         findMany: async (query: Record<string, unknown>) => {
-          shiftQuery = query;
+          captured.shiftQuery = query;
           return [];
         },
       },
@@ -95,16 +95,16 @@ test("cashier shift history only requests their own tenant-scoped shifts", async
   );
 
   await service.listOwnShifts({ limit: "25", offset: "50" }, cashier);
-  assert.deepEqual(shiftQuery?.where, {
+  assert.deepEqual(captured.shiftQuery?.where, {
     employeeId: "employee-a",
     branch: { tenantId: "tenant-a" },
   });
-  assert.equal(shiftQuery?.take, 25);
-  assert.equal(shiftQuery?.skip, 50);
+  assert.equal(captured.shiftQuery?.take, 25);
+  assert.equal(captured.shiftQuery?.skip, 50);
 });
 
 test("branch shift viewers can open a historical shift within their tenant", async () => {
-  let shiftQuery: Record<string, unknown> | null = null;
+  const captured: { shiftQuery?: Record<string, unknown> } = {};
   const manager: AuthenticatedUser = {
     ...cashier,
     employeeId: "manager-a",
@@ -116,7 +116,7 @@ test("branch shift viewers can open a historical shift within their tenant", asy
       branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
       shift: {
         findFirst: async (query: Record<string, unknown>) => {
-          shiftQuery = query;
+          captured.shiftQuery = query;
           return {
             id: "shift-old",
             employeeId: "employee-a",
@@ -132,7 +132,7 @@ test("branch shift viewers can open a historical shift within their tenant", asy
 
   const shift = await service.getShiftHistoryDetail("shift-old", manager);
   assert.equal(shift.status, "CLOSED");
-  assert.deepEqual(shiftQuery?.where, {
+  assert.deepEqual(captured.shiftQuery?.where, {
     id: "shift-old",
     branch: { tenantId: "tenant-a" },
   });
