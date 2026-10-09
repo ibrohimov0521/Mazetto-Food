@@ -360,6 +360,7 @@ export class RealtimeBootstrapService {
                       branchId: true,
                       version: true,
                       total: true,
+                      paymentStatus: true,
                       orderNumber: true,
                       displayOrderNumber: true,
                       source: true,
