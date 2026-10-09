@@ -3769,6 +3769,18 @@ function cachedCatalog(
   authScope: string,
   branchId?: string,
 ): Record<string, unknown> | null {
+  const bootstrap = branchId
+    ? store.getLatestCachedResponse(
+        authScope,
+        "/api/v1/realtime/bootstrap",
+      )
+    : null;
+  const snapshot = bootstrap
+    ? recordField(parseJsonObject(bootstrap.body), "data")
+    : null;
+  const matchesBranch =
+    snapshot?.schemaVersion === 2 && snapshot.branchId === branchId;
+  const branch = matchesBranch ? recordField(snapshot, "branch") : null;
   const cached = store.getLatestCachedResponse(
     authScope,
     "/api/v1/pos/catalog",
@@ -3781,30 +3793,22 @@ function cachedCatalog(
       Array.isArray(catalog.products) &&
       Array.isArray(catalog.tables)
     ) {
-      return catalog;
+      return branch ? { ...catalog, branch } : catalog;
     }
   }
 
-  if (!branchId) return null;
-  const bootstrap = store.getLatestCachedResponse(
-    authScope,
-    "/api/v1/realtime/bootstrap",
-  );
-  if (!bootstrap) return null;
-
-  const snapshot = recordField(parseJsonObject(bootstrap.body), "data");
+  if (!matchesBranch) return null;
   const catalog = recordField(snapshot, "catalog");
   if (
-    snapshot?.schemaVersion !== 2 ||
-    snapshot?.branchId !== branchId ||
-    catalog?.branchId !== branchId ||
+    !catalog ||
+    catalog.branchId !== branchId ||
     !Array.isArray(catalog.products) ||
     !Array.isArray(catalog.tables)
   ) {
     return null;
   }
 
-  return catalog;
+  return branch ? { ...catalog, branch } : catalog;
 }
 
 function buildOfflineOrderSnapshot(
@@ -3835,27 +3839,49 @@ function buildOfflineOrderSnapshot(
     const requestedModifiers = Array.isArray(item.modifiers)
       ? item.modifiers
       : [];
+    let modifierUnitTotal = 0;
     const modifiers = requestedModifiers.map((requested) => {
       const requestedRecord = isRecord(requested) ? requested : {};
       const modifierId = stringField(requestedRecord, "modifierId") ?? "";
+      const modifierQuantity = finiteAmount(requestedRecord.quantity) ?? 1;
       const link = modifierLinks.find((candidate) => {
         if (!isRecord(candidate)) return false;
         const modifier = recordField(candidate, "modifier");
         return modifier?.id === modifierId;
       });
       const modifier = isRecord(link) ? recordField(link, "modifier") : null;
+      const modifierPrice = finiteAmount(modifier?.price);
+      const modifierTotal = modifierPrice === null
+        ? null
+        : modifierPrice * modifierQuantity;
+      if (modifierTotal !== null) modifierUnitTotal += modifierTotal;
       return {
         id: modifierId,
         name: stringField(modifier, "name") ?? "Qo'shimcha",
-        quantity: numberField(requestedRecord, "quantity") ?? 1,
+        quantity: modifierQuantity.toFixed(3),
+        ...(modifierPrice !== null
+          ? {
+              unitPrice: modifierPrice.toFixed(2),
+              totalPrice: modifierTotal!.toFixed(2),
+            }
+          : {}),
       };
     });
+    const quantity = finiteAmount(item.quantity) ?? 1;
+    const unitPrice = finiteAmount(
+      isRecord(variant) ? variant.sellingPrice : productRecord.sellingPrice,
+    );
+    const totalPrice = unitPrice === null
+      ? null
+      : (unitPrice + modifierUnitTotal) * quantity;
     return {
       id: `${localOrderId}-item-${index + 1}`,
       productId,
       productName: stringField(productRecord, "name") ?? "Mahsulot",
       variantName: stringField(isRecord(variant) ? variant : null, "name"),
-      quantity: String(numberField(item, "quantity") ?? 1),
+      quantity: quantity.toString(),
+      ...(unitPrice !== null ? { unitPrice: unitPrice.toFixed(2) } : {}),
+      ...(totalPrice !== null ? { totalPrice: totalPrice.toFixed(2) } : {}),
       notes: stringField(item, "notes"),
       modifierSnapshot: modifiers,
     };
@@ -3877,7 +3903,10 @@ function buildOfflineOrderSnapshot(
     type: stringField(body, "type") ?? "TAKEAWAY",
     notes: stringField(body, "notes"),
     createdAt: new Date().toISOString(),
-    branch: { name: "MAZETTO FOOD" },
+    branch: {
+      name:
+        stringField(recordField(catalog, "branch"), "name") ?? "MAZETTO FOOD",
+    },
     ...(isRecord(table) ? { table } : {}),
     items,
     pendingSync: true,
@@ -3935,11 +3964,12 @@ function buildOfflinePrintDocument(
     documentType,
     statusLabel:
       documentType === "KITCHEN" ? "OSHXONA BUYURTMASI" : "SOTUV CHEKI",
-    branchName: "MAZETTO FOOD",
+    branchName:
+      stringField(recordField(order, "branch"), "name") ?? "MAZETTO FOOD",
     orderId: order.id,
     orderNumber: order.orderNumber,
     displayOrderNumber: order.displayOrderNumber,
-    orderType: order.type,
+    orderType: offlineOrderTypeLabel(stringField(order, "type")),
     orderSource: "POS",
     orderNotes: typeof order.notes === "string" ? order.notes.trim() || null : null,
     items: order.items,
@@ -3954,6 +3984,19 @@ function buildOfflinePrintDocument(
 
 function offlineWaiterInternalOrderNumber(localOrderId: string): string {
   return `WAIT-${localOrderId.slice(-6).toUpperCase()}`;
+}
+
+function offlineOrderTypeLabel(type: string | null): string {
+  switch (type) {
+    case "DINE_IN":
+      return "Zal";
+    case "TAKEAWAY":
+      return "Olib ketish";
+    case "DELIVERY":
+      return "Yetkazib berish";
+    default:
+      return type ?? "";
+  }
 }
 
 function offlinePosInternalOrderNumber(localOrderId: string): string {
@@ -4092,7 +4135,7 @@ function buildOfflineCancellationDocument(
     orderId: order.id,
     orderNumber: order.orderNumber,
     displayOrderNumber: order.displayOrderNumber,
-    orderType: order.type,
+    orderType: offlineOrderTypeLabel(stringField(order, "type")),
     items: Array.isArray(order.items) ? order.items : [],
     total: order.total,
     dateTime: formatTashkentDateTime(new Date()),

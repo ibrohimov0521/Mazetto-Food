@@ -352,13 +352,15 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     data: {
       schemaVersion: 2,
       branchId: "branch-1",
+      branch: { id: "branch-1", name: "Sergeli filiali" },
       catalog: {
         branchId: "branch-1",
         products: [
           {
             id: "product-1",
             name: "Lavash",
-            variants: [{ id: "variant-1", name: "Katta" }],
+            sellingPrice: 20_000,
+            variants: [{ id: "variant-1", name: "Katta", sellingPrice: 25_000 }],
             modifiers: [],
           },
         ],
@@ -484,6 +486,19 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
       store.listLocalPrintJobs().filter((job) => job.documentType === "RECEIPT").length,
       1,
     );
+    const localReceiptJob = store.claimLocalPrintJob(["RECEIPT"]);
+    assert.ok(localReceiptJob);
+    const localReceipt = JSON.parse(localReceiptJob.payloadJson) as {
+      branchName: string;
+      orderType: string;
+      items: Array<{ totalPrice?: string }>;
+    };
+    assert.equal(localReceipt.branchName, "Sergeli filiali");
+    assert.equal(localReceipt.orderType, "Zal");
+    assert.equal(localReceipt.items[0]?.totalPrice, "25000.00");
+    const attemptId = store.markLocalPrintJobPrinting(localReceiptJob.id);
+    assert.ok(attemptId);
+    store.completeLocalPrintJob(localReceiptJob.id, attemptId);
 
     online = true;
     const onlineRequest = await fetch(
