@@ -184,3 +184,44 @@ export function CashierWorkspaceNavigation({
     </nav>
   );
 }
+
+export function KitchenWorkspaceNavigation({
+  onNavigate,
+}: {
+  onNavigate?: () => void;
+}) {
+  const pathname = usePathname();
+  const entries = [
+    { href: "/kitchen", label: "Navbat", icon: ChefHat },
+    { href: "/kitchen/history", label: "Tarix", icon: History },
+  ];
+
+  return (
+    <nav aria-label="Oshxona bo'limlari" className={styles.panelNavigation}>
+      <section className={styles.panelGroup}>
+        <p className={styles.panelGroupLabel}>Oshxona</p>
+        <div className={styles.panelGroupItems}>
+          {entries.map(({ href, label, icon: Icon }) => {
+            const active =
+              href === "/kitchen"
+                ? pathname === href
+                : pathname === href || pathname.startsWith(`${href}/`);
+            return (
+              <Link
+                aria-current={active ? "page" : undefined}
+                className={styles.panelLink}
+                data-active={active}
+                href={href}
+                key={href}
+                onClick={() => onNavigate?.()}
+              >
+                <Icon aria-hidden="true" size={18} />
+                <span>{label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+    </nav>
+  );
+}
