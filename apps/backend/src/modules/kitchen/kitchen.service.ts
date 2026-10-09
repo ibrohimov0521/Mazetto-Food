@@ -33,6 +33,10 @@ import {
 } from "../orders/order-events";
 import { KitchenGateway } from "./kitchen.gateway";
 import { orderStatusAfterKitchenHandoff } from "./kitchen-status-sync";
+import {
+  kitchenHistoryModifiers,
+  kitchenHistoryRange,
+} from "./kitchen-history-range";
 
 type TransactionClient = Prisma.TransactionClient;
 export type KitchenStaffAction =
@@ -143,12 +147,15 @@ export class KitchenService {
       search?: string;
       limit?: string;
       offset?: string;
+      from?: string;
+      to?: string;
+      sort?: string;
     },
     user: AuthenticatedUser,
   ) {
-    const employeeId = this.requireEmployee(user);
+    this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
-    const day = this.todayTashkentRange();
+    const range = kitchenHistoryRange(query.from, query.to);
     const status = this.toKitchenTicketStatus(query.status);
     const search = query.search?.trim();
 
@@ -159,13 +166,7 @@ export class KitchenService {
           ...(scope.branchId
             ? { branchId: scope.branchId }
             : { branch: { tenantId: scope.tenantId } }),
-          createdAt: { gte: day.start, lt: day.end },
-          statusHistory: {
-            some: {
-              changedByEmployeeId: employeeId,
-              createdAt: { gte: day.start, lt: day.end },
-            },
-          },
+          createdAt: { gte: range.start, lt: range.end },
           ...(search
             ? {
                 OR: [
@@ -176,8 +177,6 @@ export class KitchenService {
                       mode: "insensitive",
                     },
                   },
-                  { customerName: { contains: search, mode: "insensitive" } },
-                  { customerPhone: { contains: search, mode: "insensitive" } },
                   {
                     items: {
                       some: {
@@ -190,13 +189,29 @@ export class KitchenService {
             : {}),
         },
       },
-      include: this.ticketInclude(),
-      orderBy: { updatedAt: "desc" },
+      select: this.historySelect(),
+      orderBy:
+        query.sort === "oldest"
+          ? [{ createdAt: "asc" }, { id: "asc" }]
+          : [{ createdAt: "desc" }, { id: "desc" }],
       skip: this.parseOffset(query.offset),
       take: this.parseLimit(query.limit),
     });
 
-    return tickets;
+    return tickets.map((ticket) => ({
+      ...ticket,
+      items: ticket.items.map((item) => ({
+        ...item,
+        modifierSnapshot: kitchenHistoryModifiers(item.modifierSnapshot),
+      })),
+      order: {
+        ...ticket.order,
+        items: ticket.order.items.map((item) => ({
+          ...item,
+          modifierSnapshot: kitchenHistoryModifiers(item.modifierSnapshot),
+        })),
+      },
+    }));
   }
 
   async createTicketForOrder(tx: TransactionClient, orderId: string) {
@@ -1020,6 +1035,61 @@ export class KitchenService {
         },
       },
     } satisfies Prisma.KitchenTicketInclude;
+  }
+
+  private historySelect() {
+    return {
+      id: true,
+      ticketNumber: true,
+      status: true,
+      priority: true,
+      version: true,
+      revisionNumber: true,
+      isSupplement: true,
+      createdAt: true,
+      acceptedAt: true,
+      items: {
+        where: { status: OrderItemStatus.ACTIVE },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          productName: true,
+          variantName: true,
+          quantity: true,
+          notes: true,
+          modifierSnapshot: true,
+        },
+      },
+      order: {
+        select: {
+          id: true,
+          orderNumber: true,
+          displayOrderNumber: true,
+          source: true,
+          type: true,
+          notes: true,
+          kitchenComment: true,
+          branch: { select: { name: true } },
+          table: { select: { number: true, name: true } },
+          statusHistory: {
+            select: { toStatus: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          },
+          items: {
+            where: { status: OrderItemStatus.ACTIVE },
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              productName: true,
+              variantName: true,
+              quantity: true,
+              notes: true,
+              modifierSnapshot: true,
+            },
+          },
+        },
+      },
+    } satisfies Prisma.KitchenTicketSelect;
   }
 
   private requireEmployee(user: AuthenticatedUser): string {

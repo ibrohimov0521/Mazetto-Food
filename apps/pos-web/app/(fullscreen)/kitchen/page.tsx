@@ -11,12 +11,12 @@ import { pickupOutstanding } from "../../../components/kitchen/kitchen-payment.m
 import { sortKitchenTickets } from "../../../components/kitchen/kitchen-prefs";
 import {
   kitchenColumns,
-  kitchenStatusLabels,
   type KitchenAction,
   type KitchenQueueResponse,
   type KitchenTicket,
 } from "../../../components/kitchen/kitchen-types";
 import { useKitchenChime } from "../../../components/kitchen/use-kitchen-chime";
+import { KitchenWorkspaceNavigation } from "../../../components/staff/staff-panel-navigation";
 import {
   StaffDialog,
   StaffEmpty,
@@ -65,12 +65,6 @@ function KitchenDisplay() {
   );
   const [handoffRecipient, setHandoffRecipient] = useState("");
   const [cancelReason, setCancelReason] = useState("");
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyTickets, setHistoryTickets] = useState<KitchenTicket[]>([]);
-  const [historyStatus, setHistoryStatus] = useState("");
-  const [historySearch, setHistorySearch] = useState("");
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState("");
   const loadVersion = useRef(0);
   const loadRequest = useRef<AbortController | null>(null);
   const pendingActions = useRef(0);
@@ -142,35 +136,6 @@ function KitchenDisplay() {
       (user?.id ?? "staff") + ":kitchen-display:" + (user?.branchId ?? "all"),
     onEvent: () => loadTickets(),
   });
-
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setHistoryError("");
-    const params = new URLSearchParams({ limit: "100", offset: "0" });
-    if (historyStatus) params.set("status", historyStatus);
-    if (historySearch.trim()) params.set("search", historySearch.trim());
-    try {
-      setHistoryTickets(
-        await apiFetch<KitchenTicket[]>(
-          `/kitchen/orders/history?${params.toString()}`,
-          {
-            cache: "no-store",
-            signal: AbortSignal.timeout(12000),
-          },
-        ),
-      );
-    } catch (caught) {
-      setHistoryError(
-        caught instanceof Error ? caught.message : "Tarix yuklanmadi.",
-      );
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [historySearch, historyStatus]);
-
-  useEffect(() => {
-    if (historyOpen) void loadHistory();
-  }, [historyOpen, loadHistory]);
 
   useEffect(() => {
     void loadTickets();
@@ -380,7 +345,7 @@ function KitchenDisplay() {
     : `Ovoz ${isSoundEnabled ? "yoqilgan" : "o'chirilgan"}`;
 
   return (
-    <StaffShell title="Oshxona">
+    <StaffShell title="Oshxona" actions={<KitchenWorkspaceNavigation />}>
       <div className={`${styles.content} ${styles.kitchenContent}`}>
         <div className={styles.overview}>
           <h2 className={styles.pageHeading}>
@@ -425,16 +390,15 @@ function KitchenDisplay() {
               )}
               <span className={styles.kitchenToolLabel}>{soundLabel}</span>
             </button>
-            <button
+            <Link
               className={styles.button}
               aria-label="Oshxona tarixi"
               title="Oshxona tarixi"
-              onClick={() => setHistoryOpen(true)}
-              type="button"
+              href="/kitchen/history"
             >
               <History size={18} aria-hidden="true" />
               <span className={styles.kitchenToolLabel}>Tarix</span>
-            </button>
+            </Link>
           </div>
         </div>
         {error && (
@@ -549,94 +513,6 @@ function KitchenDisplay() {
           ))}
         </div>
       </div>
-      {historyOpen && (
-        <StaffDialog
-          title="Smenadagi oshxona tarixi"
-          busy={historyLoading}
-          onClose={() => setHistoryOpen(false)}
-        >
-          <div className={styles.historyControls}>
-            <label className={styles.search}>
-              <Search size={17} />
-              <input
-                aria-label="Tarixdan qidirish"
-                placeholder="Buyurtma yoki taom"
-                value={historySearch}
-                onChange={(event) => setHistorySearch(event.target.value)}
-              />
-            </label>
-            <select
-              className={styles.historySelect}
-              aria-label="Tarix holati"
-              value={historyStatus}
-              onChange={(event) => setHistoryStatus(event.target.value)}
-            >
-              <option value="">Barcha holatlar</option>
-              {Object.entries(kitchenStatusLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button
-              className={styles.button}
-              onClick={() => void loadHistory()}
-              disabled={historyLoading}
-              type="button"
-            >
-              Yangilash
-            </button>
-          </div>
-          {historyError && (
-            <div className={styles.error} role="alert">
-              {historyError}
-            </div>
-          )}
-          <div className={styles.historyList}>
-            {historyLoading ? (
-              <div className={styles.skeleton} />
-            ) : historyTickets.length ? (
-              historyTickets.map((ticket) => (
-                <article className={styles.historyOrder} key={ticket.id}>
-                  <div>
-                    <strong>
-                      #
-                      {ticket.order.displayOrderNumber ??
-                        ticket.order.orderNumber}
-                    </strong>
-                    <span className={styles.muted}>
-                      {ticket.order.items.length} ta mahsulot ·{" "}
-                      {ticket.order.branch?.name ?? "Filial"}
-                    </span>
-                  </div>
-                  <span
-                    className={styles.badge}
-                    data-tone={
-                      ticket.status === "CANCELLED"
-                        ? "late"
-                        : ticket.status === "READY" ||
-                            ticket.status === "COMPLETED"
-                          ? "ready"
-                          : "cooking"
-                    }
-                  >
-                    {kitchenStatusLabels[ticket.status]}
-                  </span>
-                  {pickupHandoffSummary(ticket) ? (
-                    <span className={styles.muted}>
-                      {pickupHandoffSummary(ticket)}
-                    </span>
-                  ) : null}
-                </article>
-              ))
-            ) : (
-              <StaffEmpty title="Tarix bo'sh">
-                Bu smenada siz qabul qilgan buyurtmalar shu yerda ko'rinadi.
-              </StaffEmpty>
-            )}
-          </div>
-        </StaffDialog>
-      )}
       {cancelTicket && (
         <StaffDialog
           title="Buyurtmani bekor qilasizmi?"
@@ -774,23 +650,6 @@ function KitchenDisplay() {
       )}
     </StaffShell>
   );
-}
-
-function pickupHandoffSummary(ticket: KitchenTicket): string | null {
-  const handoff = [...(ticket.order.statusHistory ?? [])]
-    .reverse()
-    .find(
-      (entry) =>
-        entry.toStatus === "COMPLETED" &&
-        entry.reason?.includes("qabul qilgan:"),
-    );
-  if (!handoff?.reason) return null;
-  const recipient = handoff.reason.split("qabul qilgan:").at(-1)?.trim();
-  const employee = handoff.changedByEmployee;
-  const confirmedBy = employee
-    ? [employee.firstName, employee.lastName].filter(Boolean).join(" ")
-    : "xodim";
-  return recipient ? `Olgan: ${recipient} · Tasdiqladi: ${confirmedBy}` : null;
 }
 
 function splitTicketLanes(tickets: KitchenTicket[]): KitchenTicket[][] {

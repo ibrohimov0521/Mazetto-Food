@@ -67,6 +67,7 @@ export type KitchenTicket = {
     statusHistory?: {
       toStatus: string;
       reason?: string | null;
+      createdAt?: string;
       changedByEmployee?: {
         firstName: string;
         lastName?: string | null;

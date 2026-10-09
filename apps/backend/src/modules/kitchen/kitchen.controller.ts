@@ -35,6 +35,9 @@ export class KitchenController {
       search?: string;
       limit?: string;
       offset?: string;
+      from?: string;
+      to?: string;
+      sort?: string;
     },
     @CurrentUser() user: AuthenticatedUser,
   ) {

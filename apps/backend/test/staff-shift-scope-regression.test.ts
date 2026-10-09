@@ -28,7 +28,7 @@ function methodSource(source: string, name: string): string {
   return source.slice(start, next === -1 ? undefined : next);
 }
 
-test("kitchen queue keeps every active branch ticket; history remains today's and employee-scoped", () => {
+test("kitchen queue stays branch-scoped and history is paged without financial or customer data", () => {
   const active = methodSource(kitchenSource, "listOrdersWithOverflow");
   const history = methodSource(kitchenSource, "listHistory");
 
@@ -40,13 +40,21 @@ test("kitchen queue keeps every active branch ticket; history remains today's an
   assert.match(active, /trimKitchenQueue\(tickets\)/);
 
   assert.doesNotMatch(active, /changedByEmployeeId: employeeId/);
-  assert.match(history, /const employeeId = this\.requireEmployee\(user\)/);
+  assert.match(history, /this\.requireEmployee\(user\)/);
   assert.match(history, /resolveRestaurantScope\(this\.prisma, user\)/);
   assert.match(history, /tenantId: scope\.tenantId/);
-  assert.match(history, /const day = this\.todayTashkentRange\(\)/);
-  assert.match(history, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
-  assert.match(history, /changedByEmployeeId: employeeId/);
+  assert.match(history, /kitchenHistoryRange\(query\.from, query\.to\)/);
+  assert.match(history, /createdAt: \{ gte: range\.start, lt: range\.end \}/);
+  assert.doesNotMatch(history, /changedByEmployeeId: employeeId/);
+  assert.match(history, /this\.historySelect\(\)/);
+  assert.match(history, /query\.sort === "oldest"/);
   assert.match(history, /take: this\.parseLimit\(query\.limit\)/);
+
+  const selectStart = kitchenSource.indexOf("private historySelect()");
+  const selectEnd = kitchenSource.indexOf("\n  private ", selectStart + 1);
+  const historySelect = kitchenSource.slice(selectStart, selectEnd);
+  assert.match(historySelect, /statusHistory/);
+  assert.doesNotMatch(historySelect, /payments|customerOrder|customerPhone|customerName|unitPrice|totalPrice/);
 });
 
 test("employee shift history stays scoped to the open shift and today", () => {
