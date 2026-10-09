@@ -1,6 +1,6 @@
 {
   "name": "mazetto-desktop",
-  "version": "0.1.99",
+  "version": "0.1.100",
   "description": "MAZETTO FOOD offline-first branch operations desktop",
   "author": "MAZETTO FOOD",
   "private": true,
@@ -40,6 +40,10 @@
       {
         "from": "runtime/pos-web",
         "to": "ui"
+      },
+      {
+        "from": "../pos-web/public/brand/header-logo.webp",
+        "to": "assets/header-logo.webp"
       }
     ],
     "win": {

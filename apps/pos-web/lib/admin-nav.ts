@@ -277,6 +277,13 @@ export const adminNavGroups: AdminNavGroup[] = [
         permission: "RECEIPT_PRINT",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
       },
+      {
+        label: "Chop etish sozlamalari",
+        icon: "receipt",
+        href: "/admin/print-settings",
+        permission: "RECEIPT_PRINT",
+        roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+      },
     ],
   },
   {

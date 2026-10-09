@@ -37,6 +37,29 @@ type DesktopPrinterStatus = {
   systemPrinters?: DesktopSystemPrinter[];
 };
 
+type DesktopReceiptKind = "RECEIPT" | "KITCHEN" | "CANCELLATION" | "REFUND";
+type DesktopReceiptFieldKey =
+  | "branchName" | "orderNumber" | "orderType" | "dateTime"
+  | "customerName" | "customerPhone" | "address" | "itemPrices"
+  | "itemModifiers" | "itemNotes" | "payments" | "total"
+  | "orderNotes" | "reason";
+type DesktopReceiptDocumentProfile = {
+  title: string;
+  fontSizePx: number;
+  titleSizePx: number;
+  lineHeight: number;
+  fields: Record<DesktopReceiptFieldKey, boolean>;
+  headerLines: string[];
+  footerLines: string[];
+};
+type DesktopReceiptPrintProfile = {
+  businessName: string;
+  logoEnabled: boolean;
+  commonHeaderLines: string[];
+  commonFooterLines: string[];
+  documents: Record<DesktopReceiptKind, DesktopReceiptDocumentProfile>;
+};
+
 declare global {
   interface Window {
     mazettoDesktop?: {
@@ -62,6 +85,16 @@ declare global {
           paperWidthMm?: number;
           paperHeightMm?: number;
         }): Promise<{ ok: boolean }>;
+      };
+      receiptProfiles?: {
+        load(): Promise<DesktopReceiptPrintProfile>;
+        save(profile: DesktopReceiptPrintProfile): Promise<DesktopReceiptPrintProfile>;
+        reset(): Promise<DesktopReceiptPrintProfile>;
+        preview(input: {
+          kind: DesktopReceiptKind;
+          profile: DesktopReceiptPrintProfile;
+          paperWidthMm: number;
+        }): Promise<string>;
       };
       device?: {
         enroll(input: { deviceId: string; enrollmentCode: string }): Promise<unknown>;
@@ -114,4 +147,3 @@ declare global {
 }
 
 export {};
-

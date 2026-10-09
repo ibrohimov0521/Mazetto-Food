@@ -122,6 +122,9 @@ export async function writeReceiptRow(
         displayOrderNumber: order.displayOrderNumber,
         orderType: orderTypeLabel(order.type),
         orderSource: order.source,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        address: order.deliveryAddress,
         orderNotes: order.kitchenComment ?? order.notes,
         items: order.items.map((item) => ({
           name: item.productName,

@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, Printer, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, RefreshCw, X } from "lucide-react";
+import Link from "next/link";
 import { apiFetch } from "../../lib/api";
-import { runPrinterTestsIndependently } from "../../lib/printer-test-batch.mjs";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Modal } from "../admin-ui/modal";
@@ -81,51 +81,6 @@ type ConflictComparison = {
   };
 };
 
-type PrinterStatus = {
-  configured: boolean;
-  host: string | null;
-  port: number;
-  managedPrinters: number;
-  managedPrinterDetails: Array<{
-    id: string;
-    name: string;
-    host: string;
-    port: number;
-  }>;
-  systemPrinters?: SelectedSystemPrinter[];
-};
-
-type SystemPrinter = {
-  name: string;
-  displayName: string;
-  description: string | null;
-  status: number;
-  isDefault: boolean;
-};
-
-type SelectedSystemPrinter = {
-  name: string;
-  displayName: string;
-  roles: string[];
-  paperFormat: "ROLL" | "A4" | "LABEL";
-  paperWidthMm: number | "";
-  paperHeightMm?: number | "";
-};
-
-type PrinterTestResult = {
-  name: string;
-  ok: boolean;
-  message: string;
-};
-
-const printRoleOptions = [
-  { value: "RECEIPT", label: "Mijoz cheki" },
-  { value: "KITCHEN", label: "Oshxona" },
-  { value: "CANCELLATION", label: "Bekor qilish" },
-  { value: "REFUND", label: "Pul qaytarish" },
-  { value: "BAR", label: "Bar (alohida chek yo'q)" },
-] as const;
-
 export function DesktopStatusBadge() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
@@ -136,15 +91,6 @@ export function DesktopStatusBadge() {
   const [busyPrintId, setBusyPrintId] = useState<string | null>(null);
   const [comparison, setComparison] = useState<{ commandId: string; data: ConflictComparison } | null>(null);
   const [comparisonBusyId, setComparisonBusyId] = useState<string | null>(null);
-  const [printerHost, setPrinterHost] = useState("");
-  const [printerPort, setPrinterPort] = useState("9100");
-  const [printerMessage, setPrinterMessage] = useState("");
-  const [printerTestResults, setPrinterTestResults] = useState<PrinterTestResult[]>([]);
-  const [printerBusy, setPrinterBusy] = useState(false);
-  const [printerStatus, setPrinterStatus] = useState<PrinterStatus | null>(null);
-  const [systemPrinters, setSystemPrinters] = useState<SystemPrinter[]>([]);
-  const [selectedSystemPrinters, setSelectedSystemPrinters] = useState<SelectedSystemPrinter[]>([]);
-  const printerSettingsDirty = useRef(false);
   const [supportBusy, setSupportBusy] = useState(false);
 
   useEffect(() => {
@@ -185,39 +131,6 @@ export function DesktopStatusBadge() {
   }, []);
 
   useEffect(() => {
-    if (!isDesktop || !window.mazettoDesktop?.printer) return;
-    let active = true;
-    const refreshPrinterStatus = async () => {
-      try {
-        const settings = await window.mazettoDesktop?.printer?.status();
-        if (!active || !settings) return;
-        setPrinterStatus(settings);
-        setPrinterHost(settings.host ?? "");
-        setPrinterPort(String(settings.port));
-        if (!printerSettingsDirty.current) {
-          setSelectedSystemPrinters((settings.systemPrinters ?? []).map((printer) => ({
-            ...printer,
-            paperFormat: printer.paperFormat ?? "ROLL",
-            paperWidthMm: printer.paperWidthMm ?? 80,
-          })));
-        }
-      } catch {
-        // Desktop status polling retries automatically.
-      }
-    };
-    void refreshPrinterStatus();
-    const timer = window.setInterval(() => void refreshPrinterStatus(), 5_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [isDesktop]);
-
-  useEffect(() => {
-    if (!outboxOpen || !isDesktop) return;
-    void loadSystemPrinters();
-  }, [isDesktop, outboxOpen]);
-  useEffect(() => {
     const sendHeartbeat = () => {
       const version =
         window.navigator.userAgent.match(/MAZETTO-Desktop\/([^\s]+)/)?.[1];
@@ -233,189 +146,6 @@ export function DesktopStatusBadge() {
   return () => window.clearInterval(timer);
   }, []);
 
-  async function savePrinter(test = false): Promise<void> {
-    if (!window.mazettoDesktop?.printer) return;
-    setPrinterBusy(true); setPrinterMessage("");
-    try {
-      const settings = await window.mazettoDesktop.printer.save({ host: printerHost, port: Number(printerPort) });
-      setPrinterStatus(settings); setPrinterHost(settings.host ?? ""); setPrinterPort(String(settings.port));
-      if (test) await window.mazettoDesktop.printer.test();
-      setPrinterMessage(test ? "Printer bilan ulanish tasdiqlandi." : "Printer sozlamasi saqlandi.");
-    } catch (error) { setPrinterMessage(error instanceof Error ? error.message : "Printer sozlanmadi."); }
-    finally { setPrinterBusy(false); }
-  }
-
-  async function testManagedPrinters(): Promise<void> {
-    if (!window.mazettoDesktop?.printer) return;
-    setPrinterBusy(true);
-    setPrinterMessage("");
-    try {
-      const results = await window.mazettoDesktop.printer.testManaged();
-      const failed = results.filter((result) => !result.ok);
-      setPrinterMessage(
-        failed.length === 0
-          ? `${results.length} ta printer bilan ulanish tasdiqlandi.`
-          : `${results.length - failed.length} ta printer ishladi, ${failed.length} tasi javob bermadi: ${failed.map((result) => result.name).join(", ")}.`,
-      );
-      setPrinterStatus(await window.mazettoDesktop.printer.status());
-    } catch (error) {
-      setPrinterMessage(error instanceof Error ? error.message : "Printerlar sinalmadi.");
-    } finally {
-      setPrinterBusy(false);
-    }
-  }
-
-  async function loadSystemPrinters(): Promise<void> {
-    if (!window.mazettoDesktop?.printer) return;
-    setPrinterBusy(true);
-    setPrinterMessage("");
-    try {
-      setSystemPrinters(await window.mazettoDesktop.printer.listSystem());
-    } catch (error) {
-      setPrinterMessage(error instanceof Error ? error.message : "Windows printerlari olinmadi.");
-    } finally {
-      setPrinterBusy(false);
-    }
-  }
-
-  function toggleSystemPrinter(printer: SystemPrinter): void {
-    printerSettingsDirty.current = true;
-    setSelectedSystemPrinters((current) => {
-      const exists = current.some((entry) => entry.name === printer.name);
-      const isGodexLabel = /\bgodex\b/i.test(`${printer.name} ${printer.displayName}`);
-      return exists
-        ? current.filter((entry) => entry.name !== printer.name)
-        : [...current, {
-            name: printer.name,
-            displayName: printer.displayName,
-            roles: ["RECEIPT"],
-            paperFormat: isGodexLabel ? "LABEL" : "ROLL",
-            paperWidthMm: isGodexLabel ? 90 : 80,
-            ...(isGodexLabel ? { paperHeightMm: 80 } : {}),
-          }];
-    });
-  }
-
-  function setSystemPrinterPaperFormat(printerName: string, value: string): void {
-    if (value !== "ROLL" && value !== "A4" && value !== "LABEL") return;
-    printerSettingsDirty.current = true;
-    setSelectedSystemPrinters((current) => current.map((printer) => {
-      if (printer.name !== printerName) return printer;
-      if (value === "A4") {
-        const next = { ...printer, paperFormat: "A4" as const, paperWidthMm: 210 };
-        delete next.paperHeightMm;
-        return next;
-      }
-      if (value === "LABEL") {
-        return {
-          ...printer,
-          paperFormat: "LABEL" as const,
-          paperWidthMm: printer.paperWidthMm === 210 ? 90 : printer.paperWidthMm,
-          paperHeightMm: printer.paperHeightMm ?? 80,
-        };
-      }
-      const next = {
-        ...printer,
-        paperFormat: "ROLL" as const,
-        paperWidthMm: printer.paperWidthMm === 210 ? 80 : printer.paperWidthMm,
-      };
-      delete next.paperHeightMm;
-      return next;
-    }));
-  }
-
-  function setSystemPrinterPaperWidth(printerName: string, value: string): void {
-    const paperWidthMm = value === "" ? "" : Number(value);
-    if (typeof paperWidthMm === "number" && !Number.isFinite(paperWidthMm)) return;
-    printerSettingsDirty.current = true;
-    setSelectedSystemPrinters((current) => current.map((printer) =>
-      printer.name === printerName ? { ...printer, paperWidthMm } : printer,
-    ));
-  }
-
-  function setSystemPrinterPaperHeight(printerName: string, value: string): void {
-    const paperHeightMm = value === "" ? "" : Number(value);
-    if (typeof paperHeightMm === "number" && !Number.isFinite(paperHeightMm)) return;
-    printerSettingsDirty.current = true;
-    setSelectedSystemPrinters((current) => current.map((printer) =>
-      printer.name === printerName ? { ...printer, paperHeightMm } : printer,
-    ));
-  }
-
-  function togglePrinterRole(printerName: string, role: string): void {
-    printerSettingsDirty.current = true;
-    setSelectedSystemPrinters((current) => current.map((entry) => {
-      if (entry.name !== printerName) return entry;
-      const roles = entry.roles.includes(role)
-        ? entry.roles.filter((value) => value !== role)
-        : [...entry.roles, role];
-      return { ...entry, roles };
-    }).filter((entry) => entry.roles.length > 0));
-  }
-
-  async function saveSystemPrinters(test = false): Promise<void> {
-    const printerApi = window.mazettoDesktop?.printer;
-    if (!printerApi) return;
-    setPrinterBusy(true);
-    setPrinterMessage("");
-    setPrinterTestResults([]);
-    try {
-      const invalidProfile = selectedSystemPrinters.find((printer) => {
-        const width = Number(printer.paperWidthMm);
-        const height = Number(printer.paperHeightMm ?? 80);
-        return !Number.isInteger(width) || width < 30 || width > 300 ||
-          (printer.paperFormat === "LABEL" &&
-            (!Number.isInteger(height) || height < 20 || height > 300));
-      });
-      if (invalidProfile) {
-        setPrinterMessage("Qog'oz o'lchamini tekshiring: kenglik 30–300 mm, yorliq balandligi 20–300 mm bo'lishi kerak.");
-        return;
-      }
-      const printers = selectedSystemPrinters.map((printer) => {
-        const { paperHeightMm, ...settings } = printer;
-        return {
-          ...settings,
-          paperWidthMm: Number(printer.paperWidthMm),
-          ...(printer.paperFormat === "LABEL"
-            ? { paperHeightMm: Number(paperHeightMm ?? 80) }
-            : {}),
-        };
-      });
-      const settings = await printerApi.saveSystem({ printers });
-      setPrinterStatus(settings);
-      printerSettingsDirty.current = false;
-      if (test) {
-        const results = await runPrinterTestsIndependently(
-          printers,
-          async (printer) => {
-            await printerApi.testSystem({
-              name: printer.name,
-              role: printer.roles[0] ?? "RECEIPT",
-              paperFormat: printer.paperFormat,
-              paperWidthMm: printer.paperWidthMm,
-              ...(printer.paperHeightMm == null
-                ? {}
-                : { paperHeightMm: Number(printer.paperHeightMm) }),
-            });
-          },
-          setPrinterTestResults,
-        );
-        const passed = results.filter((result) => result.ok).length;
-        setPrinterMessage(
-          results.length === 0
-            ? "Test qilish uchun printer tanlanmagan."
-            : `${passed}/${results.length} printer Windows tomonidan qabul qilindi. Qog'ozni qurilmaning o'zidan tekshiring.`,
-        );
-      } else {
-        setPrinterMessage("Windows printer sozlamalari saqlandi.");
-      }
-    } catch (error) {
-      setPrinterMessage(error instanceof Error ? error.message : "Printer sozlamalari saqlanmadi.");
-    } finally {
-      setPrinterBusy(false);
-    }
-  }
-
   async function exportSupportBundle(): Promise<void> {
     if (!window.mazettoDesktop?.support) return;
     setSupportBusy(true);
@@ -423,7 +153,7 @@ export function DesktopStatusBadge() {
     try {
       const result = await window.mazettoDesktop.support.export();
       if (result) {
-        setPrinterMessage("Diagnostika fayli saqlandi.");
+        setOutboxError("Diagnostika fayli saqlandi.");
       }
     } catch (error) {
       setOutboxError(error instanceof Error ? error.message : "Diagnostika fayli yaratilmadi.");
@@ -599,122 +329,14 @@ export function DesktopStatusBadge() {
             </div>
           </div>
 
-          <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-3">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Printer className="text-mz-primary" size={17} />
-                <p className="text-sm font-semibold text-mz-text">Printerlar</p>
-              </div>
-              <Badge tone={selectedSystemPrinters.length ? "success" : "neutral"} withDot>
-                {selectedSystemPrinters.length ? `${selectedSystemPrinters.length} ta tanlangan` : "Tanlanmagan"}
-              </Badge>
-            </div>
-            <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
-              {systemPrinters.length ? systemPrinters.map((printer) => {
-                const selected = selectedSystemPrinters.find((entry) => entry.name === printer.name);
-                return (
-                  <div className="rounded-mz-control border border-mz-border bg-mz-surface p-3" key={printer.name}>
-                    <label className="flex cursor-pointer items-start gap-2">
-                      <input checked={Boolean(selected)} className="mt-0.5 h-4 w-4 accent-mz-primary" onChange={() => toggleSystemPrinter(printer)} type="checkbox" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-semibold text-mz-text">{printer.displayName}</span>
-                        <span className="block truncate text-[11px] text-mz-text-muted">{printer.isDefault ? "Windows asosiy printeri" : printer.description || printer.name}</span>
-                      </span>
-                    </label>
-                    {selected ? (
-                      <div className="mt-2 grid gap-3 border-t border-mz-border pt-2 sm:grid-cols-[minmax(0,1fr)_210px]">
-                        <div className="flex flex-wrap gap-x-3 gap-y-2">
-                          {printRoleOptions.map((role) => (
-                            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-mz-text" key={role.value}>
-                              <input checked={selected.roles.includes(role.value)} className="h-3.5 w-3.5 accent-mz-primary" onChange={() => togglePrinterRole(printer.name, role.value)} type="checkbox" />
-                              {role.label}
-                            </label>
-                          ))}
-                        </div>
-                        <div className="grid gap-2">
-                          <label className="grid gap-1 text-[11px] font-medium text-mz-text">
-                            Qog'oz turi
-                            <select
-                              aria-label={`${printer.displayName} qog'oz turi`}
-                              className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-2 text-xs"
-                              onChange={(event) => setSystemPrinterPaperFormat(printer.name, event.target.value)}
-                              value={selected.paperFormat}
-                            >
-                              <option value="ROLL">Termal rulon</option>
-                              <option value="A4">A4 varaq</option>
-                              <option value="LABEL">Yorliq</option>
-                            </select>
-                          </label>
-                          {selected.paperFormat === "A4" ? (
-                            <p className="text-[11px] text-mz-text-muted">210 × 297 mm</p>
-                          ) : (
-                            <div className={`grid gap-2 ${selected.paperFormat === "LABEL" ? "grid-cols-2" : "grid-cols-1"}`}>
-                              <label className="grid gap-1 text-[11px] font-medium text-mz-text">
-                                Kengligi, mm
-                                <input
-                                  aria-label={`${printer.displayName} qog'oz kengligi millimetrda`}
-                                  className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-2 text-xs"
-                                  max={300}
-                                  min={30}
-                                  onChange={(event) => setSystemPrinterPaperWidth(printer.name, event.target.value)}
-                                  step={1}
-                                  type="number"
-                                  value={selected.paperWidthMm}
-                                />
-                              </label>
-                              {selected.paperFormat === "LABEL" ? (
-                                <label className="grid gap-1 text-[11px] font-medium text-mz-text">
-                                  Balandligi, mm
-                                  <input
-                                    aria-label={`${printer.displayName} yorliq balandligi millimetrda`}
-                                    className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-2 text-xs"
-                                    max={300}
-                                    min={20}
-                                    onChange={(event) => setSystemPrinterPaperHeight(printer.name, event.target.value)}
-                                    step={1}
-                                    type="number"
-                                    value={selected.paperHeightMm ?? 80}
-                                  />
-                                </label>
-                              ) : null}
-                            </div>
-                          )}
-                          {/\bgodex\b/i.test(printer.name) ? (
-                            <p className="text-[11px] text-mz-text-muted">
-                              Godex uchun yorliq turini tanlang va o'lchamlarni haqiqiy yorliq bilan tenglang.
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              }) : (
-                <p className="rounded-mz-control border border-dashed border-mz-border p-3 text-center text-[12px] text-mz-text-muted">Windows printer topilmadi.</p>
-              )}
-            </div>
-            <p className="mt-3 text-[11px] text-mz-text-muted">Windows’da USB, Bluetooth va tarmoq printeri uning o‘rnatilgan drayveri orqali ishlaydi. Rulon/yorliq o‘lchamini printer drayveridagi qog‘oz bilan moslang; A4 va maxsus yorliq o‘lchami alohida boshqariladi.</p>
-            <div className="mt-3 flex flex-wrap justify-end gap-2">
-              <Button isLoading={printerBusy} onClick={() => void loadSystemPrinters()} size="sm" variant="ghost">Qayta qidirish</Button>
-              <Button disabled={!selectedSystemPrinters.length} isLoading={printerBusy} onClick={() => void saveSystemPrinters(true)} size="sm" variant="ghost">Test cheki</Button>
-              <Button disabled={!selectedSystemPrinters.length} isLoading={printerBusy} onClick={() => void saveSystemPrinters()} size="sm">Saqlash</Button>
-            </div>
-            <details className="mt-3 border-t border-mz-border pt-2 text-[12px]">
-              <summary className="cursor-pointer font-semibold text-mz-text-muted">Tarmoq printeri (ixtiyoriy)</summary>
-              <p className="my-2 text-mz-text-muted">Faqat Windows drayverisiz ESC/POS printer uchun IP manzil ishlatiladi.</p>
-              <div className="grid gap-2 sm:grid-cols-[1fr_90px_auto_auto]"><input aria-label="Zaxira printer IP manzili" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" onChange={(event) => setPrinterHost(event.target.value)} placeholder="192.168.1.50" value={printerHost} /><input aria-label="Zaxira printer porti" className="min-h-9 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm" inputMode="numeric" onChange={(event) => setPrinterPort(event.target.value)} value={printerPort} /><Button isLoading={printerBusy} onClick={() => void savePrinter()} size="sm" variant="ghost">Saqlash</Button><Button disabled={!printerHost && !printerStatus?.managedPrinters} isLoading={printerBusy} onClick={() => void (printerStatus?.managedPrinters ? testManagedPrinters() : savePrinter(true))} size="sm">Sinash</Button></div>
-            </details>
-            {printerMessage ? <p className="mt-2 text-[12px] text-mz-text-muted">{printerMessage}</p> : null}
-            {printerTestResults.length ? (
-              <ul aria-live="polite" className="mt-2 grid gap-1 text-[11px]">
-                {printerTestResults.map((result) => (
-                  <li className={result.ok ? "text-mz-success" : "text-mz-danger"} key={result.name}>
-                    <span className="font-semibold">{result.name}:</span> {result.message}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
+          <Link
+            className="flex items-center justify-between gap-3 rounded-mz-card border border-mz-border bg-mz-surface p-4 text-sm font-semibold text-mz-primary hover:bg-mz-surface-sunken"
+            href="/admin/print-settings"
+            onClick={() => setOutboxOpen(false)}
+          >
+            <span>Printer va chek ko‘rinishi sozlamalari</span>
+            <span aria-hidden="true">→</span>
+          </Link>
           <DesktopUpdateControls />
           <div className="flex justify-end">
             <Button isLoading={supportBusy} onClick={() => void exportSupportBundle()} size="sm" variant="ghost">
