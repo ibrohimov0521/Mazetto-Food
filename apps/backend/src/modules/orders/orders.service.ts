@@ -18,10 +18,13 @@ import {
   RevenueRecordSource,
   StockMovementType,
 } from "@prisma/client";
+import { createHash } from "node:crypto";
 import {
   resolveBranchScope,
   resolveRequiredBranchScope,
 } from "../../common/auth/access-scope";
+import { hasPermission } from "../../common/auth/authorization";
+import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   assertBranchBelongsToActor,
   resolveRestaurantTenantId,
@@ -93,6 +96,11 @@ import {
   type OrderEventName,
 } from "./order-events";
 import { TelegramOrderNotificationService } from "../telegram/telegram-order-notification.service";
+import {
+  planCashRefunds,
+  recordCashRefund,
+  type RefundablePayment,
+} from "../payments/refund-ledger";
 
 type TransactionClient = Prisma.TransactionClient;
 type ConfirmOrderForPreparationOptions = {
@@ -1012,15 +1020,112 @@ export class OrdersService {
       user,
       mutationContext,
       async (tx) => {
+        const isCancelling = dto.status === OrderItemStatus.CANCELLED;
+        const lockInfo = await tx.order.findUnique({
+          where: { id: orderId },
+          select: { id: true, shiftId: true },
+        });
+        if (!lockInfo) throw new NotFoundException("Order not found");
+
         await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${orderId} FOR UPDATE`;
-        const order = await tx.order.findUnique({ where: { id: orderId } });
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          include: {
+            payments: {
+              include: {
+                method: true,
+                refunds: { select: { amount: true } },
+              },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+        });
 
         if (!order) {
           throw new NotFoundException("Order not found");
         }
 
-        assertOrderCanChange(order.status);
+        if (order.shiftId !== lockInfo.shiftId) {
+          throw new ConflictException(
+            "Buyurtma smenasi o'zgargan. Tarixni yangilang.",
+          );
+        }
+        if (isCancelling) {
+          if (order.status === OrderStatus.CANCELLED) {
+            throw new BadRequestException(
+              "Bekor qilingan buyurtma o'zgartirilmaydi",
+            );
+          }
+          if (order.shiftId) {
+            const shiftLock = await tx.shift.updateMany({
+              where: {
+                id: order.shiftId,
+                branchId: order.branchId,
+                status: "OPEN",
+              },
+              data: { updatedAt: new Date() },
+            });
+            if (shiftLock.count !== 1) {
+              throw new BadRequestException(
+                "Buyurtma smenasi yopilgan. Tarixdagi buyurtmani o'zgartirib bo'lmaydi.",
+              );
+            }
+            const shift = await tx.shift.findUnique({
+              where: { id: order.shiftId },
+              select: {
+                id: true,
+                branchId: true,
+                employeeId: true,
+                status: true,
+              },
+            });
+            if (
+              !shift ||
+              shift.branchId !== order.branchId ||
+              shift.status !== "OPEN"
+            ) {
+              throw new BadRequestException(
+                "Buyurtma smenasi yopilgan. Tarixdagi buyurtmani o'zgartirib bo'lmaydi.",
+              );
+            }
+            if (
+              shift.employeeId !== employeeId &&
+              !hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH)
+            ) {
+              throw new BadRequestException(
+                "Faqat shu smena yoki filialni boshqarishga ruxsatli xodim buyurtmani o'zgartirishi mumkin.",
+              );
+            }
+          } else if (order.status === OrderStatus.COMPLETED) {
+            throw new BadRequestException(
+              "Yakunlangan buyurtma ochiq smenaga biriktirilmagan.",
+            );
+          }
+        } else {
+          assertOrderCanChange(order.status);
+        }
         await assertEmployeeInBranch(tx, employeeId, order.branchId);
+
+        const successfulPayments = order.payments.filter(
+          (payment) =>
+            payment.status === PaymentStatus.SUCCESS ||
+            payment.status === PaymentStatus.PAID ||
+            payment.status === PaymentStatus.PARTIALLY_REFUNDED,
+        );
+        const hasPaymentHistory = order.payments.some(
+          (payment) =>
+            payment.status !== PaymentStatus.PENDING &&
+            payment.status !== PaymentStatus.FAILED,
+        );
+        if (
+          !isCancelling &&
+          hasPaymentHistory &&
+          (dto.quantity !== undefined || dto.modifiers !== undefined)
+        ) {
+          throw new BadRequestException(
+            "To'langan buyurtmada mahsulot miqdori yoki tarkibini o'zgartirib bo'lmaydi. Bekor qilish amalidan foydalaning.",
+          );
+        }
 
         if (
           mutationContext.expectedVersion !== undefined &&
@@ -1078,7 +1183,72 @@ export class OrdersService {
           quantity,
           modifierSnapshot ?? [],
         );
-        const isCancelling = dto.status === OrderItemStatus.CANCELLED;
+        let refundAmount = new Prisma.Decimal(0);
+        let netPaid = successfulPayments.reduce((total, payment) => {
+          const refunded = payment.refunds.reduce(
+            (sum, refund) => sum.add(refund.amount),
+            new Prisma.Decimal(0),
+          );
+          return total.add(payment.amount).sub(refunded);
+        }, new Prisma.Decimal(0));
+
+        if (isCancelling) {
+          const totalAfterCancellation = Prisma.Decimal.max(
+            order.total.sub(item.totalPrice),
+            0,
+          );
+          refundAmount = Prisma.Decimal.max(
+            netPaid.sub(totalAfterCancellation),
+            0,
+          );
+          if (refundAmount.greaterThan(0)) {
+            if (!order.shiftId) {
+              throw new BadRequestException(
+                "Pul qaytarish uchun buyurtma smenaga biriktirilgan bo'lishi kerak.",
+              );
+            }
+            if (!hasPermission(user, PERMISSIONS.PAYMENT_REFUND)) {
+              throw new BadRequestException("Pul qaytarish uchun ruxsat yo'q.");
+            }
+            for (const payment of successfulPayments) {
+              await tx.$queryRaw`SELECT id FROM "payments" WHERE id = ${payment.id} FOR UPDATE`;
+            }
+            const lockedPayments = await tx.payment.findMany({
+              where: {
+                orderId,
+                id: { in: successfulPayments.map((payment) => payment.id) },
+              },
+              include: { method: true, refunds: { select: { amount: true } } },
+              orderBy: { createdAt: "asc" },
+            });
+            const allocations = planCashRefunds(
+              lockedPayments as RefundablePayment[],
+              refundAmount,
+            );
+            const reason =
+              dto.cancellationReason?.trim() || "Mahsulot bekor qilindi";
+            for (const [index, allocation] of allocations.entries()) {
+              const refundKey = `item:${createHash("sha256")
+                .update(
+                  `${context?.idempotencyKey ?? orderId}:${itemId}:${allocation.payment.id}:${index}`,
+                )
+                .digest("hex")}`;
+              await recordCashRefund(tx, {
+                payment: allocation.payment,
+                orderItemId: itemId,
+                branchId: order.branchId,
+                shiftId: order.shiftId,
+                employeeId,
+                createdById: user.id,
+                tenantId: user.tenantId ?? null,
+                amount: allocation.amount,
+                reason,
+                idempotencyKey: refundKey,
+              });
+            }
+            netPaid = netPaid.sub(refundAmount);
+          }
+        }
 
         if (isCancelling && item.stockDeductedAt) {
           await restoreUnstartedOrderItemStock(tx, this.inventoryService, {
@@ -1136,9 +1306,28 @@ export class OrdersService {
         }
 
         await recalculateOrderTotals(tx, orderId);
+        const hasRefunds =
+          refundAmount.greaterThan(0) ||
+          order.payments.some((payment) => payment.refunds.length > 0);
+        const totalAfterCancellation = isCancelling
+          ? Prisma.Decimal.max(order.total.sub(item.totalPrice), 0)
+          : order.total;
+        const paymentStatus = isCancelling
+          ? hasRefunds
+            ? netPaid.isZero()
+              ? PaymentStatus.REFUNDED
+              : PaymentStatus.PARTIALLY_REFUNDED
+            : netPaid.greaterThanOrEqualTo(totalAfterCancellation) &&
+                totalAfterCancellation.greaterThan(0)
+              ? PaymentStatus.PAID
+              : PaymentStatus.PENDING
+          : order.paymentStatus;
         const updatedOrder = await tx.order.update({
           where: { id: orderId },
-          data: { version: { increment: 1 } },
+          data: {
+            version: { increment: 1 },
+            ...(isCancelling ? { paymentStatus } : {}),
+          },
           select: { version: true, orderState: true },
         });
         await recordOrderEvent(tx, {

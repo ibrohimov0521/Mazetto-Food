@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Printer, RefreshCw, Search } from "lucide-react";
+import { Ban, Printer, RefreshCw, Search } from "lucide-react";
 import { useAuth } from "../../../../components/auth/auth-provider";
 import { CashierWorkspaceNavigation } from "../../../../components/staff/staff-panel-navigation";
 import {
@@ -32,6 +32,8 @@ type ShiftRow = {
 
 type OrderRow = {
   id: string;
+  version: number;
+  shiftId?: string | null;
   orderNumber: string;
   displayOrderNumber?: string | null;
   status: string;
@@ -49,6 +51,7 @@ type OrderRow = {
     quantity: string;
     totalPrice: string;
     status?: string;
+    cancellationReason?: string | null;
   }[];
   receipts?: {
     id: string;
@@ -60,6 +63,13 @@ type OrderRow = {
     amount: string;
     status: string;
     method?: { name: string; code: string } | null;
+    refunds?: {
+      id: string;
+      orderItemId?: string | null;
+      amount: string;
+      reason: string;
+      createdAt: string;
+    }[];
   }[];
   statusHistory?: {
     id: string;
@@ -92,9 +102,31 @@ export default function CashierHistoryPage() {
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [reprintingId, setReprintingId] = useState("");
   const [message, setMessage] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<{
+    itemId: string;
+    productName: string;
+    amount: string;
+    idempotencyKey: string;
+  } | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancellingItemId, setCancellingItemId] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
-    setRequestedShiftId(new URLSearchParams(window.location.search).get("shiftId") ?? "");
+    setRequestedShiftId(
+      new URLSearchParams(window.location.search).get("shiftId") ?? "",
+    );
+  }, []);
+
+  useEffect(() => {
+    const updateOnline = () => setIsOnline(navigator.onLine);
+    updateOnline();
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
   }, []);
 
   useEffect(() => {
@@ -121,7 +153,10 @@ export default function CashierHistoryPage() {
       .then(async (listedShifts) => {
         if (!active) return;
         let nextShifts = listedShifts;
-        if (requestedShiftId && !listedShifts.some((shift) => shift.id === requestedShiftId)) {
+        if (
+          requestedShiftId &&
+          !listedShifts.some((shift) => shift.id === requestedShiftId)
+        ) {
           try {
             const requestedShift = await apiFetch<ShiftRow>(
               `/cash-register/shifts/${encodeURIComponent(requestedShiftId)}`,
@@ -135,7 +170,8 @@ export default function CashierHistoryPage() {
         if (!active) return;
         setShifts(nextShifts);
         setShiftId((current) =>
-          requestedShiftId && nextShifts.some((shift) => shift.id === requestedShiftId)
+          requestedShiftId &&
+          nextShifts.some((shift) => shift.id === requestedShiftId)
             ? requestedShiftId
             : current && nextShifts.some((shift) => shift.id === current)
               ? current
@@ -145,7 +181,10 @@ export default function CashierHistoryPage() {
         );
       })
       .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : "Smenalar yuklanmadi.");
+        if (active)
+          setError(
+            caught instanceof Error ? caught.message : "Smenalar yuklanmadi.",
+          );
       })
       .finally(() => {
         if (active) setLoadingShifts(false);
@@ -178,13 +217,20 @@ export default function CashierHistoryPage() {
         );
         setOrders((current) =>
           append
-            ? [...current, ...page.filter((row) => !current.some((item) => item.id === row.id))]
+            ? [
+                ...current,
+                ...page.filter(
+                  (row) => !current.some((item) => item.id === row.id),
+                ),
+              ]
             : page,
         );
         setOffset(nextOffset);
         setHasMore(page.length === pageSize);
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "Buyurtmalar yuklanmadi.");
+        setError(
+          caught instanceof Error ? caught.message : "Buyurtmalar yuklanmadi.",
+        );
       } finally {
         setLoadingOrders(false);
       }
@@ -209,14 +255,27 @@ export default function CashierHistoryPage() {
 
   const shift = shifts.find((row) => row.id === shiftId);
   const orderDetail = orders.find((row) => row.id === selectedOrderId) ?? null;
-  const completedOrders = sortedOrders.filter((row) => ["SERVED", "COMPLETED"].includes(row.status));
-  const cancelledOrders = sortedOrders.filter((row) => row.status === "CANCELLED");
-  const inProgressOrders = sortedOrders.filter((row) => !["SERVED", "COMPLETED", "CANCELLED"].includes(row.status));
+  const completedOrders = sortedOrders.filter((row) =>
+    ["SERVED", "COMPLETED"].includes(row.status),
+  );
+  const cancelledOrders = sortedOrders.filter(
+    (row) => row.status === "CANCELLED",
+  );
+  const inProgressOrders = sortedOrders.filter(
+    (row) => !["SERVED", "COMPLETED", "CANCELLED"].includes(row.status),
+  );
   const showPrint = hasPermission(user, "RECEIPT_PRINT");
+  const canCancelItems =
+    hasPermission(user, "ORDER_UPDATE") &&
+    hasPermission(user, "PAYMENT_REFUND") &&
+    shift?.status === "OPEN" &&
+    orderDetail?.shiftId === shift.id &&
+    orderDetail.status !== "CANCELLED";
 
   async function reprint(receiptId: string) {
     setReprintingId(receiptId);
     setMessage("");
+    setError("");
     try {
       await apiFetch(`/receipts/${encodeURIComponent(receiptId)}/reprint`, {
         method: "POST",
@@ -224,9 +283,48 @@ export default function CashierHistoryPage() {
       });
       setMessage("Chek qayta chop etish navbatiga qo'shildi.");
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "Chek chop etilmadi.");
+      setError(
+        caught instanceof Error ? caught.message : "Chek chop etilmadi.",
+      );
     } finally {
       setReprintingId("");
+    }
+  }
+
+  async function cancelItem() {
+    if (!orderDetail || !cancelTarget || !cancelReason.trim()) return;
+    const itemId = cancelTarget.itemId;
+    setCancellingItemId(itemId);
+    setMessage("");
+    setError("");
+    try {
+      await apiFetch(
+        `/orders/${encodeURIComponent(orderDetail.id)}/items/${encodeURIComponent(itemId)}/actions/cancel`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": cancelTarget.idempotencyKey },
+          signal: AbortSignal.timeout(15000),
+          body: JSON.stringify({
+            expectedVersion: orderDetail.version,
+            reasonCode: "CASHIER_ITEM_CANCELLED",
+            reason: cancelReason.trim(),
+          }),
+        },
+      );
+      setCancelTarget(null);
+      setCancelReason("");
+      setMessage(
+        "Mahsulot bekor qilindi; zarur naqd qaytarish smenaga yozildi.",
+      );
+      await loadOrders(offset, false);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Mahsulotni bekor qilib bo'lmadi.",
+      );
+    } finally {
+      setCancellingItemId("");
     }
   }
 
@@ -235,7 +333,10 @@ export default function CashierHistoryPage() {
   }
 
   return (
-    <StaffShell title="Kassa" actions={<CashierWorkspaceNavigation user={user} />}>
+    <StaffShell
+      title="Kassa"
+      actions={<CashierWorkspaceNavigation user={user} />}
+    >
       <div className={styles.content}>
         <div className={styles.overview}>
           <div>
@@ -243,7 +344,8 @@ export default function CashierHistoryPage() {
             {shift ? (
               <p className={styles.muted}>
                 {shift.branch?.name ? `${shift.branch.name} · ` : ""}
-                Smena #{shift.shiftNumber} · {shift.status === "OPEN" ? "Ochiq" : "Yopilgan"}
+                Smena #{shift.shiftNumber} ·{" "}
+                {shift.status === "OPEN" ? "Ochiq" : "Yopilgan"}
               </p>
             ) : null}
           </div>
@@ -270,11 +372,16 @@ export default function CashierHistoryPage() {
               onChange={(event) => setShiftId(event.target.value)}
               disabled={loadingShifts || shifts.length === 0}
             >
-              {shifts.length === 0 ? <option value="">Smena topilmadi</option> : null}
+              {shifts.length === 0 ? (
+                <option value="">Smena topilmadi</option>
+              ) : null}
               {shifts.map((row) => (
                 <option key={row.id} value={row.id}>
-                  #{row.shiftNumber} · {formatDate(row.openedAt)} · {row.status === "OPEN" ? "Ochiq" : "Yopilgan"}
-                  {canViewBranch && row.employee ? ` · ${row.employee.firstName} ${row.employee.lastName ?? ""}` : ""}
+                  #{row.shiftNumber} · {formatDate(row.openedAt)} ·{" "}
+                  {row.status === "OPEN" ? "Ochiq" : "Yopilgan"}
+                  {canViewBranch && row.employee
+                    ? ` · ${row.employee.firstName} ${row.employee.lastName ?? ""}`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -299,7 +406,9 @@ export default function CashierHistoryPage() {
           >
             <option value="">Barcha holatlar</option>
             {Object.entries(orderStatusLabels).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
+              <option key={value} value={value}>
+                {label}
+              </option>
             ))}
           </select>
           <select
@@ -325,28 +434,69 @@ export default function CashierHistoryPage() {
 
         {shift ? (
           <section className={styles.stats} aria-label="Smena xulosasi">
-            <div className={styles.stat}><span>Buyurtmalar</span><strong>{shift.orderCount ?? sortedOrders.length}</strong></div>
-            <div className={styles.stat}><span>Kutilgan naqd</span><strong>{formatMoney(shift.expectedCash ?? 0)}</strong></div>
-            <div className={styles.stat}><span>Yakuniy naqd</span><strong>{formatMoney(shift.closingBalance ?? shift.expectedCash ?? 0)}</strong></div>
+            <div className={styles.stat}>
+              <span>Buyurtmalar</span>
+              <strong>{shift.orderCount ?? sortedOrders.length}</strong>
+            </div>
+            <div className={styles.stat}>
+              <span>Kutilgan naqd</span>
+              <strong>{formatMoney(shift.expectedCash ?? 0)}</strong>
+            </div>
+            <div className={styles.stat}>
+              <span>Yakuniy naqd</span>
+              <strong>
+                {formatMoney(shift.closingBalance ?? shift.expectedCash ?? 0)}
+              </strong>
+            </div>
           </section>
         ) : null}
 
-        {error ? <p className={styles.error} role="alert">{error}</p> : null}
-        {message ? <p className={styles.success} role="status">{message}</p> : null}
-        {loadingShifts ? <StaffEmpty title="Smenalar yuklanmoqda..." /> : !shift ? (
-          <StaffEmpty title="Smena topilmadi">Tanlangan foydalanuvchi yoki filialda smena yo'q.</StaffEmpty>
+        {error ? (
+          <p className={styles.error} role="alert">
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p className={styles.success} role="status">
+            {message}
+          </p>
+        ) : null}
+        {loadingShifts ? (
+          <StaffEmpty title="Smenalar yuklanmoqda..." />
+        ) : !shift ? (
+          <StaffEmpty title="Smena topilmadi">
+            Tanlangan foydalanuvchi yoki filialda smena yo'q.
+          </StaffEmpty>
         ) : loadingOrders && orders.length === 0 ? (
           <StaffEmpty title="Buyurtmalar yuklanmoqda..." />
         ) : sortedOrders.length === 0 ? (
-          <StaffEmpty title="Buyurtmalar topilmadi">Qidiruv yoki tanlangan holat bo'yicha natija yo'q.</StaffEmpty>
+          <StaffEmpty title="Buyurtmalar topilmadi">
+            Qidiruv yoki tanlangan holat bo'yicha natija yo'q.
+          </StaffEmpty>
         ) : (
           <div className={styles.historyList}>
-            <OrderGroup title="Topshirilgan / yakunlangan" rows={completedOrders} onSelect={setSelectedOrderId} />
-            <OrderGroup title="Jarayonda" rows={inProgressOrders} onSelect={setSelectedOrderId} />
-            <OrderGroup title="Bekor qilingan" rows={cancelledOrders} onSelect={setSelectedOrderId} />
+            <OrderGroup
+              title="Topshirilgan / yakunlangan"
+              rows={completedOrders}
+              onSelect={setSelectedOrderId}
+            />
+            <OrderGroup
+              title="Jarayonda"
+              rows={inProgressOrders}
+              onSelect={setSelectedOrderId}
+            />
+            <OrderGroup
+              title="Bekor qilingan"
+              rows={cancelledOrders}
+              onSelect={setSelectedOrderId}
+            />
             <div className={styles.totalRow}>
               <span>Ko'rsatilgan buyurtmalar jami</span>
-              <strong>{formatMoney(sortedOrders.reduce((sum, row) => sum + Number(row.total), 0))}</strong>
+              <strong>
+                {formatMoney(
+                  sortedOrders.reduce((sum, row) => sum + Number(row.total), 0),
+                )}
+              </strong>
             </div>
             {hasMore ? (
               <button
@@ -364,40 +514,148 @@ export default function CashierHistoryPage() {
 
       {selectedOrderId ? (
         <StaffDialog
-          title={orderDetail ? `Buyurtma #${orderDetail.displayOrderNumber ?? orderDetail.orderNumber}` : "Buyurtma tafsiloti"}
+          title={
+            orderDetail
+              ? `Buyurtma #${orderDetail.displayOrderNumber ?? orderDetail.orderNumber}`
+              : "Buyurtma tafsiloti"
+          }
           busy={false}
           onClose={() => setSelectedOrderId("")}
         >
           {orderDetail ? (
             <>
               <div className={styles.shiftRows}>
-                <div><span>Holat</span><strong>{orderStatusLabels[orderDetail.status as keyof typeof orderStatusLabels] ?? orderDetail.status}</strong></div>
-                <div><span>Vaqt</span><strong>{formatDate(orderDetail.createdAt)}</strong></div>
-                <div><span>Buyurtma turi</span><strong>{orderTypeLabel(orderDetail.type)}</strong></div>
-                {orderDetail.customerName ? <div><span>Mijoz</span><strong>{orderDetail.customerName}</strong></div> : null}
-                {orderDetail.table ? <div><span>Stol</span><strong>{orderDetail.table.name ?? orderDetail.table.number ?? "—"}</strong></div> : null}
+                <div>
+                  <span>Holat</span>
+                  <strong>
+                    {orderStatusLabels[
+                      orderDetail.status as keyof typeof orderStatusLabels
+                    ] ?? orderDetail.status}
+                  </strong>
+                </div>
+                <div>
+                  <span>Vaqt</span>
+                  <strong>{formatDate(orderDetail.createdAt)}</strong>
+                </div>
+                <div>
+                  <span>Buyurtma turi</span>
+                  <strong>{orderTypeLabel(orderDetail.type)}</strong>
+                </div>
+                {orderDetail.customerName ? (
+                  <div>
+                    <span>Mijoz</span>
+                    <strong>{orderDetail.customerName}</strong>
+                  </div>
+                ) : null}
+                {orderDetail.table ? (
+                  <div>
+                    <span>Stol</span>
+                    <strong>
+                      {orderDetail.table.name ??
+                        orderDetail.table.number ??
+                        "—"}
+                    </strong>
+                  </div>
+                ) : null}
               </div>
               <h3 className={styles.subheading}>Mahsulotlar</h3>
               <ul className={styles.itemList}>
                 {orderDetail.items.map((item) => (
-                  <li key={item.id}>
-                    <span>{item.productName}{item.variantName ? ` · ${item.variantName}` : ""} × {item.quantity}{item.status === "CANCELLED" ? " · Bekor qilingan" : ""}</span>
+                  <li className={styles.historyItemRow} key={item.id}>
+                    <span>
+                      {item.productName}
+                      {item.variantName ? ` · ${item.variantName}` : ""} ×{" "}
+                      {item.quantity}
+                      {item.status === "CANCELLED" ? " · Bekor qilingan" : ""}
+                      {item.status === "CANCELLED" &&
+                      item.cancellationReason ? (
+                        <small className={styles.muted}>
+                          Bekor sababi: {item.cancellationReason}
+                        </small>
+                      ) : null}
+                    </span>
                     <strong>{formatMoney(item.totalPrice)}</strong>
+                    {canCancelItems && item.status !== "CANCELLED" ? (
+                      <button
+                        aria-label={`${item.productName} mahsulotini bekor qilish`}
+                        className={styles.itemCancel}
+                        disabled={!isOnline || Boolean(cancellingItemId)}
+                        onClick={() =>
+                          setCancelTarget({
+                            itemId: item.id,
+                            productName: item.productName,
+                            amount: item.totalPrice,
+                            idempotencyKey: crypto.randomUUID(),
+                          })
+                        }
+                        title={
+                          !isOnline
+                            ? "Bekor qilish uchun internet kerak"
+                            : "Mahsulotni bekor qilish"
+                        }
+                        type="button"
+                      >
+                        <Ban size={15} />
+                        <span>Bekor</span>
+                      </button>
+                    ) : null}
                   </li>
                 ))}
               </ul>
-              {orderDetail.notes ? <p className={styles.note}>Izoh: {orderDetail.notes}</p> : null}
-              <div className={styles.totalRow}><span>Jami</span><strong>{formatMoney(orderDetail.total)}</strong></div>
+              {orderDetail.notes ? (
+                <p className={styles.note}>Izoh: {orderDetail.notes}</p>
+              ) : null}
+              <div className={styles.totalRow}>
+                <span>Jami</span>
+                <strong>{formatMoney(orderDetail.total)}</strong>
+              </div>
               {orderDetail.payments?.length ? (
                 <>
                   <h3 className={styles.subheading}>To'lovlar</h3>
                   <ul className={styles.itemList}>
                     {orderDetail.payments.map((payment) => (
                       <li key={payment.id}>
-                        <span>{payment.method?.name ?? payment.method?.code ?? "To'lov"} · {payment.status}</span>
+                        <span>
+                          {payment.method?.name ??
+                            payment.method?.code ??
+                            "To'lov"}{" "}
+                          · {payment.status}
+                        </span>
                         <strong>{formatMoney(payment.amount)}</strong>
                       </li>
                     ))}
+                  </ul>
+                </>
+              ) : null}
+              {orderDetail.payments?.some(
+                (payment) => (payment.refunds?.length ?? 0) > 0,
+              ) ? (
+                <>
+                  <h3 className={styles.subheading}>Naqd qaytarimlar</h3>
+                  <ul className={styles.itemList}>
+                    {orderDetail.payments.flatMap((payment) =>
+                      (payment.refunds ?? []).map((refund) => {
+                        const itemName = refund.orderItemId
+                          ? orderDetail.items.find(
+                              (item) => item.id === refund.orderItemId,
+                            )?.productName
+                          : null;
+                        return (
+                          <li key={refund.id}>
+                            <span>
+                              <strong>
+                                -{formatMoney(refund.amount)}
+                                {itemName ? ` · ${itemName}` : ""}
+                              </strong>
+                              <small className={styles.muted}>
+                                {refund.reason} · {formatDate(refund.createdAt)}
+                              </small>
+                            </span>
+                            <span className={styles.muted}>Qaytarildi</span>
+                          </li>
+                        );
+                      }),
+                    )}
                   </ul>
                 </>
               ) : null}
@@ -407,25 +665,119 @@ export default function CashierHistoryPage() {
                   <ul className={styles.itemList}>
                     {orderDetail.statusHistory.map((entry) => (
                       <li key={entry.id}>
-                        <span>{orderStatusLabels[entry.toStatus as keyof typeof orderStatusLabels] ?? entry.toStatus}</span>
-                        <span className={styles.muted}>{formatDate(entry.createdAt)}{entry.reason ? ` · ${entry.reason}` : ""}</span>
+                        <span>
+                          {orderStatusLabels[
+                            entry.toStatus as keyof typeof orderStatusLabels
+                          ] ?? entry.toStatus}
+                        </span>
+                        <span className={styles.muted}>
+                          {formatDate(entry.createdAt)}
+                          {entry.reason ? ` · ${entry.reason}` : ""}
+                        </span>
                       </li>
                     ))}
                   </ul>
                 </details>
               ) : null}
-              {showPrint && orderDetail.receipts?.filter((receipt) => !receipt.documentType || receipt.documentType === "RECEIPT").length ? (
+              {showPrint &&
+              orderDetail.receipts?.filter(
+                (receipt) =>
+                  !receipt.documentType || receipt.documentType === "RECEIPT",
+              ).length ? (
                 <div className={styles.dialogActions}>
-                  {orderDetail.receipts.filter((receipt) => !receipt.documentType || receipt.documentType === "RECEIPT").map((receipt) => (
-                    <button className={styles.secondary} disabled={reprintingId === receipt.id} key={receipt.id} onClick={() => void reprint(receipt.id)} type="button">
-                      <Printer size={16} />
-                      {reprintingId === receipt.id ? "Navbatga qo'shilmoqda..." : `Chekni qayta chiqarish · ${receipt.receiptNumber}`}
-                    </button>
-                  ))}
+                  {orderDetail.receipts
+                    .filter(
+                      (receipt) =>
+                        !receipt.documentType ||
+                        receipt.documentType === "RECEIPT",
+                    )
+                    .map((receipt) => (
+                      <button
+                        className={styles.secondary}
+                        disabled={reprintingId === receipt.id}
+                        key={receipt.id}
+                        onClick={() => void reprint(receipt.id)}
+                        type="button"
+                      >
+                        <Printer size={16} />
+                        {reprintingId === receipt.id
+                          ? "Navbatga qo'shilmoqda..."
+                          : `Chekni qayta chiqarish · ${receipt.receiptNumber}`}
+                      </button>
+                    ))}
                 </div>
               ) : null}
             </>
-          ) : <StaffEmpty title="Buyurtma ma'lumoti yo'q">Tarix ro'yxatini yangilang va qayta oching.</StaffEmpty>}
+          ) : (
+            <StaffEmpty title="Buyurtma ma'lumoti yo'q">
+              Tarix ro'yxatini yangilang va qayta oching.
+            </StaffEmpty>
+          )}
+        </StaffDialog>
+      ) : null}
+
+      {cancelTarget && orderDetail ? (
+        <StaffDialog
+          title="Mahsulotni bekor qilish"
+          busy={Boolean(cancellingItemId)}
+          onClose={() => {
+            if (cancellingItemId) return;
+            setCancelTarget(null);
+            setCancelReason("");
+          }}
+        >
+          <p className={styles.muted}>
+            {cancelTarget.productName} · {formatMoney(cancelTarget.amount)}
+          </p>
+          <p className={styles.note}>
+            Buyurtmaning ochiq smenasi tekshiriladi. To'langan ortiqcha summa
+            faqat naqd to'lovdan qaytariladi; karta yoki QR uchun provayder
+            qaytarishi sozlanmagan bo'lsa amal rad etiladi.
+          </p>
+          <label className={styles.field}>
+            <span>Bekor qilish sababi</span>
+            <textarea
+              className={styles.input}
+              maxLength={500}
+              value={cancelReason}
+              onChange={(event) => {
+                const reason = event.target.value;
+                if (reason !== cancelReason) {
+                  setCancelTarget((current) =>
+                    current
+                      ? { ...current, idempotencyKey: crypto.randomUUID() }
+                      : current,
+                  );
+                }
+                setCancelReason(reason);
+              }}
+              rows={3}
+            />
+          </label>
+          <div className={styles.dialogActions}>
+            <button
+              className={styles.secondary}
+              disabled={Boolean(cancellingItemId)}
+              onClick={() => setCancelTarget(null)}
+              type="button"
+            >
+              Ortga
+            </button>
+            <button
+              className={styles.danger}
+              disabled={
+                !isOnline ||
+                Boolean(cancellingItemId) ||
+                cancelReason.trim().length < 3
+              }
+              onClick={() => void cancelItem()}
+              type="button"
+            >
+              {cancellingItemId
+                ? "Bajarilmoqda..."
+                : "Bekor qilishni tasdiqlash"}
+            </button>
+          </div>
         </StaffDialog>
       ) : null}
     </StaffShell>
@@ -444,7 +796,9 @@ function OrderGroup({
   if (!rows.length) return null;
   return (
     <section>
-      <h3 className={styles.subheading}>{title} · {rows.length}</h3>
+      <h3 className={styles.subheading}>
+        {title} · {rows.length}
+      </h3>
       <div className={styles.historyList}>
         {rows.map((row) => (
           <button
@@ -455,18 +809,36 @@ function OrderGroup({
           >
             <span>
               <strong>#{row.displayOrderNumber ?? row.orderNumber}</strong>
-              <span className={styles.muted}>{formatDate(row.createdAt)} · {row.items.length} ta mahsulot</span>
+              <span className={styles.muted}>
+                {formatDate(row.createdAt)} · {row.items.length} ta mahsulot
+              </span>
             </span>
             <span className={styles.historyAmount}>
-              <span className={styles.badge} data-tone={row.status === "CANCELLED" ? "late" : row.status === "COMPLETED" || row.status === "SERVED" ? "ready" : "waiting"}>
-                {orderStatusLabels[row.status as keyof typeof orderStatusLabels] ?? row.status}
+              <span
+                className={styles.badge}
+                data-tone={
+                  row.status === "CANCELLED"
+                    ? "late"
+                    : row.status === "COMPLETED" || row.status === "SERVED"
+                      ? "ready"
+                      : "waiting"
+                }
+              >
+                {orderStatusLabels[
+                  row.status as keyof typeof orderStatusLabels
+                ] ?? row.status}
               </span>
               <strong>{formatMoney(row.total)}</strong>
             </span>
           </button>
         ))}
       </div>
-      <div className={styles.totalRow}><span>{title} jami</span><strong>{formatMoney(rows.reduce((sum, row) => sum + Number(row.total), 0))}</strong></div>
+      <div className={styles.totalRow}>
+        <span>{title} jami</span>
+        <strong>
+          {formatMoney(rows.reduce((sum, row) => sum + Number(row.total), 0))}
+        </strong>
+      </div>
     </section>
   );
 }

@@ -1277,7 +1277,8 @@ model Order {
 
 model PaymentRefund {
   id             String   @id @default(cuid())
-  paymentId      String   @unique
+  paymentId      String
+  orderItemId    String?
   branchId       String
   shiftId        String
   employeeId     String
@@ -1287,12 +1288,15 @@ model PaymentRefund {
   idempotencyKey String   @unique
   createdAt      DateTime @default(now())
 
-  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
-  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  createdBy User     @relation("PaymentRefundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  payment   Payment    @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  shift     Shift      @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  employee  Employee   @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy User       @relation("PaymentRefundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
+  @@index([paymentId])
+  @@index([orderItemId])
   @@index([branchId, createdAt])
   @@index([shiftId, createdAt])
   @@index([employeeId])
@@ -1352,6 +1356,7 @@ model OrderItem {
   product            Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
   variant            ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
   kitchenTicketItems KitchenTicketItem[]
+  refunds            PaymentRefund[]
 
   @@index([orderId])
   @@index([productId])
@@ -1661,7 +1666,7 @@ model Payment {
   cashTransactions        CashTransaction[]
   cashTransferAllocations CashTransferAllocation[]
   revenueRecords          RevenueRecord[]
-  refund                  PaymentRefund?
+  refunds                 PaymentRefund[]
 
   @@unique([paymentOperationId, operationTenderIndex])
   @@index([orderId])

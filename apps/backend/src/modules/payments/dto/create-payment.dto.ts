@@ -61,6 +61,11 @@ export class RefundPaymentDto {
   @IsString()
   shiftId!: string;
 
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  amount?: number;
+
   @IsString()
   @MinLength(3)
   @MaxLength(500)

@@ -70,7 +70,7 @@ test("durable queue is explicitly enabled and the agent completes only its lease
 test("customer and kitchen documents use separate durable print routes", () => {
   assert.match(
     receiptWriter,
-    /"RECEIPT" \| "KITCHEN" \| "CANCELLATION" \| "REFUND"/,
+    /"RECEIPT"\s*\|\s*"KITCHEN"\s*\|\s*"CANCELLATION"\s*\|\s*"REFUND"/,
   );
   assert.match(receiptWriter, /documentType === "KITCHEN"/);
   assert.match(receiptService, /isKitchen/);
@@ -88,8 +88,10 @@ test("kitchen ticket goes only to printers explicitly assigned the kitchen role"
   const tx = {
     printer: { findMany: async () => printers },
     printJob: {
-      create: async ({ data }: { data: { printerId: string | null } }) => jobs.push(data),
-      createMany: async ({ data }: { data: { printerId: string | null }[] }) => jobs.push(...data),
+      create: async ({ data }: { data: { printerId: string | null } }) =>
+        jobs.push(data),
+      createMany: async ({ data }: { data: { printerId: string | null }[] }) =>
+        jobs.push(...data),
     },
   };
   await queuePrintJobsForReceipt(tx as never, {
@@ -97,7 +99,10 @@ test("kitchen ticket goes only to printers explicitly assigned the kitchen role"
     branchId: "branch-1",
     content: { documentType: "KITCHEN" },
   });
-  assert.deepEqual(jobs.map((job) => job.printerId), ["kitchen"]);
+  assert.deepEqual(
+    jobs.map((job) => job.printerId),
+    ["kitchen"],
+  );
 });
 
 test("receipt output is localized for order type, time and quantities", () => {

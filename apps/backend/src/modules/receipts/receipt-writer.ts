@@ -13,10 +13,15 @@ export type OrderForReceipt = Prisma.OrderGetPayload<{
   };
 }>;
 
-export type ReceiptPrintRoute = "RECEIPT" | "KITCHEN" | "CANCELLATION" | "REFUND";
+export type ReceiptPrintRoute =
+  | "RECEIPT"
+  | "KITCHEN"
+  | "CANCELLATION"
+  | "REFUND";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
 // Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
-const durablePrintJobsEnabled = () => process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
+const durablePrintJobsEnabled = () =>
+  process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
 const tashkentDateTimeFormatter = new Intl.DateTimeFormat("uz-UZ", {
   timeZone: "Asia/Tashkent",
   year: "numeric",
@@ -28,13 +33,17 @@ const tashkentDateTimeFormatter = new Intl.DateTimeFormat("uz-UZ", {
   hour12: false,
 });
 
-function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+function jsonObject(
+  value: Prisma.JsonValue | null | undefined,
+): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
 }
 
-export function receiptPrintRoute(content: Prisma.JsonValue | null | undefined): ReceiptPrintRoute {
+export function receiptPrintRoute(
+  content: Prisma.JsonValue | null | undefined,
+): ReceiptPrintRoute {
   const type = jsonObject(content).documentType;
   return type === "KITCHEN" || type === "CANCELLATION" || type === "REFUND"
     ? type
@@ -46,10 +55,15 @@ export function createReceiptNumber(): string {
   return `RCPT-${date}-${randomUUID().slice(0, 12).toUpperCase()}`;
 }
 
-export async function allocateReceiptNumber(tx: TransactionClient): Promise<string> {
+export async function allocateReceiptNumber(
+  tx: TransactionClient,
+): Promise<string> {
   for (let attempt = 0; attempt < RECEIPT_NUMBER_ATTEMPTS; attempt += 1) {
     const candidate = createReceiptNumber();
-    const existing = await tx.receipt.findUnique({ where: { receiptNumber: candidate }, select: { id: true } });
+    const existing = await tx.receipt.findUnique({
+      where: { receiptNumber: candidate },
+      select: { id: true },
+    });
     if (!existing) return candidate;
   }
   throw new BadRequestException("Unable to allocate a receipt number");
@@ -61,10 +75,15 @@ function routeMatches(
 ): boolean {
   const metadata = jsonObject(printer.metadata);
   const roles = Array.isArray(metadata.printRoles)
-    ? metadata.printRoles.filter((role): role is string => typeof role === "string")
+    ? metadata.printRoles.filter(
+        (role): role is string => typeof role === "string",
+      )
     : [];
   if (roles.length > 0) return roles.includes(route);
-  return route === "RECEIPT" && (printer.type === "THERMAL" || printer.type === "RECEIPT");
+  return (
+    route === "RECEIPT" &&
+    (printer.type === "THERMAL" || printer.type === "RECEIPT")
+  );
 }
 
 /** Creates one durable job per active printer configured for this document route. */
@@ -80,7 +99,14 @@ export async function queuePrintJobsForReceipt(
   });
   const targets = printers.filter((printer) => routeMatches(printer, route));
   if (targets.length === 0) {
-    await tx.printJob.create({ data: { receiptId: receipt.id, branchId: receipt.branchId, payload: receipt.content ?? {}, printerId: null } });
+    await tx.printJob.create({
+      data: {
+        receiptId: receipt.id,
+        branchId: receipt.branchId,
+        payload: receipt.content ?? {},
+        printerId: null,
+      },
+    });
     return;
   }
   await tx.printJob.createMany({
@@ -96,7 +122,10 @@ export async function queuePrintJobsForReceipt(
 export async function writeReceiptRow(
   tx: TransactionClient,
   order: OrderForReceipt,
-  options: { documentType?: ReceiptPrintRoute; cancellationReason?: string | null } = {},
+  options: {
+    documentType?: ReceiptPrintRoute;
+    cancellationReason?: string | null;
+  } = {},
 ): Promise<void> {
   const documentType = options.documentType ?? "RECEIPT";
   const receiptNumber = await allocateReceiptNumber(tx);
@@ -125,7 +154,8 @@ export async function writeReceiptRow(
         customerName: order.customerName,
         customerPhone: order.customerPhone,
         address: order.deliveryAddress,
-        orderNotes: typeof order.notes === "string" ? order.notes.trim() || null : null,
+        orderNotes:
+          typeof order.notes === "string" ? order.notes.trim() || null : null,
         items: order.items.map((item) => ({
           name: item.productName,
           variant: item.variantName,
@@ -134,7 +164,10 @@ export async function writeReceiptRow(
           notes: item.notes,
           modifiers: item.modifierSnapshot,
         })),
-        payments: order.payments.map((payment) => ({ method: payment.method.code, amount: payment.amount.toFixed(2) })),
+        payments: order.payments.map((payment) => ({
+          method: payment.method.code,
+          amount: payment.amount.toFixed(2),
+        })),
         total: order.total.toFixed(2),
         dateTime: formatTashkentDateTime(new Date()),
       },
@@ -143,17 +176,24 @@ export async function writeReceiptRow(
   await queuePrintJobsForReceipt(tx, receipt);
 }
 
-export async function ensureOrderReceipt(tx: TransactionClient, orderId: string): Promise<void> {
+export async function ensureOrderReceipt(
+  tx: TransactionClient,
+  orderId: string,
+): Promise<void> {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
+    include: {
+      branch: true,
+      items: true,
+      payments: { include: { method: true } },
+      receipts: true,
+    },
   });
   if (
     !order ||
-    (order.receipts ?? []).some(
-      (receipt) => receipt.documentType === "RECEIPT",
-    )
-  ) return;
+    (order.receipts ?? []).some((receipt) => receipt.documentType === "RECEIPT")
+  )
+    return;
   await writeReceiptRow(tx, order);
 }
 
@@ -164,9 +204,20 @@ export async function ensureCancellationReceipt(
 ): Promise<void> {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    include: { branch: true, items: true, payments: { include: { method: true } }, receipts: true },
+    include: {
+      branch: true,
+      items: true,
+      payments: { include: { method: true } },
+      receipts: true,
+    },
   });
-  if (!order || !order.branch || !Array.isArray(order.items) || !Array.isArray(order.payments)) return;
+  if (
+    !order ||
+    !order.branch ||
+    !Array.isArray(order.items) ||
+    !Array.isArray(order.payments)
+  )
+    return;
   const alreadyCreated = (order.receipts ?? []).some(
     (receipt) => receipt.documentType === "CANCELLATION",
   );
@@ -192,9 +243,7 @@ export async function ensureKitchenReceipt(
   });
   if (
     !order ||
-    (order.receipts ?? []).some(
-      (receipt) => receipt.documentType === "KITCHEN",
-    )
+    (order.receipts ?? []).some((receipt) => receipt.documentType === "KITCHEN")
   ) {
     return;
   }
@@ -206,16 +255,23 @@ export async function ensureRefundReceipt(
   paymentId: string,
   reason: string,
   amount: Prisma.Decimal,
+  refundId: string,
 ): Promise<void> {
   const payment = await tx.payment.findUnique({
     where: { id: paymentId },
     include: {
       method: true,
-      order: { include: { branch: true, items: true, payments: { include: { method: true } } } },
+      order: {
+        include: {
+          branch: true,
+          items: true,
+          payments: { include: { method: true } },
+        },
+      },
     },
   });
   if (!payment) return;
-  const documentType = `REFUND:${payment.id}`;
+  const documentType = `REFUND:${refundId}`;
   const existing = await tx.receipt.findUnique({
     where: { orderId_documentType: { orderId: payment.orderId, documentType } },
   });
@@ -235,7 +291,9 @@ export async function ensureRefundReceipt(
         branchName: payment.order.branch.name,
         orderNumber: payment.order.orderNumber,
         items: [],
-        payments: [{ method: payment.method.code, amount: `-${amount.toFixed(2)}` }],
+        payments: [
+          { method: payment.method.code, amount: `-${amount.toFixed(2)}` },
+        ],
         total: `-${amount.toFixed(2)}`,
         dateTime: formatTashkentDateTime(new Date()),
       },

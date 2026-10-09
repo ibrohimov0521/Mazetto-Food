@@ -21,8 +21,9 @@ import {
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
-import { ensureOrderReceipt, ensureRefundReceipt } from "../receipts/receipt-writer";
+import { ensureOrderReceipt } from "../receipts/receipt-writer";
 import { writeAuditLog } from "../audit/audit-write";
+import { recordCashRefund, type RefundablePayment } from "./refund-ledger";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { ListPaymentsDto } from "./dto/list-payments.dto";
@@ -71,7 +72,7 @@ export class PaymentsService {
           }
         : undefined;
 
-    return this.prisma.payment.findMany({
+    const payments = await this.prisma.payment.findMany({
       where: {
         ...(query.orderId ? { orderId: query.orderId } : {}),
         ...(query.status ? { status: query.status } : {}),
@@ -95,7 +96,10 @@ export class PaymentsService {
         createdAt: true,
         method: { select: { id: true, code: true, name: true } },
         acceptedBy: { select: { id: true, firstName: true, lastName: true } },
-        refund: { select: { id: true, amount: true, reason: true, createdAt: true } },
+        refunds: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, amount: true, reason: true, createdAt: true },
+        },
         order: {
           select: {
             id: true,
@@ -108,6 +112,20 @@ export class PaymentsService {
           },
         },
       },
+    });
+    return payments.map((payment) => {
+      const refundedAmount = payment.refunds.reduce(
+        (total, refund) => total.add(refund.amount),
+        new Prisma.Decimal(0),
+      );
+      return {
+        ...payment,
+        refund: payment.refunds.at(-1) ?? null,
+        remainingRefundableAmount: Prisma.Decimal.max(
+          payment.amount.sub(refundedAmount),
+          0,
+        ).toFixed(2),
+      };
     });
   }
 
@@ -183,283 +201,287 @@ export class PaymentsService {
 
     try {
       const execute = async (tx: Prisma.TransactionClient) => {
-          const scopedOrder = await tx.order.findFirst({
-            where: { id: dto.orderId, branch: { tenantId } },
-            select: { id: true },
-          });
-          if (!scopedOrder) throw new NotFoundException("Order not found");
+        const scopedOrder = await tx.order.findFirst({
+          where: { id: dto.orderId, branch: { tenantId } },
+          select: { id: true },
+        });
+        if (!scopedOrder) throw new NotFoundException("Order not found");
 
-          const existingOperation = await tx.paymentOperation.findUnique({
-            where: { idempotencyKey: dto.idempotencyKey },
-          });
+        const existingOperation = await tx.paymentOperation.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+        });
 
-          if (existingOperation) {
-            return this.resolveExistingOperation(
-              tx,
-              existingOperation,
-              requestHash,
+        if (existingOperation) {
+          return this.resolveExistingOperation(
+            tx,
+            existingOperation,
+            requestHash,
+          );
+        }
+
+        const operation = await tx.paymentOperation.create({
+          data: {
+            orderId: dto.orderId,
+            idempotencyKey: dto.idempotencyKey,
+            requestHash,
+            status: "PROCESSING",
+            createdById: user.id,
+            employeeId,
+          },
+        });
+
+        await tx.$executeRaw`SELECT id FROM "orders" WHERE id = ${dto.orderId} FOR UPDATE`;
+        const order = await tx.order.findFirst({
+          where: { id: dto.orderId, branch: { tenantId } },
+          include: { payments: true, receipts: true },
+        });
+
+        if (!order) {
+          throw new NotFoundException("Order not found");
+        }
+
+        if (order.status === OrderStatus.CANCELLED) {
+          throw new BadRequestException("Cancelled orders cannot be paid");
+        }
+
+        await this.assertEmployeeInBranch(tx, employeeId, order.branchId);
+
+        const tenders = this.normalizeTenders(dto.payments);
+        const hasCashTender = tenders.some(
+          (tender) => tender.paymentMethodCode === "CASH",
+        );
+
+        if (hasCashTender && !dto.shiftId) {
+          throw new BadRequestException(
+            "Cash payments require an open employee shift",
+          );
+        }
+
+        if (dto.shiftId) {
+          await this.assertOpenShift(
+            tx,
+            dto.shiftId,
+            order.branchId,
+            employeeId,
+          );
+        }
+
+        const existingPaidTotal = this.sumSuccessfulPayments(order.payments);
+        const outstanding = order.total.sub(existingPaidTotal);
+        const requestTotal = tenders.reduce(
+          (total, tender) => total.add(tender.amount),
+          new Prisma.Decimal(0),
+        );
+
+        if (outstanding.lessThanOrEqualTo(0)) {
+          throw new BadRequestException("Order has no outstanding balance");
+        }
+
+        if (requestTotal.lessThanOrEqualTo(0)) {
+          throw new BadRequestException(
+            "Payment amount must be greater than zero",
+          );
+        }
+
+        if (requestTotal.greaterThan(outstanding)) {
+          throw new BadRequestException(
+            "Payment amount exceeds outstanding balance",
+          );
+        }
+
+        if (tenders.length > 1 && !requestTotal.equals(outstanding)) {
+          throw new BadRequestException(
+            "Mixed payment total must exactly match outstanding balance",
+          );
+        }
+
+        const now = new Date();
+        const createdPayments: {
+          payment: Prisma.PaymentGetPayload<Record<string, never>>;
+          method: Prisma.PaymentMethodGetPayload<Record<string, never>>;
+        }[] = [];
+
+        for (const [index, tender] of tenders.entries()) {
+          const method = await this.resolvePaymentMethod(
+            tx,
+            order.branchId,
+            tender,
+          );
+
+          if (!isOperationalPaymentMethod(method.code)) {
+            throw new BadRequestException(
+              `${method.code} payment provider is not enabled`,
             );
           }
 
-          const operation = await tx.paymentOperation.create({
-            data: {
-              orderId: dto.orderId,
-              idempotencyKey: dto.idempotencyKey,
-              requestHash,
-              status: "PROCESSING",
-              createdById: user.id,
-              employeeId,
-            },
-          });
-
-          await tx.$executeRaw`SELECT id FROM "orders" WHERE id = ${dto.orderId} FOR UPDATE`;
-          const order = await tx.order.findFirst({
-            where: { id: dto.orderId, branch: { tenantId } },
-            include: { payments: true, receipts: true },
-          });
-
-          if (!order) {
-            throw new NotFoundException("Order not found");
-          }
-
-          if (order.status === OrderStatus.CANCELLED) {
-            throw new BadRequestException("Cancelled orders cannot be paid");
-          }
-
-          await this.assertEmployeeInBranch(tx, employeeId, order.branchId);
-
-          const tenders = this.normalizeTenders(dto.payments);
-          const hasCashTender = tenders.some(
-            (tender) => tender.paymentMethodCode === "CASH",
-          );
-
-          if (hasCashTender && !dto.shiftId) {
+          if (method.code === "CASH" && !dto.shiftId) {
             throw new BadRequestException(
               "Cash payments require an open employee shift",
             );
           }
 
-          if (dto.shiftId) {
-            await this.assertOpenShift(
-              tx,
-              dto.shiftId,
-              order.branchId,
-              employeeId,
-            );
-          }
+          const payment = await tx.payment.create({
+            data: {
+              orderId: order.id,
+              paymentMethodId: method.id,
+              paymentOperationId: operation.id,
+              operationTenderIndex: index,
+              acceptedById: employeeId,
+              createdById: user.id,
+              amount: tender.amount,
+              status,
+              methodCode: method.code,
+              transactionId: tender.transactionId ?? null,
+              reference: reference ?? tender.transactionId ?? null,
+              paidAt: this.isSuccessfulPayment(status) ? now : null,
+            },
+          });
+          createdPayments.push({ payment, method });
+        }
 
-          const existingPaidTotal = this.sumSuccessfulPayments(order.payments);
-          const outstanding = order.total.sub(existingPaidTotal);
-          const requestTotal = tenders.reduce(
-            (total, tender) => total.add(tender.amount),
-            new Prisma.Decimal(0),
-          );
-
-          if (outstanding.lessThanOrEqualTo(0)) {
-            throw new BadRequestException("Order has no outstanding balance");
-          }
-
-          if (requestTotal.lessThanOrEqualTo(0)) {
-            throw new BadRequestException(
-              "Payment amount must be greater than zero",
-            );
-          }
-
-          if (requestTotal.greaterThan(outstanding)) {
-            throw new BadRequestException(
-              "Payment amount exceeds outstanding balance",
-            );
-          }
-
-          if (tenders.length > 1 && !requestTotal.equals(outstanding)) {
-            throw new BadRequestException(
-              "Mixed payment total must exactly match outstanding balance",
-            );
-          }
-
-          const now = new Date();
-          const createdPayments: {
-            payment: Prisma.PaymentGetPayload<Record<string, never>>;
-            method: Prisma.PaymentMethodGetPayload<Record<string, never>>;
-          }[] = [];
-
-          for (const [index, tender] of tenders.entries()) {
-            const method = await this.resolvePaymentMethod(
-              tx,
-              order.branchId,
-              tender,
-            );
-
-            if (!isOperationalPaymentMethod(method.code)) {
-              throw new BadRequestException(
-                `${method.code} payment provider is not enabled`,
-              );
-            }
-
-            if (method.code === "CASH" && !dto.shiftId) {
-              throw new BadRequestException(
-                "Cash payments require an open employee shift",
-              );
-            }
-
-            const payment = await tx.payment.create({
+        if (this.isSuccessfulPayment(status)) {
+          for (const { payment, method } of createdPayments) {
+            await tx.revenueRecord.create({
               data: {
+                branchId: order.branchId,
                 orderId: order.id,
-                paymentMethodId: method.id,
-                paymentOperationId: operation.id,
-                operationTenderIndex: index,
-                acceptedById: employeeId,
-                createdById: user.id,
-                amount: tender.amount,
-                status,
-                methodCode: method.code,
-                transactionId: tender.transactionId ?? null,
-                reference: reference ?? tender.transactionId ?? null,
-                paidAt: this.isSuccessfulPayment(status) ? now : null,
+                paymentId: payment.id,
+                shiftId: dto.shiftId ?? null,
+                employeeId,
+                source: RevenueRecordSource.ORDER,
+                amount: payment.amount,
+                description: `Payment ${method.code}`,
               },
             });
-            createdPayments.push({ payment, method });
-          }
 
-          if (this.isSuccessfulPayment(status)) {
-            for (const { payment, method } of createdPayments) {
-              await tx.revenueRecord.create({
+            if (method.code === "CASH" && dto.shiftId) {
+              await tx.cashTransaction.create({
                 data: {
                   branchId: order.branchId,
+                  shiftId: dto.shiftId,
+                  employeeId,
                   orderId: order.id,
                   paymentId: payment.id,
-                  shiftId: dto.shiftId ?? null,
-                  employeeId,
-                  source: RevenueRecordSource.ORDER,
+                  type: CashTransactionType.SALE,
                   amount: payment.amount,
-                  description: `Payment ${method.code}`,
+                  reason: "Cash payment",
+                  createdById: user.id,
+                },
+              });
+            }
+          }
+
+          const paidTotal = existingPaidTotal.add(requestTotal);
+          const paymentStatus = paidTotal.greaterThanOrEqualTo(order.total)
+            ? PaymentStatus.PAID
+            : PaymentStatus.PENDING;
+
+          const shouldCompleteOrder =
+            paymentStatus === PaymentStatus.PAID &&
+            order.source === OrderSource.POS &&
+            order.status !== OrderStatus.COMPLETED;
+
+          const updatedOrder = await tx.order.update({
+            where: { id: order.id },
+            data: {
+              paymentStatus,
+              ...(shouldCompleteOrder
+                ? {
+                    status: OrderStatus.COMPLETED,
+                    orderState: "COMPLETED",
+                    version: { increment: 1 },
+                    closedAt: now,
+                    closedById: employeeId,
+                  }
+                : {}),
+            },
+          });
+
+          if (shouldCompleteOrder) {
+            await recordOrderEvent(tx, {
+              orderId: order.id,
+              branchId: order.branchId,
+              aggregateVersion: updatedOrder.version,
+              eventType: ORDER_EVENTS.COMPLETED,
+              actorType: "STAFF",
+              actorId: user.id,
+              source: "API",
+              previousState: order.orderState,
+              newState: updatedOrder.orderState,
+              payload: {
+                fromStatus: order.status,
+                toStatus: OrderStatus.COMPLETED,
+                paymentOperationId: operation.id,
+              },
+              reasonCode: "POS_PAYMENT_COMPLETED",
+              idempotencyKey: dto.idempotencyKey,
+            });
+          }
+
+          if (paymentStatus === PaymentStatus.PAID) {
+            if (shouldCompleteOrder && order.tableId) {
+              await releaseTableIfNoActiveOrders(tx, order.tableId);
+            }
+
+            if (shouldCompleteOrder) {
+              await tx.orderStatusHistory.create({
+                data: {
+                  orderId: order.id,
+                  fromStatus: order.status,
+                  toStatus: OrderStatus.COMPLETED,
+                  changedByUserId: user.id,
+                  changedByEmployeeId: employeeId,
+                  reason: "Order completed after payment",
                 },
               });
 
-              if (method.code === "CASH" && dto.shiftId) {
-                await tx.cashTransaction.create({
-                  data: {
-                    branchId: order.branchId,
-                    shiftId: dto.shiftId,
-                    employeeId,
-                    orderId: order.id,
-                    paymentId: payment.id,
-                    type: CashTransactionType.SALE,
-                    amount: payment.amount,
-                    reason: "Cash payment",
-                    createdById: user.id,
+              await tx.kitchenTicket.updateMany({
+                where: {
+                  orderId: order.id,
+                  status: {
+                    in: [
+                      KitchenTicketStatus.NEW,
+                      KitchenTicketStatus.ACCEPTED,
+                      KitchenTicketStatus.COOKING,
+                      KitchenTicketStatus.READY,
+                    ],
                   },
-                });
-              }
-            }
-
-            const paidTotal = existingPaidTotal.add(requestTotal);
-            const paymentStatus = paidTotal.greaterThanOrEqualTo(order.total)
-              ? PaymentStatus.PAID
-              : PaymentStatus.PENDING;
-
-            const shouldCompleteOrder =
-              paymentStatus === PaymentStatus.PAID &&
-              order.source === OrderSource.POS &&
-              order.status !== OrderStatus.COMPLETED;
-
-            const updatedOrder = await tx.order.update({
-              where: { id: order.id },
-              data: {
-                paymentStatus,
-                ...(shouldCompleteOrder
-                  ? {
-                      status: OrderStatus.COMPLETED,
-                      orderState: "COMPLETED",
-                      version: { increment: 1 },
-                      closedAt: now,
-                      closedById: employeeId,
-                    }
-                  : {}),
-              },
-            });
-
-            if (shouldCompleteOrder) {
-              await recordOrderEvent(tx, {
-                orderId: order.id,
-                branchId: order.branchId,
-                aggregateVersion: updatedOrder.version,
-                eventType: ORDER_EVENTS.COMPLETED,
-                actorType: "STAFF",
-                actorId: user.id,
-                source: "API",
-                previousState: order.orderState,
-                newState: updatedOrder.orderState,
-                payload: { fromStatus: order.status, toStatus: OrderStatus.COMPLETED, paymentOperationId: operation.id },
-                reasonCode: "POS_PAYMENT_COMPLETED",
-                idempotencyKey: dto.idempotencyKey,
+                },
+                data: {
+                  status: KitchenTicketStatus.COMPLETED,
+                  completedAt: now,
+                },
               });
             }
 
-            if (paymentStatus === PaymentStatus.PAID) {
-              if (shouldCompleteOrder && order.tableId) {
-                await releaseTableIfNoActiveOrders(tx, order.tableId);
-              }
-
-              if (shouldCompleteOrder) {
-                await tx.orderStatusHistory.create({
-                  data: {
-                    orderId: order.id,
-                    fromStatus: order.status,
-                    toStatus: OrderStatus.COMPLETED,
-                    changedByUserId: user.id,
-                    changedByEmployeeId: employeeId,
-                    reason: "Order completed after payment",
-                  },
-                });
-
-                await tx.kitchenTicket.updateMany({
-                  where: {
-                    orderId: order.id,
-                    status: {
-                      in: [
-                        KitchenTicketStatus.NEW,
-                        KitchenTicketStatus.ACCEPTED,
-                        KitchenTicketStatus.COOKING,
-                        KitchenTicketStatus.READY,
-                      ],
-                    },
-                  },
-                  data: {
-                    status: KitchenTicketStatus.COMPLETED,
-                    completedAt: now,
-                  },
-                });
-              }
-
-              await ensureOrderReceipt(tx, order.id);
-            }
-
-            await writeAuditLog(tx, {
-              tenantId: user.tenantId ?? null,
-              userId: user.id,
-              action: "PAYMENT_OPERATION_COMPLETED",
-              entity: "PaymentOperation",
-              entityId: operation.id,
-              metadata: {
-                branchId: order.branchId,
-                orderId: order.id,
-                shiftId: dto.shiftId ?? null,
-                employeeId,
-                paymentIds: createdPayments.map(({ payment }) => payment.id),
-                amount: requestTotal.toFixed(2),
-                methods: createdPayments.map(({ method }) => method.code),
-              },
-            });
+            await ensureOrderReceipt(tx, order.id);
           }
 
-          await tx.paymentOperation.update({
-            where: { id: operation.id },
-            data: { status: "COMPLETED", completedAt: now },
+          await writeAuditLog(tx, {
+            tenantId: user.tenantId ?? null,
+            userId: user.id,
+            action: "PAYMENT_OPERATION_COMPLETED",
+            entity: "PaymentOperation",
+            entityId: operation.id,
+            metadata: {
+              branchId: order.branchId,
+              orderId: order.id,
+              shiftId: dto.shiftId ?? null,
+              employeeId,
+              paymentIds: createdPayments.map(({ payment }) => payment.id),
+              amount: requestTotal.toFixed(2),
+              methods: createdPayments.map(({ method }) => method.code),
+            },
           });
+        }
 
-          return this.buildOperationResult(tx, operation.id, order.id);
-        };
+        await tx.paymentOperation.update({
+          where: { id: operation.id },
+          data: { status: "COMPLETED", completedAt: now },
+        });
+
+        return this.buildOperationResult(tx, operation.id, order.id);
+      };
       return await (transaction
         ? execute(transaction)
         : this.prisma.$transaction(execute, {
@@ -488,121 +510,150 @@ export class PaymentsService {
     user: AuthenticatedUser,
   ) {
     if (!user.employeeId) {
-      throw new ForbiddenException("Authenticated user is not linked to an employee");
+      throw new ForbiddenException(
+        "Authenticated user is not linked to an employee",
+      );
     }
     const reason = dto.reason.trim();
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
-      const payment = await tx.payment.findFirst({
-        where: { id: paymentId, order: { branch: { tenantId } } },
-        include: { order: true, method: true, refund: true },
-      });
-      if (!payment) throw new NotFoundException("Payment not found");
-      resolveBranchScope(user, payment.order.branchId);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const scopedPayment = await tx.payment.findFirst({
+          where: { id: paymentId, order: { branch: { tenantId } } },
+          include: { order: true, method: true },
+        });
+        if (!scopedPayment) throw new NotFoundException("Payment not found");
+        resolveBranchScope(user, scopedPayment.order.branchId);
 
-      const replay = await tx.paymentRefund.findUnique({
-        where: { idempotencyKey: dto.idempotencyKey },
-        include: { payment: true },
-      });
-      if (replay) {
-        if (replay.paymentId !== paymentId) {
-          throw new BadRequestException("Idempotency key belongs to another refund");
+        const replay = await tx.paymentRefund.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+          include: { payment: true },
+        });
+        if (replay) {
+          if (replay.paymentId !== paymentId) {
+            throw new BadRequestException(
+              "Idempotency key belongs to another refund",
+            );
+          }
+          return replay;
         }
-        return replay;
-      }
-      if (payment.refund || payment.status === PaymentStatus.REFUNDED) {
-        throw new BadRequestException("Payment is already refunded");
-      }
-      if (!this.isSuccessfulPayment(payment.status)) {
-        throw new BadRequestException("Only successful payments can be refunded");
-      }
-      if (payment.method.code !== "CASH") {
-        throw new BadRequestException(`${payment.method.code} refund provider is not enabled`);
-      }
+        const shift = await tx.shift.findFirst({
+          where: {
+            id: dto.shiftId,
+            branchId: scopedPayment.order.branchId,
+            status: "OPEN",
+          },
+          select: { id: true, employeeId: true },
+        });
+        if (!shift)
+          throw new BadRequestException("Refund requires an open branch shift");
+        await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${scopedPayment.orderId} FOR UPDATE`;
+        const shiftLock = await tx.shift.updateMany({
+          where: {
+            id: shift.id,
+            branchId: scopedPayment.order.branchId,
+            status: "OPEN",
+          },
+          data: { updatedAt: new Date() },
+        });
+        if (shiftLock.count !== 1) {
+          throw new BadRequestException("Refund requires an open branch shift");
+        }
+        const lockedShift = await tx.shift.findUnique({
+          where: { id: shift.id },
+          select: { id: true, employeeId: true },
+        });
+        if (!lockedShift)
+          throw new BadRequestException("Refund requires an open branch shift");
+        await tx.$queryRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
 
-      const shift = await tx.shift.findFirst({
-        where: { id: dto.shiftId, branchId: payment.order.branchId, status: "OPEN" },
-        select: { id: true, employeeId: true },
-      });
-      if (!shift) throw new BadRequestException("Refund requires an open branch shift");
-
-      const refundedAt = new Date();
-      const refund = await tx.paymentRefund.create({
-        data: {
-          paymentId,
+        const payment = await tx.payment.findFirst({
+          where: { id: paymentId, order: { branch: { tenantId } } },
+          include: { order: true, method: true, refunds: true },
+        });
+        if (!payment) throw new NotFoundException("Payment not found");
+        if (payment.method.code !== "CASH") {
+          throw new BadRequestException(
+            `${payment.method.code} refund provider is not enabled`,
+          );
+        }
+        if (
+          !this.isSuccessfulPayment(payment.status) &&
+          payment.status !== PaymentStatus.PARTIALLY_REFUNDED
+        ) {
+          throw new BadRequestException(
+            "Only successful payments can be refunded",
+          );
+        }
+        const refundedSoFar = payment.refunds.reduce(
+          (total, item) => total.add(item.amount),
+          new Prisma.Decimal(0),
+        );
+        const refundable = payment.amount.sub(refundedSoFar);
+        if (refundable.lessThanOrEqualTo(0)) {
+          throw new BadRequestException("Payment is already fully refunded");
+        }
+        const amount =
+          dto.amount === undefined
+            ? refundable
+            : new Prisma.Decimal(dto.amount);
+        if (amount.lessThanOrEqualTo(0) || amount.greaterThan(refundable)) {
+          throw new BadRequestException(
+            "Qaytarish summasi to'lov qoldig'idan oshib ketdi",
+          );
+        }
+        const refund = await recordCashRefund(tx, {
+          payment: payment as RefundablePayment,
           branchId: payment.order.branchId,
-          shiftId: shift.id,
-          employeeId: shift.employeeId,
+          shiftId: lockedShift.id,
+          employeeId: lockedShift.employeeId,
           createdById: user.id,
-          amount: payment.amount,
+          tenantId: user.tenantId ?? null,
+          amount,
           reason,
           idempotencyKey: dto.idempotencyKey,
-        },
-      });
-      await tx.payment.update({
-        where: { id: paymentId },
-        data: { status: PaymentStatus.REFUNDED, refundedAt },
-      });
-      await tx.revenueRecord.create({
-        data: {
-          branchId: payment.order.branchId,
-          orderId: payment.orderId,
-          paymentId,
-          shiftId: shift.id,
-          employeeId: shift.employeeId,
-          source: RevenueRecordSource.ADJUSTMENT,
-          amount: payment.amount.negated(),
-          description: `Cash refund: ${reason}`,
-        },
-      });
-      await tx.cashTransaction.create({
-        data: {
-          branchId: payment.order.branchId,
-          shiftId: shift.id,
-          employeeId: shift.employeeId,
-          orderId: payment.orderId,
-          paymentId,
-          type: CashTransactionType.REFUND,
-          amount: payment.amount,
-          reason,
-          createdById: user.id,
-        },
-      });
+        });
 
-      const remaining = await tx.payment.aggregate({
-        where: {
-          orderId: payment.orderId,
-          status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS] },
-        },
-        _sum: { amount: true },
-      });
-      const remainingPaid = remaining._sum.amount ?? new Prisma.Decimal(0);
-      await tx.order.update({
-        where: { id: payment.orderId },
-        data: {
-          paymentStatus: remainingPaid.isZero()
-            ? PaymentStatus.REFUNDED
-            : PaymentStatus.PARTIALLY_REFUNDED,
-        },
-      });
-      await ensureRefundReceipt(tx, paymentId, reason, payment.amount);
-      await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
-        userId: user.id,
-        action: "PAYMENT_REFUNDED",
-        entity: "Payment",
-        entityId: paymentId,
-        metadata: {
-          branchId: payment.order.branchId,
-          orderId: payment.orderId,
-          shiftId: shift.id,
-          amount: payment.amount.toFixed(2),
-          reason,
-        },
-      });
-      return refund;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        const currentPayments = await tx.payment.findMany({
+          where: { orderId: payment.orderId },
+          include: { refunds: true },
+        });
+        const successfulPayments = currentPayments.filter(
+          (row) =>
+            this.isSuccessfulPayment(row.status) ||
+            row.status === PaymentStatus.PARTIALLY_REFUNDED,
+        );
+        const remainingPaid = successfulPayments.reduce(
+          (total, row) =>
+            total
+              .add(row.amount)
+              .sub(
+                row.refunds.reduce(
+                  (refundTotal, item) => refundTotal.add(item.amount),
+                  new Prisma.Decimal(0),
+                ),
+              ),
+          new Prisma.Decimal(0),
+        );
+        const hasRefunds = currentPayments.some(
+          (row) => row.refunds.length > 0,
+        );
+        await tx.order.update({
+          where: { id: payment.orderId },
+          data: {
+            paymentStatus: hasRefunds
+              ? remainingPaid.isZero()
+                ? PaymentStatus.REFUNDED
+                : PaymentStatus.PARTIALLY_REFUNDED
+              : remainingPaid.greaterThanOrEqualTo(payment.order.total)
+                ? PaymentStatus.PAID
+                : PaymentStatus.PENDING,
+          },
+        });
+        return refund;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   private sumSuccessfulPayments(
@@ -873,6 +924,15 @@ export class PaymentsService {
     });
 
     if (!shift) {
+      throw new BadRequestException(
+        "Open shift not found for this employee and branch",
+      );
+    }
+    const locked = await tx.shift.updateMany({
+      where: { id: shiftId, branchId, employeeId, status: "OPEN" },
+      data: { updatedAt: new Date() },
+    });
+    if (locked.count !== 1) {
       throw new BadRequestException(
         "Open shift not found for this employee and branch",
       );
