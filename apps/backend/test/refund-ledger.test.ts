@@ -11,7 +11,7 @@ function payment(
   id: string,
   code: string,
   amount: number,
-  status = PaymentStatus.SUCCESS,
+  status: PaymentStatus = PaymentStatus.SUCCESS,
   refunded: number[] = [],
 ): RefundablePayment {
   return {
@@ -71,6 +71,8 @@ test("item refund ignores failed and fully refunded cash tenders", () => {
   );
 
   assert.equal(plan.length, 1);
-  assert.equal(plan[0].payment.id, "available");
-  assert.equal(plan[0].amount.toFixed(2), "9000.00");
+  const allocation = plan[0];
+  assert.ok(allocation);
+  assert.equal(allocation.payment.id, "available");
+  assert.equal(allocation.amount.toFixed(2), "9000.00");
 });
