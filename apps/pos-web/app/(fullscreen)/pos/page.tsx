@@ -6,8 +6,6 @@ import {
   ArrowRight,
   Banknote,
   BellRing,
-  Check,
-  Delete,
   Clock3,
   History,
   Minus,
@@ -32,11 +30,7 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { ApiRequestError, apiFetch } from "../../../lib/api";
-import {
-  appendCashInput,
-  removeCashDigit,
-  sanitizeCashInput,
-} from "../../../lib/cash-entry.mjs";
+import { sanitizeCashInput } from "../../../lib/cash-entry.mjs";
 import { readOfflinePosCatalogSnapshot } from "../../../lib/offline-pos-bootstrap.mjs";
 import {
   parsePosCheckoutDraft,
@@ -48,6 +42,7 @@ import {
   orderStatusLabels,
   type OrderStatus,
 } from "../../../lib/order-display";
+import { POS_PAYMENT_METHOD_CODES, paymentMethodLabel } from "../../../components/payment/payment-methods";
 
 type Variant = {
   id: string;
@@ -102,6 +97,7 @@ type CartLine = {
 type OrderType = "TAKEAWAY" | "DINE_IN";
 type PosOrderResult = {
   offlineQueued?: boolean;
+  payLater?: boolean;
   message?: string;
   order: {
     id?: string;
@@ -159,15 +155,9 @@ type ShiftHistoryOrder = {
 const formatter = new Intl.NumberFormat("uz-UZ");
 const createCheckoutKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-/*
- * O'zbekistonda amalda yuradigan nominallar. Ilgari faqat +50 000 va
- * +100 000 bor edi, shuning uchun kassir 20 000 yoki 5 000 ni qo'lda
- * terishga majbur bo'lardi.
- */
-const cashDenominations = [1000, 5000, 10000, 20000, 50000, 100000, 200000];
 const cashMethodCode = "CASH";
 const fallbackPaymentMethods: PaymentMethodOption[] = [
-  { code: cashMethodCode, name: "Naqd" },
+  { code: cashMethodCode, name: paymentMethodLabel(cashMethodCode) },
 ];
 const cartStorageKey = (shiftId: string) => `mazetto.pos.cart.${shiftId}`;
 
@@ -209,7 +199,8 @@ function PosTerminal() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
-  const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
+  const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
+  const [payLater, setPayLater] = useState(false);
   const [tableId, setTableId] = useState("");
   const [paymentCode, setPaymentCode] = useState(cashMethodCode);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -406,18 +397,22 @@ function PosTerminal() {
   const validCash =
     Number.isFinite(received) && received >= total && received >= 0;
   const change = Number.isFinite(received) ? Math.max(0, received - total) : 0;
-  const paymentMethods = catalog?.paymentMethods?.length
-    ? catalog.paymentMethods
+  const availablePaymentMethods = catalog?.paymentMethods?.filter((method) =>
+    POS_PAYMENT_METHOD_CODES.some((code) => code === method.code),
+  );
+  const paymentMethods = availablePaymentMethods?.length
+    ? availablePaymentMethods.map((method) => ({ ...method, name: paymentMethodLabel(method.code) }))
     : fallbackPaymentMethods;
   const isCashPayment = paymentCode === cashMethodCode;
   const tables = catalog?.tables ?? [];
   const isDineIn = orderType === "DINE_IN";
+  const deferPayment = isDineIn && payLater;
   /*
    * Yuborish sharti to'lov usuliga QARAB o'zgaradi: naqd bo'lmaganda
    * "qabul qilingan naqd" degan tushuncha yo'q, shuning uchun uni talab
    * qilish kartani bloklab qo'yardi.
    */
-  const canSubmit = cart.length > 0 && (!isCashPayment || validCash);
+  const canSubmit = cart.length > 0 && (deferPayment || !isCashPayment || validCash);
 
   /*
    * Server tanlagan usulni bilmasa (masalan sozlamadan o'chirilgan),
@@ -450,9 +445,10 @@ function PosTerminal() {
     () =>
       JSON.stringify({
         orderType,
+        deferPayment,
         tableId: isDineIn ? tableId : null,
-        paymentCode,
-        cashReceived: isCashPayment ? received : null,
+        paymentCode: deferPayment ? null : paymentCode,
+        cashReceived: !deferPayment && isCashPayment ? received : null,
         total,
         items: cart.map((line) => [
           line.product.id,
@@ -461,7 +457,7 @@ function PosTerminal() {
           line.modifiers.map((modifier) => modifier.modifier.id).sort(),
         ]),
       }),
-    [orderType, tableId, isDineIn, paymentCode, isCashPayment, received, cart],
+    [orderType, deferPayment, tableId, isDineIn, paymentCode, isCashPayment, received, cart],
   );
 
   useEffect(() => {
@@ -503,6 +499,7 @@ function PosTerminal() {
     if (!draft) return;
 
     setOrderType(draft.orderType);
+    setPayLater(draft.payLater);
     setTableId(draft.tableId);
     setPaymentCode(draft.paymentCode);
     setCashReceived(draft.cashReceived);
@@ -565,6 +562,7 @@ function PosTerminal() {
             payloadSignature: checkoutAttempt.payloadSignature,
           },
           orderType,
+          payLater,
           tableId: isDineIn ? tableId : "",
           paymentCode,
           cashReceived,
@@ -579,6 +577,7 @@ function PosTerminal() {
     checkoutAttempt,
     payloadSignature,
     orderType,
+    payLater,
     tableId,
     paymentCode,
     cashReceived,
@@ -669,7 +668,7 @@ function PosTerminal() {
   function openCheckout() {
     if (!cart.length || isSubmitting) return;
     setError(null);
-    if (isCashPayment && !cashReceived) setCashReceived(String(total));
+    if (!deferPayment && isCashPayment && !cashReceived) setCashReceived(String(total));
     setCheckoutOpen(true);
   }
 
@@ -680,7 +679,7 @@ function PosTerminal() {
       setError("Buyurtma bo'sh");
       return;
     }
-    if (isCashPayment && !validCash) {
+    if (!deferPayment && isCashPayment && !validCash) {
       setError("Qabul qilingan naqd summani tekshiring");
       return;
     }
@@ -711,6 +710,7 @@ function PosTerminal() {
                 payloadSignature,
               },
               orderType,
+              payLater,
               tableId: isDineIn ? tableId : "",
               paymentCode,
               cashReceived,
@@ -726,14 +726,16 @@ function PosTerminal() {
         body: JSON.stringify({
           idempotencyKey: attempt.key,
           type: orderType,
+          payLater: deferPayment,
+          offlineEstimatedTotal: total,
           ...(isDineIn && tableId ? { tableId } : {}),
           /*
            * Bo'lak summasi buyurtma summasiga TENG yuboriladi. Mijoz
            * bergan ortiqcha naqd `cashReceived` da qoladi va qaytim
            * sifatida qaytariladi — ortiqcha pul daromad deb yozilmaydi.
            */
-          payments: [{ paymentMethodCode: paymentCode, amount: total }],
-          ...(isCashPayment ? { cashReceived: received } : {}),
+          ...(!deferPayment ? { payments: [{ paymentMethodCode: paymentCode, amount: total }] } : {}),
+          ...(!deferPayment && isCashPayment ? { cashReceived: received } : {}),
           items: cart.map((line) => ({
             productId: line.product.id,
             variantId: line.variant?.id,
@@ -745,8 +747,9 @@ function PosTerminal() {
           })),
         }),
       });
-      setSuccess(result);
+      setSuccess({ ...result, payLater: deferPayment });
       setCart([]);
+      setPayLater(false);
       setCashReceived("");
       setTableId("");
       setCheckoutOpen(false);
@@ -1053,8 +1056,7 @@ function PosTerminal() {
       )}
       {catalog && checkoutOpen && (
         <StaffDialog
-          title="To'lov va buyurtma"
-          placement="bottom"
+          title={isDineIn ? "Zal buyurtmasi" : "Olib ketish va to'lov"}
           busy={isSubmitting}
           onClose={() => {
             setCheckoutOpen(false);
@@ -1076,16 +1078,6 @@ function PosTerminal() {
               >
                 <button
                   className={styles.segment}
-                  aria-pressed={orderType === "TAKEAWAY"}
-                  disabled={isSubmitting}
-                  onClick={() => setOrderType("TAKEAWAY")}
-                  type="button"
-                >
-                  <ShoppingBag size={16} />
-                  Olib ketish
-                </button>
-                <button
-                  className={styles.segment}
                   aria-pressed={isDineIn}
                   disabled={isSubmitting}
                   onClick={() => setOrderType("DINE_IN")}
@@ -1093,6 +1085,20 @@ function PosTerminal() {
                 >
                   <Utensils size={16} />
                   Zal
+                </button>
+                <button
+                  className={styles.segment}
+                  aria-pressed={orderType === "TAKEAWAY"}
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setOrderType("TAKEAWAY");
+                    setPayLater(false);
+                    if (!cashReceived) setCashReceived(String(total));
+                  }}
+                  type="button"
+                >
+                  <ShoppingBag size={16} />
+                  Olib ketish
                 </button>
               </div>
               {isDineIn && (
@@ -1117,39 +1123,47 @@ function PosTerminal() {
                   </select>
                 </label>
               )}
+              {isDineIn ? (
+                <div className={styles.checkoutSheetSection}>
+                  <span className={styles.checkoutLabel}>To'lov qachon olinadi?</span>
+                  <div className={styles.segments} role="group" aria-label="To'lov vaqti">
+                    <button
+                      aria-pressed={!payLater}
+                      className={styles.segment}
+                      disabled={isSubmitting}
+                      onClick={() => {
+                        setPayLater(false);
+                        if (!cashReceived) setCashReceived(String(total));
+                      }}
+                      type="button"
+                    >
+                      Hozir to'lash
+                    </button>
+                    <button
+                      aria-pressed={payLater}
+                      className={styles.segment}
+                      disabled={isSubmitting}
+                      onClick={() => setPayLater(true)}
+                      type="button"
+                    >
+                      Chiqishda to'lash
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {deferPayment ? (
+                <p className={styles.muted}>
+                  Hozir faqat oshxona cheki chiqadi. Mijoz chiqayotganda to'lov kassada qabul qilinadi.
+                </p>
+              ) : null}
             </div>
 
-            <div className={styles.checkoutSheetSection}>
+            {!deferPayment && <div className={styles.checkoutSheetSection}>
               <span className={styles.checkoutLabel}>To'lov turi</span>
-              <div
-                className={styles.paymentOptions}
-                role="group"
-                aria-label="To'lov usuli"
-              >
-                {paymentMethods.map((method) => (
-                  <button
-                    aria-pressed={paymentCode === method.code}
-                    className={styles.paymentOption}
-                    disabled={isSubmitting}
-                    key={method.code}
-                    onClick={() => {
-                      setPaymentCode(method.code);
-                      if (method.code === cashMethodCode && !cashReceived) {
-                        setCashReceived(String(total));
-                      }
-                    }}
-                    type="button"
-                  >
-                    <span className={styles.paymentOptionMark}>
-                      {paymentCode === method.code ? <Check size={14} /> : null}
-                    </span>
-                    <span>{method.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+              <strong>{paymentMethodLabel(paymentCode)}</strong>
+            </div>}
 
-            {isCashPayment && (
+            {!deferPayment && isCashPayment && (
               <div className={styles.checkoutSheetSection}>
                 <label className={styles.field}>
                   <span>Qabul qilingan naqd pul</span>
@@ -1167,97 +1181,6 @@ function PosTerminal() {
                     }
                   />
                 </label>
-                <div
-                  className={styles.cashKeypad}
-                  role="group"
-                  aria-label="Naqd pul raqamlari"
-                >
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map(
-                    (key) => (
-                      <button
-                        className={styles.cashKey}
-                        disabled={isSubmitting}
-                        key={key}
-                        onClick={() =>
-                          setCashReceived((current) =>
-                            appendCashInput(current, key),
-                          )
-                        }
-                        type="button"
-                      >
-                        {key}
-                      </button>
-                    ),
-                  )}
-                  <button
-                    className={styles.cashKey}
-                    disabled={isSubmitting}
-                    onClick={() =>
-                      setCashReceived((current) =>
-                        appendCashInput(current, "000"),
-                      )
-                    }
-                    type="button"
-                  >
-                    000
-                  </button>
-                  <button
-                    className={styles.cashKey}
-                    disabled={isSubmitting}
-                    onClick={() =>
-                      setCashReceived((current) =>
-                        appendCashInput(current, "0"),
-                      )
-                    }
-                    type="button"
-                  >
-                    0
-                  </button>
-                  <button
-                    aria-label="Oxirgi raqamni o'chirish"
-                    className={`${styles.cashKey} ${styles.cashKeyBackspace}`}
-                    disabled={isSubmitting || !cashReceived}
-                    onClick={() =>
-                      setCashReceived((current) => removeCashDigit(current))
-                    }
-                    title="Oxirgi raqamni o'chirish"
-                    type="button"
-                  >
-                    <Delete size={19} aria-hidden="true" />
-                  </button>
-                </div>
-                <div className={styles.quickCash}>
-                  <button
-                    disabled={isSubmitting}
-                    onClick={() => setCashReceived(String(total))}
-                    type="button"
-                  >
-                    Aniq summa
-                  </button>
-                  {cashDenominations.map((amount) => (
-                    <button
-                      key={amount}
-                      disabled={isSubmitting}
-                      onClick={() =>
-                        setCashReceived(
-                          String(
-                            (Number.isFinite(received) ? received : 0) + amount,
-                          ),
-                        )
-                      }
-                      type="button"
-                    >
-                      +{formatter.format(amount)}
-                    </button>
-                  ))}
-                  <button
-                    disabled={isSubmitting || !cashReceived}
-                    onClick={() => setCashReceived("")}
-                    type="button"
-                  >
-                    Tozalash
-                  </button>
-                </div>
                 <div className={styles.change} role="status">
                   <span>{received < total ? "Yetishmayapti" : "Qaytim"}</span>
                   <strong>
@@ -1279,8 +1202,8 @@ function PosTerminal() {
                 onClick={() => void submitOrder()}
                 type="button"
               >
-                <Banknote size={19} />
-                {isSubmitting ? "Tasdiqlanmoqda..." : "Buyurtmani tasdiqlash"}
+                {deferPayment ? <Utensils size={19} /> : <Banknote size={19} />}
+                {isSubmitting ? "Tasdiqlanmoqda..." : deferPayment ? "Oshxonaga yuborish" : "To'lov va buyurtmani tasdiqlash"}
               </button>
             </div>
           </div>
@@ -1326,19 +1249,36 @@ function PosTerminal() {
           </p>
           {success.offlineQueued ? (
             <div className={styles.pendingSync} role="status">
-              Internet ulanmagani sababli buyurtma va chek qurilmadagi navbatga
-              saqlandi. Serverga internet tiklangach avtomatik yuboriladi.
+              {success.payLater
+                ? "Internet ulanmagani sababli buyurtma va oshxona cheki qurilmadagi navbatga saqlandi. To'lovni sinxronlangandan keyin qabul qiling."
+                : "Internet ulanmagani sababli buyurtma va chek qurilmadagi navbatga saqlandi. Serverga internet tiklangach avtomatik yuboriladi."}
             </div>
           ) : null}
-          <div className={styles.change} role="status">
-            <span>Qaytim</span>
-            <strong>{money(success.payment.change)}</strong>
-          </div>
+          {success.payLater ? (
+            <p className={styles.muted} role="status">
+              To'lov hali olinmadi. Mijoz chiqayotganda kassada qabul qiling.
+            </p>
+          ) : (
+            <div className={styles.change} role="status">
+              <span>Qaytim</span>
+              <strong>{money(success.payment.change)}</strong>
+            </div>
+          )}
           <div className={styles.totalRow}>
             <span>Buyurtma summasi</span>
             <strong>{money(success.order.total)}</strong>
           </div>
           <div className={styles.dialogActions}>
+            {success.payLater && !success.offlineQueued && success.order.id ? (
+              <button
+                className={styles.button}
+                onClick={() => router.push(`/pos/payment?orderId=${encodeURIComponent(success.order.id!)}`)}
+                type="button"
+              >
+                <Banknote size={18} />
+                To'lovlar
+              </button>
+            ) : null}
             {success.order.receipts?.find(
               (receipt) =>
                 receipt.documentType === "RECEIPT" || !receipt.documentType,

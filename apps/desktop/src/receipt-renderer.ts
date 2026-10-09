@@ -61,6 +61,7 @@ export function printableReceiptHtml(
   const paper = normalizeWindowsPaperSettings(paperInput);
   const profile = normalizeReceiptPrintProfile(profileInput);
   const content = receipt.content ?? {};
+  const dateTime = String(content.dateTime ?? "").replace(/\s*Toshkent vaqti\s*/gi, " ").trim();
   const documentType = String(content.documentType ?? receipt.documentType ?? "RECEIPT");
   const kind: ReceiptKind = documentType === "KITCHEN"
     ? "KITCHEN"
@@ -135,8 +136,8 @@ export function printableReceiptHtml(
   const footerContent = allFooterLines.length
     ? allFooterLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")
     : `<div>${escapeHtml(defaultFooter)}</div>`;
-  const logo = profile.logoEnabled && logoDataUrl?.startsWith("data:image/")
-    ? `<img class="logo" src="${escapeHtml(logoDataUrl)}" alt="${escapeHtml(profile.businessName)}">`
+  const logo = document.logoEnabled && logoDataUrl?.startsWith("data:image/")
+    ? `<img class="logo" src="${escapeHtml(logoDataUrl)}" alt="${escapeHtml(document.businessName)}">`
     : "";
 
   return `<!doctype html>
@@ -166,13 +167,13 @@ export function printableReceiptHtml(
   <body>
     <header>
       ${logo}
-      ${profile.businessNameEnabled && profile.businessName ? `<div class="business-name"><strong>${escapeHtml(profile.businessName)}</strong></div>` : ""}
+      ${document.businessNameEnabled && document.businessName ? `<div class="business-name"><strong>${escapeHtml(document.businessName)}</strong></div>` : ""}
       ${commonTopLines ? `<div class="common-lines">${commonTopLines}</div>` : ""}
       ${fields.branchName && content.branchName ? `<div>${escapeHtml(String(content.branchName))}</div>` : ""}
       <div class="document-title ${cancelled || refunded ? "alert" : ""}">${escapeHtml(heading)}</div>
       ${fields.orderNumber ? `<h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2>` : ""}
     </header>
-    ${(fields.orderType && content.orderType) || (fields.dateTime && content.dateTime) ? `<div class="meta"><span>${fields.orderType ? escapeHtml(String(content.orderType ?? "")) : ""}</span><span>${fields.dateTime ? escapeHtml(String(content.dateTime ?? "")) : ""}</span></div>` : ""}
+    ${(fields.orderType && content.orderType) || (fields.dateTime && dateTime) ? `<div class="meta"><span>${fields.orderType ? escapeHtml(String(content.orderType ?? "")) : ""}</span><span>${fields.dateTime ? escapeHtml(dateTime) : ""}</span></div>` : ""}
     ${customerLines ? `<div class="customer">${customerLines}</div>` : ""}
     ${reason ? `<p class="alert">Sabab: ${escapeHtml(String(reason))}</p>` : ""}
     <ul>${itemRows}</ul>

@@ -315,6 +315,35 @@ test("kassada zal buyurtmasi stol bilan ham, stolsiz ham qabul qilinadi", () => 
   );
 });
 
+test("zal buyurtmasi to'lovsiz oshxonaga yuboriladi, boshqa turda rad etiladi", () => {
+  const unpaid = checkout({ type: OrderType.DINE_IN, payLater: true });
+  delete unpaid.cashReceived;
+  assert.equal(
+    assertPosCheckoutType(unpaid),
+    OrderType.DINE_IN,
+  );
+  assert.throws(
+    () => assertPosCheckoutType({ ...unpaid, type: OrderType.TAKEAWAY }),
+    BadRequestException,
+  );
+  assert.throws(
+    () => assertPosCheckoutType({ ...unpaid, payments: [{ paymentMethodCode: "CASH", amount: 100 }] }),
+    BadRequestException,
+  );
+  const pending = summarizePosPayment(
+    unpaid,
+    new Prisma.Decimal(100),
+  );
+  assert.deepEqual(pending.methods, []);
+  assert.equal(pending.change, "0.00");
+  const now = checkout({ type: OrderType.DINE_IN });
+  delete now.cashReceived;
+  assert.notEqual(
+    createPosCheckoutRequestHash(now, "b1", "e1"),
+    createPosCheckoutRequestHash({ ...now, payLater: true }, "b1", "e1"),
+  );
+});
+
 test("olib ketishda stol tanlanmaydi", () => {
   // Aks holda stol band bo'lib qolardi, lekin hech kim o'tirmasdi.
   assert.throws(

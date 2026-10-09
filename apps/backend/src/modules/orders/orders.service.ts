@@ -463,122 +463,124 @@ export class OrdersService {
              * `payments` berilmagan bo'lsa — eski yo'l: butun summa naqd.
              * Bu shart eski kassa mijozi uchun saqlanadi.
              */
-            const tenders = requestedTenders ?? [
-              {
-                paymentMethodCode: "CASH",
-                amount: pricedOrder.total,
-                transactionId: null,
-              },
-            ];
-            const tenderTotal = tenders.reduce(
-              (total, tender) => total.add(tender.amount),
-              new Prisma.Decimal(0),
-            );
-
-            /*
-             * Kassa buyurtmasi TO'LIQ to'lanadi: qoldiq bilan chiqmaydi.
-             * Ortiqcha ham qabul qilinmaydi — 73 000 lik buyurtmaga
-             * 100 000 daromad yozish hisobotni buzardi. Mijoz bergan
-             * ortiqcha pul `cashReceived` da qoladi va qaytim sifatida
-             * qaytariladi.
-             */
-            if (!tenderTotal.equals(pricedOrder.total)) {
-              throw new BadRequestException(
-                "To'lov summasi buyurtma summasiga teng bo'lishi kerak",
-              );
-            }
-
-            const cashTender = tenders.find(
-              (tender) => tender.paymentMethodCode === "CASH",
-            );
-            /*
-             * Naqd bo'lagi bo'lmasa `cashReceived` ma'nosiz — nolga
-             * tushadi va qaytim ham nol bo'ladi.
-             */
-            const cashReceived = cashTender
-              ? new Prisma.Decimal(dto.cashReceived ?? cashTender.amount)
-              : new Prisma.Decimal(0);
-
-            if (cashTender && cashReceived.lessThan(cashTender.amount)) {
-              throw new BadRequestException(
-                "Qabul qilingan naqd pul naqd to'lov summasidan kam",
-              );
-            }
-
-            for (const [index, tender] of tenders.entries()) {
-              const method = await resolveBranchPaymentMethod(
-                tx,
-                branchId,
-                tender.paymentMethodCode,
-              );
-
-              const payment = await tx.payment.create({
-                data: {
-                  orderId: order.id,
-                  paymentMethodId: method.id,
-                  paymentOperationId: operation.id,
-                  operationTenderIndex: index,
-                  acceptedById: employeeId,
-                  createdById: user.id,
-                  status: PaymentStatus.SUCCESS,
-                  amount: tender.amount,
-                  methodCode: method.code,
-                  transactionId: tender.transactionId,
-                  reference: `POS ${method.code} payment`,
-                  paidAt: new Date(),
+            if (!dto.payLater) {
+              const tenders = requestedTenders ?? [
+                {
+                  paymentMethodCode: "CASH",
+                  amount: pricedOrder.total,
+                  transactionId: null,
                 },
-              });
+              ];
+              const tenderTotal = tenders.reduce(
+                (total, tender) => total.add(tender.amount),
+                new Prisma.Decimal(0),
+              );
 
-              await tx.revenueRecord.create({
-                data: {
+              /*
+               * Kassa buyurtmasi TO'LIQ to'lanadi: qoldiq bilan chiqmaydi.
+               * Ortiqcha ham qabul qilinmaydi — 73 000 lik buyurtmaga
+               * 100 000 daromad yozish hisobotni buzardi. Mijoz bergan
+               * ortiqcha pul `cashReceived` da qoladi va qaytim sifatida
+               * qaytariladi.
+               */
+              if (!tenderTotal.equals(pricedOrder.total)) {
+                throw new BadRequestException(
+                  "To'lov summasi buyurtma summasiga teng bo'lishi kerak",
+                );
+              }
+
+              const cashTender = tenders.find(
+                (tender) => tender.paymentMethodCode === "CASH",
+              );
+              /*
+               * Naqd bo'lagi bo'lmasa `cashReceived` ma'nosiz — nolga
+               * tushadi va qaytim ham nol bo'ladi.
+               */
+              const cashReceived = cashTender
+                ? new Prisma.Decimal(dto.cashReceived ?? cashTender.amount)
+                : new Prisma.Decimal(0);
+
+              if (cashTender && cashReceived.lessThan(cashTender.amount)) {
+                throw new BadRequestException(
+                  "Qabul qilingan naqd pul naqd to'lov summasidan kam",
+                );
+              }
+
+              for (const [index, tender] of tenders.entries()) {
+                const method = await resolveBranchPaymentMethod(
+                  tx,
                   branchId,
-                  orderId: order.id,
-                  paymentId: payment.id,
-                  shiftId: openShift.id,
-                  employeeId,
-                  source: RevenueRecordSource.ORDER,
-                  amount: payment.amount,
-                  description: `POS ${method.code} payment`,
-                },
+                  tender.paymentMethodCode,
+                );
+
+                const payment = await tx.payment.create({
+                  data: {
+                    orderId: order.id,
+                    paymentMethodId: method.id,
+                    paymentOperationId: operation.id,
+                    operationTenderIndex: index,
+                    acceptedById: employeeId,
+                    createdById: user.id,
+                    status: PaymentStatus.SUCCESS,
+                    amount: tender.amount,
+                    methodCode: method.code,
+                    transactionId: tender.transactionId,
+                    reference: `POS ${method.code} payment`,
+                    paidAt: new Date(),
+                  },
+                });
+
+                await tx.revenueRecord.create({
+                  data: {
+                    branchId,
+                    orderId: order.id,
+                    paymentId: payment.id,
+                    shiftId: openShift.id,
+                    employeeId,
+                    source: RevenueRecordSource.ORDER,
+                    amount: payment.amount,
+                    description: `POS ${method.code} payment`,
+                  },
+                });
+
+                /*
+                 * KASSA YOZUVI FAQAT NAQDGA. Karta yoki Click pul kassa
+                 * yashigiga tushmaydi, shuning uchun smena yopilishida
+                 * sanaladigan naqdga ham qo'shilmasligi kerak. Daromad
+                 * yozuvi (yuqorida) esa har usulga yoziladi.
+                 */
+                if (method.code === "CASH") {
+                  await tx.cashTransaction.create({
+                    data: {
+                      branchId,
+                      shiftId: openShift.id,
+                      employeeId,
+                      orderId: order.id,
+                      paymentId: payment.id,
+                      type: CashTransactionType.SALE,
+                      amount: payment.amount,
+                      reason: "POS cash sale",
+                      createdById: user.id,
+                    },
+                  });
+                }
+              }
+
+              await tx.order.update({
+                where: { id: order.id },
+                data: { paymentStatus: PaymentStatus.PAID },
               });
 
               /*
-               * KASSA YOZUVI FAQAT NAQDGA. Karta yoki Click pul kassa
-               * yashigiga tushmaydi, shuning uchun smena yopilishida
-               * sanaladigan naqdga ham qo'shilmasligi kerak. Daromad
-               * yozuvi (yuqorida) esa har usulga yoziladi.
+               * Kassa sotuvi ham CHEK yozuvini yaratadi.
+               *
+               * Ilgari bu qadam yo'q edi: chek faqat `PaymentsService`
+               * ichida, o'z `private` metodida yaratilardi. Natijada POS
+               * naqd sotuvining cheki hech qachon yozilmasdi va admin
+               * paneldagi cheklar ro'yxatida kassa sotuvlari ko'rinmasdi.
                */
-              if (method.code === "CASH") {
-                await tx.cashTransaction.create({
-                  data: {
-                    branchId,
-                    shiftId: openShift.id,
-                    employeeId,
-                    orderId: order.id,
-                    paymentId: payment.id,
-                    type: CashTransactionType.SALE,
-                    amount: payment.amount,
-                    reason: "POS cash sale",
-                    createdById: user.id,
-                  },
-                });
-              }
+              await ensureOrderReceipt(tx, order.id);
             }
-
-            await tx.order.update({
-              where: { id: order.id },
-              data: { paymentStatus: PaymentStatus.PAID },
-            });
-
-            /*
-             * Kassa sotuvi ham CHEK yozuvini yaratadi.
-             *
-             * Ilgari bu qadam yo'q edi: chek faqat `PaymentsService`
-             * ichida, o'z `private` metodida yaratilardi. Natijada POS
-             * naqd sotuvining cheki hech qachon yozilmasdi va admin
-             * paneldagi cheklar ro'yxatida kassa sotuvlari ko'rinmasdi.
-             */
-            await ensureOrderReceipt(tx, order.id);
 
             const confirmed = await this.confirmOrderForPreparation(tx, {
               orderId: order.id,

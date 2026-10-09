@@ -95,6 +95,52 @@
 .staffSidebar {
   display: none;
 }
+.sidebarActions {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+.sidebarActions > :is(button, a) {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #d5e2dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #07373a;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.sidebarActions > :is(button, a):hover {
+  background: #e3efea;
+}
+.sidebarActions .sync {
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 8px 2px;
+}
+@media (max-width: 1023px) {
+  .staffSidebar[data-mobile-open="true"] {
+    position: fixed;
+    z-index: var(--mz-z-sidebar);
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    width: min(288px, calc(100vw - 36px));
+    padding: 14px;
+    overflow-y: auto;
+    border-right: 1px solid #c8dad0;
+    background: #f8fbfa;
+    box-shadow: 18px 0 48px #001b2438;
+  }
+}
 .panelNavigation {
   display: grid;
   gap: 18px;
@@ -203,6 +249,9 @@
     overflow-y: auto;
     border-right: 1px solid #d5e2dd;
     background: #f8fbfa;
+  }
+  .staffSidebar .panelDrawerHeader button {
+    display: none;
   }
   .staffLayout[data-sidebar-hidden="true"] {
     grid-template-columns: minmax(0, 1fr);

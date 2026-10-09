@@ -853,7 +853,10 @@ export class DesktopGateway {
         : null;
     const localPrintJobs: LocalPrintJobInput[] = [];
     if (offlineOrderSnapshot && localAggregateId) {
-      for (const documentType of ["RECEIPT", "KITCHEN"] as const) {
+      const documentTypes = parsedBody?.payLater === true
+        ? ["KITCHEN"] as const
+        : ["RECEIPT", "KITCHEN"] as const;
+      for (const documentType of documentTypes) {
         localPrintJobs.push({
           logicalKey: localAggregateId + ":" + documentType,
           branchId: context?.branchId ?? "global",
@@ -2824,6 +2827,7 @@ function queuedResponseData(
   }
 
   if (pathname === "/api/v1/pos/orders") {
+    const payLater = parsedBody?.payLater === true;
     return {
       ...base,
       order: {
@@ -2831,12 +2835,13 @@ function queuedResponseData(
         orderNumber: offlineNumber,
         displayOrderNumber: displayNumber,
         total: String(total),
+        paymentStatus: payLater ? "PENDING" : "PENDING_SYNC",
         receipts: [],
       },
       payment: {
-        cashReceived: String(cashReceived),
-        change: String(Math.max(0, cashReceived - total)),
-        methods: paymentMethods(parsedBody),
+        cashReceived: payLater ? "0" : String(cashReceived),
+        change: payLater ? "0" : String(Math.max(0, cashReceived - total)),
+        methods: payLater ? [] : paymentMethods(parsedBody),
       },
     };
   }
@@ -2978,6 +2983,9 @@ function numberField(
 function isOfflineCashPayment(body: ArrayBuffer | undefined): boolean {
   if (!body) return false;
   const source = parseJsonObject(Buffer.from(body).toString("utf8"));
+  if (source?.payLater === true) {
+    return source.type === "DINE_IN" && source.payments === undefined && source.cashReceived === undefined;
+  }
   const payments = source?.payments;
   return (
     Array.isArray(payments) &&
@@ -3003,7 +3011,9 @@ function isOfflineCashPayment(body: ArrayBuffer | undefined): boolean {
 function paymentTotal(source: Record<string, unknown> | null): number {
   const payments = source?.payments;
   if (!Array.isArray(payments)) {
-    return 0;
+    return source?.payLater === true
+      ? Math.max(0, numberField(source, "offlineEstimatedTotal") ?? 0)
+      : 0;
   }
 
   return payments.reduce((sum, payment) => {
@@ -3861,7 +3871,7 @@ function buildOfflineOrderSnapshot(
     displayOrderNumber: offlineNumber,
     status: "NEW",
     orderState: "PLACED",
-    paymentStatus: "PENDING_SYNC",
+    paymentStatus: body.payLater === true ? "PENDING" : "PENDING_SYNC",
     total: String(paymentTotal(body)),
     source: "POS",
     type: stringField(body, "type") ?? "TAKEAWAY",
@@ -4032,7 +4042,7 @@ function tashkentDateKey(value: Date): string {
 }
 
 function formatTashkentDateTime(value: Date): string {
-  return `${new Intl.DateTimeFormat("uz-UZ", {
+  return new Intl.DateTimeFormat("uz-UZ", {
     timeZone: "Asia/Tashkent",
     year: "numeric",
     month: "2-digit",
@@ -4041,7 +4051,7 @@ function formatTashkentDateTime(value: Date): string {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-  }).format(value)} Toshkent vaqti`;
+  }).format(value);
 }
 
 function buildOfflineCancellationDocument(

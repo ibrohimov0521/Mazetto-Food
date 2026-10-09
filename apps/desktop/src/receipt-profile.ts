@@ -20,6 +20,9 @@ export type ReceiptFieldKey =
 
 export type ReceiptDocumentProfile = {
   title: string;
+  businessName: string;
+  businessNameEnabled: boolean;
+  logoEnabled: boolean;
   fontSizePx: number;
   titleSizePx: number;
   lineHeight: number;
@@ -30,8 +33,6 @@ export type ReceiptDocumentProfile = {
 
 export type ReceiptPrintProfile = {
   businessName: string;
-  businessNameEnabled: boolean;
-  logoEnabled: boolean;
   commonHeaderLines: string[];
   commonFooterLines: string[];
   documents: Record<ReceiptKind, ReceiptDocumentProfile>;
@@ -49,14 +50,15 @@ function documentProfile(
 ): ReceiptDocumentProfile {
   const fields = Object.fromEntries(visibleFields.map((key) => [key, true])) as Record<ReceiptFieldKey, boolean>;
   Object.assign(fields, overrides);
-  return { title, fontSizePx: 12, titleSizePx: 18, lineHeight: 1.3, fields, headerLines: [], footerLines: [] };
+  return {
+    title, businessName: "MAZETTO FOOD", businessNameEnabled: true, logoEnabled: true,
+    fontSizePx: 12, titleSizePx: 18, lineHeight: 1.3, fields, headerLines: [], footerLines: [],
+  };
 }
 
 export function defaultReceiptPrintProfile(): ReceiptPrintProfile {
   return {
     businessName: "MAZETTO FOOD",
-    businessNameEnabled: true,
-    logoEnabled: true,
     commonHeaderLines: [],
     commonFooterLines: [],
     documents: {
@@ -113,6 +115,17 @@ export function normalizeReceiptPrintProfile(value: unknown): ReceiptPrintProfil
     }
     documents[kind] = {
       title: safeText(raw.title, fallback.title, 80),
+      businessName: safeText(raw.businessName, safeText(input.businessName, fallback.businessName, 80), 80),
+      businessNameEnabled: typeof raw.businessNameEnabled === "boolean"
+        ? raw.businessNameEnabled
+        : typeof input.businessNameEnabled === "boolean"
+          ? input.businessNameEnabled
+          : fallback.businessNameEnabled,
+      logoEnabled: typeof raw.logoEnabled === "boolean"
+        ? raw.logoEnabled
+        : typeof input.logoEnabled === "boolean"
+          ? input.logoEnabled
+          : fallback.logoEnabled,
       fontSizePx: safeSize(raw.fontSizePx, fallback.fontSizePx, 8, 24),
       titleSizePx: safeSize(raw.titleSizePx, fallback.titleSizePx, 10, 36),
       lineHeight: safeLineHeight(raw.lineHeight, fallback.lineHeight),
@@ -124,8 +137,6 @@ export function normalizeReceiptPrintProfile(value: unknown): ReceiptPrintProfil
 
   return {
     businessName: safeText(input.businessName, defaults.businessName, 80),
-    businessNameEnabled: typeof input.businessNameEnabled === "boolean" ? input.businessNameEnabled : defaults.businessNameEnabled,
-    logoEnabled: typeof input.logoEnabled === "boolean" ? input.logoEnabled : defaults.logoEnabled,
     commonHeaderLines: safeLines(input.commonHeaderLines),
     commonFooterLines: safeLines(input.commonFooterLines),
     documents,

@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNumber,
@@ -102,6 +103,17 @@ export class CreatePosCheckoutDto {
   @IsOptional()
   @IsString()
   tableId?: string;
+
+  /** Dine-in order goes to the kitchen now; payment is collected at exit. */
+  @IsOptional()
+  @IsBoolean()
+  payLater?: boolean;
+
+  /** Display-only estimate for a queued offline order; never used for billing. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  offlineEstimatedTotal?: number;
 
   /*
    * Mijoz bergan naqd pul. FAQAT qaytimni hisoblash uchun — bu summa

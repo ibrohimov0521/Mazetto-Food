@@ -91,6 +91,13 @@ export function assertPosCheckoutType(dto: CreatePosCheckoutDto): OrderType {
     throw new BadRequestException("Stol faqat zal buyurtmasida tanlanadi");
   }
 
+  if (dto.payLater && type !== OrderType.DINE_IN) {
+    throw new BadRequestException("Keyin to'lash faqat zal buyurtmasida mumkin");
+  }
+  if (dto.payLater && (dto.payments !== undefined || dto.cashReceived !== undefined)) {
+    throw new BadRequestException("Keyin to'lanadigan buyurtmada hozirgi to'lov yuborilmaydi");
+  }
+
   return type;
 }
 
@@ -180,6 +187,9 @@ export function summarizePosPayment(
   dto: CreatePosCheckoutDto,
   orderTotal: Prisma.Decimal,
 ): PosPaymentSummary {
+  if (dto.payLater) {
+    return { method: "PENDING", methods: [], cashReceived: "0.00", change: "0.00" };
+  }
   const tenders = dto.payments?.length
     ? dto.payments.map((tender) => ({
         code: normalizePaymentMethodCode(tender.paymentMethodCode),
@@ -226,6 +236,7 @@ export function createPosCheckoutRequestHash(
     branchId,
     employeeId,
     type: dto.type ?? OrderType.TAKEAWAY,
+    payLater: dto.payLater === true,
     tableId: dto.tableId ?? null,
     cashReceived:
       dto.cashReceived === undefined

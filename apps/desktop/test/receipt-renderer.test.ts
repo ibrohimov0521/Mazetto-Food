@@ -129,9 +129,9 @@ test("cancellation receipt visibly includes its reason", () => {
 
 test("receipt profiles customize title, common text, logo, sizes, and visible fields safely", () => {
   const profile = defaultReceiptPrintProfile();
-  profile.businessName = "Mazetto <Food>";
-  profile.businessNameEnabled = true;
-  profile.logoEnabled = true;
+  profile.documents.RECEIPT.businessName = "Mazetto <Food>";
+  profile.documents.RECEIPT.businessNameEnabled = true;
+  profile.documents.RECEIPT.logoEnabled = true;
   profile.commonHeaderLines = ["Umumiy <yuqori yozuv>"];
   profile.commonFooterLines = ["Umumiy pastki yozuv"];
   profile.documents.RECEIPT.title = "Chek <nusxa>";
@@ -164,8 +164,8 @@ test("receipt profiles customize title, common text, logo, sizes, and visible fi
 test("receipt profile can hide the logo and organization name independently of their saved values", () => {
   const profile = defaultReceiptPrintProfile();
   profile.businessName = "MAZETTO FOOD";
-  profile.businessNameEnabled = false;
-  profile.logoEnabled = false;
+  profile.documents.RECEIPT.businessNameEnabled = false;
+  profile.documents.RECEIPT.logoEnabled = false;
 
   const html = printableReceiptHtml(
     { content: { orderNumber: "42" } },
@@ -176,6 +176,32 @@ test("receipt profile can hide the logo and organization name independently of t
 
   assert.doesNotMatch(html, /<img class="logo"/);
   assert.doesNotMatch(html, /MAZETTO FOOD/);
+});
+
+test("receipt branding is independent for each document kind", () => {
+  const profile = defaultReceiptPrintProfile();
+  profile.documents.RECEIPT.logoEnabled = false;
+  profile.documents.RECEIPT.businessNameEnabled = false;
+  profile.documents.CANCELLATION.logoEnabled = false;
+  profile.documents.REFUND.businessNameEnabled = false;
+  profile.documents.KITCHEN.businessName = "Oshxona <nomi>";
+  const logo = "data:image/png;base64,ZmFrZQ==";
+  const render = (documentType: string) => printableReceiptHtml(
+    { documentType, content: { documentType, dateTime: "09.10.2026 14:20 Toshkent vaqti" } },
+    { paperFormat: "ROLL", paperWidthMm: 80 },
+    profile,
+    logo,
+  );
+
+  assert.doesNotMatch(render("RECEIPT"), /<img class="logo"|MAZETTO FOOD|Toshkent vaqti/);
+  assert.match(render("KITCHEN"), /<img class="logo"/);
+  assert.match(render("KITCHEN"), /<div class="business-name">/);
+  assert.match(render("KITCHEN"), /Oshxona &lt;nomi&gt;/);
+  assert.doesNotMatch(render("CANCELLATION"), /<img class="logo"/);
+  assert.match(render("CANCELLATION"), /<div class="business-name">/);
+  assert.match(render("REFUND"), /<img class="logo"/);
+  assert.doesNotMatch(render("REFUND"), /<div class="business-name">/);
+  assert.match(render("RECEIPT"), /09.10.2026 14:20/);
 });
 
 test("receipt profile normalization bounds text, lines and sizes while preserving defaults", () => {
@@ -194,8 +220,10 @@ test("receipt profile normalization bounds text, lines and sizes while preservin
     },
   });
 
-  assert.equal(normalized.businessNameEnabled, false);
-  assert.equal(normalized.logoEnabled, false);
+  assert.equal(normalized.documents.RECEIPT.businessNameEnabled, false);
+  assert.equal(normalized.documents.RECEIPT.logoEnabled, false);
+  assert.equal(normalized.documents.KITCHEN.businessNameEnabled, false);
+  assert.equal(normalized.documents.KITCHEN.logoEnabled, false);
   assert.deepEqual(normalized.commonHeaderLines, ["bir", "ikki", "uch", "to'rt", "besh"]);
   assert.equal(normalized.documents.KITCHEN.fontSizePx, 24);
   assert.equal(normalized.documents.KITCHEN.titleSizePx, 10);
@@ -205,4 +233,20 @@ test("receipt profile normalization bounds text, lines and sizes while preservin
   assert.equal(normalized.documents.KITCHEN.fields.payments, false);
   assert.equal(normalized.documents.KITCHEN.fields.orderNumber, true);
   assert.equal(normalized.documents.RECEIPT.title, "MIJOZ CHEKI");
+});
+
+test("saved per-kind branding overrides legacy common visibility", () => {
+  const normalized = normalizeReceiptPrintProfile({
+    businessName: "Eski nom",
+    logoEnabled: false,
+    businessNameEnabled: false,
+    documents: { KITCHEN: { logoEnabled: true, businessNameEnabled: true, businessName: "Oshxona nomi" } },
+  });
+
+  assert.equal(normalized.documents.RECEIPT.logoEnabled, false);
+  assert.equal(normalized.documents.RECEIPT.businessNameEnabled, false);
+  assert.equal(normalized.documents.KITCHEN.logoEnabled, true);
+  assert.equal(normalized.documents.KITCHEN.businessNameEnabled, true);
+  assert.equal(normalized.documents.RECEIPT.businessName, "Eski nom");
+  assert.equal(normalized.documents.KITCHEN.businessName, "Oshxona nomi");
 });

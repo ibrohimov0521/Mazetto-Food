@@ -447,7 +447,7 @@ function PaymentTerminal() {
   return (
     <StaffShell
       title="To'lov"
-      sidebar={false}
+      sidebar
       actions={
         <Link className={styles.shiftLink} href="/pos">
           <ArrowLeft size={17} aria-hidden="true" />
@@ -604,6 +604,11 @@ function PaymentTerminal() {
                       >
                         <label className={styles.field}>
                           <span>Usul {isSplit ? index + 1 : ""}</span>
+                          {enabledPaymentMethods.length === 1 ? (
+                            <strong className={styles.payTenderSelect}>
+                              {paymentMethodLabel(tender.code)}
+                            </strong>
+                          ) : (
                           <select
                             className={styles.payTenderSelect}
                             aria-label={`To'lov usuli ${index + 1}`}
@@ -621,6 +626,7 @@ function PaymentTerminal() {
                               </option>
                             ))}
                           </select>
+                          )}
                         </label>
                         {isSplit ? (
                           <>
@@ -740,7 +746,7 @@ function PaymentTerminal() {
                       <Banknote size={20} aria-hidden="true" />
                       {isSubmitting
                         ? "Qabul qilinmoqda..."
-                        : `To'lovni qabul qilish · ${formatMoney(outstanding)}`}
+                        : `Tasdiqlashga o'tish · ${formatMoney(outstanding)}`}
                     </button>
                   </div>
                 </div>
@@ -763,6 +769,11 @@ function PaymentTerminal() {
           <p className={styles.muted}>
             #{orderLabel} · {tableLabel(selectedOrder)}
           </p>
+          {cashDue > 0 && currentShift?.status === "OPEN" ? (
+            <p className={styles.muted}>
+              Naqd to'lov {currentShift.shiftNumber ? `#${currentShift.shiftNumber}` : "joriy"} smenaga yoziladi.
+            </p>
+          ) : null}
           <div className={styles.payConfirmList}>
             {payload.map((item, index) => (
               <div
@@ -815,7 +826,7 @@ function PaymentTerminal() {
               type="button"
             >
               <Check size={18} aria-hidden="true" />
-              {isSubmitting ? "Qabul qilinmoqda..." : "Tasdiqlash"}
+              {isSubmitting ? "Qabul qilinmoqda..." : "To'lovni qabul qilish"}
             </button>
           </div>
         </StaffDialog>

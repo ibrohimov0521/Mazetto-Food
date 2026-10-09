@@ -45,6 +45,9 @@ type DesktopReceiptFieldKey =
   | "orderNotes" | "reason";
 type DesktopReceiptDocumentProfile = {
   title: string;
+  businessName: string;
+  businessNameEnabled: boolean;
+  logoEnabled: boolean;
   fontSizePx: number;
   titleSizePx: number;
   lineHeight: number;
@@ -54,8 +57,6 @@ type DesktopReceiptDocumentProfile = {
 };
 type DesktopReceiptPrintProfile = {
   businessName: string;
-  businessNameEnabled: boolean;
-  logoEnabled: boolean;
   commonHeaderLines: string[];
   commonFooterLines: string[];
   documents: Record<DesktopReceiptKind, DesktopReceiptDocumentProfile>;

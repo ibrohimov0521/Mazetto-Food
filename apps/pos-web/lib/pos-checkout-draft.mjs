@@ -5,6 +5,7 @@
  *   lines: PosCartLineDraft[];
  *   checkoutAttempt: PosCheckoutAttempt | null;
  *   orderType: "TAKEAWAY" | "DINE_IN";
+ *   payLater: boolean;
  *   tableId: string;
  *   paymentCode: string;
  *   cashReceived: string;
@@ -39,6 +40,7 @@ export function parsePosCheckoutDraft(raw) {
         lines: parsed,
         checkoutAttempt: null,
         orderType: "TAKEAWAY",
+        payLater: false,
         tableId: "",
         paymentCode: "CASH",
         cashReceived: "",
@@ -66,6 +68,7 @@ export function parsePosCheckoutDraft(raw) {
       lines: parsed.lines,
       checkoutAttempt,
       orderType: parsed.orderType === "DINE_IN" ? "DINE_IN" : "TAKEAWAY",
+      payLater: parsed.orderType === "DINE_IN" && parsed.payLater === true,
       tableId: typeof parsed.tableId === "string" ? parsed.tableId : "",
       paymentCode:
         typeof parsed.paymentCode === "string" ? parsed.paymentCode : "CASH",
