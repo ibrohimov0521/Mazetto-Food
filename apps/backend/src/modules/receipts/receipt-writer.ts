@@ -125,7 +125,7 @@ export async function writeReceiptRow(
         customerName: order.customerName,
         customerPhone: order.customerPhone,
         address: order.deliveryAddress,
-        orderNotes: order.kitchenComment ?? order.notes,
+        orderNotes: typeof order.notes === "string" ? order.notes.trim() || null : null,
         items: order.items.map((item) => ({
           name: item.productName,
           variant: item.variantName,

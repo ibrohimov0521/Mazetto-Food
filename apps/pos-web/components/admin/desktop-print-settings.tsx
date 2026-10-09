@@ -22,6 +22,8 @@ type ReceiptFieldKey =
   | "orderNotes" | "reason";
 type ReceiptDocument = {
   title: string;
+  titleEnabled: boolean;
+  density: "COMPACT" | "NORMAL";
   businessName: string;
   businessNameEnabled: boolean;
   logoEnabled: boolean;
@@ -492,9 +494,13 @@ export function DesktopPrintSettings() {
                     </fieldset>
                     <label className="grid gap-1 text-xs font-semibold text-mz-text">
                       Chek sarlavhasi
-                      <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" maxLength={80} onChange={(event) => updateDocument((current) => ({ ...current, title: event.target.value }))} value={activeDocument.title} />
+                      <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal disabled:opacity-50" disabled={!activeDocument.titleEnabled} maxLength={80} onChange={(event) => updateDocument((current) => ({ ...current, title: event.target.value }))} value={activeDocument.title} />
                     </label>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-mz-text">
+                      <input checked={activeDocument.titleEnabled} className="h-4 w-4 accent-mz-primary" onChange={(event) => updateDocument((current) => ({ ...current, titleEnabled: event.target.checked }))} type="checkbox" />
+                      Chek sarlavhasini chiqarish
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       <label className="grid gap-1 text-xs font-semibold text-mz-text">
                         Asosiy shrift, px
                         <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" max={24} min={8} onChange={(event) => updateDocument((current) => ({ ...current, fontSizePx: Number(event.target.value) }))} type="number" value={activeDocument.fontSizePx} />
@@ -502,6 +508,12 @@ export function DesktopPrintSettings() {
                       <label className="grid gap-1 text-xs font-semibold text-mz-text">
                         Sarlavha, px
                         <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" max={36} min={10} onChange={(event) => updateDocument((current) => ({ ...current, titleSizePx: Number(event.target.value) }))} type="number" value={activeDocument.titleSizePx} />
+                      </label>
+                      <label className="grid gap-1 text-xs font-semibold text-mz-text">
+                        Joylashuv zichligi
+                        <select className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" onChange={(event) => updateDocument((current) => ({ ...current, density: event.target.value as ReceiptDocument["density"] }))} value={activeDocument.density}>
+                          <option value="NORMAL">Standart</option><option value="COMPACT">Zich</option>
+                        </select>
                       </label>
                       <label className="grid gap-1 text-xs font-semibold text-mz-text">
                         Qator oralig‘i

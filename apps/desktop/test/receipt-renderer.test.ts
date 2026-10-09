@@ -161,6 +161,29 @@ test("receipt profiles customize title, common text, logo, sizes, and visible fi
   assert.doesNotMatch(html, /SECRET-ORDER|Naqd/);
 });
 
+test("receipt title can be hidden and compact density reduces vertical spacing", () => {
+  const profile = defaultReceiptPrintProfile();
+  profile.documents.RECEIPT.titleEnabled = false;
+  profile.documents.RECEIPT.density = "COMPACT";
+  const html = printableReceiptHtml({
+    documentType: "RECEIPT",
+    content: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash", quantity: 1 }] },
+  }, { paperFormat: "ROLL", paperWidthMm: 80 }, profile);
+
+  assert.doesNotMatch(html, /MIJOZ CHEKI/);
+  assert.match(html, /padding: 0\.8mm 0/);
+  assert.match(html, /padding: 2mm 0 1\.5mm/);
+});
+
+test("blank customer notes are omitted while meaningful notes are preserved", () => {
+  const receipt = (orderNotes: string) => printableReceiptHtml({
+    content: { orderNotes, items: [] },
+  });
+
+  assert.doesNotMatch(receipt("   \n  "), /Izoh:/);
+  assert.match(receipt("  Iltimos, achchiq solmang  "), /Izoh:<\/b> Iltimos, achchiq solmang/);
+});
+
 test("receipt profile can hide the logo and organization name independently of their saved values", () => {
   const profile = defaultReceiptPrintProfile();
   profile.businessName = "MAZETTO FOOD";
@@ -213,6 +236,7 @@ test("receipt profile normalization bounds text, lines and sizes while preservin
       KITCHEN: {
         fontSizePx: 100,
         titleSizePx: 2,
+        density: "COMPACT",
         lineHeight: 4,
         headerLines: ["x".repeat(130)],
         fields: { itemPrices: true, payments: false, orderNumber: "no" },
@@ -227,6 +251,8 @@ test("receipt profile normalization bounds text, lines and sizes while preservin
   assert.deepEqual(normalized.commonHeaderLines, ["bir", "ikki", "uch", "to'rt", "besh"]);
   assert.equal(normalized.documents.KITCHEN.fontSizePx, 24);
   assert.equal(normalized.documents.KITCHEN.titleSizePx, 10);
+  assert.equal(normalized.documents.KITCHEN.density, "COMPACT");
+  assert.equal(normalized.documents.KITCHEN.titleEnabled, true);
   assert.equal(normalized.documents.KITCHEN.lineHeight, 2);
   assert.equal(normalized.documents.KITCHEN.headerLines[0].length, 100);
   assert.equal(normalized.documents.KITCHEN.fields.itemPrices, true);

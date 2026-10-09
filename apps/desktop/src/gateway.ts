@@ -3941,7 +3941,7 @@ function buildOfflinePrintDocument(
     displayOrderNumber: order.displayOrderNumber,
     orderType: order.type,
     orderSource: "POS",
-    orderNotes: order.notes,
+    orderNotes: typeof order.notes === "string" ? order.notes.trim() || null : null,
     items: order.items,
     payments,
     total: order.total,

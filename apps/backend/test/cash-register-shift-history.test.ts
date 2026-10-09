@@ -87,20 +87,22 @@ test("cashier shift history only requests their own tenant-scoped shifts", async
       shift: {
         findMany: async (query: Record<string, unknown>) => {
           captured.shiftQuery = query;
-          return [];
+          return [{ id: "shift-a", orderCount: 0, _count: { orders: 1 } }];
         },
       },
     } as never,
     {} as never,
   );
 
-  await service.listOwnShifts({ limit: "25", offset: "50" }, cashier);
+  const shifts = await service.listOwnShifts({ limit: "25", offset: "50" }, cashier);
   assert.deepEqual(captured.shiftQuery?.where, {
     employeeId: "employee-a",
     branch: { tenantId: "tenant-a" },
   });
   assert.equal(captured.shiftQuery?.take, 25);
   assert.equal(captured.shiftQuery?.skip, 50);
+  assert.deepEqual(captured.shiftQuery?.select && (captured.shiftQuery?.select as Record<string, unknown>)._count, { select: { orders: true } });
+  assert.equal(shifts[0]?.orderCount, 1);
 });
 
 test("branch shift viewers can open a historical shift within their tenant", async () => {
@@ -123,6 +125,8 @@ test("branch shift viewers can open a historical shift within their tenant", asy
             branchId: "branch-a",
             status: "CLOSED",
             shiftNumber: 12,
+            orderCount: 0,
+            _count: { orders: 7 },
           };
         },
       },
@@ -132,6 +136,7 @@ test("branch shift viewers can open a historical shift within their tenant", asy
 
   const shift = await service.getShiftHistoryDetail("shift-old", manager);
   assert.equal(shift.status, "CLOSED");
+  assert.equal(shift.orderCount, 7);
   assert.deepEqual(captured.shiftQuery?.where, {
     id: "shift-old",
     branch: { tenantId: "tenant-a" },
