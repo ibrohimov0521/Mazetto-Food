@@ -282,14 +282,16 @@ export function DesktopStatusBadge() {
     printerSettingsDirty.current = true;
     setSelectedSystemPrinters((current) => {
       const exists = current.some((entry) => entry.name === printer.name);
+      const isGodexLabel = /\bgodex\b/i.test(`${printer.name} ${printer.displayName}`);
       return exists
         ? current.filter((entry) => entry.name !== printer.name)
         : [...current, {
             name: printer.name,
             displayName: printer.displayName,
             roles: ["RECEIPT"],
-            paperFormat: "ROLL",
-            paperWidthMm: 80,
+            paperFormat: isGodexLabel ? "LABEL" : "ROLL",
+            paperWidthMm: isGodexLabel ? 90 : 80,
+            ...(isGodexLabel ? { paperHeightMm: 80 } : {}),
           }];
     });
   }
@@ -677,6 +679,11 @@ export function DesktopStatusBadge() {
                               ) : null}
                             </div>
                           )}
+                          {/\bgodex\b/i.test(printer.name) ? (
+                            <p className="text-[11px] text-mz-text-muted">
+                              Godex uchun yorliq turini tanlang va o'lchamlarni haqiqiy yorliq bilan tenglang.
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}

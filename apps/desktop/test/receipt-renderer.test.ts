@@ -12,8 +12,8 @@ test("Windows receipt layout honors 58, 80 and A4 printable widths", () => {
   assert.match(printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 58 }), /width: 52mm/);
   assert.match(printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 80 }), /width: 74mm/);
   assert.match(printableReceiptHtml(receipt, { paperFormat: "A4", paperWidthMm: 210 }), /width: 194mm/);
-  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 58 }), {});
-  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 80 }), {});
+  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 58 }), { usePrinterDefaultPageSize: true });
+  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 80 }), { usePrinterDefaultPageSize: true });
   assert.deepEqual(windowsPrintPageSize({ paperFormat: "A4", paperWidthMm: 210 }), { pageSize: "A4" });
   assert.deepEqual(windowsPrintPageSize({ paperFormat: "LABEL", paperWidthMm: 90, paperHeightMm: 80 }), { pageSize: { width: 90_000, height: 80_000 } });
 });

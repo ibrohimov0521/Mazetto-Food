@@ -168,7 +168,9 @@ export function windowsPrintPageSize(paperInput: WindowsPaperSettings | unknown)
       },
     };
   }
-  return paper.paperFormat === "A4" ? { pageSize: "A4" as const } : {};
+  return paper.paperFormat === "A4"
+    ? { pageSize: "A4" as const }
+    : { usePrinterDefaultPageSize: true };
 }
 
 export function normalizeWindowsPaperWidth(value: unknown): number {
