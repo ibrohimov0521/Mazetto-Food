@@ -153,7 +153,6 @@ export class KitchenService {
     },
     user: AuthenticatedUser,
   ) {
-    this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
     const range = kitchenHistoryRange(query.from, query.to);
     const status = this.toKitchenTicketStatus(query.status);
