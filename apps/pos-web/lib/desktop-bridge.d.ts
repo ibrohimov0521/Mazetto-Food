@@ -54,6 +54,7 @@ type DesktopReceiptDocumentProfile = {
 };
 type DesktopReceiptPrintProfile = {
   businessName: string;
+  businessNameEnabled: boolean;
   logoEnabled: boolean;
   commonHeaderLines: string[];
   commonFooterLines: string[];

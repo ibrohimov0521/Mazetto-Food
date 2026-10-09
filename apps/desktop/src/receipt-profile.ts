@@ -30,6 +30,7 @@ export type ReceiptDocumentProfile = {
 
 export type ReceiptPrintProfile = {
   businessName: string;
+  businessNameEnabled: boolean;
   logoEnabled: boolean;
   commonHeaderLines: string[];
   commonFooterLines: string[];
@@ -54,6 +55,7 @@ function documentProfile(
 export function defaultReceiptPrintProfile(): ReceiptPrintProfile {
   return {
     businessName: "MAZETTO FOOD",
+    businessNameEnabled: true,
     logoEnabled: true,
     commonHeaderLines: [],
     commonFooterLines: [],
@@ -122,6 +124,7 @@ export function normalizeReceiptPrintProfile(value: unknown): ReceiptPrintProfil
 
   return {
     businessName: safeText(input.businessName, defaults.businessName, 80),
+    businessNameEnabled: typeof input.businessNameEnabled === "boolean" ? input.businessNameEnabled : defaults.businessNameEnabled,
     logoEnabled: typeof input.logoEnabled === "boolean" ? input.logoEnabled : defaults.logoEnabled,
     commonHeaderLines: safeLines(input.commonHeaderLines),
     commonFooterLines: safeLines(input.commonFooterLines),
