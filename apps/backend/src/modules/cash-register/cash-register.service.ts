@@ -247,7 +247,16 @@ export class CashRegisterService {
           },
         },
         items: { orderBy: { createdAt: "asc" } },
-        payments: { include: { method: true }, orderBy: { createdAt: "asc" } },
+        payments: {
+          include: {
+            method: true,
+            refunds: {
+              select: { id: true, orderItemId: true, amount: true, reason: true, createdAt: true },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
       },
       orderBy: { createdAt: "desc" },
       skip: this.parseOffset(query.offset),
@@ -328,6 +337,7 @@ export class CashRegisterService {
     query: {
       status?: string;
       search?: string;
+      sort?: string;
       limit?: string;
       offset?: string;
     },
@@ -352,7 +362,13 @@ export class CashRegisterService {
     const search = query.search?.trim();
     return this.prisma.order.findMany({
       where: {
-        shiftId: shift.id,
+        AND: [{
+          OR: [
+            { shiftId: shift.id },
+            { revenueRecords: { some: { shiftId: shift.id } } },
+          ],
+        }],
+        branchId: shift.branchId,
         branch: { tenantId },
         ...(status ? { status } : {}),
         ...(search
@@ -383,14 +399,29 @@ export class CashRegisterService {
           },
         },
         items: { orderBy: { createdAt: "asc" } },
-        payments: { include: { method: true }, orderBy: { createdAt: "asc" } },
+        payments: {
+          include: {
+            method: true,
+            refunds: {
+              select: { id: true, orderItemId: true, amount: true, reason: true, createdAt: true },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
         receipts: {
           where: { documentType: "RECEIPT" },
           select: { id: true, receiptNumber: true, printed: true },
           orderBy: { createdAt: "desc" },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: query.sort === "amount-high"
+        ? [{ total: "desc" }, { id: "desc" }]
+        : query.sort === "amount-low"
+          ? [{ total: "asc" }, { id: "asc" }]
+          : query.sort === "oldest"
+            ? [{ createdAt: "asc" }, { id: "asc" }]
+            : [{ createdAt: "desc" }, { id: "desc" }],
       skip: this.parseOffset(query.offset),
       take: this.parseLimit(query.limit),
     });

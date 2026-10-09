@@ -41,7 +41,22 @@ test("cashier can read their own shift order history with requested filters", as
     ),
     [],
   );
-  assert.equal((captured.orderQuery?.where as { shiftId: string }).shiftId, "shift-a");
+  const where = captured.orderQuery?.where as Record<string, unknown>;
+  assert.deepEqual(where.AND, [{
+    OR: [
+      { shiftId: "shift-a" },
+      { revenueRecords: { some: { shiftId: "shift-a" } } },
+    ],
+  }]);
+  assert.equal(where.branchId, "branch-a");
+  assert.deepEqual(where.branch, { tenantId: "tenant-a" });
+  assert.ok(Array.isArray(where.OR), "Search must not replace the shift membership condition");
+  assert.deepEqual(captured.orderQuery?.orderBy, [{ createdAt: "desc" }, { id: "desc" }]);
+  const include = captured.orderQuery?.include as { payments: { include: { refunds: unknown } } };
+  assert.deepEqual(include.payments.include.refunds, {
+    select: { id: true, orderItemId: true, amount: true, reason: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
   assert.equal(captured.orderQuery?.skip, 40);
   assert.equal(captured.orderQuery?.take, 20);
   assert.equal(
@@ -141,4 +156,23 @@ test("branch shift viewers can open a historical shift within their tenant", asy
     id: "shift-old",
     branch: { tenantId: "tenant-a" },
   });
+});
+
+test("shift history sorts before pagination and safely ignores unknown sort values", async () => {
+  for (const [sort, orderBy] of [
+    ["amount-high", [{ total: "desc" }, { id: "desc" }]],
+    ["amount-low", [{ total: "asc" }, { id: "asc" }]],
+    ["oldest", [{ createdAt: "asc" }, { id: "asc" }]],
+    ["untrusted-column", [{ createdAt: "desc" }, { id: "desc" }]],
+  ] as const) {
+    let captured: unknown;
+    const service = new CashRegisterService({
+      branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+      shift: { findFirst: async () => ({ id: "shift-a", branchId: "branch-a", employeeId: "employee-a" }) },
+      order: { findMany: async (query: unknown) => { captured = query; return []; } },
+    } as never, {} as never);
+    await service.getShiftOrders("shift-a", { sort, limit: "20", offset: "100" }, cashier);
+    assert.deepEqual((captured as { orderBy: unknown }).orderBy, orderBy);
+    assert.equal((captured as { skip: number }).skip, 100);
+  }
 });

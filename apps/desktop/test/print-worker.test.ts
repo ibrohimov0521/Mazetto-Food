@@ -3,6 +3,13 @@ import { createServer } from "node:net";
 import test from "node:test";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 
+test("ESC/POS item notes skip whitespace and preserve real customer notes", () => {
+  const worker = new DesktopPrintWorker({ apiUrl: "https://api.example.test/api/v1", printerHost: null, agentId: "test", deviceId: "test" });
+  const encode = (worker as unknown as { encodeCommand: (value: Record<string, unknown>, columns: number) => Buffer }).encodeCommand.bind(worker);
+  assert.doesNotMatch(encode({ type: "item", name: "Tea", quantity: "1", notes: "  \n\t" }, 48).toString(), /Izoh:/);
+  assert.match(encode({ type: "item", name: "Tea", quantity: "1", notes: " no sugar " }, 48).toString(), /Izoh: no sugar/);
+});
+
 test("local print attempt is persisted before sending data to the printer", async () => {
   const order: string[] = [];
   const completedAttempts: string[] = [];

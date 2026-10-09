@@ -83,8 +83,9 @@ export function printableReceiptHtml(
     const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
     const name = escapeHtml(String(item.name ?? item.productName ?? "Mahsulot"));
     const variant = item.variant ?? item.variantName;
-    const notes = fields.itemNotes && item.notes
-      ? `<small>Izoh: ${escapeHtml(String(item.notes))}</small>`
+    const itemNote = typeof item.notes === "string" ? item.notes.trim() : "";
+    const notes = fields.itemNotes && itemNote
+      ? `<small>Izoh: ${escapeHtml(itemNote)}</small>`
       : "";
     const rawModifiers = item.modifiers ?? item.modifierSnapshot;
     const modifiers = fields.itemModifiers && Array.isArray(rawModifiers)
