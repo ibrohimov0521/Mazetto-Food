@@ -45,9 +45,9 @@ Problem: All are required by `POS_SPEC.md` ("discount", "product notes", "order 
 Recommendation: Add a note field in the item dialog and an "Izoh" row in checkout; add a "Kutib turish" (park) action storing the cart server-side or locally with a numbered chip row above the cart; add discount (amount/%) behind a permission.
 
 **P-6 — Medium — Sub-44 px targets in the cart.**
-Location: `staff.module.css:1063-1069` (`.quantity button` 40×40), `:1035-1042` (`.cartLineHeader .iconButton` 36×36, delete), `:1103-1105` (`.quickCash button` `min-height: 36px`, `font-size: 12px`).
+Location: `staff.module.css:1063-1069` (`.quantity button` 40×40), `:1035-1042` (`.cartLineHeader .iconButton` 36×36, delete).
 Problem: Design rules forbid tiny buttons; these are the most-tapped controls on a till. The 36 px trash sits 12 px above the +/− row, inviting accidental line deletion.
-Recommendation: Raise `.quantity button` to 48×48, delete to 44×44 and move it to the right of the price row (or use swipe-to-delete on mobile), quick-cash to ≥44 px with 14 px text.
+Recommendation: Raise `.quantity button` to 48×48, delete to 44×44 and move it to the right of the price row (or use swipe-to-delete on mobile).
 
 **P-7 — Medium — After a sale there is no next-step CTA (receipt, new order).**
 Location: `pos/page.tsx:527-537` (success banner inside `cartLines`), `:65-72` (`PosOrderResult` contains no receipt id).

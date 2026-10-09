@@ -1727,54 +1727,6 @@
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-.cashKeypad {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin: 8px 0;
-}
-.cashKey {
-  display: grid;
-  place-items: center;
-  min-height: 48px;
-  border: 1px solid #d5e2dd;
-  border-radius: 6px;
-  background: #f8fbf9;
-  color: #07373a;
-  font-size: 18px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-.cashKey:hover:not(:disabled) {
-  background: #edf5f0;
-  border-color: #91b8aa;
-}
-.cashKey:active:not(:disabled) {
-  background: #dbece2;
-}
-.cashKeyBackspace {
-  color: #245e55;
-}
-.quickCash {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 12px;
-}
-.quickCash button {
-  flex: 1;
-  min-height: 36px;
-  padding: 7px 6px;
-  border: 1px solid #d5e2dd;
-  background: white;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-}
-.quickCash button:hover {
-  background: #fff2bc;
-  border-color: #ddc559;
-}
 .change {
   display: flex;
   justify-content: space-between;
@@ -2592,41 +2544,6 @@
   background: #f4f8f6;
   border: 1px solid var(--border);
   border-radius: 8px;
-}
-.payDenoms {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-.payDenoms button {
-  min-height: 48px;
-  padding: 8px 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: white;
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.payDenoms button:hover:not(:disabled) {
-  background: #fff2bc;
-  border-color: #ddc559;
-}
-.payDenoms button:disabled {
-  opacity: 0.5;
-}
-.payDenoms .payDenomExact {
-  background: #eaf4f1;
-  border-color: #91b5a6;
-}
-.payDenoms .payDenomClear {
-  max-width: 72px;
 }
 .payChange {
   display: flex;
@@ -3523,9 +3440,6 @@
 }
 .checkoutSheetSection .input {
   min-height: 44px;
-}
-.checkoutSheetSection .quickCash {
-  margin: 0;
 }
 .checkoutSheetSection .change {
   margin: 0;

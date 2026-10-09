@@ -56,8 +56,3 @@ export function paymentMethodLabel(code: string): string {
     (paymentMethodNames as Record<string, string | undefined>)[code] ?? code
   );
 }
-
-/** Naqd pul uchun tez tanlash nominallari (so'm). */
-export const CASH_DENOMINATIONS = [
-  1000, 5000, 10000, 20000, 50000, 100000, 200000,
-] as const;

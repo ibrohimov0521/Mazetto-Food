@@ -142,7 +142,10 @@ assert.match(staffShell, /<PanelNavbar/);
 assert.match(panelNavbar, /<PanelSwitcher/);
 assert.match(panelSwitcher, /getAccessiblePanels\(user\)/);
 assert.match(panelSwitcher, /if \(panels\.length <= 1\)/);
-assert.match(panelSwitcher, /router\.push\(event\.target\.value\)/);
+assert.match(panelSwitcher, /<Link/);
+assert.match(panelSwitcher, /href={panel\.href}/);
+assert.match(panelSwitcher, /aria-current={isActive \? "page" : undefined}/);
+assert.doesNotMatch(panelSwitcher, /<select/);
 for (const href of [
   "/shift",
   "/pos",
