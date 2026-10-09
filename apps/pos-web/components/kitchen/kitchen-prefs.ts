@@ -1,37 +1,10 @@
 "use client";
 
 /*
- * KDS qurilma sozlamalari va shoshilinchlik bosqichlari.
- *
- * Zichlik (normal / TV) HAR QURILMA uchun `localStorage` da saqlanadi:
- * devordagi katta ekran "TV" da, pass ustidagi planshet "normal" da
- * qolishi kerak. Maxfiy rejimda `localStorage` o'qish ham xato tashlashi
- * mumkin — shuning uchun hammasi try/catch ichida.
+ * Oshxona ekranidagi chipta tartibi va shoshilinchlik darajalari.
  */
 
 import type { KitchenTicket, KitchenTicketStatus } from "./kitchen-types";
-
-export type KitchenDensity = "normal" | "tv";
-
-const densityStorageKey = "mazetto.kds.density";
-
-export function readKitchenDensity(): KitchenDensity {
-  try {
-    return window.localStorage.getItem(densityStorageKey) === "tv"
-      ? "tv"
-      : "normal";
-  } catch {
-    return "normal";
-  }
-}
-
-export function writeKitchenDensity(density: KitchenDensity): void {
-  try {
-    window.localStorage.setItem(densityStorageKey, density);
-  } catch {
-    // Sozlama saqlanmasa ham ekran ishlashi kerak.
-  }
-}
 
 export type KitchenUrgency = "fresh" | "warn" | "late" | "critical";
 
@@ -54,7 +27,10 @@ const urgencyThresholds: Record<
   CANCELLED: { warn: 9999, late: 9999, critical: 9999 },
 };
 
-export function kitchenElapsedMinutes(ticket: KitchenTicket, now: number): number {
+export function kitchenElapsedMinutes(
+  ticket: KitchenTicket,
+  now: number,
+): number {
   const created = new Date(ticket.createdAt).getTime();
 
   return Number.isFinite(created)

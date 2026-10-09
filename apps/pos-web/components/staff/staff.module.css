@@ -754,15 +754,6 @@
   gap: 12px;
   align-items: start;
 }
-/* "TV" zichligi - uzoqdagi devor ekrani uchun, qurilmada eslab qolinadi. */
-.board[data-density="tv"] {
-  --kds-number: 22px;
-  --kds-item: 17px;
-  --kds-small: 13px;
-  --kds-qty: 14px;
-  --kds-qty-box: 28px;
-  --kds-timer: 14px;
-}
 .column {
   min-width: 0;
   min-height: 0;
@@ -1143,10 +1134,6 @@
 .ticketPrimaryShortLabel {
   display: none;
 }
-.board[data-density="tv"] .ticketPrimary {
-  min-height: 40px;
-  font-size: 14px;
-}
 .ticketCancel {
   width: 36px;
   height: 36px;
@@ -1249,7 +1236,7 @@
 }
 .kitchenContent .toolbarGroup {
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 /* Katta ekranda barcha holatlar yonma-yon ko'rinadi. Har bo'limning ichki
    ro'yxati alohida aylanadi, lekin butun taxtada yon scroll bo'lmaydi. */

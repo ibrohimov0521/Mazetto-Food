@@ -2,26 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  BellRing,
-  History,
-  Monitor,
-  Search,
-  Tv,
-  Volume2,
-  VolumeX,
-  X,
-} from "lucide-react";
+import { BellRing, History, Search, Volume2, VolumeX, X } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { useAuth } from "../../../components/auth/auth-provider";
 import { hasPermission } from "../../../lib/auth";
 import { KitchenTicketCard } from "../../../components/kitchen/kitchen-ticket-card";
-import {
-  readKitchenDensity,
-  sortKitchenTickets,
-  writeKitchenDensity,
-  type KitchenDensity,
-} from "../../../components/kitchen/kitchen-prefs";
+import { pickupOutstanding } from "../../../components/kitchen/kitchen-payment.mjs";
+import { sortKitchenTickets } from "../../../components/kitchen/kitchen-prefs";
 import {
   kitchenColumns,
   kitchenStatusLabels,
@@ -58,7 +45,6 @@ function KitchenDisplay() {
   const [queueLimit, setQueueLimit] = useState(250);
   const [now, setNow] = useState(() => Date.now());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
-  const [density, setDensity] = useState<KitchenDensity>("normal");
   const [error, setError] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -74,7 +60,9 @@ function KitchenDisplay() {
   const [mobileStatus, setMobileStatus] = useState<string>("NEW");
   const [query, setQuery] = useState("");
   const [cancelTicket, setCancelTicket] = useState<KitchenTicket | null>(null);
-  const [handoffTicket, setHandoffTicket] = useState<KitchenTicket | null>(null);
+  const [handoffTicket, setHandoffTicket] = useState<KitchenTicket | null>(
+    null,
+  );
   const [handoffRecipient, setHandoffRecipient] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -185,10 +173,6 @@ function KitchenDisplay() {
   }, [historyOpen, loadHistory]);
 
   useEffect(() => {
-    setDensity(readKitchenDensity());
-  }, []);
-
-  useEffect(() => {
     void loadTickets();
     const refresh = () => {
       if (document.visibilityState === "visible") {
@@ -291,7 +275,11 @@ function KitchenDisplay() {
   ) {
     if (busyTicketIds.has(ticket.id)) return;
     const recipient = recipientName.trim();
-    if (action === "complete" && ticket.order.type === "TAKEAWAY" && !recipient) {
+    if (
+      action === "complete" &&
+      ticket.order.type === "TAKEAWAY" &&
+      !recipient
+    ) {
       setActionErrors((current) => ({
         ...current,
         [ticket.id]: "Buyurtmani olgan shaxs ismini kiriting.",
@@ -381,12 +369,6 @@ function KitchenDisplay() {
     if (next) chime.unlock();
   }
 
-  function toggleDensity() {
-    const next: KitchenDensity = density === "tv" ? "normal" : "tv";
-    setDensity(next);
-    writeKitchenDensity(next);
-  }
-
   function acknowledgeNew() {
     setAcknowledgedIds(new Set(newTickets.map((ticket) => ticket.id)));
     chime.unlock();
@@ -398,33 +380,12 @@ function KitchenDisplay() {
     : `Ovoz ${isSoundEnabled ? "yoqilgan" : "o'chirilgan"}`;
 
   return (
-    <StaffShell
-      title="Oshxona"
-      actions={
-        <button
-          className={styles.shiftLink}
-          aria-label="Oshxona tarixi"
-          title="Oshxona tarixi"
-          onClick={() => setHistoryOpen(true)}
-          type="button"
-        >
-          <History size={17} />
-          <span>Tarix</span>
-        </button>
-      }
-    >
+    <StaffShell title="Oshxona">
       <div className={`${styles.content} ${styles.kitchenContent}`}>
         <div className={styles.overview}>
           <h2 className={styles.pageHeading}>
             Buyurtmalar navbati · {isLoading ? "..." : tickets.length}
           </h2>
-          <StaffSync
-            updatedAt={lastUpdatedAt}
-            connectionState={realtimeState}
-            error={!!error}
-            refreshing={refreshing || busyTicketIds.size > 0}
-            onRefresh={() => void loadTickets()}
-          />
         </div>
         <div className={styles.toolbar}>
           <label className={`${styles.search} ${styles.deliverySearch}`}>
@@ -437,25 +398,13 @@ function KitchenDisplay() {
             />
           </label>
           <div className={styles.toolbarGroup}>
-            <button
-              className={styles.button}
-              aria-label="TV rejimi"
-              title={
-                density === "tv" ? "Oddiy rejimga o'tish" : "TV rejimiga o'tish"
-              }
-              aria-pressed={density === "tv"}
-              onClick={toggleDensity}
-              type="button"
-            >
-              {density === "tv" ? (
-                <Tv size={18} aria-hidden="true" />
-              ) : (
-                <Monitor size={18} aria-hidden="true" />
-              )}
-              <span className={styles.kitchenToolLabel}>
-                {density === "tv" ? "TV rejimi" : "Oddiy rejim"}
-              </span>
-            </button>
+            <StaffSync
+              updatedAt={lastUpdatedAt}
+              connectionState={realtimeState}
+              error={!!error}
+              refreshing={refreshing || busyTicketIds.size > 0}
+              onRefresh={() => void loadTickets()}
+            />
             <button
               className={styles.button}
               aria-label={soundLabel}
@@ -475,6 +424,16 @@ function KitchenDisplay() {
                 <VolumeX size={18} aria-hidden="true" />
               )}
               <span className={styles.kitchenToolLabel}>{soundLabel}</span>
+            </button>
+            <button
+              className={styles.button}
+              aria-label="Oshxona tarixi"
+              title="Oshxona tarixi"
+              onClick={() => setHistoryOpen(true)}
+              type="button"
+            >
+              <History size={18} aria-hidden="true" />
+              <span className={styles.kitchenToolLabel}>Tarix</span>
             </button>
           </div>
         </div>
@@ -512,7 +471,7 @@ function KitchenDisplay() {
             </button>
           ))}
         </div>
-        <div className={styles.board} data-density={density}>
+        <div className={styles.board}>
           {groupedTickets.map((column) => (
             <section
               className={styles.column}
@@ -571,7 +530,8 @@ function KitchenDisplay() {
                                 ticket.order.type === "TAKEAWAY"
                               ) {
                                 setHandoffRecipient(
-                                  ticket.order.customerOrder?.customer?.name ?? "",
+                                  ticket.order.customerOrder?.customer?.name ??
+                                    "",
                                 );
                                 setHandoffTicket(ticket);
                               } else void runAction(ticket, action);
@@ -636,9 +596,9 @@ function KitchenDisplay() {
             {historyLoading ? (
               <div className={styles.skeleton} />
             ) : historyTickets.length ? (
-                historyTickets.map((ticket) => (
-                  <article className={styles.historyOrder} key={ticket.id}>
-                    <div>
+              historyTickets.map((ticket) => (
+                <article className={styles.historyOrder} key={ticket.id}>
+                  <div>
                     <strong>
                       #
                       {ticket.order.displayOrderNumber ??
@@ -661,13 +621,13 @@ function KitchenDisplay() {
                     }
                   >
                     {kitchenStatusLabels[ticket.status]}
+                  </span>
+                  {pickupHandoffSummary(ticket) ? (
+                    <span className={styles.muted}>
+                      {pickupHandoffSummary(ticket)}
                     </span>
-                    {pickupHandoffSummary(ticket) ? (
-                      <span className={styles.muted}>
-                        {pickupHandoffSummary(ticket)}
-                      </span>
-                    ) : null}
-                  </article>
+                  ) : null}
+                </article>
               ))
             ) : (
               <StaffEmpty title="Tarix bo'sh">
@@ -737,17 +697,18 @@ function KitchenDisplay() {
           onClose={() => setHandoffTicket(null)}
         >
           <p>
-            #{handoffTicket.order.displayOrderNumber ??
+            #
+            {handoffTicket.order.displayOrderNumber ??
               handoffTicket.order.orderNumber}
             {handoffTicket.order.customerOrder?.customer?.name
               ? ` · ${handoffTicket.order.customerOrder.customer.name}`
               : ""}
           </p>
-          {pickupOutstanding(handoffTicket) > 0 ? (
+          {pickupOutstanding(handoffTicket.order) > 0 ? (
             <p className={styles.error} role="alert">
-              {cashFormatter.format(pickupOutstanding(handoffTicket))} so'm
-              to'lanmagan. Avval kassada to'lovni qabul qiling. Oshxona pulni
-              kassaga yozmaydi.
+              {cashFormatter.format(pickupOutstanding(handoffTicket.order))}{" "}
+              so'm to'lanmagan. Avval kassada to'lovni qabul qiling. Oshxona
+              pulni kassaga yozmaydi.
             </p>
           ) : (
             <label className={styles.field}>
@@ -784,7 +745,7 @@ function KitchenDisplay() {
             >
               Ortga
             </button>
-            {pickupOutstanding(handoffTicket) > 0 ? (
+            {pickupOutstanding(handoffTicket.order) > 0 ? (
               hasPermission(user, "PAYMENT_CREATE") ? (
                 <Link
                   className={styles.primary}
@@ -815,14 +776,6 @@ function KitchenDisplay() {
   );
 }
 
-function pickupOutstanding(ticket: KitchenTicket): number {
-  if (ticket.order.type !== "TAKEAWAY") return 0;
-  const paid = (ticket.order.payments ?? [])
-    .filter((payment) => payment.status === "PAID" || payment.status === "SUCCESS")
-    .reduce((total, payment) => total + Number(payment.amount), 0);
-  return Math.max(0, Number(ticket.order.total) - paid);
-}
-
 function pickupHandoffSummary(ticket: KitchenTicket): string | null {
   const handoff = [...(ticket.order.statusHistory ?? [])]
     .reverse()
@@ -837,9 +790,7 @@ function pickupHandoffSummary(ticket: KitchenTicket): string | null {
   const confirmedBy = employee
     ? [employee.firstName, employee.lastName].filter(Boolean).join(" ")
     : "xodim";
-  return recipient
-    ? `Olgan: ${recipient} · Tasdiqladi: ${confirmedBy}`
-    : null;
+  return recipient ? `Olgan: ${recipient} · Tasdiqladi: ${confirmedBy}` : null;
 }
 
 function splitTicketLanes(tickets: KitchenTicket[]): KitchenTicket[][] {

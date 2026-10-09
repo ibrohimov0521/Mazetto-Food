@@ -291,6 +291,7 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
       branchId: "branch-a",
       version: 3,
       total: "12000",
+      paymentStatus: "PAID",
       orderNumber: "A-101",
       displayOrderNumber: "101",
       source: "POS",
@@ -351,6 +352,7 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
   const select = kitchenQuery?.select as {
     order: { select: Record<string, unknown> };
   };
+  assert.equal(select.order.select.paymentStatus, true);
   assert.equal("customerName" in select.order.select, false);
   assert.equal("customerPhone" in select.order.select, false);
   assert.equal(
