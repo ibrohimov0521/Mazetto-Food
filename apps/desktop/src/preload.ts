@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
     testSystem: (input: { name: string; role: string; paperFormat?: "ROLL" | "A4" | "LABEL"; paperWidthMm?: number; paperHeightMm?: number }) =>
       ipcRenderer.invoke("desktop:printer:test-system", input),
   },
+  receiptProfiles: {
+    load: () => ipcRenderer.invoke("desktop:receipt-profiles:load"),
+    save: (profile: unknown) => ipcRenderer.invoke("desktop:receipt-profiles:save", profile),
+    reset: () => ipcRenderer.invoke("desktop:receipt-profiles:reset"),
+    preview: (input: { kind: string; profile: unknown; paperWidthMm: number }) =>
+      ipcRenderer.invoke("desktop:receipt-profiles:preview", input),
+  },
   device: {
     enroll: (input: { deviceId: string; enrollmentCode: string }) =>
       ipcRenderer.invoke("desktop:device:enroll", input),

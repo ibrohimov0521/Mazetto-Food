@@ -1,4 +1,9 @@
 import type { PrintableReceipt } from "./print-worker.js";
+import {
+  normalizeReceiptPrintProfile,
+  type ReceiptKind,
+  type ReceiptPrintProfile,
+} from "./receipt-profile.js";
 
 export type WindowsPaperFormat = "ROLL" | "A4" | "LABEL";
 
@@ -50,30 +55,42 @@ export function normalizeWindowsPaperSettings(
 export function printableReceiptHtml(
   receipt: PrintableReceipt,
   paperInput: WindowsPaperSettings | unknown = { paperFormat: "ROLL", paperWidthMm: 80 },
+  profileInput?: ReceiptPrintProfile | unknown,
+  logoDataUrl?: string | null,
 ): string {
   const paper = normalizeWindowsPaperSettings(paperInput);
+  const profile = normalizeReceiptPrintProfile(profileInput);
   const content = receipt.content ?? {};
   const documentType = String(content.documentType ?? receipt.documentType ?? "RECEIPT");
-  const kitchen = documentType === "KITCHEN";
-  const cancelled = documentType === "CANCELLATION";
-  const refunded = documentType.startsWith("REFUND");
+  const kind: ReceiptKind = documentType === "KITCHEN"
+    ? "KITCHEN"
+    : documentType === "CANCELLATION"
+      ? "CANCELLATION"
+      : documentType.startsWith("REFUND")
+        ? "REFUND"
+        : "RECEIPT";
+  const document = profile.documents[kind];
+  const { fields } = document;
+  const kitchen = kind === "KITCHEN";
+  const cancelled = kind === "CANCELLATION";
+  const refunded = kind === "REFUND";
   const items = Array.isArray(content.items) ? content.items : [];
   const payments = Array.isArray(content.payments) ? content.payments : [];
   const itemRows = items.map((value) => {
     const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
     const name = escapeHtml(String(item.name ?? item.productName ?? "Mahsulot"));
     const variant = item.variant ?? item.variantName;
-    const notes = item.notes
+    const notes = fields.itemNotes && item.notes
       ? `<small>Izoh: ${escapeHtml(String(item.notes))}</small>`
       : "";
     const rawModifiers = item.modifiers ?? item.modifierSnapshot;
-    const modifiers = Array.isArray(rawModifiers)
+    const modifiers = fields.itemModifiers && Array.isArray(rawModifiers)
       ? rawModifiers.map((modifier: unknown) => {
           const record = modifier && typeof modifier === "object" ? modifier as Record<string, unknown> : {};
           return `<small>+ ${escapeHtml(String(record.name ?? record.modifierName ?? modifier))}</small>`;
         }).join("")
       : "";
-    const price = kitchen
+    const price = !fields.itemPrices
       ? ""
       : `<strong>${escapeHtml(String(item.total ?? item.totalPrice ?? ""))}</strong>`;
     return `<li><div><b>${escapeHtml(String(item.quantity ?? 1))}x ${name}${variant ? ` (${escapeHtml(String(variant))})` : ""}</b>${modifiers}${notes}</div>${price}</li>`;
@@ -82,14 +99,15 @@ export function printableReceiptHtml(
     const payment = value && typeof value === "object" ? value as Record<string, unknown> : {};
     return `<li><span>${escapeHtml(String(payment.method ?? "To'lov"))}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
   }).join("");
-  const heading = cancelled
+  const defaultHeading = cancelled
     ? "BUYURTMA BEKOR QILINDI"
     : refunded
       ? "TO'LOV QAYTARILDI"
       : kitchen
         ? "OSHXONA BUYURTMASI"
         : "MIJOZ CHEKI";
-  const reason = cancelled
+  const heading = document.title || defaultHeading;
+  const reason = !fields.reason ? null : cancelled
     ? content.cancellationReason
     : refunded
       ? content.refundReason
@@ -105,7 +123,21 @@ export function printableReceiptHtml(
     : paper.paperFormat === "A4"
       ? "194mm"
       : `${Math.max(20, paper.paperWidthMm - 6)}mm`;
-  const footer = kitchen ? "Tayyorlash uchun" : cancelled ? "Bekor qilingan buyurtma" : refunded ? "Pulni qaytarish qayd etildi" : "Xaridingiz uchun rahmat!";
+  const defaultFooter = kitchen ? "Tayyorlash uchun" : cancelled ? "Bekor qilingan buyurtma" : refunded ? "Pulni qaytarish qayd etildi" : "Xaridingiz uchun rahmat!";
+  const allHeaderLines = [...profile.commonHeaderLines, ...document.headerLines];
+  const allFooterLines = [...document.footerLines, ...profile.commonFooterLines];
+  const customerLines = [
+    fields.customerName && content.customerName ? `<div>${escapeHtml(String(content.customerName))}</div>` : "",
+    fields.customerPhone && content.customerPhone ? `<div>${escapeHtml(String(content.customerPhone))}</div>` : "",
+    fields.address && content.address ? `<div>${escapeHtml(String(content.address))}</div>` : "",
+  ].join("");
+  const commonTopLines = allHeaderLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
+  const footerContent = allFooterLines.length
+    ? allFooterLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")
+    : `<div>${escapeHtml(defaultFooter)}</div>`;
+  const logo = profile.logoEnabled && logoDataUrl?.startsWith("data:image/")
+    ? `<img class="logo" src="${escapeHtml(logoDataUrl)}" alt="${escapeHtml(profile.businessName)}">`
+    : "";
 
   return `<!doctype html>
 <html>
@@ -113,10 +145,13 @@ export function printableReceiptHtml(
     <meta charset="utf-8">
     <style>${pageStyle}
       * { box-sizing: border-box; }
-      body { width: ${bodyWidth}; max-width: calc(100% - 4mm); margin: 0 auto; font-family: Arial, sans-serif; color: #000; font-size: 12px; }
+      body { width: ${bodyWidth}; max-width: calc(100% - 4mm); margin: 0 auto; font-family: Arial, sans-serif; color: #000; font-size: ${document.fontSizePx}px; line-height: ${document.lineHeight}; }
       header { text-align: center; border-bottom: 2px dashed #000; padding: 4mm 0 3mm; }
-      h1 { font-size: ${kitchen ? "24px" : "18px"}; margin: 0 0 2mm; }
+      .business-name { font-size: 16px; margin: 0 0 2mm; }
+      .document-title { font-size: ${document.titleSizePx}px; margin: 0 0 2mm; overflow-wrap: anywhere; }
       h2 { font-size: ${kitchen ? "28px" : "22px"}; margin: 0; overflow-wrap: anywhere; }
+      .logo { display: block; width: auto; max-width: 55%; max-height: 18mm; object-fit: contain; margin: 0 auto 2mm; }
+      .common-lines { display: grid; gap: 1mm; overflow-wrap: anywhere; }
       ul { list-style: none; padding: 0; margin: 2mm 0; border-bottom: 1px dashed #000; }
       li { display: flex; justify-content: space-between; gap: 3mm; padding: 2mm 0; border-top: 1px dotted #777; }
       li > div { flex: 1; }
@@ -130,20 +165,21 @@ export function printableReceiptHtml(
   </head>
   <body>
     <header>
-      <h1>MAZETTO FOOD</h1>
-      <div>${escapeHtml(String(content.branchName ?? ""))}</div>
-      <div class="${cancelled || refunded ? "alert" : ""}">${heading}</div>
-      <h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2>
+      ${logo}
+      ${profile.businessName ? `<div class="business-name"><strong>${escapeHtml(profile.businessName)}</strong></div>` : ""}
+      ${commonTopLines ? `<div class="common-lines">${commonTopLines}</div>` : ""}
+      ${fields.branchName && content.branchName ? `<div>${escapeHtml(String(content.branchName))}</div>` : ""}
+      <div class="document-title ${cancelled || refunded ? "alert" : ""}">${escapeHtml(heading)}</div>
+      ${fields.orderNumber ? `<h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2>` : ""}
     </header>
-    <div class="meta">
-      <span>${escapeHtml(String(content.orderType ?? ""))}</span>
-      <span>${escapeHtml(String(content.dateTime ?? ""))}</span>
-    </div>
+    ${(fields.orderType && content.orderType) || (fields.dateTime && content.dateTime) ? `<div class="meta"><span>${fields.orderType ? escapeHtml(String(content.orderType ?? "")) : ""}</span><span>${fields.dateTime ? escapeHtml(String(content.dateTime ?? "")) : ""}</span></div>` : ""}
+    ${customerLines ? `<div class="customer">${customerLines}</div>` : ""}
     ${reason ? `<p class="alert">Sabab: ${escapeHtml(String(reason))}</p>` : ""}
     <ul>${itemRows}</ul>
-    ${kitchen ? "" : `<ul>${paymentRows}</ul><div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total ?? ""))}</span></div>`}
-    ${content.orderNotes ? `<p><b>Izoh:</b> ${escapeHtml(String(content.orderNotes))}</p>` : ""}
-    <p class="footer">${footer}</p>
+    ${fields.payments && payments.length ? `<ul>${paymentRows}</ul>` : ""}
+    ${fields.total && content.total != null ? `<div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total))}</span></div>` : ""}
+    ${fields.orderNotes && content.orderNotes ? `<p><b>Izoh:</b> ${escapeHtml(String(content.orderNotes))}</p>` : ""}
+    <div class="footer">${footerContent}</div>
   </body>
 </html>`;
 }

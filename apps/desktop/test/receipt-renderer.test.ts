@@ -6,6 +6,10 @@ import {
   printableReceiptHtml,
   windowsPrintPageSize,
 } from "../src/receipt-renderer.js";
+import {
+  defaultReceiptPrintProfile,
+  normalizeReceiptPrintProfile,
+} from "../src/receipt-profile.js";
 
 test("Windows receipt layout honors 58, 80 and A4 printable widths", () => {
   const receipt = { content: { orderNumber: "42" } };
@@ -43,7 +47,7 @@ test("A4 refund receipts include the reason and negative total", () => {
     },
   }, { paperFormat: "A4", paperWidthMm: 210 });
 
-  assert.match(html, /TO'LOV QAYTARILDI/);
+  assert.match(html, /TO&#039;LOV QAYTARILDI/);
   assert.match(html, /Pulni qaytarish qayd etildi/);
   assert.doesNotMatch(html, /Xaridingiz uchun rahmat/);
   assert.match(html, /Sabab: Mijoz so&#039;radi &lt;tekshirish&gt;/);
@@ -121,4 +125,64 @@ test("cancellation receipt visibly includes its reason", () => {
 
   assert.match(html, /BUYURTMA BEKOR QILINDI/);
   assert.match(html, /Sabab: Xaridor bekor qildi/);
+});
+
+test("receipt profiles customize title, common text, logo, sizes, and visible fields safely", () => {
+  const profile = defaultReceiptPrintProfile();
+  profile.businessName = "Mazetto <Food>";
+  profile.logoEnabled = true;
+  profile.commonHeaderLines = ["Umumiy <yuqori yozuv>"];
+  profile.commonFooterLines = ["Umumiy pastki yozuv"];
+  profile.documents.RECEIPT.title = "Chek <nusxa>";
+  profile.documents.RECEIPT.fontSizePx = 17;
+  profile.documents.RECEIPT.titleSizePx = 25;
+  profile.documents.RECEIPT.fields.orderNumber = false;
+  profile.documents.RECEIPT.fields.payments = false;
+
+  const html = printableReceiptHtml({
+    documentType: "RECEIPT",
+    content: {
+      documentType: "RECEIPT",
+      orderNumber: "SECRET-ORDER",
+      payments: [{ method: "Naqd", amount: "10 000" }],
+      total: "10 000",
+      items: [{ name: "Lavash", quantity: 1, total: "10 000" }],
+    },
+  }, { paperFormat: "ROLL", paperWidthMm: 80 }, profile, "data:image/webp;base64,ZmFrZQ==");
+
+  assert.match(html, /Mazetto &lt;Food&gt;/);
+  assert.match(html, /Chek &lt;nusxa&gt;/);
+  assert.match(html, /Umumiy &lt;yuqori yozuv&gt;/);
+  assert.match(html, /Umumiy pastki yozuv/);
+  assert.match(html, /font-size: 17px/);
+  assert.match(html, /font-size: 25px/);
+  assert.match(html, /<img class="logo"/);
+  assert.doesNotMatch(html, /SECRET-ORDER|Naqd/);
+});
+
+test("receipt profile normalization bounds text, lines and sizes while preserving defaults", () => {
+  const normalized = normalizeReceiptPrintProfile({
+    logoEnabled: false,
+    commonHeaderLines: [" bir ", "", "ikki", "uch", "to'rt", "besh", "oltinchi"],
+    documents: {
+      KITCHEN: {
+        fontSizePx: 100,
+        titleSizePx: 2,
+        lineHeight: 4,
+        headerLines: ["x".repeat(130)],
+        fields: { itemPrices: true, payments: false, orderNumber: "no" },
+      },
+    },
+  });
+
+  assert.equal(normalized.logoEnabled, false);
+  assert.deepEqual(normalized.commonHeaderLines, ["bir", "ikki", "uch", "to'rt", "besh"]);
+  assert.equal(normalized.documents.KITCHEN.fontSizePx, 24);
+  assert.equal(normalized.documents.KITCHEN.titleSizePx, 10);
+  assert.equal(normalized.documents.KITCHEN.lineHeight, 2);
+  assert.equal(normalized.documents.KITCHEN.headerLines[0].length, 100);
+  assert.equal(normalized.documents.KITCHEN.fields.itemPrices, true);
+  assert.equal(normalized.documents.KITCHEN.fields.payments, false);
+  assert.equal(normalized.documents.KITCHEN.fields.orderNumber, true);
+  assert.equal(normalized.documents.RECEIPT.title, "MIJOZ CHEKI");
 });

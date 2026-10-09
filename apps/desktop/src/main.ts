@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { DesktopGateway } from "./gateway.js";
@@ -16,6 +16,12 @@ import {
   printableReceiptHtml,
   windowsPrintPageSize,
 } from "./receipt-renderer.js";
+import {
+  defaultReceiptPrintProfile,
+  normalizeReceiptPrintProfile,
+  receiptKinds,
+  type ReceiptKind,
+} from "./receipt-profile.js";
 import { PrintOutcomeUnknownError, withTimeout } from "./print-errors.js";
 import { realtimeSocketOrigin } from "./realtime-origin.js";
 import { resolveDesktopUpdateFeed } from "./update-feed.js";
@@ -51,6 +57,7 @@ let uiProcess: ChildProcess | null = null;
 let printWorker: DesktopPrintWorker | null = null;
 let deviceAuthToken: string | null = null;
 let printTimer: NodeJS.Timeout | null = null;
+let receiptLogoDataUrl: string | null | undefined;
 let shutdownStarted = false;
 let shutdownComplete = false;
 
@@ -508,6 +515,10 @@ function setupPrinterControls(): void {
   ipcMain.removeHandler("desktop:printer:list-system");
   ipcMain.removeHandler("desktop:printer:save-system");
   ipcMain.removeHandler("desktop:printer:test-system");
+  ipcMain.removeHandler("desktop:receipt-profiles:load");
+  ipcMain.removeHandler("desktop:receipt-profiles:save");
+  ipcMain.removeHandler("desktop:receipt-profiles:reset");
+  ipcMain.removeHandler("desktop:receipt-profiles:preview");
   ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100, managedPrinters: 0, managedPrinterDetails: [] });
   ipcMain.handle("desktop:printer:save", async (_event, input: { host?: unknown; port?: unknown }) => {
     const host = typeof input?.host === "string" ? input.host.trim() : "";
@@ -576,6 +587,99 @@ function setupPrinterControls(): void {
       return { ok: true };
     },
   );
+  ipcMain.handle("desktop:receipt-profiles:load", () => loadReceiptPrintProfile());
+  ipcMain.handle("desktop:receipt-profiles:save", (_event, input: unknown) => {
+    if (!store) throw new Error("Desktop ma'lumotlar bazasi tayyor emas");
+    const profile = normalizeReceiptPrintProfile(input);
+    store.setSetting("receipt_print_profiles", JSON.stringify(profile));
+    return profile;
+  });
+  ipcMain.handle("desktop:receipt-profiles:reset", () => {
+    if (!store) throw new Error("Desktop ma'lumotlar bazasi tayyor emas");
+    const profile = defaultReceiptPrintProfile();
+    store.setSetting("receipt_print_profiles", JSON.stringify(profile));
+    return profile;
+  });
+  ipcMain.handle(
+    "desktop:receipt-profiles:preview",
+    async (_event, input: { kind?: unknown; profile?: unknown; paperWidthMm?: unknown }) => {
+      const kind = receiptKinds.includes(input?.kind as ReceiptKind)
+        ? input.kind as ReceiptKind
+        : "RECEIPT";
+      const width = Number(input?.paperWidthMm);
+      const paperInput = width === 210
+        ? { paperFormat: "A4", paperWidthMm: 210 }
+        : { paperFormat: "ROLL", paperWidthMm: width };
+      const sample = sampleReceipt(kind);
+      return printableReceiptHtml(
+        sample,
+        paperInput,
+        normalizeReceiptPrintProfile(input?.profile),
+        await loadReceiptLogoDataUrl(),
+      );
+    },
+  );
+}
+
+function loadReceiptPrintProfile() {
+  const serialized = store?.getSetting("receipt_print_profiles");
+  if (!serialized) return defaultReceiptPrintProfile();
+  try {
+    return normalizeReceiptPrintProfile(JSON.parse(serialized));
+  } catch {
+    return defaultReceiptPrintProfile();
+  }
+}
+
+async function loadReceiptLogoDataUrl(): Promise<string | null> {
+  if (receiptLogoDataUrl !== undefined) return receiptLogoDataUrl;
+  const logoPath = app.isPackaged
+    ? join(process.resourcesPath, "assets", "header-logo.webp")
+    : join(app.getAppPath(), "..", "pos-web", "public", "brand", "header-logo.webp");
+  try {
+    const image = await readFile(logoPath);
+    receiptLogoDataUrl = `data:image/webp;base64,${image.toString("base64")}`;
+  } catch {
+    receiptLogoDataUrl = null;
+  }
+  return receiptLogoDataUrl;
+}
+
+function sampleReceipt(kind: ReceiptKind): PrintableReceipt {
+  const headings: Record<ReceiptKind, string> = {
+    RECEIPT: "MIJOZ CHEKI",
+    KITCHEN: "OSHXONA BUYURTMASI",
+    CANCELLATION: "BUYURTMA BEKOR QILINDI",
+    REFUND: "TO'LOV QAYTARILDI",
+  };
+  return {
+    receiptNumber: "SAMPLE-104",
+    documentType: kind,
+    content: {
+      documentType: kind,
+      statusLabel: headings[kind],
+      branchName: "Sergeli filiali",
+      orderNumber: "M-104",
+      displayOrderNumber: "M-104",
+      orderType: "Olib ketish",
+      dateTime: new Date().toLocaleString("uz-UZ"),
+      customerName: "Javohir Ibrohimov",
+      customerPhone: "+998 90 000 00 00",
+      address: "Sergeli tumani",
+      orderNotes: "Namunaviy buyurtma izohi",
+      cancellationReason: "Mijoz so'rovi",
+      refundReason: "To'lov qaytarildi",
+      items: [{
+        name: "Katta lavash",
+        quantity: 2,
+        total: "72 000 so'm",
+        notes: "Achchiq bo'lsin",
+        modifiers: [{ name: "Qo'shimcha pishloq" }],
+      }],
+      payments: [{ method: "Naqd", amount: "72 000 so'm" }],
+      total: "72 000 so'm",
+    },
+  };
 }
 
 function setupAuthControls(): void {
@@ -772,6 +876,8 @@ async function silentPrintReceipt(
   selectedPaperInput?: unknown,
 ): Promise<void> {
   const paper = normalizeWindowsPaperSettings(selectedPaperInput, deviceName);
+  const profile = loadReceiptPrintProfile();
+  const logo = await loadReceiptLogoDataUrl();
   const paperWidthMm = paper.paperWidthMm;
   const window = new BrowserWindow({
     show: false,
@@ -783,7 +889,7 @@ async function silentPrintReceipt(
   });
   try {
     await withTimeout(
-      window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, paper))}`),
+      window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, paper, profile, logo))}`),
       10_000,
       () => new Error("Chek oynasi 10 soniyada tayyor bo'lmadi"),
     );

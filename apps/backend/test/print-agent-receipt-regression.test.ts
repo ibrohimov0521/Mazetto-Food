@@ -109,6 +109,12 @@ test("receipt output is localized for order type, time and quantities", () => {
   assert.match(receiptService, /formatReceiptQuantity/);
 });
 
+test("receipt payload carries optional customer details for configurable fields", () => {
+  assert.match(receiptWriter, /customerName: order\.customerName/);
+  assert.match(receiptWriter, /customerPhone: order\.customerPhone/);
+  assert.match(receiptWriter, /address: order\.deliveryAddress/);
+});
+
 test("production startup migrates the print queue and restores old unprinted receipts", () => {
   assert.match(backendDockerfile, /ensure-print-queue\.mjs/);
   assert.doesNotMatch(backendDockerfile, /prisma:migrate:deploy/);
