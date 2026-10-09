@@ -82,7 +82,7 @@ const items: NavItem[] = adminNavGroups.flatMap((group) => group.items);
 
 assert.equal(
   items.length,
-  29,
+  30,
   `nav elementlari soni kutilganidan farq qiladi: ${items.length}`,
 );
 
