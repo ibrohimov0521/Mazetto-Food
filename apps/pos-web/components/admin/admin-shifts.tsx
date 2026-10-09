@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
@@ -1037,6 +1038,13 @@ function ShiftDetailModal({
               <Badge tone="neutral">{shift.device.name}</Badge>
             ) : null}
           </div>
+
+          <Link
+            className="inline-flex min-h-10 items-center justify-center rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-semibold text-mz-text hover:bg-mz-surface-sunken"
+            href={`/pos/history?shiftId=${encodeURIComponent(shift.id)}`}
+          >
+            Smena buyurtmalarini ko'rish
+          </Link>
 
           {/*
            * Uchta ALOHIDA blok — MONEY_PATH: "expected, actual and

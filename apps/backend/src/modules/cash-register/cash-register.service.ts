@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   CashTransactionType,
   OrderStatus,
@@ -6,6 +6,8 @@ import {
   ShiftStatus,
 } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
+import { hasPermission } from "../../common/auth/authorization";
+import { PERMISSIONS } from "../../common/auth/permissions";
 import { resolveRestaurantTenantId } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -246,6 +248,145 @@ export class CashRegisterService {
         },
         items: { orderBy: { createdAt: "asc" } },
         payments: { include: { method: true }, orderBy: { createdAt: "asc" } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: this.parseOffset(query.offset),
+      take: this.parseLimit(query.limit),
+    });
+  }
+
+  async listOwnShifts(
+    query: { limit?: string; offset?: string },
+    user: AuthenticatedUser,
+  ) {
+    const employeeId = this.requireEmployee(user);
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+
+    return this.prisma.shift.findMany({
+      where: { employeeId, branch: { tenantId } },
+      select: {
+        id: true,
+        shiftNumber: true,
+        status: true,
+        openedAt: true,
+        closedAt: true,
+        openingBalance: true,
+        closingBalance: true,
+        expectedCash: true,
+        cashDifference: true,
+        salesTotal: true,
+        cashTotal: true,
+        orderCount: true,
+        branch: { select: { id: true, name: true } },
+      },
+      orderBy: { openedAt: "desc" },
+      skip: this.parseOffset(query.offset),
+      take: this.parseLimit(query.limit),
+    });
+  }
+
+  async getShiftHistoryDetail(shiftId: string, user: AuthenticatedUser) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const shift = await this.prisma.shift.findFirst({
+      where: { id: shiftId, branch: { tenantId } },
+      select: {
+        id: true,
+        employeeId: true,
+        branchId: true,
+        shiftNumber: true,
+        status: true,
+        openedAt: true,
+        closedAt: true,
+        openingBalance: true,
+        closingBalance: true,
+        expectedCash: true,
+        cashDifference: true,
+        salesTotal: true,
+        cashTotal: true,
+        orderCount: true,
+        branch: { select: { id: true, name: true } },
+        employee: { select: { firstName: true, lastName: true } },
+      },
+    });
+    if (!shift) throw new NotFoundException("Shift not found");
+
+    resolveBranchScope(user, shift.branchId);
+    if (
+      shift.employeeId !== user.employeeId &&
+      !hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH)
+    ) {
+      throw new ForbiddenException("Cannot access another employee shift");
+    }
+
+    return shift;
+  }
+
+  async getShiftOrders(
+    shiftId: string,
+    query: {
+      status?: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    user: AuthenticatedUser,
+  ) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const shift = await this.prisma.shift.findFirst({
+      where: { id: shiftId, branch: { tenantId } },
+      select: { id: true, branchId: true, employeeId: true },
+    });
+    if (!shift) return [];
+
+    resolveBranchScope(user, shift.branchId);
+    if (
+      shift.employeeId !== user.employeeId &&
+      !hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH)
+    ) {
+      throw new ForbiddenException("Cannot access another employee shift");
+    }
+
+    const status = this.toOrderStatus(query.status);
+    const search = query.search?.trim();
+    return this.prisma.order.findMany({
+      where: {
+        shiftId: shift.id,
+        branch: { tenantId },
+        ...(status ? { status } : {}),
+        ...(search
+          ? {
+              OR: [
+                { orderNumber: { contains: search, mode: "insensitive" } },
+                { displayOrderNumber: { contains: search, mode: "insensitive" } },
+                { customerName: { contains: search, mode: "insensitive" } },
+                { customerPhone: { contains: search, mode: "insensitive" } },
+                { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        statusHistory: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            reason: true,
+            createdAt: true,
+            changedByEmployee: {
+              select: { firstName: true, lastName: true, employeeCode: true },
+            },
+            changedByUser: { select: { displayName: true, email: true } },
+          },
+        },
+        items: { orderBy: { createdAt: "asc" } },
+        payments: { include: { method: true }, orderBy: { createdAt: "asc" } },
+        receipts: {
+          where: { documentType: "RECEIPT" },
+          select: { id: true, receiptNumber: true, printed: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
       orderBy: { createdAt: "desc" },
       skip: this.parseOffset(query.offset),

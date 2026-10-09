@@ -2,7 +2,10 @@ import { Body, Controller, Get, Headers, Param, Post, Query } from "@nestjs/comm
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { Permissions } from "../../common/decorators/permissions.decorator";
+import {
+  Permissions,
+  PermissionsAny,
+} from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
   CloseShiftDto,
@@ -35,6 +38,35 @@ export class CashRegisterController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.cashRegisterService.getCurrentShiftOrders(query, user);
+  }
+
+  @Get("shifts")
+  @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
+  listOwnShifts(
+    @Query() query: { limit?: string; offset?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.listOwnShifts(query, user);
+  }
+
+  @Get("shifts/:id")
+  @PermissionsAny(PERMISSIONS.SHIFT_VIEW_OWN, PERMISSIONS.SHIFT_VIEW_BRANCH)
+  getShiftHistoryDetail(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.getShiftHistoryDetail(id, user);
+  }
+
+  @Get("shift/:id/orders")
+  @PermissionsAny(PERMISSIONS.SHIFT_VIEW_OWN, PERMISSIONS.SHIFT_VIEW_BRANCH)
+  getShiftOrders(
+    @Param("id") id: string,
+    @Query()
+    query: { status?: string; search?: string; limit?: string; offset?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.cashRegisterService.getShiftOrders(id, query, user);
   }
 
   @Get("courier-shift")

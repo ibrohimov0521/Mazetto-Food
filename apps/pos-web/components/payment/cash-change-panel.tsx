@@ -79,6 +79,14 @@ export function CashChangePanel({
           onChange={(event) => onChange(event.target.value)}
         />
       </label>
+      <button
+        className={styles.secondary}
+        disabled={disabled}
+        onClick={() => onChange(String(cashDue))}
+        type="button"
+      >
+        Aniq summa
+      </button>
       <div
         className={styles.payChange}
         data-tone={cash.shortfall > 0 ? "short" : "change"}

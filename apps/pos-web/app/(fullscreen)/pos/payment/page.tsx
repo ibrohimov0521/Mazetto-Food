@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Banknote,
   Check,
   Plus,
@@ -38,6 +37,7 @@ import {
 } from "../../../../lib/api";
 import { useStaffRealtime } from "../../../../lib/use-staff-realtime";
 import { Pagination } from "../../../../components/admin-ui/pagination";
+import { CashierWorkspaceNavigation } from "../../../../components/staff/staff-panel-navigation";
 import {
   formatMoney,
   orderTypeLabels,
@@ -446,14 +446,9 @@ function PaymentTerminal() {
 
   return (
     <StaffShell
-      title="To'lov"
+      title="Kassa"
       sidebar
-      actions={
-        <Link className={styles.shiftLink} href="/pos">
-          <ArrowLeft size={17} aria-hidden="true" />
-          <span>Kassaga qaytish</span>
-        </Link>
-      }
+      actions={<CashierWorkspaceNavigation user={user} />}
     >
       <div className={`${styles.content} ${styles.narrowContent}`}>
         <div className={styles.overview}>

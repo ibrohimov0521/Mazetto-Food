@@ -6,8 +6,6 @@ import {
   ArrowRight,
   Banknote,
   BellRing,
-  Clock3,
-  History,
   Minus,
   Plus,
   ReceiptText,
@@ -38,11 +36,8 @@ import {
 } from "../../../lib/pos-checkout-draft.mjs";
 import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 import { handleProductImageError, productImage } from "../../../lib/media";
-import {
-  orderStatusLabels,
-  type OrderStatus,
-} from "../../../lib/order-display";
 import { POS_PAYMENT_METHOD_CODES, paymentMethodLabel } from "../../../components/payment/payment-methods";
+import { CashierWorkspaceNavigation } from "../../../components/staff/staff-panel-navigation";
 
 type Variant = {
   id: string;
@@ -121,37 +116,6 @@ type CurrentShift = {
   openedAt?: string;
   branch?: { name?: string | null } | null;
 };
-type StatusHistoryEntry = {
-  id: string;
-  fromStatus: OrderStatus | null;
-  toStatus: OrderStatus;
-  reason?: string | null;
-  createdAt: string;
-  changedByEmployee?: {
-    firstName: string;
-    lastName?: string | null;
-    employeeCode?: string | null;
-  } | null;
-  changedByUser?: {
-    displayName?: string | null;
-    email?: string | null;
-  } | null;
-};
-type ShiftHistoryOrder = {
-  id: string;
-  orderNumber: string;
-  displayOrderNumber?: string | null;
-  status: OrderStatus;
-  total: string;
-  createdAt: string;
-  items: {
-    id: string;
-    productName: string;
-    quantity: string;
-    totalPrice: string;
-  }[];
-  statusHistory?: StatusHistoryEntry[];
-};
 const formatter = new Intl.NumberFormat("uz-UZ");
 const createCheckoutKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -193,12 +157,6 @@ function PosTerminal() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<PosOrderResult | null>(null);
   const [mobileView, setMobileView] = useState("menu");
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyOrders, setHistoryOrders] = useState<ShiftHistoryOrder[]>([]);
-  const [historyStatus, setHistoryStatus] = useState("");
-  const [historySearch, setHistorySearch] = useState("");
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState("");
   const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
   const [payLater, setPayLater] = useState(false);
   const [tableId, setTableId] = useState("");
@@ -343,45 +301,6 @@ function PosTerminal() {
       return loadTerminal();
     },
   });
-
-  function historyActor(entry: StatusHistoryEntry): string {
-    const employee = entry.changedByEmployee;
-    if (employee) {
-      return [employee.firstName, employee.lastName].filter(Boolean).join(" ");
-    }
-    return (
-      entry.changedByUser?.displayName || entry.changedByUser?.email || "Tizim"
-    );
-  }
-
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setHistoryError("");
-    const params = new URLSearchParams({ limit: "100", offset: "0" });
-    if (historyStatus) params.set("status", historyStatus);
-    if (historySearch.trim()) params.set("search", historySearch.trim());
-    try {
-      setHistoryOrders(
-        await apiFetch<ShiftHistoryOrder[]>(
-          `/cash-register/shift/orders?${params.toString()}`,
-          {
-            cache: "no-store",
-            signal: AbortSignal.timeout(12000),
-          },
-        ),
-      );
-    } catch (caught) {
-      setHistoryError(
-        caught instanceof Error ? caught.message : "Tarix yuklanmadi.",
-      );
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [historySearch, historyStatus]);
-
-  useEffect(() => {
-    if (historyOpen) void loadHistory();
-  }, [historyOpen, loadHistory]);
 
   const filteredProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -770,55 +689,18 @@ function PosTerminal() {
       title="Kassa"
       terminal
       sidebar
-      actions={
-        <>
-          {hasPermission(user, "PAYMENT_CREATE") ? (
-            <button
-              className={styles.shiftLink}
-              title="To'lanmagan buyurtmalar"
-              onClick={() => router.push("/pos/payment")}
-              type="button"
-            >
-              <Banknote size={17} aria-hidden="true" />
-              <span>To'lovlar</span>
-            </button>
-          ) : null}
-          <button
-            className={styles.shiftLink}
-            title="Smena tarixi"
-            aria-label="Smena tarixi"
-            onClick={() => setHistoryOpen(true)}
-            disabled={isSubmitting}
-            type="button"
-          >
-            <History size={17} />
-            <span>Tarix</span>
-          </button>
-          <button
-            className={styles.shiftLink}
-            title="Kassa smenasi"
-            aria-label="Kassa smenasi"
-            onClick={() => router.push("/shift")}
-            disabled={isSubmitting}
-            type="button"
-          >
-            <Clock3 size={17} />
-            <span>
-              {currentShift
-                ? `Smena #${currentShift.shiftNumber ?? ""}`
-                : "Smena"}
-            </span>
-          </button>
-          <StaffSync
-            updatedAt={lastUpdatedAt}
-            connectionState={realtimeState}
-            error={Boolean(error)}
-            refreshing={isCheckingShift || isSubmitting}
-            onRefresh={() => void loadTerminal()}
-          />
-        </>
-      }
+      actions={<CashierWorkspaceNavigation user={user} />}
     >
+      <div className={styles.overview}>
+        <h2 className={styles.pageHeading}>Buyurtma qabul qilish</h2>
+        <StaffSync
+          updatedAt={lastUpdatedAt}
+          connectionState={realtimeState}
+          error={Boolean(error)}
+          refreshing={isCheckingShift || isSubmitting}
+          onRefresh={() => void loadTerminal()}
+        />
+      </div>
       {hasPermission(user, "KITCHEN_VIEW") &&
       (newOnlineOrders > 0 || onlineOrdersError) ? (
         <div className={styles.posOnlineAlert} role="status">
@@ -1304,122 +1186,6 @@ function PosTerminal() {
               <Plus size={18} />
               Yangi buyurtma
             </button>
-          </div>
-        </StaffDialog>
-      )}
-      {historyOpen && (
-        <StaffDialog
-          title="Smena buyurtmalari tarixi"
-          busy={historyLoading}
-          onClose={() => setHistoryOpen(false)}
-        >
-          <div className={styles.historyControls}>
-            <label className={styles.search}>
-              <Search size={17} />
-              <input
-                aria-label="Smena tarixidan qidirish"
-                placeholder="Buyurtma yoki mahsulot"
-                value={historySearch}
-                onChange={(event) => setHistorySearch(event.target.value)}
-              />
-            </label>
-            <select
-              className={styles.historySelect}
-              aria-label="Buyurtma holati"
-              value={historyStatus}
-              onChange={(event) => setHistoryStatus(event.target.value)}
-            >
-              <option value="">Barcha holatlar</option>
-              {Object.entries(orderStatusLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button
-              className={styles.button}
-              onClick={() => void loadHistory()}
-              disabled={historyLoading}
-              type="button"
-            >
-              Yangilash
-            </button>
-          </div>
-          {historyError && (
-            <div className={styles.error} role="alert">
-              {historyError}
-            </div>
-          )}
-          <div className={styles.historyList}>
-            {historyLoading ? (
-              <div className={styles.skeleton} />
-            ) : historyOrders.length ? (
-              historyOrders.map((order) => (
-                <article className={styles.historyOrder} key={order.id}>
-                  <div>
-                    <strong>
-                      #{order.displayOrderNumber ?? order.orderNumber}
-                    </strong>
-                    <span className={styles.muted}>
-                      {order.items.length} ta mahsulot ·{" "}
-                      {new Date(order.createdAt).toLocaleTimeString("uz-UZ", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        timeZone: "Asia/Tashkent",
-                      })}
-                    </span>
-                    {order.statusHistory?.length ? (
-                      <details className={styles.deliveryDetails}>
-                        <summary>
-                          <Clock3 size={14} /> Statuslar tarixi
-                        </summary>
-                        <ul className={styles.itemList}>
-                          {order.statusHistory.map((entry) => (
-                            <li key={entry.id}>
-                              <span>
-                                {orderStatusLabels[entry.toStatus] ??
-                                  entry.toStatus}
-                              </span>
-                              <span className={styles.muted}>
-                                {historyActor(entry)} ·{" "}
-                                {new Date(entry.createdAt).toLocaleTimeString(
-                                  "uz-UZ",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    timeZone: "Asia/Tashkent",
-                                  },
-                                )}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
-                    ) : null}
-                  </div>
-                  <div className={styles.historyAmount}>
-                    <span
-                      className={styles.badge}
-                      data-tone={
-                        order.status === "CANCELLED"
-                          ? "late"
-                          : order.status === "COMPLETED" ||
-                              order.status === "SERVED"
-                            ? "ready"
-                            : "waiting"
-                      }
-                    >
-                      {orderStatusLabels[order.status]}
-                    </span>
-                    <strong>{money(order.total)}</strong>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <StaffEmpty title="Tarix bo'sh">
-                Bu smenada qabul qilingan buyurtmalar shu yerda ko'rinadi.
-              </StaffEmpty>
-            )}
           </div>
         </StaffDialog>
       )}
