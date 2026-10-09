@@ -13,6 +13,9 @@ function main(): void {
   const ordersService = read("src/modules/orders/orders.service.ts");
   const shiftPage = read("../pos-web/app/(fullscreen)/shift/page.tsx");
   const posPage = read("../pos-web/app/(fullscreen)/pos/page.tsx");
+  const paymentPage = read("../pos-web/app/(fullscreen)/pos/payment/page.tsx");
+  const historyPage = read("../pos-web/app/(fullscreen)/pos/history/page.tsx");
+  const navigation = read("../pos-web/components/staff/staff-panel-navigation.tsx");
   const auth = read("../pos-web/lib/auth.ts");
 
   assert.match(schema, /expectedCash\s+Decimal\?/);
@@ -26,11 +29,14 @@ function main(): void {
   assert.match(ordersService, /CashTransactionType\.SALE/);
   assert.match(posPage, /\/cash-register\/shift/);
   assert.match(posPage, /router\.replace\("\/shift"\)/);
-  // POS smena banneri o'rniga ixcham tugma keldi: ochiq smena raqami bilan
-  // ko'rsatiladi, boshlanish vaqti esa endi bu ekranda chizilmaydi (u /shift
-  // sahifasida qoldi). Shuning uchun "Boshlangan:" asserti olib tashlandi.
-  assert.match(posPage, /Smena #\$\{currentShift\.shiftNumber/);
-  assert.match(posPage, /router\.push\("\/shift"\)/);
+  assert.match(posPage, /CashierWorkspaceNavigation user=\{user\}/);
+  assert.match(paymentPage, /CashierWorkspaceNavigation user=\{user\}/);
+  assert.match(historyPage, /CashierWorkspaceNavigation user=\{user\}/);
+  assert.match(shiftPage, /CashierWorkspaceNavigation user=\{user\}/);
+  assert.match(navigation, /href: "\/pos", label: "Kassa"/);
+  assert.match(navigation, /href: "\/pos\/payment", label: "Kutilayotgan to'lovlar"/);
+  assert.match(navigation, /href: "\/pos\/history", label: "Tarix"/);
+  assert.match(navigation, /href: "\/shift", label: "Smena"/);
   assert.match(auth, /CASHIER: "\/shift"/);
   assert.match(shiftPage, /\/cash-register\/shift\/open/);
   assert.match(shiftPage, /\/cash-register\/shift\/\$\{shift\.id\}\/close/);

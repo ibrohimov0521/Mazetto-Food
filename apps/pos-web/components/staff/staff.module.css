@@ -2210,6 +2210,17 @@
   border-radius: 8px;
   background: linear-gradient(135deg, #ffffff 0%, #f0f7f2 100%);
 }
+.historyOrder[type="button"] {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.historyOrder[type="button"]:hover {
+  border-color: #7eaaa0;
+  background: #f5faf7;
+}
 .historyOrder strong {
   display: block;
   color: var(--ink, #07373a);

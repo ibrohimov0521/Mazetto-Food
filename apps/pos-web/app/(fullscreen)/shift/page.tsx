@@ -26,6 +26,7 @@ import {
   type OutgoingTransfer,
 } from "../../../components/staff/cash-handover";
 import { CashTransferDetailButton } from "../../../components/staff/cash-transfer-detail";
+import { CashierWorkspaceNavigation } from "../../../components/staff/staff-panel-navigation";
 
 type CashTransfer = {
   id: string;
@@ -68,6 +69,14 @@ type Shift = {
     occurredAt: string;
   }[];
 };
+type ShiftSummaryOrder = {
+  id: string;
+  orderNumber: string;
+  displayOrderNumber?: string | null;
+  status: string;
+  total: string;
+  items: { id: string; productName: string; quantity: string }[];
+};
 
 export default function ShiftPage() {
   return (
@@ -85,6 +94,10 @@ function ShiftConsole() {
   const [transferConfirmation, setTransferConfirmation] = useState<{ transfer: CashTransfer; action: "accept" | "reject" } | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
   const [closedShift, setClosedShift] = useState<Shift | null>(null);
+  const [closedShiftOrders, setClosedShiftOrders] = useState<ShiftSummaryOrder[]>([]);
+  const [closingOrders, setClosingOrders] = useState<ShiftSummaryOrder[] | null>(null);
+  const [closingOrdersError, setClosingOrdersError] = useState("");
+  const [loadingClosingOrders, setLoadingClosingOrders] = useState(false);
   const [openingCash, setOpeningCash] = useState("0");
   const [branches, setBranches] = useState<Branch[]>([]);
   const [openingBranchId, setOpeningBranchId] = useState("");
@@ -181,6 +194,27 @@ function ShiftConsole() {
   }, [loadShift]);
 
   useEffect(() => {
+    if (!isConfirmingClose || !shift) return;
+    let active = true;
+    setClosingOrders(null);
+    setClosingOrdersError("");
+    setLoadingClosingOrders(true);
+    void readShiftOrders(shift.id)
+      .then((orders) => {
+        if (active) setClosingOrders(orders);
+      })
+      .catch((caught) => {
+        if (active) setClosingOrdersError(caught instanceof Error ? caught.message : "Smena buyurtmalari yuklanmadi.");
+      })
+      .finally(() => {
+        if (active) setLoadingClosingOrders(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isConfirmingClose, shift]);
+
+  useEffect(() => {
     if (!needsBranchChoice) {
       setBranches([]);
       setOpeningBranchId("");
@@ -247,6 +281,7 @@ function ShiftConsole() {
       });
       setShift(opened);
       setClosedShift(null);
+      setClosedShiftOrders([]);
       if (canTrade) router.replace("/pos");
       else await loadShift();
     } catch (caught) {
@@ -277,6 +312,7 @@ function ShiftConsole() {
         },
       );
       setClosedShift(closed);
+      setClosedShiftOrders(closingOrders ?? []);
       setShift(null);
       setClosingCash("");
       setIsConfirmingClose(false);
@@ -289,7 +325,7 @@ function ShiftConsole() {
   }
 
   return (
-    <StaffShell title="Xodim kassasi">
+    <StaffShell title="Kassa" actions={<CashierWorkspaceNavigation user={user} />}>
       <div className={`${styles.content} ${styles.shiftContent}`}>
         <div className={styles.overview}>
           <div>
@@ -518,6 +554,7 @@ function ShiftConsole() {
                       </strong>
                     </div>
                   </div>
+                  {closedShiftOrders.length ? <ShiftOrdersSummary orders={closedShiftOrders} /> : null}
                 </>
               )}
             </section>
@@ -604,6 +641,13 @@ function ShiftConsole() {
               <strong>{differenceText(difference)}</strong>
             </div>
           </div>
+          {loadingClosingOrders ? (
+            <p className={styles.muted}>Smenadagi buyurtmalar yuklanmoqda...</p>
+          ) : closingOrdersError ? (
+            <p className={styles.error} role="alert">{closingOrdersError}</p>
+          ) : closingOrders ? (
+            <ShiftOrdersSummary orders={closingOrders} />
+          ) : null}
           {error && (
             <p className={styles.error} role="alert">
               {error}
@@ -620,7 +664,7 @@ function ShiftConsole() {
             </button>
             <button
               className={styles.primary}
-              disabled={isSaving}
+              disabled={isSaving || loadingClosingOrders || !closingOrders || Boolean(closingOrdersError)}
               onClick={() => void closeShift()}
               type="button"
             >
@@ -643,6 +687,52 @@ function ShiftConsole() {
 function money(value: number | string) {
   return `${new Intl.NumberFormat("uz-UZ").format(Math.round(Number(value || 0)))} so'm`;
 }
+
+async function readShiftOrders(shiftId: string): Promise<ShiftSummaryOrder[]> {
+  const orders: ShiftSummaryOrder[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await apiFetch<ShiftSummaryOrder[]>(
+      `/cash-register/shift/${encodeURIComponent(shiftId)}/orders?limit=100&offset=${offset}`,
+      { cache: "no-store", signal: AbortSignal.timeout(15000) },
+    );
+    orders.push(...page);
+    if (page.length < 100) return orders;
+  }
+}
+
+function ShiftOrdersSummary({ orders }: { orders: ShiftSummaryOrder[] }) {
+  const groups = [
+    { label: "Topshirilgan / yakunlangan", orders: orders.filter((order) => ["COMPLETED", "SERVED"].includes(order.status)) },
+    { label: "Bekor qilingan", orders: orders.filter((order) => order.status === "CANCELLED") },
+    { label: "Jarayonda", orders: orders.filter((order) => !["COMPLETED", "SERVED", "CANCELLED"].includes(order.status)) },
+  ];
+
+  return (
+    <section className={styles.shiftSummary} aria-label="Smena buyurtmalari">
+      <h3 className={styles.subheading}>Smenadagi buyurtmalar · {orders.length}</h3>
+      {groups.map((group) => group.orders.length ? (
+        <div className={styles.shiftRows} key={group.label}>
+          <strong>{group.label} · {group.orders.length}</strong>
+          {group.orders.map((order) => (
+            <div key={order.id}>
+              <span>#{order.displayOrderNumber ?? order.orderNumber} · {order.items.length} ta mahsulot</span>
+              <strong>{money(order.total)}</strong>
+            </div>
+          ))}
+          <div>
+            <span>{group.label} jami</span>
+            <strong>{money(group.orders.reduce((sum, order) => sum + Number(order.total), 0))}</strong>
+          </div>
+        </div>
+      ) : null)}
+      <div className={styles.totalRow}>
+        <span>Barcha buyurtmalar jami · bekor qilinganlar bilan</span>
+        <strong>{money(orders.reduce((sum, order) => sum + Number(order.total), 0))}</strong>
+      </div>
+    </section>
+  );
+}
+
 function dateTime(value: string) {
   return new Date(value).toLocaleString("uz-UZ", {
     day: "2-digit",
