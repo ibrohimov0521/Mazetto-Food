@@ -33,7 +33,10 @@ import {
 } from "../orders/order-events";
 import { KitchenGateway } from "./kitchen.gateway";
 import { orderStatusAfterKitchenHandoff } from "./kitchen-status-sync";
-import { kitchenHistoryRange } from "./kitchen-history-range";
+import {
+  kitchenHistoryModifiers,
+  kitchenHistoryRange,
+} from "./kitchen-history-range";
 
 type TransactionClient = Prisma.TransactionClient;
 export type KitchenStaffAction =
@@ -195,7 +198,20 @@ export class KitchenService {
       take: this.parseLimit(query.limit),
     });
 
-    return tickets;
+    return tickets.map((ticket) => ({
+      ...ticket,
+      items: ticket.items.map((item) => ({
+        ...item,
+        modifierSnapshot: kitchenHistoryModifiers(item.modifierSnapshot),
+      })),
+      order: {
+        ...ticket.order,
+        items: ticket.order.items.map((item) => ({
+          ...item,
+          modifierSnapshot: kitchenHistoryModifiers(item.modifierSnapshot),
+        })),
+      },
+    }));
   }
 
   async createTicketForOrder(tx: TransactionClient, orderId: string) {

@@ -38,6 +38,7 @@ function KitchenHistoryWorkspace() {
   const requestVersion = useRef(0);
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [status, setStatus] = useState("");
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
@@ -63,7 +64,7 @@ function KitchenHistoryWorkspace() {
       to,
     });
     if (status) params.set("status", status);
-    if (search.trim()) params.set("search", search.trim());
+    if (appliedSearch) params.set("search", appliedSearch);
     try {
       const rows = await apiFetch<KitchenTicket[]>(
         `/kitchen/orders/history?${params.toString()}`,
@@ -80,7 +81,15 @@ function KitchenHistoryWorkspace() {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [from, offset, search, sort, status, user]);
+  }, [appliedSearch, from, offset, sort, status, to, user]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setAppliedSearch(search.trim()),
+      250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     void loadHistory();
@@ -123,9 +132,10 @@ function KitchenHistoryWorkspace() {
               aria-label="Buyurtma yoki taom qidirish"
               placeholder="Buyurtma yoki taom"
               value={search}
-              onChange={(event) =>
-                updateFilter(() => setSearch(event.target.value))
-              }
+              onChange={(event) => {
+                setOffset(0);
+                setSearch(event.target.value);
+              }}
             />
           </label>
           <select

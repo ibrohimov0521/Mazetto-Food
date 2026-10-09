@@ -27,6 +27,25 @@ export function kitchenHistoryRange(
   return { start, end };
 }
 
+export function kitchenHistoryModifiers(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const modifier = item as Record<string, unknown>;
+    if (typeof modifier.name !== "string") return [];
+    return [
+      {
+        name: modifier.name,
+        quantity:
+          typeof modifier.quantity === "string" ||
+          typeof modifier.quantity === "number"
+            ? String(modifier.quantity)
+            : "1",
+      },
+    ];
+  });
+}
+
 function tashkentDate(date: Date): string {
   const shifted = new Date(date.getTime() + tashkentOffsetMs);
   return [

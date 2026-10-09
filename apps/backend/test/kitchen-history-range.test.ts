@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BadRequestException } from "@nestjs/common";
-import { kitchenHistoryRange } from "../src/modules/kitchen/kitchen-history-range";
+import {
+  kitchenHistoryModifiers,
+  kitchenHistoryRange,
+} from "../src/modules/kitchen/kitchen-history-range";
 
 test("defaults to the current Tashkent day", () => {
   const range = kitchenHistoryRange(
@@ -32,4 +35,14 @@ test("rejects invalid, reversed, and overlong ranges", () => {
     () => kitchenHistoryRange("2026-01-01", "2026-02-01"),
     BadRequestException,
   );
+});
+
+test("returns only kitchen modifier labels and quantities", () => {
+  assert.deepEqual(
+    kitchenHistoryModifiers([
+      { id: "secret-id", name: "Pishloq", quantity: 2, price: 5000 },
+    ]),
+    [{ name: "Pishloq", quantity: "2" }],
+  );
+  assert.deepEqual(kitchenHistoryModifiers(null), []);
 });
