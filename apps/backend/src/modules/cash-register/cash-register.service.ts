@@ -262,7 +262,7 @@ export class CashRegisterService {
     const employeeId = this.requireEmployee(user);
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
 
-    return this.prisma.shift.findMany({
+    const shifts = await this.prisma.shift.findMany({
       where: { employeeId, branch: { tenantId } },
       select: {
         id: true,
@@ -276,13 +276,14 @@ export class CashRegisterService {
         cashDifference: true,
         salesTotal: true,
         cashTotal: true,
-        orderCount: true,
+        _count: { select: { orders: true } },
         branch: { select: { id: true, name: true } },
       },
       orderBy: { openedAt: "desc" },
       skip: this.parseOffset(query.offset),
       take: this.parseLimit(query.limit),
     });
+    return shifts.map(({ _count, ...shift }) => ({ ...shift, orderCount: _count.orders }));
   }
 
   async getShiftHistoryDetail(shiftId: string, user: AuthenticatedUser) {
@@ -303,7 +304,7 @@ export class CashRegisterService {
         cashDifference: true,
         salesTotal: true,
         cashTotal: true,
-        orderCount: true,
+        _count: { select: { orders: true } },
         branch: { select: { id: true, name: true } },
         employee: { select: { firstName: true, lastName: true } },
       },
@@ -318,7 +319,8 @@ export class CashRegisterService {
       throw new ForbiddenException("Cannot access another employee shift");
     }
 
-    return shift;
+    const { _count, ...history } = shift;
+    return { ...history, orderCount: _count.orders };
   }
 
   async getShiftOrders(

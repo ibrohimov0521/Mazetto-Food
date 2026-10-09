@@ -72,6 +72,8 @@ export function printableReceiptHtml(
         : "RECEIPT";
   const document = profile.documents[kind];
   const { fields } = document;
+  const compact = document.density === "COMPACT";
+  const orderNotes = typeof content.orderNotes === "string" ? content.orderNotes.trim() : "";
   const kitchen = kind === "KITCHEN";
   const cancelled = kind === "CANCELLATION";
   const refunded = kind === "REFUND";
@@ -147,21 +149,22 @@ export function printableReceiptHtml(
     <style>${pageStyle}
       * { box-sizing: border-box; }
       body { width: ${bodyWidth}; max-width: calc(100% - 4mm); margin: 0 auto; font-family: Arial, sans-serif; color: #000; font-size: ${document.fontSizePx}px; line-height: ${document.lineHeight}; }
-      header { text-align: center; border-bottom: 2px dashed #000; padding: 4mm 0 3mm; }
-      .business-name { font-size: 16px; margin: 0 0 2mm; }
-      .document-title { font-size: ${document.titleSizePx}px; margin: 0 0 2mm; overflow-wrap: anywhere; }
+      header { text-align: center; border-bottom: 2px dashed #000; padding: ${compact ? "2mm 0 1.5mm" : "4mm 0 3mm"}; }
+      .business-name { font-size: 16px; margin: 0 0 ${compact ? "1mm" : "2mm"}; }
+      .document-title { font-size: ${document.titleSizePx}px; margin: 0 0 ${compact ? "1mm" : "2mm"}; overflow-wrap: anywhere; }
       h2 { font-size: ${kitchen ? "28px" : "22px"}; margin: 0; overflow-wrap: anywhere; }
-      .logo { display: block; width: auto; max-width: 55%; max-height: 18mm; object-fit: contain; margin: 0 auto 2mm; }
+      .logo { display: block; width: auto; max-width: 55%; max-height: 18mm; object-fit: contain; margin: 0 auto ${compact ? "1mm" : "2mm"}; }
       .common-lines { display: grid; gap: 1mm; overflow-wrap: anywhere; }
-      ul { list-style: none; padding: 0; margin: 2mm 0; border-bottom: 1px dashed #000; }
-      li { display: flex; justify-content: space-between; gap: 3mm; padding: 2mm 0; border-top: 1px dotted #777; }
+      ul { list-style: none; padding: 0; margin: ${compact ? "1mm" : "2mm"} 0; border-bottom: 1px dashed #000; }
+      li { display: flex; justify-content: space-between; gap: 3mm; padding: ${compact ? "0.8mm" : "2mm"} 0; border-top: 1px dotted #777; }
       li > div { flex: 1; }
-      small { display: block; font-weight: 400; margin: 1mm 0 0 4mm; overflow-wrap: anywhere; }
-      .total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; margin-top: 3mm; }
-      .meta { display: flex; justify-content: space-between; gap: 2mm; margin-top: 2mm; }
+      small { display: block; font-weight: 400; margin: ${compact ? "0.5mm" : "1mm"} 0 0 4mm; overflow-wrap: anywhere; }
+      .total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; margin-top: ${compact ? "1.5mm" : "3mm"}; }
+      .meta { display: flex; justify-content: space-between; gap: 2mm; margin-top: ${compact ? "1mm" : "2mm"}; }
       .meta span:last-child { text-align: right; }
       .alert { font-weight: 800; font-size: 17px; margin-top: 2mm; overflow-wrap: anywhere; }
-      .footer { text-align: center; margin-top: 4mm; }
+      .footer { text-align: center; margin-top: ${compact ? "2mm" : "4mm"}; }
+      .order-note { margin: ${compact ? "1mm 0" : "1em 0"}; }
     </style>
   </head>
   <body>
@@ -170,7 +173,7 @@ export function printableReceiptHtml(
       ${document.businessNameEnabled && document.businessName ? `<div class="business-name"><strong>${escapeHtml(document.businessName)}</strong></div>` : ""}
       ${commonTopLines ? `<div class="common-lines">${commonTopLines}</div>` : ""}
       ${fields.branchName && content.branchName ? `<div>${escapeHtml(String(content.branchName))}</div>` : ""}
-      <div class="document-title ${cancelled || refunded ? "alert" : ""}">${escapeHtml(heading)}</div>
+      ${document.titleEnabled ? `<div class="document-title ${cancelled || refunded ? "alert" : ""}">${escapeHtml(heading)}</div>` : ""}
       ${fields.orderNumber ? `<h2>#${escapeHtml(String(content.displayOrderNumber ?? content.orderNumber ?? ""))}</h2>` : ""}
     </header>
     ${(fields.orderType && content.orderType) || (fields.dateTime && dateTime) ? `<div class="meta"><span>${fields.orderType ? escapeHtml(String(content.orderType ?? "")) : ""}</span><span>${fields.dateTime ? escapeHtml(dateTime) : ""}</span></div>` : ""}
@@ -179,7 +182,7 @@ export function printableReceiptHtml(
     <ul>${itemRows}</ul>
     ${fields.payments && payments.length ? `<ul>${paymentRows}</ul>` : ""}
     ${fields.total && content.total != null ? `<div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total))}</span></div>` : ""}
-    ${fields.orderNotes && content.orderNotes ? `<p><b>Izoh:</b> ${escapeHtml(String(content.orderNotes))}</p>` : ""}
+    ${fields.orderNotes && orderNotes ? `<p class="order-note"><b>Izoh:</b> ${escapeHtml(orderNotes)}</p>` : ""}
     <div class="footer">${footerContent}</div>
   </body>
 </html>`;

@@ -20,6 +20,8 @@ export type ReceiptFieldKey =
 
 export type ReceiptDocumentProfile = {
   title: string;
+  titleEnabled: boolean;
+  density: "COMPACT" | "NORMAL";
   businessName: string;
   businessNameEnabled: boolean;
   logoEnabled: boolean;
@@ -51,7 +53,8 @@ function documentProfile(
   const fields = Object.fromEntries(visibleFields.map((key) => [key, true])) as Record<ReceiptFieldKey, boolean>;
   Object.assign(fields, overrides);
   return {
-    title, businessName: "MAZETTO FOOD", businessNameEnabled: true, logoEnabled: true,
+    title, titleEnabled: true, density: "NORMAL",
+    businessName: "MAZETTO FOOD", businessNameEnabled: true, logoEnabled: true,
     fontSizePx: 12, titleSizePx: 18, lineHeight: 1.3, fields, headerLines: [], footerLines: [],
   };
 }
@@ -115,6 +118,8 @@ export function normalizeReceiptPrintProfile(value: unknown): ReceiptPrintProfil
     }
     documents[kind] = {
       title: safeText(raw.title, fallback.title, 80),
+      titleEnabled: typeof raw.titleEnabled === "boolean" ? raw.titleEnabled : fallback.titleEnabled,
+      density: raw.density === "COMPACT" ? "COMPACT" : "NORMAL",
       businessName: safeText(raw.businessName, safeText(input.businessName, fallback.businessName, 80), 80),
       businessNameEnabled: typeof raw.businessNameEnabled === "boolean"
         ? raw.businessNameEnabled
