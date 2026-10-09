@@ -21,6 +21,11 @@ import {
   type KitchenTicket,
 } from "../../../../components/kitchen/kitchen-types";
 import { apiFetch } from "../../../../lib/api";
+import {
+  formatDateTime,
+  orderStatusLabels,
+  type OrderStatus,
+} from "../../../../lib/order-display";
 
 const pageSize = 100;
 
@@ -343,11 +348,7 @@ function tashkentToday() {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("uz-UZ", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Tashkent",
-  }).format(new Date(value));
+  return formatDateTime(value);
 }
 
 function statusTone(status: KitchenTicket["status"]) {
@@ -363,16 +364,14 @@ function typeLabel(type: KitchenTicket["order"]["type"]) {
 }
 
 function orderStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    NEW: "Yangi",
+  const legacyLabels: Record<string, string> = {
     ACCEPTED: "Qabul qilindi",
-    PREPARING: "Tayyorlanmoqda",
-    READY: "Tayyor",
-    SERVED: "Topshirildi",
-    COMPLETED: "Yakunlandi",
-    CANCELLED: "Bekor qilindi",
   };
-  return labels[status] ?? status;
+  return (
+    legacyLabels[status] ??
+    orderStatusLabels[status as OrderStatus] ??
+    status
+  );
 }
 
 function modifierNames(value: unknown): string {
