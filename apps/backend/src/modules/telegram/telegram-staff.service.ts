@@ -279,7 +279,7 @@ export class TelegramStaffService implements OnModuleInit {
     }
 
     if ((action === "kitchen_ticket" || action === "kt") && values[0] && values[1]) {
-      await this.screen.answerCallbackWithToken(this.botToken, callback, "Amal bajarilmoqda...");
+      await this.screen.answerCallbackWithToken(this.botToken, callback, "Holat tekshirilmoqda...");
       await this.changeKitchenTicket(chatId, staff, values[0], values[1], callback.message?.message_id);
       return;
     }
@@ -569,26 +569,39 @@ export class TelegramStaffService implements OnModuleInit {
       : "🍳 Hozir oshxonada faol buyurtma yo'q.";
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
       text, parse_mode: "HTML", reply_markup: { inline_keyboard: [
-        ...tickets.map((ticket: TelegramKitchenTicket) => [{ text: `#${String(ticket.order?.displayOrderNumber ?? ticket.ticketNumber)}`, callback_data: `${staffCallbackPrefix}:kt:${ticket.id}:n` }]),
+        ...tickets.flatMap((ticket: TelegramKitchenTicket) => {
+          const actionLabel = this.kitchenActionLabel(ticket.status);
+          return actionLabel ? [[{
+            text: `${actionLabel} #${String(ticket.order?.displayOrderNumber ?? ticket.ticketNumber)}`,
+            callback_data: `${staffCallbackPrefix}:kt:${ticket.id}:${String(ticket.status)}`,
+          }]] : [];
+        }),
         [{ text: "🔄 Yangilash", callback_data: `${staffCallbackPrefix}:ki` }],
         [{ text: "🏠 Xodim paneli", callback_data: `${staffCallbackPrefix}:h` }],
       ] },
     });
   }
 
+  private kitchenActionLabel(status: unknown): string | null {
+    switch (status) {
+      case KitchenTicketStatus.NEW: return "✅ Qabul qilish";
+      case KitchenTicketStatus.ACCEPTED: return "🍳 Tayyorlash";
+      case KitchenTicketStatus.COOKING: return "🔔 Tayyor deb belgilash";
+      case KitchenTicketStatus.READY: return "✅ Yakunlash";
+      default: return null;
+    }
+  }
+
   private async changeKitchenTicket(chatId: string, staff: StaffIdentity, ticketId: string, action: string, messageId?: number): Promise<void> {
     const ticket = await this.kitchenService.getTicket(ticketId, staff.user);
-    const next = ticket.status === KitchenTicketStatus.NEW
-      ? "accept"
-      : ticket.status === KitchenTicketStatus.ACCEPTED
-        ? "start"
-        : ticket.status === KitchenTicketStatus.COOKING
-          ? "ready"
-          : "complete";
-    if (next === "accept") await this.kitchenService.acceptTicket(ticketId, staff.user);
-    else if (next === "start") await this.kitchenService.startTicket(ticketId, staff.user);
-    else if (next === "ready") await this.kitchenService.readyTicket(ticketId, staff.user);
-    else await this.kitchenService.completeTicket(ticketId, staff.user);
+    if (action !== ticket.status || !this.kitchenActionLabel(ticket.status)) {
+      await this.sendKitchenOrders(chatId, staff, messageId);
+      return;
+    }
+    if (ticket.status === KitchenTicketStatus.NEW) await this.kitchenService.acceptTicket(ticketId, staff.user);
+    else if (ticket.status === KitchenTicketStatus.ACCEPTED) await this.kitchenService.startTicket(ticketId, staff.user);
+    else if (ticket.status === KitchenTicketStatus.COOKING) await this.kitchenService.readyTicket(ticketId, staff.user);
+    else if (ticket.status === KitchenTicketStatus.READY) await this.kitchenService.completeTicket(ticketId, staff.user);
     await this.sendKitchenOrders(chatId, staff, messageId);
   }
 
