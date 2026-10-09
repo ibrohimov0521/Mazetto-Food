@@ -264,5 +264,5 @@ function formatQuantity(quantity: Prisma.Decimal): string {
 }
 
 function formatTashkentDateTime(value: Date): string {
-  return `${tashkentDateTimeFormatter.format(value)} Toshkent vaqti`;
+  return tashkentDateTimeFormatter.format(value);
 }

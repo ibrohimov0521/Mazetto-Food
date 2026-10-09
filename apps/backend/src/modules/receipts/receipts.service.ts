@@ -620,7 +620,7 @@ function formatReceiptQuantity(value: string): string {
 function formatReceiptDateTime(value: string | null, fallback: Date): string {
   const parsed = value ? new Date(value) : null;
   const date = parsed && Number.isFinite(parsed.getTime()) ? parsed : fallback;
-  return `${new Intl.DateTimeFormat("uz-UZ", {
+  return new Intl.DateTimeFormat("uz-UZ", {
     timeZone: "Asia/Tashkent",
     year: "numeric",
     month: "2-digit",
@@ -629,5 +629,5 @@ function formatReceiptDateTime(value: string | null, fallback: Date): string {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-  }).format(date)} Toshkent vaqti`;
+  }).format(date);
 }

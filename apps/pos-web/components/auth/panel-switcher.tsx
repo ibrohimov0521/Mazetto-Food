@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { getAccessiblePanels, type AuthUser } from "../../lib/auth";
 
 export function PanelSwitcher({
@@ -16,62 +16,40 @@ export function PanelSwitcher({
   staffMode?: boolean;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const accessible = getAccessiblePanels(user);
   const hasTerminal = accessible.some((panel) => panel.href === "/pos");
-  const panels = staffMode
-    ? accessible
-        .filter((panel) => panel.href !== "/shift" || !hasTerminal)
-        .map((panel) =>
-          panel.href === "/pos" ? { ...panel, title: "Kassa" } : panel,
-        )
-    : accessible;
+  const panels = accessible
+    .filter((panel) => !staffMode || panel.href !== "/shift" || !hasTerminal)
+    .map((panel) =>
+      panel.href === "/pos" ? { ...panel, title: "Kassa" } : panel,
+    );
 
   if (panels.length <= 1) {
     return null;
   }
 
-  const isDark = variant === "dark";
+  const active = panels.find((panel) =>
+    pathname === panel.href ||
+    (panel.href === "/pos" && (pathname === "/shift" || pathname?.startsWith("/pos/"))) ||
+    (panel.href.startsWith("/admin") && pathname?.startsWith("/admin")),
+  );
 
   return (
-    <nav
-      aria-label="Ruxsat berilgan panellar"
-      className={[
-        "mz-panel-nav mz-thin-scrollbar min-w-0 items-center gap-1.5 overflow-x-auto",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      {panels.map((panel) => {
-        const isActive =
-          pathname === panel.href ||
-          (staffMode &&
-            panel.href === "/pos" &&
-            (pathname === "/shift" || pathname.startsWith("/pos/"))) ||
-          (panel.href.startsWith("/admin") && pathname.startsWith("/admin"));
-
-        const className = [
-          "inline-flex shrink-0 items-center gap-1.5 rounded-mz-control px-3 py-1.5 text-xs font-black transition",
-          isDark
-            ? isActive
-              ? "bg-mz-primary text-mz-primary-fg"
-              : "border border-mz-shell-border text-mz-shell-fg-muted hover:bg-mz-shell-raised hover:text-mz-shell-fg"
-            : isActive
-              ? "bg-[#ffd52e] text-[#053f3a]"
-              : "border border-emerald-100 bg-white text-emerald-900 hover:bg-emerald-50",
-        ].join(" ");
-
-        return (
-          <Link
-            aria-current={isActive ? "page" : undefined}
-            className={className}
-            href={panel.href}
-            key={panel.href}
-          >
-            {panel.title}
-          </Link>
-        );
-      })}
-    </nav>
+    <label className={`mz-panel-switcher relative inline-flex min-w-0 shrink-0 items-center ${className}`}>
+      <span className="sr-only">Ish joyini tanlash</span>
+      <select
+        aria-label="Ish joyini tanlash"
+        className={`h-8 max-w-[150px] appearance-none rounded-mz-control border py-1 pl-2 pr-7 text-xs font-bold outline-offset-2 sm:max-w-[190px] ${variant === "dark" ? "border-mz-shell-border bg-mz-shell-raised text-mz-shell-fg" : "border-emerald-100 bg-white text-emerald-900"}`}
+        onChange={(event) => router.push(event.target.value)}
+        value={active?.href ?? ""}
+      >
+        {!active && <option value="" disabled>Panelni tanlang</option>}
+        {panels.map((panel) => (
+          <option key={panel.href} value={panel.href}>{panel.title}</option>
+        ))}
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2" size={14} />
+    </label>
   );
 }

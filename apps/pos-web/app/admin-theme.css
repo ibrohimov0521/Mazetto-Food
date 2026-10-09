@@ -199,7 +199,7 @@
 }
 .mz-panel-heading {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -219,7 +219,7 @@
   flex-shrink: 0;
   width: 154px;
   height: 38px;
-  object-fit: cover;
+  object-fit: contain;
 }
 .mz-panel-brand {
   display: none;
@@ -227,7 +227,7 @@
   width: 28px;
   height: 28px;
   border-radius: var(--radius-mz-control);
-  object-fit: cover;
+  object-fit: contain;
 }
 .mz-panel-actions {
   display: flex;
@@ -270,6 +270,9 @@
   }
   .mz-panel-brand {
     display: block;
+  }
+  .mz-panel-heading h1 {
+    display: none;
   }
   .mz-panel-header .mz-panel-actions > :is(button, a) {
     width: 32px;

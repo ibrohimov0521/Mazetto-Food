@@ -14,10 +14,6 @@ import {
 } from "../../lib/offline-freshness.mjs";
 import { PanelNavbar } from "../auth/panel-navbar";
 import styles from "./staff.module.css";
-import {
-  hasStaffPanelNavigation,
-  StaffPanelNavigation,
-} from "./staff-panel-navigation";
 
 const sidebarStorageKey = "mazetto.staff.sidebar.hidden";
 
@@ -38,8 +34,7 @@ export function StaffShell({
   const pathname = usePathname();
   const [isPanelMenuOpen, setIsPanelMenuOpen] = useState(false);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
-  const hasPanelNavigation = hasStaffPanelNavigation(user);
-  const showSidebar = sidebar && hasPanelNavigation;
+  const showSidebar = sidebar && Boolean(actions);
 
   useEffect(() => {
     try {
@@ -91,33 +86,37 @@ export function StaffShell({
       <PanelNavbar
         user={user}
         title={title}
-        actions={actions}
         className={styles.header ?? ""}
-        hasNavigation={hasPanelNavigation}
+        hasNavigation={showSidebar}
         hasSidebar={showSidebar}
         sidebarId="staff-sidebar"
-        backHref="/workspace"
         isCollapsed={isSidebarHidden}
         isMobileOpen={isPanelMenuOpen}
         onToggleCollapse={toggleSidebar}
         onToggleMobile={() => setIsPanelMenuOpen((current) => !current)}
         onLogout={() => void logout()}
       />
-      {hasPanelNavigation && isPanelMenuOpen ? (
-        <>
-          <button
-            aria-label="Menyuni yopish"
-            className={styles.panelMenuOverlay}
-            onClick={() => setIsPanelMenuOpen(false)}
-            type="button"
-          />
+      {showSidebar && isPanelMenuOpen ? (
+        <button
+          aria-label="Menyuni yopish"
+          className={styles.panelMenuOverlay}
+          onClick={() => setIsPanelMenuOpen(false)}
+          type="button"
+        />
+      ) : null}
+      {showSidebar ? (
+        <div
+          className={styles.staffLayout}
+          data-sidebar-hidden={isSidebarHidden}
+        >
           <aside
-            aria-label="Ish joylari menyusi"
-            className={styles.panelDrawer}
-            id="staff-panel-menu"
+            aria-label={`${title} amallari`}
+            className={styles.staffSidebar}
+            data-mobile-open={isPanelMenuOpen}
+            id="staff-sidebar"
           >
             <div className={styles.panelDrawerHeader}>
-              <strong>Panellar</strong>
+              <strong>{title} amallari</strong>
               <button
                 aria-label="Menyuni yopish"
                 className={styles.iconButton}
@@ -128,24 +127,7 @@ export function StaffShell({
                 <X size={18} />
               </button>
             </div>
-            <StaffPanelNavigation
-              onNavigate={() => setIsPanelMenuOpen(false)}
-              user={user}
-            />
-          </aside>
-        </>
-      ) : null}
-      {showSidebar ? (
-        <div
-          className={styles.staffLayout}
-          data-sidebar-hidden={isSidebarHidden}
-        >
-          <aside
-            aria-label="Ish joylari menyusi"
-            className={styles.staffSidebar}
-            id="staff-sidebar"
-          >
-            <StaffPanelNavigation user={user} />
+            <div className={styles.sidebarActions}>{actions}</div>
           </aside>
           <div className={styles.staffMain}>{children}</div>
         </div>

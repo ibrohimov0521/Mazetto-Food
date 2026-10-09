@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { roleLabels } from "../../lib/auth";
 import type { AuthUser, MazettoRole } from "../../lib/auth";
@@ -63,11 +62,9 @@ export function PanelNavbar({
   onToggleCollapse,
   onLogout,
   title,
-  actions,
   sidebarId = "admin-sidebar",
   hasSidebar = true,
   hasNavigation = true,
-  backHref = "/admin",
   className = "",
 }: {
   user: AuthUser | null;
@@ -77,14 +74,11 @@ export function PanelNavbar({
   onToggleCollapse: () => void;
   onLogout: () => void;
   title?: string;
-  actions?: ReactNode;
   sidebarId?: string;
   hasSidebar?: boolean;
   hasNavigation?: boolean;
-  backHref?: string;
   className?: string;
 }) {
-  const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPasswordOpen, setIsPasswordOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -123,7 +117,7 @@ export function PanelNavbar({
     >
       {hasNavigation && (
         <button
-          aria-controls={title ? "staff-panel-menu" : sidebarId}
+          aria-controls={sidebarId}
           aria-expanded={isMobileOpen}
           aria-label={isMobileOpen ? "Menyuni yopish" : "Menyuni ochish"}
           className={`grid h-8 w-8 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg ${hasSidebar ? "lg:hidden" : ""}`}
@@ -153,25 +147,7 @@ export function PanelNavbar({
         </button>
       )}
 
-      <button
-        aria-label="Orqaga"
-        className="flex h-8 shrink-0 items-center gap-1 rounded-mz-control px-2 text-xs font-semibold text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg"
-        onClick={() => {
-          if (window.history.length > 1) {
-            router.back();
-          } else {
-            router.push(backHref);
-          }
-        }}
-        title="Orqaga"
-        type="button"
-      >
-        <Icon className="h-4 w-4" name="chevronLeft" />
-        <span className="hidden sm:inline">Orqaga</span>
-      </button>
-
-      {title && (
-        <div className="mz-panel-heading">
+      <div className="mz-panel-heading">
           <img
             className="mz-panel-logo"
             src="/brand/header-logo.webp"
@@ -186,20 +162,16 @@ export function PanelNavbar({
             width={28}
             height={28}
           />
-          <h1>{title}</h1>
-        </div>
-      )}
+          <h1>{title ?? "Boshqaruv"}</h1>
+      </div>
 
       <PanelSwitcher
-        className="hidden min-w-0 flex-1 xl:flex"
         user={user}
         variant="dark"
         staffMode={Boolean(title)}
       />
 
-      <div className="min-w-0 flex-1 xl:hidden" />
-
-      {actions && <div className="mz-panel-actions">{actions}</div>}
+      <div className="min-w-0 flex-1" />
       <div className="mz-panel-runtime-status">
         <DesktopStatusBadge />
         <DesktopUpdateBadge />
@@ -247,12 +219,6 @@ export function PanelNavbar({
                 {primaryRoleLabel(user)}
               </p>
             </div>
-            <PanelSwitcher
-              className="border-b border-mz-border px-3 py-2 xl:hidden"
-              user={user}
-              variant="light"
-              staffMode={Boolean(title)}
-            />
             <button
               className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-text transition hover:bg-mz-surface-sunken"
               onClick={() => {

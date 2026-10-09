@@ -277,7 +277,7 @@ function ReceiptPreview({ id }: { id: string }) {
   return (
     <StaffShell
       title="Chek"
-      sidebar={false}
+      sidebar
       actions={
         <Link className={styles.shiftLink} href="/pos">
           <ArrowLeft size={17} aria-hidden="true" />

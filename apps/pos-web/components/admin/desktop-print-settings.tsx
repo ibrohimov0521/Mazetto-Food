@@ -22,6 +22,9 @@ type ReceiptFieldKey =
   | "orderNotes" | "reason";
 type ReceiptDocument = {
   title: string;
+  businessName: string;
+  businessNameEnabled: boolean;
+  logoEnabled: boolean;
   fontSizePx: number;
   titleSizePx: number;
   lineHeight: number;
@@ -31,8 +34,6 @@ type ReceiptDocument = {
 };
 type ReceiptProfile = {
   businessName: string;
-  businessNameEnabled: boolean;
-  logoEnabled: boolean;
   commonHeaderLines: string[];
   commonFooterLines: string[];
   documents: Record<ReceiptKind, ReceiptDocument>;
@@ -464,18 +465,6 @@ export function DesktopPrintSettings() {
                 <div className="grid content-start gap-5">
                   <section className="grid gap-4 border-b border-mz-border pb-5">
                     <h2 className="text-base font-semibold text-mz-text">Barcha cheklarga umumiy</h2>
-                    <label className="grid gap-1 text-xs font-semibold text-mz-text">
-                      Chekdagi tashkilot nomi
-                      <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" maxLength={80} onChange={(event) => { setProfile({ ...profile, businessName: event.target.value }); setReceiptDirty(true); }} value={profile.businessName} />
-                    </label>
-                    <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-mz-text">
-                      <input checked={profile.businessNameEnabled} className="h-4 w-4 accent-mz-primary" onChange={(event) => { setProfile({ ...profile, businessNameEnabled: event.target.checked }); setReceiptDirty(true); }} type="checkbox" />
-                      Tashkilot nomini cheklarda chiqarish
-                    </label>
-                    <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-mz-text">
-                      <input checked={profile.logoEnabled} className="h-4 w-4 accent-mz-primary" onChange={(event) => { setProfile({ ...profile, logoEnabled: event.target.checked }); setReceiptDirty(true); }} type="checkbox" />
-                      Logoni cheklarda chiqarish
-                    </label>
                     <LineEditor label="Har bir chek boshidagi umumiy yozuvlar" values={profile.commonHeaderLines} onChange={(values) => { setProfile({ ...profile, commonHeaderLines: values }); setReceiptDirty(true); }} />
                     <LineEditor label="Har bir chek oxiridagi umumiy yozuvlar" values={profile.commonFooterLines} onChange={(values) => { setProfile({ ...profile, commonFooterLines: values }); setReceiptDirty(true); }} />
                   </section>
@@ -486,6 +475,21 @@ export function DesktopPrintSettings() {
                       <p className="mt-1 text-sm text-mz-text-muted">Tanlangan chek turi uchun sarlavha, matn o‘lchami va chiqadigan ma’lumotlarni belgilang.</p>
                     </div>
                     <Tabs active={kind} items={receiptTabItems} label="Chek turi" onChange={(value) => setKind(value as ReceiptKind)} />
+                    <fieldset className="grid gap-2">
+                      <legend className="text-sm font-semibold text-mz-text">Sarlavha elementlari</legend>
+                      <label className="grid gap-1 text-xs font-semibold text-mz-text">
+                        Tashkilot nomi
+                        <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" maxLength={80} onChange={(event) => updateDocument((current) => ({ ...current, businessName: event.target.value }))} value={activeDocument.businessName} />
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-mz-text">
+                        <input checked={activeDocument.logoEnabled} className="h-4 w-4 accent-mz-primary" onChange={(event) => updateDocument((current) => ({ ...current, logoEnabled: event.target.checked }))} type="checkbox" />
+                        Logoni chiqarish
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-mz-text">
+                        <input checked={activeDocument.businessNameEnabled} className="h-4 w-4 accent-mz-primary" onChange={(event) => updateDocument((current) => ({ ...current, businessNameEnabled: event.target.checked }))} type="checkbox" />
+                        Tashkilot nomini chiqarish
+                      </label>
+                    </fieldset>
                     <label className="grid gap-1 text-xs font-semibold text-mz-text">
                       Chek sarlavhasi
                       <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" maxLength={80} onChange={(event) => updateDocument((current) => ({ ...current, title: event.target.value }))} value={activeDocument.title} />
