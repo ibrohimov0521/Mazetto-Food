@@ -3,11 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
-import {
-  OrderItemStatus,
-  Prisma,
-  ShiftStatus,
-} from "@prisma/client";
+import { OrderItemStatus, Prisma, ShiftStatus } from "@prisma/client";
 import type { PrismaService } from "../../prisma/prisma.service";
 import type { OrderItemModifierDto } from "./dto/order-item.dto";
 import type { ModifierSnapshot } from "./order-rules";
@@ -215,10 +211,11 @@ export async function recalculateOrderTotals(
     throw new NotFoundException("Order not found");
   }
 
-  const total = subtotal
+  const calculatedTotal = subtotal
     .sub(order.discountTotal)
     .add(order.serviceFeeTotal)
     .add(order.deliveryFeeTotal);
+  const total = Prisma.Decimal.max(calculatedTotal, 0);
 
   await tx.order.update({
     where: { id: orderId },

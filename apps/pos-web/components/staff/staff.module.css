@@ -2235,6 +2235,36 @@
   gap: 5px;
   white-space: nowrap;
 }
+.historyItemRow > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.historyItemRow > strong {
+  white-space: nowrap;
+}
+.itemCancel {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid #f0c8c4;
+  border-radius: 6px;
+  background: #fff7f6;
+  color: #a32d2d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.itemCancel:hover:not(:disabled) {
+  background: #ffebe8;
+}
+.itemCancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .detailButton {
   display: inline-flex;
   align-items: center;

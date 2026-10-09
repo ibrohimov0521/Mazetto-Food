@@ -71,6 +71,13 @@ type Payment = {
     reason: string;
     createdAt: string;
   } | null;
+  refunds?: {
+    id: string;
+    amount: string;
+    reason: string;
+    createdAt: string;
+  }[];
+  remainingRefundableAmount?: string;
   order?: {
     id: string;
     orderNumber: string;
@@ -123,6 +130,7 @@ export function AdminPaymentsPage() {
   const [offset, setOffset] = useState(0);
   const [detail, setDetail] = useState<Payment | null>(null);
   const [refundTarget, setRefundTarget] = useState<Payment | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
   const [openShifts, setOpenShifts] = useState<OpenShift[]>([]);
   const [refundShiftId, setRefundShiftId] = useState("");
   const [refundReason, setRefundReason] = useState("");
@@ -203,6 +211,7 @@ export function AdminPaymentsPage() {
     const paymentBranchId = payment.order?.branch?.id;
     if (!paymentBranchId) return;
     setRefundTarget(payment);
+    setRefundAmount(payment.remainingRefundableAmount ?? payment.amount);
     setRefundReason("");
     setRefundShiftId("");
     setRefundError("");
@@ -223,8 +232,16 @@ export function AdminPaymentsPage() {
   }
 
   async function submitRefund() {
-    if (!refundTarget || !refundShiftId || refundReason.trim().length < 3) {
-      setRefundError("Ochiq smena va kamida 3 belgili sababni kiriting.");
+    if (
+      !refundTarget ||
+      !refundShiftId ||
+      refundReason.trim().length < 3 ||
+      !Number.isFinite(Number(refundAmount)) ||
+      Number(refundAmount) <= 0
+    ) {
+      setRefundError(
+        "Ochiq smena, qaytarish summasi va kamida 3 belgili sababni kiriting.",
+      );
       return;
     }
     setIsRefunding(true);
@@ -234,13 +251,17 @@ export function AdminPaymentsPage() {
         method: "POST",
         body: JSON.stringify({
           shiftId: refundShiftId,
+          amount: Number(refundAmount),
           reason: refundReason.trim(),
           idempotencyKey: `refund:${refundTarget.id}:${crypto.randomUUID()}`,
         }),
       });
       setRefundTarget(null);
       setDetail(null);
-      showToast("To'lov qaytarildi va qaytarish cheki navbatga qo'yildi.", "success");
+      showToast(
+        "To'lov qaytarildi va qaytarish cheki navbatga qo'yildi.",
+        "success",
+      );
       await load();
     } catch (refundFailure) {
       setRefundError(
@@ -256,8 +277,13 @@ export function AdminPaymentsPage() {
   const isRefundable = (payment: Payment) =>
     canRefund &&
     touchesCashDrawer(payment) &&
-    (payment.status === "SUCCESS" || payment.status === "PAID") &&
-    !payment.refund;
+    (payment.status === "SUCCESS" ||
+      payment.status === "PAID" ||
+      payment.status === "PARTIALLY_REFUNDED") &&
+    Number(
+      payment.remainingRefundableAmount ??
+        (payment.refund ? 0 : payment.amount),
+    ) > 0;
 
   const columns: DataTableColumn<Payment>[] = [
     {
@@ -529,9 +555,9 @@ export function AdminPaymentsPage() {
         />
         <CardBody>
           <p className="text-sm text-mz-text">
-            Muvaffaqiyatli <strong>naqd to&apos;lov</strong> detalidan to&apos;liq
-            qaytarish mumkin. Amal uchun ochiq smena va sabab talab qilinadi;
-            qaytarish cheki avtomatik chop navbatiga tushadi.
+            Muvaffaqiyatli <strong>naqd to&apos;lov</strong> detalidan
+            to&apos;liq qaytarish mumkin. Amal uchun ochiq smena va sabab talab
+            qilinadi; qaytarish cheki avtomatik chop navbatiga tushadi.
           </p>
           <p className="mt-2 text-sm text-mz-text-muted">
             Karta, Click va Payme qaytarishlari provayder integratsiyasi va
@@ -555,10 +581,7 @@ export function AdminPaymentsPage() {
               </ButtonLink>
             ) : null}
             {detail && isRefundable(detail) ? (
-              <Button
-                onClick={() => void openRefund(detail)}
-                variant="danger"
-              >
+              <Button onClick={() => void openRefund(detail)} variant="danger">
                 To&apos;lovni qaytarish
               </Button>
             ) : null}
@@ -662,10 +685,31 @@ export function AdminPaymentsPage() {
           <div className="grid gap-4">
             <p className="text-sm text-mz-text-muted">
               {refundTarget.order?.displayOrderNumber ??
-                refundTarget.order?.orderNumber} uchun {formatMoney(refundTarget.amount)}
-              kassa qutisidan chiqim qilinadi. Bu amalni ortga qaytarib
-              bo&apos;lmaydi.
+                refundTarget.order?.orderNumber}{" "}
+              uchun qolgan naqd limit:{" "}
+              {formatMoney(
+                refundTarget.remainingRefundableAmount ?? refundTarget.amount,
+              )}
+              . Kassa qutisidan chiqariladigan summani kiriting. Bu amalni ortga
+              qaytarib bo&apos;lmaydi.
             </p>
+            <FormField label="Qaytarish summasi" required>
+              {(props) => (
+                <TextInput
+                  {...props}
+                  inputMode="decimal"
+                  max={
+                    refundTarget.remainingRefundableAmount ??
+                    refundTarget.amount
+                  }
+                  min="0.01"
+                  onChange={(event) => setRefundAmount(event.target.value)}
+                  step="0.01"
+                  type="number"
+                  value={refundAmount}
+                />
+              )}
+            </FormField>
             <FormField
               {...(openShifts.length === 0
                 ? { error: "Filialda ochiq smena topilmadi." }

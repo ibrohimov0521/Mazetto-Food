@@ -92,7 +92,8 @@ test("ochiq smena topilsa qaytariladi", async () => {
 
 test("jami summa faqat FAOL qatorlardan hisoblanadi", async () => {
   let capturedWhere: { status?: unknown } = {};
-  let written: { subtotal: Prisma.Decimal; total: Prisma.Decimal } | null = null;
+  let written: { subtotal: Prisma.Decimal; total: Prisma.Decimal } | null =
+    null;
   const tx = {
     orderItem: {
       findMany: async (args: { where: { status?: unknown } }) => {
@@ -130,6 +131,29 @@ test("jami summa faqat FAOL qatorlardan hisoblanadi", async () => {
   assert.equal(result.subtotal.toFixed(2), "15000.00");
   // 15000 - 1000 + 500 + 2000
   assert.equal(result.total.toFixed(2), "16500.00");
+});
+
+test("buyurtma chegirmasi qolgan mahsulotlardan oshsa jami manfiy bo'lmaydi", async () => {
+  let total = new Prisma.Decimal(-1);
+  const tx = {
+    orderItem: {
+      findMany: async () => [{ totalPrice: new Prisma.Decimal(1000) }],
+    },
+    order: {
+      findUnique: async () => ({
+        discountTotal: new Prisma.Decimal(2500),
+        serviceFeeTotal: new Prisma.Decimal(0),
+        deliveryFeeTotal: new Prisma.Decimal(0),
+      }),
+      update: async ({ data }: { data: { total: Prisma.Decimal } }) => {
+        total = data.total;
+        return {};
+      },
+    },
+  } as unknown as Tx;
+
+  await recalculateOrderTotals(tx, "o1");
+  assert.equal(total.toFixed(2), "0.00");
 });
 
 test("buyurtma topilmasa qayta hisoblash to'xtaydi", async () => {
