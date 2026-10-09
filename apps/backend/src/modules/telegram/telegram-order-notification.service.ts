@@ -253,6 +253,8 @@ export class TelegramOrderNotificationService {
           chat_id: this.staffChatId(),
           text: this.formatStaffOrderMessage(order),
           parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+          reply_markup: this.staffOrderKeyboard(order),
         },
         { maxAttempts: 1 },
       );
@@ -569,7 +571,7 @@ export class TelegramOrderNotificationService {
     const mapUrl = this.deliveryMapUrl(order.deliveryLocation);
 
     if (mapUrl) {
-      lines.push(`<b>Lokatsiya:</b> <a href="${mapUrl}">Google Maps</a>`);
+      lines.push("<b>Lokatsiya:</b> xaritada ochish");
     }
 
     return lines;
@@ -581,8 +583,16 @@ export class TelegramOrderNotificationService {
     }
 
     const record = location as Record<string, unknown>;
-    const latitude = Number(record.latitude);
-    const longitude = Number(record.longitude);
+    const rawLatitude = record.latitude;
+    const rawLongitude = record.longitude;
+    if (
+      (typeof rawLatitude !== "number" && (typeof rawLatitude !== "string" || !rawLatitude.trim())) ||
+      (typeof rawLongitude !== "number" && (typeof rawLongitude !== "string" || !rawLongitude.trim()))
+    ) {
+      return null;
+    }
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
 
     if (
       !Number.isFinite(latitude) ||
@@ -612,8 +622,14 @@ export class TelegramOrderNotificationService {
       .filter((value): value is string => Boolean(value));
   }
 
-  private clearedOrderKeyboard(): TelegramInlineKeyboard {
-    return { inline_keyboard: [] };
+  private staffOrderKeyboard(order: StaffOrderForMessage): TelegramInlineKeyboard {
+    const type = order.customerOrder?.type ?? order.type;
+    const mapUrl = type === "DELIVERY" ? this.deliveryMapUrl(order.deliveryLocation) : null;
+    return {
+      inline_keyboard: mapUrl
+        ? [[{ text: "📍 Xaritada ochish", url: mapUrl }]]
+        : [],
+    };
   }
 
   private staffOrderTitle(status: OrderStatus, type?: string): string {
@@ -694,7 +710,8 @@ export class TelegramOrderNotificationService {
       chat_id: chatId,
       text: this.formatStaffOrderMessage(order),
       parse_mode: "HTML",
-      reply_markup: this.clearedOrderKeyboard(),
+      link_preview_options: { is_disabled: true },
+      reply_markup: this.staffOrderKeyboard(order),
     };
 
     if (messageId) {
@@ -725,7 +742,8 @@ export class TelegramOrderNotificationService {
       chat_id: order.staffTelegramChatId ?? this.staffChatId(),
       text: this.formatStaffOrderMessage(order),
       parse_mode: "HTML",
-      reply_markup: this.clearedOrderKeyboard(),
+      link_preview_options: { is_disabled: true },
+      reply_markup: this.staffOrderKeyboard(order),
     };
 
     if (order.staffTelegramMessageId) {

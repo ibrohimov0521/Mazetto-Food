@@ -9,7 +9,7 @@ import { CourierOrderStatus } from "../customers/dto/list-customers.dto";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { TablesService } from "../tables/tables.service";
 import { CashRegisterService } from "../cash-register/cash-register.service";
-import { TelegramCustomerScreenService, type TelegramReplyButton } from "./telegram-customer-screen.service";
+import { TelegramCustomerScreenService } from "./telegram-customer-screen.service";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
@@ -342,12 +342,6 @@ export class TelegramStaffService implements OnModuleInit {
       },
     ]);
 
-    const keyboard: TelegramReplyButton[][] = [["👔 Xodim paneli"]];
-    if (staff.user.roles.includes("COURIER")) keyboard.push(["🚚 Kuryer buyurtmalari"]);
-    if (this.canUseKitchen(staff)) keyboard.push(["🍳 Oshxona buyurtmalari"]);
-    if (staff.user.roles.includes("WAITER")) keyboard.push(["🍽 Ofitsiant buyurtmalari"]);
-    if (this.canUseCashier(staff)) keyboard.push(["💵 Kassa"]);
-
     await this.screen.renderWithToken(this.botToken,
       this.screenTarget(chatId, messageId),
       {
@@ -362,8 +356,6 @@ export class TelegramStaffService implements OnModuleInit {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: rows,
-          keyboard,
-          resize_keyboard: true,
         },
       },
     );
