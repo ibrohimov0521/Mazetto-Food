@@ -130,6 +130,7 @@ test("cancellation receipt visibly includes its reason", () => {
 test("receipt profiles customize title, common text, logo, sizes, and visible fields safely", () => {
   const profile = defaultReceiptPrintProfile();
   profile.businessName = "Mazetto <Food>";
+  profile.businessNameEnabled = true;
   profile.logoEnabled = true;
   profile.commonHeaderLines = ["Umumiy <yuqori yozuv>"];
   profile.commonFooterLines = ["Umumiy pastki yozuv"];
@@ -160,8 +161,26 @@ test("receipt profiles customize title, common text, logo, sizes, and visible fi
   assert.doesNotMatch(html, /SECRET-ORDER|Naqd/);
 });
 
+test("receipt profile can hide the logo and organization name independently of their saved values", () => {
+  const profile = defaultReceiptPrintProfile();
+  profile.businessName = "MAZETTO FOOD";
+  profile.businessNameEnabled = false;
+  profile.logoEnabled = false;
+
+  const html = printableReceiptHtml(
+    { content: { orderNumber: "42" } },
+    { paperFormat: "ROLL", paperWidthMm: 80 },
+    profile,
+    "data:image/png;base64,ZmFrZQ==",
+  );
+
+  assert.doesNotMatch(html, /<img class="logo"/);
+  assert.doesNotMatch(html, /MAZETTO FOOD/);
+});
+
 test("receipt profile normalization bounds text, lines and sizes while preserving defaults", () => {
   const normalized = normalizeReceiptPrintProfile({
+    businessNameEnabled: false,
     logoEnabled: false,
     commonHeaderLines: [" bir ", "", "ikki", "uch", "to'rt", "besh", "oltinchi"],
     documents: {
@@ -175,6 +194,7 @@ test("receipt profile normalization bounds text, lines and sizes while preservin
     },
   });
 
+  assert.equal(normalized.businessNameEnabled, false);
   assert.equal(normalized.logoEnabled, false);
   assert.deepEqual(normalized.commonHeaderLines, ["bir", "ikki", "uch", "to'rt", "besh"]);
   assert.equal(normalized.documents.KITCHEN.fontSizePx, 24);

@@ -166,7 +166,7 @@ export function printableReceiptHtml(
   <body>
     <header>
       ${logo}
-      ${profile.businessName ? `<div class="business-name"><strong>${escapeHtml(profile.businessName)}</strong></div>` : ""}
+      ${profile.businessNameEnabled && profile.businessName ? `<div class="business-name"><strong>${escapeHtml(profile.businessName)}</strong></div>` : ""}
       ${commonTopLines ? `<div class="common-lines">${commonTopLines}</div>` : ""}
       ${fields.branchName && content.branchName ? `<div>${escapeHtml(String(content.branchName))}</div>` : ""}
       <div class="document-title ${cancelled || refunded ? "alert" : ""}">${escapeHtml(heading)}</div>

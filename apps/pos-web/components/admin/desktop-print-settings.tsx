@@ -31,6 +31,7 @@ type ReceiptDocument = {
 };
 type ReceiptProfile = {
   businessName: string;
+  businessNameEnabled: boolean;
   logoEnabled: boolean;
   commonHeaderLines: string[];
   commonFooterLines: string[];
@@ -464,8 +465,12 @@ export function DesktopPrintSettings() {
                   <section className="grid gap-4 border-b border-mz-border pb-5">
                     <h2 className="text-base font-semibold text-mz-text">Barcha cheklarga umumiy</h2>
                     <label className="grid gap-1 text-xs font-semibold text-mz-text">
-                      Tashkilot nomi
+                      Chekdagi tashkilot nomi
                       <input className="min-h-10 rounded-mz-control border border-mz-border bg-mz-surface px-3 text-sm font-normal" maxLength={80} onChange={(event) => { setProfile({ ...profile, businessName: event.target.value }); setReceiptDirty(true); }} value={profile.businessName} />
+                    </label>
+                    <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-mz-text">
+                      <input checked={profile.businessNameEnabled} className="h-4 w-4 accent-mz-primary" onChange={(event) => { setProfile({ ...profile, businessNameEnabled: event.target.checked }); setReceiptDirty(true); }} type="checkbox" />
+                      Tashkilot nomini cheklarda chiqarish
                     </label>
                     <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-mz-text">
                       <input checked={profile.logoEnabled} className="h-4 w-4 accent-mz-primary" onChange={(event) => { setProfile({ ...profile, logoEnabled: event.target.checked }); setReceiptDirty(true); }} type="checkbox" />
