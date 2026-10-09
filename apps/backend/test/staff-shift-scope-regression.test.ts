@@ -40,7 +40,7 @@ test("kitchen queue stays branch-scoped and history is paged without financial o
   assert.match(active, /trimKitchenQueue\(tickets\)/);
 
   assert.doesNotMatch(active, /changedByEmployeeId: employeeId/);
-  assert.match(history, /this\.requireEmployee\(user\)/);
+  assert.doesNotMatch(history, /this\.requireEmployee\(user\)/);
   assert.match(history, /resolveRestaurantScope\(this\.prisma, user\)/);
   assert.match(history, /tenantId: scope\.tenantId/);
   assert.match(history, /kitchenHistoryRange\(query\.from, query\.to\)/);
