@@ -1654,7 +1654,12 @@ export class OrdersService {
       throw new BadRequestException("POS checkout is already in progress");
     }
 
-    return this.findOrderById(operation.orderId, tx);
+    const order = await this.findOrderById(operation.orderId, tx);
+    if (order.paymentStatus !== PaymentStatus.PAID) return order;
+
+    // Older committed POS sales may predate receipt creation. Repair on replay.
+    await ensureOrderReceipt(tx, order.id);
+    return this.findOrderById(order.id, tx);
   }
 
   private async resolveExistingPosCheckoutByKey(

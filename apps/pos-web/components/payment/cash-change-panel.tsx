@@ -1,9 +1,7 @@
 "use client";
 
-import { Eraser, Wallet } from "lucide-react";
 import styles from "../staff/staff.module.css";
 import { formatMoney } from "../../lib/order-display";
-import { CASH_DENOMINATIONS } from "./payment-methods";
 
 export type CashState = {
   /** Mijoz uzatgan naqd pul. Bo'sh maydon = aniq summa. */
@@ -64,11 +62,6 @@ export function CashChangePanel({
   cash: CashState;
   disabled?: boolean;
 }) {
-  function addDenomination(amount: number) {
-    const base = value.trim() ? Number(value) : cashDue;
-    onChange(String((Number.isFinite(base) ? base : 0) + amount));
-  }
-
   return (
     <div className={styles.payCash}>
       <label className={styles.field}>
@@ -86,38 +79,6 @@ export function CashChangePanel({
           onChange={(event) => onChange(event.target.value)}
         />
       </label>
-      <div className={styles.payDenoms}>
-        <button
-          className={styles.payDenomExact}
-          disabled={disabled}
-          onClick={() => onChange(String(cashDue))}
-          type="button"
-        >
-          <Wallet size={16} aria-hidden="true" />
-          Aniq summa
-        </button>
-        {CASH_DENOMINATIONS.map((amount) => (
-          <button
-            key={amount}
-            disabled={disabled}
-            aria-label={`${amount} so'm qo'shish`}
-            onClick={() => addDenomination(amount)}
-            type="button"
-          >
-            +{amount.toLocaleString("uz-UZ")}
-          </button>
-        ))}
-        <button
-          className={styles.payDenomClear}
-          disabled={disabled || !value.trim()}
-          aria-label="Naqd summani tozalash"
-          title="Tozalash"
-          onClick={() => onChange("")}
-          type="button"
-        >
-          <Eraser size={16} aria-hidden="true" />
-        </button>
-      </div>
       <div
         className={styles.payChange}
         data-tone={cash.shortfall > 0 ? "short" : "change"}

@@ -166,12 +166,13 @@ export function PanelNavbar({
       </div>
 
       <PanelSwitcher
+        className="hidden min-w-0 flex-1 xl:flex"
         user={user}
         variant="dark"
         staffMode={Boolean(title)}
       />
 
-      <div className="min-w-0 flex-1" />
+      <div className="min-w-0 flex-1 xl:hidden" />
       <div className="mz-panel-runtime-status">
         <DesktopStatusBadge />
         <DesktopUpdateBadge />
@@ -219,6 +220,12 @@ export function PanelNavbar({
                 {primaryRoleLabel(user)}
               </p>
             </div>
+            <PanelSwitcher
+              className="border-b border-mz-border px-3 py-2 xl:hidden"
+              user={user}
+              variant="light"
+              staffMode={Boolean(title)}
+            />
             <button
               className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-mz-text transition hover:bg-mz-surface-sunken"
               onClick={() => {
