@@ -186,9 +186,10 @@ export class CashRegisterController {
   @Permissions(PERMISSIONS.SHIFT_VIEW_OWN)
   getTransactions(
     @Param("id") id: string,
+    @Query() query: { limit?: string; offset?: string },
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.cashRegisterService.getTransactions(id, user);
+    return this.cashRegisterService.getTransactions(id, query, user);
   }
 
   @Post("shift/:id/transactions")

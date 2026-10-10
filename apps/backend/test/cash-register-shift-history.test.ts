@@ -167,6 +167,81 @@ test("cashier shift history only requests their own tenant-scoped shifts", async
   assert.equal(shifts[0]?.orderCount, 1);
 });
 
+test("shift cash transaction history returns a stable, paginated page and exact total", async () => {
+  const captured: {
+    transactionQuery?: Record<string, unknown>;
+    countWhere?: unknown;
+  } = {};
+  const rows = [{ id: "transaction-101" }];
+  const service = new CashRegisterService(
+    {
+      branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+      shift: {
+        findFirst: async () => ({
+          id: "shift-a",
+          branchId: "branch-a",
+          employeeId: "employee-a",
+        }),
+      },
+      cashTransaction: {
+        findMany: async (query: Record<string, unknown>) => {
+          captured.transactionQuery = query;
+          return rows;
+        },
+        count: async ({ where }: { where: unknown }) => {
+          captured.countWhere = where;
+          return 101;
+        },
+      },
+    } as never,
+    {} as never,
+  );
+
+  assert.deepEqual(
+    await service.getTransactions(
+      "shift-a",
+      { limit: "500", offset: "50" },
+      cashier,
+    ),
+    { items: rows, total: 101 },
+  );
+  assert.deepEqual(captured.transactionQuery?.where, { shiftId: "shift-a" });
+  assert.deepEqual(captured.transactionQuery?.orderBy, [
+    { occurredAt: "desc" },
+    { id: "desc" },
+  ]);
+  assert.equal(captured.transactionQuery?.skip, 50);
+  assert.equal(captured.transactionQuery?.take, 100);
+  assert.deepEqual(captured.countWhere, { shiftId: "shift-a" });
+});
+
+test("cash transaction history returns an empty page for an unknown shift", async () => {
+  let queriedTransactions = false;
+  const service = new CashRegisterService(
+    {
+      branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+      shift: { findFirst: async () => null },
+      cashTransaction: {
+        findMany: async () => {
+          queriedTransactions = true;
+          return [];
+        },
+        count: async () => {
+          queriedTransactions = true;
+          return 0;
+        },
+      },
+    } as never,
+    {} as never,
+  );
+
+  assert.deepEqual(
+    await service.getTransactions("missing-shift", { limit: "50" }, cashier),
+    { items: [], total: 0 },
+  );
+  assert.equal(queriedTransactions, false);
+});
+
 test("branch shift viewers can open a historical shift within their tenant", async () => {
   const captured: { shiftQuery?: Record<string, unknown> } = {};
   const manager: AuthenticatedUser = {

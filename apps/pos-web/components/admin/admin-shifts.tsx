@@ -118,6 +118,11 @@ type CashTransaction = {
   order?: { id: string; orderNumber: string } | null;
 };
 
+type CashTransactionPage = {
+  items: CashTransaction[];
+  total: number;
+};
+
 const cashTypeLabels: Record<CashTransactionType, string> = {
   OPENING: "Boshlang'ich",
   OPENING_BALANCE: "Boshlang'ich qoldiq",
@@ -160,6 +165,7 @@ function cashTypeTone(type: CashTransactionType): BadgeTone {
 }
 
 const pageSize = 25;
+const transactionPageSize = 50;
 
 function employeeName(employee: Employee | undefined): string {
   if (!employee) {
@@ -915,30 +921,37 @@ function ShiftDetailModal({
   shift: Shift | null;
 }) {
   const shiftId = shift?.id ?? "";
+  const [transactionPage, setTransactionPage] = useState({
+    shiftId: "",
+    offset: 0,
+  });
+  const transactionOffset =
+    transactionPage.shiftId === shiftId ? transactionPage.offset : 0;
 
   const {
-    data: transactions,
+    data: transactionPageData,
     isLoading,
     error,
     reload,
-  } = useApiResource<CashTransaction[]>(
+  } = useApiResource<CashTransactionPage>(
     () =>
       shiftId
-        ? apiFetch<CashTransaction[]>(
-            `/cash-register/shift/${shiftId}/transactions`,
+        ? apiFetch<CashTransactionPage>(
+            `/cash-register/shift/${shiftId}/transactions?limit=${transactionPageSize}&offset=${transactionOffset}`,
           )
-        : Promise.resolve([]),
+        : Promise.resolve({ items: [], total: 0 }),
     /*
      * `closedAt` ham bog'liqlik: smena yopilgandan keyin oyna AYNI shu
      * `id` bilan qayta ochiladi, lekin kassa daftariga `CLOSING_BALANCE`
      * yozuvi qo'shilgan bo'ladi. Faqat `shiftId` ga tayansak, jadval
      * yopilishdan oldingi holatni ko'rsatib turardi.
      */
-    [shiftId, shift?.closedAt ?? ""],
+    [shiftId, shift?.closedAt ?? "", transactionOffset],
     "Kassa harakatlarini yuklab bo'lmadi.",
   );
 
-  const rows = transactions ?? [];
+  const rows = transactionPageData?.items ?? [];
+  const transactionTotal = transactionPageData?.total ?? 0;
 
   const columns: DataTableColumn<CashTransaction>[] = [
     {
@@ -1149,6 +1162,20 @@ function ShiftDetailModal({
                 scrollHeightClass="max-h-72"
               />
             )}
+            {!error && !isLoading &&
+            (transactionTotal > transactionPageSize || transactionOffset > 0) ? (
+              <Pagination
+                count={rows.length}
+                isLoading={isLoading}
+                noun="harakat"
+                offset={transactionOffset}
+                onOffsetChange={(offset) =>
+                  setTransactionPage({ shiftId, offset })
+                }
+                pageSize={transactionPageSize}
+                total={transactionTotal}
+              />
+            ) : null}
           </Card>
 
           {rows.some((row) => row.cashTransferId) ? (
