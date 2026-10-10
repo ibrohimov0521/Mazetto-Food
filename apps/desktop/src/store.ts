@@ -1230,7 +1230,11 @@ export class DesktopStore {
          WHERE auth_scope = ?
            ${branchFilter}
            AND state IN ('pending', 'sending', 'conflict', 'dead_letter')
-           AND command_type IN ('pos.order.create', 'payment.process')
+           AND command_type IN (
+             'pos.order.create',
+             'payment.process',
+             'cash.transaction.create'
+           )
          LIMIT 1`,
       )
       .get(...(branchId ? [authScope, branchId] : [authScope]));
