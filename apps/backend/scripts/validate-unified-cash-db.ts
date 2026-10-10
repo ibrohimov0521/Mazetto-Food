@@ -2,7 +2,7 @@ import "reflect-metadata";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { OrderSource, OrderStatus } from "@prisma/client";
+import { OrderSource, OrderStatus, PaymentStatus } from "@prisma/client";
 import { CourierOrderStatus } from "../src/modules/customers/dto/list-customers.dto";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { ShiftsService } from "../src/modules/shifts/shifts.service";
@@ -149,6 +149,22 @@ async function main() {
     assert.equal(await prisma.payment.count({ where: { orderId: pos.order.id } }), 1);
     assert.equal(await prisma.kitchenTicket.count({ where: { orderId: pos.order.id } }), 1);
     assert.equal(await balance(), 10000);
+    const unpaidHallOrder = await prisma.order.create({
+      data: {
+        branchId: branch.id,
+        shiftId: sourceShift.id,
+        orderNumber: "QA" + crypto.randomUUID(),
+        source: OrderSource.POS,
+        type: "DINE_IN",
+        status: OrderStatus.NEW,
+        paymentStatus: PaymentStatus.PENDING,
+        subtotal: 7000,
+        total: 7000,
+        createdById: worker.employeeId!,
+        acceptedById: worker.employeeId!,
+      },
+    });
+    assert.equal(await prisma.payment.count({ where: { orderId: unpaidHallOrder.id } }), 0);
     const pickup = await online("TAKEAWAY", 20000);
     const ticket = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: pickup.order.id } });
     await assert.rejects(() => kitchen.completeTicket(ticket.id, worker), /kassada to'lovni qabul qiling/);
@@ -265,6 +281,9 @@ async function main() {
     assert.equal(closed.cashTotal.toNumber(), 60000);
     assert.equal(closed.terminalTotal.toNumber(), 0);
     assert.equal(closed.salesTotal.toNumber(), 60000);
+    const closedShiftOrders = await cash.getShiftOrders(sourceShift.id, {}, worker);
+    assert.ok(closedShiftOrders.some(({ id }) => id === unpaidHallOrder.id));
+    assert.equal(closed.orderCount, closedShiftOrders.length);
     assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: pos.order.id } })).shiftId, sourceShift.id);
 
     const roleCodes = ["KITCHEN", "COURIER"];

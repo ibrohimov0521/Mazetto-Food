@@ -243,3 +243,15 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Manual cash entries now conditionally update the still-open shift row after validating the request and before writing the ledger entry. This serializes the entry with close, POS payment, refund, and transfer operations; if closure wins, the write is rejected instead of being attached to a closed shift.
 - The same endpoint also accepted system-owned `SALE`, `REFUND`, transfer, opening, and closing ledger types. Those could forge cash or shift totals outside their real workflows. Manual requests now accept only `INCOME`, `EXPENSE`, and `WITHDRAW`; sales, refunds, transfers, and shift lifecycle entries remain owned by their corresponding operations.
 - The disposable PostgreSQL integration smoke now holds a shift row in one transaction and verifies that a manual cash entry waits for that lock. Cash transaction idempotency and tenant-link regression tests were updated. Desktop now rejects system-owned types while offline instead of queuing impossible ledger writes; its gateway projects only the same three manual types. Local validation: backend tests 572/572, Desktop gateway tests 45/45, changed-file ESLint, backend app/scripts and Desktop TypeScript checks, and Nest build passed. The real PostgreSQL check remains gated by PR CI; no schema migration is required.
+
+## Release confirmation: manual cash entries and shift closure
+
+- PR #284 was squash-merged as `05b7a0a70f66870d0e88fa9c5a17bf04582f172f`; Main CI #801 and production Deploy #318 succeeded, including production smoke. The `production` tag was advanced to the merge commit.
+- Desktop 0.1.113 was published with the matching offline cash-entry validation. It still needs to be installed on the restaurant workstation.
+- A separate read-only production smoke passed 27/27 checks for the API/database, customer site, `www`, POS, owner login, media, and public catalogue assets.
+
+## Audit continuation: unpaid hall orders in shift-close counts
+
+- POS `DINE_IN` orders intentionally enter the kitchen before payment and are directly assigned to the cashier's open shift. Because they have no payment/revenue row yet, shift-close `orderCount` previously counted only revenue-linked orders and omitted these unpaid hall orders.
+- Shift-close count now includes orders directly linked through `Order.shiftId` plus legacy revenue-linked orders. Prisma's `OR` count includes each matching order once. Regression coverage verifies the query and closing snapshot; the disposable PostgreSQL cash smoke also checks that an unpaid hall order appears in the closed shift's order list and that the saved count matches that list.
+- Local validation passed: backend tests 572/572, changed-file ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check`. The PostgreSQL integration check remains for PR CI; no schema change is needed.
