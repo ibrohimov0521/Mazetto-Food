@@ -26,7 +26,7 @@ export function CustomerAuthPanel({
 }) {
   const locale = useLocale();
   const t = useTranslations("Customer");
-  const { customer, setCustomer, showToast } = useCart();
+  const { customer, customerReady, setCustomer, showToast } = useCart();
   const [name, setName] = useState(customer?.name ?? "");
   const [phone, setPhone] = useState(nationalPhoneValue(customer?.phone ?? ""));
   const [code, setCode] = useState("");
@@ -161,6 +161,14 @@ export function CustomerAuthPanel({
   const resendInSeconds = resendAt
     ? Math.max(0, Math.ceil((resendAt - now) / 1000))
     : 0;
+  if (!customerReady) {
+    return (
+      <div aria-busy="true" aria-label="Sessiya tekshirilmoqda" className="mf-card-soft min-h-24 p-4" role="status">
+        <div className="h-4 w-36 animate-pulse rounded bg-[#17314A]/10" />
+        <div className="mt-3 h-3 w-56 max-w-full animate-pulse rounded bg-[#17314A]/10" />
+      </div>
+    );
+  }
 
   if (customer?.accessToken) {
     return (

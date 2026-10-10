@@ -28,7 +28,7 @@ function CartReview() {
   const locale = useLocale();
   const meta = useTranslations("CustomerMeta");
   const t = useTranslations("Customer");
-  const { customer, items, removeItem, subtotal, updateQuantity, fulfillment, openFulfillment } = useCart();
+  const { customer, customerReady, items, removeItem, subtotal, updateQuantity, fulfillment, openFulfillment } = useCart();
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Category[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -138,7 +138,7 @@ function CartReview() {
 
       {items.length ? <section className="mf-cart-summary min-w-0 h-fit" aria-label={t("buyurtma_xulosasi_db1cafac")}>
         <h2 className="text-2xl font-black text-[#17314A]">{t("xulosa_39195b11")}</h2>
-        {!customer?.accessToken ? (
+        {customerReady && !customer?.accessToken ? (
           <div className="mf-surface-note mt-4 rounded-2xl px-4 py-3 text-sm font-bold">
             {t("buyurtma_berish_uchun_telefon_raqaming_9bc83fb6")}</div>
         ) : null}
