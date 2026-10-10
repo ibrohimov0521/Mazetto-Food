@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PaymentStatus, Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PaymentsService } from "../src/modules/payments/payments.service";
 
@@ -114,6 +115,69 @@ test("foreign order is rejected before an idempotency replay lookup", async () =
     branch: { tenantId: "tenant-a" },
   });
   assert.equal(operationReads, 0);
+});
+
+test("cashier cannot collect more than the balance after a partial refund", async () => {
+  const order = {
+    id: "order-a",
+    branchId: "branch-a",
+    total: new Prisma.Decimal(74000),
+    status: "COMPLETED",
+    source: "WEB",
+    payments: [
+      {
+        amount: new Prisma.Decimal(74000),
+        status: PaymentStatus.PARTIALLY_REFUNDED,
+        refunds: [{ amount: new Prisma.Decimal(24000) }],
+      },
+    ],
+    receipts: [],
+  };
+  let orderReads = 0;
+  let paymentMethodLookup = false;
+  const transaction = {
+    $executeRaw: async () => 1,
+    order: {
+      findFirst: async () => {
+        orderReads += 1;
+        return orderReads === 1 ? { id: order.id } : order;
+      },
+    },
+    paymentOperation: {
+      findUnique: async () => null,
+      create: async () => ({ id: "operation-a" }),
+    },
+    shift: {
+      findFirst: async () => ({ id: "shift-a" }),
+      updateMany: async () => ({ count: 1 }),
+    },
+    employee: { findFirst: async () => ({ id: "employee-a" }) },
+    paymentMethod: {
+      findFirst: async () => {
+        paymentMethodLookup = true;
+        throw new Error("Payment method lookup should not be reached");
+      },
+    },
+  };
+  const service = new PaymentsService({ ...tenantLookup } as never);
+
+  await assert.rejects(
+    service.processOrderPayment(
+      {
+        orderId: "order-a",
+        shiftId: "shift-a",
+        idempotencyKey: "refund-balance-overpayment",
+        payments: [{ paymentMethodCode: "CASH", amount: 50000 }],
+      } as never,
+      cashier,
+      undefined,
+      undefined,
+      undefined,
+      transaction as never,
+    ),
+    /Payment amount exceeds outstanding balance/,
+  );
+  assert.equal(paymentMethodLookup, false);
 });
 
 test("foreign payment is rejected before refund replay lookup", async () => {
