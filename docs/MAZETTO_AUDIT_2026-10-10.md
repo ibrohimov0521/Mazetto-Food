@@ -207,3 +207,10 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - The customer order-detail page uses a localized payment-status label. A partially refunded tender was missing from both Uzbek and Russian label maps, so it appeared as an unknown status instead of explaining what happened.
 - The label now says `Qisman qaytarilgan` in Uzbek and `Частичный возврат` in Russian. Existing unknown-status fallbacks remain unchanged.
 - Regression tests cover both locales and unknown statuses. Local validation passed: customer-web tests 20/20, focused ESLint, TypeScript, and optimized Next.js production build. No schema migration is required; PR CI and production deployment remain the release gate.
+
+## Audit continuation: pending cash transfer and recipient shift closure
+
+- A cashier could close a shift that had an incoming cash transfer still awaiting acceptance. The transfer remained pinned to the closed shift, so the intended cashier could no longer accept or reject it. A forced close also left that inbound transfer stranded.
+- Ordinary close now blocks while an incoming transfer is pending. Forced close unassigns pending inbound transfers while preserving their `PENDING` status, so another authorized cashier in the same branch can accept or reject them through the existing queue. The force-close audit entry records how many incoming transfers were unassigned.
+- Normal and administrator-forced transfer creation now lock source and recipient shifts in deterministic ID order. The normal path re-reads and validates both under lock before checking cash and creating ledger rows. This closes the recipient-close race and avoids lock-order deadlocks between normal and forced transfers.
+- Regression tests cover both transfer lock orders/idempotent replay, target shift closure during transfer creation, incoming-transfer close blocking, and force-close recovery. Validation passed: backend tests 571/571, transient HTTP retry tests 3/3, changed-file ESLint, backend app and scripts TypeScript checks, Nest build, and `git diff --check`. No schema change or migration is required; PR CI and production release remain the gate.
