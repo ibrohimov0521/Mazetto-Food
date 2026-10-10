@@ -29,6 +29,7 @@ import {
   paymentMethodLabel,
   type PaymentMethodCode,
 } from "../../../../components/payment/payment-methods";
+import { calculateOutstandingPaymentBalance } from "../../../../lib/payment-balance.mjs";
 import {
   apiFetch,
   isOfflineQueuedResult,
@@ -61,7 +62,12 @@ type Order = {
     quantity: string;
     totalPrice: string;
   }[];
-  payments: { id: string; amount: string; status: string }[];
+  payments: {
+    id: string;
+    amount: string;
+    status: string;
+    refunds?: { amount: string }[];
+  }[];
 };
 type Shift = { id: string; status: string; shiftNumber?: number } | null;
 type PaymentMethodOption = { code: PaymentMethodCode; name: string };
@@ -88,7 +94,6 @@ type Completion = {
 const createPaymentKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
-const successStatuses = ["PAID", "SUCCESS"];
 const orderPageSize = 50;
 
 export default function PaymentPage() {
@@ -278,11 +283,18 @@ function PaymentTerminal() {
     [orders, selectedOrderId],
   );
   const total = Number(selectedOrder?.total ?? 0);
-  const alreadyPaid =
-    selectedOrder?.payments
-      .filter((payment) => successStatuses.includes(payment.status))
-      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0) ?? 0;
-  const outstanding = Math.max(0, total - alreadyPaid);
+  const paymentBalance = selectedOrder
+    ? calculateOutstandingPaymentBalance(
+        selectedOrder.total,
+        selectedOrder.payments,
+      )
+    : null;
+  const paymentBalanceValid = !selectedOrder || paymentBalance !== null;
+  const alreadyPaid = paymentBalance?.paid ?? 0;
+  const outstanding = paymentBalance?.outstanding ?? 0;
+  const outstandingLabel = paymentBalanceValid
+    ? formatMoney(outstanding)
+    : "Tekshirish kerak";
   const isSplit = tenders.length > 1;
 
   /*
@@ -316,9 +328,12 @@ function PaymentTerminal() {
   const needsShift = payload.length > 0;
   const shiftMissing = needsShift && currentShift?.status !== "OPEN";
   const splitMismatch =
-    isSplit && Math.round(payloadTotal) !== Math.round(outstanding);
+    paymentBalanceValid &&
+    isSplit &&
+    Math.round(payloadTotal) !== Math.round(outstanding);
   const canSubmit =
     !!selectedOrder &&
+    paymentBalanceValid &&
     outstanding > 0 &&
     payload.length > 0 &&
     enabledPaymentMethods.length > 0 &&
@@ -589,7 +604,7 @@ function PaymentTerminal() {
                     </div>
                     <div className={styles.payTotalBox}>
                       <span>To'lanishi kerak</span>
-                      <strong>{formatMoney(outstanding)}</strong>
+                      <strong>{outstandingLabel}</strong>
                       {alreadyPaid > 0 ? (
                         <small>
                           Jami {formatMoney(total)} · To'langan{" "}
@@ -617,7 +632,11 @@ function PaymentTerminal() {
                     {enabledPaymentMethods.length > 1 ? (
                       <button
                         className={styles.button}
-                        disabled={isSubmitting || outstanding <= 0}
+                        disabled={
+                          isSubmitting ||
+                          !paymentBalanceValid ||
+                          outstanding <= 0
+                        }
                         onClick={addTender}
                         type="button"
                       >
@@ -691,7 +710,7 @@ function PaymentTerminal() {
                         ) : (
                           <div className={styles.payFixedAmount}>
                             <span>Summa</span>
-                            <strong>{formatMoney(outstanding)}</strong>
+                            <strong>{outstandingLabel}</strong>
                           </div>
                         )}
                       </div>
@@ -714,7 +733,7 @@ function PaymentTerminal() {
                       </div>
                       <div className={styles.paySummaryRow}>
                         <span>Qoldiq</span>
-                        <b>{formatMoney(outstanding)}</b>
+                        <b>{outstandingLabel}</b>
                       </div>
                     </div>
                   ) : null}
@@ -722,7 +741,7 @@ function PaymentTerminal() {
                   {splitMismatch ? (
                     <p className={styles.note}>
                       Aralash to'lovda summalar yig'indisi qoldiqqa aniq teng
-                      bo'lishi shart: {formatMoney(outstanding)}.
+                      bo'lishi shart: {outstandingLabel}.
                     </p>
                   ) : null}
 
@@ -737,6 +756,24 @@ function PaymentTerminal() {
                       cash={cash}
                       disabled={isSubmitting}
                     />
+                  ) : null}
+
+                  {selectedOrder && !paymentBalanceValid ? (
+                    <div className={styles.error} role="alert">
+                      <span>
+                        To'lov yoki qaytarish ma'lumoti to'liq emas. Pul qabul
+                        qilishdan oldin buyurtmalarni yangilang.
+                      </span>
+                      <button
+                        className={styles.button}
+                        disabled={isLoading || isSubmitting}
+                        onClick={() => void loadOrders()}
+                        type="button"
+                      >
+                        <RotateCcw size={16} aria-hidden="true" />
+                        Yangilash
+                      </button>
+                    </div>
                   ) : null}
 
                   {shiftMissing ? (
@@ -754,7 +791,7 @@ function PaymentTerminal() {
                     </div>
                   ) : null}
 
-                  {outstanding <= 0 ? (
+                  {paymentBalanceValid && outstanding <= 0 ? (
                     <p className={styles.note}>
                       Bu buyurtmada to'lanishi kerak summa qolmagan.
                     </p>
@@ -785,7 +822,7 @@ function PaymentTerminal() {
                       <Banknote size={20} aria-hidden="true" />
                       {isSubmitting
                         ? "Qabul qilinmoqda..."
-                        : `Tasdiqlashga o'tish · ${formatMoney(outstanding)}`}
+                        : `Tasdiqlashga o'tish · ${outstandingLabel}`}
                     </button>
                   </div>
                 </div>

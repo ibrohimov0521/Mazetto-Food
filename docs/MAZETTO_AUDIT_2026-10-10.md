@@ -178,6 +178,13 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - PR #276 was squash-merged as `2a698a7755c3c9fbf24adb68dc3ff38f2ac476a0`; main CI and production Deploy #310 succeeded. The `production` tag points to that commit.
 - Read-only production checks returned HTTP 200 for API health, POS history, and the customer site. The server checkout is clean on `main` at the deployed commit.
 
+## Audit continuation: POS payment screens and partial refunds
+
+- The backend and kitchen/courier paths already subtract refund rows from the amount collected, but the cashier payment queue still counted only `PAID` and `SUCCESS` rows and ignored `PARTIALLY_REFUNDED`. A 74,000 so'm tender with a 24,000 so'm refund could therefore display 74,000 due instead of 24,000. The order-list API includes refund rows, so the POS can calculate this accurately without a schema change or new endpoint.
+- Cashier balance now uses validated integer minor units, subtracts every recorded refund, and excludes pending, failed, and fully refunded tenders. Missing refund details for a partial-refund tender, malformed amounts, or refunds larger than their original tender fail closed: the UI shows a warning and disables payment until the cashier refreshes.
+- Admin payment-page totals now include partially refunded tenders as collected gross amounts and show returned money in a separate summary. This retains consistency with sales reports, where gross collections and refunds are distinct ledger facts. The five summary values reflow responsively.
+- Regression tests cover partial and multiple tenders, excluded failed/fully-refunded tenders, missing or invalid refund details, and the admin ledger summary. Local validation passed: POS tests 56/56, focused ESLint, POS TypeScript, and optimized Next.js production build. `git diff --check` passed. CI and production release remain the release gate; no migration is required.
+
 ## Audit continuation: courier balance after a partial refund
 
 - Courier delivery lists and completion logic counted only `PAID`/`SUCCESS` payment rows and did not load refund details. A partially refunded order could show too much due and ask the courier to collect more than its net outstanding balance.

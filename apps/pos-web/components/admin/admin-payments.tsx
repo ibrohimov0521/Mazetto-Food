@@ -18,6 +18,7 @@ import {
   type PaymentStatus,
 } from "../../lib/order-display";
 import { paymentMethodLabel } from "../payment/payment-methods";
+import { summarizePaymentPage } from "../../lib/payment-balance.mjs";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
 import { Button, ButtonLink } from "../admin-ui/button";
@@ -37,7 +38,7 @@ import {
 } from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
 import { Pagination } from "../admin-ui/pagination";
-import { InfoBox, StatGrid } from "../admin-ui/stat-box";
+import { InfoBox } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
 import { moneyCell } from "./admin-report-views";
 
@@ -187,24 +188,7 @@ export function AdminPaymentsPage() {
   const payments = data ?? [];
 
   const stats = useMemo(() => {
-    const successful = payments.filter(
-      (payment) => payment.status === "PAID" || payment.status === "SUCCESS",
-    );
-    const amount = successful.reduce(
-      (sum, payment) => sum + Number(payment.amount ?? 0),
-      0,
-    );
-    const cash = successful
-      .filter(touchesCashDrawer)
-      .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
-
-    return {
-      successful: successful.length,
-      amount,
-      cash,
-      cashless: amount - cash,
-      total: payments.length,
-    };
+    return summarizePaymentPage(payments);
   }, [payments]);
 
   async function openRefund(payment: Payment) {
@@ -361,33 +345,45 @@ export function AdminPaymentsPage() {
   return (
     <div className="grid gap-5">
       {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
+      {!stats ? (
+        <p className="text-sm text-red-700" role="alert">
+          To'lov summalarini jamlab bo'lmadi. Ma'lumotni yangilang va
+          tekshiring.
+        </p>
+      ) : null}
 
-      <StatGrid>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <InfoBox
           icon="wallet"
           label="Ko'rsatilgan to'lov"
-          value={`${stats.total} ta`}
+          value={stats ? `${stats.total} ta` : "—"}
         />
         <InfoBox
           icon="check"
           label="Muvaffaqiyatli"
           tone="success"
-          value={`${stats.successful} ta`}
+          value={stats ? `${stats.successful} ta` : "—"}
         />
         <InfoBox
-          description="Kassa qutisiga yozilgan"
+          description="Qaytarishlar alohida ko'rsatiladi"
           icon="banknote"
           label="Naqd (sahifada)"
           tone="brand"
-          value={formatMoney(stats.cash)}
+          value={stats ? formatMoney(stats.cash) : "—"}
         />
         <InfoBox
           description="Karta va onlayn — qutiga tegmaydi"
           icon="globe"
           label="Naqdsiz (sahifada)"
-          value={formatMoney(stats.cashless)}
+          value={stats ? formatMoney(stats.cashless) : "—"}
         />
-      </StatGrid>
+        <InfoBox
+          description="Faqat shu sahifadagi yozuvlar"
+          icon="arrowDown"
+          label="Qaytarilgan"
+          value={stats ? formatMoney(stats.refunds) : "—"}
+        />
+      </div>
 
       <Card>
         <CardHeader
