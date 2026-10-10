@@ -14,7 +14,7 @@ const actor: AuthenticatedUser = {
   permissions: ["PAYMENT_REFUND"],
 };
 
-function fixture(methodCode = "CASH") {
+function fixture(methodCode = "CASH", orderTotal = 74000) {
   const calls: string[] = [];
   const refunds: {
     id: string;
@@ -36,7 +36,7 @@ function fixture(methodCode = "CASH") {
       id: "order-1",
       branchId: "branch-1",
       orderNumber: "109",
-      total: amount,
+      total: new Prisma.Decimal(orderTotal),
       branch: { id: "branch-1", name: "Sergeli" },
       items: [],
       payments: [],
@@ -189,10 +189,27 @@ test("partial cash refunds preserve a refundable balance and then close it exact
   );
 
   assert.ok(calls.includes("payment:PARTIALLY_REFUNDED"));
+  assert.ok(calls.includes("order:PENDING"));
   assert.equal(calls.filter((call) => call === "refund").length, 2);
   assert.ok(calls.includes("receipt:REFUND:refund-1"));
   assert.ok(calls.includes("receipt:REFUND:refund-2"));
   assert.equal(calls.at(-1), "order:REFUNDED");
+});
+
+test("partial cash refund keeps a fully covered order paid", async () => {
+  const { calls, service } = fixture("CASH", 50000);
+  await service.refundPayment(
+    "payment-1",
+    {
+      shiftId: "shift-1",
+      amount: 24000,
+      reason: "Ortiqcha tushum qaytarildi",
+      idempotencyKey: "refund-covered-order",
+    },
+    actor,
+  );
+
+  assert.equal(calls.at(-1), "order:PAID");
 });
 
 test("provider payment refund stays disabled until provider reconciliation exists", async () => {
