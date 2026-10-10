@@ -225,3 +225,14 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Rejection locked the cash-transfer row first, then the source shift. Forced shift close locks the source shift first and then updates pending transfer rows. Concurrent rejection and forced close could therefore wait on each other's locks and trigger a database deadlock/retry failure.
 - Rejection now reads the branch-scoped transfer to identify its immutable source shift, locks that source shift first, then locks and re-reads the transfer before applying any refund or status changes. Its lock order now agrees with forced close; if the source or transfer disappears during the sequence, the operation fails as not found without ledger writes.
 - Added regression coverage asserting source-shift-before-transfer lock order while preserving the existing exactly-once rejection/refund behavior. Validation passed: backend tests 571/571, transient HTTP retry tests 3/3, changed-file ESLint, backend app and scripts TypeScript checks, Nest build, and `git diff --check`. No schema change or migration is required; PR CI and production release remain the gate.
+
+## Release confirmation: cash transfer rejection lock order
+
+- PR #282 was squash-merged as `0e2dd774cfbc56876040e1a70dd98969aced8fdb`; Main CI #794 and production Deploy #316 succeeded, including production smoke. The `production` tag points to the merge commit.
+- Read-only checks again returned HTTP 200 for the customer site, `www` site, POS dashboard, and backend health endpoint.
+
+## Audit continuation: PostgreSQL cash-transfer recovery coverage
+
+- Unit coverage verifies that forced close unassigns a pending incoming transfer, but the disposable PostgreSQL integration smoke did not yet prove a replacement cashier can see and accept that transfer through the production query/transaction behavior.
+- Expanded only the isolated `cash_qa` integration scenario: create a pending transfer, force-close its recipient shift, verify it remains pending and unassigned, open the replacement cashier shift, verify the branch queue returns it, accept it, and assert exactly one incoming cash ledger row and the resulting balances. No production data or schema is involved.
+- The existing backend suite remains green at 571/571. This integration-script change passes focused ESLint and backend scripts TypeScript checks; PR CI must additionally pass the disposable PostgreSQL scenario before merge. No schema change or migration is required.
