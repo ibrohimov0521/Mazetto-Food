@@ -1,3 +1,8 @@
+/*
+ * TO'LOV HOLATI mijoz tilida, jumladan qisman qaytarilgan to'lovlar uchun.
+ */
+export { paymentStatusLabel } from "./payment-status-label.mjs";
+
 export type TrackedOrder = {
   status: string;
   type: string;
@@ -56,20 +61,4 @@ export function trackingTone(status: string): TrackingTone {
   if (status === "COMPLETED") return "done";
   if (status === "NEW") return "pending";
   return "progress";
-}
-
-/*
- * TO'LOV HOLATI mijoz tilida.
- *
- * Ilgari buyurtma sahifasida xom enum ko'rsatilardi ("PENDING"), va
- * to'lov yozuvi yo'q naqd buyurtmada "To'lov ma'lumoti hali
- * biriktirilmagan" deb yozilardi — mijoz buni muammo deb o'qirdi,
- * holbuki naqd buyurtmada bu normal holat.
- */
-export function paymentStatusLabel(status: string, locale = "uz"): string {
-  const ru = locale === "ru";
-  const labels = ru
-    ? { PENDING: "Ожидает оплаты", SUCCESS: "Оплачен", PAID: "Оплачен", FAILED: "Не прошла", REFUNDED: "Возвращена" }
-    : { PENDING: "Kutilmoqda", SUCCESS: "To'langan", PAID: "To'langan", FAILED: "O'tmadi", REFUNDED: "Qaytarilgan" };
-  return (labels as Record<string, string>)[status] ?? (ru ? "Статус не определён" : "Holat aniqlanmadi");
 }
