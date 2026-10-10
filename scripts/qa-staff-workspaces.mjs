@@ -56,6 +56,10 @@ const catalog = {
     ],
     modifiers: [],
   })),
+  paymentMethods: [
+    { code: "CASH", name: "Naqd" },
+    { code: "CLICK", name: "Click" },
+  ],
 };
 catalog.products[4].variants.push({
   id: "v-p5-large",
@@ -244,6 +248,8 @@ async function setup(width = 1440, height = 900, roles = session) {
         body: req.postDataJSON(),
       });
     if (path === "/devices/heartbeat") return ok({ active: true });
+    if (path === "/realtime/events")
+      return ok({ events: [], cursor: null, hasMore: false });
     if (path === "/cash-register/courier-shift")
       return ok({
         id: "cs1",
@@ -254,6 +260,29 @@ async function setup(width = 1440, height = 900, roles = session) {
       });
     if (path === "/cash-register/shift")
       return state.failShift ? fail() : ok(state.shift);
+    if (path.startsWith("/cash-register/shift/") && path.endsWith("/orders"))
+      return ok([
+        {
+          id: "shift-order-served",
+          orderNumber: "101",
+          displayOrderNumber: "WEB101",
+          status: "SERVED",
+          total: "72000",
+          items: [
+            { id: "served-item", productName: "Big lavash", quantity: "2" },
+          ],
+        },
+        {
+          id: "shift-order-cancelled",
+          orderNumber: "102",
+          displayOrderNumber: "WEB102",
+          status: "CANCELLED",
+          total: "36000",
+          items: [
+            { id: "cancelled-item", productName: "Lavash", quantity: "1" },
+          ],
+        },
+      ]);
     if (path === "/cash-register/transfers/receivers") return ok([]);
     if (path === "/cash-register/transfers/pending") return ok([]);
     if (path === "/pos/catalog") return ok(state.catalog);
@@ -401,6 +430,12 @@ try {
       "73-product catalog must not clip names, prices or plus icons",
     );
     await cards.last().scrollIntoViewIfNeeded();
+    const finalImage = cards.last().locator("img");
+    await page.waitForFunction(
+      (image) => image.complete && image.naturalWidth > 0,
+      await finalImage.elementHandle(),
+    );
+    await finalImage.evaluate((image) => image.decode());
     await screenshot(page, "pos-73-products-" + width);
     await cards.last().click();
     assert.deepEqual(errors, []);
@@ -420,17 +455,18 @@ try {
   ]) {
     const { context, page, errors } = await setup(width, height);
     for (const [path, title] of [
-      ["/kitchen", "Oshxona"],
-      ["/courier", "Kuryer"],
-      ["/pos", "Kassa"],
-      ["/shift", "Xodim kassasi"],
+      ["/kitchen", /Buyurtmalar navbati/],
+      ["/courier", "Yetkazib berishlar"],
+      ["/pos", "Buyurtma qabul qilish"],
+      ["/shift", /Smena #24/],
     ]) {
       await visit(page, path);
       assert.equal(
         await page
-          .getByRole("heading", { name: title, exact: true, level: 1 })
+          .getByRole("heading", { name: title, level: 2 })
           .count(),
         1,
+        `${path}: expected one page heading named ${title}`,
       );
       const panelNavigation = page.getByRole("navigation", {
         name: "Ruxsat berilgan panellar",
@@ -470,7 +506,7 @@ try {
             .click();
         else await page.getByRole("button", { name: /Jami/ }).click();
         await page
-          .getByRole("spinbutton", { name: "Qabul qilingan naqd pul" })
+          .getByRole("textbox", { name: "Qabul qilingan naqd pul" })
           .fill("200000");
         await checkLayout(page, `pos-filled-${width}`);
       }
@@ -558,7 +594,7 @@ try {
     await page.getByRole("button", { name: "Yangilash", exact: true }).click();
     await page.locator('main [role="alert"]').waitFor({ state: "hidden" });
     await page
-      .locator('aside[aria-label="Ish joylari menyusi"]')
+      .getByRole("navigation", { name: "Ruxsat berilgan panellar" })
       .getByRole("link", { name: "Kuryer", exact: true })
       .click();
     await page.getByRole("heading", { name: "Kuryer", level: 1 }).waitFor();
@@ -686,11 +722,21 @@ try {
       .getByRole("button", { name: "Double chizburgerni o'chirish" })
       .click();
     await receipt.getByRole("button", { name: /Jami/ }).click();
-    const cash = page.getByRole("spinbutton", {
+    const paymentMethod = page.getByRole("combobox", {
+      name: "To'lov turi",
+    });
+    await paymentMethod.selectOption("CLICK");
+    await page.getByText(/Naqd bo'lmagan to'lovni terminal/).waitFor();
+    await paymentMethod.selectOption("CASH");
+    assert.equal(
+      await page.getByText(/Naqd bo'lmagan to'lovni terminal/).count(),
+      0,
+    );
+    const cash = page.getByRole("textbox", {
       name: "Qabul qilingan naqd pul",
     });
     const pay = page.getByRole("button", {
-      name: "Buyurtmani tasdiqlash",
+      name: "To'lov va buyurtmani tasdiqlash",
       exact: true,
     });
     await cash.fill("-100");
@@ -708,7 +754,9 @@ try {
         .getByRole("button", { name: "Big lavashni ko'paytirish" })
         .isDisabled(),
     );
-    await page.getByRole("status").waitFor();
+    await page
+      .getByRole("heading", { name: "Buyurtma qabul qilindi", exact: true })
+      .waitFor();
     assert.equal(state.posts.at(-1).body.idempotencyKey, firstKey);
     assert.equal(state.posts.at(-1).body.items[0].variantId, "v-p1");
     assert.equal(state.posts.filter((p) => p.path === "/pos/orders").length, 2);
@@ -746,12 +794,25 @@ try {
     await page
       .getByRole("button", { name: "Smenani yopish", exact: true })
       .click();
+    const closingSummary = page.getByRole("region", {
+      name: "Smena buyurtmalari",
+    });
+    await closingSummary.waitFor();
+    const summaryText = await closingSummary.innerText();
+    assert.match(summaryText, /Topshirilgan \/ yakunlangan · 1/);
+    assert.match(summaryText, /Bekor qilingan · 1/);
+    assert.match(summaryText, /WEB101/);
+    assert.match(summaryText, /WEB102/);
     await screenshot(page, "shift-confirmation-mobile");
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Yakunlash", exact: true })
       .click();
-    await page.getByRole("status").waitFor();
+    await page.getByText("#24 smena yakunlandi.", { exact: true }).waitFor();
+    await page
+      .getByRole("button", { name: "Smena hisobotini chop etish", exact: true })
+      .waitFor();
+    await page.getByText("Smena buyurtmalari · 2", { exact: true }).waitFor();
     assert.equal(state.shift, null);
     assert.deepEqual(errors, []);
     results.push({

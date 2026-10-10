@@ -21,6 +21,8 @@ import {
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { SettingsService } from "../settings/settings.service";
+import { isCashierPaymentMethodCode } from "../settings/setting-rules";
 import { ensureOrderReceipt } from "../receipts/receipt-writer";
 import { writeAuditLog } from "../audit/audit-write";
 import { recordCashRefund, type RefundablePayment } from "./refund-ledger";
@@ -41,15 +43,54 @@ type NormalizedPaymentTender = {
   transactionId?: string;
 };
 
-const OPERATIONAL_PAYMENT_METHOD_CODES = new Set(["CASH"]);
-
 export function isOperationalPaymentMethod(code: string): boolean {
-  return OPERATIONAL_PAYMENT_METHOD_CODES.has(code.trim().toUpperCase());
+  return isCashierPaymentMethodCode(code);
 }
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings?: SettingsService,
+  ) {}
+
+  private async enabledCashierPaymentMethods(tenantId: string) {
+    const configured = this.settings
+      ? await this.settings.getCsv("cashier_payment_methods", tenantId)
+      : ["CASH"];
+    return new Set<string>(configured.filter(isCashierPaymentMethodCode));
+  }
+
+  async listPaymentMethods(user: AuthenticatedUser) {
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+    );
+    if (!branchId) {
+      throw new BadRequestException("To'lov usullari uchun filial tanlang");
+    }
+    const enabledCodes = await this.enabledCashierPaymentMethods(tenantId);
+    const rows = await this.prisma.paymentMethod.findMany({
+      where: { isActive: true, OR: [{ branchId }, { branchId: null }] },
+      orderBy: [{ branchId: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
+      select: { code: true, name: true, sortOrder: true },
+    });
+    const seen = new Set<string>();
+    return rows
+      .filter((method) => {
+        if (
+          !enabledCodes.has(method.code) ||
+          !isOperationalPaymentMethod(method.code) ||
+          seen.has(method.code)
+        ) {
+          return false;
+        }
+        seen.add(method.code);
+        return true;
+      })
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+      .map(({ code, name }) => ({ code, name }));
+  }
 
   /**
    * To'lovlar ro'yxati.
@@ -198,6 +239,8 @@ export class PaymentsService {
       employeeId,
     );
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const enabledPaymentMethods =
+      await this.enabledCashierPaymentMethods(tenantId);
 
     try {
       const execute = async (tx: Prisma.TransactionClient) => {
@@ -311,6 +354,11 @@ export class PaymentsService {
           if (!isOperationalPaymentMethod(method.code)) {
             throw new BadRequestException(
               `${method.code} payment provider is not enabled`,
+            );
+          }
+          if (!enabledPaymentMethods.has(method.code)) {
+            throw new BadRequestException(
+              `${method.code} to'lov usuli tizim sozlamalarida o'chirilgan`,
             );
           }
 

@@ -26,7 +26,6 @@ import {
   resolveCash,
 } from "../../../../components/payment/cash-change-panel";
 import {
-  POS_PAYMENT_METHOD_CODES,
   paymentMethodLabel,
   type PaymentMethodCode,
 } from "../../../../components/payment/payment-methods";
@@ -65,6 +64,7 @@ type Order = {
   payments: { id: string; amount: string; status: string }[];
 };
 type Shift = { id: string; status: string; shiftNumber?: number } | null;
+type PaymentMethodOption = { code: PaymentMethodCode; name: string };
 type Tender = { code: PaymentMethodCode; amount: string };
 type ProcessResult = {
   order?: {
@@ -87,9 +87,6 @@ const createPaymentKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
 const successStatuses = ["PAID", "SUCCESS"];
-const enabledPaymentMethods: readonly PaymentMethodCode[] = [
-  ...POS_PAYMENT_METHOD_CODES,
-];
 const orderPageSize = 50;
 
 export default function PaymentPage() {
@@ -104,6 +101,9 @@ function PaymentTerminal() {
   const router = useRouter();
   const { logout, session, user } = useAuth();
   const [orders, setOrders] = useState<Order[] | null>(null);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>(
+    [],
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
@@ -130,6 +130,10 @@ function PaymentTerminal() {
    * unique indeksi ikkinchi to'lovni yaratmaydi.
    */
   const attemptRef = useRef<string | null>(null);
+  const enabledPaymentMethods = useMemo(
+    () => paymentMethods.map((method) => method.code),
+    [paymentMethods],
+  );
 
   const handleFailure = useCallback(
     (caught: unknown, fallback: string): string => {
@@ -163,23 +167,36 @@ function PaymentTerminal() {
         offset: String(offset),
       });
       if (appliedSearch) params.set("search", appliedSearch);
-      const requestedOrderId = new URLSearchParams(window.location.search).get("orderId");
-      const [nextOrders, shift, requestedOrder] = await Promise.all([
-        apiFetch<Order[]>(`/orders?${params.toString()}`, {
-          cache: "no-store",
-          signal,
-        }),
-        apiFetch<Shift>("/cash-register/shift", { signal }).catch(() => null),
-        requestedOrderId
-          ? apiFetch<Order>(`/orders/${encodeURIComponent(requestedOrderId)}`, {
-              cache: "no-store",
-              signal,
-            }).catch(() => null)
-          : Promise.resolve(null),
-      ]);
+      const requestedOrderId = new URLSearchParams(window.location.search).get(
+        "orderId",
+      );
+      const [nextOrders, shift, requestedOrder, nextPaymentMethods] =
+        await Promise.all([
+          apiFetch<Order[]>(`/orders?${params.toString()}`, {
+            cache: "no-store",
+            signal,
+          }),
+          apiFetch<Shift>("/cash-register/shift", { signal }).catch(() => null),
+          requestedOrderId
+            ? apiFetch<Order>(
+                `/orders/${encodeURIComponent(requestedOrderId)}`,
+                {
+                  cache: "no-store",
+                  signal,
+                },
+              ).catch(() => null)
+            : Promise.resolve(null),
+          apiFetch<PaymentMethodOption[]>("/payments/methods", {
+            cache: "no-store",
+            signal,
+          }),
+        ]);
 
       if (controller.signal.aborted) {
         return false;
+      }
+      if (!nextPaymentMethods.length) {
+        throw new Error("Kassada hozircha faol to'lov usuli yo'q.");
       }
 
       const payable = nextOrders.filter(
@@ -195,14 +212,16 @@ function PaymentTerminal() {
         payable.unshift(requestedOrder);
       }
       setOrders(payable);
+      setPaymentMethods(nextPaymentMethods);
       setCurrentShift(shift);
       setUpdatedAt(new Date());
       setSelectedOrderId((current) =>
         current && payable.some((order) => order.id === current)
           ? current
-          : (requestedOrder && payable.some((order) => order.id === requestedOrder.id)
-              ? requestedOrder.id
-              : payable[0]?.id ?? null),
+          : requestedOrder &&
+              payable.some((order) => order.id === requestedOrder.id)
+            ? requestedOrder.id
+            : (payable[0]?.id ?? null),
       );
       return true;
     } catch (caught) {
@@ -292,7 +311,7 @@ function PaymentTerminal() {
    * ko'rinib qolardi.
    */
   const cash = resolveCash(cashDue > 0 ? cashReceived : "", cashDue);
-  const needsShift = cashDue > 0;
+  const needsShift = payload.length > 0;
   const shiftMissing = needsShift && currentShift?.status !== "OPEN";
   const splitMismatch =
     isSplit && Math.round(payloadTotal) !== Math.round(outstanding);
@@ -300,6 +319,8 @@ function PaymentTerminal() {
     !!selectedOrder &&
     outstanding > 0 &&
     payload.length > 0 &&
+    enabledPaymentMethods.length > 0 &&
+    payload.every((item) => enabledPaymentMethods.includes(item.code)) &&
     payload.every((item) => item.amount > 0) &&
     !splitMismatch &&
     cash.valid &&
@@ -308,10 +329,22 @@ function PaymentTerminal() {
 
   // Buyurtma almashsa tenderlar va naqd maydoni tozalanadi.
   useEffect(() => {
-    setTenders([{ code: "CASH", amount: "" }]);
+    setTenders([{ code: enabledPaymentMethods[0] ?? "CASH", amount: "" }]);
     setCashReceived("");
     setSubmitError(null);
-  }, [selectedOrderId]);
+  }, [enabledPaymentMethods, selectedOrderId]);
+
+  useEffect(() => {
+    const fallbackCode = enabledPaymentMethods[0];
+    if (!fallbackCode) return;
+    setTenders((current) =>
+      current.map((tender) =>
+        enabledPaymentMethods.includes(tender.code)
+          ? tender
+          : { ...tender, code: fallbackCode },
+      ),
+    );
+  }, [enabledPaymentMethods]);
 
   /*
    * Kalitni yangilash sharti: buyurtma, qoldiq yoki YUBORILADIGAN tender
@@ -377,7 +410,7 @@ function PaymentTerminal() {
 
   function resetForNextOrder() {
     setCompletion(null);
-    setTenders([{ code: "CASH", amount: "" }]);
+    setTenders([{ code: enabledPaymentMethods[0] ?? "CASH", amount: "" }]);
     setCashReceived("");
     setSubmitError(null);
     void loadOrders();
@@ -604,23 +637,23 @@ function PaymentTerminal() {
                               {paymentMethodLabel(tender.code)}
                             </strong>
                           ) : (
-                          <select
-                            className={styles.payTenderSelect}
-                            aria-label={`To'lov usuli ${index + 1}`}
-                            disabled={isSubmitting}
-                            value={tender.code}
-                            onChange={(event) =>
-                              updateTender(index, {
-                                code: event.target.value as PaymentMethodCode,
-                              })
-                            }
-                          >
-                            {enabledPaymentMethods.map((code) => (
-                              <option key={code} value={code}>
-                                {paymentMethodLabel(code)}
-                              </option>
-                            ))}
-                          </select>
+                            <select
+                              className={styles.payTenderSelect}
+                              aria-label={`To'lov usuli ${index + 1}`}
+                              disabled={isSubmitting}
+                              value={tender.code}
+                              onChange={(event) =>
+                                updateTender(index, {
+                                  code: event.target.value as PaymentMethodCode,
+                                })
+                              }
+                            >
+                              {enabledPaymentMethods.map((code) => (
+                                <option key={code} value={code}>
+                                  {paymentMethodLabel(code)}
+                                </option>
+                              ))}
+                            </select>
                           )}
                         </label>
                         {isSplit ? (
@@ -661,6 +694,13 @@ function PaymentTerminal() {
                       </div>
                     ))}
                   </div>
+
+                  {payload.some((item) => item.code !== "CASH") ? (
+                    <p className={styles.note}>
+                      Naqd bo'lmagan to'lovni terminal yoki bank SMSidan
+                      tekshiring. Tizim provayder orqali avtomatik tasdiqlamaydi.
+                    </p>
+                  ) : null}
 
                   {isSplit ? (
                     <div className={styles.paySummary}>
@@ -764,9 +804,13 @@ function PaymentTerminal() {
           <p className={styles.muted}>
             #{orderLabel} · {tableLabel(selectedOrder)}
           </p>
-          {cashDue > 0 && currentShift?.status === "OPEN" ? (
+          {needsShift && currentShift?.status === "OPEN" ? (
             <p className={styles.muted}>
-              Naqd to'lov {currentShift.shiftNumber ? `#${currentShift.shiftNumber}` : "joriy"} smenaga yoziladi.
+              To'lov{" "}
+              {currentShift.shiftNumber
+                ? `#${currentShift.shiftNumber}`
+                : "joriy"}{" "}
+              smenaga yoziladi; naqd qismi kassaga qo'shiladi.
             </p>
           ) : null}
           <div className={styles.payConfirmList}>
@@ -795,6 +839,12 @@ function PaymentTerminal() {
               <span>Qaytim</span>
               <strong>{formatMoney(cash.change)}</strong>
             </div>
+          ) : null}
+          {payload.some((item) => item.code !== "CASH") ? (
+            <p className={styles.note}>
+              Naqd bo'lmagan to'lov provayderdan avtomatik tasdiqlanmaydi;
+              tushumni tekshirgandan keyingina qabul qiling.
+            </p>
           ) : null}
           <p className={styles.note}>
             <TriangleAlert size={15} aria-hidden="true" /> Tasdiqlangandan keyin

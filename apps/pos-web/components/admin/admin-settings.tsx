@@ -70,7 +70,7 @@ type SettingRow = {
  */
 const SETTING_LABELS: Record<
   string,
-  { title: string; hint: string; impact?: string }
+  { title: string; hint: string; impact?: string; group?: "cashier-payments" }
 > = {
   customer_code_ttl_minutes: {
     title: "Tasdiqlash kodi muddati",
@@ -113,10 +113,15 @@ const SETTING_LABELS: Record<
     hint: "Bitta ekranda nechta mahsulot ko'rsatiladi",
   },
   customer_payment_methods: {
-    title: "Mijoz to'lov usullari",
-    hint: "Checkout'da ko'rinadigan usullar. Faqat haqiqatan ishlayotganini yoqing",
+    title: "Mijoz checkout to'lovi",
+    hint: "Avtomatik online to'lov integratsiyasi hozircha ulanmagan; naqd usuli ishlaydi",
     impact:
-      "Mijoz checkout'da faqat shu usullarni ko'radi. Ishlamayotgan usulni yoqish buyurtmalarning to'lovsiz qolishiga olib keladi.",
+      "Mijoz saytidagi online to'lov usullari bank/provayder integratsiyasiga bog'liq. Hozircha faqat naqd ishlaydi.",
+  },
+  cashier_payment_methods: {
+    title: "Kassada qabul qilinadigan to'lovlar",
+    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder ulanishi emas",
+    group: "cashier-payments",
   },
   customer_delivery_enabled: {
     title: "Yetkazib berish",
@@ -259,7 +264,14 @@ export function AdminSettings() {
   const groups = useMemo(
     () => ({
       customer: rows.filter((row) => row.affectsCustomer),
-      internal: rows.filter((row) => !row.affectsCustomer),
+      cashierPayments: rows.filter(
+        (row) => SETTING_LABELS[row.key]?.group === "cashier-payments",
+      ),
+      internal: rows.filter(
+        (row) =>
+          !row.affectsCustomer &&
+          SETTING_LABELS[row.key]?.group !== "cashier-payments",
+      ),
     }),
     [rows],
   );
@@ -292,8 +304,7 @@ export function AdminSettings() {
             <span className="font-semibold text-mz-text">
               Mijozga ochiq sozlamalar tasdiqlashdan o&apos;tadi
             </span>{" "}
-            — ular mijoz checkout&apos;iga o&apos;sha zahoti ta&apos;sir
-            qiladi.
+            — ular mijoz checkout&apos;iga o&apos;sha zahoti ta&apos;sir qiladi.
           </p>
         </CardBody>
       </Card>
@@ -311,7 +322,19 @@ export function AdminSettings() {
       />
 
       <SettingsGroup
-        description="Cheklovlar va muddatlar — mijozga ko'rinmaydi, darhol saqlanadi."
+        description="Bu usullar kassir oynalarida ko'rinadi. Click/Payme va karta tushumini kassir alohida tekshiradi; avtomatik bank tasdig'i yo'q."
+        drafts={drafts}
+        onDraftChange={(key, value) =>
+          setDrafts((previous) => ({ ...previous, [key]: value }))
+        }
+        onSave={requestSave}
+        rows={groups.cashierPayments}
+        savingKey={savingKey}
+        title="Kassa to'lovlari"
+      />
+
+      <SettingsGroup
+        description="Xavfsizlik chegaralari va xizmat muddatlari — mijozga ko'rinmaydi, darhol saqlanadi."
         drafts={drafts}
         onDraftChange={(key, value) =>
           setDrafts((previous) => ({ ...previous, [key]: value }))

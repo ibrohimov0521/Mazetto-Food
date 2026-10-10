@@ -6,12 +6,15 @@ AliPOS concepts are treated as functional references only. MAZETTO FOOD must pre
 
 ## Order Types
 
-The POS must support:
+Current POS order types are:
 
-- DINE_IN_TABLE
-- DINE_IN_HALL
-- PICKUP
-- DELIVERY
+- `DINE_IN` (table optional)
+- `TAKEAWAY`
+
+Customer delivery is created through customer web/Telegram, where address and
+server-side delivery quote are available. The POS checkout rejects `DELIVERY`
+until that complete workflow exists in the cashier UI. Display names such as
+"Zal" and "Olib ketish" are presentation labels, not separate order types.
 
 The architecture must remain extensible for future order channels.
 
@@ -107,23 +110,32 @@ Important actions must be auditable.
 
 ## Payments
 
-The system must support configurable payment methods, including:
+Cashier payment methods are configured per restaurant from Admin > Settings.
+The backend accepts only a method that is enabled in `cashier_payment_methods`
+and has an active `PaymentMethod` row for the current branch or globally.
+Supported codes are:
 
 - CASH
-- TERMINAL
+- CARD
+- UZCARD
+- HUMO
 - CLICK
 - PAYME
-- CARD
-- RAHMAT
-- CORPORATE_CARD
-- OTHER
+- ONLINE
 
-The architecture must not be hardcoded to only these methods. Payment methods must be configurable.
+The default is `CASH`. A cashier may record a non-cash method only after
+manually verifying that the payment arrived. This setting does not connect to a
+bank or payment provider and does not verify a QR/SMS. Customer checkout remains
+cash-only until an official provider settlement flow is implemented.
 
 Order and payment are separate concepts. Split payment must be supported in the future, for example:
 
 - 50,000 CASH
-- 30,000 TERMINAL
+- 30,000 CARD
+
+POS supports split payment with up to four tenders. Only the cash tender changes
+the physical drawer balance; every successful tender is recorded in shift
+revenue and payment-method totals.
 
 Payment status must be tracked separately from order status.
 

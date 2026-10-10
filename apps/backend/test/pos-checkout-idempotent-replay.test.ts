@@ -4,10 +4,57 @@ import { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import type { CreatePosCheckoutDto } from "../src/modules/orders/dto/pos-checkout.dto";
 import { OrdersService } from "../src/modules/orders/orders.service";
+import { BadRequestException } from "@nestjs/common";
 import {
   createPosCheckoutRequestHash,
   createPosIdempotencyKey,
 } from "../src/modules/orders/order-rules";
+
+test("disabled payment methods are rejected before a new POS order is created", async () => {
+  const actor: AuthenticatedUser = {
+    id: "user-1",
+    employeeId: "employee-1",
+    branchId: "branch-1",
+    roles: ["CASHIER"],
+    permissions: ["POS_USE"],
+  };
+  const transaction = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    paymentOperation: { findUnique: async () => null },
+  };
+  const prisma = {
+    $transaction: async (
+      callback: (tx: typeof transaction) => Promise<unknown>,
+    ) => callback(transaction),
+  };
+  const service = new OrdersService(
+    prisma as never,
+    {} as never,
+    {} as never,
+    undefined,
+    undefined,
+    { getCsv: async () => ["CASH"] } as never,
+  );
+
+  await assert.rejects(
+    service.createPosCheckout(
+      {
+        idempotencyKey: "disabled-click",
+        items: [{ productId: "product-1", quantity: 1 }],
+        payments: [{ paymentMethodCode: "CLICK", amount: 1000 }],
+      },
+      actor,
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.match(error.message, /tizim sozlamalarida o'chirilgan/);
+      return true;
+    },
+  );
+});
 
 test("completed POS checkout replay does not republish order side effects", async () => {
   const user: AuthenticatedUser = {
@@ -40,8 +87,9 @@ test("completed POS checkout replay does not republish order side effects", asyn
     order: { findUnique: async () => order },
   };
   const prisma = {
-    $transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) =>
-      callback(transaction),
+    $transaction: async (
+      callback: (tx: typeof transaction) => Promise<unknown>,
+    ) => callback(transaction),
     paymentOperation: { findUnique: async () => operation },
     order: {
       findUnique: async () => {
@@ -91,21 +139,24 @@ test("paid POS checkout replay restores a missing receipt and print job", async 
     requestHash: createPosCheckoutRequestHash(dto, "branch-1", "employee-1"),
     status: "COMPLETED",
   };
-  const receiptRows: { id: string; branchId: string; documentType: string }[] = [];
+  const receiptRows: { id: string; branchId: string; documentType: string }[] =
+    [];
   const order = {
     id: "order-1",
     total: new Prisma.Decimal(25000),
     paymentStatus: "PAID",
     branchId: "branch-1",
     branch: { name: "Sergeli filiali" },
-    items: [{
-      productName: "Lavash",
-      variantName: null,
-      quantity: new Prisma.Decimal(1),
-      totalPrice: new Prisma.Decimal(25000),
-      notes: null,
-      modifierSnapshot: null,
-    }],
+    items: [
+      {
+        productName: "Lavash",
+        variantName: null,
+        quantity: new Prisma.Decimal(1),
+        totalPrice: new Prisma.Decimal(25000),
+        notes: null,
+        modifierSnapshot: null,
+      },
+    ],
     payments: [{ method: { code: "CASH" }, amount: new Prisma.Decimal(25000) }],
     receipts: receiptRows,
     orderNumber: "POS-1",
@@ -129,19 +180,32 @@ test("paid POS checkout replay restores a missing receipt and print job", async 
     order: { findUnique: async () => order },
     receipt: {
       findUnique: async () => null,
-      create: async ({ data }: { data: { branchId: string; documentType: string } }) => {
+      create: async ({
+        data,
+      }: {
+        data: { branchId: string; documentType: string };
+      }) => {
         receiptCreates += 1;
-        const created = { id: "receipt-1", branchId: data.branchId, documentType: data.documentType };
+        const created = {
+          id: "receipt-1",
+          branchId: data.branchId,
+          documentType: data.documentType,
+        };
         receiptRows.push(created);
         return { ...created, content: {} };
       },
     },
     printer: { findMany: async () => [] },
-    printJob: { create: async () => { printJobCreates += 1; } },
+    printJob: {
+      create: async () => {
+        printJobCreates += 1;
+      },
+    },
   };
   const prisma = {
-    $transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) =>
-      callback(transaction),
+    $transaction: async (
+      callback: (tx: typeof transaction) => Promise<unknown>,
+    ) => callback(transaction),
     paymentOperation: { findUnique: async () => operation },
     order: { findUnique: async () => ({ staffTelegramMessageId: null }) },
   };
@@ -153,14 +217,19 @@ test("paid POS checkout replay restores a missing receipt and print job", async 
       emitOrderConfirmed: () => assert.fail("replay must not republish"),
       emitOrderSentToKitchen: () => assert.fail("replay must not republish"),
     } as never,
-    { notifyNewOrder: async () => assert.fail("replay must not renotify") } as never,
+    {
+      notifyNewOrder: async () => assert.fail("replay must not renotify"),
+    } as never,
   );
 
   const result = await service.createPosCheckout(dto, user);
 
   assert.equal(receiptCreates, 1);
   assert.equal(printJobCreates, 1);
-  assert.deepEqual(result.order.receipts.map((receipt) => receipt.documentType), ["RECEIPT"]);
+  assert.deepEqual(
+    result.order.receipts.map((receipt) => receipt.documentType),
+    ["RECEIPT"],
+  );
 });
 
 test("POS checkout replays a committed order after an idempotency collision", async () => {

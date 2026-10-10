@@ -31,14 +31,46 @@ test("payment listing filters through the order tenant", async () => {
   } as never);
 
   await service.listPayments({} as never, cashier);
+  assert.deepEqual((where?.order as Record<string, unknown>).branch, {
+    tenantId: "tenant-a",
+  });
   assert.deepEqual(
-    ((where?.order as Record<string, unknown>).branch),
-    { tenantId: "tenant-a" },
-  );
-  assert.deepEqual(
-    ((where?.order as Record<string, unknown>).branchId),
+    (where?.order as Record<string, unknown>).branchId,
     "branch-a",
   );
+});
+
+test("cashier payment method list follows tenant toggles and active methods", async () => {
+  let methodWhere: Record<string, unknown> | undefined;
+  const service = new PaymentsService(
+    {
+      ...tenantLookup,
+      paymentMethod: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          methodWhere = args.where;
+          return [
+            { code: "CASH", name: "Naqd", sortOrder: 1 },
+            { code: "CARD", name: "Karta", sortOrder: 2 },
+            { code: "CLICK", name: "Click", sortOrder: 3 },
+            { code: "PAYME", name: "Payme", sortOrder: 4 },
+            { code: "UNKNOWN", name: "Noma'lum", sortOrder: 5 },
+          ];
+        },
+      },
+    } as never,
+    { getCsv: async () => ["CASH", "CLICK", "UNKNOWN"] } as never,
+  );
+
+  const methods = await service.listPaymentMethods(cashier);
+
+  assert.deepEqual(methodWhere, {
+    isActive: true,
+    OR: [{ branchId: "branch-a" }, { branchId: null }],
+  });
+  assert.deepEqual(methods, [
+    { code: "CASH", name: "Naqd" },
+    { code: "CLICK", name: "Click" },
+  ]);
 });
 
 test("foreign order is rejected before an idempotency replay lookup", async () => {
@@ -111,7 +143,11 @@ test("foreign payment is rejected before refund replay lookup", async () => {
   await assert.rejects(
     service.refundPayment(
       "payment-b",
-      { shiftId: "shift-a", reason: "Test", idempotencyKey: "refund-key-b" } as never,
+      {
+        shiftId: "shift-a",
+        reason: "Test",
+        idempotencyKey: "refund-key-b",
+      } as never,
       cashier,
     ),
     /Payment not found/,

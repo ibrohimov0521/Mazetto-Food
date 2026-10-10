@@ -37,6 +37,8 @@ import {
 } from "../../common/idempotency/idempotency-key";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { SettingsService } from "../settings/settings.service";
+import { isCashierPaymentMethodCode } from "../settings/setting-rules";
 import { buildOrderListWhere } from "./orders-list-filters";
 import { writeAuditLog } from "../audit/audit-write";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
@@ -139,7 +141,16 @@ export class OrdersService {
     @Optional()
     private readonly telegramOrderNotificationService?: TelegramOrderNotificationService,
     @Optional() private readonly idempotency?: IdempotencyService,
+    @Optional() private readonly settings?: SettingsService,
   ) {}
+
+  private async enabledCashierPaymentMethods(tenantId: string) {
+    return new Set(
+      this.settings
+        ? await this.settings.getCsv("cashier_payment_methods", tenantId)
+        : ["CASH"],
+    );
+  }
 
   async listPosCatalog(user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user);
@@ -248,6 +259,9 @@ export class OrdersService {
      * ustun (`orderBy: branchId desc`), shu sababli bir xil kod ikki
      * marta chiqmasligi uchun kod bo'yicha filtrlanadi.
      */
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const enabledPaymentMethods =
+      await this.enabledCashierPaymentMethods(tenantId);
     const branchPaymentMethods = await this.prisma.paymentMethod.findMany({
       where: { isActive: true, OR: [{ branchId }, { branchId: null }] },
       orderBy: [{ branchId: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
@@ -256,6 +270,12 @@ export class OrdersService {
     const seenMethodCodes = new Set<string>();
     const paymentMethods = branchPaymentMethods
       .filter((method) => {
+        if (
+          !isCashierPaymentMethodCode(method.code) ||
+          !enabledPaymentMethods.has(method.code)
+        ) {
+          return false;
+        }
         if (seenMethodCodes.has(method.code)) return false;
         seenMethodCodes.add(method.code);
         return true;
@@ -318,7 +338,11 @@ export class OrdersService {
       try {
         const order = await this.prisma.$transaction(
           async (tx) => {
-            await assertBranchBelongsToActor(tx, user, branchId);
+            const tenantId = await assertBranchBelongsToActor(
+              tx,
+              user,
+              branchId,
+            );
             const existingOperation = await tx.paymentOperation.findUnique({
               where: { idempotencyKey },
             });
@@ -329,6 +353,24 @@ export class OrdersService {
                 existingOperation,
                 requestHash,
               );
+            }
+
+            if (!dto.payLater) {
+              const enabledPaymentMethods =
+                await this.enabledCashierPaymentMethods(tenantId);
+              const methodCodes = requestedTenders?.map(
+                (tender) => tender.paymentMethodCode,
+              ) ?? ["CASH"];
+              for (const code of methodCodes) {
+                if (
+                  !enabledPaymentMethods.has(code) ||
+                  !isCashierPaymentMethodCode(code)
+                ) {
+                  throw new BadRequestException(
+                    `To'lov usuli "${code}" tizim sozlamalarida o'chirilgan`,
+                  );
+                }
+              }
             }
 
             await assertEmployeeInBranch(tx, employeeId, branchId);

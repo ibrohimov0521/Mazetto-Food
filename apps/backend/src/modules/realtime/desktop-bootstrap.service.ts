@@ -22,13 +22,17 @@ import {
 } from "../kitchen/kitchen-queue-window";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { SettingsService } from "../settings/settings.service";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
 import { unavailableProductWhere } from "../orders/order-rules";
 import { encodeBranchRevisionCursor } from "./realtime.service";
 
 @Injectable()
 export class RealtimeBootstrapService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings?: SettingsService,
+  ) {}
 
   async create(
     branchId: string | undefined,
@@ -49,6 +53,14 @@ export class RealtimeBootstrapService {
         if (!scope.branchId) {
           throw new BadRequestException("Filial tanlanishi shart.");
         }
+        const enabledCashierPaymentMethods = new Set(
+          this.settings
+            ? await this.settings.getCsv(
+                "cashier_payment_methods",
+                scope.tenantId,
+              )
+            : ["CASH"],
+        );
 
         const canViewKitchen = user.permissions.includes(
           PERMISSIONS.KITCHEN_VIEW,
@@ -393,7 +405,11 @@ export class RealtimeBootstrapService {
         const seenPaymentMethodCodes = new Set<string>();
         const paymentMethods = configuredPaymentMethods
           .filter((method) => {
-            if (seenPaymentMethodCodes.has(method.code)) return false;
+            if (
+              !enabledCashierPaymentMethods.has(method.code) ||
+              seenPaymentMethodCodes.has(method.code)
+            )
+              return false;
             seenPaymentMethodCodes.add(method.code);
             return true;
           })

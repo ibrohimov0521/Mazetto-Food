@@ -31,6 +31,27 @@ type SettingRule =
   | { kind: "csv-enum"; values: readonly string[]; fallback: string }
   | { kind: "string"; fallback: string };
 
+export const CASHIER_PAYMENT_METHOD_CODES = [
+  "CASH",
+  "CARD",
+  "UZCARD",
+  "HUMO",
+  "CLICK",
+  "PAYME",
+  "ONLINE",
+] as const;
+
+export type CashierPaymentMethodCode =
+  (typeof CASHIER_PAYMENT_METHOD_CODES)[number];
+
+export function isCashierPaymentMethodCode(
+  code: string,
+): code is CashierPaymentMethodCode {
+  return (CASHIER_PAYMENT_METHOD_CODES as readonly string[]).includes(
+    code.trim().toUpperCase(),
+  );
+}
+
 const INT = (min: number, max: number, fallback: number): SettingRule => ({
   kind: "int",
   min,
@@ -73,7 +94,13 @@ const SETTING_RULES = {
   // qatorga qo'shiladi, deploysiz.
   customer_payment_methods: {
     kind: "csv-enum",
-    values: ["CASH", "CARD", "CLICK", "PAYME"],
+    values: ["CASH"],
+    fallback: "CASH",
+  },
+  // Kassir tashqi to'lovni ko'rib tasdiqlaydi; provider callback yoqmaydi.
+  cashier_payment_methods: {
+    kind: "csv-enum",
+    values: CASHIER_PAYMENT_METHOD_CODES,
     fallback: "CASH",
   },
   // Yetkazish darvozasi. `false` — mijoz checkout'da yetkazishni tanlay
@@ -204,7 +231,9 @@ export function validateSettingValue(key: SettingKey, raw: string): string {
       .filter(Boolean);
 
     if (entries.length === 0) {
-      throw new BadRequestException(`"${key}" kamida bitta qiymat talab qiladi`);
+      throw new BadRequestException(
+        `"${key}" kamida bitta qiymat talab qiladi`,
+      );
     }
 
     for (const entry of entries) {
@@ -230,7 +259,10 @@ export function validateSettingValue(key: SettingKey, raw: string): string {
  * qatlami bo'lib qoladi: buzuq qiymat default'ga tushadi, ilovani
  * qulatmaydi.
  */
-export function parseIntSetting(key: SettingKey, stored: string | undefined): number {
+export function parseIntSetting(
+  key: SettingKey,
+  stored: string | undefined,
+): number {
   const rule = SETTING_RULES[key];
 
   if (rule.kind !== "int") {
@@ -250,7 +282,10 @@ export function parseIntSetting(key: SettingKey, stored: string | undefined): nu
   return parsed;
 }
 
-export function parseBoolSetting(key: SettingKey, stored: string | undefined): boolean {
+export function parseBoolSetting(
+  key: SettingKey,
+  stored: string | undefined,
+): boolean {
   const rule = SETTING_RULES[key];
 
   if (rule.kind !== "bool") {
@@ -274,7 +309,10 @@ export function parseBoolSetting(key: SettingKey, stored: string | undefined): b
   return rule.fallback;
 }
 
-export function parseCsvSetting(key: SettingKey, stored: string | undefined): string[] {
+export function parseCsvSetting(
+  key: SettingKey,
+  stored: string | undefined,
+): string[] {
   const rule = SETTING_RULES[key];
 
   if (rule.kind !== "csv-enum") {
@@ -285,7 +323,7 @@ export function parseCsvSetting(key: SettingKey, stored: string | undefined): st
   const entries = source
     .split(",")
     .map((entry) => entry.trim().toUpperCase())
-    .filter((entry) => rule.values.includes(entry));
+    .filter((entry) => rule.values.some((value) => value === entry));
 
   // Filtrlash hammasini olib tashlagan bo'lsa default'ga qaytamiz: bo'sh
   // ro'yxat, masalan, to'lov usullarini butunlay yo'q qilardi.

@@ -289,9 +289,7 @@ export class ShiftsService {
           openingBalance: dto.openingBalance,
         })
       : undefined;
-    let decision:
-      | Awaited<ReturnType<IdempotencyService["start"]>>
-      | undefined;
+    let decision: Awaited<ReturnType<IdempotencyService["start"]>> | undefined;
 
     if (idempotencyKey && requestHash) {
       if (!this.idempotency) {
@@ -314,7 +312,9 @@ export class ShiftsService {
       if (decision.kind === "REPLAY") {
         const resourceId = decision.record.resourceId;
         if (decision.record.resourceType !== "SHIFT" || !resourceId) {
-          throw new BadRequestException("Previous shift opening did not complete");
+          throw new BadRequestException(
+            "Previous shift opening did not complete",
+          );
         }
         const previous = await this.prisma.shift.findFirst({
           where: { id: resourceId, branchId, employeeId },
@@ -416,9 +416,11 @@ export class ShiftsService {
         return shift;
       });
     } catch (error) {
-      await this.idempotency!
-        .fail(decision.record.id, requestHash, "SHIFT_OPEN_FAILED")
-        .catch(() => undefined);
+      await this.idempotency!.fail(
+        decision.record.id,
+        requestHash,
+        "SHIFT_OPEN_FAILED",
+      ).catch(() => undefined);
       throw error;
     }
   }
@@ -441,12 +443,12 @@ export class ShiftsService {
       ? normalizeIdempotencyKey(context.idempotencyKey)
       : undefined;
     let requestHash: string | undefined;
-    let decision:
-      | Awaited<ReturnType<IdempotencyService["start"]>>
-      | undefined;
+    let decision: Awaited<ReturnType<IdempotencyService["start"]>> | undefined;
 
     if (idempotencyKey) {
-      const currentShift = await this.prisma.shift.findUnique({ where: { id } });
+      const currentShift = await this.prisma.shift.findUnique({
+        where: { id },
+      });
       if (!currentShift) {
         throw new NotFoundException("Shift not found");
       }
@@ -482,7 +484,9 @@ export class ShiftsService {
       if (decision.kind === "REPLAY") {
         const resourceId = decision.record.resourceId;
         if (decision.record.resourceType !== "SHIFT" || !resourceId) {
-          throw new BadRequestException("Previous shift close did not complete");
+          throw new BadRequestException(
+            "Previous shift close did not complete",
+          );
         }
         const previous = await this.prisma.shift.findFirst({
           where: {
@@ -622,9 +626,11 @@ export class ShiftsService {
         }
 
         if (decision?.kind === "CLAIMED" && requestHash) {
-          await this.idempotency!
-            .fail(decision.record.id, requestHash, "SHIFT_CLOSE_FAILED")
-            .catch(() => undefined);
+          await this.idempotency!.fail(
+            decision.record.id,
+            requestHash,
+            "SHIFT_CLOSE_FAILED",
+          ).catch(() => undefined);
         }
 
         throw error;
@@ -797,9 +803,7 @@ export class ShiftsService {
     const requestHash = idempotencyKey
       ? hashCanonicalJson({ shiftId, dto })
       : undefined;
-    let decision:
-      | Awaited<ReturnType<IdempotencyService["start"]>>
-      | undefined;
+    let decision: Awaited<ReturnType<IdempotencyService["start"]>> | undefined;
 
     if (idempotencyKey && requestHash) {
       if (!this.idempotency) {
@@ -866,7 +870,11 @@ export class ShiftsService {
       }
 
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
-      const tenantId = await assertBranchBelongsToActor(tx, user, shift.branchId);
+      const tenantId = await assertBranchBelongsToActor(
+        tx,
+        user,
+        shift.branchId,
+      );
       this.assertCanOperateShift(user, shift.employeeId);
 
       if (dto.orderId) {
@@ -934,13 +942,11 @@ export class ShiftsService {
         return transaction;
       });
     } catch (error) {
-      await this.idempotency!
-        .fail(
-          decision.record.id,
-          requestHash,
-          "CASH_TRANSACTION_FAILED",
-        )
-        .catch(() => undefined);
+      await this.idempotency!.fail(
+        decision.record.id,
+        requestHash,
+        "CASH_TRANSACTION_FAILED",
+      ).catch(() => undefined);
       throw error;
     }
   }
@@ -1022,12 +1028,8 @@ export class ShiftsService {
     const idempotencyKey = context?.idempotencyKey
       ? normalizeIdempotencyKey(context.idempotencyKey)
       : undefined;
-    const requestHash = idempotencyKey
-      ? hashCanonicalJson(dto)
-      : undefined;
-    let decision:
-      | Awaited<ReturnType<IdempotencyService["start"]>>
-      | undefined;
+    const requestHash = idempotencyKey ? hashCanonicalJson(dto) : undefined;
+    let decision: Awaited<ReturnType<IdempotencyService["start"]>> | undefined;
 
     if (idempotencyKey && requestHash) {
       if (!this.idempotency) {
@@ -1046,10 +1048,7 @@ export class ShiftsService {
 
       if (decision.kind === "REPLAY") {
         const resourceId = decision.record.resourceId;
-        if (
-          decision.record.resourceType !== "CASH_TRANSFER" ||
-          !resourceId
-        ) {
+        if (decision.record.resourceType !== "CASH_TRANSFER" || !resourceId) {
           throw new BadRequestException(
             "Previous cash transfer request did not complete",
           );
@@ -1231,9 +1230,11 @@ export class ShiftsService {
         return transfer;
       });
     } catch (error) {
-      await this.idempotency!
-        .fail(decision.record.id, requestHash, "CASH_TRANSFER_FAILED")
-        .catch(() => undefined);
+      await this.idempotency!.fail(
+        decision.record.id,
+        requestHash,
+        "CASH_TRANSFER_FAILED",
+      ).catch(() => undefined);
       throw error;
     }
   }
@@ -1384,9 +1385,7 @@ export class ShiftsService {
     const requestHash = idempotencyKey
       ? hashCanonicalJson({ transferId: id, action: "ACCEPT" })
       : undefined;
-    let decision:
-      | Awaited<ReturnType<IdempotencyService["start"]>>
-      | undefined;
+    let decision: Awaited<ReturnType<IdempotencyService["start"]>> | undefined;
 
     if (idempotencyKey && requestHash) {
       if (!this.idempotency) {
@@ -1539,9 +1538,11 @@ export class ShiftsService {
         return accepted;
       });
     } catch (error) {
-      await this.idempotency!
-        .fail(decision.record.id, requestHash, "CASH_TRANSFER_ACCEPT_FAILED")
-        .catch(() => undefined);
+      await this.idempotency!.fail(
+        decision.record.id,
+        requestHash,
+        "CASH_TRANSFER_ACCEPT_FAILED",
+      ).catch(() => undefined);
       throw error;
     }
   }
@@ -1568,9 +1569,7 @@ export class ShiftsService {
           reason: reason ?? null,
         })
       : undefined;
-    let decision:
-      | Awaited<ReturnType<IdempotencyService["start"]>>
-      | undefined;
+    let decision: Awaited<ReturnType<IdempotencyService["start"]>> | undefined;
 
     if (idempotencyKey && requestHash) {
       if (!this.idempotency) {
@@ -1714,7 +1713,10 @@ export class ShiftsService {
           {
             requestHash,
             responseStatus: 200,
-            responseBody: { cashTransferId: rejected.id, status: rejected.status },
+            responseBody: {
+              cashTransferId: rejected.id,
+              status: rejected.status,
+            },
             resourceType: "CASH_TRANSFER",
             resourceId: rejected.id,
           },
@@ -1723,9 +1725,11 @@ export class ShiftsService {
         return rejected;
       });
     } catch (error) {
-      await this.idempotency!
-        .fail(decision.record.id, requestHash, "CASH_TRANSFER_REJECT_FAILED")
-        .catch(() => undefined);
+      await this.idempotency!.fail(
+        decision.record.id,
+        requestHash,
+        "CASH_TRANSFER_REJECT_FAILED",
+      ).catch(() => undefined);
       throw error;
     }
   }
@@ -2009,10 +2013,20 @@ export class ShiftsService {
     const terminalTotal = this.sumPaymentsByCodes(payments, [
       "CARD",
       "TERMINAL",
+      "UZCARD",
+      "HUMO",
     ]);
     const clickTotal = this.sumPaymentsByCodes(payments, ["CLICK"]);
     const paymeTotal = this.sumPaymentsByCodes(payments, ["PAYME"]);
-    const knownCodes = new Set(["CASH", "CARD", "TERMINAL", "CLICK", "PAYME"]);
+    const knownCodes = new Set([
+      "CASH",
+      "CARD",
+      "TERMINAL",
+      "UZCARD",
+      "HUMO",
+      "CLICK",
+      "PAYME",
+    ]);
     const otherPaymentTotal = payments.reduce(
       (total, payment) =>
         knownCodes.has(payment.method.code) ? total : total.add(payment.amount),
