@@ -41,7 +41,7 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 
 ## Follow-up acceptance order
 
-1. [x] Confirm production deploy #292 at `f320fd3` and read-only smoke 27/27; workstation Desktop installation remains separate acceptance.
+1. [x] Confirm production deploy #297 at `e3cb9c7` and read-only smoke 27/27. Desktop 0.1.110 is published; workstation installation remains separate acceptance.
 2. Install Desktop 0.1.110, then test an already-cached unpaid order offline: exact cash, same employee/branch open shift, immediate local receipt, reconnect sync and no duplicate server receipt.
 3. Close a controlled low-value test shift with multiple statuses on the restaurant workstation; inspect all printed pages and compare count, cancelled rows, payment entries, expected cash and closing cash with admin history.
 4. Test restricted cashier/branch-manager roles, offline close and sync, and a paid online-order item refund against the selected shift without using a real customer payment.
@@ -59,7 +59,13 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Telegram map locations use an explicit Google Maps button with previews disabled; focused map/staff-panel tests passed 4/4. Historical group messages were not remotely edited.
 - Repository scan found no tracked build/cache/database artifacts or actionable TODO markers. `.gitignore` now excludes local dump and SQLite runtime formats. No uncertain source files or dependencies were removed.
 - Offline cashier payments now project a fully covered order as paid in cached payment queues. Offline shift close fails closed while unresolved POS-order or cash-payment commands remain for the branch. The Desktop suite passes 137/137; gateway coverage is 44/44; Desktop typecheck and focused ESLint pass.
-- Human acceptance still needed: install Desktop 0.1.108 on workstations, test real receipt/shift paper on the chosen printer, verify offline close after sync, and obtain NBU merchant API/export details before automating QR reconciliation.
+- Human acceptance still needed: install Desktop 0.1.110 on workstations, test real receipt/shift paper on the chosen printer, verify offline close after sync, and obtain NBU merchant API/export details before automating QR reconciliation.
 - Follow-up audit found offline expense/income commands were optimistically added to the shift balance but omitted from the offline-close guard. Version 0.1.108 includes that guard and a regression test; Desktop CI run #745, release #157, and deploy #294 succeeded. The release published `MAZETTO-Desktop-0.1.108-x64.exe`, and production tag now points to `9db7333`. Dokploy found no backend/web/Telegram service to deploy, so production smoke was skipped. Workstation installation remains separate acceptance.
 - A subsequent cash-flow audit found a separate projection gap: queued offline cash payments marked orders paid but did not update the open shift's expected/current cash, cash sales, or distinct order count. The follow-up fix adds pending `SALE` ledger rows and projects those totals idempotently; the targeted offline-payment regression and full Desktop suite (138/138), Desktop typecheck, and diff validation pass. CI remains the final lint/release authority.
 - Offline payment processing for an existing order now fails closed unless the device has a no-older-than-12-hours order and OPEN shift cached for the same branch and employee, the order is still unpaid/non-delivery, its complete active items are available, and the cash tender equals the exact outstanding balance. The payment and matching local receipt print job are persisted atomically; the receipt retains the real order source/number/items and current payment time, and the POS tells staff to check the paper output. Regression cases cover stale/missing cache, wrong employee, wrong shift, wrong branch, and amount mismatch.
+
+## Current release confirmation (2026-10-10)
+
+- PR #263 was squash-merged as `e3cb9c76d147582a478d563591a2ab8065992649`; production deploy workflow #297 succeeded and the remote `production` tag points to that commit.
+- Desktop 0.1.110 was published. Main CI passed, and the independent read-only production smoke passed 27/27 after deployment.
+- No database migration was needed for this release. Production checks do not replace workstation installation, a physical printer test, or a controlled offline payment-and-sync acceptance run.
