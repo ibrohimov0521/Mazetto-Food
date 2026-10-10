@@ -1,4 +1,3 @@
-/* global console, localStorage, document, window, sessionStorage */
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import { URL } from "node:url";

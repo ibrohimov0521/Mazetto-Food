@@ -1,4 +1,3 @@
-/* global URL, process, localStorage, setTimeout, document, innerWidth, structuredClone, console */
 import { createRequire } from "node:module";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";

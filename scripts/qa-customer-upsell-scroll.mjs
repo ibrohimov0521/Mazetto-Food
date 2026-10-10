@@ -1,4 +1,3 @@
-/* global document, window, getComputedStyle, localStorage */
 import assert from 'node:assert/strict';
 import { URL } from 'node:url';
 import { mkdir } from 'node:fs/promises';

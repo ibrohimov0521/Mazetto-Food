@@ -110,7 +110,7 @@ try {
   renameSync(statusPartial, statusFile);
   console.log(`Yozildi: ${target} (${size.toLocaleString("en-US")} bayt)`);
   console.log(`Arxiv o'qildi — ${entries} ta yozuv. Backup yaroqli.`);
-} catch (error) {
+} catch {
   console.error("BACKUP YAROQSIZ — pg_restore arxivni o'qiy olmadi");
   process.exit(1);
 }
