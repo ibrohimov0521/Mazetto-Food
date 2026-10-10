@@ -409,61 +409,6 @@ export class TelegramCustomerAuthService {
     });
   }
 
-  private async sendProductsForCategory(
-    chatId: string,
-    categoryId: string,
-  ): Promise<void> {
-    const products = await this.prisma.product.findMany({
-      where: { categoryId, isAvailable: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      take: 8,
-      include: {
-        variants: {
-          where: { isAvailable: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        },
-      },
-    });
-
-    if (!products.length) {
-      await this.telegramRequest("sendMessage", {
-        chat_id: chatId,
-        text: "Bu bo'limda hozircha mahsulot yo'q.",
-      });
-      return;
-    }
-
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: [
-        "🍽 <b>Mahsulotlar</b>",
-        "",
-        ...products.flatMap((product) => {
-          const variant =
-            product.variants.find((item) => item.isDefault) ??
-            product.variants[0];
-          return [
-            `<b>${this.escapeHtml(product.name)}</b>`,
-            `${this.escapeHtml(product.description ?? "Buyurtmadan keyin tayyorlanadi.")}`,
-            `Narx: ${this.formatMoney(variant?.sellingPrice ?? product.sellingPrice)}`,
-            "",
-          ];
-        }),
-      ].join("\n"),
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "⬅️ Bo'limlarga qaytish",
-              callback_data: `${customerCallbackPrefix}:home`,
-            },
-          ],
-        ],
-      },
-    });
-  }
-
   private async sendCustomerOrders(message: TelegramMessage): Promise<void> {
     const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
     const customer = await this.findLinkedCustomer(message.from?.id);
@@ -533,49 +478,6 @@ export class TelegramCustomerAuthService {
         `<b>Bonus:</b> ${this.formatMoney(customer.bonusBalance)}`,
       ].join("\n"),
       parse_mode: "HTML",
-    });
-  }
-
-  private async sendBranches(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
-    const branches = await this.prisma.branch.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: {
-        name: true,
-        address: true,
-        acceptsOrders: true,
-        deliveryEnabled: true,
-        pickupEnabled: true,
-        isTemporarilyClosed: true,
-      },
-    });
-
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: [
-        "📍 <b>Filiallar</b>",
-        "",
-        ...branches.map((branch) =>
-          [
-            `<b>${this.escapeHtml(branch.name)}</b>`,
-            this.escapeHtml(branch.address ?? "Manzil kiritilmagan"),
-            branch.acceptsOrders && !branch.isTemporarilyClosed
-              ? "Buyurtma qabul qilmoqda"
-              : "Hozir buyurtma qabul qilmayapti",
-            `${branch.pickupEnabled ? "Olib ketish ✅" : "Olib ketish ❌"} · ${branch.deliveryEnabled ? "Yetkazib berish ✅" : "Yetkazib berish ❌"}`,
-          ].join("\n"),
-        ),
-      ].join("\n\n"),
-      parse_mode: "HTML",
-    });
-  }
-
-  private async sendCartPlaceholder(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: "🛒 Telegram savat orqali buyurtma berish navbatdagi bosqichda to'liq ulanadi. Hozircha web sayt orqali buyurtma berishingiz mumkin.",
     });
   }
 
