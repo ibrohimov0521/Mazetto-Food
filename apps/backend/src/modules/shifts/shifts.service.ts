@@ -1584,11 +1584,32 @@ export class ShiftsService {
     }
 
     const rejectTransfer = async (tx: Prisma.TransactionClient) => {
-      const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+      const candidate = await tx.cashTransfer.findFirst({
+        where: {
+          id,
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
+        },
+        include: { fromShift: true },
+      });
+      if (!candidate) {
+        throw new NotFoundException("Cash transfer not found");
+      }
+
+      const sourceLock = await tx.$queryRawUnsafe<{ id: string }[]>(
+        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+        candidate.fromShiftId,
+      );
+      if (sourceLock.length !== 1) {
+        throw new NotFoundException("Cash transfer source shift not found");
+      }
+
+      const transferLock = await tx.$queryRawUnsafe<{ id: string }[]>(
         'SELECT "id" FROM "cash_transfers" WHERE "id" = $1 FOR UPDATE',
         id,
       );
-      if (locked.length !== 1) {
+      if (transferLock.length !== 1) {
         throw new NotFoundException("Cash transfer not found");
       }
 
@@ -1629,10 +1650,6 @@ export class ShiftsService {
           );
         }
       }
-      await tx.$queryRawUnsafe(
-        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
-        transfer.fromShiftId,
-      );
       const sourceShift = await tx.shift.findUniqueOrThrow({
         where: { id: transfer.fromShiftId },
       });
