@@ -4,6 +4,7 @@ import { BadRequestException } from "@nestjs/common";
 import { PaymentStatus, Prisma } from "@prisma/client";
 import {
   planCashRefunds,
+  sumNetCollectedPayments,
   type RefundablePayment,
 } from "../src/modules/payments/refund-ledger";
 
@@ -75,4 +76,17 @@ test("item refund ignores failed and fully refunded cash tenders", () => {
   assert.ok(allocation);
   assert.equal(allocation.payment.id, "available");
   assert.equal(allocation.amount.toFixed(2), "9000.00");
+});
+
+test("net collected total subtracts partial refunds and ignores failed or fully refunded payments", () => {
+  const total = sumNetCollectedPayments([
+    payment("partial", "CASH", 74_000, PaymentStatus.PARTIALLY_REFUNDED, [
+      24_000,
+    ]),
+    payment("paid", "CARD", 18_000, PaymentStatus.PAID),
+    payment("refunded", "CASH", 10_000, PaymentStatus.REFUNDED, [10_000]),
+    payment("failed", "CASH", 9_000, PaymentStatus.FAILED),
+  ]);
+
+  assert.equal(total.toFixed(0), "68000");
 });

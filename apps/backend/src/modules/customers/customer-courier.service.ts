@@ -8,7 +8,6 @@ import {
 } from "@nestjs/common";
 import {
   OrderStatus,
-  PaymentStatus,
   Prisma,
   ShiftStatus,
 } from "@prisma/client";
@@ -22,6 +21,7 @@ import {
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentsService } from "../payments/payments.service";
+import { sumNetCollectedPayments } from "../payments/refund-ledger";
 import {
   eventForLegacyStatus,
   orderStateForLegacyStatus,
@@ -168,7 +168,11 @@ export class CustomerCourierService {
         order: {
           include: {
             payments: {
-              select: { amount: true, status: true },
+              select: {
+                amount: true,
+                status: true,
+                refunds: { select: { amount: true } },
+              },
             },
             statusHistory: {
               orderBy: { createdAt: "asc" },
@@ -206,16 +210,7 @@ export class CustomerCourierService {
 
     return customerOrders.map((customerOrder) => {
       const { payments, ...order } = customerOrder.order;
-      const paidTotal = payments
-        .filter(
-          (payment) =>
-            payment.status === PaymentStatus.PAID ||
-            payment.status === PaymentStatus.SUCCESS,
-        )
-        .reduce(
-          (total, payment) => total.add(payment.amount),
-          new Prisma.Decimal(0),
-        );
+      const paidTotal = sumNetCollectedPayments(payments);
       const outstanding = order.total.sub(paidTotal);
       return withDeliveryDistance(
         withDerivedCustomerOrderStatus({
@@ -411,7 +406,9 @@ export class CustomerCourierService {
         await tx.$queryRaw`SELECT o.id FROM "orders" o JOIN "customer_orders" c ON c."orderId" = o.id JOIN "branches" b ON b.id = c."branchId" WHERE c.id = ${customerOrderId} AND b."tenantId" = ${scope.tenantId} FOR UPDATE OF o`;
         const existing = await tx.customerOrder.findFirst({
           where: { id: customerOrderId, branch: { tenantId: scope.tenantId } },
-          include: { order: { include: { payments: true } } },
+          include: {
+            order: { include: { payments: { include: { refunds: true } } } },
+          },
         });
 
         if (!existing) {
@@ -476,16 +473,7 @@ export class CustomerCourierService {
             );
           }
           if (nextStatus === OrderStatus.COMPLETED) {
-            const paidTotal = existing.order.payments
-              .filter(
-                (payment) =>
-                  payment.status === PaymentStatus.PAID ||
-                  payment.status === PaymentStatus.SUCCESS,
-              )
-              .reduce(
-                (total, payment) => total.add(payment.amount),
-                new Prisma.Decimal(0),
-              );
+            const paidTotal = sumNetCollectedPayments(existing.order.payments);
             const outstanding = existing.order.total.sub(paidTotal);
             if (outstanding.greaterThan(0)) {
               if (dto.amount !== undefined && !outstanding.equals(dto.amount)) {
