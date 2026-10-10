@@ -14,7 +14,12 @@ import type { ProductReportQueryDto, ReportQueryDto } from "./dto/report-query.d
 import { ReportPreset } from "./dto/report-query.dto";
 import { resolveReportRange, toTashkentDateKey, toTashkentMonthKey } from "./report-range";
 
-const successfulPaymentStatuses = [PaymentStatus.PAID, PaymentStatus.SUCCESS] as const;
+const successfulPaymentStatuses = [
+  PaymentStatus.PAID,
+  PaymentStatus.SUCCESS,
+  PaymentStatus.PARTIALLY_REFUNDED,
+] as const;
+const settledOrderPaymentStatuses = [PaymentStatus.PAID, PaymentStatus.SUCCESS] as const;
 const successfulOrderStatuses = [
   OrderStatus.CONFIRMED,
   OrderStatus.PREPARING,
@@ -80,7 +85,7 @@ export class ReportsService {
           order: {
             branch: { tenantId },
             status: { in: [...successfulOrderStatuses] },
-            paymentStatus: { in: [...successfulPaymentStatuses] },
+            paymentStatus: { in: [...settledOrderPaymentStatuses] },
             ...(branchId ? { branchId } : {}),
             ...(source ? { source } : {}),
             payments: {
@@ -171,7 +176,7 @@ export class ReportsService {
         paymentStatuses: [...successfulPaymentStatuses],
         orderStatuses: [...successfulOrderStatuses],
         excludedOrderStatuses: [OrderStatus.CANCELLED],
-        basis: "Successful payments paid inside the selected Asia/Tashkent period. Cancelled, failed, pending, unpaid, and refunded payments are excluded from successful sales.",
+        basis: "Successful payments paid inside the selected Asia/Tashkent period. Partial refunds remain visible as gross successful payments and are reported separately; cancelled, failed, pending, unpaid, and fully refunded payments are excluded from successful sales.",
       },
       revenue,
       totalSales: revenue,
@@ -218,7 +223,7 @@ export class ReportsService {
         order: {
           branch: { tenantId },
           status: { in: [...successfulOrderStatuses] },
-          paymentStatus: { in: [...successfulPaymentStatuses] },
+          paymentStatus: { in: [...settledOrderPaymentStatuses] },
           ...(branchId ? { branchId } : {}),
           ...(query.source ? { source: query.source } : {}),
           payments: {
