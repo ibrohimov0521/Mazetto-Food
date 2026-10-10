@@ -57,6 +57,42 @@ test("A4 refund receipts include the reason and negative total", () => {
   assert.doesNotMatch(html, /<tekshirish>/);
 });
 
+test("receipt payment codes use the same readable labels as cashier screens", () => {
+  const methods = [
+    ["CASH", "Naqd pul"],
+    ["CARD", "Bank kartasi"],
+    ["UZCARD", "Uzcard"],
+    ["HUMO", "Humo"],
+    ["CLICK", "Click"],
+    ["PAYME", "Payme"],
+    ["ONLINE", "Onlayn to'lov"],
+  ] as const;
+  const html = printableReceiptHtml({
+    documentType: "RECEIPT",
+    content: {
+      documentType: "RECEIPT",
+      payments: methods.map(([method]) => ({ method, amount: "1 000" })),
+      items: [],
+    },
+  });
+
+  for (const [code, label] of methods) {
+    assert.match(html, new RegExp(`<span>${label.replace("'", "&#039;")}</span>`));
+    assert.doesNotMatch(html, new RegExp(`<span>${code}</span>`));
+  }
+});
+
+test("unknown payment method labels remain readable", () => {
+  const html = printableReceiptHtml({
+    content: {
+      payments: [{ method: "Terminal xodimi", amount: "1 000" }],
+      items: [],
+    },
+  });
+
+  assert.match(html, /<span>Terminal xodimi<\/span>/);
+});
+
 test("label dimensions are explicit and legacy Godex settings remain compatible", () => {
   const settings = normalizeWindowsPaperSettings({
     paperFormat: "LABEL",
