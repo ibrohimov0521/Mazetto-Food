@@ -101,6 +101,7 @@ export class OrderActionService {
           },
           user,
           {
+            shiftId: dto.shiftId,
             expectedVersion: dto.expectedVersion,
             correlationId: context.correlationId,
             idempotencyKey: context.idempotencyKey,
