@@ -8,6 +8,7 @@ import {
 } from "../src/receipt-renderer.js";
 import {
   defaultReceiptPrintProfile,
+  migrateStoredReceiptPrintProfile,
   normalizeReceiptPrintProfile,
 } from "../src/receipt-profile.js";
 
@@ -199,6 +200,61 @@ test("receipt profile can hide the logo and organization name independently of t
 
   assert.doesNotMatch(html, /<img class="logo"/);
   assert.doesNotMatch(html, /MAZETTO FOOD/);
+});
+
+test("customer receipt branding is off by default and can be enabled again", () => {
+  const profile = defaultReceiptPrintProfile();
+  assert.equal(profile.documents.RECEIPT.logoEnabled, false);
+  assert.equal(profile.documents.RECEIPT.businessNameEnabled, false);
+  assert.equal(profile.documents.KITCHEN.logoEnabled, true);
+  assert.equal(profile.documents.KITCHEN.businessNameEnabled, true);
+
+  const render = () => printableReceiptHtml(
+    { documentType: "RECEIPT", content: { documentType: "RECEIPT" } },
+    { paperFormat: "ROLL", paperWidthMm: 80 },
+    profile,
+    "data:image/png;base64,ZmFrZQ==",
+  );
+  assert.doesNotMatch(render(), /<img class="logo"|MAZETTO FOOD/);
+  profile.documents.RECEIPT.logoEnabled = true;
+  profile.documents.RECEIPT.businessNameEnabled = true;
+  assert.match(render(), /<img class="logo"/);
+  assert.match(render(), /MAZETTO FOOD/);
+});
+
+test("legacy default receipt branding migrates once without changing other document kinds", () => {
+  const legacy = defaultReceiptPrintProfile() as unknown as Record<string, unknown>;
+  delete legacy.schemaVersion;
+  const documents = legacy.documents as Record<string, Record<string, unknown>>;
+  documents.RECEIPT.logoEnabled = true;
+  documents.RECEIPT.businessNameEnabled = true;
+
+  const migrated = migrateStoredReceiptPrintProfile(legacy);
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.documents.RECEIPT.logoEnabled, false);
+  assert.equal(migrated.documents.RECEIPT.businessNameEnabled, false);
+  assert.equal(migrated.documents.KITCHEN.logoEnabled, true);
+  assert.equal(migrated.documents.KITCHEN.businessNameEnabled, true);
+  migrated.documents.RECEIPT.logoEnabled = true;
+  migrated.documents.RECEIPT.businessNameEnabled = true;
+  assert.equal(migrateStoredReceiptPrintProfile(migrated).documents.RECEIPT.logoEnabled, true);
+  assert.equal(migrateStoredReceiptPrintProfile(migrated).documents.RECEIPT.businessNameEnabled, true);
+});
+
+test("legacy custom branding and explicit hide choices are preserved", () => {
+  const customName = migrateStoredReceiptPrintProfile({
+    businessName: "MAZETTO SERGELI",
+    documents: { RECEIPT: { businessName: "MAZETTO SERGELI", logoEnabled: true, businessNameEnabled: true } },
+  });
+  const hiddenLogo = migrateStoredReceiptPrintProfile({
+    businessName: "MAZETTO FOOD",
+    documents: { RECEIPT: { logoEnabled: false, businessNameEnabled: true } },
+  });
+
+  assert.equal(customName.documents.RECEIPT.logoEnabled, true);
+  assert.equal(customName.documents.RECEIPT.businessNameEnabled, true);
+  assert.equal(hiddenLogo.documents.RECEIPT.logoEnabled, false);
+  assert.equal(hiddenLogo.documents.RECEIPT.businessNameEnabled, true);
 });
 
 test("receipt branding is independent for each document kind", () => {

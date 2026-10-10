@@ -35,6 +35,7 @@ type ReceiptDocument = {
   footerLines: string[];
 };
 type ReceiptProfile = {
+  schemaVersion: number;
   businessName: string;
   commonHeaderLines: string[];
   commonFooterLines: string[];
