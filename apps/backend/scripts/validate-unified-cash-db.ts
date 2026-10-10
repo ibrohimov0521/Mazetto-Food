@@ -35,6 +35,7 @@ async function main() {
     };
     const worker = await actor("Worker", ["KITCHEN", "CASHIER", "COURIER"]);
     const receiver = await actor("Receiver", ["CASHIER"]);
+    const branchManager = await actor("Manager", ["BRANCH_MANAGER"]);
     const category = await prisma.category.create({ data: { code: "CASHQA" + id, name: "QA" } });
     const product = await prisma.product.findFirst({ where: { code: "CLASSIC_LAVASH" } }) ?? await prisma.product.create({ data: { code: "CLASSIC_LAVASH", categoryId: category.id, name: "QA item", sellingPrice: 10000, isAvailable: true } });
     await prisma.paymentMethod.create({ data: { branchId: branch.id, code: "CASH", name: "Cash", isActive: true } });
@@ -170,14 +171,50 @@ async function main() {
     assert.equal((await cash.getCurrentShift(worker))!.cashTransactions.length, 50);
     assert.equal((await shifts.getCurrentCourierShift(worker))!.currentCash.toNumber(), 15250);
 
+    const recoveryTransfer = await shifts.createCashTransfer(
+      { amount: 5000, toShiftId: targetShift.id },
+      worker,
+    );
+    assert.equal(await balance(), 10250);
+    await shifts.forceCloseShift(
+      targetShift.id,
+      { reason: "QA pending incoming transfer recovery" },
+      branchManager,
+    );
+    const unassignedTransfer = await prisma.cashTransfer.findUniqueOrThrow({
+      where: { id: recoveryTransfer.id },
+    });
+    assert.equal(unassignedTransfer.status, "PENDING");
+    assert.equal(unassignedTransfer.toShiftId, null);
+
+    const replacementTargetShift = await shifts.openShift(
+      { openingBalance: 0 },
+      receiver,
+    );
+    const receiverQueue = await shifts.listPendingCashTransfers(receiver);
+    assert.ok(receiverQueue.some(({ id }) => id === recoveryTransfer.id));
+    const recovered = await shifts.acceptCashTransfer(
+      recoveryTransfer.id,
+      receiver,
+    );
+    assert.equal(recovered.status, "ACCEPTED");
+    assert.equal(recovered.toShiftId, replacementTargetShift.id);
+    assert.equal(await balance(receiver), 5000);
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { cashTransferId: recoveryTransfer.id, type: "CASH_IN" },
+      }),
+      1,
+    );
+
     const card = await online("TAKEAWAY", 10000);
     await assert.rejects(
       () => payments.processOrderPayment({ orderId: card.order.id, idempotencyKey: "qa-card-" + id, shiftId: sourceShift.id, payments: [{ paymentMethodCode: "CARD", amount: 10000 }] }, worker),
       /to'lov usuli tizim sozlamalarida o'chirilgan/,
     );
     assert.equal(await prisma.payment.count({ where: { orderId: card.order.id } }), 0);
-    assert.equal(await balance(), 15250, "card revenue is not physical cash");
-    const closed = await shifts.closeShift(sourceShift.id, { closingBalance: 15250 }, worker);
+    assert.equal(await balance(), 10250, "card revenue is not physical cash");
+    const closed = await shifts.closeShift(sourceShift.id, { closingBalance: 10250 }, worker);
     assert.equal(closed.cashDifference?.toNumber(), 0);
     assert.equal(closed.cashTotal.toNumber(), 60000);
     assert.equal(closed.terminalTotal.toNumber(), 0);
@@ -211,15 +248,15 @@ async function main() {
     const diningPayment = {
       orderId: diningOrder.id,
       idempotencyKey: "qa-waiter-" + id,
-      shiftId: targetShift.id,
+      shiftId: replacementTargetShift.id,
       payments: [{ paymentMethodCode: "CASH", amount: 7000 }],
     };
     await payments.processOrderPayment(diningPayment, receiver);
     await payments.processOrderPayment(diningPayment, receiver);
-    assert.equal(await balance(receiver), 67000);
+    assert.equal(await balance(receiver), 12000);
     assert.equal(await prisma.payment.count({ where: { orderId: diningOrder.id } }), 1);
     assert.equal(await prisma.cashTransaction.count({
-      where: { orderId: diningOrder.id, shiftId: targetShift.id, employeeId: receiver.employeeId },
+      where: { orderId: diningOrder.id, shiftId: replacementTargetShift.id, employeeId: receiver.employeeId },
     }), 1);
     console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
   } finally { await prisma.onModuleDestroy(); }
