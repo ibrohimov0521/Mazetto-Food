@@ -22,7 +22,13 @@ export class DashboardService {
     const [revenue, ordersCount, activeShifts] = await Promise.all([
       this.prisma.payment.aggregate({
         where: {
-          status: { in: [PaymentStatus.PAID, PaymentStatus.SUCCESS] },
+          status: {
+            in: [
+              PaymentStatus.PAID,
+              PaymentStatus.SUCCESS,
+              PaymentStatus.PARTIALLY_REFUNDED,
+            ],
+          },
           paidAt: { gte: from, lte: to },
           order: {
             branch: { tenantId },
