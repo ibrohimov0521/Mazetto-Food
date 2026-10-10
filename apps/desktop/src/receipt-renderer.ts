@@ -13,6 +13,16 @@ export type WindowsPaperSettings = {
   paperHeightMm?: number;
 };
 
+const paymentMethodLabels: Record<string, string> = {
+  CASH: "Naqd pul",
+  CARD: "Bank kartasi",
+  UZCARD: "Uzcard",
+  HUMO: "Humo",
+  CLICK: "Click",
+  PAYME: "Payme",
+  ONLINE: "Onlayn to'lov",
+};
+
 export function normalizeWindowsPaperSettings(
   value: unknown,
   printerName?: string,
@@ -101,7 +111,11 @@ export function printableReceiptHtml(
   }).join("");
   const paymentRows = payments.map((value) => {
     const payment = value && typeof value === "object" ? value as Record<string, unknown> : {};
-    return `<li><span>${escapeHtml(String(payment.method ?? "To'lov"))}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
+    const rawMethod = typeof payment.method === "string" ? payment.method.trim() : "";
+    const method = rawMethod
+      ? paymentMethodLabels[rawMethod.toUpperCase()] ?? rawMethod
+      : "To'lov";
+    return `<li><span>${escapeHtml(method)}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
   }).join("");
   const defaultHeading = cancelled
     ? "BUYURTMA BEKOR QILINDI"
