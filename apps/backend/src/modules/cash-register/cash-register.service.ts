@@ -63,7 +63,7 @@ export class CashRegisterService {
           return null;
         }
 
-        const [cashTransactionTotals, cashSales, paidOrders] = await Promise.all([
+        const [cashTransactionTotals, cashSales, shiftOrders] = await Promise.all([
           tx.cashTransaction.groupBy({
             by: ["type"],
             where: { shiftId: shift.id },
@@ -77,27 +77,34 @@ export class CashRegisterService {
             },
             _sum: { amount: true },
           }),
-          tx.revenueRecord.groupBy({
-            by: ["orderId"],
+          tx.order.findMany({
             where: {
-              shiftId: shift.id,
-              paymentId: { not: null },
-              orderId: { not: null },
+              OR: [
+                { shiftId: shift.id },
+                {
+                  revenueRecords: {
+                    some: {
+                      shiftId: shift.id,
+                      paymentId: { not: null },
+                    },
+                  },
+                },
+              ],
             },
+            select: { id: true },
+            orderBy: { id: "asc" },
           }),
         ]);
-        const paidOrderIds = paidOrders.flatMap(({ orderId }) =>
-          orderId ? [orderId] : [],
-        );
+        const shiftOrderIds = shiftOrders.map(({ id }) => id);
 
         return {
           ...shift,
-          revenueRecords: paidOrderIds.map((orderId) => ({ orderId })),
+          revenueRecords: shiftOrderIds.map((orderId) => ({ orderId })),
           ...this.calculateShiftSummary(
             shift.openingBalance,
             cashTransactionTotals,
             cashSales._sum.amount,
-            paidOrderIds.length,
+            shiftOrderIds.length,
           ),
         };
       },

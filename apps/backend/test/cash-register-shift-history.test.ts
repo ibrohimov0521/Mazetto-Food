@@ -20,11 +20,12 @@ async function getCurrentCash(
     amount: number;
     methodCode: string | null;
   }[] = [],
+  directlyAssignedOrderIds: string[] = [],
   captured?: {
     shiftQuery?: Record<string, unknown>;
     cashTransactionQuery?: Record<string, unknown>;
     cashSalesQuery?: Record<string, unknown>;
-    paidOrdersQuery?: Record<string, unknown>;
+    shiftOrdersQuery?: Record<string, unknown>;
     transactionOptions?: Record<string, unknown>;
   },
 ) {
@@ -76,13 +77,18 @@ async function getCurrentCash(
           },
         };
       },
-      groupBy: async (query: Record<string, unknown>) => {
-        if (captured) captured.paidOrdersQuery = query;
-        return [...new Set(
-          revenueRecords
+    },
+    order: {
+      findMany: async (query: Record<string, unknown>) => {
+        if (captured) captured.shiftOrdersQuery = query;
+        return [...new Set([
+          ...directlyAssignedOrderIds,
+          ...revenueRecords
             .filter((record) => record.orderId && record.methodCode)
-            .map((record) => record.orderId),
-        )].map((orderId) => ({ orderId }));
+            .map((record) => record.orderId as string),
+        ])]
+          .sort()
+          .map((id) => ({ id }));
       },
     },
   };
@@ -120,12 +126,12 @@ test("current shift balance does not count the opening float twice when its ledg
   assert.equal(shift?.currentBalance.toFixed(0), "115000");
 });
 
-test("current shift summary aggregates cash and paid orders without loading full ledger history", async () => {
+test("current shift summary counts direct and paid orders without loading full ledger history", async () => {
   const captured: {
     shiftQuery?: Record<string, unknown>;
     cashTransactionQuery?: Record<string, unknown>;
     cashSalesQuery?: Record<string, unknown>;
-    paidOrdersQuery?: Record<string, unknown>;
+    shiftOrdersQuery?: Record<string, unknown>;
     transactionOptions?: Record<string, unknown>;
   } = {};
   const shift = await getCurrentCash(
@@ -140,15 +146,17 @@ test("current shift summary aggregates cash and paid orders without loading full
       { orderId: "order-b", amount: 25000, methodCode: "UZCARD" },
       { orderId: "unpaid", amount: 10000, methodCode: null },
     ],
+    ["order-c"],
     captured,
   );
 
   assert.equal(shift?.currentBalance.toFixed(0), "65000");
   assert.equal(shift?.cashSales.toFixed(0), "40000");
-  assert.equal(shift?.orderCount, 2);
+  assert.equal(shift?.orderCount, 3);
   assert.deepEqual(shift?.revenueRecords, [
     { orderId: "order-a" },
     { orderId: "order-b" },
+    { orderId: "order-c" },
   ]);
   const include = captured.shiftQuery?.include as {
     cashTransactions: Record<string, unknown>;
@@ -168,13 +176,22 @@ test("current shift summary aggregates cash and paid orders without loading full
     },
     _sum: { amount: true },
   });
-  assert.deepEqual(captured.paidOrdersQuery, {
-    by: ["orderId"],
+  assert.deepEqual(captured.shiftOrdersQuery, {
     where: {
-      shiftId: "shift-a",
-      paymentId: { not: null },
-      orderId: { not: null },
+      OR: [
+        { shiftId: "shift-a" },
+        {
+          revenueRecords: {
+            some: {
+              shiftId: "shift-a",
+              paymentId: { not: null },
+            },
+          },
+        },
+      ],
     },
+    select: { id: true },
+    orderBy: { id: "asc" },
   });
   assert.deepEqual(captured.transactionOptions, {
     isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
