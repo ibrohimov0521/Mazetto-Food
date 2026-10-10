@@ -215,6 +215,38 @@ test("shift cash transaction history returns a stable, paginated page and exact 
   assert.deepEqual(captured.countWhere, { shiftId: "shift-a" });
 });
 
+test("cash transaction history keeps the legacy array response without page parameters", async () => {
+  const captured: { transactionQuery?: Record<string, unknown> } = {};
+  const rows = [{ id: "legacy-transaction" }];
+  const service = new CashRegisterService(
+    {
+      branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+      shift: {
+        findFirst: async () => ({
+          id: "shift-a",
+          branchId: "branch-a",
+          employeeId: "employee-a",
+        }),
+      },
+      cashTransaction: {
+        findMany: async (query: Record<string, unknown>) => {
+          captured.transactionQuery = query;
+          return rows;
+        },
+      },
+    } as never,
+    {} as never,
+  );
+
+  assert.deepEqual(await service.getTransactions("shift-a", {}, cashier), rows);
+  assert.equal(captured.transactionQuery?.take, 200);
+  assert.equal(captured.transactionQuery?.skip, undefined);
+  assert.deepEqual(captured.transactionQuery?.orderBy, [
+    { occurredAt: "desc" },
+    { id: "desc" },
+  ]);
+});
+
 test("cash transaction history returns an empty page for an unknown shift", async () => {
   let queriedTransactions = false;
   const service = new CashRegisterService(

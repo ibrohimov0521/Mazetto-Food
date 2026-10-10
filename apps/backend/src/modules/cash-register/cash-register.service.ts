@@ -160,15 +160,30 @@ export class CashRegisterService {
     this.assertCanViewShift(user, shift.employeeId);
 
     const where = { shiftId };
+    const pageQuery: Prisma.CashTransactionFindManyArgs = {
+      where,
+      include: {
+        employee: true,
+        payment: { include: { method: true } },
+        order: true,
+      },
+      orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+    };
+
+    // Older POS clients request this endpoint without page parameters and
+    // expect the original array response.
+    const paginationRequested =
+      query.limit !== undefined || query.offset !== undefined;
+    if (!paginationRequested) {
+      return this.prisma.cashTransaction.findMany({
+        ...pageQuery,
+        take: 200,
+      });
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.cashTransaction.findMany({
-        where,
-        include: {
-          employee: true,
-          payment: { include: { method: true } },
-          order: true,
-        },
-        orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+        ...pageQuery,
         skip: this.parseOffset(query.offset),
         take: this.parseLimit(query.limit),
       }),
