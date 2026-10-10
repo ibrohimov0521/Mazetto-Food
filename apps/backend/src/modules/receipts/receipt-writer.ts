@@ -52,7 +52,8 @@ export function receiptPrintRoute(
 
 export function createReceiptNumber(): string {
   const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  return `RCPT-${date}-${randomUUID().slice(0, 12).toUpperCase()}`;
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+  return `RCPT-${date}-${suffix}`;
 }
 
 export async function allocateReceiptNumber(
