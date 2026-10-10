@@ -233,11 +233,15 @@ async function main() {
     const activeShiftSummary = (await cash.getCurrentShift(worker))!;
     assert.equal(activeShiftSummary.cashTransactions.length, 50);
     assert.equal(activeShiftSummary.cashSales.toNumber(), 60000);
-    assert.equal(activeShiftSummary.orderCount, 3);
+    assert.equal(activeShiftSummary.orderCount, 4);
     assert.equal(
       new Set(activeShiftSummary.revenueRecords.map(({ orderId }) => orderId)).size,
-      3,
+      4,
       "offline replay order IDs must stay compact and unique",
+    );
+    assert.ok(
+      activeShiftSummary.revenueRecords.some(({ orderId }) => orderId === unpaidHallOrder.id),
+      "directly assigned unpaid hall orders must be counted before payment",
     );
     assert.equal((await shifts.getCurrentCourierShift(worker))!.currentCash.toNumber(), 15250);
 
