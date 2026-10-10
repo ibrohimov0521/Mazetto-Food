@@ -189,3 +189,14 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 
 - Courier delivery lists and completion logic counted only `PAID`/`SUCCESS` payment rows and did not load refund details. A partially refunded order could show too much due and ask the courier to collect more than its net outstanding balance.
 - The same net-collected payment calculation is now shared across cashier collection, kitchen handoff, and courier list/completion paths; courier queries load refund amounts. Regression coverage verifies the displayed 24,000 so'm balance, the exact amount collected on courier completion, and common net calculations for partial, full, and failed tenders. Local validation passed: backend tests 567/567, transient retry tests 3/3, focused courier/refund tests 10/10, ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check`. No migration is needed; PR CI and production release remain the gate.
+
+## Release confirmation: refund-aware collection screens
+
+- PR #277 was squash-merged as `0510fe35001dcbcf2502876af4ba287e17b5f222`; production Deploy #311 succeeded and the `production` tag points to that commit.
+- PR #278 was squash-merged as `ba18c6ded12214f4b5f727405d4e05c4650f0a26`; Main CI run #38059218697 and production Deploy run #38059483669 succeeded, including production smoke. The `production` tag was verified at that commit.
+
+## Audit continuation: customer payment status labels
+
+- The customer order-detail page uses a localized payment-status label. A partially refunded tender was missing from both Uzbek and Russian label maps, so it appeared as an unknown status instead of explaining what happened.
+- The label now says `Qisman qaytarilgan` in Uzbek and `Частичный возврат` in Russian. Existing unknown-status fallbacks remain unchanged.
+- Regression tests cover both locales and unknown statuses. Local validation passed: customer-web tests 20/20, focused ESLint, TypeScript, and optimized Next.js production build. No schema migration is required; PR CI and production deployment remain the release gate.
