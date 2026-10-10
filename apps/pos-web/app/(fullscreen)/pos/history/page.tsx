@@ -14,6 +14,7 @@ import {
 import styles from "../../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../../lib/api";
 import { hasPermission } from "../../../../lib/auth";
+import { orderItemCancellationNeedsRefundPermission } from "../../../../lib/order-item-cancellation.mjs";
 import { formatMoney, orderStatusLabels } from "../../../../lib/order-display";
 
 type ShiftRow = {
@@ -277,10 +278,10 @@ export default function CashierHistoryPage() {
   const showPrint = hasPermission(user, "RECEIPT_PRINT");
   const canCancelItems =
     hasPermission(user, "ORDER_UPDATE") &&
-    hasPermission(user, "PAYMENT_REFUND") &&
     shift?.status === "OPEN" &&
     orderDetail !== null &&
     orderDetail.status !== "CANCELLED";
+  const canRefundPayments = hasPermission(user, "PAYMENT_REFUND");
 
   async function reprint(receiptId: string) {
     setReprintingId(receiptId);
@@ -572,47 +573,66 @@ export default function CashierHistoryPage() {
               </div>
               <h3 className={styles.subheading}>Mahsulotlar</h3>
               <ul className={styles.itemList}>
-                {orderDetail.items.map((item) => (
-                  <li className={styles.historyItemRow} key={item.id}>
-                    <span>
-                      {item.productName}
-                      {item.variantName ? ` · ${item.variantName}` : ""} ×{" "}
-                      {item.quantity}
-                      {item.status === "CANCELLED" ? " · Bekor qilingan" : ""}
-                      {item.status === "CANCELLED" &&
-                      item.cancellationReason ? (
-                        <small className={styles.muted}>
-                          Bekor sababi: {item.cancellationReason}
-                        </small>
+                {orderDetail.items.map((item) => {
+                  const refundPermissionRequired =
+                    orderItemCancellationNeedsRefundPermission({
+                      orderTotal: orderDetail.total,
+                      itemTotal: item.totalPrice,
+                      payments: orderDetail.payments ?? [],
+                    });
+                  const refundBlocked =
+                    refundPermissionRequired && !canRefundPayments;
+
+                  return (
+                    <li className={styles.historyItemRow} key={item.id}>
+                      <span>
+                        {item.productName}
+                        {item.variantName ? ` · ${item.variantName}` : ""} ×{" "}
+                        {item.quantity}
+                        {item.status === "CANCELLED"
+                          ? " · Bekor qilingan"
+                          : ""}
+                        {item.status === "CANCELLED" &&
+                        item.cancellationReason ? (
+                          <small className={styles.muted}>
+                            Bekor sababi: {item.cancellationReason}
+                          </small>
+                        ) : null}
+                      </span>
+                      <strong>{formatMoney(item.totalPrice)}</strong>
+                      {canCancelItems && item.status !== "CANCELLED" ? (
+                        <button
+                          aria-label={`${item.productName} mahsulotini bekor qilish`}
+                          className={styles.itemCancel}
+                          disabled={
+                            !isOnline ||
+                            Boolean(cancellingItemId) ||
+                            refundBlocked
+                          }
+                          onClick={() =>
+                            setCancelTarget({
+                              itemId: item.id,
+                              productName: item.productName,
+                              amount: item.totalPrice,
+                              idempotencyKey: crypto.randomUUID(),
+                            })
+                          }
+                          title={
+                            !isOnline
+                              ? "Bekor qilish uchun internet kerak"
+                              : refundBlocked
+                                ? "Pul qaytarish uchun alohida ruxsat kerak"
+                                : "Mahsulotni bekor qilish"
+                          }
+                          type="button"
+                        >
+                          <Ban size={15} />
+                          <span>Bekor</span>
+                        </button>
                       ) : null}
-                    </span>
-                    <strong>{formatMoney(item.totalPrice)}</strong>
-                    {canCancelItems && item.status !== "CANCELLED" ? (
-                      <button
-                        aria-label={`${item.productName} mahsulotini bekor qilish`}
-                        className={styles.itemCancel}
-                        disabled={!isOnline || Boolean(cancellingItemId)}
-                        onClick={() =>
-                          setCancelTarget({
-                            itemId: item.id,
-                            productName: item.productName,
-                            amount: item.totalPrice,
-                            idempotencyKey: crypto.randomUUID(),
-                          })
-                        }
-                        title={
-                          !isOnline
-                            ? "Bekor qilish uchun internet kerak"
-                            : "Mahsulotni bekor qilish"
-                        }
-                        type="button"
-                      >
-                        <Ban size={15} />
-                        <span>Bekor</span>
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
               {orderDetail.notes ? (
                 <p className={styles.note}>Izoh: {orderDetail.notes}</p>
