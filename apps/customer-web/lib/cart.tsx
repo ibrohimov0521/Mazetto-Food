@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { apiFetch, getApiBaseUrl } from "./api";
+import { customerProfileForStorage } from "./customer-session-storage.mjs";
 import { guestApiFetch } from "./guest-addresses";
 import {
   isDeliveryLocation,
@@ -33,6 +34,10 @@ export type CustomerSession = {
   refreshToken?: string;
   tokenType: "Bearer";
 };
+export type CustomerProfileSession = Omit<
+  CustomerSession,
+  "accessToken" | "refreshToken" | "tokenType"
+> & Partial<Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType">>;
 export type CartModifier = {
   modifierId: string;
   name: string;
@@ -61,7 +66,8 @@ export type CartFlight = {
   };
 };
 type CartContextValue = {
-  customer: CustomerSession | null;
+  customer: CustomerProfileSession | null;
+  customerReady: boolean;
   items: CartItem[];
   favoriteIds: string[];
   toastMessage: string | null;
@@ -92,7 +98,9 @@ const customerKey = "mazetto.customer.session";
 const favoritesKey = "mazetto.customer.favorites";
 const CartContext = createContext<CartContextValue | null>(null);
 
-function withoutCustomerRefreshToken(customer: CustomerSession): CustomerSession {
+function withoutCustomerRefreshToken(
+  customer: CustomerProfileSession,
+): CustomerProfileSession {
   const safeCustomer = { ...customer };
   delete safeCustomer.refreshToken;
   return safeCustomer;
@@ -186,7 +194,8 @@ const sourceMenuMediaPaths = new Set([
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
-  const [customer, setCustomerState] = useState<CustomerSession | null>(null);
+  const [customer, setCustomerState] = useState<CustomerProfileSession | null>(null);
+  const [customerReady, setCustomerReady] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [cartPulseId, setCartPulseId] = useState(0);
@@ -253,13 +262,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setItems(readStoredValue<CartItem[]>(storageKey, []));
-    const legacyCustomer = readStoredValue<CustomerSession | null>(customerKey, null);
+    const legacyCustomer = readStoredValue<CustomerProfileSession | null>(customerKey, null);
     const browserCustomer = legacyCustomer
-      ? withoutCustomerRefreshToken(legacyCustomer)
+      ? customerProfileForStorage(legacyCustomer) as CustomerProfileSession
       : null;
-    // Refresh tokens are HttpOnly cookies. Keep only the short-lived access
-    // token and profile in localStorage; old stored refresh tokens are used
-    // once below to migrate existing browsers into the cookie session.
+    // Access and refresh tokens stay out of localStorage; the refresh cookie
+    // restores an in-memory access token before authenticated pages render.
     setCustomerState(browserCustomer);
     if (browserCustomer) {
       window.localStorage.setItem(customerKey, JSON.stringify(browserCustomer));
@@ -272,6 +280,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             ? { refreshToken: legacyCustomer.refreshToken }
             : {},
         ),
+        signal: AbortSignal.timeout(15_000),
         credentials: "include",
       })
         .then(async (response) => {
@@ -288,9 +297,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           if (!payload.data) return;
           const migrated = withoutCustomerRefreshToken({ ...payload.data.customer, ...payload.data.tokens });
           setCustomerState(migrated);
-          window.localStorage.setItem(customerKey, JSON.stringify(migrated));
+          window.localStorage.setItem(customerKey, JSON.stringify(customerProfileForStorage(migrated)));
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => setCustomerReady(true));
     setFavoriteIds(readStoredValue<string[]>(favoritesKey, []));
     setHydrated(true);
   }, []);
@@ -321,9 +331,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       ? withoutCustomerRefreshToken(customer)
       : null;
     setCustomerState(browserCustomer);
+    setCustomerReady(true);
 
     if (browserCustomer) {
-      window.localStorage.setItem(customerKey, JSON.stringify(browserCustomer));
+      window.localStorage.setItem(customerKey, JSON.stringify(customerProfileForStorage(browserCustomer)));
     } else {
       window.localStorage.removeItem(customerKey);
       void fetch(`${getCustomerApiBaseUrl()}/customer/auth/logout`, {
@@ -418,6 +429,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const value: CartContextValue = {
     customer,
+    customerReady,
     items,
     favoriteIds,
     toastMessage,

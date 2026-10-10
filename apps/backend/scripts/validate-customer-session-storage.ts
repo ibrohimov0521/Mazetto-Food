@@ -11,10 +11,14 @@ const source = readFileSync(
   "utf8",
 );
 
+const storageSource = readFileSync(
+  join(repoRoot, "apps/customer-web/lib/customer-session-storage.mjs"),
+  "utf8",
+);
 assert.match(
   source,
-  /function withoutCustomerRefreshToken\(customer: CustomerSession\)/,
-  "customer session sanitizatsiyasi yo'q",
+  /function withoutCustomerRefreshToken\([\s\S]*?customer: CustomerProfileSession/,
+  "customer profile session sanitizatsiyasi yo'q",
 );
 assert.match(
   source,
@@ -23,8 +27,33 @@ assert.match(
 );
 assert.match(
   source,
-  /window\.localStorage\.setItem\(customerKey, JSON\.stringify\(browserCustomer\)\)/,
-  "customer session localStorage'ga xavfsiz shaklda yozilmayapti",
+  /customerProfileForStorage\(legacyCustomer\)/,
+  "legacy session localStorage'dan oldin tokenlardan tozalanmayapti",
+);
+assert.match(
+  source,
+  /JSON\.stringify\(customerProfileForStorage\(migrated\)\)/,
+  "refresh javobidagi tokenlar localStorage'ga yozilmasligi kerak",
+);
+assert.match(
+  source,
+  /JSON\.stringify\(customerProfileForStorage\(browserCustomer\)\)/,
+  "login sessiyasi localStorage'ga tokenlarsiz yozilishi kerak",
+);
+assert.match(
+  storageSource,
+  /delete profile\.accessToken/,
+  "access token customer localStorage profilidan olib tashlanmayapti",
+);
+assert.match(
+  storageSource,
+  /delete profile\.refreshToken/,
+  "refresh token customer localStorage profilidan olib tashlanmayapti",
+);
+assert.match(
+  storageSource,
+  /delete profile\.tokenType/,
+  "token turi customer localStorage profilidan olib tashlanmayapti",
 );
 assert.match(
   source,
@@ -38,8 +67,8 @@ const localStorageWrites = source.match(
 for (const write of localStorageWrites) {
   assert.doesNotMatch(
     write,
-    /refreshToken/,
-    "refresh token customer localStorage yozuviga qayta tushmasin",
+    /accessToken|refreshToken|tokenType/,
+    "auth token customer localStorage yozuviga qayta tushmasin",
   );
 }
 

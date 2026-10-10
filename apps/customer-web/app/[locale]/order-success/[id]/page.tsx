@@ -40,7 +40,7 @@ function OrderSuccess() {
   const meta = useTranslations("CustomerMeta");
   const t = useTranslations("Customer");
   const params = useParams<{ id: string }>();
-  const { customer, refreshCustomer } = useCart();
+  const { customer, customerReady, refreshCustomer } = useCart();
   const [order, setOrder] = useState<CustomerOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -81,6 +81,14 @@ function OrderSuccess() {
   }, [load]);
 
   const itemCount = order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 0;
+
+  if (!customerReady) {
+    return (
+      <section aria-busy="true" className="mx-auto max-w-3xl px-4 py-10">
+        <div className="mf-card min-h-40 animate-pulse p-8" />
+      </section>
+    );
+  }
 
   if (!customer?.accessToken) {
     return (
