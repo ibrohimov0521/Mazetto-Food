@@ -93,6 +93,8 @@ async function main(): Promise<void> {
           mockDeliveries.push({ orderId, tenantId });
           return "sent";
         },
+        deliverOutboxCustomerStatus: async () => "sent",
+        deliverOutboxStaffStatusRefresh: async () => "sent",
       } as never,
     );
     const dueNotificationCount = await prisma.notificationOutbox.count({

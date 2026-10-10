@@ -6,6 +6,7 @@ const pnpmCli = process.env.npm_execpath;
 if (!pnpmCli) {
   throw new Error("Run release acceptance through pnpm");
 }
+const pnpmCliIsJavaScript = /\.(?:cjs|mjs|js)$/i.test(pnpmCli);
 
 const pnpm = (...args) => [pnpmCli, ...args];
 
@@ -39,8 +40,10 @@ const stages = [
 
 for (const [label, args] of stages) {
   console.log(`\n=== ${label} ===`);
-  const commandArgs = args[0] === pnpmCli ? args : [pnpmCli, ...args];
-  const result = spawnSync(process.execPath, commandArgs, {
+  const commandArgs = args[0] === pnpmCli ? args.slice(1) : args;
+  const command = pnpmCliIsJavaScript ? process.execPath : pnpmCli;
+  const commandPrefix = pnpmCliIsJavaScript ? [pnpmCli] : [];
+  const result = spawnSync(command, [...commandPrefix, ...commandArgs], {
     stdio: "inherit",
     env: {
       ...process.env,

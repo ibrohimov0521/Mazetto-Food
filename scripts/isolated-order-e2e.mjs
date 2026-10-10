@@ -19,9 +19,12 @@ const databaseUrl = new URL(adminUrl);
 databaseUrl.pathname = `/${databaseName}`;
 const pnpmCli = process.env.npm_execpath;
 if (!pnpmCli) throw new Error("Run this command through pnpm");
+const pnpmCliIsJavaScript = /\.(?:cjs|mjs|js)$/i.test(pnpmCli);
 
 function run(args) {
-  const result = spawnSync(process.execPath, [pnpmCli, ...args], {
+  const command = pnpmCliIsJavaScript ? process.execPath : pnpmCli;
+  const commandPrefix = pnpmCliIsJavaScript ? [pnpmCli] : [];
+  const result = spawnSync(command, [...commandPrefix, ...args], {
     cwd: new URL("..", import.meta.url),
     env: {
       ...process.env,
