@@ -313,7 +313,9 @@ export class DesktopGateway {
                       targetUrl,
                       identity?.branchId,
                     )
-                  : null;
+                  : commandDefinition.commandType === "cash.transaction.create"
+                    ? validateOfflineCashTransaction(body)
+                    : null;
           if (mutationError) {
             this.sendJson(response, 409, {
               success: false,
@@ -563,7 +565,9 @@ export class DesktopGateway {
                     targetUrl,
                     identity?.branchId,
                   )
-                : null;
+                : commandDefinition.commandType === "cash.transaction.create"
+                  ? validateOfflineCashTransaction(body)
+                  : null;
         if (mutationError) {
           this.sendJson(response, 409, {
             success: false,
@@ -1862,6 +1866,19 @@ function validateOfflineCashTransfer(
   }
 }
 
+function validateOfflineCashTransaction(body: ArrayBuffer): string | null {
+  const payload = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const type = stringField(payload, "type");
+  if (!new Set(["INCOME", "EXPENSE", "WITHDRAW"]).has(type ?? "")) {
+    return "Faqat kirim, xarajat yoki kassadan chiqarish amallarini oflayn saqlash mumkin.";
+  }
+  const amount = numberField(payload, "amount");
+  if (amount === null || amount <= 0) {
+    return "Kassa harakati summasi musbat bo'lishi kerak.";
+  }
+  return null;
+}
+
 function validateOfflineShiftClose(
   store: DesktopStore,
   authScope: string,
@@ -2206,19 +2223,7 @@ function optimisticCashTransaction(
   const amount = numberField(body, "amount");
   if (
     !type ||
-    ![
-      "OPENING",
-      "OPENING_BALANCE",
-      "SALE",
-      "REFUND",
-      "EXPENSE",
-      "WITHDRAW",
-      "INCOME",
-      "CASH_IN",
-      "CASH_OUT",
-      "CLOSING",
-      "CLOSING_BALANCE",
-    ].includes(type) ||
+    !["EXPENSE", "WITHDRAW", "INCOME"].includes(type) ||
     amount === null ||
     amount <= 0
   ) {
