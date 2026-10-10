@@ -278,7 +278,11 @@ test("already-paid cash pickup can be handed off without collecting again", asyn
   };
   state.order.status = OrderStatus.READY;
   state.order.paymentStatus = PaymentStatus.PAID;
-  state.order.payments.push({ amount: new Prisma.Decimal(100), status: PaymentStatus.PAID });
+  state.order.payments.push({
+    amount: new Prisma.Decimal(100),
+    status: PaymentStatus.PAID,
+    refunds: [],
+  });
   state.ticket.status = KitchenTicketStatus.READY;
   state.ticket.version = 3;
   const service = new KitchenService(state.prisma as never, state.gateway as never);
@@ -294,6 +298,61 @@ test("already-paid cash pickup can be handed off without collecting again", asyn
     (state.ticketEvents[0]?.payload as { recipientName?: string })?.recipientName,
     "Ali Valiyev",
   );
+});
+
+test("pickup with an item refund uses net paid amount after cancellation", async () => {
+  const state = createConcurrentKitchenState();
+  state.order.type = OrderType.TAKEAWAY;
+  state.order.customerOrder = {
+    paymentMethod: "CASH",
+    customer: { telegramChatId: null },
+  };
+  state.order.status = OrderStatus.READY;
+  state.order.total = new Prisma.Decimal(70);
+  state.order.paymentStatus = PaymentStatus.PAID;
+  state.order.payments.push({
+    amount: new Prisma.Decimal(100),
+    status: PaymentStatus.PARTIALLY_REFUNDED,
+    refunds: [{ amount: new Prisma.Decimal(30) }],
+  });
+  state.ticket.status = KitchenTicketStatus.READY;
+  state.ticket.version = 3;
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
+  await service.applyTicketAction("ticket-1", "complete", user, undefined, {
+    expectedVersion: 3,
+    recipientName: "Ali Valiyev",
+  });
+
+  assert.equal(state.order.status, OrderStatus.COMPLETED);
+  assert.equal(state.cashWrites.length, 0);
+});
+
+test("pickup with a partial refund still blocks when net paid is below total", async () => {
+  const state = createConcurrentKitchenState();
+  state.order.type = OrderType.TAKEAWAY;
+  state.order.customerOrder = {
+    paymentMethod: "CASH",
+    customer: { telegramChatId: null },
+  };
+  state.order.status = OrderStatus.READY;
+  state.order.total = new Prisma.Decimal(70);
+  state.order.payments.push({
+    amount: new Prisma.Decimal(70),
+    status: PaymentStatus.PARTIALLY_REFUNDED,
+    refunds: [{ amount: new Prisma.Decimal(10) }],
+  });
+  state.ticket.status = KitchenTicketStatus.READY;
+  state.ticket.version = 3;
+  const service = new KitchenService(state.prisma as never, state.gateway as never);
+
+  await assert.rejects(
+    service.applyTicketAction("ticket-1", "complete", user, undefined, {
+      expectedVersion: 3,
+    }),
+    /kassada to'lovni qabul qiling/,
+  );
+  assert.equal(state.order.status, OrderStatus.READY);
 });
 
 test("combined cashier and kitchen role still cannot record payment at handoff", async () => {
@@ -510,7 +569,11 @@ function createConcurrentKitchenState(customerTelegramChatId: string | null = nu
     cancellationReason: null as string | null,
     paymentStatus: PaymentStatus.PENDING as PaymentStatus,
     total: new Prisma.Decimal(100),
-    payments: [] as { amount: Prisma.Decimal; status: PaymentStatus }[],
+    payments: [] as {
+      amount: Prisma.Decimal;
+      status: PaymentStatus;
+      refunds: { amount: Prisma.Decimal }[];
+    }[],
     customerOrder: customerTelegramChatId
       ? {
           paymentMethod: null as string | null,

@@ -297,6 +297,13 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
       version: 3,
       total: "12000",
       paymentStatus: "PAID",
+      payments: [
+        {
+          amount: "12000",
+          status: "PARTIALLY_REFUNDED",
+          refunds: [{ amount: "1000" }],
+        },
+      ],
       orderNumber: "A-101",
       displayOrderNumber: "101",
       source: "POS",
@@ -358,6 +365,13 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
     order: { select: Record<string, unknown> };
   };
   assert.equal(select.order.select.paymentStatus, true);
+  assert.deepEqual(select.order.select.payments, {
+    select: {
+      amount: true,
+      status: true,
+      refunds: { select: { amount: true } },
+    },
+  });
   assert.equal("customerName" in select.order.select, false);
   assert.equal("customerPhone" in select.order.select, false);
   assert.equal(

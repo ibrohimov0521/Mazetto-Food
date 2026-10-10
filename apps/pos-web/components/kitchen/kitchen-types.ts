@@ -59,7 +59,11 @@ export type KitchenTicket = {
     type: "DINE_IN" | "TAKEAWAY" | "DELIVERY";
     total: string;
     paymentStatus?: string;
-    payments?: { amount: string; status: string }[];
+    payments?: {
+      amount: string;
+      status: string;
+      refunds: { amount: string }[];
+    }[];
     customerOrder?: {
       paymentMethod: string | null;
       customer?: { name: string } | null;

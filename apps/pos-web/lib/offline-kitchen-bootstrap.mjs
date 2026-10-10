@@ -8,7 +8,29 @@ const nullableString = (value) => value === null || typeof value === "string";
 const ticketStatuses = new Set(["NEW", "ACCEPTED", "COOKING", "READY"]);
 const orderSources = new Set(["POS", "WEB", "TELEGRAM"]);
 const orderTypes = new Set(["DINE_IN", "TAKEAWAY", "DELIVERY"]);
+const paymentStatuses = new Set([
+  "PENDING",
+  "SUCCESS",
+  "PAID",
+  "FAILED",
+  "REFUNDED",
+  "PARTIALLY_REFUNDED",
+]);
 const stationRoutings = new Set(["KITCHEN", "BAR", "RECEIPT", "NONE"]);
+const isMoney = (value) =>
+  typeof value === "string" &&
+  value.trim() !== "" &&
+  Number.isFinite(Number(value)) &&
+  Number(value) >= 0;
+
+const isKitchenPayment = (value) =>
+  isRecord(value) &&
+  isMoney(value.amount) &&
+  paymentStatuses.has(value.status) &&
+  Array.isArray(value.refunds) &&
+  value.refunds.every(
+    (refund) => isRecord(refund) && isMoney(refund.amount),
+  );
 
 const isKitchenItem = (value) =>
   hasStringFields(value, ["id", "productName", "quantity"]) &&
@@ -43,6 +65,10 @@ const isKitchenTicket = (value, expectedBranchId) =>
   value.order.branchId === expectedBranchId &&
   orderSources.has(value.order.source) &&
   orderTypes.has(value.order.type) &&
+  isMoney(value.order.total) &&
+  paymentStatuses.has(value.order.paymentStatus) &&
+  Array.isArray(value.order.payments) &&
+  value.order.payments.every(isKitchenPayment) &&
   typeof value.order.isSupplemental === "boolean" &&
   (value.order.supplementNumber === null ||
     Number.isInteger(value.order.supplementNumber)) &&
