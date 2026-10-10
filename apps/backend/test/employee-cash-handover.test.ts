@@ -30,6 +30,7 @@ function fixture(
   const writes: { type: string; amount: Prisma.Decimal }[] = [];
   const auditEntries: Array<Record<string, unknown>> = [];
   const lockedShiftIds: string[] = [];
+  const lockOrder: string[] = [];
   let shiftCloseWrites = 0;
   const allocationWrites: Array<{
     amount: Prisma.Decimal;
@@ -70,13 +71,21 @@ function fixture(
   };
   const calls: string[] = [];
   const tx = {
-    $queryRawUnsafe: async (_query: string, shiftId: string) => {
+    $queryRawUnsafe: async (query: string, resourceId: string) => {
       calls.push("lock");
-      lockedShiftIds.push(shiftId);
-      if (options.receiverClosesBeforeCreate && shiftId === receiverShift.id) {
+      if (query.includes('"cash_transfers"')) {
+        lockOrder.push(`transfer:${resourceId}`);
+        return [{ id: resourceId }];
+      }
+      lockedShiftIds.push(resourceId);
+      lockOrder.push(`shift:${resourceId}`);
+      if (
+        options.receiverClosesBeforeCreate &&
+        resourceId === receiverShift.id
+      ) {
         receiverShift.status = "CLOSED";
       }
-      return [{ id: shiftId }];
+      return [{ id: resourceId }];
     },
     employee: { findFirst: async () => ({ id: "receiver" }) },
     branch: {
@@ -192,6 +201,7 @@ function fixture(
     calls,
     auditEntries,
     lockedShiftIds,
+    lockOrder,
     get shiftCloseWrites() {
       return shiftCloseWrites;
     },
@@ -354,6 +364,7 @@ test("force-closing a recipient shift unassigns pending cash without disputing i
 test("rejected transfer restores sender cash exactly once", async () => {
   const f = fixture();
   await f.service.rejectCashTransfer("t1", "Summa mos emas", user());
+  assert.deepEqual(f.lockOrder, ["shift:s1", "transfer:t1"]);
   assert.equal(f.transfer.status, "REJECTED");
   assert.ok(f.writes[0]);
   assert.equal(f.writes[0].type, "CASH_IN");
