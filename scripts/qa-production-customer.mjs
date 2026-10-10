@@ -1,4 +1,3 @@
-/* global localStorage, sessionStorage, document, window, getComputedStyle */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { chromium } from "playwright";

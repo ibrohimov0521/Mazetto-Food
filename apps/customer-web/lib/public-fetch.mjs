@@ -1,5 +1,3 @@
-/* global AbortSignal, clearTimeout, setTimeout */
-
 const transientStatuses = new Set([408, 425, 500, 502, 503, 504]);
 const safeErrorNames = new Set([
   "AbortError",

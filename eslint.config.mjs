@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default [
@@ -34,11 +35,19 @@ export default [
   {
     files: ["**/*.{js,mjs,cjs}"],
     languageOptions: {
-      globals: {
-        console: "readonly",
-        fetch: "readonly",
-        process: "readonly",
-      },
+      globals: globals.node,
+    },
+  },
+  {
+    files: ["scripts/qa-*.{js,mjs,cjs}"],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+  {
+    files: ["**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
 ];

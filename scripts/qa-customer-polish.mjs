@@ -1,4 +1,3 @@
-/* global console, document, localStorage, process, setTimeout, URL, window */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";

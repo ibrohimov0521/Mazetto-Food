@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint && eslint scripts apps/media/scripts",
     "typecheck": "turbo run typecheck",
     "media:prepare": "node apps/media/scripts/prepare-media-release.mjs --dry-run",
     "media:smoke": "node apps/media/scripts/smoke-media-container.mjs",
@@ -39,6 +39,7 @@
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.2",
     "eslint-config-prettier": "10.1.8",
+    "globals": "14.0.0",
     "playwright": "1.58.2",
     "prettier": "3.6.2",
     "turbo": "2.11.7",

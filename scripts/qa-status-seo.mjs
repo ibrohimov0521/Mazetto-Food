@@ -1,4 +1,3 @@
-/* global console, document, window, localStorage, process, URL */
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";

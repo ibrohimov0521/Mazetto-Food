@@ -1,4 +1,4 @@
-/* global document, setTimeout, clearTimeout */
+/* global document */
 const completedStatuses = new Set(["COMPLETED", "SERVED"]);
 
 export function sumAmounts(values) {

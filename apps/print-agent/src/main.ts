@@ -2,22 +2,15 @@ import { createServer, type Server, type ServerResponse } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { Socket } from "node:net";
 import { join } from "node:path";
-
-type ReceiptSummary = {
-  id: string;
-  receiptNumber: string;
-  printed: boolean;
-  createdAt: string;
-  branch?: { id: string; name: string; code: string };
-  order?: { orderNumber: string; displayOrderNumber: string | null; status: string };
-};
-
-type ReceiptDetail = ReceiptSummary & {
-  escpos?: {
-    encoding: string;
-    commands: Array<Record<string, unknown>>;
-  };
-};
+import {
+  AmbiguousPrintError,
+  hasPrintQueueTarget,
+  pollPrintJob,
+  type PrintQueueConfig,
+  type PrintRoute,
+  type ReceiptDetail,
+  type ReceiptSummary,
+} from "./print-job-runner.js";
 
 type AgentConfig = {
   enabled: boolean;
@@ -37,6 +30,9 @@ type AgentConfig = {
   healthHost: string;
   protocol: "receipts" | "jobs";
   agentId: string;
+  printerIds: string[];
+  acceptUnassigned: boolean;
+  unassignedRoutes: PrintRoute[];
 };
 
 type AgentState = {
@@ -51,6 +47,7 @@ type AgentState = {
   printedCount: number;
   failedCount: number;
   lastError: string | null;
+  pollingHalted: boolean;
 };
 
 const config = readConfig();
@@ -58,7 +55,10 @@ const state: AgentState = {
   startedAt: new Date().toISOString(),
   mode: "idle",
   tokenConfigured: Boolean(config.token),
-  printerConfigured: config.dryRun || config.mode !== "tcp" || Boolean(config.printerHost),
+  printerConfigured:
+    config.dryRun ||
+    ((config.mode !== "tcp" || Boolean(config.printerHost)) &&
+      (config.protocol !== "jobs" || hasPrintQueueTarget(printQueueConfig(config)))),
   lastPollAt: null,
   lastPrintedAt: null,
   lastReceipt: null,
@@ -66,6 +66,7 @@ const state: AgentState = {
   printedCount: 0,
   failedCount: 0,
   lastError: null,
+  pollingHalted: false,
 };
 
 void main(config, state).catch((error) => {
@@ -114,10 +115,23 @@ async function main(agentConfig: AgentConfig, agentState: AgentState): Promise<v
   }
 
   do {
-    if (agentConfig.protocol === "jobs") {
-      await pollJobOnce(agentConfig, agentState);
-    } else {
-      await pollOnce(agentConfig, agentState);
+    try {
+      if (agentConfig.protocol === "jobs") {
+        await pollJobOnce(agentConfig, agentState);
+      } else {
+        await pollOnce(agentConfig, agentState);
+      }
+    } catch (error) {
+      agentState.mode = "degraded";
+      agentState.lastError = errorMessage(error);
+      agentState.pendingCount = 0;
+      console.error("Print poll failed; the agent will retry on the next cycle", error);
+    }
+
+    if (agentState.pollingHalted) {
+      console.error("Print polling halted because an ambiguous output could not be saved to the backend");
+      if (!agentConfig.once) await keepAlive();
+      break;
     }
 
     if (!agentConfig.once) {
@@ -129,6 +143,12 @@ async function main(agentConfig: AgentConfig, agentState: AgentState): Promise<v
 }
 
 async function pollOnce(agentConfig: AgentConfig, agentState: AgentState): Promise<void> {
+  if (agentConfig.mode === "tcp" && !agentConfig.dryRun) {
+    agentState.mode = "degraded";
+    agentState.lastError = "TCP printing requires MAZETTO_PRINT_PROTOCOL=jobs to prevent duplicate receipts";
+    return;
+  }
+
   agentState.mode = "polling";
   agentState.lastPollAt = new Date().toISOString();
   const pending = await request<ReceiptSummary[]>(agentConfig, receiptsPath(agentConfig));
@@ -164,37 +184,22 @@ async function pollJobOnce(agentConfig: AgentConfig, agentState: AgentState): Pr
     agentState.mode = "ready";
     console.log("Durable print queue is not claimed in dry-run mode");
     return;
-  }  const query = agentConfig.branchId ? `?branchId=${encodeURIComponent(agentConfig.branchId)}` : "";
-  const job = await request<PrintJob | null>(agentConfig, `/receipts/print-jobs/claim${query}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ agentId: agentConfig.agentId }),
-  });
-  agentState.pendingCount = job ? 1 : 0;
-  if (!job) { agentState.mode = "ready"; return; }
-  try {
-    const receipt = await request<ReceiptDetail>(agentConfig, `/receipts/${encodeURIComponent(job.receiptId)}`);
-    await sendToPrinter(agentConfig, receipt);
-    await request(agentConfig, `/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leaseToken: job.leaseToken }),
-    });
-    agentState.printedCount += 1;
-    agentState.lastPrintedAt = new Date().toISOString();
-    agentState.lastReceipt = receipt.receiptNumber;
-    agentState.lastError = null;
-    agentState.mode = "ready";
-  } catch (error) {
-    const message = errorMessage(error);
-    await request(agentConfig, `/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leaseToken: job.leaseToken, error: message }),
-    }).catch(() => undefined);
-    agentState.failedCount += 1;
-    agentState.lastError = message;
-    agentState.mode = "degraded";
   }
+
+  if (agentConfig.mode === "tcp" && agentConfig.protocol !== "jobs") {
+    agentState.mode = "degraded";
+    agentState.lastError = "TCP printing requires MAZETTO_PRINT_PROTOCOL=jobs to prevent duplicate receipts";
+    return;
+  }
+
+  await pollPrintJob(
+    printQueueConfig(agentConfig),
+    agentState,
+    (path, init) => request(agentConfig, path, init),
+    (receipt) => sendToPrinter(agentConfig, receipt),
+  );
 }
 
-type PrintJob = { id: string; receiptId: string; leaseToken: string };
 async function printReceipt(agentConfig: AgentConfig, agentState: AgentState, receiptId: string): Promise<void> {
   const receipt = await request<ReceiptDetail>(agentConfig, `/receipts/${encodeURIComponent(receiptId)}`);
   const label = `${receipt.receiptNumber} / ${receipt.order?.displayOrderNumber ?? receipt.order?.orderNumber ?? "order"}`;
@@ -236,6 +241,9 @@ async function sendToPrinter(agentConfig: AgentConfig, receipt: ReceiptDetail): 
         return;
       }
     } catch (error) {
+      if (error instanceof AmbiguousPrintError) {
+        throw error;
+      }
       if (attempt > agentConfig.retries) {
         throw error;
       }
@@ -264,20 +272,29 @@ async function writeTcpReceipt(agentConfig: AgentConfig, commands: Array<Record<
 
   await new Promise<void>((resolve, reject) => {
     const socket = new Socket();
-    const timeout = setTimeout(() => {
+    let connected = false;
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
       socket.destroy();
-      reject(new Error(`Printer TCP timeout after ${agentConfig.timeoutMs}ms`));
+      if (error) reject(error);
+      else resolve();
+    };
+    const timeout = setTimeout(() => {
+      const message = `Printer TCP timeout after ${agentConfig.timeoutMs}ms`;
+      finish(connected ? new AmbiguousPrintError(message) : new Error(message));
     }, agentConfig.timeoutMs);
 
     socket.once("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
+      finish(connected ? new AmbiguousPrintError(error.message, { cause: error }) : error);
     });
 
     socket.connect(agentConfig.printerPort, printerHost, () => {
+      connected = true;
       socket.end(payload, () => {
-        clearTimeout(timeout);
-        resolve();
+        finish();
       });
     });
   });
@@ -304,7 +321,7 @@ async function request<T>(agentConfig: AgentConfig, path: string, init: RequestI
   });
 
   if (!response.ok) {
-    throw new Error(`API ${path} failed with ${response.status}: ${await response.text()}`);
+    throw new Error(`API ${path} failed with ${response.status}`);
   }
 
   const body = await response.json() as { data?: T } | T;
@@ -404,10 +421,34 @@ function readConfig(): AgentConfig {
     timeoutMs: readPositiveInt(process.env.MAZETTO_PRINT_TIMEOUT_MS, 10000),
     retries: readNonNegativeInt(process.env.MAZETTO_PRINT_RETRIES, 2),
     healthPort: readPositiveInt(process.env.MAZETTO_PRINT_HEALTH_PORT, 7357),
-    healthHost: process.env.MAZETTO_PRINT_HEALTH_HOST?.trim() || "0.0.0.0",
+    healthHost: process.env.MAZETTO_PRINT_HEALTH_HOST?.trim() || "127.0.0.1",
     protocol: process.env.MAZETTO_PRINT_PROTOCOL === "jobs" ? "jobs" : "receipts",
     agentId: process.env.MAZETTO_PRINT_AGENT_ID?.trim() || `agent-${process.env.HOSTNAME || "local"}`,
+    printerIds: parseCsv(process.env.MAZETTO_PRINT_PRINTER_IDS),
+    acceptUnassigned: process.env.MAZETTO_PRINT_ACCEPT_UNASSIGNED === "true",
+    unassignedRoutes: parsePrintRoutes(process.env.MAZETTO_PRINT_UNASSIGNED_ROUTES),
   };
+}
+
+function printQueueConfig(agentConfig: AgentConfig): PrintQueueConfig {
+  return {
+    agentId: agentConfig.agentId,
+    branchId: agentConfig.branchId,
+    printerIds: agentConfig.printerIds,
+    acceptUnassigned: agentConfig.acceptUnassigned,
+    unassignedRoutes: agentConfig.unassignedRoutes,
+    mode: agentConfig.mode,
+  };
+}
+
+function parseCsv(value: string | undefined): string[] {
+  return [...new Set((value ?? "").split(",").map((item) => item.trim()).filter(Boolean))];
+}
+
+function parsePrintRoutes(value: string | undefined): PrintRoute[] {
+  const allowed = new Set<PrintRoute>(["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"]);
+  return [...new Set((value ?? "").split(",").map((item) => item.trim().toUpperCase()))]
+    .filter((item): item is PrintRoute => allowed.has(item as PrintRoute));
 }
 
 function requiredUrl(value: string): string {
