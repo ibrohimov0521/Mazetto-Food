@@ -67,6 +67,7 @@ type Shift = { id: string; status: string; shiftNumber?: number } | null;
 type PaymentMethodOption = { code: PaymentMethodCode; name: string };
 type Tender = { code: PaymentMethodCode; amount: string };
 type ProcessResult = {
+  offlineReceiptQueued?: boolean;
   order?: {
     id: string;
     orderNumber: string;
@@ -81,6 +82,7 @@ type Completion = {
   change: number;
   receiptId: string | null;
   offlineQueued: boolean;
+  offlineReceiptQueued: boolean;
 };
 
 const createPaymentKey = () =>
@@ -458,6 +460,7 @@ function PaymentTerminal() {
         paid: payloadTotal,
         change: cash.change,
         offlineQueued,
+        offlineReceiptQueued: result.offlineReceiptQueued === true,
         receiptId:
           latestReceipt?.id ??
           (offlineQueued ? null : await findReceiptId(order.id)),
@@ -698,7 +701,8 @@ function PaymentTerminal() {
                   {payload.some((item) => item.code !== "CASH") ? (
                     <p className={styles.note}>
                       Naqd bo'lmagan to'lovni terminal yoki bank SMSidan
-                      tekshiring. Tizim provayder orqali avtomatik tasdiqlamaydi.
+                      tekshiring. Tizim provayder orqali avtomatik
+                      tasdiqlamaydi.
                     </p>
                   ) : null}
 
@@ -897,7 +901,11 @@ function PaymentTerminal() {
                 completion.orderLabel +
                 " uchun " +
                 formatMoney(completion.paid) +
-                " naqd to'lov serverga yuborilishi kutilmoqda. Internet qaytgach avtomatik sinxronlanadi; yakuniy chek shundan keyin mavjud bo'ladi."
+                " naqd to'lov qurilmada saqlandi. " +
+                (completion.offlineReceiptQueued
+                  ? "Chek mahalliy printer navbatiga yuborildi, qog'oz chiqqanini tekshiring. "
+                  : "Chekni chop etish navbatiga qo'shib bo'lmadi. ") +
+                "Internet qaytgach serverga avtomatik sinxronlanadi."
               : "#" +
                 completion.orderLabel +
                 " uchun " +
