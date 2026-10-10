@@ -141,7 +141,11 @@ export class CashRegisterService {
     return this.shiftsService.createCashTransaction(id, dto, user, context);
   }
 
-  async getTransactions(shiftId: string, user: AuthenticatedUser) {
+  async getTransactions(
+    shiftId: string,
+    query: { limit?: string; offset?: string },
+    user: AuthenticatedUser,
+  ) {
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const shift = await this.prisma.shift.findFirst({
       where: { id: shiftId, branch: { tenantId } },
@@ -149,22 +153,29 @@ export class CashRegisterService {
     });
 
     if (!shift) {
-      return [];
+      return { items: [], total: 0 };
     }
 
     resolveBranchScope(user, shift.branchId);
     this.assertCanViewShift(user, shift.employeeId);
 
-    return this.prisma.cashTransaction.findMany({
-      where: { shiftId },
-      include: {
-        employee: true,
-        payment: { include: { method: true } },
-        order: true,
-      },
-      orderBy: { occurredAt: "desc" },
-      take: 200,
-    });
+    const where = { shiftId };
+    const [items, total] = await Promise.all([
+      this.prisma.cashTransaction.findMany({
+        where,
+        include: {
+          employee: true,
+          payment: { include: { method: true } },
+          order: true,
+        },
+        orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+        skip: this.parseOffset(query.offset),
+        take: this.parseLimit(query.limit),
+      }),
+      this.prisma.cashTransaction.count({ where }),
+    ]);
+
+    return { items, total };
   }
 
   async getCurrentShiftOrders(

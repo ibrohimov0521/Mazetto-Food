@@ -30,8 +30,8 @@ test("cashier shift and transaction reads are tenant-scoped", async () => {
 
   assert.equal(await service.getCurrentShift(cashier), null);
   assert.deepEqual(
-    await service.getTransactions("shift-b", cashier),
-    [],
+    await service.getTransactions("shift-b", {}, cashier),
+    { items: [], total: 0 },
   );
   assert.deepEqual(filters, [
     {

@@ -460,7 +460,10 @@ function ShiftConsole() {
                 <p className={styles.muted}>
                   Ochilgan: {dateTime(shift.openedAt)}
                 </p>
-                <h3 className={styles.subheading}>Umumiy kassa harakatlari</h3>
+                <h3 className={styles.subheading}>Oxirgi kassa harakatlari</h3>
+                <p className={styles.muted}>
+                  Smena ekranida oxirgi 50 ta yozuv ko&apos;rsatiladi.
+                </p>
                 <div className={styles.shiftRows}>
                   {shift.cashTransactions?.length ? (
                     shift.cashTransactions.map((item) => (

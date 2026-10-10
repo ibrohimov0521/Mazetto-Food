@@ -39,7 +39,8 @@ export function Pagination({
   const from = count === 0 ? 0 : offset + 1;
   const to = offset + count;
   const isFirstPage = offset === 0;
-  const isLastPage = count < pageSize;
+  const isLastPage =
+    total === undefined ? count < pageSize : offset + count >= total;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-mz-border px-4 py-3">
