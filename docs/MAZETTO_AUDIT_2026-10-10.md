@@ -69,3 +69,10 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - PR #263 was squash-merged as `e3cb9c76d147582a478d563591a2ab8065992649`; production deploy workflow #297 succeeded and the remote `production` tag points to that commit.
 - Desktop 0.1.110 was published. Main CI passed, and the independent read-only production smoke passed 27/27 after deployment.
 - No database migration was needed for this release. Production checks do not replace workstation installation, a physical printer test, or a controlled offline payment-and-sync acceptance run.
+
+## Audit continuation: inventory readiness
+
+- The backend already exposes branch-scoped inventory readiness, but the POS admin inventory page did not consume it. A branch with recipe-backed items and no active warehouse could therefore reach order confirmation before the structural problem was visible in the admin UI; stock deduction then aborts the confirmation transaction.
+- The inventory page now checks readiness for the selected branch (or the signed-in user's branch), avoids displaying a previous branch's late response, explains missing active warehouses and archived recipe ingredients, and links to recipe management only when the user has that permission. Global-scope users are prompted to choose a branch.
+- A green readiness message means only that the warehouse and recipe structure pass these checks. It does not prove that ingredient quantities are sufficient.
+- Focused validation passed: POS ESLint, TypeScript, tests 44/44, and optimized production build. The full repository CI/deploy workflow remains the release gate.

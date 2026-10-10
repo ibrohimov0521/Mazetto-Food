@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
@@ -78,6 +79,26 @@ type Movement = {
 };
 
 type InventoryBranch = { id: string; name: string };
+
+type InventoryReadinessIssue =
+  | "ACTIVE_WAREHOUSE_REQUIRED"
+  | "INACTIVE_RECIPE_INGREDIENT";
+
+type InventoryReadiness = {
+  branchId: string;
+  ready: boolean;
+  activeWarehouses: number;
+  recipeVariants: number;
+  inactiveIngredientReferences: number;
+  issues: InventoryReadinessIssue[];
+};
+
+const inventoryReadinessIssueLabels: Record<InventoryReadinessIssue, string> = {
+  ACTIVE_WAREHOUSE_REQUIRED:
+    "Retseptli mahsulot buyurtmasini tasdiqlash uchun filialda faol ombor kerak.",
+  INACTIVE_RECIPE_INGREDIENT:
+    "Retseptlarda arxivlangan ingredient bor. Retseptni yoki ingredient holatini tekshiring.",
+};
 
 type Warehouse = {
   id: string;
@@ -179,6 +200,7 @@ export function AdminInventoryPage() {
   const { showToast } = useToast();
   const canCreate = hasPermission(user, "INVENTORY_CREATE");
   const canEdit = hasPermission(user, "INVENTORY_EDIT");
+  const canManageRecipes = hasPermission(user, "RECIPE_MANAGE");
   const showBranchFilter = canSwitchBranch(user);
 
   const [branchId, setBranchId] = useState("");
@@ -226,6 +248,24 @@ export function AdminInventoryPage() {
   const warehouseFormRef = useRef<HTMLFormElement>(null);
 
   const branchQuery = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
+  const readinessPath = showBranchFilter
+    ? branchId
+      ? `/inventory/readiness${branchQuery}`
+      : null
+    : "/inventory/readiness";
+
+  const {
+    data: readinessData,
+    error: readinessError,
+    reload: reloadReadiness,
+  } = useApiResource<InventoryReadiness | null>(
+    () =>
+      readinessPath
+        ? apiFetch<InventoryReadiness>(readinessPath)
+        : Promise.resolve(null),
+    [readinessPath],
+    "Ombor tayyorligini tekshirib bo'lmadi.",
+  );
 
   const {
     data: stockData,
@@ -285,13 +325,24 @@ export function AdminInventoryPage() {
   const warehouses = warehouseData ?? [];
   const ingredients = ingredientData ?? [];
   const branches = branchData ?? [];
+  const currentReadiness =
+    readinessData?.branchId === (branchId || user?.branchId)
+      ? readinessData
+      : null;
 
   const reloadAll = useCallback(() => {
     reloadStock();
     reloadMovements();
     reloadWarehouses();
     reloadIngredients();
-  }, [reloadIngredients, reloadMovements, reloadStock, reloadWarehouses]);
+    reloadReadiness();
+  }, [
+    reloadIngredients,
+    reloadMovements,
+    reloadReadiness,
+    reloadStock,
+    reloadWarehouses,
+  ]);
 
   const filteredStock = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -724,6 +775,69 @@ export function AdminInventoryPage() {
     <div className="grid gap-5">
       {stockError ? (
         <ErrorState message={stockError} onRetry={() => reloadStock()} />
+      ) : null}
+
+      {readinessError ? (
+        <ErrorState
+          message={readinessError}
+          onRetry={() => reloadReadiness()}
+        />
+      ) : null}
+
+      {showBranchFilter && !branchId ? (
+        <p
+          className="rounded-mz-control bg-mz-warning-bg px-3 py-2 text-[13px] text-mz-warning"
+          role="status"
+        >
+          Retsept ombori tayyorligini ko'rish uchun filialni tanlang.
+        </p>
+      ) : null}
+
+      {currentReadiness?.recipeVariants ? (
+        currentReadiness.ready ? (
+          <p
+            className="rounded-mz-control bg-mz-success-bg px-3 py-2 text-[13px] text-mz-success"
+            role="status"
+          >
+            Retseptli {currentReadiness.recipeVariants} ta variant uchun ombor
+            sozlamasi tayyor. Bu tekshiruv qoldiq miqdori yetarliligini
+            bildirmaydi.
+          </p>
+        ) : (
+          <section
+            aria-labelledby="inventory-readiness-title"
+            className="flex flex-wrap items-start justify-between gap-3 rounded-mz-control border border-mz-danger/30 bg-mz-danger-bg px-4 py-3"
+            role="alert"
+          >
+            <div className="flex min-w-0 items-start gap-2">
+              <Icon
+                className="mt-0.5 h-4 w-4 shrink-0 text-mz-danger"
+                name="alert"
+              />
+              <div className="grid gap-1">
+                <h2
+                  className="text-sm font-semibold text-mz-danger"
+                  id="inventory-readiness-title"
+                >
+                  Retsept bo'yicha ombor sozlamasini tekshiring
+                </h2>
+                <ul className="grid gap-1 text-[13px] text-mz-danger">
+                  {currentReadiness.issues.map((issue) => (
+                    <li key={issue}>{inventoryReadinessIssueLabels[issue]}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            {canManageRecipes ? (
+              <Link
+                className="shrink-0 text-sm font-semibold text-mz-primary underline underline-offset-2"
+                href="/admin/recipes"
+              >
+                Retseptlarni ko'rish
+              </Link>
+            ) : null}
+          </section>
+        )
       ) : null}
 
       <StatGrid>
