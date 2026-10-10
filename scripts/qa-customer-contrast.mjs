@@ -1,4 +1,3 @@
-/* global document, getComputedStyle, localStorage, window */
 /*
  * MIJOZ SAYTI — KONTRAST, MAYDA MATN VA GORIZONTAL OQISH TEKSHIRUVI.
  *
