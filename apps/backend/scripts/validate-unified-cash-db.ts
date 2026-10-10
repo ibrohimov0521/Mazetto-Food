@@ -230,7 +230,15 @@ async function main() {
     assert.equal(await balance(), 15000);
     await prisma.cashTransaction.createMany({ data: Array.from({ length: 250 }, () => ({ branchId: branch.id, employeeId: worker.employeeId!, shiftId: sourceShift.id, type: "CASH_IN" as const, amount: 1 })) });
     assert.equal(await balance(), 15250, "older ledger entries must remain in the balance");
-    assert.equal((await cash.getCurrentShift(worker))!.cashTransactions.length, 50);
+    const activeShiftSummary = (await cash.getCurrentShift(worker))!;
+    assert.equal(activeShiftSummary.cashTransactions.length, 50);
+    assert.equal(activeShiftSummary.cashSales.toNumber(), 60000);
+    assert.equal(activeShiftSummary.orderCount, 3);
+    assert.equal(
+      new Set(activeShiftSummary.revenueRecords.map(({ orderId }) => orderId)).size,
+      3,
+      "offline replay order IDs must stay compact and unique",
+    );
     assert.equal((await shifts.getCurrentCourierShift(worker))!.currentCash.toNumber(), 15250);
 
     const recoveryTransfer = await shifts.createCashTransfer(

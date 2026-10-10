@@ -300,4 +300,15 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 
 - Desktop's shared receipt renderer printed raw payment codes such as `CASH` and `UZCARD`, while the POS receipt screen showed human-readable names. Online and offline Desktop receipts shared the same renderer, so both printed the raw codes.
 - Desktop receipt output now localizes the supported methods to `Naqd pul`, `Bank kartasi`, `Uzcard`, `Humo`, `Click`, `Payme`, and `Onlayn to'lov`; unknown method names are preserved as entered. Both online and offline Desktop print jobs use this renderer.
-- Focused renderer tests cover all supported payment codes and unknown labels. Desktop is bumped to 0.1.114 so the fix can be installed on the restaurant workstation; validation and release are pending.
+- Focused renderer tests cover all supported payment codes and unknown labels. Desktop was bumped to 0.1.114 so the fix can be installed on the restaurant workstation. PR #290 merged as `4eae81eb8fed3c2dc125219a2bfcead02b642fb7`; Desktop Release #171 published the Windows installer. The asset was verified at 141,234,385 bytes with SHA-256 `49a7e20f59c4dd8279b4b199b8647d26801e6c745dca41b7c2a275cda1a987c1`.
+
+## Release confirmation: printed payment method labels
+
+- Main CI #813 passed. Deploy #324 succeeded as a workflow, but its release gate selected no server applications because this change is Desktop-only; it skipped production smoke and did not redeploy POS/backend services. The `production` tag points to `4eae81e`.
+- Server checkout is clean on `main` at `4eae81e`, and the independent read-only production smoke passed 27/27 checks. Installing Desktop 0.1.114 on the restaurant workstation and physically checking a receipt remain operator acceptance steps.
+
+## Audit continuation: cashier current-shift summary query size
+
+- The active-shift endpoint returned only the latest 50 cash transactions, but loaded every shift transaction and every revenue record (including nested payment and method objects) before calculating balance, cash sales, and order count. Long-running shifts therefore caused unnecessary database transfer, Node memory use, and a large response/cache payload.
+- Cash balance is now calculated from database sums grouped by transaction type; cash sales use a `CASH`-filtered database aggregate; paid-order count uses distinct non-null order IDs. The shift row and all aggregates are read in one `Repeatable Read` transaction so a payment cannot appear in only part of the summary. The response still provides the latest 50 transaction rows and the `revenueRecords` order-ID shape used by Desktop's offline replay reconciliation, now deduplicated and compact. No schema or API consumer change is needed.
+- Regression tests cover opening-float legacy behavior, opening-ledger handling, cash/reversal totals, split payments, non-cash methods, unpaid orders, aggregation query scopes, and the bounded response. The disposable PostgreSQL scenario now also asserts actual cash sales, distinct paid-order count, 50-row history, and compact unique offline-replay IDs after 250 ledger entries. Local validation passed: backend tests 577/577, focused tenant/history tests 12/12, changed-file ESLint, backend app and scripts typechecks, Nest build, and `git diff --check`; PostgreSQL CI and production release remain pending. No migration is required.

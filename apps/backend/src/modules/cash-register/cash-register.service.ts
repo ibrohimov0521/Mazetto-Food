@@ -29,41 +29,80 @@ export class CashRegisterService {
   async getCurrentShift(user: AuthenticatedUser) {
     const employeeId = this.requireEmployee(user);
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    const shift = await this.prisma.shift.findFirst({
-      where: {
-        employeeId,
-        status: ShiftStatus.OPEN,
-        branch: { tenantId },
-      },
-      include: {
-        branch: true,
-        employee: true,
-        cashTransactions: { orderBy: { occurredAt: "desc" } },
-        outgoingCashTransfers: {
-          orderBy: { createdAt: "desc" },
-          take: 100,
+    return this.prisma.$transaction(
+      async (tx) => {
+        const shift = await tx.shift.findFirst({
+          where: {
+            employeeId,
+            status: ShiftStatus.OPEN,
+            branch: { tenantId },
+          },
           include: {
-            toShift: {
-              select: {
-                employee: { select: { firstName: true, lastName: true } },
+            branch: true,
+            employee: true,
+            cashTransactions: {
+              orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+              take: 50,
+            },
+            outgoingCashTransfers: {
+              orderBy: { createdAt: "desc" },
+              take: 100,
+              include: {
+                toShift: {
+                  select: {
+                    employee: { select: { firstName: true, lastName: true } },
+                  },
+                },
               },
             },
           },
-        },
-        revenueRecords: { include: { payment: { include: { method: true } } } },
+          orderBy: { openedAt: "desc" },
+        });
+
+        if (!shift) {
+          return null;
+        }
+
+        const [cashTransactionTotals, cashSales, paidOrders] = await Promise.all([
+          tx.cashTransaction.groupBy({
+            by: ["type"],
+            where: { shiftId: shift.id },
+            _sum: { amount: true },
+            _count: { _all: true },
+          }),
+          tx.revenueRecord.aggregate({
+            where: {
+              shiftId: shift.id,
+              payment: { method: { code: "CASH" } },
+            },
+            _sum: { amount: true },
+          }),
+          tx.revenueRecord.groupBy({
+            by: ["orderId"],
+            where: {
+              shiftId: shift.id,
+              paymentId: { not: null },
+              orderId: { not: null },
+            },
+          }),
+        ]);
+        const paidOrderIds = paidOrders.flatMap(({ orderId }) =>
+          orderId ? [orderId] : [],
+        );
+
+        return {
+          ...shift,
+          revenueRecords: paidOrderIds.map((orderId) => ({ orderId })),
+          ...this.calculateShiftSummary(
+            shift.openingBalance,
+            cashTransactionTotals,
+            cashSales._sum.amount,
+            paidOrderIds.length,
+          ),
+        };
       },
-      orderBy: { openedAt: "desc" },
-    });
-
-    if (!shift) {
-      return null;
-    }
-
-    return {
-      ...shift,
-      ...this.calculateShiftSummary(shift),
-      cashTransactions: shift.cashTransactions.slice(0, 50),
-    };
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   getCourierShift(user: AuthenticatedUser) {
@@ -453,59 +492,49 @@ export class CashRegisterService {
     });
   }
 
-  private calculateShiftSummary(shift: {
-    openingBalance: Prisma.Decimal;
-    cashTransactions: { amount: Prisma.Decimal; type: CashTransactionType }[];
-    revenueRecords: {
-      orderId: string | null;
-      amount: Prisma.Decimal;
-      payment: { method: { code: string } } | null;
-    }[];
-  }) {
-    const hasOpeningTransaction = shift.cashTransactions.some(
-      (transaction) =>
-        transaction.type === CashTransactionType.OPENING_BALANCE,
+  private calculateShiftSummary(
+    openingBalance: Prisma.Decimal,
+    transactionTotals: {
+      type: CashTransactionType;
+      _sum: { amount: Prisma.Decimal | null };
+      _count: { _all: number };
+    }[],
+    cashSalesAmount: Prisma.Decimal | null,
+    orderCount: number,
+  ) {
+    const hasOpeningTransaction = transactionTotals.some(
+      (group) =>
+        group.type === CashTransactionType.OPENING_BALANCE &&
+        group._count._all > 0,
     );
-    const currentBalance = shift.cashTransactions.reduce(
-      (total, transaction) => {
-        const amount = transaction.amount;
+    const currentBalance = transactionTotals.reduce((total, group) => {
+      const amount = group._sum.amount ?? new Prisma.Decimal(0);
 
-        if (
-          transaction.type === CashTransactionType.REFUND ||
-          transaction.type === CashTransactionType.EXPENSE ||
-          transaction.type === CashTransactionType.WITHDRAW ||
-          transaction.type === CashTransactionType.CASH_OUT
-        ) {
-          return total.sub(amount);
-        }
+      if (
+        group.type === CashTransactionType.REFUND ||
+        group.type === CashTransactionType.EXPENSE ||
+        group.type === CashTransactionType.WITHDRAW ||
+        group.type === CashTransactionType.CASH_OUT
+      ) {
+        return total.sub(amount);
+      }
 
-        if (
-          transaction.type === CashTransactionType.CLOSING ||
-          transaction.type === CashTransactionType.CLOSING_BALANCE
-        ) {
-          return total;
-        }
+      if (
+        group.type === CashTransactionType.CLOSING ||
+        group.type === CashTransactionType.CLOSING_BALANCE
+      ) {
+        return total;
+      }
 
-        return total.add(amount);
-      },
-      hasOpeningTransaction ? new Prisma.Decimal(0) : shift.openingBalance,
-    );
-
-    const paidRevenue = shift.revenueRecords.filter((record) => record.payment);
-    const orderIds = new Set(
-      paidRevenue.map((record) => record.orderId).filter(Boolean),
-    );
-    const cashSales = paidRevenue.reduce((total, record) => {
-      return record.payment?.method.code === "CASH"
-        ? total.add(record.amount)
-        : total;
-    }, new Prisma.Decimal(0));
+      return total.add(amount);
+    }, hasOpeningTransaction ? new Prisma.Decimal(0) : openingBalance);
+    const cashSales = cashSalesAmount ?? new Prisma.Decimal(0);
 
     return {
       currentBalance,
       expectedCash: currentBalance,
       cashSales,
-      orderCount: orderIds.size,
+      orderCount,
     };
   }
 
