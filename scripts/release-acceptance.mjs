@@ -33,6 +33,10 @@ const stages = [
   ["Backend tests", pnpm("--filter", "backend", "test")],
   ["Desktop tests", pnpm("--filter", "mazetto-desktop", "test")],
   ["Static validators", pnpm("validate")],
+  [
+    "Docker pnpm patch contexts",
+    pnpm("exec", "node", "scripts/docker-patch-context-check.mjs"),
+  ],
   ["Media asset validation", pnpm("media:validate")],
   ["Disposable order-to-cash-to-stock-to-print E2E", ["qa:isolated-order-e2e"]],
   ...(productionSmoke ? [["Read-only production smoke", ["release:smoke"]]] : []),
