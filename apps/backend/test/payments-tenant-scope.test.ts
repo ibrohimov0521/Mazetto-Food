@@ -74,6 +74,72 @@ test("cashier payment method list follows tenant toggles and active methods", as
   ]);
 });
 
+test("disabled payment method cannot be collected against an existing order", async () => {
+  let orderReads = 0;
+  let paymentWrites = 0;
+  let revenueWrites = 0;
+  const order = {
+    id: "order-a",
+    branchId: "branch-a",
+    total: new Prisma.Decimal(10000),
+    status: "READY",
+    source: "WEB",
+    payments: [],
+    receipts: [],
+  };
+  const transaction = {
+    $executeRaw: async () => 1,
+    order: {
+      findFirst: async () => {
+        orderReads += 1;
+        return orderReads === 1 ? { id: order.id } : order;
+      },
+    },
+    paymentOperation: {
+      findUnique: async () => null,
+      create: async () => ({ id: "operation-a" }),
+    },
+    employee: { findFirst: async () => ({ id: "employee-a" }) },
+    paymentMethod: {
+      findFirst: async () => ({ id: "click-method", code: "CLICK" }),
+    },
+    payment: {
+      create: async () => {
+        paymentWrites += 1;
+        throw new Error("Disabled method must not create a payment");
+      },
+    },
+    revenueRecord: {
+      create: async () => {
+        revenueWrites += 1;
+        throw new Error("Disabled method must not create revenue");
+      },
+    },
+  };
+  const service = new PaymentsService(
+    { ...tenantLookup } as never,
+    { getCsv: async () => ["CASH"] } as never,
+  );
+
+  await assert.rejects(
+    service.processOrderPayment(
+      {
+        orderId: order.id,
+        idempotencyKey: "disabled-click-existing-order",
+        payments: [{ paymentMethodCode: "CLICK", amount: 10000 }],
+      } as never,
+      cashier,
+      undefined,
+      undefined,
+      undefined,
+      transaction as never,
+    ),
+    /CLICK to'lov usuli tizim sozlamalarida o'chirilgan/,
+  );
+  assert.equal(paymentWrites, 0);
+  assert.equal(revenueWrites, 0);
+});
+
 test("foreign order is rejected before an idempotency replay lookup", async () => {
   let operationReads = 0;
   let orderWhere: unknown;
