@@ -134,3 +134,52 @@ test("reprint aborts before queueing if the tenant-scoped receipt update loses i
   assert.deepEqual(updateWhere, { id: "receipt-a", branchId: "branch-a", branch: { tenantId: "tenant-a" } });
   assert.equal(printerLookup, false);
 });
+
+test("manual receipt reprint queues a job that bypasses local replay deduplication", async () => {
+  const queuedPayloads: unknown[] = [];
+  const content = {
+    documentType: "RECEIPT",
+    orderNumber: "M-104",
+    branchName: "Sergeli",
+    items: [{ name: "Lavash", quantity: "1", total: "36000" }],
+    payments: [],
+    total: "36000",
+  };
+  const service = new ReceiptsService({
+    ...activeTenant,
+    receipt: {
+      findFirst: async () => ({
+        id: "receipt-a",
+        branchId: "branch-a",
+        content,
+        receiptNumber: "RCPT-1",
+        documentType: "RECEIPT",
+        branch: { name: "Sergeli" },
+        order: {
+          orderNumber: "M-104",
+          displayOrderNumber: "M-104",
+          items: [],
+          payments: [],
+        },
+        createdAt: new Date("2026-10-10T06:00:00Z"),
+        total: { toFixed: () => "36000.00" },
+      }),
+    },
+    $transaction: async (callback: (tx: object) => Promise<unknown>) =>
+      callback({
+        receipt: { updateMany: async () => ({ count: 1 }) },
+        printer: { findMany: async () => [] },
+        printJob: {
+          create: async ({ data }: { data: { payload: unknown } }) => {
+            queuedPayloads.push(data.payload);
+          },
+        },
+      }),
+  } as never);
+
+  await service.reprintReceipt("receipt-a", owner);
+
+  assert.deepEqual(queuedPayloads, [
+    { ...content, __bestteamAllowLocalReprint: true },
+  ]);
+});

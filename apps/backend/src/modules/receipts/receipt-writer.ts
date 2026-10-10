@@ -91,9 +91,16 @@ function routeMatches(
 export async function queuePrintJobsForReceipt(
   tx: TransactionClient,
   receipt: { id: string; branchId: string; content: Prisma.JsonValue | null },
+  options: { allowLocalReprint?: boolean } = {},
 ): Promise<void> {
   if (!durablePrintJobsEnabled()) return;
   const route = receiptPrintRoute(receipt.content);
+  const payload = options.allowLocalReprint
+    ? {
+        ...jsonObject(receipt.content),
+        __bestteamAllowLocalReprint: true,
+      }
+    : (receipt.content ?? {});
   const printers = await tx.printer.findMany({
     where: { branchId: receipt.branchId, isActive: true, status: "ONLINE" },
     select: { id: true, type: true, metadata: true },
@@ -104,7 +111,7 @@ export async function queuePrintJobsForReceipt(
       data: {
         receiptId: receipt.id,
         branchId: receipt.branchId,
-        payload: receipt.content ?? {},
+        payload,
         printerId: null,
       },
     });
@@ -115,7 +122,7 @@ export async function queuePrintJobsForReceipt(
       receiptId: receipt.id,
       branchId: receipt.branchId,
       printerId: printer.id,
-      payload: receipt.content ?? {},
+      payload,
     })),
   });
 }
