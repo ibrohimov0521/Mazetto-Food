@@ -10,6 +10,10 @@ import { readdirSync } from "node:fs";
  * chetda: ular o'z bayrog'ini talab qiladi va tasodifan ishlamasligi kerak.
  */
 
+execFileSync("node", ["scripts/docker-patch-context-check.mjs"], {
+  stdio: "inherit",
+});
+
 const SKIP = new Set([
   "validate-telegram-staff-lifecycle",
   "validate-order-display-numbers",

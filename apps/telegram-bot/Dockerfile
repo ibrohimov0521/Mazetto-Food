@@ -10,6 +10,7 @@ WORKDIR /app
 FROM base AS deps
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY patches ./patches
 COPY apps/telegram-bot/package.json ./apps/telegram-bot/package.json
 
 RUN pnpm install --frozen-lockfile
