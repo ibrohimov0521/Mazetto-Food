@@ -36,3 +36,87 @@ test("smena hisobotida Uzcard va Humo terminalga, naqd esa kassaga yoziladi", ()
   assert.equal((totals.otherPaymentTotal as Prisma.Decimal).toFixed(0), "7000");
   assert.equal(totals.orderCount, 6);
 });
+
+test("keyingi smenadagi refund avvalgi smena naqd tushumini qayta qo'shmaydi", async () => {
+  const shiftState: Record<string, unknown> = {
+    id: "shift-b",
+    branchId: "branch-a",
+    employeeId: "employee-a",
+    status: "OPEN",
+    openingBalance: new Prisma.Decimal(50_000),
+  };
+  let closeData: Record<string, unknown> | undefined;
+  const tx = {
+    $queryRawUnsafe: async () => [],
+    shift: {
+      findUnique: async () => ({ ...shiftState }),
+      updateMany: async ({ data }: { data: Record<string, unknown> }) => {
+        closeData = data;
+        Object.assign(shiftState, data);
+        return { count: 1 };
+      },
+      findUniqueOrThrow: async () => ({ ...shiftState }),
+    },
+    employee: { findFirst: async () => ({ id: "employee-a" }) },
+    cashTransfer: { findFirst: async () => null },
+    payment: {
+      findMany: async (args: {
+        where: {
+          revenueRecords: {
+            some: { shiftId: string; source: string };
+          };
+        };
+      }) => {
+        assert.deepEqual(args.where.revenueRecords.some, {
+          shiftId: "shift-b",
+          source: "ORDER",
+        });
+        return [];
+      },
+    },
+    cashTransaction: {
+      findMany: async () => [
+        { type: "REFUND", amount: new Prisma.Decimal(24_000) },
+      ],
+      create: async () => ({ id: "closing-row-b" }),
+    },
+    order: {
+      count: async (args: {
+        where: { revenueRecords: { some: { shiftId: string } } };
+      }) => {
+        assert.deepEqual(args.where.revenueRecords.some, {
+          shiftId: "shift-b",
+        });
+        return 1;
+      },
+    },
+  };
+  const prisma = {
+    $transaction: async <T>(callback: (database: typeof tx) => Promise<T>) =>
+      callback(tx),
+  };
+  const service = new ShiftsService(prisma as never);
+
+  await service.closeShift(
+    "shift-b",
+    { closingBalance: 26_000 },
+    {
+      id: "cashier-a",
+      employeeId: "employee-a",
+      branchId: "branch-a",
+      tenantId: "tenant-a",
+      membershipId: "membership-a",
+      isGlobalScope: false,
+      roles: ["CASHIER"],
+      permissions: ["SHIFT_CLOSE"],
+    },
+  );
+
+  assert.ok(closeData);
+  assert.equal((closeData.expectedCash as Prisma.Decimal).toFixed(0), "26000");
+  assert.equal((closeData.cashTotal as Prisma.Decimal).toFixed(0), "0");
+  assert.equal((closeData.refundsTotal as Prisma.Decimal).toFixed(0), "24000");
+  assert.equal((closeData.salesTotal as Prisma.Decimal).toFixed(0), "0");
+  assert.equal(closeData.orderCount, 1);
+  assert.equal((closeData.cashDifference as Prisma.Decimal).toFixed(0), "0");
+});
