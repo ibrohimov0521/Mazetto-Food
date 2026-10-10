@@ -30,6 +30,14 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Local database backups and SQLite runtime stores
+*.dump
+*.dump.gz
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.sqlite-*
+
 .DS_Store
 Thumbs.db
 
