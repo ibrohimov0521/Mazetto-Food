@@ -283,3 +283,15 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Backend-first deployment exposed a version-compatibility risk: older POS clients call the cash-transaction endpoint without pagination parameters and expect an array, while the new paginated client expects `{ items, total }`.
 - Keep the original array response and 200-row cap when no page parameters are supplied; requests with page parameters receive the bounded page envelope and exact total. This allows backend and POS to roll out independently.
 - Regression coverage verifies both response contracts. Validation passed: backend tests 576/576, changed-file ESLint, backend app/scripts TypeScript checks, Nest build, and `git diff --check`. CI and production deployment remain release gates; no schema change is required.
+
+## Release confirmation: cash transaction API rollout compatibility
+
+- PR #288 was squash-merged as `cf8f4936fabd3c47e99eda222daf407c475e3d16`; main CI #809 and production Deploy #322 succeeded. The `production` tag matches the merge commit.
+- Independent read-only production smoke passed 27/27 checks. This release changed only the backend and did not require a database migration.
+
+## Audit continuation: cashier payment settings and offline terminals
+
+- Verified the payment-method switches are tenant-scoped, validated against the shared setting registry, cached in Redis with invalidation on save, filtered from the cashier payment list and Desktop bootstrap, and rechecked by the backend before recording new cashier payments. Disabling a method does not prevent refunds for earlier recorded payments, which is necessary for returns.
+- Found an offline operational edge: a disconnected Desktop terminal can keep its last downloaded payment-method list. If an administrator disables a method while that terminal has a queued payment in that method, replay is rejected by the current server policy and the queue enters conflict; the shift remains blocked from closing until the conflict is resolved. The payment is not silently added to the ledger.
+- The settings page now asks for confirmation specifically before disabling CASH and explains to synchronize every Desktop terminal first. Click/Payme/card toggles remain immediate because those methods cannot be queued offline. If a CASH conflict occurs, the operator can re-enable CASH and retry the queued action from Desktop. This is an operator safeguard, not a change to payment authorization or offline policy.
+- Validation and deployment for this UI safeguard are pending; no database change is planned.

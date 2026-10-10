@@ -120,7 +120,7 @@ const SETTING_LABELS: Record<
   },
   cashier_payment_methods: {
     title: "Kassada qabul qilinadigan to'lovlar",
-    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder ulanishi emas",
+    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder ulanishi emas. Oflayn kassalar Naqd usulining oxirgi yuklangan sozlamasidan foydalanadi.",
     group: "cashier-payments",
   },
   customer_delivery_enabled: {
@@ -237,12 +237,23 @@ export function AdminSettings() {
   );
 
   /**
-   * Saqlash so'rovi. Mijozga ochiq sozlama bo'lsa tasdiqlash oynasi ochiladi,
-   * ichki sozlama esa darhol saqlanadi.
+   * Mijozga ochiq sozlamalar va kassa usulini o'chirish tasdiqlanadi.
    */
   const requestSave = useCallback(
     (row: SettingRow, value: string) => {
-      if (!row.affectsCustomer) {
+      const nextCashierMethods = new Set(
+        value.split(",").map((method) => method.trim().toUpperCase()),
+      );
+      const disabledCashierMethods =
+        row.key === "cashier_payment_methods" && row.rule.kind === "csv-enum"
+          ? row.value
+              .split(",")
+              .map((method) => method.trim().toUpperCase())
+              .filter((method) => method && !nextCashierMethods.has(method))
+          : [];
+      const disablesOfflineCash = disabledCashierMethods.includes("CASH");
+
+      if (!row.affectsCustomer && !disablesOfflineCash) {
         void save(row.key, value);
         return;
       }
@@ -253,9 +264,10 @@ export function AdminSettings() {
         title: settingTitle(row.key),
         before: describeValue(row.rule, row.value),
         after: describeValue(row.rule, value),
-        impact:
-          SETTING_LABELS[row.key]?.impact ??
-          "Bu sozlama mijoz saytida darhol qo'llanadi.",
+        impact: disablesOfflineCash
+          ? "Internetga ulanmagan Desktop kassa oxirgi yuklangan Naqd sozlamasidan foydalanishda davom etishi mumkin. Unda naqd to'lov navbatda qolgan bo'lsa, qayta ulanganda sinxronlash nizosiga tushadi va smenani yopib bo'lmaydi. Avval barcha kassalarni internetga ulang va kutayotgan amallarni sinxronlang. Nizo yuz bersa, Naqd usulini qayta yoqib, Desktop navbatidan amalni qayta yuboring."
+          : (SETTING_LABELS[row.key]?.impact ??
+            "Bu sozlama mijoz saytida darhol qo'llanadi."),
       });
     },
     [save],
@@ -322,7 +334,7 @@ export function AdminSettings() {
       />
 
       <SettingsGroup
-        description="Bu usullar kassir oynalarida ko'rinadi. Click/Payme va karta tushumini kassir alohida tekshiradi; avtomatik bank tasdig'i yo'q."
+        description="Bu usullar kassir oynalarida ko'rinadi. Click/Payme va karta tushumini kassir alohida tekshiradi; avtomatik bank tasdig'i yo'q. Naqdni o'chirishdan oldin oflayn Desktop kassalaridagi kutayotgan amallarni sinxronlang."
         drafts={drafts}
         onDraftChange={(key, value) =>
           setDrafts((previous) => ({ ...previous, [key]: value }))
