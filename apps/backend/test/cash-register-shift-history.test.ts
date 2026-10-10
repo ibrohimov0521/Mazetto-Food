@@ -15,22 +15,75 @@ const cashier: AuthenticatedUser = {
 async function getCurrentCash(
   openingBalance: number,
   cashTransactions: { amount: number; type: CashTransactionType }[],
+  revenueRecords: {
+    orderId: string | null;
+    amount: number;
+    methodCode: string | null;
+  }[] = [],
+  captured?: {
+    shiftQuery?: Record<string, unknown>;
+    cashTransactionQuery?: Record<string, unknown>;
+    cashSalesQuery?: Record<string, unknown>;
+    paidOrdersQuery?: Record<string, unknown>;
+  },
 ) {
+  const totals = new Map<CashTransactionType, { amount: Prisma.Decimal; count: number }>();
+  for (const transaction of cashTransactions) {
+    const total = totals.get(transaction.type) ?? {
+      amount: new Prisma.Decimal(0),
+      count: 0,
+    };
+    total.amount = total.amount.add(transaction.amount);
+    total.count += 1;
+    totals.set(transaction.type, total);
+  }
   const service = new CashRegisterService(
     {
       branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
       shift: {
-        findFirst: async () => ({
-          id: "shift-a",
-          branchId: "branch-a",
-          employeeId: "employee-a",
-          openingBalance: new Prisma.Decimal(openingBalance),
-          cashTransactions: cashTransactions.map((transaction) => ({
-            ...transaction,
-            amount: new Prisma.Decimal(transaction.amount),
-          })),
-          revenueRecords: [],
-        }),
+        findFirst: async (query: Record<string, unknown>) => {
+          if (captured) captured.shiftQuery = query;
+          return {
+            id: "shift-a",
+            branchId: "branch-a",
+            employeeId: "employee-a",
+            openingBalance: new Prisma.Decimal(openingBalance),
+            cashTransactions: cashTransactions.slice(0, 50).map((transaction) => ({
+              ...transaction,
+              amount: new Prisma.Decimal(transaction.amount),
+            })),
+          };
+        },
+      },
+      cashTransaction: {
+        groupBy: async (query: Record<string, unknown>) => {
+          if (captured) captured.cashTransactionQuery = query;
+          return [...totals].map(([type, total]) => ({
+            type,
+            _sum: { amount: total.amount },
+            _count: { _all: total.count },
+          }));
+        },
+      },
+      revenueRecord: {
+        aggregate: async (query: Record<string, unknown>) => {
+          if (captured) captured.cashSalesQuery = query;
+          return {
+            _sum: {
+              amount: revenueRecords
+                .filter((record) => record.orderId && record.methodCode === "CASH")
+                .reduce((total, record) => total.add(record.amount), new Prisma.Decimal(0)),
+            },
+          };
+        },
+        groupBy: async (query: Record<string, unknown>) => {
+          if (captured) captured.paidOrdersQuery = query;
+          return [...new Set(
+            revenueRecords
+              .filter((record) => record.orderId && record.methodCode)
+              .map((record) => record.orderId),
+          )].map((orderId) => ({ orderId }));
+        },
       },
     } as never,
     {} as never,
@@ -56,6 +109,63 @@ test("current shift balance does not count the opening float twice when its ledg
   ]);
 
   assert.equal(shift?.currentBalance.toFixed(0), "115000");
+});
+
+test("current shift summary aggregates cash and paid orders without loading full ledger history", async () => {
+  const captured: {
+    shiftQuery?: Record<string, unknown>;
+    cashTransactionQuery?: Record<string, unknown>;
+    cashSalesQuery?: Record<string, unknown>;
+    paidOrdersQuery?: Record<string, unknown>;
+  } = {};
+  const shift = await getCurrentCash(
+    50000,
+    [
+      { amount: 20000, type: CashTransactionType.SALE },
+      { amount: 5000, type: CashTransactionType.REFUND },
+    ],
+    [
+      { orderId: "order-a", amount: 30000, methodCode: "CASH" },
+      { orderId: "order-a", amount: 10000, methodCode: "CASH" },
+      { orderId: "order-b", amount: 25000, methodCode: "UZCARD" },
+      { orderId: "unpaid", amount: 10000, methodCode: null },
+    ],
+    captured,
+  );
+
+  assert.equal(shift?.currentBalance.toFixed(0), "65000");
+  assert.equal(shift?.cashSales.toFixed(0), "40000");
+  assert.equal(shift?.orderCount, 2);
+  assert.deepEqual(shift?.revenueRecords, [
+    { orderId: "order-a" },
+    { orderId: "order-b" },
+  ]);
+  const include = captured.shiftQuery?.include as {
+    cashTransactions: Record<string, unknown>;
+  };
+  assert.equal(include.cashTransactions.take, 50);
+  assert.equal("revenueRecords" in include, false);
+  assert.deepEqual(captured.cashTransactionQuery, {
+    by: ["type"],
+    where: { shiftId: "shift-a" },
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+  assert.deepEqual(captured.cashSalesQuery, {
+    where: {
+      shiftId: "shift-a",
+      payment: { method: { code: "CASH" } },
+    },
+    _sum: { amount: true },
+  });
+  assert.deepEqual(captured.paidOrdersQuery, {
+    by: ["orderId"],
+    where: {
+      shiftId: "shift-a",
+      paymentId: { not: null },
+      orderId: { not: null },
+    },
+  });
 });
 
 test("cashier can read their own shift order history with requested filters", async () => {
