@@ -59,6 +59,7 @@ type CustomerOrderDetail = {
   createdAt: string;
   branch?: { name: string; address?: string | null } | null;
   order: {
+    id: string;
     orderNumber: string;
     displayOrderNumber?: string | null;
     total: string;
@@ -147,7 +148,7 @@ function OrderDetail() {
     void load();
   }, [load]);
 
-  useOrderUpdates(customer?.accessToken, load);
+  useOrderUpdates(customer?.accessToken, load, order?.order.id ?? null);
 
   const itemCount = useMemo(
     () => order?.order.items.reduce((total, item) => total + Number(item.quantity), 0) ?? 0,

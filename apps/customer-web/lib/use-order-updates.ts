@@ -4,7 +4,13 @@ import { useEffect } from "react";
 import { io } from "socket.io-client";
 import { getApiBaseUrl } from "./api";
 
-export function useOrderUpdates(token: string | undefined, reload: (silent?: boolean) => Promise<void>) {
+type OrderUpdatePayload = { orderId?: string };
+
+export function useOrderUpdates(
+  token: string | undefined,
+  reload: (silent?: boolean) => Promise<void>,
+  orderIdFilter?: string | null,
+) {
   useEffect(() => {
     if (!token) return;
     let stopped = false;
@@ -24,8 +30,12 @@ export function useOrderUpdates(token: string | undefined, reload: (silent?: boo
       auth: { token, tokenType: "customer" },
       transports: ["websocket"],
     });
+    const onOrderUpdate = (payload?: OrderUpdatePayload) => {
+      if (orderIdFilter !== undefined && payload?.orderId !== orderIdFilter) return;
+      void refresh();
+    };
     for (const event of ["order.created", "order.confirmed", "order.sent_to_kitchen", "order.status_changed"]) {
-      socket.on(event, refresh);
+      socket.on(event, onOrderUpdate);
     }
     let pollTimer: number | undefined;
     const schedulePoll = () => {
@@ -50,5 +60,5 @@ export function useOrderUpdates(token: string | undefined, reload: (silent?: boo
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [token, reload]);
+  }, [token, reload, orderIdFilter]);
 }
