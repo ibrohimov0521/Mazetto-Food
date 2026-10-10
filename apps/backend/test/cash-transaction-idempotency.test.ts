@@ -16,6 +16,7 @@ const cashier: AuthenticatedUser = {
 test("cash transaction replay returns the original ledger row without a second write", async () => {
   let transactionActive = false;
   let writes = 0;
+  let shiftLocks = 0;
   let storedTransaction: Record<string, unknown> | null = null;
   let idempotencyRecord:
     | {
@@ -41,6 +42,10 @@ test("cash transaction replay returns the original ledger row without a second w
         employeeId: "employee-a",
         status: "OPEN",
       }),
+      updateMany: async () => {
+        shiftLocks += 1;
+        return { count: 1 };
+      },
     },
     employee: { findFirst: async () => ({ id: "employee-a" }) },
     order: { findFirst: async () => null },
@@ -142,6 +147,7 @@ test("cash transaction replay returns the original ledger row without a second w
   assert.equal(claimedKey, context.idempotencyKey);
   assert.deepEqual(replay, first);
   assert.equal(writes, 1);
+  assert.equal(shiftLocks, 1);
 
   await assert.rejects(
     service.createCashTransaction(

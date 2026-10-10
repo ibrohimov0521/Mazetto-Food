@@ -861,6 +861,21 @@ export class ShiftsService {
         throw new BadRequestException("Payment does not belong to order");
       }
 
+      const lockedShift = await tx.shift.updateMany({
+        where: {
+          id: shiftId,
+          branchId: shift.branchId,
+          employeeId: shift.employeeId,
+          status: ShiftStatus.OPEN,
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (lockedShift.count !== 1) {
+        throw new BadRequestException(
+          "Cash transactions require an open shift",
+        );
+      }
+
       return tx.cashTransaction.create({
         data: {
           branchId: shift.branchId,

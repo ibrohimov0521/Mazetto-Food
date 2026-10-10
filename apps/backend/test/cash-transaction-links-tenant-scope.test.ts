@@ -33,6 +33,7 @@ function createHarness(
         employeeId: "employee-a",
         status: "OPEN",
       }),
+      updateMany: async () => ({ count: 1 }),
     },
     employee: { findFirst: async () => ({ id: "employee-a" }) },
     order: {
