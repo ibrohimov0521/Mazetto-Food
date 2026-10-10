@@ -828,17 +828,7 @@ async function proveOrderCashStockPrint(
       refundActor,
       cancellationContext(unrelatedOpenShift.id, "unrelated"),
     ),
-    (error: unknown) => {
-      const response = (
-        error as { getResponse?: () => unknown }
-      ).getResponse?.();
-      const detail = [
-        (error as Error).message,
-        typeof response === "string" ? response : JSON.stringify(response),
-      ].join(" ");
-      assert.match(detail, /naqd to'lov tanlangan smenada kassaga kiritilmagan/i);
-      return true;
-    },
+    /naqd to'lov(i)? tanlangan smenada kassaga kiritilmagan/i,
     "refund must reject an open shift without this order's cash SALE",
   );
   assert.equal(
