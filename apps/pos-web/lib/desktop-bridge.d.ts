@@ -58,6 +58,7 @@ type DesktopReceiptDocumentProfile = {
   footerLines: string[];
 };
 type DesktopReceiptPrintProfile = {
+  schemaVersion: number;
   businessName: string;
   commonHeaderLines: string[];
   commonFooterLines: string[];

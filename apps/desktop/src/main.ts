@@ -18,6 +18,7 @@ import {
 } from "./receipt-renderer.js";
 import {
   defaultReceiptPrintProfile,
+  migrateStoredReceiptPrintProfile,
   normalizeReceiptPrintProfile,
   receiptKinds,
   type ReceiptKind,
@@ -625,7 +626,16 @@ function loadReceiptPrintProfile() {
   const serialized = store?.getSetting("receipt_print_profiles");
   if (!serialized) return defaultReceiptPrintProfile();
   try {
-    return normalizeReceiptPrintProfile(JSON.parse(serialized));
+    const saved = JSON.parse(serialized) as Record<string, unknown>;
+    const profile = migrateStoredReceiptPrintProfile(saved);
+    if (saved.schemaVersion !== profile.schemaVersion) {
+      try {
+        store?.setSetting("receipt_print_profiles", JSON.stringify(profile));
+      } catch (error) {
+        console.warn("Could not persist migrated receipt print profile", error);
+      }
+    }
+    return profile;
   } catch {
     return defaultReceiptPrintProfile();
   }

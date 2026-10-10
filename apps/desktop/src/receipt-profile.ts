@@ -34,6 +34,7 @@ export type ReceiptDocumentProfile = {
 };
 
 export type ReceiptPrintProfile = {
+  schemaVersion: 2;
   businessName: string;
   commonHeaderLines: string[];
   commonFooterLines: string[];
@@ -61,11 +62,16 @@ function documentProfile(
 
 export function defaultReceiptPrintProfile(): ReceiptPrintProfile {
   return {
+    schemaVersion: 2,
     businessName: "MAZETTO FOOD",
     commonHeaderLines: [],
     commonFooterLines: [],
     documents: {
-      RECEIPT: documentProfile("MIJOZ CHEKI", { reason: false }),
+      RECEIPT: {
+        ...documentProfile("MIJOZ CHEKI", { reason: false }),
+        businessNameEnabled: false,
+        logoEnabled: false,
+      },
       KITCHEN: documentProfile("OSHXONA BUYURTMASI", {
         customerName: false, customerPhone: false, address: false, itemPrices: false,
         payments: false, total: false, reason: false,
@@ -141,9 +147,40 @@ export function normalizeReceiptPrintProfile(value: unknown): ReceiptPrintProfil
   }
 
   return {
+    schemaVersion: 2,
     businessName: safeText(input.businessName, defaults.businessName, 80),
     commonHeaderLines: safeLines(input.commonHeaderLines),
     commonFooterLines: safeLines(input.commonFooterLines),
     documents,
   };
+}
+
+export function migrateStoredReceiptPrintProfile(value: unknown): ReceiptPrintProfile {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const profile = normalizeReceiptPrintProfile(input);
+  if (typeof input.schemaVersion === "number" && input.schemaVersion >= 2) return profile;
+
+  const documentsInput = input.documents && typeof input.documents === "object"
+    ? input.documents as Record<string, unknown>
+    : {};
+  const rawReceipt = documentsInput.RECEIPT && typeof documentsInput.RECEIPT === "object"
+    ? documentsInput.RECEIPT as Record<string, unknown>
+    : {};
+  const businessName = safeText(
+    rawReceipt.businessName,
+    safeText(input.businessName, "MAZETTO FOOD", 80),
+    80,
+  );
+  const logoEnabled = typeof rawReceipt.logoEnabled === "boolean"
+    ? rawReceipt.logoEnabled
+    : typeof input.logoEnabled === "boolean" ? input.logoEnabled : true;
+  const businessNameEnabled = typeof rawReceipt.businessNameEnabled === "boolean"
+    ? rawReceipt.businessNameEnabled
+    : typeof input.businessNameEnabled === "boolean" ? input.businessNameEnabled : true;
+
+  if (businessName.toLocaleUpperCase() === "MAZETTO FOOD" && logoEnabled && businessNameEnabled) {
+    profile.documents.RECEIPT.logoEnabled = false;
+    profile.documents.RECEIPT.businessNameEnabled = false;
+  }
+  return profile;
 }
