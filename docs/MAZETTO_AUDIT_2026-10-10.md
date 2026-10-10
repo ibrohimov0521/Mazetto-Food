@@ -89,4 +89,17 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Found a print-queue collision between offline replay protection and the explicit reprint action. After an offline receipt had printed locally and synced, Desktop treated every later server job for the same order/document type as a duplicate, so a cashier's manual reprint could be marked complete without reaching paper.
 - Manual reprint jobs now carry an internal opt-in marker in the durable payload. Desktop skips local replay deduplication only for those jobs and strips the marker before sending content to the printer. Normal sync replay retains duplicate suppression; invalid/empty receipt data still fails printable-content validation rather than silently printing a blank page.
 - No database/schema migration was needed. Regression coverage verifies the tenant-scoped reprint service adds the marker only for an explicit reprint, Desktop still suppresses ordinary replay, and a manual reprint reaches the configured system printer without exposing the internal marker in receipt content.
-- Verification passed: backend tests 553/553, Desktop tests 139/139, focused ESLint, backend app and script TypeScript checks, Desktop TypeScript check, Nest build, and Desktop TypeScript/preload build. Production release remains the release gate.
+- Verification passed for the reprint change: backend tests 553/553, Desktop tests 139/139, focused ESLint, backend app and script TypeScript checks, Desktop TypeScript check, Nest build, and Desktop TypeScript/preload build.
+
+## Latest release confirmation (2026-10-10)
+
+- PR #267 merged as `d8b78df5011f9be4d80a3e4221e0d54d90574ebb`; Deploy #301 succeeded, including production smoke 27/27. The `production` tag was verified at this server-code commit.
+- PR #268 then published MAZETTO Desktop 0.1.111. Desktop Release #163 succeeded and published the versioned installer, `latest` installer, blockmap, and `latest.yml`.
+- Deploy #302 for the version/document-only commit succeeded and advanced `production` to `d4098e18d79e5ccce6abb28d9ebec492390a8e6c`; its production smoke was skipped because no runtime service inputs changed. Deploy #301's smoke covered the server runtime change.
+- Installing Desktop 0.1.111 at the restaurant and physically verifying a requested reprint remain human acceptance steps.
+
+## Audit continuation: legacy shift opening balance
+
+- The live cashier summary rebuilt the current drawer balance from cash ledger rows starting at zero. For an older/open shift whose stored `openingBalance` had no `OPENING_BALANCE` ledger row, the UI omitted the opening float even though shift-close and transfer calculations already had a legacy fallback.
+- Current shift balance now uses `openingBalance` only when the opening ledger entry is absent, matching the established shift calculation and avoiding double-counting when the ledger entry exists.
+- Regression tests cover both legacy and ledger-backed shifts. Backend suite passed 555/555; the new focused history suite passed 7/7; ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check` all passed. Full CI and production release remain the gate for this continuation.
