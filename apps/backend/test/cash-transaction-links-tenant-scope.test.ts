@@ -33,6 +33,7 @@ function createHarness(
         employeeId: "employee-a",
         status: "OPEN",
       }),
+      updateMany: async () => ({ count: 1 }),
     },
     employee: { findFirst: async () => ({ id: "employee-a" }) },
     order: {
@@ -80,7 +81,7 @@ test("cash transaction rejects an order outside the cashier branch before writin
     harness.service.createCashTransaction(
       "shift-a",
       {
-        type: "CASH_IN",
+        type: "INCOME",
         amount: 500,
         orderId: "order-b",
       } as never,
@@ -102,7 +103,7 @@ test("cash transaction rejects a payment outside the cashier branch before writi
     harness.service.createCashTransaction(
       "shift-a",
       {
-        type: "CASH_IN",
+        type: "INCOME",
         amount: 500,
         paymentId: "payment-b",
       } as never,
@@ -126,7 +127,7 @@ test("cash transaction rejects an order and payment pair that do not match", asy
     harness.service.createCashTransaction(
       "shift-a",
       {
-        type: "CASH_IN",
+        type: "INCOME",
         amount: 500,
         orderId: "order-a",
         paymentId: "payment-a",

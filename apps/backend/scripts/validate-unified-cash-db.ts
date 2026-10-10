@@ -36,6 +36,7 @@ async function main() {
     const worker = await actor("Worker", ["KITCHEN", "CASHIER", "COURIER"]);
     const receiver = await actor("Receiver", ["CASHIER"]);
     const branchManager = await actor("Manager", ["BRANCH_MANAGER"]);
+    const cashOperator = await actor("CashOperator", ["CASHIER"]);
     const category = await prisma.category.create({ data: { code: "CASHQA" + id, name: "QA" } });
     const product = await prisma.product.findFirst({ where: { code: "CLASSIC_LAVASH" } }) ?? await prisma.product.create({ data: { code: "CLASSIC_LAVASH", categoryId: category.id, name: "QA item", sellingPrice: 10000, isAvailable: true } });
     await prisma.paymentMethod.create({ data: { branchId: branch.id, code: "CASH", name: "Cash", isActive: true } });
@@ -77,6 +78,51 @@ async function main() {
     );
     const sourceShift = await shifts.openShift({ openingBalance: 0 }, worker);
     const targetShift = await shifts.openShift({ openingBalance: 0 }, receiver);
+    const cashOperatorShift = await shifts.openShift(
+      { openingBalance: 0 },
+      cashOperator,
+    );
+    let releaseShiftLock!: () => void;
+    let signalShiftLocked!: () => void;
+    const shiftLockReleased = new Promise<void>((resolve) => {
+      releaseShiftLock = resolve;
+    });
+    const shiftLocked = new Promise<void>((resolve) => {
+      signalShiftLocked = resolve;
+    });
+    const lockOwner = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "shifts" WHERE "id" = ${cashOperatorShift.id} FOR UPDATE`;
+      signalShiftLocked();
+      await shiftLockReleased;
+    });
+    await shiftLocked;
+    let cashEntrySettled = false;
+    const cashEntry = shifts
+      .createCashTransaction(
+        cashOperatorShift.id,
+        { type: "INCOME", amount: 1234 },
+        cashOperator,
+      )
+      .then(
+        (entry) => {
+          cashEntrySettled = true;
+          return entry;
+        },
+        (error: unknown) => {
+          cashEntrySettled = true;
+          throw error;
+        },
+      );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const cashEntryWaitedForShiftLock = !cashEntrySettled;
+    releaseShiftLock();
+    await lockOwner;
+    await cashEntry;
+    assert.equal(
+      cashEntryWaitedForShiftLock,
+      true,
+      "manual cash entries must serialize with shift close and transfers",
+    );
     await assert.rejects(() => shifts.openCourierShift({ openingBalance: 0 }, worker));
     const balance = async (user = worker) => (await cash.getCurrentShift(user))!.expectedCash.toNumber();
     const online = async (type: "DELIVERY" | "TAKEAWAY", total: number, status: OrderStatus = OrderStatus.READY) => {
@@ -159,7 +205,7 @@ async function main() {
     assert.equal(await prisma.revenueRecord.count({ where: { shiftId: targetShift.id } }), 0, "handover is not another sale");
     assert.equal(await prisma.cashTransaction.count({ where: { cashTransferId: transfer.id, type: "CASH_IN" } }), 1);
 
-    await shifts.createCashTransaction(sourceShift.id, { type: "CASH_IN", amount: 15000 }, worker);
+    await shifts.createCashTransaction(sourceShift.id, { type: "INCOME", amount: 15000 }, worker);
     const attempts = await Promise.allSettled([shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker), shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker)]);
     assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1, "parallel submissions cannot overdraw");
     const pending = await prisma.cashTransfer.findFirstOrThrow({ where: { fromShiftId: sourceShift.id, status: "PENDING" } });

@@ -752,6 +752,17 @@ export class ShiftsService {
       );
     }
 
+    const manualCashTransactionTypes = new Set<CashTransactionType>([
+      CashTransactionType.INCOME,
+      CashTransactionType.EXPENSE,
+      CashTransactionType.WITHDRAW,
+    ]);
+    if (!manualCashTransactionTypes.has(dto.type)) {
+      throw new BadRequestException(
+        "Faqat kirim, xarajat yoki kassadan chiqarish qo'lda kiritilishi mumkin",
+      );
+    }
+
     const idempotencyKey = context?.idempotencyKey
       ? normalizeIdempotencyKey(context.idempotencyKey)
       : undefined;
@@ -859,6 +870,21 @@ export class ShiftsService {
 
       if (dto.orderId && paymentOrderId && dto.orderId !== paymentOrderId) {
         throw new BadRequestException("Payment does not belong to order");
+      }
+
+      const lockedShift = await tx.shift.updateMany({
+        where: {
+          id: shiftId,
+          branchId: shift.branchId,
+          employeeId: shift.employeeId,
+          status: ShiftStatus.OPEN,
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (lockedShift.count !== 1) {
+        throw new BadRequestException(
+          "Cash transactions require an open shift",
+        );
       }
 
       return tx.cashTransaction.create({

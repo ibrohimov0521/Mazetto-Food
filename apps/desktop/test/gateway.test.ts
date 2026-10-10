@@ -832,6 +832,21 @@ test("offline cash transactions block shift close until they sync", async () => 
     );
 
     online = false;
+    const unsupportedType = await fetch(
+      `${baseUrl}/cash-shift-expense-1/transactions`,
+      {
+        method: "POST",
+        headers: { ...headers, "Idempotency-Key": "offline-forged-sale" },
+        body: JSON.stringify({ type: "SALE", amount: 5000 }),
+      },
+    );
+    assert.equal(unsupportedType.status, 409);
+    assert.match(
+      (await unsupportedType.json()).error.message,
+      /Faqat kirim, xarajat yoki kassadan chiqarish/,
+    );
+    assert.equal(store.summary().pendingCommands, 0);
+
     const expense = await fetch(
       `${baseUrl}/cash-shift-expense-1/transactions`,
       {
