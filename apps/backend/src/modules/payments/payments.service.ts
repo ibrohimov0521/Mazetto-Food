@@ -689,13 +689,12 @@ export class PaymentsService {
         await tx.order.update({
           where: { id: payment.orderId },
           data: {
-            paymentStatus: hasRefunds
-              ? remainingPaid.isZero()
+            paymentStatus:
+              hasRefunds && remainingPaid.isZero()
                 ? PaymentStatus.REFUNDED
-                : PaymentStatus.PARTIALLY_REFUNDED
-              : remainingPaid.greaterThanOrEqualTo(payment.order.total)
-                ? PaymentStatus.PAID
-                : PaymentStatus.PENDING,
+                : remainingPaid.greaterThanOrEqualTo(payment.order.total)
+                  ? PaymentStatus.PAID
+                  : PaymentStatus.PENDING,
           },
         });
         return refund;
