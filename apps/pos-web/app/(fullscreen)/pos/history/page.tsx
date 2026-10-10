@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Printer, RefreshCw, Search } from "lucide-react";
+import { Ban, ChevronDown, Printer, RefreshCw, Search } from "lucide-react";
 import { useAuth } from "../../../../components/auth/auth-provider";
 import { CashierWorkspaceNavigation } from "../../../../components/staff/staff-panel-navigation";
 import { ShiftClosePrintReport } from "../../../../components/staff/shift-close-print-report";
@@ -89,6 +89,9 @@ export default function CashierHistoryPage() {
   const canViewOwn = hasPermission(user, "SHIFT_VIEW_OWN");
   const canViewBranch = hasPermission(user, "SHIFT_VIEW_BRANCH");
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
+  const [shiftOffset, setShiftOffset] = useState(0);
+  const [hasMoreShifts, setHasMoreShifts] = useState(false);
+  const [loadingMoreShifts, setLoadingMoreShifts] = useState(false);
   const [shiftId, setShiftId] = useState("");
   const [requestedShiftId, setRequestedShiftId] = useState("");
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -114,6 +117,7 @@ export default function CashierHistoryPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [cancellingItemId, setCancellingItemId] = useState("");
   const [isOnline, setIsOnline] = useState(true);
+  const shiftPageRequest = useRef(false);
 
   useEffect(() => {
     setRequestedShiftId(
@@ -145,10 +149,14 @@ export default function CashierHistoryPage() {
 
     let active = true;
     setLoadingShifts(true);
+    setHasMoreShifts(false);
+    setShiftOffset(0);
     setError("");
-    const endpoint = canViewBranch
-      ? "/shifts?limit=100&offset=0"
-      : "/cash-register/shifts?limit=100&offset=0";
+    const params = new URLSearchParams({
+      limit: String(pageSize),
+      offset: "0",
+    });
+    const endpoint = `${canViewBranch ? "/shifts" : "/cash-register/shifts"}?${params}`;
     apiFetch<ShiftRow[]>(endpoint, {
       cache: "no-store",
       signal: AbortSignal.timeout(15000),
@@ -171,6 +179,8 @@ export default function CashierHistoryPage() {
           }
         }
         if (!active) return;
+        setShiftOffset(listedShifts.length);
+        setHasMoreShifts(listedShifts.length === pageSize);
         setShifts(nextShifts);
         setShiftId((current) =>
           requestedShiftId &&
@@ -197,6 +207,43 @@ export default function CashierHistoryPage() {
       active = false;
     };
   }, [canViewBranch, canViewOwn, isReady, requestedShiftId, router, user]);
+
+  const loadMoreShifts = useCallback(async () => {
+    if (!hasMoreShifts || shiftPageRequest.current) return;
+    shiftPageRequest.current = true;
+    setLoadingMoreShifts(true);
+    setError("");
+    const params = new URLSearchParams({
+      limit: String(pageSize),
+      offset: String(shiftOffset),
+    });
+    const endpoint = `${canViewBranch ? "/shifts" : "/cash-register/shifts"}?${params}`;
+
+    try {
+      const page = await apiFetch<ShiftRow[]>(endpoint, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
+      });
+      setShifts((current) => {
+        const knownIds = new Set(current.map((shift) => shift.id));
+        const additions = page.filter((shift) => {
+          if (knownIds.has(shift.id)) return false;
+          knownIds.add(shift.id);
+          return true;
+        });
+        return [...current, ...additions];
+      });
+      setShiftOffset((current) => current + page.length);
+      setHasMoreShifts(page.length === pageSize);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Eski smenalar yuklanmadi.",
+      );
+    } finally {
+      shiftPageRequest.current = false;
+      setLoadingMoreShifts(false);
+    }
+  }, [canViewBranch, hasMoreShifts, shiftOffset]);
 
   const loadOrders = useCallback(
     async (nextOffset = 0, append = false) => {
@@ -361,18 +408,37 @@ export default function CashierHistoryPage() {
               </p>
             ) : null}
           </div>
-          <button
-            aria-label="Tarixni yangilash"
-            className={styles.iconButton}
-            disabled={loadingShifts || loadingOrders}
-            onClick={() => {
-              window.location.reload();
-            }}
-            title="Yangilash"
-            type="button"
-          >
-            <RefreshCw size={17} />
-          </button>
+          <div className={styles.inlineActions}>
+            {hasMoreShifts ? (
+              <button
+                className={styles.button}
+                disabled={loadingShifts || loadingMoreShifts}
+                onClick={() => void loadMoreShifts()}
+                type="button"
+              >
+                {loadingMoreShifts ? (
+                  <RefreshCw className={styles.spinning} size={16} />
+                ) : (
+                  <ChevronDown size={16} />
+                )}
+                {loadingMoreShifts
+                  ? "Yuklanmoqda..."
+                  : "Eski smenalarni yuklash"}
+              </button>
+            ) : null}
+            <button
+              aria-label="Tarixni yangilash"
+              className={styles.iconButton}
+              disabled={loadingShifts || loadingOrders || loadingMoreShifts}
+              onClick={() => {
+                window.location.reload();
+              }}
+              title="Yangilash"
+              type="button"
+            >
+              <RefreshCw size={17} />
+            </button>
+          </div>
         </div>
 
         {shift?.status === "CLOSED" && <ShiftClosePrintReport key={shift.id} shift={shift} />}
