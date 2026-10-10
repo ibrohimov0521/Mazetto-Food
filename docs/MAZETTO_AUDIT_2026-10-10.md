@@ -33,15 +33,29 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 ## Remaining operational and product gaps
 
 - A browser print invocation is not proof that a printer fed paper. The shift report has not been physically tested on the restaurant's eventual receipt printer. Select its driver/paper in the print dialog and check a real multi-page shift. Godex G500 90 x 80 mm label printing was previously confirmed for receipts, not this long shift report.
-- Offline close can queue a pending command. The printed provisional report may be incomplete; after sync, reopen the closed shift and print the server-confirmed version. No automatic replacement print is asserted.
+- Offline shift close is now refused while this user's branch has an unresolved POS-order creation or cash-payment command (pending, sending, conflict or dead-letter). After those cash-affecting commands sync, the cashier can close the shift. A close with no pending cash posting can still be queued offline; its report remains provisional until server confirmation, and no automatic replacement print is asserted.
 - Existing shift list counters count orders created directly in the shift. Their labels now say "Smenada yaratilgan"; the printed report lists the wider set, including orders whose revenue was recorded in the shift.
 - The shared NBU QR's SMS contains no order ID. Same-amount payments cannot be assigned automatically or marked paid from an SMS alone. Bank API/reconciliation evidence is needed; see `docs/NBU_QR_RECONCILIATION.md`.
-- The Desktop app must update to 0.1.106 on each workstation for the whitespace-only item-note correction. Browser/POS updates do not replace an installed executable automatically until the release is published and installed.
+- The Desktop app must update to 0.1.107 on each workstation for the latest offline cash-queue safeguard; it also includes the whitespace-only item-note correction from 0.1.106. Browser/POS updates do not replace an installed executable automatically until the release is published and installed.
 - Production smoke is read-only and cannot prove a real customer checkout, a bank settlement, a shift with 205 real orders, Telegram delivery, or hardware spooler behavior. Those require controlled acceptance checks with the restaurant.
 
 ## Follow-up acceptance order
 
-1. Confirm the release and Desktop installer are deployed; repeat production smoke and verify the running commit/version.
+1. [x] Confirm production deploy #292 at `f320fd3` and read-only smoke 27/27; workstation Desktop installation remains separate acceptance.
 2. Close a controlled low-value test shift with multiple statuses on the restaurant workstation; inspect all printed pages and compare count, cancelled rows, payment entries, expected cash and closing cash with admin history.
 3. Test restricted cashier/branch-manager roles, offline close and sync, and a paid online-order item refund against the selected shift without using a real customer payment.
 4. Obtain NBU's merchant transaction API/export contract before implementing QR auto-reconciliation.
+
+## Follow-up verification (2026-10-10)
+
+- Production is now deploy #292 at `f320fd3`; the deploy workflow succeeded and independent read-only production smoke passed 27/27.
+- Read-only checks returned HTTP 200 for apex and `www` home/checkout, POS dashboard, and API health. This does not exercise authenticated actions.
+- Customer access tokens are memory-only in customer web; profile-only persistence, migration of old browser data, and refresh readiness were tested in PR #258. Real OTP/login was not exercised.
+- Desktop credential storage is present in release 0.1.106: opt-in saved accounts use Electron `safeStorage`; it is not Chrome's native password prompt. Four targeted tests and Desktop/POS typechecks passed. Each workstation still needs the release installed and an account must opt in.
+- Cashier payment-method tenant toggles are enforced both in catalog reads and payment writes. Backend payment/shift tests passed 18/18; POS checkout/kitchen tests passed 10/10. Customer checkout remains cash-only because no provider callback/reconciliation is connected.
+- Kitchen pickup handover blocks unpaid balances and routes payment to cashier; it does not add cash from the kitchen screen.
+- Shift close still loads all pages and prints grouped order detail; physical printer and offline-sync acceptance remain pending.
+- Telegram map locations use an explicit Google Maps button with previews disabled; focused map/staff-panel tests passed 4/4. Historical group messages were not remotely edited.
+- Repository scan found no tracked build/cache/database artifacts or actionable TODO markers. `.gitignore` now excludes local dump and SQLite runtime formats. No uncertain source files or dependencies were removed.
+- Offline cashier payments now project a fully covered order as paid in cached payment queues. Offline shift close fails closed while unresolved POS-order or cash-payment commands remain for the branch. The Desktop suite passes 137/137; gateway coverage is 44/44; Desktop typecheck and focused ESLint pass.
+- Human acceptance still needed: install Desktop 0.1.107 on workstations, test real receipt/shift paper on the chosen printer, verify offline close after sync, and obtain NBU merchant API/export details before automating QR reconciliation.
