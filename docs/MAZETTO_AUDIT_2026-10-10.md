@@ -322,4 +322,15 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 
 - Open-shift summaries counted only orders with a paid revenue record. Unpaid dine-in orders are assigned directly to the shift before the cashier collects payment, so the active shift understated its order count compared with its own order list and the final close snapshot.
 - The active summary now counts the union of directly assigned shift orders and orders with a paid revenue record for that shift. Database selection returns only unique order IDs. The compact `revenueRecords` compatibility field carries that full set so Desktop offline replay does not increment the order count a second time when an already-listed unpaid order is paid.
-- Unit and disposable PostgreSQL integration coverage assert that an unpaid hall order appears in the active summary exactly once before payment, alongside paid orders. Validation and production release are still pending; there is no schema change.
+- Unit and disposable PostgreSQL integration coverage assert that an unpaid hall order appears in the active summary exactly once before payment, alongside paid orders. No schema change was required.
+
+## Release confirmation: open-shift order count consistency
+
+- PR #292 merged as `6f8592f9fa205f26807d36257df5b2df1e0903ce`; its CI, main-branch CI, production Deploy, Dokploy rollout, production smoke, and release-tag advancement all succeeded.
+- Independent read-only production smoke passed 27/27 checks. The server checkout is clean on `main`, and the `production` tag points to the merge commit.
+
+## Audit continuation: older cashier shifts unreachable from the history picker
+
+- The cashier shift-history page requested only the first 100 shifts and offered no way to fetch older pages, even though both backend list endpoints accept `limit` and `offset`. Shifts beyond the initial page could not be selected from the UI.
+- The history header now loads subsequent 100-shift pages, deduplicates by shift ID, preserves already-selected or deep-linked shifts, and tracks the backend offset independently from any injected deep link. The control disappears after a short page and is disabled during loading.
+- POS unit tests (56/56), changed-file ESLint, TypeScript check, production build, and `git diff --check` passed locally. CI and production release remain pending; there is no backend or database change.
