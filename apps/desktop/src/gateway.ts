@@ -1922,6 +1922,46 @@ function optimisticCashTransaction(
   };
 }
 
+function optimisticCashPaymentTransactions(
+  command: PendingOutboxCommand,
+  payload: Record<string, unknown> | null,
+  body: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const shiftId = stringField(body, "shiftId");
+  const orderId = stringField(body, "orderId");
+  const payments = Array.isArray(body.payments) ? body.payments : [];
+  if (!shiftId || !orderId) return [];
+
+  return payments.flatMap((value, index) => {
+    if (
+      !isRecord(value) ||
+      stringField(value, "paymentMethodCode") !== "CASH"
+    ) {
+      return [];
+    }
+    const amount = finiteAmount(value.amount);
+    if (amount === null || amount <= 0) return [];
+
+    const paymentId = `local-payment-${command.id}-${index + 1}`;
+    return [
+      {
+        id: `local-cash-${command.id}-${index + 1}`,
+        shiftId,
+        type: "SALE",
+        amount: String(amount),
+        reason: "Cash payment",
+        orderId,
+        paymentId,
+        occurredAt:
+          stringField(payload, "queuedAt") ?? new Date().toISOString(),
+        pendingSync: true,
+        offlineQueued: true,
+        commandId: `${command.id}:payment:${index + 1}`,
+      },
+    ];
+  });
+}
+
 function applyCashTransactionToShift(
   shift: Record<string, unknown>,
   transaction: Record<string, unknown>,
@@ -2248,6 +2288,55 @@ function applyOptimisticProjection(
       ) {
         appendUniqueRecord(shift, "outgoingCashTransfers", transfer);
         applied.push(command.id);
+      }
+      continue;
+    }
+
+    if (
+      command.commandType === "payment.process" &&
+      pathname === "/api/v1/cash-register/shift"
+    ) {
+      const shift = responseDataRecord(projected);
+      const shiftId = stringField(commandBody, "shiftId");
+      const transactions = optimisticCashPaymentTransactions(
+        command,
+        payload,
+        commandBody ?? {},
+      );
+      if (
+        shift &&
+        shiftId &&
+        shift.id === shiftId &&
+        shift.status === "OPEN" &&
+        transactions.length > 0
+      ) {
+        const orderId = stringField(commandBody, "orderId");
+        const wasOrderCounted =
+          Boolean(orderId) &&
+          [shift.revenueRecords, shift.cashTransactions].some(
+            (records) =>
+              Array.isArray(records) &&
+              records.some(
+                (record) => isRecord(record) && record.orderId === orderId,
+              ),
+          );
+        let amountApplied = 0;
+        for (const transaction of transactions) {
+          if (applyCashTransactionToShift(shift, transaction)) {
+            amountApplied += finiteAmount(transaction.amount) ?? 0;
+          }
+        }
+        if (amountApplied > 0) {
+          const cashSales = finiteAmount(shift.cashSales);
+          if (cashSales !== null) {
+            shift.cashSales = String(cashSales + amountApplied);
+          }
+          const orderCount = finiteAmount(shift.orderCount);
+          if (!wasOrderCounted && orderCount !== null) {
+            shift.orderCount = orderCount + 1;
+          }
+          applied.push(command.id);
+        }
       }
       continue;
     }
