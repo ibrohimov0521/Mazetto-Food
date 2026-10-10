@@ -104,6 +104,17 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Current shift balance now uses `openingBalance` only when the opening ledger entry is absent, matching the established shift calculation and avoiding double-counting when the ledger entry exists.
 - Regression tests cover both legacy and ledger-backed shifts. Backend suite passed 555/555; the new focused history suite passed 7/7; ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check` all passed. Full CI and production release remain the gate for this continuation.
 
+## Release confirmation: cashier item-cancellation permissions
+
+- PR #270 was squash-merged as `cc6d708d2c1ece09ad3c878c9a315d39f8162d19`; Deploy #304 succeeded, production smoke passed, and the `production` tag was verified at that commit.
+- POS history returned HTTP 200 in a read-only production request. No migration or Desktop release was needed.
+
+## Audit continuation: item-cancellation payment status
+
+- A service-level transaction regression exposed a financial status bug: after cancelling an item, order totals were recalculated and the code then subtracted that item's price a second time when deciding whether the remaining order was paid. An underpaid remainder could therefore be marked `PAID` incorrectly.
+- The remaining total is computed once from the pre-cancellation order and reused for refund calculation and post-cancellation payment status. A follow-up check found that order-level status must represent whether the *new* total is still owed, while the payment row retains its own `PARTIALLY_REFUNDED` audit status. The order is now `PAID` when net payments cover the reduced total, `PENDING` when a balance remains, and `REFUNDED` only when the zero-total order's funds have been fully returned. This prevents a fully covered pickup order from reappearing in the cashier queue while keeping underpaid orders payable.
+- End-to-end service tests cover the cash refund ledger/receipt/revenue row and same-shift association, underpaid and exactly paid remainders, a prior refund with a remaining balance, non-cash refund rejection, and closed-shift rejection. Backend tests pass 560/560 (including the three transient-retry script tests); the focused cancellation suite passes 5/5. Backend ESLint, app/script TypeScript checks, Nest build, and `git diff --check` pass. Full PR CI and production release remain the gate.
+
 ## Release confirmation: legacy shift opening balance
 
 - PR #269 was squash-merged as `bc92b7b7966c0e005736f426f5946378588b4868`; production Deploy #303 succeeded, including production smoke, and the `production` tag was verified at that commit.

@@ -1245,12 +1245,11 @@ export class OrdersService {
           );
           return total.add(payment.amount).sub(refunded);
         }, new Prisma.Decimal(0));
+        const totalAfterCancellation = isCancelling
+          ? Prisma.Decimal.max(order.total.sub(item.totalPrice), 0)
+          : order.total;
 
         if (isCancelling) {
-          const totalAfterCancellation = Prisma.Decimal.max(
-            order.total.sub(item.totalPrice),
-            0,
-          );
           refundAmount = Prisma.Decimal.max(
             netPaid.sub(totalAfterCancellation),
             0,
@@ -1390,16 +1389,13 @@ export class OrdersService {
         const hasRefunds =
           refundAmount.greaterThan(0) ||
           order.payments.some((payment) => payment.refunds.length > 0);
-        const totalAfterCancellation = isCancelling
-          ? Prisma.Decimal.max(order.total.sub(item.totalPrice), 0)
-          : order.total;
+        // The order status tracks balance due; payment rows retain refund history.
         const paymentStatus = isCancelling
-          ? hasRefunds
-            ? netPaid.isZero()
-              ? PaymentStatus.REFUNDED
-              : PaymentStatus.PARTIALLY_REFUNDED
-            : netPaid.greaterThanOrEqualTo(totalAfterCancellation) &&
-                totalAfterCancellation.greaterThan(0)
+          ? totalAfterCancellation.isZero() &&
+            hasRefunds &&
+            netPaid.isZero()
+            ? PaymentStatus.REFUNDED
+            : netPaid.greaterThanOrEqualTo(totalAfterCancellation)
               ? PaymentStatus.PAID
               : PaymentStatus.PENDING
           : order.paymentStatus;
