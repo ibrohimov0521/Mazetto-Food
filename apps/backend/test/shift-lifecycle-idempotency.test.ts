@@ -176,6 +176,7 @@ test("shift close replay does not add another closing ledger row", async () => {
     },
     cashTransfer: { findFirst: async () => null },
     payment: { findMany: async () => [] },
+    order: { count: async () => 0 },
     cashTransaction: {
       findMany: async () => [],
       create: async () => {

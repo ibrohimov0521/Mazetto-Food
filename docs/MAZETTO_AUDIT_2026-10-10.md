@@ -151,3 +151,14 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - After the generic refund path was aligned to order balance, a follow-up cashier-flow review found `processOrderPayment` still calculated outstanding balance from only `PAID`/`SUCCESS` rows and ignored refund ledger entries. A 74,000 so'm payment with 24,000 so'm refunded could therefore present the original 74,000 as still due and allow the cashier to collect more than the 24,000 so'm net balance.
 - The order payment query now loads refund rows, and outstanding balance uses net collected value from successful or partially-refunded payment rows, subtracting refunds and clamping inconsistent negative values to zero. Failed, pending, and fully-refunded payment rows remain excluded.
 - A regression test asserts that attempting to collect 50,000 so'm when only 24,000 so'm remains fails before payment-method resolution. Verification passed: full backend suite 565/565, transient HTTP retry tests 3/3, focused payment tests 5/5, ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check`. No schema change or migration is required; PR CI and production release remain the gate.
+
+## Release confirmation: cashier collection after a partial refund
+
+- PR #274 was squash-merged as `7ec3c0649dd0b705d624dd82040a7f01b615da41`. Main CI #777 and production Deploy #308 succeeded; the `production` tag points to the merge commit.
+- Read-only production checks returned HTTP 200 for API health, POS history, and the customer site. The server checkout is clean on `main` at the deployed commit.
+
+## Audit continuation: refunds recorded in a later shift
+
+- Reviewing shift-close accounting found that its payment query matched any revenue record in the shift. A payment refunded in a later shift has an `ADJUSTMENT` revenue record there, so the query could pull the original gross payment into the later shift's sales and cash totals, then also subtract that shift's refund transaction. This overstated expected cash and duplicated sales across shifts.
+- The close snapshot now includes payment tenders only when their `ORDER` revenue record belongs to that shift. Order count still uses all revenue linked to the shift, so a refund-only order remains visible in the shift report. Refunds continue to reduce expected cash through the shift's cash-refund ledger entry. Ordinary and force-close paths share the same snapshot calculation.
+- A regression test closes a later shift with a 50,000 so'm opening balance, a 24,000 so'm refund, and 26,000 so'm counted cash; it verifies zero cash difference and confirms the original payment is not imported into that shift. Local validation passed: backend tests 566/566, transient retry tests 3/3, focused shift tests 4/4, focused ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check`. No migration is needed; PR CI and production release remain the gate.

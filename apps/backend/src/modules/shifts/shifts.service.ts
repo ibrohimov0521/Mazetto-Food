@@ -10,6 +10,7 @@ import {
   CashTransferStatus,
   PaymentStatus,
   Prisma,
+  RevenueRecordSource,
   ShiftStatus,
   ShiftType,
 } from "@prisma/client";
@@ -535,37 +536,9 @@ export class ShiftsService {
               );
             }
 
-            const payments = await tx.payment.findMany({
-              where: {
-                status: {
-                  in: [
-                    PaymentStatus.PAID,
-                    PaymentStatus.SUCCESS,
-                    PaymentStatus.REFUNDED,
-                    PaymentStatus.PARTIALLY_REFUNDED,
-                  ],
-                },
-                revenueRecords: { some: { shiftId: id } },
-              },
-              include: { method: true },
-            });
-            const cashTransactions = await tx.cashTransaction.findMany({
-              where: { shiftId: id },
-            });
-            const orderIds = new Set(
-              payments.map((payment) => payment.orderId),
-            );
-            const totals = this.calculateShiftTotals(
-              payments,
-              cashTransactions,
-              orderIds.size,
-            );
+            const snapshot = await this.loadShiftCloseSnapshot(tx, shift);
+            const { totals, expectedCash } = snapshot;
             const closingBalance = new Prisma.Decimal(dto.closingBalance);
-            const expectedCash = this.calculateExpectedCash(
-              shift.openingBalance,
-              totals,
-              cashTransactions,
-            );
             const cashDifference = closingBalance.sub(expectedCash);
 
             const closed = await tx.shift.updateMany({
@@ -676,40 +649,8 @@ export class ShiftsService {
               },
             });
 
-            const payments = await tx.payment.findMany({
-              where: {
-                status: {
-                  in: [
-                    PaymentStatus.PAID,
-                    PaymentStatus.SUCCESS,
-                    PaymentStatus.REFUNDED,
-                    PaymentStatus.PARTIALLY_REFUNDED,
-                  ],
-                },
-                revenueRecords: { some: { shiftId: id } },
-              },
-              include: { method: true },
-            });
-            const cashTransactions = await tx.cashTransaction.findMany({
-              where: { shiftId: id },
-            });
-            const orderIds = new Set(
-              payments.map((payment) => payment.orderId),
-            );
-            const totals = this.calculateShiftTotals(
-              payments,
-              cashTransactions,
-              orderIds.size,
-            );
-            const expectedCash = this.calculateExpectedCash(
-              shift.openingBalance,
-              totals,
-              cashTransactions,
-            );
-            const currentCash = this.calculateCashBalance(
-              shift.openingBalance,
-              cashTransactions,
-            );
+            const snapshot = await this.loadShiftCloseSnapshot(tx, shift);
+            const { totals, expectedCash, currentCash } = snapshot;
             const closingBalance =
               dto.closingBalance === undefined
                 ? currentCash
@@ -2054,6 +1995,51 @@ export class ShiftsService {
       incomeTotal,
       refundsTotal,
       orderCount,
+    };
+  }
+
+  private async loadShiftCloseSnapshot(
+    tx: Prisma.TransactionClient,
+    shift: { id: string; openingBalance: Prisma.Decimal },
+  ) {
+    const shiftRevenue = { shiftId: shift.id };
+    const [payments, cashTransactions, orderCount] = await Promise.all([
+      tx.payment.findMany({
+        where: {
+          status: {
+            in: [
+              PaymentStatus.PAID,
+              PaymentStatus.SUCCESS,
+              PaymentStatus.REFUNDED,
+              PaymentStatus.PARTIALLY_REFUNDED,
+            ],
+          },
+          revenueRecords: {
+            some: { ...shiftRevenue, source: RevenueRecordSource.ORDER },
+          },
+        },
+        include: { method: true },
+      }),
+      tx.cashTransaction.findMany({ where: shiftRevenue }),
+      tx.order.count({ where: { revenueRecords: { some: shiftRevenue } } }),
+    ]);
+    const totals = this.calculateShiftTotals(
+      payments,
+      cashTransactions,
+      orderCount,
+    );
+
+    return {
+      totals,
+      expectedCash: this.calculateExpectedCash(
+        shift.openingBalance,
+        totals,
+        cashTransactions,
+      ),
+      currentCash: this.calculateCashBalance(
+        shift.openingBalance,
+        cashTransactions,
+      ),
     };
   }
 
