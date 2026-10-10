@@ -538,9 +538,10 @@ export class KitchenService {
         order.type === OrderType.TAKEAWAY
       ) {
         const paidTotal = order.payments
-          .filter((payment) =>
-            payment.status === PaymentStatus.PAID ||
-            payment.status === PaymentStatus.SUCCESS,
+          .filter(
+            (payment) =>
+              payment.status === PaymentStatus.PAID ||
+              payment.status === PaymentStatus.SUCCESS,
           )
           .reduce(
             (total, payment) => total.add(payment.amount),
@@ -1142,7 +1143,8 @@ export class KitchenService {
   private createTicketNumber(): string {
     const now = new Date();
     const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-    return `KDS-${date}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const suffix = randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+    return `KDS-${date}-${suffix}`;
   }
 
   private isUniqueTicketError(error: unknown): boolean {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Prisma } from "@prisma/client";
 import {
+  createReceiptNumber,
   writeReceiptRow,
   type OrderForReceipt,
 } from "../src/modules/receipts/receipt-writer";
@@ -59,4 +60,10 @@ test("receipt notes contain customer text, not generated service instructions", 
     "Achchiq bo‘lmasin",
   );
   assert.equal(await writeOrderNote("  ", "Pickup order"), null);
+});
+
+test("receipt numbers contain a 12-character hexadecimal suffix", () => {
+  for (let index = 0; index < 50; index += 1) {
+    assert.match(createReceiptNumber(), /^RCPT-\d{8}-[A-F0-9]{12}$/);
+  }
 });

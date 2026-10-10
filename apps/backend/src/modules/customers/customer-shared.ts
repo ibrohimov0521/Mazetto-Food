@@ -1,6 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
 import { OrderStatus, Prisma } from "@prisma/client";
-import { randomUUID } from "node:crypto";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { deliveryDistanceKm } from "./delivery-distance";
 
@@ -233,19 +232,6 @@ export function customerOrderInclude(options?: { includePayments?: boolean }) {
       },
     },
   } satisfies Prisma.CustomerOrderInclude;
-}
-
-/*
- * Mijoz buyurtma raqami. `orders.service.ts` dagi POS variantidagi kabi
- * sana UTC dan olinadi — identifikator sifatida ishlatilgani uchun
- * xatti-harakat saqlangan.
- */
-export function createOrderNumber(): string {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-  const time = now.toISOString().slice(11, 19).replaceAll(":", "");
-
-  return `WEB-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
 /*

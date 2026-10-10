@@ -81,6 +81,7 @@ import {
   summarizePosPayment,
   toStoredStatus,
   unavailableProductWhere,
+  withUniqueConstraintRetry,
   type ModifierSnapshot,
 } from "./order-rules";
 import {
@@ -724,7 +725,7 @@ export class OrdersService {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     const employeeId = resolveEmployeeId(dto.employeeId, user);
 
-    const order = await this.withUniqueConstraintRetry(() =>
+    const order = await withUniqueConstraintRetry(() =>
       this.prisma.$transaction(async (tx) => {
         await assertBranchBelongsToActor(tx, user, branchId);
         await assertEmployeeInBranch(tx, employeeId, branchId);
@@ -1944,24 +1945,6 @@ export class OrdersService {
     }
 
     return this.resolveExistingPosCheckout(this.prisma, operation, requestHash);
-  }
-
-  private async withUniqueConstraintRetry<T>(
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        return await operation();
-      } catch (error) {
-        if (isUniqueConstraintError(error) && attempt < 2) {
-          continue;
-        }
-
-        throw error;
-      }
-    }
-
-    throw new BadRequestException("Operation could not be completed");
   }
 
   private async deductRecipeStock(

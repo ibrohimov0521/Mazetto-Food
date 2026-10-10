@@ -293,6 +293,22 @@ export function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
+export async function withUniqueConstraintRetry<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isUniqueConstraintError(error) || attempt === 2) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("Unique constraint retry exhausted");
+}
+
 /*
  * P2034 — tranzaksiya to'qnashuvi (write conflict / deadlock). Bu
  * XATO EMAS, qayta urinish signali: PostgreSQL bir vaqtda kelgan ikki
@@ -503,10 +519,11 @@ export function unavailableProductWhere(
  * `createdAt` dan olinadi), shuning uchun xatti-harakat saqlab
  * qolindi — lekin bilib turish kerak.
  */
-export function createOrderNumber(): string {
+export function createOrderNumber(prefix = "POS"): string {
   const now = new Date();
   const date = now.toISOString().slice(0, 10).replaceAll("-", "");
   const time = now.toISOString().slice(11, 19).replaceAll(":", "");
 
-  return `POS-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+  return `${prefix}-${date}-${time}-${suffix}`;
 }
