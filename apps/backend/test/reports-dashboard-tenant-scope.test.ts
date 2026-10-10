@@ -136,6 +136,9 @@ test("dashboard summary aggregates only the resolved tenant", async () => {
   } as never);
 
   await service.getSummary(owner);
+  assert.deepEqual(filters.get("payments")?.status, {
+    in: ["PAID", "SUCCESS", "PARTIALLY_REFUNDED"],
+  });
   assert.deepEqual(
     ((filters.get("payments")?.order as Record<string, unknown>).branch),
     { tenantId: "tenant-a" },
