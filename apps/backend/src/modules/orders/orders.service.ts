@@ -1389,13 +1389,13 @@ export class OrdersService {
         const hasRefunds =
           refundAmount.greaterThan(0) ||
           order.payments.some((payment) => payment.refunds.length > 0);
+        // The order status tracks balance due; payment rows retain refund history.
         const paymentStatus = isCancelling
-          ? hasRefunds
-            ? netPaid.isZero()
-              ? PaymentStatus.REFUNDED
-              : PaymentStatus.PARTIALLY_REFUNDED
-            : netPaid.greaterThanOrEqualTo(totalAfterCancellation) &&
-                totalAfterCancellation.greaterThan(0)
+          ? totalAfterCancellation.isZero() &&
+            hasRefunds &&
+            netPaid.isZero()
+            ? PaymentStatus.REFUNDED
+            : netPaid.greaterThanOrEqualTo(totalAfterCancellation)
               ? PaymentStatus.PAID
               : PaymentStatus.PENDING
           : order.paymentStatus;

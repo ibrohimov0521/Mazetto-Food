@@ -25,6 +25,7 @@ const actor: AuthenticatedUser = {
 function createHarness(options: {
   paymentCode?: string;
   paymentAmount?: number;
+  previousRefundAmount?: number;
   shiftOpen?: boolean;
 } = {}) {
   const events: Record<string, unknown>[] = [];
@@ -36,13 +37,17 @@ function createHarness(options: {
     id: "payment-1",
     orderId: "order-1",
     amount: new Prisma.Decimal(options.paymentAmount ?? 10000),
-    status: PaymentStatus.SUCCESS as PaymentStatus,
+    status: (options.previousRefundAmount
+      ? PaymentStatus.PARTIALLY_REFUNDED
+      : PaymentStatus.SUCCESS) as PaymentStatus,
     method: {
       id: "method-1",
       code: options.paymentCode ?? "CASH",
       name: options.paymentCode ?? "CASH",
     },
-    refunds: [] as { amount: Prisma.Decimal }[],
+    refunds: options.previousRefundAmount
+      ? [{ amount: new Prisma.Decimal(options.previousRefundAmount) }]
+      : ([] as { amount: Prisma.Decimal }[]),
   };
   const item = {
     id: "item-1",
@@ -82,7 +87,9 @@ function createHarness(options: {
     discountTotal: new Prisma.Decimal(0),
     serviceFeeTotal: new Prisma.Decimal(0),
     deliveryFeeTotal: new Prisma.Decimal(0),
-    paymentStatus: PaymentStatus.PENDING as PaymentStatus,
+    paymentStatus: (options.previousRefundAmount
+      ? PaymentStatus.PARTIALLY_REFUNDED
+      : PaymentStatus.PENDING) as PaymentStatus,
     payments: [payment],
     items: [item, remainingItem],
   };
@@ -230,6 +237,7 @@ function createHarness(options: {
     cashTransactions,
     receipts,
     item,
+    payment,
     order,
     service,
   };
@@ -263,7 +271,8 @@ test("paid item cancellation records one item-linked cash refund in the same ope
 
   assert.equal(state.item.status, OrderItemStatus.CANCELLED);
   assert.equal(result.total.toFixed(2), "7000.00");
-  assert.equal(result.paymentStatus, PaymentStatus.PARTIALLY_REFUNDED);
+  assert.equal(result.paymentStatus, PaymentStatus.PAID);
+  assert.equal(state.payment.status, PaymentStatus.PARTIALLY_REFUNDED);
   assert.equal(state.refunds.length, 1);
   assert.equal(state.refunds[0]?.orderItemId, "item-1");
   assert.equal(state.refunds[0]?.shiftId, "shift-1");
@@ -290,6 +299,21 @@ test("underpaid item cancellation reduces the order without creating a cash refu
   assert.equal(state.item.status, OrderItemStatus.CANCELLED);
   assert.equal(result.total.toFixed(2), "7000.00");
   assert.equal(result.paymentStatus, PaymentStatus.PENDING);
+  assert.equal(state.refunds.length, 0);
+  assert.equal(state.cashTransactions.length, 0);
+});
+
+test("an earlier refund does not hide a remaining balance from the cashier", async () => {
+  const state = createHarness({
+    paymentAmount: 7000,
+    previousRefundAmount: 1000,
+  });
+
+  const result = await cancelItem(state.service);
+
+  assert.equal(result.total.toFixed(2), "7000.00");
+  assert.equal(result.paymentStatus, PaymentStatus.PENDING);
+  assert.equal(state.payment.status, PaymentStatus.PARTIALLY_REFUNDED);
   assert.equal(state.refunds.length, 0);
   assert.equal(state.cashTransactions.length, 0);
 });
