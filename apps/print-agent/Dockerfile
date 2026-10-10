@@ -10,8 +10,9 @@ WORKDIR /app
 FROM base AS deps
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-COPY patches ./patches
+COPY apps/backend/package.json ./apps/backend/package.json
 COPY apps/print-agent/package.json ./apps/print-agent/package.json
+COPY patches ./patches
 
 RUN pnpm install --frozen-lockfile
 
@@ -19,6 +20,8 @@ FROM base AS builder
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY patches ./patches
 COPY apps/print-agent ./apps/print-agent
 
 RUN pnpm --filter print-agent build
