@@ -12,6 +12,10 @@ const receiptService = readFileSync(
   "utf8",
 );
 const printAgent = readFileSync("../print-agent/src/main.ts", "utf8");
+const printJobRunner = readFileSync(
+  "../print-agent/src/print-job-runner.ts",
+  "utf8",
+);
 const receiptWriter = readFileSync(
   "src/modules/receipts/receipt-writer.ts",
   "utf8",
@@ -58,9 +62,13 @@ test("durable queue is explicitly enabled and the agent completes only its lease
     printAgent,
     /MAZETTO_PRINT_PROTOCOL === "jobs" \? "jobs" : "receipts"/,
   );
-  assert.match(printAgent, /\/receipts\/print-jobs\/claim/);
-  assert.match(printAgent, /\/complete/);
-  assert.match(printAgent, /leaseToken: job\.leaseToken/);
+  assert.match(printAgent, /await pollPrintJob\(/);
+  assert.match(printJobRunner, /\/receipts\/print-jobs\/claim/);
+  assert.match(printJobRunner, /\/complete/);
+  assert.match(printJobRunner, /leaseToken: job\.leaseToken/);
+  assert.match(printJobRunner, /printerIds: config\.printerIds/);
+  assert.match(printJobRunner, /error instanceof AmbiguousPrintError/);
+  assert.match(printJobRunner, /outcome =\s*error instanceof AmbiguousPrintError/);
   assert.match(
     printAgent,
     /Durable print queue is not claimed in dry-run mode/,
