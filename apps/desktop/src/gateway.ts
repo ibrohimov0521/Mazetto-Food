@@ -286,23 +286,33 @@ export class DesktopGateway {
           hasStableIdempotencyKey(request, body)
         ) {
           const mutationError =
-            commandDefinition.commandType === "cash.transfer.create"
-              ? validateOfflineCashTransfer(
+            commandDefinition.commandType === "payment.process"
+              ? validateOfflineCashPayment(
                   this.store,
                   authScope,
                   cacheScope,
                   targetUrl,
                   body,
-                )
-              : commandDefinition.commandType === "shift.close"
-                ? validateOfflineShiftClose(
+                  identity?.branchId,
+                  identity?.employeeId,
+                ).error
+              : commandDefinition.commandType === "cash.transfer.create"
+                ? validateOfflineCashTransfer(
                     this.store,
                     authScope,
                     cacheScope,
                     targetUrl,
-                    identity?.branchId,
+                    body,
                   )
-                : null;
+                : commandDefinition.commandType === "shift.close"
+                  ? validateOfflineShiftClose(
+                      this.store,
+                      authScope,
+                      cacheScope,
+                      targetUrl,
+                      identity?.branchId,
+                    )
+                  : null;
           if (mutationError) {
             this.sendJson(response, 409, {
               success: false,
@@ -526,23 +536,33 @@ export class DesktopGateway {
           hasStableIdempotencyKey(request, body))
       ) {
         const mutationError =
-          commandDefinition.commandType === "cash.transfer.create"
-            ? validateOfflineCashTransfer(
+          commandDefinition.commandType === "payment.process"
+            ? validateOfflineCashPayment(
                 this.store,
                 authScope,
                 cacheScope,
                 targetUrl,
                 body,
-              )
-            : commandDefinition.commandType === "shift.close"
-              ? validateOfflineShiftClose(
+                identity?.branchId,
+                identity?.employeeId,
+              ).error
+            : commandDefinition.commandType === "cash.transfer.create"
+              ? validateOfflineCashTransfer(
                   this.store,
                   authScope,
                   cacheScope,
                   targetUrl,
-                  identity?.branchId,
+                  body,
                 )
-              : null;
+              : commandDefinition.commandType === "shift.close"
+                ? validateOfflineShiftClose(
+                    this.store,
+                    authScope,
+                    cacheScope,
+                    targetUrl,
+                    identity?.branchId,
+                  )
+                : null;
         if (mutationError) {
           this.sendJson(response, 409, {
             success: false,
@@ -838,6 +858,7 @@ export class DesktopGateway {
     const bodyText = parsedBody
       ? JSON.stringify(parsedBody)
       : Buffer.from(input.body).toString("utf8");
+    const queuedAt = new Date().toISOString();
     const baseVersion = numberField(parsedBody, "expectedVersion");
     const offlineOrderSnapshot =
       input.definition.commandType === "pos.order.create" && localAggregateId
@@ -847,6 +868,21 @@ export class DesktopGateway {
             localAggregateId,
           )
         : null;
+    const offlineCashPayment =
+      input.definition.commandType === "payment.process"
+        ? validateOfflineCashPayment(
+            this.store,
+            input.authScope,
+            input.cacheScope,
+            input.targetUrl,
+            input.body,
+            context?.branchId,
+            context?.employeeId,
+          )
+        : null;
+    const offlinePaymentReceiptQueued = Boolean(
+      offlineCashPayment?.order && !offlineCashPayment.error,
+    );
 
     const dependencyLane =
       input.definition.aggregateType === "cash-register" ||
@@ -855,9 +891,10 @@ export class DesktopGateway {
         : null;
     const localPrintJobs: LocalPrintJobInput[] = [];
     if (offlineOrderSnapshot && localAggregateId) {
-      const documentTypes = parsedBody?.payLater === true
-        ? ["KITCHEN"] as const
-        : ["RECEIPT", "KITCHEN"] as const;
+      const documentTypes =
+        parsedBody?.payLater === true
+          ? (["KITCHEN"] as const)
+          : (["RECEIPT", "KITCHEN"] as const);
       for (const documentType of documentTypes) {
         localPrintJobs.push({
           logicalKey: localAggregateId + ":" + documentType,
@@ -870,6 +907,22 @@ export class DesktopGateway {
           ),
         });
       }
+    }
+    if (
+      offlinePaymentReceiptQueued &&
+      offlineCashPayment?.order &&
+      parsedBody
+    ) {
+      localPrintJobs.push({
+        logicalKey: offlineCashPayment.order.id + ":RECEIPT",
+        branchId: context?.branchId ?? "global",
+        documentType: "RECEIPT",
+        payload: buildOfflinePaymentReceiptDocument(
+          offlineCashPayment.order,
+          parsedBody,
+          queuedAt,
+        ),
+      });
     }
     const cancellation = buildOfflineCancellationDocument(
       this.store,
@@ -908,6 +961,9 @@ export class DesktopGateway {
           ...(offlineOrderSnapshot ? { offlineOrderSnapshot } : {}),
           ...(offlineWaiterItemSnapshot ? { offlineWaiterItemSnapshot } : {}),
           ...(offlineWaiterTableSnapshot ? { offlineWaiterTableSnapshot } : {}),
+          ...(offlinePaymentReceiptQueued
+            ? { offlinePaymentReceiptQueued: true }
+            : {}),
           headers: {
             "content-type":
               headerValue(input.request.headers["content-type"]) ??
@@ -915,7 +971,7 @@ export class DesktopGateway {
             "idempotency-key": idempotencyKey,
           },
           body: bodyText,
-          queuedAt: new Date().toISOString(),
+          queuedAt,
         },
       },
       localPrintJobs,
@@ -1853,6 +1909,240 @@ function validateOfflineShiftClose(
   }
 }
 
+function validateOfflineCashPayment(
+  store: DesktopStore,
+  authScope: string,
+  cacheScope: string,
+  targetUrl: string,
+  body: ArrayBuffer | undefined,
+  branchId: string | null | undefined,
+  employeeId: string | null | undefined,
+): { error: string | null; order: Record<string, unknown> | null } {
+  if (!body || !branchId || !employeeId || !isOfflineCashPayment(body)) {
+    return {
+      error:
+        "Oflayn naqd to'lov uchun buyurtma, filial va naqd summa aniqlanmadi.",
+      order: null,
+    };
+  }
+
+  const paymentBody = parseJsonObject(Buffer.from(body).toString("utf8"));
+  const orderId = stringField(paymentBody, "orderId");
+  const shiftId = stringField(paymentBody, "shiftId");
+  if (!orderId || !shiftId) {
+    return {
+      error: "Oflayn to'lov uchun buyurtma va ochiq smena tanlanishi kerak.",
+      order: null,
+    };
+  }
+
+  const cachedShift = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/cash-register/shift",
+  );
+  if (!cachedShift) {
+    return {
+      error:
+        "Ochiq kassa smenasi qurilmada saqlanmagan. Internet borida smenani yangilang.",
+      order: null,
+    };
+  }
+  const projectedShift = applyOptimisticProjection(
+    cachedShift.body,
+    cachedShift.requestUrl,
+    store.listActiveMutations(authScope),
+  );
+  const shift = responseDataRecord(
+    parseJsonValue(projectedShift?.body ?? cachedShift.body),
+  );
+  if (!shift || shift.id !== shiftId || shift.status !== "OPEN") {
+    return {
+      error:
+        "Tanlangan smena keshlangan ochiq kassa bilan mos emas. To'lov saqlanmadi.",
+      order: null,
+    };
+  }
+  const shiftBranchId =
+    stringField(shift, "branchId") ??
+    stringField(recordField(shift, "branch"), "id");
+  if (shiftBranchId !== branchId) {
+    return {
+      error: "Ochiq smena tanlangan filialga tegishli emas. To'lov saqlanmadi.",
+      order: null,
+    };
+  }
+  if (stringField(shift, "employeeId") !== employeeId) {
+    return {
+      error: "Ochiq smena shu xodimga tegishli emas. Oflayn to'lov saqlanmadi.",
+      order: null,
+    };
+  }
+
+  const detailPath = `/api/v1/orders/${encodeURIComponent(orderId)}`;
+  const cachedOrderResponses = [
+    store.getLatestCachedResponse(cacheScope, detailPath),
+    store.getLatestCachedResponse(cacheScope, "/api/v1/orders"),
+  ]
+    .filter((cached): cached is CachedResponse => Boolean(cached))
+    .sort((left, right) => right.cachedAt.localeCompare(left.cachedAt));
+  let order: Record<string, unknown> | null = null;
+  for (const cached of cachedOrderResponses) {
+    const projected = applyOptimisticProjection(
+      cached.body,
+      cached.requestUrl,
+      store.listActiveMutations(authScope),
+    );
+    order = findRecordById(
+      parseJsonValue(projected?.body ?? cached.body),
+      orderId,
+    );
+    if (order) break;
+  }
+  if (!order) {
+    return {
+      error:
+        "Buyurtma qurilmada keshlanmagan. Internet borida kassa buyurtmalarini yangilang.",
+      order: null,
+    };
+  }
+
+  const orderBranchId =
+    stringField(order, "branchId") ??
+    stringField(recordField(order, "branch"), "id");
+  if (orderBranchId !== branchId) {
+    return {
+      error:
+        "Buyurtma tanlangan filialga tegishli emas. Oflayn to'lov saqlanmadi.",
+      order: null,
+    };
+  }
+  if (
+    stringField(order, "status") === "CANCELLED" ||
+    stringField(order, "type") === "DELIVERY" ||
+    stringField(order, "paymentStatus") !== "PENDING"
+  ) {
+    return {
+      error:
+        "Bekor qilingan, yetkazib beriladigan yoki to'langan buyurtma oflayn qabul qilinmaydi.",
+      order: null,
+    };
+  }
+
+  const items = Array.isArray(order.items)
+    ? order.items.filter(
+        (item) => isRecord(item) && item.status !== "CANCELLED",
+      )
+    : [];
+  if (
+    !items.length ||
+    !items.every(
+      (item) =>
+        isRecord(item) &&
+        Boolean(stringField(item, "productName")) &&
+        (finiteAmount(item.quantity) ?? 0) > 0 &&
+        (finiteAmount(item.totalPrice) ?? -1) >= 0,
+    )
+  ) {
+    return {
+      error:
+        "Buyurtma tarkibi to'liq keshlanmagan. Chekni to'g'ri chiqarish uchun internetni tiklang.",
+      order: null,
+    };
+  }
+
+  const total = finiteAmount(order.total);
+  const totalCents = total === null ? -1 : Math.round(total * 100);
+  if (totalCents <= 0 || !Array.isArray(order.payments)) {
+    return {
+      error: "Buyurtmaning to'liq summasi yoki to'lovlar tarixi keshlanmagan.",
+      order: null,
+    };
+  }
+
+  let paidCents = 0;
+  for (const payment of order.payments) {
+    if (!isRecord(payment)) continue;
+    const status = stringField(payment, "status");
+    if (status === "PENDING" || status === "PARTIALLY_REFUNDED") {
+      return {
+        error:
+          "Buyurtmada yakunlanmagan yoki qisman qaytarilgan to'lov bor. Oflayn takroriy qabul xavfsiz emas.",
+        order: null,
+      };
+    }
+    if (status === "SUCCESS" || status === "PAID") {
+      const amount = finiteAmount(payment.amount);
+      if (amount === null || amount < 0) {
+        return {
+          error: "Avvalgi to'lov summasi keshlangan ma'lumotda yaroqsiz.",
+          order: null,
+        };
+      }
+      paidCents += Math.round(amount * 100);
+    }
+  }
+
+  const requestedCents = Math.round(paymentTotal(paymentBody) * 100);
+  if (requestedCents <= 0 || requestedCents !== totalCents - paidCents) {
+    return {
+      error:
+        "Kiritilgan naqd summa buyurtmaning aniq qolgan to'loviga teng emas.",
+      order: null,
+    };
+  }
+
+  return { error: null, order };
+}
+
+function buildOfflinePaymentReceiptDocument(
+  order: Record<string, unknown>,
+  paymentBody: Record<string, unknown>,
+  queuedAt: string,
+): Record<string, unknown> {
+  const previousPayments = Array.isArray(order.payments)
+    ? order.payments.flatMap((value) => {
+        if (
+          !isRecord(value) ||
+          !["SUCCESS", "PAID"].includes(stringField(value, "status") ?? "")
+        ) {
+          return [];
+        }
+        const amount = finiteAmount(value.amount);
+        if (amount === null) return [];
+        return [
+          {
+            paymentMethodCode:
+              stringField(value, "methodCode") ??
+              stringField(value, "paymentMethodCode") ??
+              stringField(recordField(value, "method"), "code") ??
+              "ONLINE",
+            amount,
+          },
+        ];
+      })
+    : [];
+  const receiptOrder = {
+    ...order,
+    createdAt: queuedAt,
+    items: Array.isArray(order.items)
+      ? order.items.filter(
+          (item) => isRecord(item) && item.status !== "CANCELLED",
+        )
+      : [],
+  };
+  return buildOfflinePrintDocument(
+    receiptOrder,
+    {
+      ...paymentBody,
+      payments: [
+        ...previousPayments,
+        ...(Array.isArray(paymentBody.payments) ? paymentBody.payments : []),
+      ],
+    },
+    "RECEIPT",
+  );
+}
+
 function appendUniqueRecord(
   target: Record<string, unknown>,
   collectionName: string,
@@ -2572,9 +2862,7 @@ function patchPendingPaymentProjection(
         return sum + (finiteAmount(payment.amount) ?? 0);
       }, 0)
     : 0;
-  if (
-    Math.round((alreadyPaid + tendered) * 100) !== Math.round(total * 100)
-  )
+  if (Math.round((alreadyPaid + tendered) * 100) !== Math.round(total * 100))
     return false;
 
   Object.assign(order, {
@@ -2911,6 +3199,9 @@ function queuedResponseData(
     commandId: command.id,
     idempotencyKey: command.idempotencyKey,
     message: "Internet qaytganda avtomatik yuboriladi.",
+    ...(queuedPayload?.offlinePaymentReceiptQueued === true
+      ? { offlineReceiptQueued: true }
+      : {}),
   };
 
   if (
@@ -3132,7 +3423,11 @@ function isOfflineCashPayment(body: ArrayBuffer | undefined): boolean {
   if (!body) return false;
   const source = parseJsonObject(Buffer.from(body).toString("utf8"));
   if (source?.payLater === true) {
-    return source.type === "DINE_IN" && source.payments === undefined && source.cashReceived === undefined;
+    return (
+      source.type === "DINE_IN" &&
+      source.payments === undefined &&
+      source.cashReceived === undefined
+    );
   }
   const payments = source?.payments;
   return (
@@ -3918,10 +4213,7 @@ function cachedCatalog(
   branchId?: string,
 ): Record<string, unknown> | null {
   const bootstrap = branchId
-    ? store.getLatestCachedResponse(
-        authScope,
-        "/api/v1/realtime/bootstrap",
-      )
+    ? store.getLatestCachedResponse(authScope, "/api/v1/realtime/bootstrap")
     : null;
   const snapshot = bootstrap
     ? recordField(parseJsonObject(bootstrap.body), "data")
@@ -3999,9 +4291,8 @@ function buildOfflineOrderSnapshot(
       });
       const modifier = isRecord(link) ? recordField(link, "modifier") : null;
       const modifierPrice = finiteAmount(modifier?.price);
-      const modifierTotal = modifierPrice === null
-        ? null
-        : modifierPrice * modifierQuantity;
+      const modifierTotal =
+        modifierPrice === null ? null : modifierPrice * modifierQuantity;
       if (modifierTotal !== null) modifierUnitTotal += modifierTotal;
       return {
         id: modifierId,
@@ -4019,9 +4310,8 @@ function buildOfflineOrderSnapshot(
     const unitPrice = finiteAmount(
       isRecord(variant) ? variant.sellingPrice : productRecord.sellingPrice,
     );
-    const totalPrice = unitPrice === null
-      ? null
-      : (unitPrice + modifierUnitTotal) * quantity;
+    const totalPrice =
+      unitPrice === null ? null : (unitPrice + modifierUnitTotal) * quantity;
     return {
       id: `${localOrderId}-item-${index + 1}`,
       productId,
@@ -4103,7 +4393,7 @@ function buildOfflinePrintDocument(
         const payment = isRecord(value) ? value : {};
         return {
           method: stringField(payment, "paymentMethodCode") ?? "CASH",
-          amount: String(numberField(payment, "amount") ?? 0),
+          amount: String(finiteAmount(payment.amount) ?? 0),
         };
       })
     : [];
@@ -4118,8 +4408,9 @@ function buildOfflinePrintDocument(
     orderNumber: order.orderNumber,
     displayOrderNumber: order.displayOrderNumber,
     orderType: offlineOrderTypeLabel(stringField(order, "type")),
-    orderSource: "POS",
-    orderNotes: typeof order.notes === "string" ? order.notes.trim() || null : null,
+    orderSource: stringField(order, "source") ?? "POS",
+    orderNotes:
+      typeof order.notes === "string" ? order.notes.trim() || null : null,
     items: order.items,
     payments,
     total: order.total,
