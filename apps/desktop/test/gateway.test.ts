@@ -870,7 +870,18 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
       if (url.endsWith("/cash-register/shift")) {
         return jsonResponse({
           success: true,
-          data: { id: "shift-offline-1", branchId: "branch-1", status: "OPEN" },
+          data: {
+            id: "shift-offline-1",
+            branchId: "branch-1",
+            status: "OPEN",
+            openingBalance: "0",
+            currentBalance: "0",
+            expectedCash: "0",
+            cashSales: "0",
+            orderCount: 0,
+            cashTransactions: [],
+            revenueRecords: [],
+          },
         });
       }
       if (url.includes("/orders?")) {
@@ -930,6 +941,34 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
     const pendingPayload = await pendingOrders.json();
     assert.equal(pendingPayload.data[0].paymentStatus, "PAID");
     assert.equal(pendingPayload.data[0].pendingSync, true);
+
+    const pendingShift = await fetch(`${baseUrl}/cash-register/shift`, {
+      headers,
+    });
+    assert.equal(
+      pendingShift.headers.get("x-mazetto-desktop"),
+      "offline-optimistic",
+    );
+    const pendingShiftPayload = await pendingShift.json();
+    assert.equal(pendingShiftPayload.data.expectedCash, "42000");
+    assert.equal(pendingShiftPayload.data.currentBalance, "42000");
+    assert.equal(pendingShiftPayload.data.cashSales, "42000");
+    assert.equal(pendingShiftPayload.data.orderCount, 1);
+    assert.deepEqual(
+      pendingShiftPayload.data.cashTransactions.map((transaction) => [
+        transaction.type,
+        transaction.amount,
+        transaction.pendingSync,
+      ]),
+      [["SALE", "42000", true]],
+    );
+    const repeatedShift = await fetch(`${baseUrl}/cash-register/shift`, {
+      headers,
+    });
+    const repeatedShiftPayload = await repeatedShift.json();
+    assert.equal(repeatedShiftPayload.data.expectedCash, "42000");
+    assert.equal(repeatedShiftPayload.data.cashSales, "42000");
+    assert.equal(repeatedShiftPayload.data.orderCount, 1);
 
     const close = await fetch(
       `${baseUrl}/cash-register/shift/shift-offline-1/close`,
