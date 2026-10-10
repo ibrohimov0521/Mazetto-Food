@@ -4,6 +4,7 @@ import {
   CUSTOMER_CHECKOUT_SETTING_KEYS,
   PUBLIC_SETTING_KEYS,
   describeSettingRule,
+  parseCsvSetting,
   parseIntSetting,
   validateSettingValue,
 } from "../src/modules/settings/setting-rules";
@@ -63,7 +64,9 @@ test("narx mijozga ochiq kalitlar ro'yxatida", () => {
    * Yashirin narx — oxirgi qadamda tashlab ketishning asosiy sababi.
    */
   assert.ok(
-    (PUBLIC_SETTING_KEYS as readonly string[]).includes("customer_delivery_fee"),
+    (PUBLIC_SETTING_KEYS as readonly string[]).includes(
+      "customer_delivery_fee",
+    ),
   );
 });
 
@@ -82,6 +85,19 @@ test("radius uchun manfiy qiymat rad etiladi", () => {
   assert.throws(() =>
     validateSettingValue("customer_free_delivery_radius_meters", "-1"),
   );
+});
+
+test("cashier payment methods can be toggled independently from customer checkout", () => {
+  assert.equal(
+    validateSettingValue("cashier_payment_methods", "cash, CARD, click, CARD"),
+    "CASH,CARD,CLICK",
+  );
+  assert.throws(() =>
+    validateSettingValue("customer_payment_methods", "CASH,CLICK"),
+  );
+  assert.deepEqual(parseCsvSetting("customer_payment_methods", "CASH,CLICK"), [
+    "CASH",
+  ]);
 });
 
 test("buzuq radius default'ga tushadi", () => {

@@ -173,7 +173,7 @@ async function main() {
     const card = await online("TAKEAWAY", 10000);
     await assert.rejects(
       () => payments.processOrderPayment({ orderId: card.order.id, idempotencyKey: "qa-card-" + id, shiftId: sourceShift.id, payments: [{ paymentMethodCode: "CARD", amount: 10000 }] }, worker),
-      /provider is not enabled/,
+      /to'lov usuli tizim sozlamalarida o'chirilgan/,
     );
     assert.equal(await prisma.payment.count({ where: { orderId: card.order.id } }), 0);
     assert.equal(await balance(), 15250, "card revenue is not physical cash");

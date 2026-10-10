@@ -36,7 +36,7 @@ import {
 } from "../../../lib/pos-checkout-draft.mjs";
 import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 import { handleProductImageError, productImage } from "../../../lib/media";
-import { POS_PAYMENT_METHOD_CODES, paymentMethodLabel } from "../../../components/payment/payment-methods";
+import { paymentMethodLabel } from "../../../components/payment/payment-methods";
 import { CashierWorkspaceNavigation } from "../../../components/staff/staff-panel-navigation";
 
 type Variant = {
@@ -137,6 +137,7 @@ function PosTerminal() {
   const router = useRouter();
   const { user, logout, session } = useAuth();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [catalogOffline, setCatalogOffline] = useState(false);
   const [currentShift, setCurrentShift] = useState<CurrentShift | null>(null);
   const [isCheckingShift, setIsCheckingShift] = useState(true);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -198,6 +199,7 @@ function PosTerminal() {
       setCurrentShift(shift);
       let data: Catalog;
       let catalogUpdatedAt = new Date();
+      let offlineSnapshotUsed = false;
       try {
         data = await apiFetch<Catalog>("/pos/catalog", { signal });
       } catch (catalogError) {
@@ -221,12 +223,14 @@ function PosTerminal() {
           if (!restored) throw catalogError;
           data = restored.catalog as Catalog;
           catalogUpdatedAt = new Date(restored.generatedAt);
+          offlineSnapshotUsed = true;
         } catch {
           throw catalogError;
         }
       }
       if (!controller.signal.aborted) {
         setCatalog(data);
+        setCatalogOffline(offlineSnapshotUsed);
         setLastUpdatedAt(catalogUpdatedAt);
       }
       return true;
@@ -316,12 +320,16 @@ function PosTerminal() {
   const validCash =
     Number.isFinite(received) && received >= total && received >= 0;
   const change = Number.isFinite(received) ? Math.max(0, received - total) : 0;
-  const availablePaymentMethods = catalog?.paymentMethods?.filter((method) =>
-    POS_PAYMENT_METHOD_CODES.some((code) => code === method.code),
-  );
-  const paymentMethods = availablePaymentMethods?.length
-    ? availablePaymentMethods.map((method) => ({ ...method, name: paymentMethodLabel(method.code) }))
-    : fallbackPaymentMethods;
+  const availablePaymentMethods = catalog?.paymentMethods;
+  const paymentMethods =
+    availablePaymentMethods === undefined
+      ? fallbackPaymentMethods
+      : availablePaymentMethods
+          .filter((method) => !catalogOffline || method.code === cashMethodCode)
+          .map((method) => ({
+            ...method,
+            name: paymentMethodLabel(method.code),
+          }));
   const isCashPayment = paymentCode === cashMethodCode;
   const tables = catalog?.tables ?? [];
   const isDineIn = orderType === "DINE_IN";
@@ -331,7 +339,10 @@ function PosTerminal() {
    * "qabul qilingan naqd" degan tushuncha yo'q, shuning uchun uni talab
    * qilish kartani bloklab qo'yardi.
    */
-  const canSubmit = cart.length > 0 && (deferPayment || !isCashPayment || validCash);
+  const canSubmit =
+    cart.length > 0 &&
+    (deferPayment ||
+      (paymentMethods.length > 0 && (!isCashPayment || validCash)));
 
   /*
    * Server tanlagan usulni bilmasa (masalan sozlamadan o'chirilgan),
@@ -340,7 +351,7 @@ function PosTerminal() {
    */
   useEffect(() => {
     if (paymentMethods.some((method) => method.code === paymentCode)) return;
-    setPaymentCode(paymentMethods[0]?.code ?? cashMethodCode);
+    setPaymentCode(paymentMethods[0]?.code ?? "");
   }, [paymentMethods, paymentCode]);
 
   /*
@@ -376,7 +387,16 @@ function PosTerminal() {
           line.modifiers.map((modifier) => modifier.modifier.id).sort(),
         ]),
       }),
-    [orderType, deferPayment, tableId, isDineIn, paymentCode, isCashPayment, received, cart],
+    [
+      orderType,
+      deferPayment,
+      tableId,
+      isDineIn,
+      paymentCode,
+      isCashPayment,
+      received,
+      cart,
+    ],
   );
 
   useEffect(() => {
@@ -587,7 +607,8 @@ function PosTerminal() {
   function openCheckout() {
     if (!cart.length || isSubmitting) return;
     setError(null);
-    if (!deferPayment && isCashPayment && !cashReceived) setCashReceived(String(total));
+    if (!deferPayment && isCashPayment && !cashReceived)
+      setCashReceived(String(total));
     setCheckoutOpen(true);
   }
 
@@ -653,7 +674,9 @@ function PosTerminal() {
            * bergan ortiqcha naqd `cashReceived` da qoladi va qaytim
            * sifatida qaytariladi — ortiqcha pul daromad deb yozilmaydi.
            */
-          ...(!deferPayment ? { payments: [{ paymentMethodCode: paymentCode, amount: total }] } : {}),
+          ...(!deferPayment
+            ? { payments: [{ paymentMethodCode: paymentCode, amount: total }] }
+            : {}),
           ...(!deferPayment && isCashPayment ? { cashReceived: received } : {}),
           items: cart.map((line) => ({
             productId: line.product.id,
@@ -1007,8 +1030,14 @@ function PosTerminal() {
               )}
               {isDineIn ? (
                 <div className={styles.checkoutSheetSection}>
-                  <span className={styles.checkoutLabel}>To'lov qachon olinadi?</span>
-                  <div className={styles.segments} role="group" aria-label="To'lov vaqti">
+                  <span className={styles.checkoutLabel}>
+                    To'lov qachon olinadi?
+                  </span>
+                  <div
+                    className={styles.segments}
+                    role="group"
+                    aria-label="To'lov vaqti"
+                  >
                     <button
                       aria-pressed={!payLater}
                       className={styles.segment}
@@ -1035,15 +1064,47 @@ function PosTerminal() {
               ) : null}
               {deferPayment ? (
                 <p className={styles.muted}>
-                  Hozir faqat oshxona cheki chiqadi. Mijoz chiqayotganda to'lov kassada qabul qilinadi.
+                  Hozir faqat oshxona cheki chiqadi. Mijoz chiqayotganda to'lov
+                  kassada qabul qilinadi.
                 </p>
               ) : null}
             </div>
 
-            {!deferPayment && <div className={styles.checkoutSheetSection}>
-              <span className={styles.checkoutLabel}>To'lov turi</span>
-              <strong>{paymentMethodLabel(paymentCode)}</strong>
-            </div>}
+            {!deferPayment && paymentMethods.length > 0 ? (
+              <div className={styles.checkoutSheetSection}>
+                <span className={styles.checkoutLabel}>To'lov turi</span>
+                {paymentMethods.length === 1 ? (
+                  <strong>{paymentMethodLabel(paymentCode)}</strong>
+                ) : (
+                  <select
+                    aria-label="To'lov turi"
+                    className={styles.input}
+                    disabled={isSubmitting}
+                    onChange={(event) => setPaymentCode(event.target.value)}
+                    value={paymentCode}
+                  >
+                    {paymentMethods.map((method) => (
+                      <option key={method.code} value={method.code}>
+                        {method.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {!isCashPayment ? (
+                  <p className={styles.note}>
+                    Naqd bo'lmagan to'lovni terminal yoki bank SMSidan
+                    tekshiring. Tizim to'lovni provayder orqali avtomatik
+                    tasdiqlamaydi.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {!deferPayment && paymentMethods.length === 0 ? (
+              <p className={styles.pendingSync} role="alert">
+                Hozir internet uzilgan va naqd to'lov usuli yoqilmagan. Smena
+                buyurtmasini to'lov usuli mavjud bo'lganda qabul qiling.
+              </p>
+            ) : null}
 
             {!deferPayment && isCashPayment && (
               <div className={styles.checkoutSheetSection}>
@@ -1085,7 +1146,11 @@ function PosTerminal() {
                 type="button"
               >
                 {deferPayment ? <Utensils size={19} /> : <Banknote size={19} />}
-                {isSubmitting ? "Tasdiqlanmoqda..." : deferPayment ? "Oshxonaga yuborish" : "To'lov va buyurtmani tasdiqlash"}
+                {isSubmitting
+                  ? "Tasdiqlanmoqda..."
+                  : deferPayment
+                    ? "Oshxonaga yuborish"
+                    : "To'lov va buyurtmani tasdiqlash"}
               </button>
             </div>
           </div>
@@ -1154,7 +1219,11 @@ function PosTerminal() {
             {success.payLater && !success.offlineQueued && success.order.id ? (
               <button
                 className={styles.button}
-                onClick={() => router.push(`/pos/payment?orderId=${encodeURIComponent(success.order.id!)}`)}
+                onClick={() =>
+                  router.push(
+                    `/pos/payment?orderId=${encodeURIComponent(success.order.id!)}`,
+                  )
+                }
                 type="button"
               >
                 <Banknote size={18} />

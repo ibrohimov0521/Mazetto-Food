@@ -1,45 +1,53 @@
 # MAZETTO FOOD Production Deployment Audit
 
-Phase 6B prepares the monorepo for Dokploy and Cloudflare deployment. This document inventories environment variables currently used by code or local deployment configuration and records production wiring requirements.
+Runtime configuration was rechecked against the current source on 2026-10-10.
+This document records the environment variables consumed by the applications
+and the production wiring requirements.
 
 ## Environment Inventory
 
 ### BACKEND
 
-| Variable | Required | Secret/Public | Runtime/Build-time | Description |
-| --- | --- | --- | --- | --- |
-| `NODE_ENV` | Required in production | Public | Runtime | Enables production-only checks for required JWT secrets. Set to `production` in Dokploy. |
-| `BACKEND_PORT` | Optional | Public | Runtime | NestJS listen port. Defaults to `4000` when omitted. |
-| `DATABASE_URL` | Required | Secret | Runtime and Prisma CLI | PostgreSQL connection string used by `PrismaService` and `prisma.config.ts`. |
-| `JWT_ACCESS_SECRET` | Required in production | Secret | Runtime | Secret used to sign JWT access tokens. Backend throws in production if missing. |
-| `JWT_REFRESH_SECRET` | Required in production | Secret | Runtime | Secret used to sign JWT refresh tokens. Backend throws in production if missing. |
-| `JWT_ACCESS_EXPIRES_IN_SECONDS` | Optional | Public | Runtime | Access token lifetime in seconds. Defaults to `900`. |
-| `JWT_REFRESH_EXPIRES_IN_SECONDS` | Optional | Public | Runtime | Refresh token lifetime in seconds. Defaults to `604800`. |
+| Variable                         | Required               | Secret/Public | Runtime/Build-time     | Description                                                                                                                                                                                                |
+| -------------------------------- | ---------------------- | ------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                       | Required in production | Public        | Runtime                | Enables production-only checks for required JWT secrets. Set to `production` in Dokploy.                                                                                                                   |
+| `BACKEND_PORT`                   | Optional               | Public        | Runtime                | NestJS listen port. Defaults to `4000` when omitted.                                                                                                                                                       |
+| `DATABASE_URL`                   | Required               | Secret        | Runtime and Prisma CLI | PostgreSQL connection string used by `PrismaService` and `prisma.config.ts`.                                                                                                                               |
+| `JWT_ACCESS_SECRET`              | Required in production | Secret        | Runtime                | Secret used to sign JWT access tokens. Backend throws in production if missing.                                                                                                                            |
+| `JWT_REFRESH_SECRET`             | Required in production | Secret        | Runtime                | Secret used to sign JWT refresh tokens. Backend throws in production if missing.                                                                                                                           |
+| `JWT_ACCESS_EXPIRES_IN_SECONDS`  | Optional               | Public        | Runtime                | Access token lifetime in seconds. Defaults to `900`.                                                                                                                                                       |
+| `JWT_REFRESH_EXPIRES_IN_SECONDS` | Optional               | Public        | Runtime                | Refresh token lifetime in seconds. Defaults to `604800`.                                                                                                                                                   |
+| `REDIS_URL`                      | Optional               | Secret        | Runtime                | Redis connection URL; takes precedence over `REDIS_PORT`. Redis backs settings/session/rate-limit caches with in-memory fallback on connection failure.                                                    |
+| `REDIS_PORT`                     | Optional               | Public        | Runtime                | When `REDIS_URL` is absent, connects to `redis://127.0.0.1:<port>`.                                                                                                                                        |
+| `CORS_ORIGINS`                   | Optional               | Public        | Runtime                | Comma-separated allowed origins shared by HTTP and WebSocket gateways. Credentials are enabled; `*` is rejected. Defaults include the production Mazetto Food web/POS origins and local development ports. |
 
 ### CUSTOMER-WEB
 
-| Variable | Required | Secret/Public | Runtime/Build-time | Description |
-| --- | --- | --- | --- | --- |
-| `NEXT_PUBLIC_API_BASE_URL` | Required for production | Public | Build-time and browser runtime | Public backend API base URL used by customer-web fetch calls and Socket.IO base derivation. Production value: `https://api.mazettofood.uz/api/v1`. |
+| Variable                   | Required                | Secret/Public | Runtime/Build-time             | Description                                                                                                                                        |
+| -------------------------- | ----------------------- | ------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_BASE_URL` | Required for production | Public        | Build-time and browser runtime | Public backend API base URL used by customer-web fetch calls and Socket.IO base derivation. Production value: `https://api.mazettofood.uz/api/v1`. |
 
 ### POS-WEB
 
-| Variable | Required | Secret/Public | Runtime/Build-time | Description |
-| --- | --- | --- | --- | --- |
-| `NEXT_PUBLIC_API_BASE_URL` | Required for production | Public | Build-time and browser runtime | Public backend API base URL used by POS auth/API fetch calls and Socket.IO base derivation. Production value: `https://api.mazettofood.uz/api/v1`. |
+| Variable                   | Required                | Secret/Public | Runtime/Build-time             | Description                                                                                                                                        |
+| -------------------------- | ----------------------- | ------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_BASE_URL` | Required for production | Public        | Build-time and browser runtime | Public backend API base URL used by POS auth/API fetch calls and Socket.IO base derivation. Production value: `https://api.mazettofood.uz/api/v1`. |
 
 ### POSTGRES
 
-| Variable | Required | Secret/Public | Runtime/Build-time | Description |
-| --- | --- | --- | --- | --- |
-| `POSTGRES_USER` | Required only for local compose/Postgres service creation | Secret | Service startup | PostgreSQL bootstrap user used by `docker-compose.yml`. |
-| `POSTGRES_PASSWORD` | Required only for local compose/Postgres service creation | Secret | Service startup | PostgreSQL bootstrap password used by `docker-compose.yml`. |
-| `POSTGRES_DB` | Required only for local compose/Postgres service creation | Public | Service startup | PostgreSQL bootstrap database name used by `docker-compose.yml`. |
-| `DATABASE_URL` | Required by backend | Secret | Runtime and Prisma CLI | Backend-facing PostgreSQL URL. In Dokploy, point this at the internal Postgres hostname, not Cloudflare. |
+| Variable            | Required                                                  | Secret/Public | Runtime/Build-time     | Description                                                                                              |
+| ------------------- | --------------------------------------------------------- | ------------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| `POSTGRES_USER`     | Required only for local compose/Postgres service creation | Secret        | Service startup        | PostgreSQL bootstrap user used by `docker-compose.yml`.                                                  |
+| `POSTGRES_PASSWORD` | Required only for local compose/Postgres service creation | Secret        | Service startup        | PostgreSQL bootstrap password used by `docker-compose.yml`.                                              |
+| `POSTGRES_DB`       | Required only for local compose/Postgres service creation | Public        | Service startup        | PostgreSQL bootstrap database name used by `docker-compose.yml`.                                         |
+| `DATABASE_URL`      | Required by backend                                       | Secret        | Runtime and Prisma CLI | Backend-facing PostgreSQL URL. In Dokploy, point this at the internal Postgres hostname, not Cloudflare. |
 
 ### REDIS
 
-No Redis environment variables are currently read by application code. `docker-compose.yml` defines a Redis service, but no code reads `REDIS_URL` or equivalent yet.
+`RedisService` reads `REDIS_URL`, or `REDIS_PORT` when the URL is absent. It is
+used for tenant settings cache invalidation and other short-lived caches and
+limits. Redis is not the source of business data; callers have a fallback when
+Redis is unavailable.
 
 ### TELEGRAM BOT
 
@@ -47,28 +55,33 @@ Telegram buyurtma va webhook mantiqi backenddagi `TelegramModule` ichida. `apps/
 
 ### PRINT SERVICE
 
-No print-agent environment variables are currently read. `apps/print-agent/src/main.ts` only starts a placeholder service. Printer records are managed through the backend database, not environment variables.
+The supported printer workflow is Mazetto Desktop with printers assigned in
+the backend. `apps/print-agent` is a legacy fallback, disabled by default unless
+`MAZETTO_LEGACY_PRINT_AGENT_ENABLED=true`; it also reads `MAZETTO_API_URL`,
+`MAZETTO_PRINT_AGENT_TOKEN`, `MAZETTO_BRANCH_ID`, poll/health settings, and
+optional raw-printer connection settings. Do not enable the legacy agent as a
+second consumer for a printer already claimed by Desktop.
 
 ## Integrations Not Yet Environment-Backed
 
-| Area                   | Current status                                                                                                                          |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Redis config           | Redis service exists in compose, but application code does not use it.                                                                  |
-| WebSocket config       | Backend gateway allows `origin: "*"`, and clients derive socket origin from `NEXT_PUBLIC_API_BASE_URL`. No dedicated socket env exists. |
-| CORS config            | Backend HTTP CORS is not explicitly enabled in `main.ts`. No CORS env exists.                                                           |
-| Telegram bot config    | Backend TelegramModule bot webhooklarini qabul qiladi; alohida agent servislar token, webhook secret va API URL env'larini o'qiydi.     |
-| Printer/receipt config | No printer host, queue, or agent key env is used.                                                                                       |
-| Instagram integrations | No Instagram env is used.                                                                                                               |
-| Payment integrations   | Click, Payme, Uzcard, Humo, card, and online methods exist as business values only. No provider secret/env is used.                     |
+| Area                   | Current status                                                                                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Redis config           | `REDIS_URL` or `REDIS_PORT` is read by RedisService; Redis is optional and application data remains in PostgreSQL.                                                                                    |
+| WebSocket config       | Kitchen WebSocket gateway uses the same `CORS_ORIGINS` allowlist as HTTP. Clients derive socket origin from `NEXT_PUBLIC_API_BASE_URL`.                                                               |
+| CORS config            | HTTP CORS and the WebSocket gateway share `CORS_ORIGINS`; credentialed wildcard origin is rejected.                                                                                                   |
+| Telegram bot config    | Backend TelegramModule bot webhooklarini qabul qiladi; alohida agent servislar token, webhook secret va API URL env'larini o'qiydi.                                                                   |
+| Printer/receipt config | Mazetto Desktop uses printer assignments from the backend. The legacy print-agent reads its `MAZETTO_*` settings and is disabled by default.                                                     |
+| Instagram integrations | No Instagram env is used.                                                                                                                                                                             |
+| Payment integrations   | Cashier payment methods can be enabled per tenant for manual cashier confirmation; customer checkout remains CASH-only. No Click/Payme/bank provider callback or settlement credential is configured. |
 
 ## Dokploy Service Order
 
 1. PostgreSQL
-2. Redis, optional for current code because no application reads it yet
+2. Redis, optional for short-lived caches and limits; application data remains in PostgreSQL
 3. Backend API
 4. Customer web
 5. POS web
-6. Print agent, optional placeholder until printer service logic is implemented
+6. Legacy print agent, optional and disabled by default; use only when Desktop is not consuming the same printer
 7. Customer Telegram agent and staff Telegram agent (same image, separate Dokploy services and credentials)
 
 Run Prisma migrations from the backend service after PostgreSQL is reachable and before opening traffic to the web apps.
@@ -77,12 +90,12 @@ Run Prisma migrations from the backend service after PostgreSQL is reachable and
 
 These should stay internal to Dokploy/private networking:
 
-| Service | Internal URL |
-| --- | --- |
-| PostgreSQL | `postgres:5432` or the Dokploy-provided internal database host |
-| Redis | `redis:6379` if Redis becomes used later |
-| Backend from internal services | `http://backend:4000` where supported by Dokploy networking |
-| Backend API prefix | `http://backend:4000/api/v1` for internal service-to-service calls |
+| Service                        | Internal URL                                                       |
+| ------------------------------ | ------------------------------------------------------------------ |
+| PostgreSQL                     | `postgres:5432` or the Dokploy-provided internal database host     |
+| Redis                          | `redis:6379` when configured for cache/limit services              |
+| Backend from internal services | `http://backend:4000` where supported by Dokploy networking        |
+| Backend API prefix             | `http://backend:4000/api/v1` for internal service-to-service calls |
 
 Do not expose PostgreSQL or Redis through Cloudflare public DNS.
 
@@ -90,11 +103,11 @@ Do not expose PostgreSQL or Redis through Cloudflare public DNS.
 
 Expected public URLs:
 
-| Domain | Target |
-| --- | --- |
-| `https://mazettofood.uz` | Customer web |
-| `https://www.mazettofood.uz` | Customer web |
-| `https://pos.mazettofood.uz` | POS web |
+| Domain                       | Target                    |
+| ---------------------------- | ------------------------- |
+| `https://mazettofood.uz`     | Customer web              |
+| `https://www.mazettofood.uz` | Customer web              |
+| `https://pos.mazettofood.uz` | POS web                   |
 | `https://api.mazettofood.uz` | Backend API and Socket.IO |
 
 The frontend production value for `NEXT_PUBLIC_API_BASE_URL` must be:

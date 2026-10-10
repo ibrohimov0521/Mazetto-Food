@@ -74,7 +74,10 @@ export class SettingsService {
 
     return settingKeys.map((key) => ({
       key,
-      value: stored[key] ?? settingFallback(key),
+      value:
+        describeSettingRule(key).kind === "csv-enum"
+          ? parseCsvSetting(key, stored[key]).join(",")
+          : (stored[key] ?? settingFallback(key)),
       isStored: stored[key] !== undefined,
       isPublic: isPublicSettingKey(key),
       affectsCustomer: affectsCustomerCheckout(key),
@@ -86,8 +89,14 @@ export class SettingsService {
   /** Mijoz tomoniga oshkor qilinadigan qism. */
   async getPublicSettings(tenantId: string): Promise<Record<string, unknown>> {
     return {
-      customerPaymentMethods: await this.getCsv("customer_payment_methods", tenantId),
-      customerDeliveryEnabled: await this.getBool("customer_delivery_enabled", tenantId),
+      customerPaymentMethods: await this.getCsv(
+        "customer_payment_methods",
+        tenantId,
+      ),
+      customerDeliveryEnabled: await this.getBool(
+        "customer_delivery_enabled",
+        tenantId,
+      ),
       customerDeliveryFee: await this.getInt("customer_delivery_fee", tenantId),
     };
   }
@@ -142,12 +151,17 @@ export class SettingsService {
 
   // --- Ichki qismlar -----------------------------------------------------
 
-  private async readRaw(key: SettingKey, tenantId: string): Promise<string | undefined> {
+  private async readRaw(
+    key: SettingKey,
+    tenantId: string,
+  ): Promise<string | undefined> {
     const all = await this.readAll(tenantId);
     return all[key];
   }
 
-  private async readAll(tenantId: string): Promise<Partial<Record<SettingKey, string>>> {
+  private async readAll(
+    tenantId: string,
+  ): Promise<Partial<Record<SettingKey, string>>> {
     const cached = await this.readCache(tenantId);
 
     if (cached) {
@@ -175,7 +189,9 @@ export class SettingsService {
     return map;
   }
 
-  private async readCache(tenantId: string): Promise<Partial<Record<SettingKey, string>> | null> {
+  private async readCache(
+    tenantId: string,
+  ): Promise<Partial<Record<SettingKey, string>> | null> {
     const client = this.redis.getClient();
 
     if (!client) {
@@ -184,7 +200,9 @@ export class SettingsService {
 
     try {
       const raw = await client.get(cacheKey(tenantId));
-      return raw ? (JSON.parse(raw) as Partial<Record<SettingKey, string>>) : null;
+      return raw
+        ? (JSON.parse(raw) as Partial<Record<SettingKey, string>>)
+        : null;
     } catch {
       // Kesh o'qilmadi — bazaga boramiz. Sozlama o'qishi Redis tufayli
       // buzilmasligi kerak.
@@ -192,7 +210,10 @@ export class SettingsService {
     }
   }
 
-  private async writeCache(tenantId: string, map: Partial<Record<SettingKey, string>>): Promise<void> {
+  private async writeCache(
+    tenantId: string,
+    map: Partial<Record<SettingKey, string>>,
+  ): Promise<void> {
     const client = this.redis.getClient();
 
     if (!client) {
@@ -200,7 +221,12 @@ export class SettingsService {
     }
 
     try {
-      await client.set(cacheKey(tenantId), JSON.stringify(map), "EX", CACHE_TTL_SECONDS);
+      await client.set(
+        cacheKey(tenantId),
+        JSON.stringify(map),
+        "EX",
+        CACHE_TTL_SECONDS,
+      );
     } catch {
       // e'tiborsiz — kesh ixtiyoriy
     }

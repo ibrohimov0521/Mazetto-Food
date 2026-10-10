@@ -42,19 +42,29 @@ async function main(): Promise<void> {
 
   // --- Sxema qoidalari (bazasiz) ---------------------------------------
 
-  assert.ok(settingKeys.length > 10, `reestr juda kichik: ${settingKeys.length}`);
+  assert.ok(
+    settingKeys.length > 10,
+    `reestr juda kichik: ${settingKeys.length}`,
+  );
   assert.ok(isKnownSettingKey("customer_code_ttl_minutes"));
   assert.equal(isKnownSettingKey("customer_code_ttl_minute"), false);
 
   // Kanonik ko'rinish: turli yozuvlar bitta qatorga aylanadi, ya'ni o'quvchi
   // tomon bir nechta ko'rinishni qo'llab-quvvatlashi shart emas.
-  assert.equal(validateSettingValue("customer_delivery_enabled", " TRUE "), "true");
+  assert.equal(
+    validateSettingValue("customer_delivery_enabled", " TRUE "),
+    "true",
+  );
   assert.equal(validateSettingValue("customer_delivery_enabled", "0"), "false");
   assert.equal(validateSettingValue("customer_code_ttl_minutes", " 15 "), "15");
   assert.equal(
-    validateSettingValue("customer_payment_methods", "cash, CASH , card"),
+    validateSettingValue("cashier_payment_methods", "cash, CASH , card"),
     "CASH,CARD",
     "takrorlar olib tashlanib, katta harfga keltirilishi kerak",
+  );
+  assert.throws(
+    () => validateSettingValue("customer_payment_methods", "CASH,CLICK"),
+    BadRequestException,
   );
 
   // Chegaradan tashqari va noma'lum qiymatlar RAD ETILADI — ilgari bunday
@@ -95,11 +105,20 @@ async function main(): Promise<void> {
 
   try {
     // Saqlanmagan kalit reestr default'ini beradi.
-    await prisma.setting.deleteMany({ where: { tenantId, key: "customer_code_ttl_minutes" } });
-    assert.equal(await settings.getInt("customer_code_ttl_minutes", tenantId), 10);
+    await prisma.setting.deleteMany({
+      where: { tenantId, key: "customer_code_ttl_minutes" },
+    });
+    assert.equal(
+      await settings.getInt("customer_code_ttl_minutes", tenantId),
+      10,
+    );
 
     // Yozilgandan keyin YANGI qiymat qaytadi — ya'ni kesh bekor qilingan.
-    await settings.updateSetting("customer_code_ttl_minutes", "25", settingsActor);
+    await settings.updateSetting(
+      "customer_code_ttl_minutes",
+      "25",
+      settingsActor,
+    );
     assert.equal(
       await settings.getInt("customer_code_ttl_minutes", tenantId),
       25,
@@ -109,8 +128,7 @@ async function main(): Promise<void> {
     // Noma'lum kalit rad etiladi: reestrda yo'q kalit hech qachon
     // so'ralmaydi, ya'ni yozuv jimgina ta'sirsiz qolardi.
     await assert.rejects(
-      () =>
-        settings.updateSetting("made_up_key", "1", settingsActor),
+      () => settings.updateSetting("made_up_key", "1", settingsActor),
       /Noma'lum sozlama kaliti/,
     );
 
@@ -126,7 +144,9 @@ async function main(): Promise<void> {
     console.log("Settings registry validation passed");
     console.log(`  reestr: ${settingKeys.length} ta kalit`);
   } finally {
-    await prisma.setting.deleteMany({ where: { tenantId, key: "customer_code_ttl_minutes" } });
+    await prisma.setting.deleteMany({
+      where: { tenantId, key: "customer_code_ttl_minutes" },
+    });
     await prisma.$disconnect();
     // Redis ulanishi ochiq qolsa jarayon tugamaydi — skript osilib qoladi.
     await redis.onModuleDestroy();

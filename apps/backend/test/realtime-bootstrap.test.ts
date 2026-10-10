@@ -66,77 +66,82 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
     pickupEnabled: true,
     realtimeRevision: 44n,
   };
-  const service = new RealtimeBootstrapService({
-    $transaction: async (
-      callback: (transaction: object) => Promise<unknown>,
-      options: unknown,
-    ) => {
-      transactionOptions = options;
-      return callback({
-        restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
-        branch: {
-          findFirst: async (args: { select: Record<string, boolean> }) =>
-            "realtimeRevision" in args.select ? branch : { id: "branch-a" },
-        },
-        category: {
-          findMany: async (args: { where: Record<string, unknown> }) => {
-            reads.categories += 1;
-            categoryWhere = args.where;
-            return [{ id: "category-a", name: "Lavash" }];
+  const service = new RealtimeBootstrapService(
+    {
+      $transaction: async (
+        callback: (transaction: object) => Promise<unknown>,
+        options: unknown,
+      ) => {
+        transactionOptions = options;
+        return callback({
+          restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+          branch: {
+            findFirst: async (args: { select: Record<string, boolean> }) =>
+              "realtimeRevision" in args.select ? branch : { id: "branch-a" },
           },
-        },
-        product: {
-          findMany: async (args: { select: Record<string, unknown> }) => {
-            reads.products += 1;
-            productSelect = args.select;
-            return [{ id: "product-a", sellingPrice: 1000 }];
+          category: {
+            findMany: async (args: { where: Record<string, unknown> }) => {
+              reads.categories += 1;
+              categoryWhere = args.where;
+              return [{ id: "category-a", name: "Lavash" }];
+            },
           },
-        },
-        paymentMethod: {
-          findMany: async () => {
-            reads.paymentMethods += 1;
-            return configuredPaymentMethods;
+          product: {
+            findMany: async (args: { select: Record<string, unknown> }) => {
+              reads.products += 1;
+              productSelect = args.select;
+              return [{ id: "product-a", sellingPrice: 1000 }];
+            },
           },
-        },
-        restaurantTable: {
-          findMany: async (args: {
-            where: Record<string, unknown>;
-            select: Record<string, unknown>;
-          }) => {
-            reads.tables += 1;
-            tableSelect = args.select;
-            tableWhere = args.where;
-            const ordersQuery = args.select.orders;
-            if (ordersQuery && typeof ordersQuery === "object") {
-              tableOrdersQuery = ordersQuery as Record<string, unknown>;
-            }
-            return "orders" in args.select
-              ? tables
-              : tables.map((table) =>
-                  Object.fromEntries(
-                    Object.entries(table).filter(([key]) => key !== "orders"),
-                  ),
-                );
+          paymentMethod: {
+            findMany: async () => {
+              reads.paymentMethods += 1;
+              return configuredPaymentMethods;
+            },
           },
-        },
-        hall: {
-          findMany: async () => {
-            reads.halls += 1;
-            return [
-              {
-                id: "hall-a",
-                branchId: "branch-a",
-                code: "MAIN",
-                name: "Asosiy zal",
-                isActive: true,
-                sortOrder: 1,
-              },
-            ];
+          restaurantTable: {
+            findMany: async (args: {
+              where: Record<string, unknown>;
+              select: Record<string, unknown>;
+            }) => {
+              reads.tables += 1;
+              tableSelect = args.select;
+              tableWhere = args.where;
+              const ordersQuery = args.select.orders;
+              if (ordersQuery && typeof ordersQuery === "object") {
+                tableOrdersQuery = ordersQuery as Record<string, unknown>;
+              }
+              return "orders" in args.select
+                ? tables
+                : tables.map((table) =>
+                    Object.fromEntries(
+                      Object.entries(table).filter(([key]) => key !== "orders"),
+                    ),
+                  );
+            },
           },
-        },
-      });
-    },
-  } as never);
+          hall: {
+            findMany: async () => {
+              reads.halls += 1;
+              return [
+                {
+                  id: "hall-a",
+                  branchId: "branch-a",
+                  code: "MAIN",
+                  name: "Asosiy zal",
+                  isActive: true,
+                  sortOrder: 1,
+                },
+              ];
+            },
+          },
+        });
+      },
+    } as never,
+    {
+      getCsv: async () => ["CASH", "CARD"],
+    } as never,
+  );
 
   const snapshot = await service.create("branch-a", owner);
   const waiterSnapshot = await service.create("branch-a", {

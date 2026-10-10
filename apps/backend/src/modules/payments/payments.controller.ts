@@ -15,6 +15,12 @@ import { PaymentsService } from "./payments.service";
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
+  @Get("methods")
+  @Permissions(PERMISSIONS.PAYMENT_CREATE)
+  listPaymentMethods(@CurrentUser() user: AuthenticatedUser) {
+    return this.paymentsService.listPaymentMethods(user);
+  }
+
   @Get()
   @Permissions(PERMISSIONS.PAYMENT_VIEW)
   listPayments(
