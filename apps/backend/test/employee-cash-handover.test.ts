@@ -17,9 +17,18 @@ const user = (
 });
 
 function fixture(
-  options: { self?: boolean; balance?: number; pending?: boolean } = {},
+  options: {
+    self?: boolean;
+    balance?: number;
+    pending?: boolean;
+    pendingIncoming?: boolean;
+    receiverClosesBeforeCreate?: boolean;
+  } = {},
 ) {
   const writes: { type: string; amount: Prisma.Decimal }[] = [];
+  const auditEntries: Array<Record<string, unknown>> = [];
+  const lockedShiftIds: string[] = [];
+  let shiftCloseWrites = 0;
   const allocationWrites: Array<{
     amount: Prisma.Decimal;
     orderId: string | null;
@@ -59,9 +68,13 @@ function fixture(
   };
   const calls: string[] = [];
   const tx = {
-    $queryRawUnsafe: async () => {
+    $queryRawUnsafe: async (_query: string, shiftId: string) => {
       calls.push("lock");
-      return [{ id: "s1" }];
+      lockedShiftIds.push(shiftId);
+      if (options.receiverClosesBeforeCreate && shiftId === receiverShift.id) {
+        receiverShift.status = "CLOSED";
+      }
+      return [{ id: shiftId }];
     },
     employee: { findFirst: async () => ({ id: "receiver" }) },
     branch: {
@@ -73,11 +86,25 @@ function fixture(
         where?.employeeId === "receiver" ? receiverShift : shift,
       findUnique: async ({ where }: { where: { id: string } }) =>
         where.id === receiverShift.id ? receiverShift : shift,
-      findUniqueOrThrow: async () => shift,
+      findUniqueOrThrow: async ({ where }: { where: { id: string } }) =>
+        where.id === receiverShift.id ? receiverShift : shift,
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) => {
+        shiftCloseWrites += 1;
+        const target = where.id === receiverShift.id ? receiverShift : shift;
+        Object.assign(target, data);
+        return { count: 1 };
+      },
     },
     cashTransaction: {
-      findMany: async () => {
+      findMany: async ({ where }: { where?: { shiftId?: string } } = {}) => {
         calls.push("balance");
+        if (where?.shiftId === receiverShift.id) return [];
         return [
           {
             id: "cash-sale-1",
@@ -108,13 +135,44 @@ function fixture(
       },
     },
     cashTransfer: {
-      findFirst: async ({ where }: { where?: { branchId?: string } } = {}) =>
-        where?.branchId === "b1" || options.pending ? transfer : null,
+      findFirst: async ({
+        where,
+      }: {
+        where?: { branchId?: string; fromShiftId?: string; toShiftId?: string };
+      } = {}) => {
+        if (where?.fromShiftId === shift.id) return options.pending ? transfer : null;
+        if (where?.toShiftId === receiverShift.id) {
+          return options.pendingIncoming ? transfer : null;
+        }
+        return where?.branchId === "b1" ? transfer : null;
+      },
       findUnique: async () => transfer,
       findUniqueOrThrow: async () => transfer,
       create: async () => transfer,
       update: async ({ data }: { data: { status: string } }) =>
         Object.assign(transfer, data),
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { fromShiftId?: string; toShiftId?: string };
+        data: Record<string, unknown>;
+      }) => {
+        if (where.fromShiftId === receiverShift.id) return { count: 0 };
+        if (where.toShiftId === receiverShift.id && options.pendingIncoming) {
+          Object.assign(transfer, data);
+          return { count: 1 };
+        }
+        return { count: 0 };
+      },
+    },
+    payment: { findMany: async () => [] },
+    order: { count: async () => 0 },
+    auditLog: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        auditEntries.push(data);
+        return data;
+      },
     },
   };
   const prisma = {
@@ -130,6 +188,11 @@ function fixture(
     allocationWrites,
     transfer,
     calls,
+    auditEntries,
+    lockedShiftIds,
+    get shiftCloseWrites() {
+      return shiftCloseWrites;
+    },
   };
 }
 
@@ -148,6 +211,21 @@ test("a kitchen employee can submit cash; only one CASH_OUT is created", async (
   assert.equal(f.allocationWrites[0]?.orderId, "order-1");
   assert.equal(f.allocationWrites[0]?.paymentId, "payment-1");
   assert.ok(f.calls.indexOf("lock") < f.calls.indexOf("balance"));
+  assert.deepEqual(f.lockedShiftIds, ["s1", "s2"]);
+});
+
+test("cash transfer is refused if the selected cashier shift closes before both shifts lock", async () => {
+  const f = fixture({ receiverClosesBeforeCreate: true });
+
+  await assert.rejects(
+    () => f.service.createCashTransfer(
+      { amount: 40000, toShiftId: "s2" },
+      user("KITCHEN", "sender"),
+    ),
+    /kassir smenasi ochiq emas/,
+  );
+  assert.equal(f.writes.length, 0);
+  assert.deepEqual(f.lockedShiftIds, ["s1", "s2"]);
 });
 
 test("handover cannot exceed available employee cash", async () => {
@@ -223,6 +301,39 @@ test("pending outgoing cash blocks closing the shift", async () => {
     /hali tasdiqlanmagan/,
   );
   assert.equal(f.writes.length, 0);
+});
+
+test("pending incoming cash blocks the cashier shift from closing", async () => {
+  const f = fixture({ pendingIncoming: true });
+  await assert.rejects(
+    () => f.service.closeShift(
+      "s2",
+      { closingBalance: 0 },
+      user("CASHIER", "receiver"),
+    ),
+    /kelgan pul topshiruvi hali hal qilinmagan/,
+  );
+  assert.equal(f.shiftCloseWrites, 0);
+});
+
+test("force-closing a recipient shift unassigns pending cash without disputing it", async () => {
+  const f = fixture({ pendingIncoming: true });
+  const closed = await f.service.forceCloseShift(
+    "s2",
+    { reason: "Kassir smenasi yakunlandi" },
+    user("BRANCH_MANAGER", "receiver"),
+  );
+
+  assert.equal(closed.status, "CLOSED");
+  assert.equal(f.transfer.status, "PENDING");
+  assert.equal(f.transfer.toShiftId, null);
+  assert.equal(f.shiftCloseWrites, 1);
+  assert.equal(
+    f.auditEntries[0]?.metadata &&
+      (f.auditEntries[0].metadata as Record<string, unknown>)
+        .pendingIncomingTransfersUnassigned,
+    1,
+  );
 });
 
 test("rejected transfer restores sender cash exactly once", async () => {

@@ -536,6 +536,16 @@ export class ShiftsService {
               );
             }
 
+            const pendingIncomingTransfer = await tx.cashTransfer.findFirst({
+              where: { toShiftId: id, status: CashTransferStatus.PENDING },
+              select: { id: true },
+            });
+            if (pendingIncomingTransfer) {
+              throw new BadRequestException(
+                "Kassaga kelgan pul topshiruvi hali hal qilinmagan. Avval qabul qiling yoki rad eting.",
+              );
+            }
+
             const snapshot = await this.loadShiftCloseSnapshot(tx, shift);
             const { totals, expectedCash } = snapshot;
             const closingBalance = new Prisma.Decimal(dto.closingBalance);
@@ -648,6 +658,10 @@ export class ShiftsService {
                 rejectedAt: new Date(),
               },
             });
+            const pendingIncomingTransfers = await tx.cashTransfer.updateMany({
+              where: { toShiftId: id, status: CashTransferStatus.PENDING },
+              data: { toShiftId: null },
+            });
 
             const snapshot = await this.loadShiftCloseSnapshot(tx, shift);
             const { totals, expectedCash, currentCash } = snapshot;
@@ -698,6 +712,7 @@ export class ShiftsService {
                 expectedCash: expectedCash.toString(),
                 cashDifference: cashDifference.toString(),
                 pendingTransfersDisputed: pendingTransfers.count,
+                pendingIncomingTransfersUnassigned: pendingIncomingTransfers.count,
                 reason: dto.reason?.trim() || null,
               },
             });
@@ -1033,35 +1048,32 @@ export class ShiftsService {
       await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
       await assertBranchBelongsToActor(tx, user, shift.branchId);
 
-      await tx.$queryRawUnsafe(
-        'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
-        shift.id,
-      );
-      const current = await tx.shift.findUnique({ where: { id: shift.id } });
-      if (current?.status !== ShiftStatus.OPEN) {
-        throw new BadRequestException(
-          "Smena yopilgan. Pul topshirib bo'lmaydi.",
-        );
-      }
-
-      const transactions = await tx.cashTransaction.findMany({
-        where: { shiftId: shift.id },
-        select: { amount: true, type: true },
-      });
-      const balance = this.calculateCashBalance(
-        shift.openingBalance,
-        transactions,
-      );
-      const amount = new Prisma.Decimal(dto.amount);
-      if (balance.lessThan(amount)) {
-        throw new BadRequestException(
-          "Topshirish summasi kassadagi naqd puldan oshmasligi kerak",
-        );
-      }
-
       if (!dto.toShiftId) {
         throw new BadRequestException(
           "Pulni qabul qiladigan ochiq kassir smenasini tanlang",
+        );
+      }
+
+      for (const shiftId of [...new Set([shift.id, dto.toShiftId])].sort()) {
+        const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+          'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+          shiftId,
+        );
+        if (locked.length !== 1) {
+          throw new BadRequestException(
+            "Tanlangan kassir smenasi ochiq emas. Ro'yxatni yangilang.",
+          );
+        }
+      }
+
+      const current = await tx.shift.findUnique({ where: { id: shift.id } });
+      if (
+        current?.status !== ShiftStatus.OPEN ||
+        current.employeeId !== employeeId ||
+        current.branchId !== shift.branchId
+      ) {
+        throw new BadRequestException(
+          "Smena yopilgan. Pul topshirib bo'lmaydi.",
         );
       }
 
@@ -1111,6 +1123,21 @@ export class ShiftsService {
       ) {
         throw new BadRequestException(
           "Tanlangan xodim pul qabul qiluvchi kassir emas",
+        );
+      }
+
+      const transactions = await tx.cashTransaction.findMany({
+        where: { shiftId: current.id },
+        select: { amount: true, type: true },
+      });
+      const balance = this.calculateCashBalance(
+        current.openingBalance,
+        transactions,
+      );
+      const amount = new Prisma.Decimal(dto.amount);
+      if (balance.lessThan(amount)) {
+        throw new BadRequestException(
+          "Topshirish summasi kassadagi naqd puldan oshmasligi kerak",
         );
       }
 

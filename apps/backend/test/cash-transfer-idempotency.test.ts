@@ -21,6 +21,7 @@ test("cash transfer replay does not create another transfer or ledger row", asyn
   let transferWrites = 0;
   let ledgerWrites = 0;
   let allocationSnapshots = 0;
+  const lockedShiftIds: string[] = [];
   let idemRecord:
     | {
         id: string;
@@ -46,7 +47,13 @@ test("cash transfer replay does not create another transfer or ledger row", asyn
       }),
       findUnique: async ({ where }: { where: { id: string } }) =>
         where.id === "source-shift"
-          ? { id: "source-shift", status: "OPEN" }
+          ? {
+              id: "source-shift",
+              branchId: "branch-a",
+              employeeId: "employee-a",
+              status: "OPEN",
+              openingBalance: new Prisma.Decimal(10_000),
+            }
           : {
               id: "receiver-shift",
               branchId: "branch-a",
@@ -63,7 +70,10 @@ test("cash transfer replay does not create another transfer or ledger row", asyn
         openingBalance: new Prisma.Decimal(10_000),
       }),
     },
-    $queryRawUnsafe: async () => [],
+    $queryRawUnsafe: async (_query: string, shiftId: string) => {
+      lockedShiftIds.push(shiftId);
+      return [{ id: shiftId }];
+    },
     cashTransaction: {
       findMany: async () => [],
       create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -182,6 +192,7 @@ test("cash transfer replay does not create another transfer or ledger row", asyn
   assert.equal(transferWrites, 1);
   assert.equal(ledgerWrites, 1);
   assert.equal(allocationSnapshots, 1);
+  assert.deepEqual(lockedShiftIds, ["receiver-shift", "source-shift"]);
   assert.equal(idemRecord?.status, "COMPLETED");
 
   await assert.rejects(
