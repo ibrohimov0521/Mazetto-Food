@@ -103,3 +103,15 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - The live cashier summary rebuilt the current drawer balance from cash ledger rows starting at zero. For an older/open shift whose stored `openingBalance` had no `OPENING_BALANCE` ledger row, the UI omitted the opening float even though shift-close and transfer calculations already had a legacy fallback.
 - Current shift balance now uses `openingBalance` only when the opening ledger entry is absent, matching the established shift calculation and avoiding double-counting when the ledger entry exists.
 - Regression tests cover both legacy and ledger-backed shifts. Backend suite passed 555/555; the new focused history suite passed 7/7; ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check` all passed. Full CI and production release remain the gate for this continuation.
+
+## Release confirmation: legacy shift opening balance
+
+- PR #269 was squash-merged as `bc92b7b7966c0e005736f426f5946378588b4868`; production Deploy #303 succeeded, including production smoke, and the `production` tag was verified at that commit.
+- No migration was required. Physical workstation acceptance remains outstanding as listed above.
+
+## Audit continuation: cashier item-cancellation permissions
+
+- The server requires `PAYMENT_REFUND` only when cancelling an item creates an actual refund. The cashier history UI previously hid the cancel action for every order unless the user had that permission, including unpaid or still-underpaid orders where no refund is due.
+- The UI now estimates the remaining paid balance from successful tenders and recorded refunds, and requires the extra permission only when the cancellation needs money returned. Invalid monetary data fails closed; the backend remains authoritative.
+- Regression coverage checks unpaid, underpaid, overpaid, already-refunded, and invalid-value cases. POS web tests passed 48/48; POS ESLint, TypeScript, and optimized production build passed. `git diff --check` also passed.
+- Full PR CI and production release remain the gate for this continuation. Backend refund authorization and accounting remain authoritative; the UI check only avoids offering an action that the backend must reject.
