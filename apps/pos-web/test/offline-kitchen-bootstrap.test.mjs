@@ -31,6 +31,15 @@ const ticket = {
     displayOrderNumber: "101",
     source: "POS",
     type: "DINE_IN",
+    total: "12000",
+    paymentStatus: "PENDING",
+    payments: [
+      {
+        amount: "7000",
+        status: "PARTIALLY_REFUNDED",
+        refunds: [{ amount: "1000" }],
+      },
+    ],
     isSupplemental: false,
     supplementNumber: null,
     notes: null,
@@ -91,6 +100,32 @@ test("rejects cross-branch, unsupported and incomplete kitchen snapshots", () =>
       {
         ...snapshot(),
         kitchenQueue: { items: [ticket], hasMore: false, limit: 0 },
+      },
+      "branch-a",
+    ),
+    null,
+  );
+});
+
+test("rejects cached payment data without refund details", () => {
+  assert.equal(
+    readOfflineKitchenSnapshot(
+      {
+        ...snapshot(),
+        kitchenQueue: {
+          ...snapshot().kitchenQueue,
+          items: [
+            {
+              ...ticket,
+              order: {
+                ...ticket.order,
+                payments: [
+                  { amount: "7000", status: "PARTIALLY_REFUNDED" },
+                ],
+              },
+            },
+          ],
+        },
       },
       "branch-a",
     ),

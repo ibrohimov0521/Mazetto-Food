@@ -126,3 +126,14 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - The UI now estimates the remaining paid balance from successful tenders and recorded refunds, and requires the extra permission only when the cancellation needs money returned. Invalid monetary data fails closed; the backend remains authoritative.
 - Regression coverage checks unpaid, underpaid, overpaid, already-refunded, and invalid-value cases. POS web tests passed 48/48; POS ESLint, TypeScript, and optimized production build passed. `git diff --check` also passed.
 - Full PR CI and production release remain the gate for this continuation. Backend refund authorization and accounting remain authoritative; the UI check only avoids offering an action that the backend must reject.
+
+## Release confirmation: item-cancellation payment status
+
+- PR #271 was squash-merged as `59449f250ad6598a32c8cbde36fe6a0279c997e7`; main CI #770 and production Deploy #305 succeeded, including production smoke. The `production` tag points to the merge commit.
+- Read-only production checks returned HTTP 200 for the POS history page and the actual backend health path `/api/v1/health`. No database migration or Desktop release was required.
+
+## Audit continuation: kitchen pickup refund balance
+
+- Cross-role review found that kitchen handoff UI and backend validation counted only full `PAID`/`SUCCESS` payment rows and ignored partial-refund ledger rows. After an item cancellation, a refund could either show the full order as due or make the backend reject a correctly paid reduced-total pickup. The offline kitchen bootstrap also omitted payment details entirely.
+- Kitchen API and offline bootstrap now include tender refund amounts; the UI and authoritative handoff check calculate net paid after refunds. Offline snapshots without the required payment/refund fields are rejected rather than used to show a misleading balance. No schema migration is required.
+- Regression coverage verifies a refunded, fully-covered reduced order can be handed off, a genuine remaining balance still blocks handoff, refund-aware balance display, safe rejection of stale offline cache data, and the payment/refund fields in the branch-scoped bootstrap. Backend tests passed 562/562 plus transient-retry 3/3; focused kitchen/backend bootstrap tests passed 19/19; POS tests passed 51/51. Backend and POS ESLint, backend app/script and POS TypeScript checks, Nest build, POS production build, and `git diff --check` passed.

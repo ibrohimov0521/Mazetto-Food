@@ -80,7 +80,11 @@ type KitchenTransitionOrder = {
   cancellationReason: string | null;
   paymentStatus: PaymentStatus;
   total: Prisma.Decimal;
-  payments: { amount: Prisma.Decimal; status: PaymentStatus }[];
+  payments: {
+    amount: Prisma.Decimal;
+    status: PaymentStatus;
+    refunds: { amount: Prisma.Decimal }[];
+  }[];
   customerOrder: {
     paymentMethod: string | null;
     customer: { telegramChatId: string | null } | null;
@@ -541,12 +545,18 @@ export class KitchenService {
           .filter(
             (payment) =>
               payment.status === PaymentStatus.PAID ||
-              payment.status === PaymentStatus.SUCCESS,
+              payment.status === PaymentStatus.SUCCESS ||
+              payment.status === PaymentStatus.PARTIALLY_REFUNDED,
           )
-          .reduce(
-            (total, payment) => total.add(payment.amount),
-            new Prisma.Decimal(0),
-          );
+          .reduce((total, payment) => {
+            const refunded = payment.refunds.reduce(
+              (sum, refund) => sum.add(refund.amount),
+              new Prisma.Decimal(0),
+            );
+            return total.add(
+              Prisma.Decimal.max(payment.amount.sub(refunded), 0),
+            );
+          }, new Prisma.Decimal(0));
         if (order.total.greaterThan(paidTotal)) {
           throw new BadRequestException(
             "Olib ketish buyurtmasini topshirishdan oldin kassada to'lovni qabul qiling",
@@ -936,7 +946,13 @@ export class KitchenService {
             customer: { select: { telegramChatId: true } },
           },
         },
-        payments: { select: { amount: true, status: true } },
+        payments: {
+          select: {
+            amount: true,
+            status: true,
+            refunds: { select: { amount: true } },
+          },
+        },
         acceptedAt: true,
         acceptedById: true,
         cancelledAt: true,
@@ -1011,7 +1027,13 @@ export class KitchenService {
               customer: { select: { name: true } },
             },
           },
-          payments: { select: { amount: true, status: true } },
+          payments: {
+            select: {
+              amount: true,
+              status: true,
+              refunds: { select: { amount: true } },
+            },
+          },
           statusHistory: {
             orderBy: { createdAt: "asc" },
             include: {

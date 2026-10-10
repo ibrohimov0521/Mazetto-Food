@@ -373,6 +373,13 @@ export class RealtimeBootstrapService {
                       version: true,
                       total: true,
                       paymentStatus: true,
+                      payments: {
+                        select: {
+                          amount: true,
+                          status: true,
+                          refunds: { select: { amount: true } },
+                        },
+                      },
                       orderNumber: true,
                       displayOrderNumber: true,
                       source: true,
