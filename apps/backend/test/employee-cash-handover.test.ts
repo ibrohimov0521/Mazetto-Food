@@ -23,6 +23,8 @@ function fixture(
     pending?: boolean;
     pendingIncoming?: boolean;
     receiverClosesBeforeCreate?: boolean;
+    sourceShiftId?: string;
+    receiverShiftId?: string;
   } = {},
 ) {
   const writes: { type: string; amount: Prisma.Decimal }[] = [];
@@ -35,14 +37,14 @@ function fixture(
     paymentId: string | null;
   }> = [];
   const shift = {
-    id: "s1",
+    id: options.sourceShiftId ?? "s1",
     branchId: "b1",
     employeeId: "sender",
     status: "OPEN",
     openingBalance: new Prisma.Decimal(0),
   };
   const receiverShift = {
-    id: "s2",
+    id: options.receiverShiftId ?? "s2",
     branchId: "b1",
     employeeId: "receiver",
     status: "OPEN",
@@ -212,6 +214,19 @@ test("a kitchen employee can submit cash; only one CASH_OUT is created", async (
   assert.equal(f.allocationWrites[0]?.paymentId, "payment-1");
   assert.ok(f.calls.indexOf("lock") < f.calls.indexOf("balance"));
   assert.deepEqual(f.lockedShiftIds, ["s1", "s2"]);
+});
+
+test("forced cash handover locks source and recipient shifts in deterministic order", async () => {
+  const f = fixture({ sourceShiftId: "z-source", receiverShiftId: "a-receiver" });
+
+  await f.service.forceCashHandover(
+    "z-source",
+    { toShiftId: "a-receiver", reason: "Smena yakuni" },
+    user("BRANCH_MANAGER", "admin"),
+  );
+
+  assert.deepEqual(f.lockedShiftIds, ["a-receiver", "z-source"]);
+  assert.deepEqual(f.writes.map((entry) => entry.type), ["CASH_OUT", "CASH_IN"]);
 });
 
 test("cash transfer is refused if the selected cashier shift closes before both shifts lock", async () => {

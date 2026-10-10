@@ -105,12 +105,24 @@ export class ShiftsService {
   ) {
     return this.prisma.$transaction(
       async (tx) => {
-        const sourceLock = await tx.$queryRawUnsafe<{ id: string }[]>(
-          'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
-          sourceShiftId,
-        );
-        if (sourceLock.length !== 1) {
-          throw new NotFoundException("Source shift not found");
+        if (sourceShiftId === dto.toShiftId) {
+          throw new BadRequestException(
+            "Manba va qabul qiluvchi smena bir xil bo'lmasligi kerak",
+          );
+        }
+
+        for (const shiftId of [...new Set([sourceShiftId, dto.toShiftId])].sort()) {
+          const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+            'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
+            shiftId,
+          );
+          if (locked.length !== 1) {
+            throw new NotFoundException(
+              shiftId === sourceShiftId
+                ? "Source shift not found"
+                : "Qabul qiluvchi smena topilmadi",
+            );
+          }
         }
 
         const source = await tx.shift.findUnique({
@@ -123,19 +135,6 @@ export class ShiftsService {
           );
         }
         await assertBranchBelongsToActor(tx, user, source.branchId);
-        if (sourceShiftId === dto.toShiftId) {
-          throw new BadRequestException(
-            "Manba va qabul qiluvchi smena bir xil bo'lmasligi kerak",
-          );
-        }
-
-        const receiverLock = await tx.$queryRawUnsafe<{ id: string }[]>(
-          'SELECT "id" FROM "shifts" WHERE "id" = $1 FOR UPDATE',
-          dto.toShiftId,
-        );
-        if (receiverLock.length !== 1) {
-          throw new NotFoundException("Qabul qiluvchi smena topilmadi");
-        }
         const receiver = await tx.shift.findUnique({
           where: { id: dto.toShiftId },
           include: {
