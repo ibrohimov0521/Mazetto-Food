@@ -29,75 +29,80 @@ export class CashRegisterService {
   async getCurrentShift(user: AuthenticatedUser) {
     const employeeId = this.requireEmployee(user);
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    const shift = await this.prisma.shift.findFirst({
-      where: {
-        employeeId,
-        status: ShiftStatus.OPEN,
-        branch: { tenantId },
-      },
-      include: {
-        branch: true,
-        employee: true,
-        cashTransactions: {
-          orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
-          take: 50,
-        },
-        outgoingCashTransfers: {
-          orderBy: { createdAt: "desc" },
-          take: 100,
+    return this.prisma.$transaction(
+      async (tx) => {
+        const shift = await tx.shift.findFirst({
+          where: {
+            employeeId,
+            status: ShiftStatus.OPEN,
+            branch: { tenantId },
+          },
           include: {
-            toShift: {
-              select: {
-                employee: { select: { firstName: true, lastName: true } },
+            branch: true,
+            employee: true,
+            cashTransactions: {
+              orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+              take: 50,
+            },
+            outgoingCashTransfers: {
+              orderBy: { createdAt: "desc" },
+              take: 100,
+              include: {
+                toShift: {
+                  select: {
+                    employee: { select: { firstName: true, lastName: true } },
+                  },
+                },
               },
             },
           },
-        },
+          orderBy: { openedAt: "desc" },
+        });
+
+        if (!shift) {
+          return null;
+        }
+
+        const [cashTransactionTotals, cashSales, paidOrders] = await Promise.all([
+          tx.cashTransaction.groupBy({
+            by: ["type"],
+            where: { shiftId: shift.id },
+            _sum: { amount: true },
+            _count: { _all: true },
+          }),
+          tx.revenueRecord.aggregate({
+            where: {
+              shiftId: shift.id,
+              payment: { method: { code: "CASH" } },
+            },
+            _sum: { amount: true },
+          }),
+          tx.revenueRecord.groupBy({
+            by: ["orderId"],
+            where: {
+              shiftId: shift.id,
+              paymentId: { not: null },
+              orderId: { not: null },
+            },
+          }),
+        ]);
+        const paidOrderIds = paidOrders.flatMap(({ orderId }) =>
+          orderId ? [orderId] : [],
+        );
+
+        return {
+          ...shift,
+          revenueRecords: paidOrderIds.map((orderId) => ({ orderId })),
+          ...this.calculateShiftSummary(
+            shift.openingBalance,
+            cashTransactionTotals,
+            cashSales._sum.amount,
+            paidOrderIds.length,
+          ),
+        };
       },
-      orderBy: { openedAt: "desc" },
-    });
-
-    if (!shift) {
-      return null;
-    }
-
-    const [cashTransactionTotals, cashSales, paidOrders] = await Promise.all([
-      this.prisma.cashTransaction.groupBy({
-        by: ["type"],
-        where: { shiftId: shift.id },
-        _sum: { amount: true },
-        _count: { _all: true },
-      }),
-      this.prisma.revenueRecord.aggregate({
-        where: {
-          shiftId: shift.id,
-          payment: { method: { code: "CASH" } },
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.revenueRecord.groupBy({
-        by: ["orderId"],
-        where: {
-          shiftId: shift.id,
-          paymentId: { not: null },
-          orderId: { not: null },
-        },
-      }),
-    ]);
-    const paidOrderIds = paidOrders.flatMap(({ orderId }) =>
-      orderId ? [orderId] : [],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-
-    return {
-      ...shift,
-      revenueRecords: paidOrderIds.map((orderId) => ({ orderId })),
-      ...this.calculateShiftSummary(
-        shift.openingBalance,
-        cashTransactionTotals,
-        cashSales._sum.amount,
-        paidOrderIds.length,
-      ),
-    };
   }
 
   getCourierShift(user: AuthenticatedUser) {

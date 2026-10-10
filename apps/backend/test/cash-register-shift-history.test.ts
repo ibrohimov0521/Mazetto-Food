@@ -25,6 +25,7 @@ async function getCurrentCash(
     cashTransactionQuery?: Record<string, unknown>;
     cashSalesQuery?: Record<string, unknown>;
     paidOrdersQuery?: Record<string, unknown>;
+    transactionOptions?: Record<string, unknown>;
   },
 ) {
   const totals = new Map<CashTransactionType, { amount: Prisma.Decimal; count: number }>();
@@ -37,57 +38,65 @@ async function getCurrentCash(
     total.count += 1;
     totals.set(transaction.type, total);
   }
-  const service = new CashRegisterService(
-    {
-      branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
-      shift: {
-        findFirst: async (query: Record<string, unknown>) => {
-          if (captured) captured.shiftQuery = query;
-          return {
-            id: "shift-a",
-            branchId: "branch-a",
-            employeeId: "employee-a",
-            openingBalance: new Prisma.Decimal(openingBalance),
-            cashTransactions: cashTransactions.slice(0, 50).map((transaction) => ({
-              ...transaction,
-              amount: new Prisma.Decimal(transaction.amount),
-            })),
-          };
-        },
+  const db = {
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    shift: {
+      findFirst: async (query: Record<string, unknown>) => {
+        if (captured) captured.shiftQuery = query;
+        return {
+          id: "shift-a",
+          branchId: "branch-a",
+          employeeId: "employee-a",
+          openingBalance: new Prisma.Decimal(openingBalance),
+          cashTransactions: cashTransactions.slice(0, 50).map((transaction) => ({
+            ...transaction,
+            amount: new Prisma.Decimal(transaction.amount),
+          })),
+        };
       },
-      cashTransaction: {
-        groupBy: async (query: Record<string, unknown>) => {
-          if (captured) captured.cashTransactionQuery = query;
-          return [...totals].map(([type, total]) => ({
-            type,
-            _sum: { amount: total.amount },
-            _count: { _all: total.count },
-          }));
-        },
+    },
+    cashTransaction: {
+      groupBy: async (query: Record<string, unknown>) => {
+        if (captured) captured.cashTransactionQuery = query;
+        return [...totals].map(([type, total]) => ({
+          type,
+          _sum: { amount: total.amount },
+          _count: { _all: total.count },
+        }));
       },
-      revenueRecord: {
-        aggregate: async (query: Record<string, unknown>) => {
-          if (captured) captured.cashSalesQuery = query;
-          return {
-            _sum: {
-              amount: revenueRecords
-                .filter((record) => record.orderId && record.methodCode === "CASH")
-                .reduce((total, record) => total.add(record.amount), new Prisma.Decimal(0)),
-            },
-          };
-        },
-        groupBy: async (query: Record<string, unknown>) => {
-          if (captured) captured.paidOrdersQuery = query;
-          return [...new Set(
-            revenueRecords
-              .filter((record) => record.orderId && record.methodCode)
-              .map((record) => record.orderId),
-          )].map((orderId) => ({ orderId }));
-        },
+    },
+    revenueRecord: {
+      aggregate: async (query: Record<string, unknown>) => {
+        if (captured) captured.cashSalesQuery = query;
+        return {
+          _sum: {
+            amount: revenueRecords
+              .filter((record) => record.orderId && record.methodCode === "CASH")
+              .reduce((total, record) => total.add(record.amount), new Prisma.Decimal(0)),
+          },
+        };
       },
-    } as never,
-    {} as never,
-  );
+      groupBy: async (query: Record<string, unknown>) => {
+        if (captured) captured.paidOrdersQuery = query;
+        return [...new Set(
+          revenueRecords
+            .filter((record) => record.orderId && record.methodCode)
+            .map((record) => record.orderId),
+        )].map((orderId) => ({ orderId }));
+      },
+    },
+  };
+  const prisma = {
+    ...db,
+    $transaction: async (
+      operation: (tx: typeof db) => Promise<unknown>,
+      options: Record<string, unknown>,
+    ) => {
+      if (captured) captured.transactionOptions = options;
+      return operation(db);
+    },
+  };
+  const service = new CashRegisterService(prisma as never, {} as never);
 
   return service.getCurrentShift(cashier);
 }
@@ -117,6 +126,7 @@ test("current shift summary aggregates cash and paid orders without loading full
     cashTransactionQuery?: Record<string, unknown>;
     cashSalesQuery?: Record<string, unknown>;
     paidOrdersQuery?: Record<string, unknown>;
+    transactionOptions?: Record<string, unknown>;
   } = {};
   const shift = await getCurrentCash(
     50000,
@@ -165,6 +175,9 @@ test("current shift summary aggregates cash and paid orders without loading full
       paymentId: { not: null },
       orderId: { not: null },
     },
+  });
+  assert.deepEqual(captured.transactionOptions, {
+    isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
   });
 });
 

@@ -13,17 +13,20 @@ const cashier: AuthenticatedUser = {
 
 test("cashier shift and transaction reads are tenant-scoped", async () => {
   const filters: unknown[] = [];
+  const shift = {
+    findFirst: async (args: { where: unknown }) => {
+      filters.push(args.where);
+      return null;
+    },
+  };
   const service = new CashRegisterService(
     {
       branch: {
         findUnique: async () => ({ tenantId: "tenant-a" }),
       },
-      shift: {
-        findFirst: async (args: { where: unknown }) => {
-          filters.push(args.where);
-          return null;
-        },
-      },
+      shift,
+      $transaction: async (operation: (tx: { shift: typeof shift }) => Promise<unknown>) =>
+        operation({ shift }),
     } as never,
     {} as never,
   );
