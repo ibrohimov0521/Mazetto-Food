@@ -776,6 +776,108 @@ test("gateway queues only cash payments while offline", async () => {
   }
 });
 
+test("offline payment is projected as paid and blocks unsafe shift close", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-payment-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-offline-payment-close", "branch-1");
+  const ordersPath =
+    "/orders?paymentStatus=PENDING&excludeStatus=CANCELLED&excludeType=DELIVERY&limit=50&offset=0";
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/cash-register/shift")) {
+        return jsonResponse({
+          success: true,
+          data: { id: "shift-offline-1", branchId: "branch-1", status: "OPEN" },
+        });
+      }
+      if (url.includes("/orders?")) {
+        return jsonResponse({
+          success: true,
+          data: [
+            {
+              id: "order-offline-1",
+              total: "42000",
+              paymentStatus: "PENDING",
+              payments: [],
+            },
+          ],
+        });
+      }
+      return jsonResponse({ success: true, data: {} });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const baseUrl = `http://127.0.0.1:${gatewayPort}/api/v1`;
+    const headers = { Authorization: authorization };
+    assert.equal(
+      (await fetch(`${baseUrl}/cash-register/shift`, { headers })).status,
+      200,
+    );
+    assert.equal(
+      (await fetch(`${baseUrl}${ordersPath}`, { headers })).status,
+      200,
+    );
+
+    online = false;
+    const payment = await fetch(`${baseUrl}/payments/process`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: "order-offline-1",
+        shiftId: "shift-offline-1",
+        idempotencyKey: "offline-payment-close-1",
+        payments: [{ paymentMethodCode: "CASH", amount: 42_000 }],
+      }),
+    });
+    assert.equal(payment.status, 202);
+
+    assert.deepEqual(
+      store
+        .listActiveMutations(DesktopStore.mutationScope(authorization))
+        .map((item) => item.commandType),
+      ["payment.process"],
+    );
+    const pendingOrders = await fetch(`${baseUrl}${ordersPath}`, { headers });
+    assert.equal(
+      pendingOrders.headers.get("x-mazetto-desktop"),
+      "offline-optimistic",
+    );
+    const pendingPayload = await pendingOrders.json();
+    assert.equal(pendingPayload.data[0].paymentStatus, "PAID");
+    assert.equal(pendingPayload.data[0].pendingSync, true);
+
+    const close = await fetch(
+      `${baseUrl}/cash-register/shift/shift-offline-1/close`,
+      {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-close-after-payment-1",
+        },
+        body: JSON.stringify({ closingBalance: 42_000 }),
+      },
+    );
+    assert.equal(close.status, 409);
+    assert.match((await close.json()).error.message, /hali sinxronlanmagan/);
+    assert.equal(store.summary().pendingCommands, 1);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("gateway flushes queued mutations from the reconnect health probe", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));

@@ -300,6 +300,7 @@ export class DesktopGateway {
                     authScope,
                     cacheScope,
                     targetUrl,
+                    identity?.branchId,
                   )
                 : null;
           if (mutationError) {
@@ -539,6 +540,7 @@ export class DesktopGateway {
                   authScope,
                   cacheScope,
                   targetUrl,
+                  identity?.branchId,
                 )
               : null;
         if (mutationError) {
@@ -1808,6 +1810,7 @@ function validateOfflineShiftClose(
   authScope: string,
   cacheScope: string,
   targetUrl: string,
+  branchId: string | null | undefined,
 ): string | null {
   try {
     const closeUrl = new URL(targetUrl);
@@ -1831,6 +1834,9 @@ function validateOfflineShiftClose(
     const shift = responseDataRecord(parseJsonValue(projected?.body ?? source));
     if (!shift || shift.status !== "OPEN" || shift.id !== requestedShiftId) {
       return "Oflayn smenani yopish uchun kassaning saqlangan ochiq holati topilmadi.";
+    }
+    if (store.hasUnresolvedCashPostingMutations(authScope, branchId)) {
+      return "Oflayn buyurtma yoki naqd to'lov hali sinxronlanmagan. Smenani yopishdan oldin internetni tiklab, navbat yuborilishini kuting.";
     }
     const hasUnresolvedTransfer =
       Array.isArray(shift.outgoingCashTransfers) &&
@@ -2246,6 +2252,23 @@ function applyOptimisticProjection(
       continue;
     }
 
+    const paymentOrderId = stringField(commandBody, "orderId");
+    if (
+      command.commandType === "payment.process" &&
+      paymentOrderId &&
+      (pathname === "/api/v1/orders" ||
+        pathname === `/api/v1/orders/${paymentOrderId}`) &&
+      patchPendingPaymentProjection(
+        projected,
+        paymentOrderId,
+        commandBody ?? {},
+        command,
+      )
+    ) {
+      applied.push(command.id);
+      continue;
+    }
+
     const statusMatch = commandPath.match(
       /^\/api\/v1\/orders\/([^/]+)\/status$/,
     );
@@ -2434,6 +2457,42 @@ function patchOrderStatusProjection(
     status,
     version: expectedVersion + 1,
     pendingSync: true,
+  });
+  return true;
+}
+
+function patchPendingPaymentProjection(
+  projected: unknown,
+  orderId: string,
+  body: Record<string, unknown>,
+  command: PendingOutboxCommand,
+): boolean {
+  const order = findRecordById(projected, orderId);
+  const total = order ? finiteAmount(order.total) : null;
+  const tendered = paymentTotal(body);
+  if (!order || total === null || tendered <= 0) return false;
+
+  const alreadyPaid = Array.isArray(order.payments)
+    ? order.payments.reduce((sum, payment) => {
+        if (
+          !isRecord(payment) ||
+          !["SUCCESS", "PAID"].includes(String(payment.status))
+        ) {
+          return sum;
+        }
+        return sum + (finiteAmount(payment.amount) ?? 0);
+      }, 0)
+    : 0;
+  if (
+    Math.round((alreadyPaid + tendered) * 100) !== Math.round(total * 100)
+  )
+    return false;
+
+  Object.assign(order, {
+    paymentStatus: "PAID",
+    pendingSync: true,
+    offlineQueued: true,
+    pendingPaymentCommandId: command.id,
   });
   return true;
 }

@@ -1218,6 +1218,25 @@ export class DesktopStore {
     return rows.map((row) => ({ ...row }));
   }
 
+  hasUnresolvedCashPostingMutations(
+    authScope: string,
+    branchId: string | null | undefined,
+  ): boolean {
+    const branchFilter = branchId ? "AND branch_id = ?" : "";
+    const row = this.database
+      .prepare(
+        `SELECT 1
+         FROM mutation_outbox
+         WHERE auth_scope = ?
+           ${branchFilter}
+           AND state IN ('pending', 'sending', 'conflict', 'dead_letter')
+           AND command_type IN ('pos.order.create', 'payment.process')
+         LIMIT 1`,
+      )
+      .get(...(branchId ? [authScope, branchId] : [authScope]));
+    return Boolean(row);
+  }
+
   retryMutation(id: string): boolean {
     const result = this.database
       .prepare(
