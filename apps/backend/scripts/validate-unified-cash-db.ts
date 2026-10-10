@@ -100,7 +100,7 @@ async function main() {
     const cashEntry = shifts
       .createCashTransaction(
         cashOperatorShift.id,
-        { type: "CASH_IN", amount: 1234 },
+        { type: "INCOME", amount: 1234 },
         cashOperator,
       )
       .then(
@@ -205,7 +205,7 @@ async function main() {
     assert.equal(await prisma.revenueRecord.count({ where: { shiftId: targetShift.id } }), 0, "handover is not another sale");
     assert.equal(await prisma.cashTransaction.count({ where: { cashTransferId: transfer.id, type: "CASH_IN" } }), 1);
 
-    await shifts.createCashTransaction(sourceShift.id, { type: "CASH_IN", amount: 15000 }, worker);
+    await shifts.createCashTransaction(sourceShift.id, { type: "INCOME", amount: 15000 }, worker);
     const attempts = await Promise.allSettled([shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker), shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker)]);
     assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1, "parallel submissions cannot overdraw");
     const pending = await prisma.cashTransfer.findFirstOrThrow({ where: { fromShiftId: sourceShift.id, status: "PENDING" } });

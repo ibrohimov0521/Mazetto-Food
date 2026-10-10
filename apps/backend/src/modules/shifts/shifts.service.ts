@@ -752,6 +752,17 @@ export class ShiftsService {
       );
     }
 
+    const manualCashTransactionTypes = new Set<CashTransactionType>([
+      CashTransactionType.INCOME,
+      CashTransactionType.EXPENSE,
+      CashTransactionType.WITHDRAW,
+    ]);
+    if (!manualCashTransactionTypes.has(dto.type)) {
+      throw new BadRequestException(
+        "Faqat kirim, xarajat yoki kassadan chiqarish qo'lda kiritilishi mumkin",
+      );
+    }
+
     const idempotencyKey = context?.idempotencyKey
       ? normalizeIdempotencyKey(context.idempotencyKey)
       : undefined;

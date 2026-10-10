@@ -124,7 +124,7 @@ test("cash transaction replay returns the original ledger row without a second w
     },
   };
   const service = new ShiftsService(prisma as never, idempotency as never);
-  const dto = { type: "CASH_IN", amount: 500 } as const;
+  const dto = { type: "INCOME", amount: 500 } as const;
   const context = {
     idempotencyKey: "cash-ledger-key-1",
     correlationId: "request-a",
@@ -159,4 +159,29 @@ test("cash transaction replay returns the original ledger row without a second w
     /different request/,
   );
   assert.equal(writes, 1);
+});
+
+test("cash transaction API rejects system-owned ledger types", async () => {
+  const service = new ShiftsService({} as never);
+  const systemOwnedTypes = [
+    "OPENING",
+    "OPENING_BALANCE",
+    "SALE",
+    "REFUND",
+    "CASH_IN",
+    "CASH_OUT",
+    "CLOSING",
+    "CLOSING_BALANCE",
+  ];
+
+  for (const type of systemOwnedTypes) {
+    await assert.rejects(
+      service.createCashTransaction(
+        "shift-a",
+        { type, amount: 100 } as never,
+        cashier,
+      ),
+      /Faqat kirim, xarajat yoki kassadan chiqarish/,
+    );
+  }
 });
