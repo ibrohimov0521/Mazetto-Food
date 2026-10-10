@@ -129,6 +129,7 @@ async function main(): Promise<void> {
     await proveOrderCashStockPrint(
       prisma,
       services.paymentsService,
+      services.ordersService,
       fixture,
       webOrder.customerOrder.id,
     );
@@ -659,6 +660,7 @@ async function findCatalogProduct(
 async function proveOrderCashStockPrint(
   prisma: PrismaService,
   paymentsService: PaymentsService,
+  ordersService: OrdersService,
   fixture: Awaited<ReturnType<typeof createFixture>>,
   customerOrderId: string,
 ): Promise<void> {
@@ -733,6 +735,133 @@ async function proveOrderCashStockPrint(
       where: { sourceType: "ORDER_ITEM_RECIPE", sourceId: customerOrder.orderId },
     })) > 0,
     "confirmed customer order must deduct recipe stock",
+  );
+
+  const paidOrder = await prisma.order.findUniqueOrThrow({
+    where: { id: customerOrder.orderId },
+    include: { items: true },
+  });
+  assert.equal(
+    paidOrder.shiftId,
+    null,
+    "online order must remain unassigned to a cashier shift",
+  );
+  const item = paidOrder.items[0]!;
+  const refundActor = {
+    ...actor,
+    permissions: [
+      "PAYMENT_CREATE",
+      "RECEIPT_PRINT",
+      "ORDER_UPDATE",
+      "PAYMENT_REFUND",
+      "SHIFT_VIEW_BRANCH",
+    ],
+  };
+  const closedShift = await prisma.shift.create({
+    data: {
+      branchId: fixture.branch.id,
+      employeeId: fixture.employee.id,
+      deviceId: fixture.shift.deviceId,
+      shiftNumber: 2,
+      status: "CLOSED",
+      type: "CASHIER",
+      openingBalance: 0,
+      closedAt: new Date(),
+    },
+  });
+  const unrelatedUser = await prisma.user.create({
+    data: {
+      email: "step8-refund-shift-" + fixture.runId + "@qa.local",
+      displayName: "STEP 8 unrelated cashier",
+      isActive: true,
+    },
+  });
+  const unrelatedEmployee = await prisma.employee.create({
+    data: {
+      userId: unrelatedUser.id,
+      branchId: fixture.branch.id,
+      employeeCode: "STEP8-REFUND-" + fixture.runId,
+      firstName: "STEP 8",
+      lastName: "Unrelated cashier",
+      status: "ACTIVE",
+    },
+  });
+  const unrelatedOpenShift = await prisma.shift.create({
+    data: {
+      branchId: fixture.branch.id,
+      employeeId: unrelatedEmployee.id,
+      deviceId: fixture.shift.deviceId,
+      shiftNumber: 3,
+      status: "OPEN",
+      type: "CASHIER",
+      openingBalance: 0,
+    },
+  });
+  const cancellationContext = (shiftId: string, suffix: string) => ({
+    shiftId,
+    expectedVersion: paidOrder.version,
+    eventType: ORDER_EVENTS.ITEM_CANCELLED,
+    correlationId: "step8-refund-" + suffix + "-" + fixture.runId,
+    idempotencyKey: "step8-refund-" + suffix + "-" + fixture.runId,
+  });
+  const cancellationDto = {
+    status: OrderItemStatus.CANCELLED,
+    cancellationReason: "Step 8 online order item refund",
+  };
+
+  await assert.rejects(
+    ordersService.updateItem(
+      paidOrder.id,
+      item.id,
+      cancellationDto,
+      refundActor,
+      cancellationContext(closedShift.id, "closed"),
+    ),
+    /smenasi yopilgan/i,
+    "refund must reject a closed cashier shift",
+  );
+  await assert.rejects(
+    ordersService.updateItem(
+      paidOrder.id,
+      item.id,
+      cancellationDto,
+      refundActor,
+      cancellationContext(unrelatedOpenShift.id, "unrelated"),
+    ),
+    /naqd to'lov(i)? tanlangan smenada kassaga kiritilmagan/i,
+    "refund must reject an open shift without this order's cash SALE",
+  );
+  assert.equal(
+    await prisma.paymentRefund.count({
+      where: { orderItemId: item.id },
+    }),
+    0,
+    "rejected shifts must not create refunds",
+  );
+
+  await ordersService.updateItem(
+    paidOrder.id,
+    item.id,
+    cancellationDto,
+    refundActor,
+    cancellationContext(fixture.shift.id, "valid"),
+  );
+  const refund = await prisma.paymentRefund.findFirstOrThrow({
+    where: { orderItemId: item.id },
+  });
+  assert.equal(refund.shiftId, fixture.shift.id);
+  assert.equal(refund.amount.toFixed(2), paidOrder.total.toFixed(2));
+  assert.equal(
+    await prisma.cashTransaction.count({
+      where: {
+        orderId: paidOrder.id,
+        shiftId: fixture.shift.id,
+        paymentId: refund.paymentId,
+        type: "REFUND",
+      },
+    }),
+    1,
+    "valid refund must be written to the shift containing the original cash sale",
   );
 }
 

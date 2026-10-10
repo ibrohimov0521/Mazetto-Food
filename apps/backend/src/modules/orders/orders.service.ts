@@ -118,6 +118,7 @@ type ConfirmOrderForPreparationOptions = {
 
 export type OrderMutationContext = {
   expectedVersion?: number | undefined;
+  shiftId?: string | undefined;
   correlationId?: string | undefined;
   idempotencyKey?: string | undefined;
   eventType?: OrderEventName | undefined;
@@ -1098,10 +1099,20 @@ export class OrdersService {
               "Bekor qilingan buyurtma o'zgartirilmaydi",
             );
           }
-          if (order.shiftId) {
+          const cancellationShiftId = order.shiftId ?? context?.shiftId;
+          if (
+            order.shiftId &&
+            context?.shiftId &&
+            context.shiftId !== order.shiftId
+          ) {
+            throw new BadRequestException(
+              "Tanlangan smena buyurtma tushgan smenaga mos emas.",
+            );
+          }
+          if (cancellationShiftId) {
             const shiftLock = await tx.shift.updateMany({
               where: {
-                id: order.shiftId,
+                id: cancellationShiftId,
                 branchId: order.branchId,
                 status: "OPEN",
               },
@@ -1113,7 +1124,7 @@ export class OrdersService {
               );
             }
             const shift = await tx.shift.findUnique({
-              where: { id: order.shiftId },
+              where: { id: cancellationShiftId },
               select: {
                 id: true,
                 branchId: true,
@@ -1244,9 +1255,10 @@ export class OrdersService {
             0,
           );
           if (refundAmount.greaterThan(0)) {
-            if (!order.shiftId) {
+            const refundShiftId = order.shiftId ?? context?.shiftId;
+            if (!refundShiftId) {
               throw new BadRequestException(
-                "Pul qaytarish uchun buyurtma smenaga biriktirilgan bo'lishi kerak.",
+                "Pul qaytarish uchun ochiq kassa smenasini tanlang.",
               );
             }
             if (!hasPermission(user, PERMISSIONS.PAYMENT_REFUND)) {
@@ -1267,6 +1279,32 @@ export class OrdersService {
               lockedPayments as RefundablePayment[],
               refundAmount,
             );
+            if (!order.shiftId) {
+              const cashSales = await tx.cashTransaction.findMany({
+                where: {
+                  branchId: order.branchId,
+                  shiftId: refundShiftId,
+                  orderId,
+                  paymentId: {
+                    in: allocations.map(({ payment }) => payment.id),
+                  },
+                  type: CashTransactionType.SALE,
+                },
+                select: { paymentId: true },
+              });
+              const cashSalePaymentIds = new Set(
+                cashSales.map((transaction) => transaction.paymentId),
+              );
+              if (
+                allocations.some(
+                  ({ payment }) => !cashSalePaymentIds.has(payment.id),
+                )
+              ) {
+                throw new BadRequestException(
+                  "Buyurtmaning naqd to'lovi tanlangan smenada kassaga kiritilmagan.",
+                );
+              }
+            }
             const reason =
               dto.cancellationReason?.trim() || "Mahsulot bekor qilindi";
             for (const [index, allocation] of allocations.entries()) {
@@ -1279,7 +1317,7 @@ export class OrdersService {
                 payment: allocation.payment,
                 orderItemId: itemId,
                 branchId: order.branchId,
-                shiftId: order.shiftId,
+                shiftId: refundShiftId,
                 employeeId,
                 createdById: user.id,
                 tenantId: user.tenantId ?? null,

@@ -27,6 +27,11 @@ function main(): void {
   assert.match(ordersService, /tx\.revenueRecord\.create/);
   assert.match(ordersService, /tx\.cashTransaction\.create/);
   assert.match(ordersService, /CashTransactionType\.SALE/);
+  assert.match(historyPage, /shiftId:\s*shift\.id/);
+  assert.doesNotMatch(historyPage, /orderDetail\?\.shiftId === shift\.id/);
+  assert.match(ordersService, /const cancellationShiftId = order\.shiftId \?\? context\?\.shiftId/);
+  assert.match(ordersService, /const refundShiftId = order\.shiftId \?\? context\?\.shiftId/);
+  assert.match(ordersService, /cashTransaction\.findMany/);
   assert.match(posPage, /\/cash-register\/shift/);
   assert.match(posPage, /router\.replace\("\/shift"\)/);
   assert.match(posPage, /CashierWorkspaceNavigation user=\{user\}/);

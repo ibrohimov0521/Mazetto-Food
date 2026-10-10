@@ -90,6 +90,12 @@ export class CancelOrderItemActionDto {
   @Min(1)
   expectedVersion!: number;
 
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  shiftId?: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(80)

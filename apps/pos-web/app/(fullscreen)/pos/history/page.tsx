@@ -279,7 +279,7 @@ export default function CashierHistoryPage() {
     hasPermission(user, "ORDER_UPDATE") &&
     hasPermission(user, "PAYMENT_REFUND") &&
     shift?.status === "OPEN" &&
-    orderDetail?.shiftId === shift.id &&
+    orderDetail !== null &&
     orderDetail.status !== "CANCELLED";
 
   async function reprint(receiptId: string) {
@@ -302,7 +302,7 @@ export default function CashierHistoryPage() {
   }
 
   async function cancelItem() {
-    if (!orderDetail || !cancelTarget || !cancelReason.trim()) return;
+    if (!orderDetail || shift?.status !== "OPEN" || !cancelTarget || !cancelReason.trim()) return;
     const itemId = cancelTarget.itemId;
     setCancellingItemId(itemId);
     setMessage("");
@@ -315,6 +315,7 @@ export default function CashierHistoryPage() {
           headers: { "Idempotency-Key": cancelTarget.idempotencyKey },
           signal: AbortSignal.timeout(15000),
           body: JSON.stringify({
+            shiftId: shift.id,
             expectedVersion: orderDetail.version,
             reasonCode: "CASHIER_ITEM_CANCELLED",
             reason: cancelReason.trim(),
