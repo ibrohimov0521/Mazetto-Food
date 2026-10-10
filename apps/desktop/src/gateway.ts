@@ -1836,7 +1836,7 @@ function validateOfflineShiftClose(
       return "Oflayn smenani yopish uchun kassaning saqlangan ochiq holati topilmadi.";
     }
     if (store.hasUnresolvedCashPostingMutations(authScope, branchId)) {
-      return "Oflayn buyurtma yoki naqd to'lov hali sinxronlanmagan. Smenani yopishdan oldin internetni tiklab, navbat yuborilishini kuting.";
+      return "Oflayn kassa amali hali sinxronlanmagan. Smenani yopishdan oldin internetni tiklab, navbat yuborilishini kuting.";
     }
     const hasUnresolvedTransfer =
       Array.isArray(shift.outgoingCashTransfers) &&

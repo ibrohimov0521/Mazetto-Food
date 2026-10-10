@@ -776,6 +776,81 @@ test("gateway queues only cash payments while offline", async () => {
   }
 });
 
+test("offline cash transactions block shift close until they sync", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-cash-close-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-offline-expense-close", "branch-1");
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      if (!online) throw new Error("offline");
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/health")) {
+        return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (url.pathname === "/api/v1/cash-register/shift") {
+        return jsonResponse({
+          success: true,
+          data: {
+            id: "cash-shift-expense-1",
+            branchId: "branch-1",
+            status: "OPEN",
+            openingBalance: "25000",
+            currentBalance: "25000",
+            expectedCash: "25000",
+            cashTransactions: [],
+          },
+        });
+      }
+      return jsonResponse({ success: true, data: {} });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const baseUrl = `http://127.0.0.1:${port}/api/v1/cash-register/shift`;
+    const headers = {
+      Authorization: authorization,
+      "Content-Type": "application/json",
+    };
+    assert.equal(
+      (await fetch(baseUrl, { headers: { Authorization: authorization } })).status,
+      200,
+    );
+
+    online = false;
+    const expense = await fetch(`${baseUrl}/cash-shift-expense-1/transactions`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-expense-before-close" },
+      body: JSON.stringify({ type: "EXPENSE", amount: 3_750, reason: "Xarid" }),
+    });
+    assert.equal(expense.status, 202);
+    assert.deepEqual(
+      store
+        .listActiveMutations(DesktopStore.mutationScope(authorization))
+        .map((command) => command.commandType),
+      ["cash.transaction.create"],
+    );
+
+    const close = await fetch(`${baseUrl}/cash-shift-expense-1/close`, {
+      method: "POST",
+      headers: { ...headers, "Idempotency-Key": "offline-close-after-expense" },
+      body: JSON.stringify({ closingBalance: 21_250 }),
+    });
+    assert.equal(close.status, 409);
+    assert.match((await close.json()).error.message, /kassa amali hali sinxronlanmagan/);
+    assert.equal(store.summary().pendingCommands, 1);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("offline payment is projected as paid and blocks unsafe shift close", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-payment-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
