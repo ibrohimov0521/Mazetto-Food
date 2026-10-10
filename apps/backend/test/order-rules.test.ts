@@ -19,6 +19,7 @@ import {
   summarizePosPayment,
   toStoredStatus,
   unavailableProductWhere,
+  withUniqueConstraintRetry,
 } from "../src/modules/orders/order-rules";
 import { PosOrderStatus } from "../src/modules/orders/dto/order-status.dto";
 import type { CreatePosCheckoutDto } from "../src/modules/orders/dto/pos-checkout.dto";
@@ -178,6 +179,50 @@ test("Prisma xato kodlari to'g'ri ajratiladi", () => {
   assert.equal(isRetryableTransactionConflict(new Error("boom")), false);
 });
 
+test("P2002 transaction retry is bounded and reruns the whole operation", async () => {
+  const unique = new Prisma.PrismaClientKnownRequestError("dup", {
+    code: "P2002",
+    clientVersion: "x",
+  });
+  let attempts = 0;
+
+  const result = await withUniqueConstraintRetry(async () => {
+    attempts += 1;
+    if (attempts < 3) throw unique;
+    return "created";
+  });
+
+  assert.equal(result, "created");
+  assert.equal(attempts, 3);
+});
+
+test("P2002 retry preserves the final database error and does not retry other errors", async () => {
+  const unique = new Prisma.PrismaClientKnownRequestError("dup", {
+    code: "P2002",
+    clientVersion: "x",
+  });
+  let attempts = 0;
+  await assert.rejects(
+    withUniqueConstraintRetry(async () => {
+      attempts += 1;
+      throw unique;
+    }),
+    (error) => error === unique,
+  );
+  assert.equal(attempts, 3);
+
+  const failure = new Error("database unavailable");
+  attempts = 0;
+  await assert.rejects(
+    withUniqueConstraintRetry(async () => {
+      attempts += 1;
+      throw failure;
+    }),
+    (error) => error === failure,
+  );
+  assert.equal(attempts, 1);
+});
+
 test("modifikator narxi miqdorga KO'PAYTIRILADI", () => {
   /*
    * "2 ta burger + pishloq" = (burger + pishloq) x 2. Agar modifikator
@@ -273,10 +318,13 @@ test("buyurtma raqami o'ziga xos va formatli", () => {
     Array.from({ length: 50 }, () => createOrderNumber()),
   );
   for (const value of numbers) {
-    assert.match(value, /^POS-\d{8}-\d{6}-[A-F0-9]{8}$/);
+    assert.match(value, /^POS-\d{8}-\d{6}-[A-F0-9]{12}$/);
   }
   // Bir soniyada yasalgan raqamlar ham asosan farq qilishi kerak.
   assert.ok(numbers.size > 40, `juda ko'p takror: ${numbers.size}/50`);
+  assert.match(createOrderNumber("WEB"), /^WEB-\d{8}-\d{6}-[A-F0-9]{12}$/);
+  assert.match(createOrderNumber("TG"), /^TG-\d{8}-\d{6}-[A-F0-9]{12}$/);
+  assert.match(createOrderNumber("WTR"), /^WTR-\d{8}-\d{6}-[A-F0-9]{12}$/);
 });
 
 /*
@@ -318,22 +366,20 @@ test("kassada zal buyurtmasi stol bilan ham, stolsiz ham qabul qilinadi", () => 
 test("zal buyurtmasi to'lovsiz oshxonaga yuboriladi, boshqa turda rad etiladi", () => {
   const unpaid = checkout({ type: OrderType.DINE_IN, payLater: true });
   delete unpaid.cashReceived;
-  assert.equal(
-    assertPosCheckoutType(unpaid),
-    OrderType.DINE_IN,
-  );
+  assert.equal(assertPosCheckoutType(unpaid), OrderType.DINE_IN);
   assert.throws(
     () => assertPosCheckoutType({ ...unpaid, type: OrderType.TAKEAWAY }),
     BadRequestException,
   );
   assert.throws(
-    () => assertPosCheckoutType({ ...unpaid, payments: [{ paymentMethodCode: "CASH", amount: 100 }] }),
+    () =>
+      assertPosCheckoutType({
+        ...unpaid,
+        payments: [{ paymentMethodCode: "CASH", amount: 100 }],
+      }),
     BadRequestException,
   );
-  const pending = summarizePosPayment(
-    unpaid,
-    new Prisma.Decimal(100),
-  );
+  const pending = summarizePosPayment(unpaid, new Prisma.Decimal(100));
   assert.deepEqual(pending.methods, []);
   assert.equal(pending.change, "0.00");
   const now = checkout({ type: OrderType.DINE_IN });

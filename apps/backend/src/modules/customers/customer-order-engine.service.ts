@@ -19,6 +19,10 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { BranchesService } from "../branches/branches.service";
 import { KitchenService } from "../kitchen/kitchen.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
+import {
+  createOrderNumber as createBusinessOrderNumber,
+  withUniqueConstraintRetry,
+} from "../orders/order-rules";
 import { OrdersService } from "../orders/orders.service";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { customerVisibleProductWhere } from "./customer-catalog-visibility";
@@ -136,171 +140,175 @@ export class CustomerOrderEngineService {
       );
 
       const correlationId = randomUUID();
-      const result = await this.prisma.$transaction(
-        async (tx) => {
-          const orderSource = options?.source ?? OrderSource.WEB;
-          const displayOrder = await allocateDisplayOrderNumber(
-            tx,
-            orderSource,
-          );
-          const order = await tx.order.create({
-            data: {
-              branchId: dto.branchId,
-              orderNumber: this.createOrderNumber(
-                options?.orderNumberPrefix ?? "WEB",
-              ),
-              ...displayOrder,
-              source: orderSource,
-              type:
-                dto.type === OnlineOrderTypeDto.DELIVERY
-                  ? OrderType.DELIVERY
-                  : OrderType.TAKEAWAY,
-              status: OrderStatus.NEW,
-              customerName: dto.name ?? customer.name,
-              customerPhone: dto.phone
-                ? normalizeCustomerPhone(dto.phone)
-                : customer.phone,
-              deliveryAddress: deliveryAddress ?? null,
-              ...(deliveryLocation ? { deliveryLocation } : {}),
-              notes: dto.notes ?? null,
-              kitchenComment:
-                dto.type === OnlineOrderTypeDto.DELIVERY
-                  ? `Delivery: ${deliveryAddress}`
-                  : "Pickup order",
-            },
-          });
-
-          let subtotal = new Prisma.Decimal(0);
-          for (const item of dto.items) {
-            const snapshot = await this.createItemSnapshot(
+      const createOrder = () =>
+        this.prisma.$transaction(
+          async (tx) => {
+            const orderSource = options?.source ?? OrderSource.WEB;
+            const displayOrder = await allocateDisplayOrderNumber(
               tx,
-              dto.branchId,
-              item,
+              orderSource,
             );
-            subtotal = subtotal.add(snapshot.totalPrice);
-            await tx.orderItem.create({
+            const order = await tx.order.create({
               data: {
-                orderId: order.id,
-                productId: item.productId,
-                variantId: item.variantId ?? null,
-                productName: snapshot.productName,
-                variantName: snapshot.variantName ?? null,
-                quantity: snapshot.quantity,
-                unitPrice: snapshot.unitPrice,
-                totalPrice: snapshot.totalPrice,
-                modifierSnapshot: snapshot.modifiers,
-                notes: item.notes ?? null,
+                branchId: dto.branchId,
+                orderNumber: createBusinessOrderNumber(
+                  options?.orderNumberPrefix ?? "WEB",
+                ),
+                ...displayOrder,
+                source: orderSource,
+                type:
+                  dto.type === OnlineOrderTypeDto.DELIVERY
+                    ? OrderType.DELIVERY
+                    : OrderType.TAKEAWAY,
+                status: OrderStatus.NEW,
+                customerName: dto.name ?? customer.name,
+                customerPhone: dto.phone
+                  ? normalizeCustomerPhone(dto.phone)
+                  : customer.phone,
+                deliveryAddress: deliveryAddress ?? null,
+                ...(deliveryLocation ? { deliveryLocation } : {}),
+                notes: dto.notes ?? null,
+                kitchenComment:
+                  dto.type === OnlineOrderTypeDto.DELIVERY
+                    ? `Delivery: ${deliveryAddress}`
+                    : "Pickup order",
               },
             });
-          }
 
-          const pricing = this.composeCustomerOrderPricing(
-            subtotal,
-            deliveryFee,
-          );
-          await this.recalculateOrderTotals(tx, order.id, pricing.deliveryFee);
-          await tx.orderStatusHistory.create({
-            data: {
+            let subtotal = new Prisma.Decimal(0);
+            for (const item of dto.items) {
+              const snapshot = await this.createItemSnapshot(
+                tx,
+                dto.branchId,
+                item,
+              );
+              subtotal = subtotal.add(snapshot.totalPrice);
+              await tx.orderItem.create({
+                data: {
+                  orderId: order.id,
+                  productId: item.productId,
+                  variantId: item.variantId ?? null,
+                  productName: snapshot.productName,
+                  variantName: snapshot.variantName ?? null,
+                  quantity: snapshot.quantity,
+                  unitPrice: snapshot.unitPrice,
+                  totalPrice: snapshot.totalPrice,
+                  modifierSnapshot: snapshot.modifiers,
+                  notes: item.notes ?? null,
+                },
+              });
+            }
+
+            const pricing = this.composeCustomerOrderPricing(
+              subtotal,
+              deliveryFee,
+            );
+            await this.recalculateOrderTotals(
+              tx,
+              order.id,
+              pricing.deliveryFee,
+            );
+            await tx.orderStatusHistory.create({
+              data: {
+                orderId: order.id,
+                toStatus: OrderStatus.NEW,
+                reason:
+                  options?.source === OrderSource.TELEGRAM
+                    ? "Telegram order created"
+                    : "Online order created",
+              },
+            });
+
+            await recordOrderEvent(tx, {
               orderId: order.id,
-              toStatus: OrderStatus.NEW,
-              reason:
-                options?.source === OrderSource.TELEGRAM
-                  ? "Telegram order created"
-                  : "Online order created",
-            },
-          });
-
-          await recordOrderEvent(tx, {
-            orderId: order.id,
-            branchId: dto.branchId,
-            aggregateVersion: order.version,
-            eventType: ORDER_EVENTS.PLACED,
-            actorType: "CUSTOMER",
-            actorId: customerId,
-            source:
-              options?.source === OrderSource.TELEGRAM
-                ? "TELEGRAM"
-                : "CUSTOMER_WEB",
-            newState: OrderState.PLACED,
-            payload: { legacyStatus: OrderStatus.NEW, type: order.type },
-            reasonCode:
-              options?.source === OrderSource.TELEGRAM
-                ? "TELEGRAM_ORDER_CREATED"
-                : "ONLINE_ORDER_CREATED",
-            correlationId,
-            idempotencyKey: dto.idempotencyKey,
-          });
-
-          const confirmed = await this.ordersService.confirmOrderForPreparation(
-            tx,
-            {
-              orderId: order.id,
-              reason:
-                options?.source === OrderSource.TELEGRAM
-                  ? "Telegram order accepted for preparation"
-                  : "Online order accepted for preparation",
+              branchId: dto.branchId,
+              aggregateVersion: order.version,
+              eventType: ORDER_EVENTS.PLACED,
+              actorType: "CUSTOMER",
+              actorId: customerId,
               source:
                 options?.source === OrderSource.TELEGRAM
                   ? "TELEGRAM"
                   : "CUSTOMER_WEB",
+              newState: OrderState.PLACED,
+              payload: { legacyStatus: OrderStatus.NEW, type: order.type },
+              reasonCode:
+                options?.source === OrderSource.TELEGRAM
+                  ? "TELEGRAM_ORDER_CREATED"
+                  : "ONLINE_ORDER_CREATED",
               correlationId,
               idempotencyKey: dto.idempotencyKey,
-              reasonCode: "ONLINE_ORDER_ACCEPTED",
-            },
-          );
+            });
 
-          const customerOrder = await tx.customerOrder.create({
-            data: {
-              customerId,
-              branchId: dto.branchId,
-              orderId: order.id,
-              type:
-                dto.type === OnlineOrderTypeDto.DELIVERY
-                  ? CustomerOrderType.DELIVERY
-                  : CustomerOrderType.PICKUP,
-              paymentMethod: dto.paymentMethod,
-              deliveryAddress: deliveryAddress ?? null,
-              ...(deliveryLocation ? { deliveryLocation } : {}),
-              notes: dto.notes ?? null,
-            },
-          });
+            const confirmed =
+              await this.ordersService.confirmOrderForPreparation(tx, {
+                orderId: order.id,
+                reason:
+                  options?.source === OrderSource.TELEGRAM
+                    ? "Telegram order accepted for preparation"
+                    : "Online order accepted for preparation",
+                source:
+                  options?.source === OrderSource.TELEGRAM
+                    ? "TELEGRAM"
+                    : "CUSTOMER_WEB",
+                correlationId,
+                idempotencyKey: dto.idempotencyKey,
+                reasonCode: "ONLINE_ORDER_ACCEPTED",
+              });
 
-          await tx.notificationOutbox.create({
-            data: {
-              tenantId: customer.tenantId,
-              dedupeKey: `staff_new_order:${order.id}`,
-              kind: "staff_new_order",
-              orderId: order.id,
-            },
-          });
-
-          if (attempt) {
-            await tx.customerOrderAttempt.update({
-              where: { id: attempt.id },
+            const customerOrder = await tx.customerOrder.create({
               data: {
-                status: CustomerOrderAttemptStatus.COMPLETED,
-                customerOrderId: customerOrder.id,
-                completedAt: new Date(),
+                customerId,
+                branchId: dto.branchId,
+                orderId: order.id,
+                type:
+                  dto.type === OnlineOrderTypeDto.DELIVERY
+                    ? CustomerOrderType.DELIVERY
+                    : CustomerOrderType.PICKUP,
+                paymentMethod: dto.paymentMethod,
+                deliveryAddress: deliveryAddress ?? null,
+                ...(deliveryLocation ? { deliveryLocation } : {}),
+                notes: dto.notes ?? null,
               },
             });
-          }
 
-          kitchenTicket = confirmed.kitchenTicket;
-          const operationalOrder = await tx.order.findUnique({
-            where: { id: order.id },
-            include: { items: true, kitchenTickets: true },
-          });
+            await tx.notificationOutbox.create({
+              data: {
+                tenantId: customer.tenantId,
+                dedupeKey: `staff_new_order:${order.id}`,
+                kind: "staff_new_order",
+                orderId: order.id,
+              },
+            });
 
-          return {
-            customerOrder: this.withDerivedCustomerOrderStatus({
-              ...customerOrder,
+            if (attempt) {
+              await tx.customerOrderAttempt.update({
+                where: { id: attempt.id },
+                data: {
+                  status: CustomerOrderAttemptStatus.COMPLETED,
+                  customerOrderId: customerOrder.id,
+                  completedAt: new Date(),
+                },
+              });
+            }
+
+            kitchenTicket = confirmed.kitchenTicket;
+            const operationalOrder = await tx.order.findUnique({
+              where: { id: order.id },
+              include: { items: true, kitchenTickets: true },
+            });
+
+            return {
+              customerOrder: this.withDerivedCustomerOrderStatus({
+                ...customerOrder,
+                order: operationalOrder,
+              }),
               order: operationalOrder,
-            }),
-            order: operationalOrder,
-          };
-        },
-        { timeout: 15000 },
-      );
+            };
+          },
+          { timeout: 15000 },
+        );
+      const result = await withUniqueConstraintRetry(createOrder);
 
       this.kitchenService.emitOrderCreated(result.order);
       this.kitchenService.emitOrderConfirmed(result.order);
@@ -672,9 +680,7 @@ export class CustomerOrderEngineService {
     branchId: string,
     items: OnlineOrderItemDto[],
   ) {
-    const snapshots: Awaited<
-      ReturnType<typeof this.createItemSnapshot>
-    >[] = [];
+    const snapshots: Awaited<ReturnType<typeof this.createItemSnapshot>>[] = [];
     // Interactive transactions use one PostgreSQL connection. Serial reads
     // avoid overlapping `pg` queries on that connection and keep pricing
     // deterministic when several cart lines reference the same stock rows.
@@ -836,13 +842,5 @@ export class CustomerOrderEngineService {
     }
 
     return status;
-  }
-
-  private createOrderNumber(prefix: string): string {
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-    const time = now.toISOString().slice(11, 19).replaceAll(":", "");
-
-    return `${prefix}-${date}-${time}-${randomUUID().slice(0, 8).toUpperCase()}`;
   }
 }

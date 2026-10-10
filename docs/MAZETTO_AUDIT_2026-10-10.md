@@ -76,3 +76,10 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - The inventory page now checks readiness for the selected branch (or the signed-in user's branch), avoids displaying a previous branch's late response, explains missing active warehouses and archived recipe ingredients, and links to recipe management only when the user has that permission. Global-scope users are prompted to choose a branch.
 - A green readiness message means only that the warehouse and recipe structure pass these checks. It does not prove that ingredient quantities are sufficient.
 - Focused validation passed: POS ESLint, TypeScript, tests 44/44, and optimized production build. The full repository CI/deploy workflow remains the release gate.
+
+## Audit continuation: generated business numbers
+
+- Rechecked historical finding AUD-005 against current code. Display order numbers use a transaction-scoped advisory lock; shift numbers use a branch-scoped advisory lock; POS checkout/order creation already retried unique-constraint conflicts. Customer/Telegram and waiter table-order transactions previously did not retry, and order/ticket identifiers used only eight random hex characters.
+- POS checkout/order, customer web/Telegram, and waiter table-order creation now use bounded whole-transaction P2002 retries. All business order numbers share one generator with their existing POS/WEB/TG/WTR prefixes and a 12-hex random suffix; the unused duplicate customer-order and waiter generators were removed. Kitchen ticket numbers also use a 12-hex suffix. Database uniqueness constraints remain authoritative.
+- Receipt numbers already use a 12-hex suffix with bounded candidate checks. A theoretical cross-transaction receipt collision remains constrained by the database unique index; no migration or numbering schema change was introduced.
+- Unit tests cover successful bounded retries, exhaustion, non-unique errors, and POS/WEB/TG/WTR number formats. Backend verification passed: all 550 tests, ESLint on touched source/test files, app and script TypeScript checks, and Nest build. Full CI and production release remain the release gate.
