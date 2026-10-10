@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CashTransactionType, Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { CashRegisterService } from "../src/modules/cash-register/cash-register.service";
 
@@ -10,6 +11,52 @@ const cashier: AuthenticatedUser = {
   roles: ["CASHIER"],
   permissions: ["SHIFT_VIEW_OWN"],
 };
+
+async function getCurrentCash(
+  openingBalance: number,
+  cashTransactions: { amount: number; type: CashTransactionType }[],
+) {
+  const service = new CashRegisterService(
+    {
+      branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+      shift: {
+        findFirst: async () => ({
+          id: "shift-a",
+          branchId: "branch-a",
+          employeeId: "employee-a",
+          openingBalance: new Prisma.Decimal(openingBalance),
+          cashTransactions: cashTransactions.map((transaction) => ({
+            ...transaction,
+            amount: new Prisma.Decimal(transaction.amount),
+          })),
+          revenueRecords: [],
+        }),
+      },
+    } as never,
+    {} as never,
+  );
+
+  return service.getCurrentShift(cashier);
+}
+
+test("current shift balance includes the opening float for a legacy shift without an opening ledger row", async () => {
+  const shift = await getCurrentCash(100000, [
+    { amount: 25000, type: CashTransactionType.SALE },
+    { amount: 10000, type: CashTransactionType.EXPENSE },
+  ]);
+
+  assert.equal(shift?.currentBalance.toFixed(0), "115000");
+});
+
+test("current shift balance does not count the opening float twice when its ledger row exists", async () => {
+  const shift = await getCurrentCash(100000, [
+    { amount: 100000, type: CashTransactionType.OPENING_BALANCE },
+    { amount: 25000, type: CashTransactionType.SALE },
+    { amount: 10000, type: CashTransactionType.EXPENSE },
+  ]);
+
+  assert.equal(shift?.currentBalance.toFixed(0), "115000");
+});
 
 test("cashier can read their own shift order history with requested filters", async () => {
   const captured: { orderQuery?: Record<string, unknown> } = {};

@@ -436,6 +436,10 @@ export class CashRegisterService {
       payment: { method: { code: string } } | null;
     }[];
   }) {
+    const hasOpeningTransaction = shift.cashTransactions.some(
+      (transaction) =>
+        transaction.type === CashTransactionType.OPENING_BALANCE,
+    );
     const currentBalance = shift.cashTransactions.reduce(
       (total, transaction) => {
         const amount = transaction.amount;
@@ -458,7 +462,7 @@ export class CashRegisterService {
 
         return total.add(amount);
       },
-      new Prisma.Decimal(0),
+      hasOpeningTransaction ? new Prisma.Decimal(0) : shift.openingBalance,
     );
 
     const paidRevenue = shift.revenueRecords.filter((record) => record.payment);
