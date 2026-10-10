@@ -276,7 +276,7 @@ export class PaymentsService {
         await tx.$executeRaw`SELECT id FROM "orders" WHERE id = ${dto.orderId} FOR UPDATE`;
         const order = await tx.order.findFirst({
           where: { id: dto.orderId, branch: { tenantId } },
-          include: { payments: true, receipts: true },
+          include: { payments: { include: { refunds: true } }, receipts: true },
         });
 
         if (!order) {
@@ -309,7 +309,7 @@ export class PaymentsService {
           );
         }
 
-        const existingPaidTotal = this.sumSuccessfulPayments(order.payments);
+        const existingPaidTotal = this.sumNetCollectedPayments(order.payments);
         const outstanding = order.total.sub(existingPaidTotal);
         const requestTotal = tenders.reduce(
           (total, tender) => total.add(tender.amount),
@@ -703,14 +703,27 @@ export class PaymentsService {
     );
   }
 
-  private sumSuccessfulPayments(
-    payments: { amount: Prisma.Decimal; status: PaymentStatus }[],
+  private sumNetCollectedPayments(
+    payments: {
+      amount: Prisma.Decimal;
+      status: PaymentStatus;
+      refunds?: { amount: Prisma.Decimal }[];
+    }[],
   ) {
     return payments.reduce(
-      (total, payment) =>
-        this.isSuccessfulPayment(payment.status)
-          ? total.add(payment.amount)
-          : total,
+      (total, payment) => {
+        const isCollected =
+          this.isSuccessfulPayment(payment.status) ||
+          payment.status === PaymentStatus.PARTIALLY_REFUNDED;
+        if (!isCollected) return total;
+
+        const refunded = (payment.refunds ?? []).reduce(
+          (refundTotal, refund) => refundTotal.add(refund.amount),
+          new Prisma.Decimal(0),
+        );
+        const netAmount = Prisma.Decimal.max(payment.amount.sub(refunded), 0);
+        return total.add(netAmount);
+      },
       new Prisma.Decimal(0),
     );
   }
