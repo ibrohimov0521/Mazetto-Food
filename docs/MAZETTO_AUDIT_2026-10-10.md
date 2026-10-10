@@ -272,3 +272,14 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Shift-detail history returned only the newest 200 cash transactions, with no total count or paging controls. A busy shift could therefore hide older ledger rows from the administrator's review.
 - The endpoint now returns a tenant- and branch-checked page plus the exact total, capped at 100 rows per request and ordered by timestamp then ID for stable paging. The admin shift detail shows 50 rows per page. Shared pagination now uses the total count to disable `Keyingi` on an exact full last page. The cashier's live shift summary is explicitly labelled as showing the latest 50 entries, not the complete ledger.
 - Added coverage for stable ordering, total count, page-size cap, and unknown-shift isolation. Focused tests passed 10/10; the full backend suite passed 575/575. Changed-file ESLint, backend and POS TypeScript checks, Nest and POS production builds, and `git diff --check` passed. CI and production deployment remain release gates; no schema migration is needed.
+
+## Release confirmation: cash transaction history pagination
+
+- PR #287 was squash-merged as `8b220d0063aa51e6ee8a13d326f3e1be91747b8d`; main CI run #807 and production Deploy #321 completed successfully. The `production` tag points to the merge commit.
+- Dokploy's first attempts hit a transient GitHub HTTP/2 fetch cancellation (`early EOF`); retry succeeded. Independent production smoke passed 27/27, and backend, customer web, POS, platform admin, and Telegram services are running the released build. The print agent remains workstation-managed and is not deployed by Dokploy.
+
+## Audit continuation: cash transaction API rollout compatibility
+
+- Backend-first deployment exposed a version-compatibility risk: older POS clients call the cash-transaction endpoint without pagination parameters and expect an array, while the new paginated client expects `{ items, total }`.
+- Keep the original array response and 200-row cap when no page parameters are supplied; requests with page parameters receive the bounded page envelope and exact total. This allows backend and POS to roll out independently.
+- Regression coverage verifies both response contracts. Validation passed: backend tests 576/576, changed-file ESLint, backend app/scripts TypeScript checks, Nest build, and `git diff --check`. CI and production deployment remain release gates; no schema change is required.
