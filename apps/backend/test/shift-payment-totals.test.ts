@@ -37,7 +37,7 @@ test("smena hisobotida Uzcard va Humo terminalga, naqd esa kassaga yoziladi", ()
   assert.equal(totals.orderCount, 6);
 });
 
-test("keyingi smenadagi refund avvalgi smena naqd tushumini qayta qo'shmaydi", async () => {
+test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qayta qo'shmaydi", async () => {
   const shiftState: Record<string, unknown> = {
     id: "shift-b",
     branchId: "branch-a",
@@ -82,12 +82,20 @@ test("keyingi smenadagi refund avvalgi smena naqd tushumini qayta qo'shmaydi", a
     },
     order: {
       count: async (args: {
-        where: { revenueRecords: { some: { shiftId: string } } };
+        where: {
+          OR: [
+            { shiftId: string },
+            { revenueRecords: { some: { shiftId: string } } },
+          ];
+        };
       }) => {
-        assert.deepEqual(args.where.revenueRecords.some, {
-          shiftId: "shift-b",
-        });
-        return 1;
+        assert.deepEqual(args.where.OR, [
+          { shiftId: "shift-b" },
+          { revenueRecords: { some: { shiftId: "shift-b" } } },
+        ]);
+        // The direct shift order is an unpaid DINE_IN order; the other is a
+        // legacy/refund-linked order that only has a revenue-record relation.
+        return 2;
       },
     },
   };
@@ -117,6 +125,6 @@ test("keyingi smenadagi refund avvalgi smena naqd tushumini qayta qo'shmaydi", a
   assert.equal((closeData.cashTotal as Prisma.Decimal).toFixed(0), "0");
   assert.equal((closeData.refundsTotal as Prisma.Decimal).toFixed(0), "24000");
   assert.equal((closeData.salesTotal as Prisma.Decimal).toFixed(0), "0");
-  assert.equal(closeData.orderCount, 1);
+  assert.equal(closeData.orderCount, 2);
   assert.equal((closeData.cashDifference as Prisma.Decimal).toFixed(0), "0");
 });

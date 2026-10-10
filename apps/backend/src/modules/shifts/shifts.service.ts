@@ -2090,7 +2090,14 @@ export class ShiftsService {
         include: { method: true },
       }),
       tx.cashTransaction.findMany({ where: shiftRevenue }),
-      tx.order.count({ where: { revenueRecords: { some: shiftRevenue } } }),
+      tx.order.count({
+        where: {
+          OR: [
+            { shiftId: shift.id },
+            { revenueRecords: { some: shiftRevenue } },
+          ],
+        },
+      }),
     ]);
     const totals = this.calculateShiftTotals(
       payments,
