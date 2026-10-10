@@ -25,7 +25,11 @@ import { SettingsService } from "../settings/settings.service";
 import { isCashierPaymentMethodCode } from "../settings/setting-rules";
 import { ensureOrderReceipt } from "../receipts/receipt-writer";
 import { writeAuditLog } from "../audit/audit-write";
-import { recordCashRefund, type RefundablePayment } from "./refund-ledger";
+import {
+  recordCashRefund,
+  sumNetCollectedPayments,
+  type RefundablePayment,
+} from "./refund-ledger";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { ListPaymentsDto } from "./dto/list-payments.dto";
@@ -309,7 +313,7 @@ export class PaymentsService {
           );
         }
 
-        const existingPaidTotal = this.sumNetCollectedPayments(order.payments);
+        const existingPaidTotal = sumNetCollectedPayments(order.payments);
         const outstanding = order.total.sub(existingPaidTotal);
         const requestTotal = tenders.reduce(
           (total, tender) => total.add(tender.amount),
@@ -700,31 +704,6 @@ export class PaymentsService {
         return refund;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
-  }
-
-  private sumNetCollectedPayments(
-    payments: {
-      amount: Prisma.Decimal;
-      status: PaymentStatus;
-      refunds?: { amount: Prisma.Decimal }[];
-    }[],
-  ) {
-    return payments.reduce(
-      (total, payment) => {
-        const isCollected =
-          this.isSuccessfulPayment(payment.status) ||
-          payment.status === PaymentStatus.PARTIALLY_REFUNDED;
-        if (!isCollected) return total;
-
-        const refunded = (payment.refunds ?? []).reduce(
-          (refundTotal, refund) => refundTotal.add(refund.amount),
-          new Prisma.Decimal(0),
-        );
-        const netAmount = Prisma.Decimal.max(payment.amount.sub(refunded), 0);
-        return total.add(netAmount);
-      },
-      new Prisma.Decimal(0),
     );
   }
 

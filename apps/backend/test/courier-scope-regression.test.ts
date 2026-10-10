@@ -47,28 +47,45 @@ test("courier history filters are applied by the backend request", () => {
   assert.match(courierUiSource, /\}, \[historySearch, historyStatus\]\);/);
 });
 
-test("courier orders expose only the unpaid balance, including partial payments", async () => {
+test("courier orders expose the net unpaid balance after partial payments and refunds", async () => {
   const fixtures = [
-    { status: "PAID", amount: 180000, expected: "0" },
-    { status: "SUCCESS", amount: 135000, expected: "45000" },
-    { status: "PENDING", amount: 180000, expected: "180000" },
+    { status: "PAID", amount: 180000, orderTotal: 180000, refunds: [], expected: "0" },
+    { status: "SUCCESS", amount: 135000, orderTotal: 180000, refunds: [], expected: "45000" },
+    { status: "PENDING", amount: 180000, orderTotal: 180000, refunds: [], expected: "180000" },
+    {
+      status: "PARTIALLY_REFUNDED",
+      amount: 74000,
+      orderTotal: 74000,
+      refunds: [24000],
+      expected: "24000",
+    },
   ];
+  let paymentSelection: unknown;
   const prisma = {
     customerOrder: {
-      findMany: async () => fixtures.map((fixture, index) => ({
-        id: `delivery-${index}`,
-        type: "DELIVERY",
-        branch: null,
-        order: {
-          id: `order-${index}`,
-          status: "READY",
-          total: new Prisma.Decimal(180000),
-          payments: [{
-            amount: new Prisma.Decimal(fixture.amount),
-            status: fixture.status,
-          }],
-        },
-      })),
+      findMany: async (args: { include: Record<string, unknown> }) => {
+        paymentSelection = (
+          (((args.include.order as Record<string, unknown>).include as Record<string, unknown>)
+            .payments as Record<string, unknown>)
+        ).select;
+        return fixtures.map((fixture, index) => ({
+          id: `delivery-${index}`,
+          type: "DELIVERY",
+          branch: null,
+          order: {
+            id: `order-${index}`,
+            status: "READY",
+            total: new Prisma.Decimal(fixture.orderTotal),
+            payments: [{
+              amount: new Prisma.Decimal(fixture.amount),
+              status: fixture.status,
+              refunds: fixture.refunds.map((amount) => ({
+                amount: new Prisma.Decimal(amount),
+              })),
+            }],
+          },
+        }));
+      },
     },
     restaurantTenant: {
       findFirst: async () => ({ id: "tenant-a" }),
@@ -89,5 +106,10 @@ test("courier orders expose only the unpaid balance, including partial payments"
   const service = new CustomerCourierService(prisma, {} as never, {} as never);
   const orders = await service.listCourierDeliveryOrders(new ListOnlineOrdersDto(), user);
   assert.deepEqual(orders.map((item) => item.order.outstandingAmount), fixtures.map((item) => item.expected));
+  assert.deepEqual(paymentSelection, {
+    amount: true,
+    status: true,
+    refunds: { select: { amount: true } },
+  });
   assert.ok(orders.every((item) => !("payments" in item.order)));
 });

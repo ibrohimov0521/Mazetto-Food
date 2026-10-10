@@ -32,6 +32,7 @@ import {
   recordOrderEvent,
 } from "../orders/order-events";
 import { KitchenGateway } from "./kitchen.gateway";
+import { sumNetCollectedPayments } from "../payments/refund-ledger";
 import { orderStatusAfterKitchenHandoff } from "./kitchen-status-sync";
 import {
   kitchenHistoryModifiers,
@@ -541,22 +542,7 @@ export class KitchenService {
         transition.orderStatus === OrderStatus.COMPLETED &&
         order.type === OrderType.TAKEAWAY
       ) {
-        const paidTotal = order.payments
-          .filter(
-            (payment) =>
-              payment.status === PaymentStatus.PAID ||
-              payment.status === PaymentStatus.SUCCESS ||
-              payment.status === PaymentStatus.PARTIALLY_REFUNDED,
-          )
-          .reduce((total, payment) => {
-            const refunded = payment.refunds.reduce(
-              (sum, refund) => sum.add(refund.amount),
-              new Prisma.Decimal(0),
-            );
-            return total.add(
-              Prisma.Decimal.max(payment.amount.sub(refunded), 0),
-            );
-          }, new Prisma.Decimal(0));
+        const paidTotal = sumNetCollectedPayments(order.payments);
         if (order.total.greaterThan(paidTotal)) {
           throw new BadRequestException(
             "Olib ketish buyurtmasini topshirishdan oldin kassada to'lovni qabul qiling",

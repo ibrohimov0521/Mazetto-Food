@@ -108,8 +108,14 @@ test("courier payment, status event, and idempotency completion share one transa
       status: OrderStatus.READY,
       orderState: "READY",
       servedById: null,
-      total: new Prisma.Decimal(42_000),
-      payments: [],
+      total: new Prisma.Decimal(74_000),
+      payments: [
+        {
+          amount: new Prisma.Decimal(74_000),
+          status: "PARTIALLY_REFUNDED",
+          refunds: [{ amount: new Prisma.Decimal(24_000) }],
+        },
+      ],
     },
   };
   const result = {
@@ -201,7 +207,7 @@ test("courier payment, status event, and idempotency completion share one transa
     "customer-order-b",
     {
       status: "COMPLETED",
-      amount: 42_000,
+      amount: 24_000,
       shiftId: "courier-shift-a",
       paymentMethodCode: "CASH",
     } as never,
@@ -211,6 +217,10 @@ test("courier payment, status event, and idempotency completion share one transa
 
   assert.equal(paymentCalls, 1);
   assert.equal(paymentInput?.idempotencyKey, "courier-status-key-b");
+  assert.equal(
+    (paymentInput?.payments as { amount: number }[] | undefined)?.[0]?.amount,
+    24_000,
+  );
   assert.equal(paymentTransaction, tx);
   assert.equal(completedInsideTransaction, true);
   assert.equal(eventInput?.idempotencyKey, "courier-status-key-b");

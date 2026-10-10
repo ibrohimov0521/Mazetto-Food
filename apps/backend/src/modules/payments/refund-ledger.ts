@@ -19,6 +19,31 @@ export type RefundablePayment = {
   refunds: { amount: Prisma.Decimal }[];
 };
 
+export function sumNetCollectedPayments(
+  payments: {
+    amount: Prisma.Decimal;
+    status: PaymentStatus;
+    refunds?: { amount: Prisma.Decimal }[];
+  }[],
+) {
+  return payments.reduce(
+    (total, payment) => {
+      const isCollected =
+        payment.status === PaymentStatus.PAID ||
+        payment.status === PaymentStatus.SUCCESS ||
+        payment.status === PaymentStatus.PARTIALLY_REFUNDED;
+      if (!isCollected) return total;
+
+      const refunded = (payment.refunds ?? []).reduce(
+        (refundTotal, refund) => refundTotal.add(refund.amount),
+        new Prisma.Decimal(0),
+      );
+      return total.add(Prisma.Decimal.max(payment.amount.sub(refunded), 0));
+    },
+    new Prisma.Decimal(0),
+  );
+}
+
 export type CashRefundAllocation = {
   payment: RefundablePayment;
   amount: Prisma.Decimal;

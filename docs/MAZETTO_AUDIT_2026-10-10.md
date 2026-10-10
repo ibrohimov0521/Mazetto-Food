@@ -167,3 +167,18 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 
 - The main sales report retains partially refunded tenders as gross collected revenue and lists refunds separately, but the admin dashboard fallback summary filtered them out completely. If the detailed report failed or was unavailable, the same day's revenue number could be lower than the sales report.
 - Dashboard summary now includes `PARTIALLY_REFUNDED`, while continuing to exclude fully refunded payments, matching the existing report rule. A tenant-scope regression asserts the exact status filter. Local validation passed: backend tests 566/566, focused dashboard/report tests 2/2, ESLint, backend TypeScript check, Nest build, and `git diff --check`. No migration is needed; PR CI and production release remain the gate.
+
+## Release confirmation: shift refund accounting
+
+- PR #275 was squash-merged as `9193fee58e592c3bcf8271f1e29953fbda00ddc5`; main CI and production Deploy #309 succeeded. The `production` tag points to that commit.
+- Read-only production checks returned HTTP 200 for API health, POS history, and the customer site.
+
+## Release confirmation: dashboard partial-refund revenue
+
+- PR #276 was squash-merged as `2a698a7755c3c9fbf24adb68dc3ff38f2ac476a0`; main CI and production Deploy #310 succeeded. The `production` tag points to that commit.
+- Read-only production checks returned HTTP 200 for API health, POS history, and the customer site. The server checkout is clean on `main` at the deployed commit.
+
+## Audit continuation: courier balance after a partial refund
+
+- Courier delivery lists and completion logic counted only `PAID`/`SUCCESS` payment rows and did not load refund details. A partially refunded order could show too much due and ask the courier to collect more than its net outstanding balance.
+- The same net-collected payment calculation is now shared across cashier collection, kitchen handoff, and courier list/completion paths; courier queries load refund amounts. Regression coverage verifies the displayed 24,000 so'm balance, the exact amount collected on courier completion, and common net calculations for partial, full, and failed tenders. Local validation passed: backend tests 567/567, transient retry tests 3/3, focused courier/refund tests 10/10, ESLint, backend app/script TypeScript checks, Nest build, and `git diff --check`. No migration is needed; PR CI and production release remain the gate.
