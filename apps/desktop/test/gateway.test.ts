@@ -1006,7 +1006,62 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
       200,
     );
 
+    const cacheScope = DesktopStore.authScope(authorization);
+    const cachedShift = store.getLatestCachedResponse(
+      cacheScope,
+      "/api/v1/cash-register/shift",
+    );
+    const cachedOrders = store.getLatestCachedResponse(
+      cacheScope,
+      "/api/v1/orders",
+    );
+    assert.ok(cachedShift);
+    assert.ok(cachedOrders);
+    const staleAt = new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString();
+
     online = false;
+    store.putCachedResponse({ ...cachedShift, cachedAt: staleAt });
+    const staleShiftPayment = await fetch(`${baseUrl}/payments/process`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: "order-offline-1",
+        shiftId: "shift-offline-1",
+        idempotencyKey: "offline-payment-stale-shift",
+        payments: [{ paymentMethodCode: "CASH", amount: "42000" }],
+      }),
+    });
+    assert.equal(staleShiftPayment.status, 409);
+    assert.match(
+      (await staleShiftPayment.json()).error.message,
+      /keshi eskirgan/,
+    );
+    store.putCachedResponse({
+      ...cachedShift,
+      cachedAt: new Date().toISOString(),
+    });
+
+    store.putCachedResponse({ ...cachedOrders, cachedAt: staleAt });
+    const staleOrderPayment = await fetch(`${baseUrl}/payments/process`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: "order-offline-1",
+        shiftId: "shift-offline-1",
+        idempotencyKey: "offline-payment-stale-order",
+        payments: [{ paymentMethodCode: "CASH", amount: "42000" }],
+      }),
+    });
+    assert.equal(staleOrderPayment.status, 409);
+    assert.match(
+      (await staleOrderPayment.json()).error.message,
+      /keshi eskirgan/,
+    );
+    store.putCachedResponse({
+      ...cachedOrders,
+      cachedAt: new Date().toISOString(),
+    });
+
     const otherCashierPayment = await fetch(`${baseUrl}/payments/process`, {
       method: "POST",
       headers: {

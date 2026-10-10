@@ -21,6 +21,7 @@ import {
 const KNOWN_OFFLINE_ERROR = new Error(
   "Desktop upstream is already marked offline",
 );
+const OFFLINE_CASH_PAYMENT_SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const UPSTREAM_UNAVAILABLE_STATUSES = new Set([
   502, 503, 504, 521, 522, 523, 524,
 ]);
@@ -1947,6 +1948,13 @@ function validateOfflineCashPayment(
       order: null,
     };
   }
+  if (!isFreshOfflineCashPaymentSnapshot(cachedShift)) {
+    return {
+      error:
+        "Kassa smenasi keshi eskirgan. Oflayn pul qabul qilishdan oldin internetda smenani yangilang.",
+      order: null,
+    };
+  }
   const projectedShift = applyOptimisticProjection(
     cachedShift.body,
     cachedShift.requestUrl,
@@ -1979,12 +1987,22 @@ function validateOfflineCashPayment(
   }
 
   const detailPath = `/api/v1/orders/${encodeURIComponent(orderId)}`;
-  const cachedOrderResponses = [
+  const availableOrderResponses = [
     store.getLatestCachedResponse(cacheScope, detailPath),
     store.getLatestCachedResponse(cacheScope, "/api/v1/orders"),
   ]
     .filter((cached): cached is CachedResponse => Boolean(cached))
     .sort((left, right) => right.cachedAt.localeCompare(left.cachedAt));
+  const cachedOrderResponses = availableOrderResponses.filter(
+    isFreshOfflineCashPaymentSnapshot,
+  );
+  if (!cachedOrderResponses.length && availableOrderResponses.length) {
+    return {
+      error:
+        "Buyurtma keshi eskirgan. Oflayn pul qabul qilishdan oldin kassa buyurtmalarini internetda yangilang.",
+      order: null,
+    };
+  }
   let order: Record<string, unknown> | null = null;
   for (const cached of cachedOrderResponses) {
     const projected = applyOptimisticProjection(
@@ -2092,6 +2110,16 @@ function validateOfflineCashPayment(
   }
 
   return { error: null, order };
+}
+
+function isFreshOfflineCashPaymentSnapshot(cached: CachedResponse): boolean {
+  const cachedAt = Date.parse(cached.cachedAt);
+  const age = Date.now() - cachedAt;
+  return (
+    Number.isFinite(cachedAt) &&
+    age >= 0 &&
+    age <= OFFLINE_CASH_PAYMENT_SNAPSHOT_MAX_AGE_MS
+  );
 }
 
 function buildOfflinePaymentReceiptDocument(
