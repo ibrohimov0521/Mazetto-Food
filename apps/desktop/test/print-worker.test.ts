@@ -940,6 +940,69 @@ test("server replay is completed without duplicate paper when local document alr
   assert.equal(completed, 1);
 });
 
+test("manual server reprint reaches the printer even when the original was printed locally", async () => {
+  let completed = 0;
+  let physicalPrints = 0;
+  let claimed = false;
+  let printedContent: Record<string, unknown> | undefined;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (_deviceName, receipt) => {
+      physicalPrints += 1;
+      printedContent = receipt.content ?? undefined;
+    },
+    localQueue: {
+      claim: () => null,
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: () => true,
+    },
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-reprint-1",
+          receiptId: "receipt-1",
+          leaseToken: "lease-1",
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "M-1",
+            items: [{ name: "Lavash", quantity: "1", total: "36000" }],
+            __bestteamAllowLocalReprint: true,
+          },
+          receipt: { orderId: "server-order-1" },
+          printer: null,
+        });
+      }
+      if (url.endsWith("/complete")) {
+        completed += 1;
+        return jsonResponse({});
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(physicalPrints, 1);
+  assert.equal(completed, 1);
+  assert.deepEqual(printedContent, {
+    documentType: "RECEIPT",
+    orderNumber: "M-1",
+    items: [{ name: "Lavash", quantity: "1", total: "36000" }],
+  });
+});
+
 test("print worker does not claim a job when no printer is ready", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const worker = createWorker(async (input, init) => {

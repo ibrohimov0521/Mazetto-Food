@@ -248,7 +248,7 @@ export class ReceiptsService {
         data: { printed: false, printedAt: null },
       });
       if (updated.count !== 1) throw new NotFoundException("Receipt not found");
-      await queuePrintJobsForReceipt(tx, receipt);
+      await queuePrintJobsForReceipt(tx, receipt, { allowLocalReprint: true });
     });
     return this.getReceipt(id, user);
   }

@@ -62,6 +62,7 @@ type PrintJob = {
     metadata?: PrinterMetadata | null;
   } | null;
 };
+const ALLOW_LOCAL_REPRINT_KEY = "__bestteamAllowLocalReprint";
 
 export type PrintableReceipt = {
   receiptNumber?: string;
@@ -301,6 +302,7 @@ export class DesktopPrintWorker {
         ));
       const route = receiptRoute(receipt);
       if (
+        job.payload?.[ALLOW_LOCAL_REPRINT_KEY] !== true &&
         receipt.orderId &&
         this.localQueue?.wasPrinted(receipt.orderId, route)
       ) {
@@ -922,13 +924,18 @@ function printableReceiptFromJob(job: PrintJob): PrintableReceipt | null {
       ? job.payload.documentType
       : job.receipt?.documentType;
   if (!documentType) return null;
+  const content = Object.fromEntries(
+    Object.entries(job.payload).filter(
+      ([key]) => key !== ALLOW_LOCAL_REPRINT_KEY,
+    ),
+  );
   return {
     ...(job.receipt?.receiptNumber
       ? { receiptNumber: job.receipt.receiptNumber }
       : {}),
     ...(job.receipt?.orderId ? { orderId: job.receipt.orderId } : {}),
     documentType,
-    content: job.payload,
+    content,
   };
 }
 
