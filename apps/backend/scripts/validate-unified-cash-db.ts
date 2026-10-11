@@ -288,6 +288,64 @@ async function main() {
     );
     assert.equal(await prisma.payment.count({ where: { orderId: card.order.id } }), 0);
     assert.equal(await balance(), 10250, "card revenue is not physical cash");
+    const refundOperator = await actor("RefundOperator", ["CASHIER"]);
+    const refundShift = await shifts.openShift({ openingBalance: 0 }, refundOperator);
+    const refundableOrder = await online("TAKEAWAY", 9000);
+    await payments.processOrderPayment(
+      {
+        orderId: refundableOrder.order.id,
+        idempotencyKey: "qa-refund-sale-" + id,
+        shiftId: refundShift.id,
+        payments: [{ paymentMethodCode: "CASH", amount: 9000 }],
+      },
+      refundOperator,
+    );
+    const refundablePayment = await prisma.payment.findFirstOrThrow({
+      where: { orderId: refundableOrder.order.id },
+    });
+    const refundAttempts = await Promise.allSettled([
+      payments.refundPayment(
+        refundablePayment.id,
+        {
+          shiftId: refundShift.id,
+          amount: 7000,
+          reason: "QA parallel refund A",
+          idempotencyKey: "qa-refund-a-" + id,
+        },
+        refundOperator,
+      ),
+      payments.refundPayment(
+        refundablePayment.id,
+        {
+          shiftId: refundShift.id,
+          amount: 7000,
+          reason: "QA parallel refund B",
+          idempotencyKey: "qa-refund-b-" + id,
+        },
+        refundOperator,
+      ),
+    ]);
+    assert.equal(
+      refundAttempts.filter((result) => result.status === "fulfilled").length,
+      1,
+      "concurrent refunds cannot both consume the same refundable balance",
+    );
+    const refundRows = await prisma.paymentRefund.findMany({
+      where: { paymentId: refundablePayment.id },
+    });
+    const totalRefunded = refundRows.reduce(
+      (total, refund) => total + refund.amount.toNumber(),
+      0,
+    );
+    assert.equal(totalRefunded, 7000);
+    assert.equal(await balance(refundOperator), 2000);
+    assert.equal(
+      (await prisma.order.findUniqueOrThrow({
+        where: { id: refundableOrder.order.id },
+      })).paymentStatus,
+      PaymentStatus.PENDING,
+    );
+
     const closed = await shifts.closeShift(sourceShift.id, { closingBalance: 10250 }, worker);
     assert.equal(closed.cashDifference?.toNumber(), 0);
     assert.equal(closed.cashTotal.toNumber(), 60000);
@@ -335,7 +393,7 @@ async function main() {
     assert.equal(await prisma.cashTransaction.count({
       where: { orderId: diningOrder.id, shiftId: replacementTargetShift.id, employeeId: receiver.employeeId },
     }), 1);
-    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
+    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, concurrent refund bounds, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
   } finally { await prisma.onModuleDestroy(); }
 }
 void main();

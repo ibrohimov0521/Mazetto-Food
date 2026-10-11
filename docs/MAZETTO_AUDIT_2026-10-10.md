@@ -634,3 +634,9 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Cash refund creation and idempotent replay now perform the same active-employee/branch check before reading a prior refund result or writing a new refund. Regression coverage verifies inactive employees are rejected both before the first refund and when replaying a completed refund, without extra ledger writes.
 - Verification passed: `pnpm verify` and `pnpm test` completed successfully across all eight workspace packages, including 33 operational validators; backend tests passed 627/627 plus HTTP retry tests 3/3. The focused ESLint, backend application/scripts typechecks, and Nest production build also passed. The read-only production smoke separately passed 27/27 against the currently deployed baseline, which does not include this source change.
 - This source-only continuation has not been pushed, merged, or deployed. No production service or database has been changed.
+
+## Audit continuation: parallel refund ledger verification (2026-10-11)
+
+- The disposable PostgreSQL unified-cash validator covered concurrent order completion and transfers but did not exercise competing refund requests against one payment. Added a parallel 7,000 + 7,000 so'm refund attempt against one 9,000 so'm cash payment. The invariant asserts exactly one request can consume the current refundable amount, the total refund remains 7,000, the remaining shift cash is 2,000, and the order returns to PENDING.
+- The scenario passed against an isolated PostgreSQL 18 database after all 59 migrations. Its temporary no-volume container was removed; no shared development, staging, or production database was used.
+- The validator addition still requires repository CI on its next push.
