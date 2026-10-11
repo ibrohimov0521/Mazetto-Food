@@ -12,6 +12,7 @@
 # Branch protection shu `verify` ni `main` uchun majburiy qiladi — u yashil
 # bo'lmaguncha PR merge qilinmaydi. Relizdan oldin server'da
 # `pnpm release:gate` aynan o'sha commit'ning `verify` natijasini so'raydi.
+# `verify` Windows desktop installer build tugashini ham kutadi, ammo nashr qilmaydi.
 # Batafsil: docs/CI_CD.md.
 #
 # Deploy alohida: deploy.yml shu check yashil tugagach, yangi migratsiyasi
@@ -39,6 +40,39 @@ permissions:
   contents: read
 
 jobs:
+  windows-desktop-package:
+    name: windows-desktop-package
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        shell: pwsh
+        run: corepack enable
+
+      - name: Install
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop shell
+        shell: pwsh
+        run: pnpm --filter mazetto-desktop build
+
+      - name: Build bundled POS UI
+        shell: pwsh
+        run: pnpm --filter mazetto-desktop build:ui
+
+      - name: Build Windows installer without publishing
+        shell: pwsh
+        run: pnpm --filter mazetto-desktop exec electron-builder --win nsis --publish never
+
   verify:
     # Bu nom branch protection'dagi majburiy check nomi va release gate ham
     # uni qidiradi. O'zgartirilsa ikkalasini ham yangilang, aks holda PR'lar
@@ -46,6 +80,7 @@ jobs:
     #
     # Shu sababli `paths-ignore` ham YO'Q: faqat hujjat o'zgargan PR'da check
     # umuman yurmasa, majburiy check hech qachon kelmaydi va PR bloklanadi.
+    needs: windows-desktop-package
     name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
