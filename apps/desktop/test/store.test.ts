@@ -799,6 +799,126 @@ test("offline mutation rolls back when a local print job cannot be serialized", 
   }
 });
 
+test("outbox cancellation blocks financial or already-sent mutations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-outbox-cancel-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  try {
+    const payment = store.enqueueMutation({
+      idempotencyKey: "cancel-payment-key",
+      commandType: "payment.process",
+      aggregateType: "payments",
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "POST",
+        body: JSON.stringify({ orderId: "order-12345678" }),
+      },
+    });
+    assert.equal(store.listOutbox()[0]?.canCancel, false);
+    assert.equal(store.cancelMutation(payment.id), false);
+
+    const sent = store.enqueueMutation({
+      idempotencyKey: "cancel-sent-key",
+      commandType: "order.status.update",
+      aggregateType: "orders",
+      aggregateId: "order-12345678",
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "PATCH",
+        targetUrl: "https://api.test/orders/order-12345678/status",
+      },
+    });
+    assert.equal(store.markMutationSending(sent.id), true);
+    store.markMutationPending(sent.id, "connection reset");
+    assert.equal(store.cancelMutation(sent.id), false);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("outbox cancellation atomically stops its unprinted cancellation document", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-outbox-print-cancel-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  try {
+    const orderId = "order-cancel-12345678";
+    const command = store.enqueueMutation({
+      idempotencyKey: "cancel-unsent-status-key",
+      commandType: "order.status.update",
+      aggregateType: "orders",
+      aggregateId: orderId,
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "PATCH",
+        body: JSON.stringify({ status: "CANCELLED" }),
+      },
+    });
+    store.enqueueLocalPrintJob({
+      logicalKey: orderId + ":CANCELLATION",
+      branchId: "branch-1",
+      documentType: "CANCELLATION",
+      payload: { orderId },
+    });
+
+    assert.equal(store.listOutbox()[0]?.canCancel, true);
+    assert.equal(store.cancelMutation(command.id), true);
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.claimLocalPrintJob(["CANCELLATION"]), null);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("outbox cancellation refuses an order mutation with a dependent command", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-outbox-dependent-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  try {
+    const orderId = "order-dependent-12345678";
+    const parent = store.enqueueMutation({
+      idempotencyKey: "cancel-parent-key",
+      commandType: "order.status.update",
+      aggregateType: "orders",
+      aggregateId: orderId,
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "PATCH",
+        targetUrl: "https://api.test/orders/" + orderId + "/status",
+      },
+    });
+    store.enqueueMutation({
+      idempotencyKey: "cancel-child-key",
+      commandType: "kitchen.action",
+      aggregateType: "kitchen",
+      aggregateId: orderId,
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "other-cashier-scope",
+      payload: {
+        method: "PATCH",
+        targetUrl: "https://api.test/kitchen/orders/" + orderId + "/ready",
+      },
+    });
+
+    assert.equal(
+      store.listOutbox().find((item) => item.id === parent.id)?.canCancel,
+      false,
+    );
+    assert.equal(store.cancelMutation(parent.id), false);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("local print retries back off and stop at the dead-letter limit", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
@@ -951,8 +1071,9 @@ test("desktop store lists, retries and cancels queued mutations", async () => {
     assert.equal(store.retryMutation(command.id), true);
     assert.equal(store.summary().pendingCommands, 1);
 
-    assert.equal(store.cancelMutation(command.id), true);
-    assert.equal(store.listOutbox().length, 0);
+    assert.equal(store.listOutbox()[0]?.canCancel, false);
+    assert.equal(store.cancelMutation(command.id), false);
+    assert.equal(store.listOutbox().length, 1);
   } finally {
     store.close();
     await rm(directory, { recursive: true, force: true });

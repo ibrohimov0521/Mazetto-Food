@@ -57,6 +57,7 @@ type DesktopReceiptDocumentProfile = {
   title: string;
   titleEnabled: boolean;
   density: "COMPACT" | "NORMAL";
+  defaultFooterEnabled: boolean;
   businessName: string;
   businessNameEnabled: boolean;
   logoEnabled: boolean;

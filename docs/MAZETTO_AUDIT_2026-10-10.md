@@ -650,3 +650,12 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Unit regression verifies cashier rejection without ledger writes, branch-manager success, and denial of the same replay to the cashier. The isolated PostgreSQL validator verifies the same access boundary against a real migrated database and checks the recorded shift balance.
 - Verification passed after this change: full pnpm verify and pnpm test across all eight workspace packages, 33 operational validators, backend 628/628 plus HTTP retry tests 3/3, and the isolated PostgreSQL 18 run after all 59 migrations. The temporary database was removed. Read-only production smoke passed 27/27 against deployed baseline only.
 - This follow-up remains local and has not yet been pushed; no production service or database was changed.
+
+## Audit continuation: grouped cross-flow verification (2026-10-11)
+
+- A checkout retry path still used a two-minute age threshold after reservation, so an old-but-unexpired attempt could be deleted before the tenant-configured TTL. Stale detection now uses the persisted expiry for both retry and scheduled cleanup.
+- The shift-close report warning previously used any cached response in the current panel; unrelated cached catalog data or another endpoint could label fresh order data as provisional. It now checks only the exact shift-order page, panel path, and current user's scope.
+- Added regression tests for both cases. Full workspace pnpm verify passed: 14/14 typecheck/lint tasks, 7/7 builds, and 33/33 validators. Full pnpm test passed: backend 632, HTTP retry 3, Desktop 165, POS 62, customer web 22, Telegram 5, print-agent 7, and root tests 11; 907 passed, zero failed. git diff --check passed.
+- Read-only production health checks passed for backend/POS/customer web/PostgreSQL/Redis; production smoke passed 27/27. This proves the current deployed baseline only, not these uncommitted fixes.
+- No push, PR, merge, production deploy, migration, or production data write occurred in this grouped audit pass. The working branch remains uncommitted.
+- Remaining external acceptance: verify the installed Windows Desktop build and native credential prompt/DPAPI, print a real multi-page shift report through the restaurant printer, exercise offline close/reconnect on the restaurant workstation, confirm Telegram webhook with authorized credentials, and obtain NBU transaction-reconciliation API/export evidence before automating QR payment matching.

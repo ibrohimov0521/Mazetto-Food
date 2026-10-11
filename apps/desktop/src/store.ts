@@ -77,6 +77,7 @@ export type OutboxQueueItem = PendingOutboxCommand & {
   nextAttemptAt: string | null;
   acknowledgedAt: string | null;
   lastError: string | null;
+  canCancel: boolean;
   payload: {
     method?: string;
     pathname?: string;
@@ -571,15 +572,16 @@ export class DesktopStore {
       .run(scope, jobId, printerName.trim().toLowerCase());
   }
 
-  listLocalPrintJobs(limit = 50): LocalPrintQueueItem[] {
+  listLocalPrintJobs(limit = 50, branchId?: string): LocalPrintQueueItem[] {
     const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
     const rows = this.database
       .prepare(
         "SELECT id, document_type AS documentType, state, attempts, created_at AS createdAt, last_error AS lastError " +
           "FROM print_jobs WHERE printer_id = 'system:auto' AND state <> 'printed' " +
+          "AND (? IS NULL OR branch_id = ? OR branch_id = 'global') " +
           "ORDER BY created_at DESC LIMIT ?",
       )
-      .all(boundedLimit);
+      .all(branchId ?? null, branchId ?? null, boundedLimit);
     const jobs = rows as Omit<LocalPrintQueueItem, "attemptHistory">[];
     if (jobs.length === 0) return [];
     const placeholders = jobs.map(() => "?").join(", ");
@@ -619,7 +621,7 @@ export class DesktopStore {
     }));
   }
 
-  retryLocalPrintJob(id: string): boolean {
+  retryLocalPrintJob(id: string, branchId?: string): boolean {
     const now = new Date().toISOString();
     this.database.exec("BEGIN IMMEDIATE");
     try {
@@ -627,9 +629,10 @@ export class DesktopStore {
         .prepare(
           "UPDATE print_jobs SET state = 'pending', attempts = 0, " +
             "lease_token = NULL, lease_expires_at = NULL, next_attempt_at = NULL, last_error = NULL " +
-            "WHERE id = ? AND printer_id = 'system:auto' AND state = 'dead_letter'",
+            "WHERE id = ? AND printer_id = 'system:auto' AND state = 'dead_letter' " +
+            "AND (? IS NULL OR branch_id = ? OR branch_id = 'global')",
         )
-        .run(id);
+        .run(id, branchId ?? null, branchId ?? null);
       if (Number(result.changes) === 0) {
         this.database.exec("COMMIT");
         return false;
@@ -969,8 +972,8 @@ export class DesktopStore {
     return rows.map((row) => ({ ...row }));
   }
 
-  markMutationSending(id: string): void {
-    this.database
+  markMutationSending(id: string): boolean {
+    const result = this.database
       .prepare(
         `
       UPDATE mutation_outbox
@@ -979,6 +982,7 @@ export class DesktopStore {
     `,
       )
       .run(id);
+    return Number(result.changes) === 1;
   }
 
   markMutationAcknowledged(id: string): void {
@@ -1255,7 +1259,7 @@ export class DesktopStore {
       .run(error, id);
   }
 
-  listOutbox(limit = 50): OutboxQueueItem[] {
+  listOutbox(limit = 50, authScope?: string): OutboxQueueItem[] {
     const rows = this.database
       .prepare(
         `
@@ -1278,6 +1282,7 @@ export class DesktopStore {
         last_error AS lastError
       FROM mutation_outbox
       WHERE state IN ('pending', 'sending', 'conflict', 'dead_letter')
+        AND (? IS NULL OR auth_scope = ?)
       ORDER BY
         CASE state
           WHEN 'conflict' THEN 0
@@ -1289,17 +1294,25 @@ export class DesktopStore {
       LIMIT ?
     `,
       )
-      .all(Math.max(1, Math.min(200, limit))) as Array<
-      Omit<OutboxQueueItem, "payload"> & { payloadJson: string }
+      .all(
+        authScope ?? null,
+        authScope ?? null,
+        Math.max(1, Math.min(200, limit)),
+      ) as Array<
+      Omit<OutboxQueueItem, "payload" | "canCancel"> & { payloadJson: string }
     >;
 
     return rows.map((row) => ({
       ...row,
+      canCancel: this.mutationCancelPlan(row).allowed,
       payload: summarizeOutboxPayload(row.payloadJson),
     }));
   }
 
-  getOutboxCommand(id: string): PendingOutboxCommand | null {
+  getOutboxCommand(
+    id: string,
+    authScope?: string,
+  ): PendingOutboxCommand | null {
     const row = this.database
       .prepare(
         `
@@ -1317,9 +1330,12 @@ export class DesktopStore {
         attempts
       FROM mutation_outbox
       WHERE id = ?
+        AND (? IS NULL OR auth_scope = ?)
     `,
       )
-      .get(id) as PendingOutboxCommand | undefined;
+      .get(id, authScope ?? null, authScope ?? null) as
+      | PendingOutboxCommand
+      | undefined;
 
     return row ? { ...row } : null;
   }
@@ -1374,7 +1390,7 @@ export class DesktopStore {
     return Boolean(row);
   }
 
-  retryMutation(id: string): boolean {
+  retryMutation(id: string, authScope?: string): boolean {
     const result = this.database
       .prepare(
         `
@@ -1384,25 +1400,207 @@ export class DesktopStore {
           last_error = NULL
       WHERE id = ?
         AND state IN ('pending', 'conflict', 'dead_letter')
+        AND (? IS NULL OR auth_scope = ?)
     `,
       )
-      .run(new Date().toISOString(), id);
+      .run(new Date().toISOString(), id, authScope ?? null, authScope ?? null);
 
     return Number(result.changes) > 0;
   }
 
-  cancelMutation(id: string): boolean {
-    const result = this.database
-      .prepare(
-        `
-      DELETE FROM mutation_outbox
-      WHERE id = ?
-        AND state IN ('pending', 'conflict', 'dead_letter')
-    `,
-      )
-      .run(id);
+  cancelMutation(id: string, authScope?: string): boolean {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.database
+        .prepare(
+          `SELECT id, command_type AS commandType,
+                  aggregate_type AS aggregateType,
+                  aggregate_id AS aggregateId, auth_scope AS authScope,
+                  branch_id AS branchId,
+                  payload_json AS payloadJson, state, attempts
+           FROM mutation_outbox WHERE id = ?
+             AND (? IS NULL OR auth_scope = ?)`,
+        )
+        .get(id, authScope ?? null, authScope ?? null) as
+        | {
+            id: string;
+            commandType: string;
+            aggregateType: string;
+            aggregateId: string | null;
+            authScope: string;
+            branchId: string;
+            payloadJson: string;
+            state: string;
+            attempts: number;
+          }
+        | undefined;
+      if (!row) {
+        this.database.exec("COMMIT");
+        return false;
+      }
 
-    return Number(result.changes) > 0;
+      const plan = this.mutationCancelPlan(row);
+      if (!plan.allowed) {
+        this.database.exec("COMMIT");
+        return false;
+      }
+
+      for (const jobId of plan.printJobIds) {
+        const cancelled = this.database
+          .prepare(
+            `UPDATE print_jobs
+             SET state = 'cancelled', next_attempt_at = NULL,
+                 lease_token = NULL, lease_expires_at = NULL
+             WHERE id = ? AND state IN ('pending', 'retry', 'dead_letter')
+               AND attempts = 0`,
+          )
+          .run(jobId);
+        if (Number(cancelled.changes) !== 1) {
+          this.database.exec("ROLLBACK");
+          return false;
+        }
+      }
+
+      const deleted = this.database
+        .prepare(
+          `DELETE FROM mutation_outbox
+           WHERE id = ? AND attempts = 0
+             AND state IN ('pending', 'conflict', 'dead_letter')
+             AND (? IS NULL OR auth_scope = ?)`,
+        )
+        .run(id, authScope ?? null, authScope ?? null);
+      if (Number(deleted.changes) !== 1) {
+        this.database.exec("ROLLBACK");
+        return false;
+      }
+
+      this.database.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private mutationCancelPlan(row: {
+    id: string;
+    commandType: string;
+    aggregateType: string;
+    aggregateId: string | null;
+    authScope: string;
+    branchId: string;
+    payloadJson: string;
+    state: string;
+    attempts: number;
+  }): { allowed: boolean; printJobIds: string[] } {
+    const plan = { allowed: false, printJobIds: [] as string[] };
+    if (
+      row.attempts !== 0 ||
+      !["pending", "conflict", "dead_letter"].includes(row.state)
+    ) {
+      return plan;
+    }
+
+    const cancellableTypes = new Set([
+      "order.status.update",
+      "order.action",
+      "order.items.update",
+    ]);
+    if (!cancellableTypes.has(row.commandType)) return plan;
+
+    let payload: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(row.payloadJson);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return plan;
+      }
+      payload = parsed as Record<string, unknown>;
+    } catch {
+      return plan;
+    }
+
+    let body: Record<string, unknown> = {};
+    if (typeof payload.body === "string") {
+      try {
+        const parsedBody: unknown = JSON.parse(payload.body);
+        if (
+          parsedBody &&
+          typeof parsedBody === "object" &&
+          !Array.isArray(parsedBody)
+        ) {
+          body = parsedBody as Record<string, unknown>;
+        }
+      } catch {
+        return plan;
+      }
+    } else if (
+      payload.body &&
+      typeof payload.body === "object" &&
+      !Array.isArray(payload.body)
+    ) {
+      body = payload.body as Record<string, unknown>;
+    }
+
+    const relatedIds = new Set<string>();
+    for (const value of [
+      payload.localAggregateId,
+      body.orderId,
+      row.aggregateId,
+    ]) {
+      if (typeof value === "string" && value.length >= 8) relatedIds.add(value);
+    }
+
+    if (!relatedIds.size) return plan;
+    if (relatedIds.size > 0) {
+      const activeCommands = this.database
+        .prepare(
+          `SELECT aggregate_id AS aggregateId, payload_json AS payloadJson
+           FROM mutation_outbox
+           WHERE branch_id = ? AND id <> ? AND state <> 'acknowledged'`,
+        )
+        .all(row.branchId, row.id) as Array<{
+        aggregateId: string | null;
+        payloadJson: string;
+      }>;
+      for (const command of activeCommands) {
+        if (
+          [...relatedIds].some(
+            (relatedId) =>
+              command.aggregateId === relatedId ||
+              command.payloadJson.includes(relatedId),
+          )
+        ) {
+          return plan;
+        }
+      }
+
+      for (const relatedId of relatedIds) {
+        const prefix = relatedId + ":";
+        const jobs = this.database
+          .prepare(
+            `SELECT id, state, attempts FROM print_jobs
+             WHERE substr(logical_key, 1, ?) = ?`,
+          )
+          .all(prefix.length, prefix) as Array<{
+          id: string;
+          state: string;
+          attempts: number;
+        }>;
+        for (const job of jobs) {
+          if (job.state === "cancelled") continue;
+          if (
+            job.attempts !== 0 ||
+            !["pending", "retry", "dead_letter"].includes(job.state)
+          ) {
+            return plan;
+          }
+          plan.printJobIds.push(job.id);
+        }
+      }
+    }
+
+    plan.allowed = true;
+    return plan;
   }
 
   summary(): DesktopStoreSummary {
@@ -1633,10 +1831,7 @@ export class DesktopStore {
     })();
     const incomingEmployeeId = queuedEmployeeId(input.payload);
     const incomingFingerprint = requestFingerprint(input.payload);
-    if (
-      storedFingerprint !== null ||
-      incomingFingerprint !== null
-    ) {
+    if (storedFingerprint !== null || incomingFingerprint !== null) {
       if (
         storedFingerprint === null ||
         incomingFingerprint === null ||

@@ -27,18 +27,22 @@ export function normalizeWindowsPaperSettings(
   value: unknown,
   printerName?: string,
 ): WindowsPaperSettings {
-  const record = value && typeof value === "object"
-    ? value as Record<string, unknown>
-    : {};
+  const record =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
   const name = printerName?.trim() ?? "";
   const legacyLabel = !record.paperFormat && /\bgodex\b/i.test(name);
-  const requestedFormat = typeof record.paperFormat === "string"
-    ? record.paperFormat.toUpperCase()
-    : "";
+  const requestedFormat =
+    typeof record.paperFormat === "string"
+      ? record.paperFormat.toUpperCase()
+      : "";
   const rawWidth = record.paperWidthMm ?? (legacyLabel ? 90 : undefined);
   const width = normalizeWindowsPaperWidth(rawWidth);
   const paperFormat: WindowsPaperFormat =
-    requestedFormat === "ROLL" || requestedFormat === "A4" || requestedFormat === "LABEL"
+    requestedFormat === "ROLL" ||
+    requestedFormat === "A4" ||
+    requestedFormat === "LABEL"
       ? requestedFormat
       : legacyLabel
         ? "LABEL"
@@ -64,59 +68,88 @@ export function normalizeWindowsPaperSettings(
 
 export function printableReceiptHtml(
   receipt: PrintableReceipt,
-  paperInput: WindowsPaperSettings | unknown = { paperFormat: "ROLL", paperWidthMm: 80 },
+  paperInput: WindowsPaperSettings | unknown = {
+    paperFormat: "ROLL",
+    paperWidthMm: 80,
+  },
   profileInput?: ReceiptPrintProfile | unknown,
   logoDataUrl?: string | null,
 ): string {
   const paper = normalizeWindowsPaperSettings(paperInput);
   const profile = normalizeReceiptPrintProfile(profileInput);
   const content = receipt.content ?? {};
-  const dateTime = String(content.dateTime ?? "").replace(/\s*Toshkent vaqti\s*/gi, " ").trim();
-  const documentType = String(content.documentType ?? receipt.documentType ?? "RECEIPT");
-  const kind: ReceiptKind = documentType === "KITCHEN"
-    ? "KITCHEN"
-    : documentType === "CANCELLATION"
-      ? "CANCELLATION"
-      : documentType.startsWith("REFUND")
-        ? "REFUND"
-        : "RECEIPT";
+  const dateTime = String(content.dateTime ?? "")
+    .replace(/\s*Toshkent vaqti\s*/gi, " ")
+    .trim();
+  const documentType = String(
+    content.documentType ?? receipt.documentType ?? "RECEIPT",
+  );
+  const kind: ReceiptKind =
+    documentType === "KITCHEN"
+      ? "KITCHEN"
+      : documentType === "CANCELLATION"
+        ? "CANCELLATION"
+        : documentType.startsWith("REFUND")
+          ? "REFUND"
+          : "RECEIPT";
   const document = profile.documents[kind];
   const { fields } = document;
   const compact = document.density === "COMPACT";
-  const orderNotes = typeof content.orderNotes === "string" ? content.orderNotes.trim() : "";
+  const orderNotes =
+    typeof content.orderNotes === "string" ? content.orderNotes.trim() : "";
   const kitchen = kind === "KITCHEN";
   const cancelled = kind === "CANCELLATION";
   const refunded = kind === "REFUND";
   const items = Array.isArray(content.items) ? content.items : [];
   const payments = Array.isArray(content.payments) ? content.payments : [];
-  const itemRows = items.map((value) => {
-    const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
-    const name = escapeHtml(String(item.name ?? item.productName ?? "Mahsulot"));
-    const variant = item.variant ?? item.variantName;
-    const itemNote = typeof item.notes === "string" ? item.notes.trim() : "";
-    const notes = fields.itemNotes && itemNote
-      ? `<small>Izoh: ${escapeHtml(itemNote)}</small>`
-      : "";
-    const rawModifiers = item.modifiers ?? item.modifierSnapshot;
-    const modifiers = fields.itemModifiers && Array.isArray(rawModifiers)
-      ? rawModifiers.map((modifier: unknown) => {
-          const record = modifier && typeof modifier === "object" ? modifier as Record<string, unknown> : {};
-          return `<small>+ ${escapeHtml(String(record.name ?? record.modifierName ?? modifier))}</small>`;
-        }).join("")
-      : "";
-    const price = !fields.itemPrices
-      ? ""
-      : `<strong>${escapeHtml(String(item.total ?? item.totalPrice ?? ""))}</strong>`;
-    return `<li><div><b>${escapeHtml(String(item.quantity ?? 1))}x ${name}${variant ? ` (${escapeHtml(String(variant))})` : ""}</b>${modifiers}${notes}</div>${price}</li>`;
-  }).join("");
-  const paymentRows = payments.map((value) => {
-    const payment = value && typeof value === "object" ? value as Record<string, unknown> : {};
-    const rawMethod = typeof payment.method === "string" ? payment.method.trim() : "";
-    const method = rawMethod
-      ? paymentMethodLabels[rawMethod.toUpperCase()] ?? rawMethod
-      : "To'lov";
-    return `<li><span>${escapeHtml(method)}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
-  }).join("");
+  const itemRows = items
+    .map((value) => {
+      const item =
+        value && typeof value === "object"
+          ? (value as Record<string, unknown>)
+          : {};
+      const name = escapeHtml(
+        String(item.name ?? item.productName ?? "Mahsulot"),
+      );
+      const variant = item.variant ?? item.variantName;
+      const itemNote = typeof item.notes === "string" ? item.notes.trim() : "";
+      const notes =
+        fields.itemNotes && itemNote
+          ? `<small>Izoh: ${escapeHtml(itemNote)}</small>`
+          : "";
+      const rawModifiers = item.modifiers ?? item.modifierSnapshot;
+      const modifiers =
+        fields.itemModifiers && Array.isArray(rawModifiers)
+          ? rawModifiers
+              .map((modifier: unknown) => {
+                const record =
+                  modifier && typeof modifier === "object"
+                    ? (modifier as Record<string, unknown>)
+                    : {};
+                return `<small>+ ${escapeHtml(String(record.name ?? record.modifierName ?? modifier))}</small>`;
+              })
+              .join("")
+          : "";
+      const price = !fields.itemPrices
+        ? ""
+        : `<strong>${escapeHtml(String(item.total ?? item.totalPrice ?? ""))}</strong>`;
+      return `<li><div><b>${escapeHtml(String(item.quantity ?? 1))}x ${name}${variant ? ` (${escapeHtml(String(variant))})` : ""}</b>${modifiers}${notes}</div>${price}</li>`;
+    })
+    .join("");
+  const paymentRows = payments
+    .map((value) => {
+      const payment =
+        value && typeof value === "object"
+          ? (value as Record<string, unknown>)
+          : {};
+      const rawMethod =
+        typeof payment.method === "string" ? payment.method.trim() : "";
+      const method = rawMethod
+        ? (paymentMethodLabels[rawMethod.toUpperCase()] ?? rawMethod)
+        : "To'lov";
+      return `<li><span>${escapeHtml(method)}</span><strong>${escapeHtml(String(payment.amount ?? ""))}</strong></li>`;
+    })
+    .join("");
   const defaultHeading = cancelled
     ? "BUYURTMA BEKOR QILINDI"
     : refunded
@@ -125,37 +158,67 @@ export function printableReceiptHtml(
         ? "OSHXONA BUYURTMASI"
         : "MIJOZ CHEKI";
   const heading = document.title || defaultHeading;
-  const reason = !fields.reason ? null : cancelled
-    ? content.cancellationReason
-    : refunded
-      ? content.refundReason
-      : null;
-  const pageStyle = (paper.paperFormat === "LABEL"
-    ? `@page{size:${paper.paperWidthMm}mm ${paper.paperHeightMm}mm;margin:0}`
-    : paper.paperFormat === "A4"
-      ? "@page{size:A4;margin:2mm}"
-      : "@page{margin:2mm}") +
+  const reason = !fields.reason
+    ? null
+    : cancelled
+      ? content.cancellationReason
+      : refunded
+        ? content.refundReason
+        : null;
+  const pageStyle =
+    (paper.paperFormat === "LABEL"
+      ? `@page{size:${paper.paperWidthMm}mm ${paper.paperHeightMm}mm;margin:0}`
+      : paper.paperFormat === "A4"
+        ? "@page{size:A4;margin:2mm}"
+        : "@page{margin:2mm}") +
     "body{line-height:1.3}li>div{min-width:0;overflow-wrap:anywhere}strong{font-variant-numeric:tabular-nums}.total{border-top:2px solid #000;padding-top:2mm}";
-  const bodyWidth = paper.paperFormat === "LABEL"
-    ? `${Math.max(20, paper.paperWidthMm - 4)}mm`
-    : paper.paperFormat === "A4"
-      ? "194mm"
-      : `${Math.max(20, paper.paperWidthMm - 6)}mm`;
-  const defaultFooter = kitchen ? "Tayyorlash uchun" : cancelled ? "Bekor qilingan buyurtma" : refunded ? "Pulni qaytarish qayd etildi" : "Xaridingiz uchun rahmat!";
-  const allHeaderLines = [...profile.commonHeaderLines, ...document.headerLines];
-  const allFooterLines = [...document.footerLines, ...profile.commonFooterLines];
+  const bodyWidth =
+    paper.paperFormat === "LABEL"
+      ? `${Math.max(20, paper.paperWidthMm - 4)}mm`
+      : paper.paperFormat === "A4"
+        ? "194mm"
+        : `${Math.max(20, paper.paperWidthMm - 6)}mm`;
+  const defaultFooter = kitchen
+    ? "Tayyorlash uchun"
+    : cancelled
+      ? "Bekor qilingan buyurtma"
+      : refunded
+        ? "Pulni qaytarish qayd etildi"
+        : "Xaridingiz uchun rahmat!";
+  const allHeaderLines = [
+    ...profile.commonHeaderLines,
+    ...document.headerLines,
+  ];
+  const allFooterLines = [
+    ...document.footerLines,
+    ...profile.commonFooterLines,
+  ];
   const customerLines = [
-    fields.customerName && content.customerName ? `<div>${escapeHtml(String(content.customerName))}</div>` : "",
-    fields.customerPhone && content.customerPhone ? `<div>${escapeHtml(String(content.customerPhone))}</div>` : "",
-    fields.address && content.address ? `<div>${escapeHtml(String(content.address))}</div>` : "",
+    fields.customerName && content.customerName
+      ? `<div>${escapeHtml(String(content.customerName))}</div>`
+      : "",
+    fields.customerPhone && content.customerPhone
+      ? `<div>${escapeHtml(String(content.customerPhone))}</div>`
+      : "",
+    fields.address && content.address
+      ? `<div>${escapeHtml(String(content.address))}</div>`
+      : "",
   ].join("");
-  const commonTopLines = allHeaderLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
-  const footerContent = allFooterLines.length
-    ? allFooterLines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")
-    : `<div>${escapeHtml(defaultFooter)}</div>`;
-  const logo = document.logoEnabled && logoDataUrl?.startsWith("data:image/")
-    ? `<img class="logo" src="${escapeHtml(logoDataUrl)}" alt="${escapeHtml(document.businessName)}">`
-    : "";
+  const commonTopLines = allHeaderLines
+    .map((line) => `<div>${escapeHtml(line)}</div>`)
+    .join("");
+  const footerLines = allFooterLines.length
+    ? allFooterLines
+    : document.defaultFooterEnabled
+      ? [defaultFooter]
+      : [];
+  const footerContent = footerLines
+    .map((line) => `<div>${escapeHtml(line)}</div>`)
+    .join("");
+  const logo =
+    document.logoEnabled && logoDataUrl?.startsWith("data:image/")
+      ? `<img class="logo" src="${escapeHtml(logoDataUrl)}" alt="${escapeHtml(document.businessName)}">`
+      : "";
 
   return `<!doctype html>
 <html>
@@ -198,22 +261,28 @@ export function printableReceiptHtml(
     ${fields.payments && payments.length ? `<ul>${paymentRows}</ul>` : ""}
     ${fields.total && content.total != null ? `<div class="total"><span>JAMI</span><span>${escapeHtml(String(content.total))}</span></div>` : ""}
     ${fields.orderNotes && orderNotes ? `<p class="order-note"><b>Izoh:</b> ${escapeHtml(orderNotes)}</p>` : ""}
-    <div class="footer">${footerContent}</div>
+    ${footerContent ? `<div class="footer">${footerContent}</div>` : ""}
   </body>
 </html>`;
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  })[character] ?? character);
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[character] ?? character,
+  );
 }
 
-export function windowsPrintPageSize(paperInput: WindowsPaperSettings | unknown) {
+export function windowsPrintPageSize(
+  paperInput: WindowsPaperSettings | unknown,
+) {
   const paper = normalizeWindowsPaperSettings(paperInput);
   if (paper.paperFormat === "LABEL") {
     return {
@@ -229,13 +298,19 @@ export function windowsPrintPageSize(paperInput: WindowsPaperSettings | unknown)
 }
 
 export function normalizeWindowsPaperWidth(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 30 && value <= 300
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 30 &&
+    value <= 300
     ? value
     : 80;
 }
 
 function normalizeWindowsPaperHeight(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 20 && value <= 300
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 20 &&
+    value <= 300
     ? value
     : 80;
 }

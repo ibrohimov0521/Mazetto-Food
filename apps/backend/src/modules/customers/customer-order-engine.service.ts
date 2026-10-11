@@ -62,9 +62,7 @@ type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
   created: boolean;
 };
 
-const CUSTOMER_ORDER_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_ORDER_ATTEMPT_WAIT_MS = 15000;
-const CUSTOMER_ORDER_STALE_PENDING_MS = 2 * 60 * 1000;
 const operationalCustomerPaymentMethods = [
   OnlinePaymentMethodDto.CASH,
 ] as const;
@@ -119,6 +117,10 @@ export class CustomerOrderEngineService {
           customerId,
           dto.idempotencyKey,
           requestHash,
+          await this.settings.getInt(
+            "customer_order_attempt_ttl_hours",
+            customer.tenantId,
+          ),
         )
       : null;
 
@@ -374,8 +376,9 @@ export class CustomerOrderEngineService {
     customerId: string,
     idempotencyKey: string,
     requestHash: string,
+    ttlHours: number,
   ): Promise<CustomerOrderAttemptReservation> {
-    const expiresAt = new Date(Date.now() + CUSTOMER_ORDER_ATTEMPT_TTL_MS);
+    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     try {
       const attempt = await this.prisma.customerOrderAttempt.create({
@@ -410,6 +413,7 @@ export class CustomerOrderEngineService {
         customerId,
         idempotencyKey,
         requestHash,
+        ttlHours,
       );
     }
 
@@ -504,8 +508,7 @@ export class CustomerOrderEngineService {
     return (
       attempt.status === CustomerOrderAttemptStatus.PENDING &&
       !attempt.customerOrderId &&
-      Date.now() - attempt.createdAt.getTime() >=
-        CUSTOMER_ORDER_STALE_PENDING_MS
+      attempt.expiresAt.getTime() <= Date.now()
     );
   }
 

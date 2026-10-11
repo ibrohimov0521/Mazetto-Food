@@ -884,7 +884,8 @@ export class DesktopGateway {
           success: false,
           error: {
             code: "IDEMPOTENCY_KEY_REUSED",
-            message: "Idempotency kaliti boshqa amal bilan ishlatilgan. Yangi kalit yarating.",
+            message:
+              "Idempotency kaliti boshqa amal bilan ishlatilgan. Yangi kalit yarating.",
           },
         });
         return true;
@@ -1181,7 +1182,8 @@ export class DesktopGateway {
         payload,
         "queuedEmployeeId",
       );
-      const currentEmployeeId = readJwtContext(authorization)?.employeeId ?? null;
+      const currentEmployeeId =
+        readJwtContext(authorization)?.employeeId ?? null;
       if (
         !hasEmployeeBinding ||
         payload.queuedEmployeeId !== currentEmployeeId
@@ -1216,7 +1218,9 @@ export class DesktopGateway {
         return;
       }
 
-      this.store.markMutationSending(latestCommand.id);
+      if (!this.store.markMutationSending(latestCommand.id)) {
+        return;
+      }
 
       const headers = new Headers({
         Accept: "application/json",
@@ -1419,14 +1423,24 @@ export class DesktopGateway {
     url: URL,
   ): Promise<void> {
     const method = (request.method ?? "GET").toUpperCase();
+    const authorization = headerValue(request.headers.authorization);
+    const identity = authorization ? readJwtContext(authorization) : null;
+    const authScope =
+      authorization && identity
+        ? DesktopStore.mutationScope(authorization)
+        : null;
+    const printBranchId =
+      identity && !identity.isGlobalScope ? identity.branchId : undefined;
     if (url.pathname === "/desktop/outbox" && method === "GET") {
       const limit = Number(url.searchParams.get("limit") ?? 50);
       this.sendJson(response, 200, {
         ok: true,
         data: {
           summary: this.status(),
-          commands: this.store.listOutbox(limit),
-          printJobs: this.store.listLocalPrintJobs(limit),
+          commands: authScope ? this.store.listOutbox(limit, authScope) : [],
+          printJobs: authScope
+            ? this.store.listLocalPrintJobs(limit, printBranchId)
+            : [],
         },
       });
       return;
@@ -1436,8 +1450,17 @@ export class DesktopGateway {
       /^\/desktop\/prints\/([^/]+)\/retry$/,
     );
     if (retryPrintMatch && method === "POST") {
+      if (!authScope) {
+        this.sendJson(response, 401, {
+          ok: false,
+          error: {
+            message: "Printer navbatini boshqarish uchun tizimga kiring.",
+          },
+        });
+        return;
+      }
       const id = decodeURIComponent(retryPrintMatch[1] ?? "");
-      if (!this.store.retryLocalPrintJob(id)) {
+      if (!this.store.retryLocalPrintJob(id, printBranchId)) {
         this.sendJson(response, 409, {
           ok: false,
           error: {
@@ -1450,8 +1473,8 @@ export class DesktopGateway {
         ok: true,
         data: {
           summary: this.status(),
-          commands: this.store.listOutbox(),
-          printJobs: this.store.listLocalPrintJobs(),
+          commands: this.store.listOutbox(50, authScope),
+          printJobs: this.store.listLocalPrintJobs(50, printBranchId),
         },
       });
       return;
@@ -1461,10 +1484,18 @@ export class DesktopGateway {
       /^\/desktop\/outbox\/([^/]+)\/compare$/,
     );
     if (compareMatch && method === "GET") {
+      if (!authScope) {
+        this.sendJson(response, 401, {
+          ok: false,
+          error: { message: "Navbatni taqqoslash uchun tizimga kiring." },
+        });
+        return;
+      }
       await this.handleOutboxComparison(
         request,
         response,
         decodeURIComponent(compareMatch[1] ?? ""),
+        authScope,
       );
       return;
     }
@@ -1480,12 +1511,20 @@ export class DesktopGateway {
       return;
     }
 
+    if (!authorization || !authScope) {
+      this.sendJson(response, 401, {
+        ok: false,
+        error: { message: "Navbat amallarini bajarish uchun tizimga kiring." },
+      });
+      return;
+    }
+
     const id = decodeURIComponent(match[1] ?? "");
     const action = match[2];
     const changed =
       action === "retry"
-        ? this.store.retryMutation(id)
-        : this.store.cancelMutation(id);
+        ? this.store.retryMutation(id, authScope)
+        : this.store.cancelMutation(id, authScope);
 
     if (!changed) {
       this.sendJson(response, 409, {
@@ -1494,25 +1533,24 @@ export class DesktopGateway {
           message:
             action === "retry"
               ? "Bu amalni qayta yuborib bo'lmaydi."
-              : "Bu amalni navbatdan olib tashlab bo'lmaydi.",
+              : "Bu amalni bekor qilib bo'lmaydi: moliyaviy yoki tizim amali, tanilmagan tur, yuborilgan amal yoxud bog'liq/chop etilgan hujjat bo'lishi mumkin.",
         },
       });
       return;
     }
 
     if (action === "retry") {
-      for (const [authScope, authorization] of this.activeAuthorizations) {
-        this.trackBackgroundTask(
-          this.flushPendingMutations(authorization, authScope),
-        );
-      }
+      this.activeAuthorizations.set(authScope, authorization);
+      this.trackBackgroundTask(
+        this.flushPendingMutations(authorization, authScope),
+      );
     }
 
     this.sendJson(response, 200, {
       ok: true,
       data: {
         summary: this.status(),
-        commands: this.store.listOutbox(),
+        commands: this.store.listOutbox(50, authScope),
       },
     });
   }
@@ -1521,8 +1559,9 @@ export class DesktopGateway {
     request: IncomingMessage,
     response: ServerResponse,
     id: string,
+    authScope: string,
   ): Promise<void> {
-    const command = this.store.getOutboxCommand(id);
+    const command = this.store.getOutboxCommand(id, authScope);
     if (!command) {
       this.sendJson(response, 404, {
         ok: false,
@@ -1531,9 +1570,7 @@ export class DesktopGateway {
       return;
     }
 
-    const authorization =
-      headerValue(request.headers.authorization) ??
-      this.activeAuthorizations.get(command.authScope);
+    const authorization = headerValue(request.headers.authorization);
     if (!authorization) {
       this.sendJson(response, 401, {
         ok: false,
@@ -1590,7 +1627,7 @@ export class DesktopGateway {
       });
       const responseText = await upstream.text();
       const outboxItem = this.store
-        .listOutbox(200)
+        .listOutbox(200, authScope)
         .find((item) => item.id === command.id);
       this.sendJson(response, 200, {
         ok: true,
@@ -1602,6 +1639,7 @@ export class DesktopGateway {
             aggregateId: command.aggregateId,
             idempotencyKey: command.idempotencyKey,
             baseVersion: command.baseVersion,
+            canCancel: outboxItem?.canCancel ?? false,
             payload: {
               method: stringField(payload, "method"),
               pathname,

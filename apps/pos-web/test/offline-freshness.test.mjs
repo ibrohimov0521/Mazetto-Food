@@ -7,6 +7,7 @@ import {
   getApiFreshnessScope,
   getApiFreshnessSnapshot,
   recordApiResponseFreshness,
+  isApiResponseCached,
   subscribeApiFreshness,
 } from "../lib/offline-freshness.mjs";
 
@@ -137,6 +138,29 @@ test("freshness is isolated by the panel that consumed the cached response", () 
   recordApiResponseFreshness("/orders", "online", null, "/pos");
   assert.equal(getApiFreshnessSnapshot(now, "/pos").cachedResponses, 0);
   assert.equal(getApiFreshnessSnapshot(now, "/kitchen").cachedResponses, 0);
+  clearApiFreshness();
+});
+
+test("resource cache state is exact to its path, panel, and user scope", () => {
+  clearApiFreshness();
+  const userA = "scope-a";
+  const userB = "scope-b";
+  const reportPath = "/cash-register/shift/shift-a/orders?limit=100&offset=0";
+  recordApiResponseFreshness(
+    reportPath,
+    "offline-cache",
+    "2026-10-11T00:00:00.000Z",
+    "/cashier",
+    userA,
+  );
+
+  assert.equal(isApiResponseCached(reportPath, "/cashier", userA), true);
+  assert.equal(isApiResponseCached("/pos/catalog", "/cashier", userA), false);
+  assert.equal(isApiResponseCached(reportPath, "/kitchen", userA), false);
+  assert.equal(isApiResponseCached(reportPath, "/cashier", userB), false);
+
+  recordApiResponseFreshness(reportPath, "online", null, "/cashier", userA);
+  assert.equal(isApiResponseCached(reportPath, "/cashier", userA), false);
   clearApiFreshness();
 });
 

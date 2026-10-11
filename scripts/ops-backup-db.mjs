@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   createReadStream,
@@ -12,6 +12,7 @@ import {
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream/promises";
+import { parseDockerContainerRows, resolveDockerHealthTarget } from "./docker-health-target.mjs";
 
 /*
  * Baza nusxasini olish va YAROQLILIGINI tekshirish (7-bosqich Q3.3).
@@ -25,7 +26,25 @@ import { pipeline } from "node:stream/promises";
  * tiklash kerak bo'lgan kunda bilish juda kech.
  */
 
-const container = process.env.MAZETTO_PG_CONTAINER ?? "mazetto-postgres";
+let runningContainers = [];
+try {
+  runningContainers = parseDockerContainerRows(
+    execFileSync(
+      "docker",
+      ["ps", "--filter", "status=running", "--format", "{{.ID}}|{{.Image}}|{{.Names}}"],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    ).toString(),
+  );
+} catch {
+  // Explicit overrides and the legacy fallback still work if Docker listing fails.
+}
+const postgresTarget = resolveDockerHealthTarget(
+  "postgres",
+  runningContainers,
+  process.env.MAZETTO_PG_CONTAINER,
+);
+if (postgresTarget.error) throw new Error(postgresTarget.error);
+const container = postgresTarget.container;
 const outDir = process.env.MAZETTO_BACKUP_DIR ?? ".backups";
 
 function envValue(name, fallback) {

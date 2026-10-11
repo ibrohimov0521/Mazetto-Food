@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
+import { isDockerHealthOutputHealthy, parseDockerContainerRows, resolveDockerHealthTarget } from "./docker-health-target.mjs";
 
 /*
  * Lokal xizmatlar holati (7-bosqich Q3.3).
@@ -14,6 +15,7 @@ const httpChecks = [
   ["customer-web", "http://localhost:3000/"],
 ];
 
+let failedChecks = 0;
 for (const [name, url] of httpChecks) {
   let status = "javob yo'q";
 
@@ -25,20 +27,66 @@ for (const [name, url] of httpChecks) {
   }
 
   console.log(`${name.padEnd(13)} ${status}`);
+  if (status !== "200") failedChecks += 1;
+}
+
+let runningContainers = [];
+try {
+  runningContainers = parseDockerContainerRows(
+    execFileSync(
+      "docker",
+      ["ps", "--filter", "status=running", "--format", "{{.ID}}|{{.Image}}|{{.Names}}"],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    ).toString(),
+  );
+} catch {
+  // Direct container overrides and legacy names remain available below.
 }
 
 const containerChecks = [
-  ["postgres", ["exec", process.env.MAZETTO_PG_CONTAINER ?? "mazetto-postgres", "pg_isready", "-U", process.env.POSTGRES_USER ?? "mazetto"]],
-  ["redis", ["exec", "mazetto-redis", "redis-cli", "PING"]],
+  {
+    name: "postgres",
+    kind: "postgres",
+    override: process.env.MAZETTO_PG_CONTAINER,
+    args: ["pg_isready", "-U", process.env.POSTGRES_USER ?? "mazetto"],
+  },
+  {
+    name: "redis",
+    kind: "redis",
+    override: process.env.MAZETTO_REDIS_CONTAINER,
+    args: ["redis-cli", "PING"],
+  },
 ];
 
-for (const [name, args] of containerChecks) {
+for (const check of containerChecks) {
+  const target = resolveDockerHealthTarget(
+    check.kind,
+    runningContainers,
+    check.override,
+  );
+  if (target.error) {
+    console.log(`${check.name.padEnd(13)} ${target.error}`);
+    failedChecks += 1;
+    continue;
+  }
+
   try {
-    const out = execFileSync("docker", args, { stdio: ["ignore", "pipe", "ignore"] })
+    const out = execFileSync(
+      "docker",
+      ["exec", target.container, ...check.args],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    )
       .toString()
       .trim();
-    console.log(`${name.padEnd(13)} ${out.split("\n").pop()}`);
+    const result = out.split("\n").pop() ?? "";
+    console.log(`${check.name.padEnd(13)} ${result}`);
+    if (!isDockerHealthOutputHealthy(check.kind, result)) {
+      failedChecks += 1;
+    }
   } catch {
-    console.log(`${name.padEnd(13)} javob yo'q`);
+    console.log(`${check.name.padEnd(13)} javob yo'q (${target.container})`);
+    failedChecks += 1;
   }
 }
+
+if (failedChecks > 0) process.exitCode = 1;

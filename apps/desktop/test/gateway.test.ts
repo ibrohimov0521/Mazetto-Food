@@ -609,14 +609,16 @@ test("offline POS mutation is not replayed under a different employee", async ()
   try {
     const port = await gateway.start();
     await waitFor(() => gateway.status().mode === "online");
-    const response = await fetch(
-      `http://127.0.0.1:${port}/api/v1/branches`,
-      { headers: { Authorization: currentAuthorization } },
-    );
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/branches`, {
+      headers: { Authorization: currentAuthorization },
+    });
     assert.equal(response.status, 200);
     await waitFor(() => store.summary().conflictCommands === 1);
     assert.equal(requests.includes("/api/v1/pos/orders"), false);
-    assert.match(store.listOutbox()[0]?.lastError ?? "", /EMPLOYEE_CONTEXT_CHANGED/);
+    assert.match(
+      store.listOutbox()[0]?.lastError ?? "",
+      /EMPLOYEE_CONTEXT_CHANGED/,
+    );
   } finally {
     await gateway.stop();
     store.close();
@@ -663,14 +665,16 @@ test("legacy offline POS mutation without employee identity is not replayed", as
   try {
     const port = await gateway.start();
     await waitFor(() => gateway.status().mode === "online");
-    const response = await fetch(
-      `http://127.0.0.1:${port}/api/v1/branches`,
-      { headers: { Authorization: authorization } },
-    );
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/branches`, {
+      headers: { Authorization: authorization },
+    });
     assert.equal(response.status, 200);
     await waitFor(() => store.summary().conflictCommands === 1);
     assert.equal(requests.includes("/api/v1/pos/orders"), false);
-    assert.match(store.listOutbox()[0]?.lastError ?? "", /EMPLOYEE_CONTEXT_UNKNOWN/);
+    assert.match(
+      store.listOutbox()[0]?.lastError ?? "",
+      /EMPLOYEE_CONTEXT_UNKNOWN/,
+    );
   } finally {
     await gateway.stop();
     store.close();
@@ -1451,6 +1455,7 @@ test("gateway flushes queued mutations from the reconnect health probe", async (
 test("gateway exposes and retries failed local printer jobs", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-printer", "branch-1");
   store.enqueueLocalPrintJob({
     logicalKey: "local-order:RECEIPT",
     branchId: "branch-1",
@@ -1482,19 +1487,47 @@ test("gateway exposes and retries failed local printer jobs", async () => {
   try {
     const gatewayPort = await gateway.start();
     const base = "http://127.0.0.1:" + gatewayPort + "/desktop";
-    const listed = await fetch(base + "/outbox");
+    const otherJobInput = {
+      logicalKey: "other-branch-order:RECEIPT",
+      branchId: "branch-2",
+      documentType: "RECEIPT" as const,
+      payload: { orderNumber: "OFF-202" },
+    };
+    store.enqueueLocalPrintJob(otherJobInput);
+    const otherJob = store.listLocalPrintJobs(10, "branch-2")[0]!;
+    let otherRetryAt = new Date();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const claimed = store.claimLocalPrintJob(["RECEIPT"], otherRetryAt);
+      assert.equal(claimed?.id, otherJob.id);
+      store.failLocalPrintJob(otherJob.id, "Printer offline", otherRetryAt);
+      if (attempt < 4) {
+        otherRetryAt = new Date(otherRetryAt.getTime() + 60_000);
+      }
+    }
+
+    const listed = await fetch(base + "/outbox", {
+      headers: { Authorization: authorization },
+    });
     const queue = await listed.json();
     assert.equal(queue.data.printJobs[0].state, "dead_letter");
     assert.equal(queue.data.printJobs[0].lastError, "Printer offline");
+    assert.equal(queue.data.printJobs.length, 1);
+
+    const otherBranchRetry = await fetch(
+      base + "/prints/" + otherJob.id + "/retry",
+      { method: "POST", headers: { Authorization: authorization } },
+    );
+    assert.equal(otherBranchRetry.status, 409);
 
     const retried = await fetch(base + "/prints/" + printJob.id + "/retry", {
       method: "POST",
+      headers: { Authorization: authorization },
     });
     assert.equal(retried.status, 200);
     const updated = await retried.json();
     assert.equal(updated.data.printJobs[0].state, "pending");
     assert.equal(updated.data.summary.pendingPrintJobs, 1);
-    assert.equal(updated.data.summary.deadLetterPrintJobs, 0);
+    assert.equal(updated.data.summary.deadLetterPrintJobs, 1);
   } finally {
     await gateway.stop();
     store.close();
@@ -2190,8 +2223,32 @@ test("gateway exposes and manages the desktop outbox", async () => {
     );
     assert.equal(sale.status, 202);
 
+    const anonymousOutbox = await fetch(
+      `http://127.0.0.1:${gatewayPort}/desktop/outbox`,
+    );
+    assert.equal(anonymousOutbox.status, 200);
+    assert.deepEqual(
+      ((await anonymousOutbox.json()) as { data: { commands: unknown[] } }).data
+        .commands,
+      [],
+    );
+    const otherScopeOutbox = await fetch(
+      `http://127.0.0.1:${gatewayPort}/desktop/outbox`,
+      {
+        headers: {
+          Authorization: desktopJwt("cashier-other", "branch-1"),
+        },
+      },
+    );
+    assert.deepEqual(
+      ((await otherScopeOutbox.json()) as { data: { commands: unknown[] } })
+        .data.commands,
+      [],
+    );
+
     const outbox = await fetch(
       `http://127.0.0.1:${gatewayPort}/desktop/outbox`,
+      { headers: { Authorization: authorization } },
     );
     assert.equal(outbox.status, 200);
     const outboxPayload = (await outbox.json()) as {
@@ -2205,11 +2262,66 @@ test("gateway exposes and manages the desktop outbox", async () => {
 
     const commandId = outboxPayload.data.commands[0]!.id;
     const cancel = await fetch(
-      `http://127.0.0.1:${gatewayPort}/desktop/outbox/${commandId}/cancel`,
+      "http://127.0.0.1:" +
+        gatewayPort +
+        "/desktop/outbox/" +
+        commandId +
+        "/cancel",
+      { method: "POST", headers: { Authorization: authorization } },
+    );
+    assert.equal(cancel.status, 409);
+    assert.equal(store.summary().pendingCommands, 1);
+
+    const unauthenticatedCancel = await fetch(
+      "http://127.0.0.1:" +
+        gatewayPort +
+        "/desktop/outbox/" +
+        commandId +
+        "/cancel",
       { method: "POST" },
     );
-    assert.equal(cancel.status, 200);
-    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(unauthenticatedCancel.status, 401);
+
+    const orderEdit = store.enqueueMutation({
+      idempotencyKey: "order-edit-outbox-key",
+      commandType: "order.items.update",
+      aggregateType: "orders",
+      aggregateId: "order-edit-12345678",
+      actorId: "cashier-3",
+      branchId: "branch-1",
+      authScope: DesktopStore.mutationScope(authorization),
+      payload: {
+        method: "PATCH",
+        pathname: "/api/v1/orders/order-edit-12345678/items/item-1",
+        targetUrl:
+          "https://api.example.test/api/v1/orders/order-edit-12345678/items/item-1",
+        body: JSON.stringify({ orderId: "order-edit-12345678", quantity: 1 }),
+      },
+    });
+    const safeCancel = await fetch(
+      "http://127.0.0.1:" +
+        gatewayPort +
+        "/desktop/outbox/" +
+        orderEdit.id +
+        "/cancel",
+      {
+        method: "POST",
+        headers: { Authorization: desktopJwt("cashier-other", "branch-1") },
+      },
+    );
+    assert.equal(safeCancel.status, 409);
+    assert.equal(store.summary().pendingCommands, 2);
+
+    const ownCancel = await fetch(
+      "http://127.0.0.1:" +
+        gatewayPort +
+        "/desktop/outbox/" +
+        orderEdit.id +
+        "/cancel",
+      { method: "POST", headers: { Authorization: authorization } },
+    );
+    assert.equal(ownCancel.status, 200);
+    assert.equal(store.summary().pendingCommands, 1);
   } finally {
     await gateway.stop();
     store.close();
@@ -2494,14 +2606,19 @@ test("conflicted offline order creation blocks only its dependent commands", asy
 test("gateway can retry a blocked outbox command", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-4", "branch-1", {
+    employeeId: "employee-4",
+  });
+  const authScope = DesktopStore.mutationScope(authorization);
   const command = store.enqueueMutation({
     idempotencyKey: "blocked-key",
     commandType: "POST /api/v1/pos/orders",
     aggregateType: "pos",
     actorId: "cashier-4",
     branchId: "branch-1",
-    authScope: "scope-1",
+    authScope,
     payload: {
+      queuedEmployeeId: "employee-4",
       method: "POST",
       pathname: "/api/v1/pos/orders",
       targetUrl: "https://api.example.test/api/v1/pos/orders",
@@ -2520,11 +2637,12 @@ test("gateway can retry a blocked outbox command", async () => {
     const gatewayPort = await gateway.start();
     const retry = await fetch(
       `http://127.0.0.1:${gatewayPort}/desktop/outbox/${command.id}/retry`,
-      { method: "POST" },
+      { method: "POST", headers: { Authorization: authorization } },
     );
     assert.equal(retry.status, 200);
+    await waitFor(() => store.listOutbox().length === 0);
     assert.equal(store.summary().conflictCommands, 0);
-    assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.summary().pendingCommands, 0);
   } finally {
     await gateway.stop();
     store.close();
@@ -2588,7 +2706,7 @@ test("gateway compares a conflicted command with the current server resource", a
     assert.equal(response.status, 200);
     const payload = (await response.json()) as {
       data: {
-        command: { payload: { body: unknown } };
+        command: { canCancel: boolean; payload: { body: unknown } };
         comparison: {
           resourcePath: string;
           expectedVersion: number | null;
@@ -2602,6 +2720,7 @@ test("gateway compares a conflicted command with the current server resource", a
     );
     assert.equal(payload.data.comparison.expectedVersion, 2);
     assert.equal(payload.data.comparison.server.status, 200);
+    assert.equal(payload.data.command.canCancel, false);
     assert.deepEqual(payload.data.command.payload.body, {
       expectedVersion: 2,
       status: "READY",

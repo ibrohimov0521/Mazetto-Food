@@ -196,6 +196,7 @@ test("accepted staff sockets join a per-user revocation room", async () => {
   await gateway.handleConnection(socket.client);
 
   assert.ok(socket.joined.includes("staff-user:user-1"));
+  assert.ok(socket.joined.includes("staff-membership:membership-a"));
 });
 
 test("credential invalidation disconnects all sockets for that staff user", () => {
@@ -212,4 +213,20 @@ test("credential invalidation disconnects all sockets for that staff user", () =
   gateway.disconnectStaffUser("user-1");
 
   assert.deepEqual(calls, [{ room: "staff-user:user-1", close: true }]);
+});
+
+test("tenant membership invalidation disconnects only sockets for that membership", () => {
+  const gateway = makeGateway({ id: "user-1", credentialVersion: 2 }, 2);
+  const calls: Array<{ room: string; close: boolean }> = [];
+  Object.defineProperty(gateway, "server", {
+    value: {
+      in: (room: string) => ({
+        disconnectSockets: (close: boolean) => calls.push({ room, close }),
+      }),
+    },
+  });
+
+  gateway.disconnectTenantMembership("membership-a");
+
+  assert.deepEqual(calls, [{ room: "staff-membership:membership-a", close: true }]);
 });

@@ -14,7 +14,7 @@ import {
 import styles from "../../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../../lib/api";
 import { hasPermission } from "../../../../lib/auth";
-import { orderItemCancellationNeedsRefundPermission } from "../../../../lib/order-item-cancellation.mjs";
+import { orderItemCancellationRefundPlan } from "../../../../lib/order-item-cancellation.mjs";
 import { formatMoney, orderStatusLabels } from "../../../../lib/order-display";
 
 type ShiftRow = {
@@ -268,7 +268,13 @@ export default function CashierHistoryPage() {
       try {
         const page = await apiFetch<OrderRow[]>(
           `/cash-register/shift/${encodeURIComponent(shiftId)}/orders?${params}`,
-          { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) },
+          {
+            cache: "no-store",
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(15000),
+            ]),
+          },
         );
         if (controller.signal.aborted) return;
         setOrders((current) =>
@@ -350,7 +356,13 @@ export default function CashierHistoryPage() {
   }
 
   async function cancelItem() {
-    if (!orderDetail || shift?.status !== "OPEN" || !cancelTarget || !cancelReason.trim()) return;
+    if (
+      !orderDetail ||
+      shift?.status !== "OPEN" ||
+      !cancelTarget ||
+      !cancelReason.trim()
+    )
+      return;
     const itemId = cancelTarget.itemId;
     setCancellingItemId(itemId);
     setMessage("");
@@ -372,9 +384,7 @@ export default function CashierHistoryPage() {
       );
       setCancelTarget(null);
       setCancelReason("");
-      setMessage(
-        "Mahsulot bekor qilindi; zarur naqd qaytarish smenaga yozildi.",
-      );
+      setMessage("Mahsulot bekor qilindi va buyurtma yangilandi.");
       await loadOrders(0, false);
     } catch (caught) {
       setError(
@@ -441,7 +451,9 @@ export default function CashierHistoryPage() {
           </div>
         </div>
 
-        {shift?.status === "CLOSED" && <ShiftClosePrintReport key={shift.id} shift={shift} />}
+        {shift?.status === "CLOSED" && (
+          <ShiftClosePrintReport key={shift.id} shift={shift} />
+        )}
         <div className={styles.historyControls}>
           <label className={styles.field}>
             <span>Smena</span>
@@ -640,24 +652,26 @@ export default function CashierHistoryPage() {
               <h3 className={styles.subheading}>Mahsulotlar</h3>
               <ul className={styles.itemList}>
                 {orderDetail.items.map((item) => {
-                  const refundPermissionRequired =
-                    orderItemCancellationNeedsRefundPermission({
-                      orderTotal: orderDetail.total,
-                      itemTotal: item.totalPrice,
-                      payments: orderDetail.payments ?? [],
-                    });
+                  const refundPlan = orderItemCancellationRefundPlan({
+                    orderTotal: orderDetail.total,
+                    itemTotal: item.totalPrice,
+                    payments: orderDetail.payments ?? [],
+                  });
                   const refundBlocked =
-                    refundPermissionRequired && !canRefundPayments;
+                    refundPlan.refundRequired &&
+                    (!canRefundPayments || !refundPlan.canRefundInCash);
+                  const refundBlockReason = !canRefundPayments
+                    ? "Pul qaytarish uchun alohida ruxsat kerak"
+                    : "Naqd qaytarish uchun kassada mos naqd to'lov yetarli emas; karta/Click/Payme qaytarimini provayder orqali alohida bajaring";
 
                   return (
                     <li className={styles.historyItemRow} key={item.id}>
                       <span>
                         {item.productName}
-                        {item.variantName ? ` · ${item.variantName}` : ""} ×{" "}
-                        {item.quantity}
-                        {item.status === "CANCELLED"
-                          ? " · Bekor qilingan"
-                          : ""}
+                        {item.variantName
+                          ? ` · ${item.variantName}`
+                          : ""} × {item.quantity}
+                        {item.status === "CANCELLED" ? " · Bekor qilingan" : ""}
                         {item.status === "CANCELLED" &&
                         item.cancellationReason ? (
                           <small className={styles.muted}>
@@ -687,7 +701,7 @@ export default function CashierHistoryPage() {
                             !isOnline
                               ? "Bekor qilish uchun internet kerak"
                               : refundBlocked
-                                ? "Pul qaytarish uchun alohida ruxsat kerak"
+                                ? refundBlockReason
                                 : "Mahsulotni bekor qilish"
                           }
                           type="button"

@@ -14,18 +14,55 @@ import {
 
 test("Windows receipt layout honors 58, 80 and A4 printable widths", () => {
   const receipt = { content: { orderNumber: "42" } };
-  assert.match(printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 58 }), /width: 52mm/);
-  assert.match(printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 80 }), /width: 74mm/);
-  assert.match(printableReceiptHtml(receipt, { paperFormat: "A4", paperWidthMm: 210 }), /width: 194mm/);
-  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 58 }), { usePrinterDefaultPageSize: true });
-  assert.deepEqual(windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 80 }), { usePrinterDefaultPageSize: true });
-  assert.deepEqual(windowsPrintPageSize({ paperFormat: "A4", paperWidthMm: 210 }), { pageSize: "A4" });
-  assert.deepEqual(windowsPrintPageSize({ paperFormat: "LABEL", paperWidthMm: 90, paperHeightMm: 80 }), { pageSize: { width: 90_000, height: 80_000 } });
+  assert.match(
+    printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 58 }),
+    /width: 52mm/,
+  );
+  assert.match(
+    printableReceiptHtml(receipt, { paperFormat: "ROLL", paperWidthMm: 80 }),
+    /width: 74mm/,
+  );
+  assert.match(
+    printableReceiptHtml(receipt, { paperFormat: "A4", paperWidthMm: 210 }),
+    /width: 194mm/,
+  );
+  assert.deepEqual(
+    windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 58 }),
+    { usePrinterDefaultPageSize: true },
+  );
+  assert.deepEqual(
+    windowsPrintPageSize({ paperFormat: "ROLL", paperWidthMm: 80 }),
+    { usePrinterDefaultPageSize: true },
+  );
+  assert.deepEqual(
+    windowsPrintPageSize({ paperFormat: "A4", paperWidthMm: 210 }),
+    { pageSize: "A4" },
+  );
+  assert.deepEqual(
+    windowsPrintPageSize({
+      paperFormat: "LABEL",
+      paperWidthMm: 90,
+      paperHeightMm: 80,
+    }),
+    { pageSize: { width: 90_000, height: 80_000 } },
+  );
 });
 
 test("custom Windows driver widths are preserved and invalid widths fall back safely", () => {
-  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, { paperFormat: "ROLL", paperWidthMm: 70 }), /width: 64mm/);
-  assert.match(printableReceiptHtml({ content: { orderNumber: "42" } }, { paperFormat: "ROLL", paperWidthMm: 102 }), /width: 96mm/);
+  assert.match(
+    printableReceiptHtml(
+      { content: { orderNumber: "42" } },
+      { paperFormat: "ROLL", paperWidthMm: 70 },
+    ),
+    /width: 64mm/,
+  );
+  assert.match(
+    printableReceiptHtml(
+      { content: { orderNumber: "42" } },
+      { paperFormat: "ROLL", paperWidthMm: 102 },
+    ),
+    /width: 96mm/,
+  );
   assert.equal(normalizeWindowsPaperWidth(70), 70);
   assert.equal(normalizeWindowsPaperWidth(30), 30);
   assert.equal(normalizeWindowsPaperWidth(300), 300);
@@ -36,17 +73,20 @@ test("custom Windows driver widths are preserved and invalid widths fall back sa
 });
 
 test("A4 refund receipts include the reason and negative total", () => {
-  const html = printableReceiptHtml({
-    documentType: "REFUND:payment-1",
-    content: {
-      documentType: "REFUND",
-      refundReason: "Mijoz so'radi <tekshirish>",
-      orderNumber: "42",
-      payments: [{ method: "Naqd", amount: "-12 000" }],
-      total: "-12 000",
-      items: [],
+  const html = printableReceiptHtml(
+    {
+      documentType: "REFUND:payment-1",
+      content: {
+        documentType: "REFUND",
+        refundReason: "Mijoz so'radi <tekshirish>",
+        orderNumber: "42",
+        payments: [{ method: "Naqd", amount: "-12 000" }],
+        total: "-12 000",
+        items: [],
+      },
     },
-  }, { paperFormat: "A4", paperWidthMm: 210 });
+    { paperFormat: "A4", paperWidthMm: 210 },
+  );
 
   assert.match(html, /TO&#039;LOV QAYTARILDI/);
   assert.match(html, /Pulni qaytarish qayd etildi/);
@@ -77,7 +117,10 @@ test("receipt payment codes use the same readable labels as cashier screens", ()
   });
 
   for (const [code, label] of methods) {
-    assert.match(html, new RegExp(`<span>${label.replace("'", "&#039;")}</span>`));
+    assert.match(
+      html,
+      new RegExp(`<span>${label.replace("'", "&#039;")}</span>`),
+    );
     assert.doesNotMatch(html, new RegExp(`<span>${code}</span>`));
   }
 });
@@ -111,11 +154,14 @@ test("label dimensions are explicit and legacy Godex settings remain compatible"
   assert.deepEqual(windowsPrintPageSize(settings), {
     pageSize: { width: 100_000, height: 60_000 },
   });
-  assert.deepEqual(normalizeWindowsPaperSettings({ paperWidthMm: 90 }, "Godex G500"), {
-    paperFormat: "LABEL",
-    paperWidthMm: 90,
-    paperHeightMm: 80,
-  });
+  assert.deepEqual(
+    normalizeWindowsPaperSettings({ paperWidthMm: 90 }, "Godex G500"),
+    {
+      paperFormat: "LABEL",
+      paperWidthMm: 90,
+      paperHeightMm: 80,
+    },
+  );
   assert.deepEqual(normalizeWindowsPaperSettings({ paperWidthMm: 210 }), {
     paperFormat: "A4",
     paperWidthMm: 210,
@@ -130,13 +176,15 @@ test("kitchen tickets keep notes and modifiers without prices or payments", () =
       displayOrderNumber: "B-104",
       orderType: "Yetkazib berish",
       orderNotes: "Eshik oldida qoldiring",
-      items: [{
-        name: "Katta lavash",
-        quantity: "2",
-        total: "78 000",
-        notes: "Achchiq bo'lsin",
-        modifiers: [{ name: "Qo'shimcha pishloq" }],
-      }],
+      items: [
+        {
+          name: "Katta lavash",
+          quantity: "2",
+          total: "78 000",
+          notes: "Achchiq bo'lsin",
+          modifiers: [{ name: "Qo'shimcha pishloq" }],
+        },
+      ],
       payments: [{ method: "Naqd", amount: "78 000" }],
       total: "78 000",
     },
@@ -177,16 +225,21 @@ test("receipt profiles customize title, common text, logo, sizes, and visible fi
   profile.documents.RECEIPT.fields.orderNumber = false;
   profile.documents.RECEIPT.fields.payments = false;
 
-  const html = printableReceiptHtml({
-    documentType: "RECEIPT",
-    content: {
+  const html = printableReceiptHtml(
+    {
       documentType: "RECEIPT",
-      orderNumber: "SECRET-ORDER",
-      payments: [{ method: "Naqd", amount: "10 000" }],
-      total: "10 000",
-      items: [{ name: "Lavash", quantity: 1, total: "10 000" }],
+      content: {
+        documentType: "RECEIPT",
+        orderNumber: "SECRET-ORDER",
+        payments: [{ method: "Naqd", amount: "10 000" }],
+        total: "10 000",
+        items: [{ name: "Lavash", quantity: 1, total: "10 000" }],
+      },
     },
-  }, { paperFormat: "ROLL", paperWidthMm: 80 }, profile, "data:image/webp;base64,ZmFrZQ==");
+    { paperFormat: "ROLL", paperWidthMm: 80 },
+    profile,
+    "data:image/webp;base64,ZmFrZQ==",
+  );
 
   assert.match(html, /Mazetto &lt;Food&gt;/);
   assert.match(html, /Chek &lt;nusxa&gt;/);
@@ -202,10 +255,18 @@ test("receipt title can be hidden and compact density reduces vertical spacing",
   const profile = defaultReceiptPrintProfile();
   profile.documents.RECEIPT.titleEnabled = false;
   profile.documents.RECEIPT.density = "COMPACT";
-  const html = printableReceiptHtml({
-    documentType: "RECEIPT",
-    content: { documentType: "RECEIPT", orderNumber: "42", items: [{ name: "Lavash", quantity: 1 }] },
-  }, { paperFormat: "ROLL", paperWidthMm: 80 }, profile);
+  const html = printableReceiptHtml(
+    {
+      documentType: "RECEIPT",
+      content: {
+        documentType: "RECEIPT",
+        orderNumber: "42",
+        items: [{ name: "Lavash", quantity: 1 }],
+      },
+    },
+    { paperFormat: "ROLL", paperWidthMm: 80 },
+    profile,
+  );
 
   assert.doesNotMatch(html, /MIJOZ CHEKI/);
   assert.match(html, /padding: 0\.8mm 0/);
@@ -213,12 +274,16 @@ test("receipt title can be hidden and compact density reduces vertical spacing",
 });
 
 test("blank customer notes are omitted while meaningful notes are preserved", () => {
-  const receipt = (orderNotes: string) => printableReceiptHtml({
-    content: { orderNotes, items: [] },
-  });
+  const receipt = (orderNotes: string) =>
+    printableReceiptHtml({
+      content: { orderNotes, items: [] },
+    });
 
   assert.doesNotMatch(receipt("   \n  "), /Izoh:/);
-  assert.match(receipt("  Iltimos, achchiq solmang  "), /Izoh:<\/b> Iltimos, achchiq solmang/);
+  assert.match(
+    receipt("  Iltimos, achchiq solmang  "),
+    /Izoh:<\/b> Iltimos, achchiq solmang/,
+  );
 });
 
 test("receipt profile can hide the logo and organization name independently of their saved values", () => {
@@ -245,12 +310,13 @@ test("customer receipt branding is off by default and can be enabled again", () 
   assert.equal(profile.documents.KITCHEN.logoEnabled, true);
   assert.equal(profile.documents.KITCHEN.businessNameEnabled, true);
 
-  const render = () => printableReceiptHtml(
-    { documentType: "RECEIPT", content: { documentType: "RECEIPT" } },
-    { paperFormat: "ROLL", paperWidthMm: 80 },
-    profile,
-    "data:image/png;base64,ZmFrZQ==",
-  );
+  const render = () =>
+    printableReceiptHtml(
+      { documentType: "RECEIPT", content: { documentType: "RECEIPT" } },
+      { paperFormat: "ROLL", paperWidthMm: 80 },
+      profile,
+      "data:image/png;base64,ZmFrZQ==",
+    );
   assert.doesNotMatch(render(), /<img class="logo"|MAZETTO FOOD/);
   profile.documents.RECEIPT.logoEnabled = true;
   profile.documents.RECEIPT.businessNameEnabled = true;
@@ -259,28 +325,44 @@ test("customer receipt branding is off by default and can be enabled again", () 
 });
 
 test("legacy default receipt branding migrates once without changing other document kinds", () => {
-  const legacy = defaultReceiptPrintProfile() as unknown as Record<string, unknown>;
+  const legacy = defaultReceiptPrintProfile() as unknown as Record<
+    string,
+    unknown
+  >;
   delete legacy.schemaVersion;
   const documents = legacy.documents as Record<string, Record<string, unknown>>;
   documents.RECEIPT.logoEnabled = true;
   documents.RECEIPT.businessNameEnabled = true;
 
   const migrated = migrateStoredReceiptPrintProfile(legacy);
-  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.schemaVersion, 3);
   assert.equal(migrated.documents.RECEIPT.logoEnabled, false);
   assert.equal(migrated.documents.RECEIPT.businessNameEnabled, false);
   assert.equal(migrated.documents.KITCHEN.logoEnabled, true);
   assert.equal(migrated.documents.KITCHEN.businessNameEnabled, true);
   migrated.documents.RECEIPT.logoEnabled = true;
   migrated.documents.RECEIPT.businessNameEnabled = true;
-  assert.equal(migrateStoredReceiptPrintProfile(migrated).documents.RECEIPT.logoEnabled, true);
-  assert.equal(migrateStoredReceiptPrintProfile(migrated).documents.RECEIPT.businessNameEnabled, true);
+  assert.equal(
+    migrateStoredReceiptPrintProfile(migrated).documents.RECEIPT.logoEnabled,
+    true,
+  );
+  assert.equal(
+    migrateStoredReceiptPrintProfile(migrated).documents.RECEIPT
+      .businessNameEnabled,
+    true,
+  );
 });
 
 test("legacy custom branding and explicit hide choices are preserved", () => {
   const customName = migrateStoredReceiptPrintProfile({
     businessName: "MAZETTO SERGELI",
-    documents: { RECEIPT: { businessName: "MAZETTO SERGELI", logoEnabled: true, businessNameEnabled: true } },
+    documents: {
+      RECEIPT: {
+        businessName: "MAZETTO SERGELI",
+        logoEnabled: true,
+        businessNameEnabled: true,
+      },
+    },
   });
   const hiddenLogo = migrateStoredReceiptPrintProfile({
     businessName: "MAZETTO FOOD",
@@ -301,14 +383,21 @@ test("receipt branding is independent for each document kind", () => {
   profile.documents.REFUND.businessNameEnabled = false;
   profile.documents.KITCHEN.businessName = "Oshxona <nomi>";
   const logo = "data:image/png;base64,ZmFrZQ==";
-  const render = (documentType: string) => printableReceiptHtml(
-    { documentType, content: { documentType, dateTime: "09.10.2026 14:20 Toshkent vaqti" } },
-    { paperFormat: "ROLL", paperWidthMm: 80 },
-    profile,
-    logo,
-  );
+  const render = (documentType: string) =>
+    printableReceiptHtml(
+      {
+        documentType,
+        content: { documentType, dateTime: "09.10.2026 14:20 Toshkent vaqti" },
+      },
+      { paperFormat: "ROLL", paperWidthMm: 80 },
+      profile,
+      logo,
+    );
 
-  assert.doesNotMatch(render("RECEIPT"), /<img class="logo"|MAZETTO FOOD|Toshkent vaqti/);
+  assert.doesNotMatch(
+    render("RECEIPT"),
+    /<img class="logo"|MAZETTO FOOD|Toshkent vaqti/,
+  );
   assert.match(render("KITCHEN"), /<img class="logo"/);
   assert.match(render("KITCHEN"), /<div class="business-name">/);
   assert.match(render("KITCHEN"), /Oshxona &lt;nomi&gt;/);
@@ -323,7 +412,15 @@ test("receipt profile normalization bounds text, lines and sizes while preservin
   const normalized = normalizeReceiptPrintProfile({
     businessNameEnabled: false,
     logoEnabled: false,
-    commonHeaderLines: [" bir ", "", "ikki", "uch", "to'rt", "besh", "oltinchi"],
+    commonHeaderLines: [
+      " bir ",
+      "",
+      "ikki",
+      "uch",
+      "to'rt",
+      "besh",
+      "oltinchi",
+    ],
     documents: {
       KITCHEN: {
         fontSizePx: 100,
@@ -340,7 +437,13 @@ test("receipt profile normalization bounds text, lines and sizes while preservin
   assert.equal(normalized.documents.RECEIPT.logoEnabled, false);
   assert.equal(normalized.documents.KITCHEN.businessNameEnabled, false);
   assert.equal(normalized.documents.KITCHEN.logoEnabled, false);
-  assert.deepEqual(normalized.commonHeaderLines, ["bir", "ikki", "uch", "to'rt", "besh"]);
+  assert.deepEqual(normalized.commonHeaderLines, [
+    "bir",
+    "ikki",
+    "uch",
+    "to'rt",
+    "besh",
+  ]);
   assert.equal(normalized.documents.KITCHEN.fontSizePx, 24);
   assert.equal(normalized.documents.KITCHEN.titleSizePx, 10);
   assert.equal(normalized.documents.KITCHEN.density, "COMPACT");
@@ -358,7 +461,13 @@ test("saved per-kind branding overrides legacy common visibility", () => {
     businessName: "Eski nom",
     logoEnabled: false,
     businessNameEnabled: false,
-    documents: { KITCHEN: { logoEnabled: true, businessNameEnabled: true, businessName: "Oshxona nomi" } },
+    documents: {
+      KITCHEN: {
+        logoEnabled: true,
+        businessNameEnabled: true,
+        businessName: "Oshxona nomi",
+      },
+    },
   });
 
   assert.equal(normalized.documents.RECEIPT.logoEnabled, false);
@@ -372,9 +481,40 @@ test("saved per-kind branding overrides legacy common visibility", () => {
 test("dining and takeaway order types are not printed as customer notes", () => {
   for (const orderType of ["Zal", "Olib ketish"]) {
     const html = printableReceiptHtml({
-      content: { orderType, orderNotes: "  ", items: [{ productName: "Tea", notes: " \n\t " }] },
+      content: {
+        orderType,
+        orderNotes: "  ",
+        items: [{ productName: "Tea", notes: " \n\t " }],
+      },
     });
     assert.doesNotMatch(html, /Izoh:/);
     assert.ok(html.includes(orderType));
   }
+});
+
+test("default receipt footer can be disabled per document without hiding custom footer lines", () => {
+  const profile = defaultReceiptPrintProfile();
+  profile.documents.RECEIPT.defaultFooterEnabled = false;
+  const render = (documentType: string) =>
+    printableReceiptHtml(
+      { documentType, content: { documentType } },
+      { paperFormat: "ROLL", paperWidthMm: 80 },
+      profile,
+    );
+
+  assert.doesNotMatch(render("RECEIPT"), /Xaridingiz uchun rahmat/);
+  assert.match(render("KITCHEN"), /Tayyorlash uchun/);
+
+  profile.documents.RECEIPT.footerLines = ["Tashrifingiz uchun rahmat"];
+  assert.match(render("RECEIPT"), /Tashrifingiz uchun rahmat/);
+  assert.doesNotMatch(render("RECEIPT"), /Xaridingiz uchun rahmat/);
+});
+
+test("version-two receipt settings migrate with default footer enabled", () => {
+  const migrated = migrateStoredReceiptPrintProfile({
+    schemaVersion: 2,
+    documents: { RECEIPT: { title: "MIJOZ CHEKI" } },
+  });
+  assert.equal(migrated.schemaVersion, 3);
+  assert.equal(migrated.documents.RECEIPT.defaultFooterEnabled, true);
 });

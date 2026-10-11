@@ -5,7 +5,7 @@ import { PlatformTenantMembershipService } from "../src/modules/platform-monitor
 
 test("suspending a tenant membership disconnects staff sockets after the transaction commits", async () => {
   let transactionCommitted = false;
-  let disconnectedUser: string | null = null;
+  let disconnectedMembership: string | null = null;
   const tx = {
     tenantMembership: {
       findFirst: async () => ({
@@ -25,9 +25,9 @@ test("suspending a tenant membership disconnects staff sockets after the transac
     },
   };
   const gateway = {
-    disconnectStaffUser: (userId: string) => {
+    disconnectTenantMembership: (membershipId: string) => {
       assert.equal(transactionCommitted, true);
-      disconnectedUser = userId;
+      disconnectedMembership = membershipId;
     },
   };
   const service = new PlatformTenantMembershipService(
@@ -43,12 +43,12 @@ test("suspending a tenant membership disconnects staff sockets after the transac
   );
 
   assert.deepEqual(result, { id: "membership-a", status: "SUSPENDED" });
-  assert.equal(disconnectedUser, "staff-a");
+  assert.equal(disconnectedMembership, "membership-a");
 });
 
 test("replacing tenant membership roles disconnects existing staff sockets", async () => {
   let transactionCommitted = false;
-  let disconnectedUser: string | null = null;
+  let disconnectedMembership: string | null = null;
   const tx = {
     tenantMembershipRole: {
       deleteMany: async () => ({ count: 1 }),
@@ -79,9 +79,9 @@ test("replacing tenant membership roles disconnects existing staff sockets", asy
     },
   };
   const gateway = {
-    disconnectStaffUser: (userId: string) => {
+    disconnectTenantMembership: (membershipId: string) => {
       assert.equal(transactionCommitted, true);
-      disconnectedUser = userId;
+      disconnectedMembership = membershipId;
     },
   };
   const service = new PlatformTenantMembershipService(
@@ -96,5 +96,5 @@ test("replacing tenant membership roles disconnects existing staff sockets", asy
     { id: "owner-a", roles: [], permissions: [] },
   );
 
-  assert.equal(disconnectedUser, "staff-a");
+  assert.equal(disconnectedMembership, "membership-a");
 });
