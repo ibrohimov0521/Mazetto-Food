@@ -346,6 +346,53 @@ async function main() {
       PaymentStatus.PENDING,
     );
 
+    const retryOperator = await actor("RefundRetry", ["CASHIER"]);
+    const retryShift = await shifts.openShift({ openingBalance: 0 }, retryOperator);
+    const retryOrder = await online("TAKEAWAY", 4000);
+    await payments.processOrderPayment(
+      {
+        orderId: retryOrder.order.id,
+        idempotencyKey: "qa-refund-retry-sale-" + id,
+        shiftId: retryShift.id,
+        payments: [{ paymentMethodCode: "CASH", amount: 4000 }],
+      },
+      retryOperator,
+    );
+    const retryPayment = await prisma.payment.findFirstOrThrow({
+      where: { orderId: retryOrder.order.id },
+    });
+    const retryRequest = {
+      shiftId: retryShift.id,
+      amount: 1000,
+      reason: "QA concurrent duplicate refund",
+      idempotencyKey: "qa-refund-same-key-" + id,
+    };
+    const duplicateRefunds = await Promise.allSettled([
+      payments.refundPayment(retryPayment.id, retryRequest, retryOperator),
+      payments.refundPayment(retryPayment.id, retryRequest, retryOperator),
+    ]);
+    const duplicateRefundResults = duplicateRefunds.map((result) =>
+      result.status === "fulfilled" ? result.value.id : String(result.reason),
+    );
+    assert.equal(
+      duplicateRefunds.filter((result) => result.status === "fulfilled").length,
+      2,
+      `concurrent retries with one idempotency key should both resolve: ${duplicateRefundResults.join("; ")}`,
+    );
+    const duplicateRefundIds = new Set(
+      duplicateRefunds.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value.id] : [],
+      ),
+    );
+    assert.equal(duplicateRefundIds.size, 1);
+    assert.equal(
+      await prisma.paymentRefund.count({
+        where: { paymentId: retryPayment.id },
+      }),
+      1,
+    );
+    assert.equal(await balance(retryOperator), 3000);
+
     const closed = await shifts.closeShift(sourceShift.id, { closingBalance: 10250 }, worker);
     assert.equal(closed.cashDifference?.toNumber(), 0);
     assert.equal(closed.cashTotal.toNumber(), 60000);
@@ -393,7 +440,7 @@ async function main() {
     assert.equal(await prisma.cashTransaction.count({
       where: { orderId: diningOrder.id, shiftId: replacementTargetShift.id, employeeId: receiver.employeeId },
     }), 1);
-    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, concurrent refund bounds, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
+    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, concurrent refund bounds and idempotent retries, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
   } finally { await prisma.onModuleDestroy(); }
 }
 void main();

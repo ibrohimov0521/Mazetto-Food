@@ -635,8 +635,10 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Verification passed: `pnpm verify` and `pnpm test` completed successfully across all eight workspace packages, including 33 operational validators; backend tests passed 627/627 plus HTTP retry tests 3/3. The focused ESLint, backend application/scripts typechecks, and Nest production build also passed. The read-only production smoke separately passed 27/27 against the currently deployed baseline, which does not include this source change.
 - This source-only continuation has not been pushed, merged, or deployed. No production service or database has been changed.
 
-## Audit continuation: parallel refund ledger verification (2026-10-11)
+## Audit continuation: parallel refund and idempotency verification (2026-10-11)
 
-- The disposable PostgreSQL unified-cash validator covered concurrent order completion and transfers but did not exercise competing refund requests against one payment. Added a parallel 7,000 + 7,000 so'm refund attempt against one 9,000 so'm cash payment. The invariant asserts exactly one request can consume the current refundable amount, the total refund remains 7,000, the remaining shift cash is 2,000, and the order returns to PENDING.
-- The scenario passed against an isolated PostgreSQL 18 database after all 59 migrations. Its temporary no-volume container was removed; no shared development, staging, or production database was used.
-- The validator addition still requires repository CI on its next push.
+- The disposable PostgreSQL unified-cash validator now races two different 7,000 so'm refund requests against one 9,000 so'm cash payment. Exactly one consumes the balance; the total refund is 7,000, shift cash remains 2,000, and the order returns to PENDING.
+- A same-key concurrent retry exposed a second defect: PostgreSQL rejected the losing SERIALIZABLE transaction with SQLSTATE 40001, surfaced by Prisma as a P2010 raw-query error. Refund requests now retry bounded P2034 and PostgreSQL serialization/deadlock errors; the retry sees the committed idempotency record and returns that same refund rather than an internal error or second ledger write.
+- Regression coverage checks P2010/40001 classification and irrelevant raw-query errors. The disposable PostgreSQL 18 validator passes both different-key over-refund protection and identical-key replay, with one refund row and the correct remaining cash.
+- Full `pnpm verify` and `pnpm test` passed across all eight workspace packages, including 33 operational validators. Backend tests passed 627/627 plus HTTP retry tests 3/3. The standalone disposable database received all 59 migrations and was removed after the run.
+- The latest follow-up edits have not yet been pushed to PR #296; its next CI run must include the new same-key integration case. No production service or database was changed.

@@ -169,10 +169,21 @@ test("Prisma xato kodlari to'g'ri ajratiladi", () => {
     code: "P2034",
     clientVersion: "x",
   });
+  const serialization = new Prisma.PrismaClientKnownRequestError(
+    "Raw query failed. Code: 40001. Message: could not serialize access",
+    { code: "P2010", clientVersion: "x", meta: { code: "40001" } },
+  );
+  const ordinaryRawError = new Prisma.PrismaClientKnownRequestError("raw error", {
+    code: "P2010",
+    clientVersion: "x",
+    meta: { code: "42P01" },
+  });
 
   assert.equal(isUniqueConstraintError(unique), true);
   assert.equal(isUniqueConstraintError(conflict), false);
   assert.equal(isRetryableTransactionConflict(conflict), true);
+  assert.equal(isRetryableTransactionConflict(serialization), true);
+  assert.equal(isRetryableTransactionConflict(ordinaryRawError), false);
   assert.equal(isRetryableTransactionConflict(unique), false);
   // Oddiy xato ikkalasiga ham tushmasligi kerak.
   assert.equal(isUniqueConstraintError(new Error("boom")), false);

@@ -31,6 +31,7 @@ import {
   type RefundablePayment,
 } from "./refund-ledger";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
+import { isRetryableTransactionConflict } from "../orders/order-rules";
 import { releaseTableIfNoActiveOrders } from "../tables/table-order-state";
 import type { ListPaymentsDto } from "./dto/list-payments.dto";
 import type {
@@ -577,7 +578,7 @@ export class PaymentsService {
     const employeeId = user.employeeId;
     const reason = dto.reason.trim();
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    return this.prisma.$transaction(
+    const executeRefund = () => this.prisma.$transaction(
       async (tx) => {
         const scopedPayment = await tx.payment.findFirst({
           where: { id: paymentId, order: { branch: { tenantId } } },
@@ -731,6 +732,17 @@ export class PaymentsService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await executeRefund();
+      } catch (error) {
+        if (isRetryableTransactionConflict(error) && attempt < 2) continue;
+        throw error;
+      }
+    }
+
+    throw new BadRequestException("Refund could not be completed");
   }
 
   private requirePaymentMethodCode(code: string | undefined): string {
