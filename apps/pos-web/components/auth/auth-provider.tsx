@@ -28,8 +28,7 @@ type AuthContextValue = {
   login: (
     identifier: string,
     password: string,
-    rememberDesktopCredentials?: boolean,
-    selectedSavedIdentifier?: string | null,
+    useSavedCredential?: boolean,
   ) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -80,38 +79,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (
       identifier: string,
       password: string,
-      rememberDesktopCredentials = false,
-      selectedSavedIdentifier: string | null = null,
+      useSavedCredential = false,
     ) => {
       const desktopAuth = window.mazettoDesktop?.auth;
       const desktopLogin = desktopAuth?.login;
       if (desktopLogin) {
         let session: AuthSession;
         try {
-          session = await desktopLogin({ identifier, password }) as AuthSession;
+          session = (await desktopLogin({
+            identifier,
+            password,
+            useSavedCredential,
+          })) as AuthSession;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           if (message.toLowerCase().includes("invalid credentials")) {
             throw new Error(
               "Login yoki parol noto'g'ri. Saqlangan hisobni tanlang yoki ma'lumotlarni qayta kiriting.",
             );
           }
           throw new Error(
-            message.replace(/^Error invoking remote method '[^']+': Error:\s*/i, ""),
+            message.replace(
+              /^Error invoking remote method '[^']+': Error:\s*/i,
+              "",
+            ),
           );
         }
 
-        if (desktopAuth.credentials) {
-          try {
-            if (rememberDesktopCredentials) {
-              await desktopAuth.credentials.save({ identifier, password });
-            } else if (selectedSavedIdentifier) {
-              await desktopAuth.credentials.remove(selectedSavedIdentifier);
-            }
-          } catch {
-            console.warn("Desktop login ma'lumotini xavfsiz saqlash imkoni bo'lmadi.");
-          }
-        }
         writeSession(session);
         router.replace(getPrimaryRedirect(session.user));
         return;
@@ -172,11 +167,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 async function getLoginRedirect(session: AuthSession): Promise<string> {
   const fallbackRedirect = getPrimaryRedirect(session.user);
 
-  if (typeof window !== "undefined" && window.navigator.userAgent.includes("MAZETTO-Desktop/")) {
+  if (
+    typeof window !== "undefined" &&
+    window.navigator.userAgent.includes("MAZETTO-Desktop/")
+  ) {
     try {
-      const desktopStatus = await fetch("http://127.0.0.1:7359/desktop/status", {
-        cache: "no-store",
-      });
+      const desktopStatus = await fetch(
+        "http://127.0.0.1:7359/desktop/status",
+        {
+          cache: "no-store",
+        },
+      );
       const desktopPayload = (await desktopStatus.json()) as {
         data?: { deviceId?: string };
       };

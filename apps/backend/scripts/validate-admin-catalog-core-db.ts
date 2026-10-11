@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     });
 
     assert.equal(created.categoryId, category.id);
-    assert.equal(created.catalogVisibility, "INTERNAL");
+    assert.equal(created.catalogVisibility, "CUSTOM");
     assert.equal(String(created.sellingPrice), "12000");
     assert.equal(created.variants.length, 1);
     assert.equal(String(created.variants[0]?.sellingPrice), "12000");

@@ -355,6 +355,15 @@ export class DesktopStore {
   ): PendingOutboxCommand {
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      const existing = this.getOutboxCommandByIdempotencyKey(
+        input.idempotencyKey,
+      );
+      if (existing) {
+        this.assertSameIdempotentCommand(existing, input);
+        this.database.exec("COMMIT");
+        return existing;
+      }
+
       const command = this.enqueueMutation(input);
       for (const printJob of printJobs) {
         this.enqueueLocalPrintJob(printJob);
@@ -731,7 +740,32 @@ export class DesktopStore {
   wasLocalDocumentPrinted(
     serverOrderId: string,
     documentType: string,
+    printerName?: string,
   ): boolean {
+    if (printerName?.trim()) {
+      const row = this.database
+        .prepare(
+          `SELECT 1
+           FROM print_jobs job
+           LEFT JOIN local_id_map map
+             ON job.logical_key = map.local_id || ':' || ?
+           JOIN print_job_targets target
+             ON target.scope = 'local'
+            AND target.job_id = job.id
+            AND target.printer_key = ?
+            AND target.state = 'printed'
+           WHERE (map.server_id = ? OR job.logical_key = ?)
+           LIMIT 1`,
+        )
+        .get(
+          documentType,
+          printerName.trim().toLowerCase(),
+          serverOrderId,
+          serverOrderId + ":" + documentType,
+        );
+      return Boolean(row);
+    }
+
     const row = this.database
       .prepare(
         `SELECT 1
@@ -746,7 +780,70 @@ export class DesktopStore {
     return Boolean(row);
   }
 
+  wasLocalDocumentAmbiguous(
+    serverOrderId: string,
+    documentType: string,
+    printerName: string,
+  ): boolean {
+    const row = this.database
+      .prepare(
+        `SELECT 1
+         FROM print_jobs job
+         LEFT JOIN local_id_map map
+           ON job.logical_key = map.local_id || ':' || ?
+         JOIN print_job_targets target
+           ON target.scope = 'local'
+          AND target.job_id = job.id
+          AND target.printer_key = ?
+          AND target.state = 'ambiguous'
+         WHERE (map.server_id = ? OR job.logical_key = ?)
+         LIMIT 1`,
+      )
+      .get(
+        documentType,
+        printerName.trim().toLowerCase(),
+        serverOrderId,
+        `${serverOrderId}:${documentType}`,
+      );
+    return Boolean(row);
+  }
+
+  resolveIdempotentMutation(input: {
+    idempotencyKey: string;
+    commandType: string;
+    aggregateType: string;
+    actorId: string;
+    branchId: string;
+    authScope: string;
+    requestFingerprint: string;
+    queuedEmployeeId: string | null;
+  }): PendingOutboxCommand | null {
+    const existing = this.getOutboxCommandByIdempotencyKey(
+      input.idempotencyKey,
+    );
+    if (!existing) return null;
+
+    this.assertSameIdempotentCommand(existing, {
+      ...input,
+      aggregateId: existing.aggregateId,
+      baseVersion: existing.baseVersion,
+      payload: {
+        requestFingerprint: input.requestFingerprint,
+        queuedEmployeeId: input.queuedEmployeeId,
+      },
+    });
+    return existing;
+  }
+
   enqueueMutation(input: OutboxCommandInput): PendingOutboxCommand {
+    const existing = this.getOutboxCommandByIdempotencyKey(
+      input.idempotencyKey,
+    );
+    if (existing) {
+      this.assertSameIdempotentCommand(existing, input);
+      return existing;
+    }
+
     const id = input.id ?? randomUUID();
     const now = new Date().toISOString();
     const payloadJson = JSON.stringify(input.payload);
@@ -759,9 +856,7 @@ export class DesktopStore {
         base_version, actor_id, branch_id, auth_scope, payload_json, state,
         attempts, next_attempt_at, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)
-      ON CONFLICT(idempotency_key) DO UPDATE SET
-        payload_json = excluded.payload_json,
-        last_error = NULL
+      ON CONFLICT(idempotency_key) DO NOTHING
     `,
       )
       .run(
@@ -779,21 +874,26 @@ export class DesktopStore {
         now,
       );
 
-    return (
-      this.getOutboxCommandByIdempotencyKey(input.idempotencyKey) ?? {
-        id,
-        idempotencyKey: input.idempotencyKey,
-        commandType: input.commandType,
-        aggregateType: input.aggregateType,
-        aggregateId: input.aggregateId ?? null,
-        baseVersion: input.baseVersion ?? null,
-        actorId: input.actorId,
-        branchId: input.branchId,
-        authScope: input.authScope,
-        payloadJson,
-        attempts: 0,
-      }
+    const persisted = this.getOutboxCommandByIdempotencyKey(
+      input.idempotencyKey,
     );
+    if (persisted) {
+      this.assertSameIdempotentCommand(persisted, input);
+      return persisted;
+    }
+    return {
+      id,
+      idempotencyKey: input.idempotencyKey,
+      commandType: input.commandType,
+      aggregateType: input.aggregateType,
+      aggregateId: input.aggregateId ?? null,
+      baseVersion: input.baseVersion ?? null,
+      actorId: input.actorId,
+      branchId: input.branchId,
+      authScope: input.authScope,
+      payloadJson,
+      attempts: 0,
+    };
   }
 
   adoptMutationsForIdentity(
@@ -1503,6 +1603,73 @@ export class DesktopStore {
     return row?.value ?? null;
   }
 
+  private assertSameIdempotentCommand(
+    existing: PendingOutboxCommand,
+    input: OutboxCommandInput,
+  ): void {
+    const requestFingerprint = (payload: unknown): string | null => {
+      if (!payload || typeof payload !== "object" || Array.isArray(payload))
+        return null;
+      const value = (payload as Record<string, unknown>).requestFingerprint;
+      return typeof value === "string" ? value : null;
+    };
+    const storedFingerprint = (() => {
+      try {
+        return requestFingerprint(JSON.parse(existing.payloadJson) as unknown);
+      } catch {
+        return null;
+      }
+    })();
+    const queuedEmployeeId = (payload: unknown): unknown =>
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).queuedEmployeeId
+        : undefined;
+    const storedEmployeeId = (() => {
+      try {
+        return queuedEmployeeId(JSON.parse(existing.payloadJson) as unknown);
+      } catch {
+        return undefined;
+      }
+    })();
+    const incomingEmployeeId = queuedEmployeeId(input.payload);
+    const incomingFingerprint = requestFingerprint(input.payload);
+    if (
+      storedFingerprint !== null ||
+      incomingFingerprint !== null
+    ) {
+      if (
+        storedFingerprint === null ||
+        incomingFingerprint === null ||
+        storedFingerprint !== incomingFingerprint ||
+        storedEmployeeId !== incomingEmployeeId ||
+        existing.actorId !== input.actorId ||
+        existing.branchId !== input.branchId ||
+        existing.authScope !== input.authScope ||
+        existing.commandType !== input.commandType ||
+        existing.aggregateType !== input.aggregateType
+      ) {
+        throw new Error(
+          "Idempotency key is already used by a different command identity.",
+        );
+      }
+      return;
+    }
+    if (
+      existing.actorId !== input.actorId ||
+      existing.branchId !== input.branchId ||
+      existing.authScope !== input.authScope ||
+      existing.commandType !== input.commandType ||
+      existing.aggregateType !== input.aggregateType ||
+      existing.aggregateId !== (input.aggregateId ?? null) ||
+      existing.baseVersion !== (input.baseVersion ?? null) ||
+      existing.payloadJson !== JSON.stringify(input.payload)
+    ) {
+      throw new Error(
+        "Idempotency key is already used by a different command identity.",
+      );
+    }
+  }
+
   private getOutboxCommandByIdempotencyKey(
     idempotencyKey: string,
   ): PendingOutboxCommand | null {
@@ -1848,6 +2015,7 @@ function readJwtIdentity(authorization: string): string | null {
     return JSON.stringify({
       actorId: context.actorId,
       branchId: context.branchId,
+      employeeId: context.employeeId ?? null,
       isGlobalScope: context.isGlobalScope,
       tenantId: typeof claims.tenantId === "string" ? claims.tenantId : null,
       membershipId:

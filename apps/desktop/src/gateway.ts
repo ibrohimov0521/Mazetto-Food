@@ -4,7 +4,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import {
   resolveOfflineCommand,
@@ -274,6 +274,22 @@ export class DesktopGateway {
         }
 
         const commandDefinition = resolveOfflineCommand(method, url.pathname);
+        if (
+          authorization &&
+          body &&
+          commandDefinition &&
+          this.sendExistingQueuedMutationResponse(response, {
+            authorization,
+            authScope,
+            body,
+            method,
+            pathname: url.pathname,
+            request,
+            definition: commandDefinition,
+          })
+        ) {
+          return;
+        }
         const isPaymentCommand =
           commandDefinition?.commandType === "pos.order.create" ||
           commandDefinition?.commandType === "payment.process";
@@ -525,6 +541,22 @@ export class DesktopGateway {
       }
 
       const commandDefinition = resolveOfflineCommand(method, url.pathname);
+      if (
+        authorization &&
+        body &&
+        commandDefinition &&
+        this.sendExistingQueuedMutationResponse(response, {
+          authorization,
+          authScope,
+          body,
+          method,
+          pathname: url.pathname,
+          request,
+          definition: commandDefinition,
+        })
+      ) {
+        return;
+      }
       const isPaymentCommand =
         commandDefinition?.commandType === "pos.order.create" ||
         commandDefinition?.commandType === "payment.process";
@@ -794,6 +826,73 @@ export class DesktopGateway {
     );
   }
 
+  private sendExistingQueuedMutationResponse(
+    response: ServerResponse,
+    input: {
+      authorization: string;
+      authScope: string;
+      body: ArrayBuffer;
+      method: string;
+      pathname: string;
+      request: IncomingMessage;
+      definition: OfflineCommandDefinition;
+    },
+  ): boolean {
+    if (!hasStableIdempotencyKey(input.request, input.body)) return false;
+    const rawBody = Buffer.from(input.body).toString("utf8");
+    const parsedBody = parseJsonObject(rawBody);
+    const idempotencyKey =
+      headerValue(input.request.headers["idempotency-key"]) ??
+      stringField(parsedBody, "idempotencyKey");
+    if (!idempotencyKey) return false;
+
+    const identity = readJwtContext(input.authorization);
+    const requestFingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          method: input.method,
+          pathname: input.pathname,
+          body: parsedBody === null ? rawBody : canonicalizeJson(parsedBody),
+        }),
+      )
+      .digest("hex");
+    try {
+      const command = this.store.resolveIdempotentMutation({
+        idempotencyKey,
+        commandType: input.definition.commandType,
+        aggregateType: input.definition.aggregateType,
+        actorId: identity?.actorId ?? "unknown",
+        branchId: identity?.branchId ?? "global",
+        authScope: input.authScope,
+        requestFingerprint,
+        queuedEmployeeId: identity?.employeeId ?? null,
+      });
+      if (!command) return false;
+      this.sendQueuedMutationResponse(
+        response,
+        input.pathname,
+        command,
+        input.body,
+      );
+      return true;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Idempotency key is already used")
+      ) {
+        this.sendJson(response, 409, {
+          success: false,
+          error: {
+            code: "IDEMPOTENCY_KEY_REUSED",
+            message: "Idempotency kaliti boshqa amal bilan ishlatilgan. Yangi kalit yarating.",
+          },
+        });
+        return true;
+      }
+      throw error;
+    }
+  }
+
   private queueMutation(input: {
     authorization: string;
     authScope: string;
@@ -806,11 +905,32 @@ export class DesktopGateway {
     definition: OfflineCommandDefinition;
   }): { command: PendingOutboxCommand } {
     let parsedBody = parseJsonObject(Buffer.from(input.body).toString("utf8"));
+    const rawBody = Buffer.from(input.body).toString("utf8");
+    const requestFingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          method: input.method,
+          pathname: input.pathname,
+          body: parsedBody === null ? rawBody : canonicalizeJson(parsedBody),
+        }),
+      )
+      .digest("hex");
     const context = readJwtContext(input.authorization);
     const idempotencyKey =
       headerValue(input.request.headers["idempotency-key"]) ??
       stringField(parsedBody, "idempotencyKey") ??
       `desktop-${randomUUID()}`;
+    const existingCommand = this.store.resolveIdempotentMutation({
+      idempotencyKey,
+      commandType: input.definition.commandType,
+      aggregateType: input.definition.aggregateType,
+      actorId: context?.actorId ?? "unknown",
+      branchId: context?.branchId ?? "global",
+      authScope: input.authScope,
+      requestFingerprint,
+      queuedEmployeeId: context?.employeeId ?? null,
+    });
+    if (existingCommand) return { command: existingCommand };
     const aggregate = aggregateFromPath(input.pathname);
     const localAggregateId = createsLocalAggregate(input.definition.commandType)
       ? `local-${randomUUID()}`
@@ -957,6 +1077,8 @@ export class DesktopGateway {
         branchId: context?.branchId ?? "global",
         authScope: input.authScope,
         payload: {
+          requestFingerprint,
+          queuedEmployeeId: context?.employeeId ?? null,
           commandType: input.definition.commandType,
           method: input.method,
           targetUrl: input.targetUrl,
@@ -1043,7 +1165,6 @@ export class DesktopGateway {
     authorization: string,
   ): Promise<void> {
     const latestCommand = this.store.getOutboxCommand(command.id) ?? command;
-    this.store.markMutationSending(latestCommand.id);
 
     try {
       const payload = JSON.parse(latestCommand.payloadJson) as {
@@ -1054,7 +1175,25 @@ export class DesktopGateway {
         pathname?: string;
         targetUrl?: string;
         localAggregateId?: string;
+        queuedEmployeeId?: string | null;
       };
+      const hasEmployeeBinding = Object.prototype.hasOwnProperty.call(
+        payload,
+        "queuedEmployeeId",
+      );
+      const currentEmployeeId = readJwtContext(authorization)?.employeeId ?? null;
+      if (
+        !hasEmployeeBinding ||
+        payload.queuedEmployeeId !== currentEmployeeId
+      ) {
+        this.store.markMutationConflict(
+          latestCommand.id,
+          hasEmployeeBinding
+            ? "EMPLOYEE_CONTEXT_CHANGED: Offline amal boshqa xodim kontekstida yaratilgan; kassirni tekshirib qayta yarating."
+            : "EMPLOYEE_CONTEXT_UNKNOWN: Eski offline amal yaratilgan xodim saqlanmagan; kassirni tekshirib qayta yarating.",
+        );
+        return;
+      }
       if (!payload.method || !payload.targetUrl) {
         throw new Error("Queued command payload is incomplete");
       }
@@ -1076,6 +1215,8 @@ export class DesktopGateway {
         );
         return;
       }
+
+      this.store.markMutationSending(latestCommand.id);
 
       const headers = new Headers({
         Accept: "application/json",
@@ -3434,6 +3575,17 @@ function parseJsonObject(source: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, canonicalizeJson(record[key])]),
+  );
 }
 
 function stringField(

@@ -155,7 +155,11 @@ function fixture(
         if (where?.toShiftId === receiverShift.id) {
           return options.pendingIncoming ? transfer : null;
         }
-        return where?.branchId === "b1" ? transfer : null;
+        return where?.fromShiftId || where?.toShiftId
+          ? null
+          : where?.branchId === "b1"
+            ? transfer
+            : null;
       },
       findUnique: async () => transfer,
       findUniqueOrThrow: async () => transfer,

@@ -55,6 +55,19 @@ export function parseSavedDesktopCredentials(
   }
 }
 
+export function shouldOfferDesktopCredentialSave(
+  credentials: SavedDesktopCredential[],
+  identifier: string,
+  password: string,
+): boolean {
+  const normalized = normalizeSavedCredentialIdentifier(identifier);
+  return !credentials.some(
+    (entry) =>
+      normalizeSavedCredentialIdentifier(entry.identifier) === normalized &&
+      entry.password === password,
+  );
+}
+
 export function upsertSavedDesktopCredential(
   credentials: SavedDesktopCredential[],
   identifier: string,
@@ -89,4 +102,23 @@ export function removeSavedDesktopCredential(
     (entry) =>
       normalizeSavedCredentialIdentifier(entry.identifier) !== normalized,
   );
+}
+
+export function resolveDesktopLoginPassword(
+  credentials: SavedDesktopCredential[],
+  identifier: string,
+  password: string,
+  useSavedCredential: boolean,
+): string {
+  if (!useSavedCredential) return password;
+
+  const normalized = normalizeSavedCredentialIdentifier(identifier);
+  const saved = credentials.find(
+    (entry) =>
+      normalizeSavedCredentialIdentifier(entry.identifier) === normalized,
+  );
+  if (!saved) {
+    throw new Error("Saqlangan hisob topilmadi. Parolni qayta kiriting.");
+  }
+  return saved.password;
 }

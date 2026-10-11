@@ -447,7 +447,7 @@ export function AdminShiftsPage() {
     },
     {
       key: "orders",
-      header: "Smenada yaratilgan",
+      header: "Smenadagi buyurtmalar",
       align: "right",
       hideOnMobile: true,
       render: (shift) => (
@@ -1109,7 +1109,7 @@ function ShiftDetailModal({
               numeric
               value={formatMoney(shift.openingBalance)}
             />
-            <Row label="Smenada yaratilgan" value={`${shift.orderCount} ta`} />
+            <Row label="Smenadagi buyurtmalar" value={`${shift.orderCount} ta`} />
             <Row label="Savdo" numeric value={formatMoney(shift.salesTotal)} />
             <Row label="Naqd" numeric value={formatMoney(shift.cashTotal)} />
             <Row

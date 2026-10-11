@@ -514,7 +514,7 @@ export default function CashierHistoryPage() {
         {shift ? (
           <section className={styles.stats} aria-label="Smena xulosasi">
             <div className={styles.stat}>
-              <span>Smenada yaratilgan</span>
+              <span>Smenadagi buyurtmalar</span>
               <strong>{shift.orderCount ?? sortedOrders.length}</strong>
             </div>
             <div className={styles.stat}>

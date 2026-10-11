@@ -39,10 +39,20 @@ type DesktopPrinterStatus = {
 
 type DesktopReceiptKind = "RECEIPT" | "KITCHEN" | "CANCELLATION" | "REFUND";
 type DesktopReceiptFieldKey =
-  | "branchName" | "orderNumber" | "orderType" | "dateTime"
-  | "customerName" | "customerPhone" | "address" | "itemPrices"
-  | "itemModifiers" | "itemNotes" | "payments" | "total"
-  | "orderNotes" | "reason";
+  | "branchName"
+  | "orderNumber"
+  | "orderType"
+  | "dateTime"
+  | "customerName"
+  | "customerPhone"
+  | "address"
+  | "itemPrices"
+  | "itemModifiers"
+  | "itemNotes"
+  | "payments"
+  | "total"
+  | "orderNotes"
+  | "reason";
 type DesktopReceiptDocumentProfile = {
   title: string;
   titleEnabled: boolean;
@@ -70,7 +80,10 @@ declare global {
     mazettoDesktop?: {
       printer?: {
         status(): Promise<DesktopPrinterStatus>;
-        save(input: { host: string; port: number }): Promise<DesktopPrinterStatus>;
+        save(input: {
+          host: string;
+          port: number;
+        }): Promise<DesktopPrinterStatus>;
         test(): Promise<void>;
         testManaged(): Promise<Array<{ name: string; ok: boolean }>>;
         listSystem(): Promise<
@@ -82,7 +95,9 @@ declare global {
             isDefault: boolean;
           }>
         >;
-        saveSystem(input: { printers: DesktopSystemPrinter[] }): Promise<DesktopPrinterStatus>;
+        saveSystem(input: {
+          printers: DesktopSystemPrinter[];
+        }): Promise<DesktopPrinterStatus>;
         testSystem(input: {
           name: string;
           role: string;
@@ -93,7 +108,9 @@ declare global {
       };
       receiptProfiles?: {
         load(): Promise<DesktopReceiptPrintProfile>;
-        save(profile: DesktopReceiptPrintProfile): Promise<DesktopReceiptPrintProfile>;
+        save(
+          profile: DesktopReceiptPrintProfile,
+        ): Promise<DesktopReceiptPrintProfile>;
         reset(): Promise<DesktopReceiptPrintProfile>;
         preview(input: {
           kind: DesktopReceiptKind;
@@ -102,14 +119,19 @@ declare global {
         }): Promise<string>;
       };
       device?: {
-        enroll(input: { deviceId: string; enrollmentCode: string }): Promise<unknown>;
+        enroll(input: {
+          deviceId: string;
+          enrollmentCode: string;
+        }): Promise<unknown>;
       };
       auth?: {
-        login(input: { identifier: string; password: string }): Promise<unknown>;
+        login(input: {
+          identifier: string;
+          password: string;
+          useSavedCredential?: boolean;
+        }): Promise<unknown>;
         credentials?: {
           list(): Promise<string[]>;
-          get(identifier: string): Promise<{ identifier: string; password: string } | null>;
-          save(input: { identifier: string; password: string }): Promise<string[]>;
           remove(identifier: string): Promise<string[]>;
         };
       };

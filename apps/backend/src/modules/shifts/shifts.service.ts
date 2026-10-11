@@ -37,6 +37,7 @@ import type {
   ForceCashHandoverDto,
   OpenShiftDto,
 } from "./dto/shift.dto";
+import { countOrdersForShifts } from "./shift-order-count";
 
 @Injectable()
 export class ShiftsService {
@@ -81,20 +82,53 @@ export class ShiftsService {
       take: query.limit,
       include: {
         ...this.shiftInclude(),
-        cashTransactions: { select: { amount: true, type: true } },
       },
     });
 
+    const openShifts = shifts.filter(
+      (shift) => shift.status === ShiftStatus.OPEN,
+    );
+    const openShiftIds = openShifts.map((shift) => shift.id);
+    const [orderCounts, cashTransactionTotals] = await Promise.all([
+      countOrdersForShifts(
+        this.prisma,
+        shifts.map((shift) => shift.id),
+      ),
+      openShiftIds.length
+        ? this.prisma.cashTransaction.groupBy({
+            by: ["shiftId", "type"],
+            where: {
+              OR: openShifts.map((shift) => ({
+                shiftId: shift.id,
+                branchId: shift.branchId,
+              })),
+            },
+            _sum: { amount: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const transactionsByShift = new Map<
+      string,
+      { amount: Prisma.Decimal; type: CashTransactionType }[]
+    >();
+    for (const total of cashTransactionTotals) {
+      const transactions = transactionsByShift.get(total.shiftId) ?? [];
+      transactions.push({
+        type: total.type,
+        amount: total._sum.amount ?? new Prisma.Decimal(0),
+      });
+      transactionsByShift.set(total.shiftId, transactions);
+    }
     return shifts.map((shift) => ({
       ...shift,
+      orderCount: orderCounts.get(shift.id) ?? 0,
       currentCash:
         shift.status === ShiftStatus.OPEN
           ? this.calculateCashBalance(
               shift.openingBalance,
-              shift.cashTransactions,
+              transactionsByShift.get(shift.id) ?? [],
             )
           : null,
-      cashTransactions: undefined,
     }));
   }
 
@@ -173,7 +207,7 @@ export class ShiftsService {
         }
 
         const transactions = await tx.cashTransaction.findMany({
-          where: { shiftId: source.id },
+          where: { shiftId: source.id, branchId: source.branchId },
           select: { amount: true, type: true },
         });
         const balance = this.calculateCashBalance(
@@ -526,7 +560,11 @@ export class ShiftsService {
             this.assertCanOperateShift(user, shift.employeeId);
 
             const pendingTransfer = await tx.cashTransfer.findFirst({
-              where: { fromShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                fromShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               select: { id: true },
             });
             if (pendingTransfer) {
@@ -536,7 +574,11 @@ export class ShiftsService {
             }
 
             const pendingIncomingTransfer = await tx.cashTransfer.findFirst({
-              where: { toShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                toShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               select: { id: true },
             });
             if (pendingIncomingTransfer) {
@@ -648,7 +690,11 @@ export class ShiftsService {
             const tenantId = await assertBranchBelongsToActor(tx, user, shift.branchId);
 
             const pendingTransfers = await tx.cashTransfer.updateMany({
-              where: { fromShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                fromShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               data: {
                 status: CashTransferStatus.DISPUTED,
                 reason:
@@ -658,7 +704,11 @@ export class ShiftsService {
               },
             });
             const pendingIncomingTransfers = await tx.cashTransfer.updateMany({
-              where: { toShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                toShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               data: { toShiftId: null },
             });
 
@@ -983,13 +1033,20 @@ export class ShiftsService {
       return null;
     }
 
+    const cashTransactions = shift.cashTransactions.filter(
+      (transaction) => transaction.branchId === shift.branchId,
+    );
+    const outgoingCashTransfers = shift.outgoingCashTransfers.filter(
+      (transfer) => transfer.branchId === shift.branchId,
+    );
     return {
       ...shift,
       currentCash: this.calculateCashBalance(
         shift.openingBalance,
-        shift.cashTransactions,
+        cashTransactions,
       ),
-      cashTransactions: shift.cashTransactions.slice(0, 200),
+      cashTransactions: cashTransactions.slice(0, 200),
+      outgoingCashTransfers,
     };
   }
 
@@ -1152,7 +1209,7 @@ export class ShiftsService {
       }
 
       const transactions = await tx.cashTransaction.findMany({
-        where: { shiftId: current.id },
+        where: { shiftId: current.id, branchId: current.branchId },
         select: { amount: true, type: true },
       });
       const balance = this.calculateCashBalance(
@@ -1798,10 +1855,10 @@ export class ShiftsService {
   ) {
     const shift = await tx.shift.findUniqueOrThrow({
       where: { id: shiftId },
-      select: { openingBalance: true },
+      select: { branchId: true, openingBalance: true },
     });
     const transactions = await tx.cashTransaction.findMany({
-      where: { shiftId },
+      where: { shiftId, branchId: shift.branchId },
       orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,
@@ -2071,9 +2128,9 @@ export class ShiftsService {
 
   private async loadShiftCloseSnapshot(
     tx: Prisma.TransactionClient,
-    shift: { id: string; openingBalance: Prisma.Decimal },
+    shift: { id: string; branchId: string; openingBalance: Prisma.Decimal },
   ) {
-    const shiftRevenue = { shiftId: shift.id };
+    const shiftRevenue = { shiftId: shift.id, branchId: shift.branchId };
     const [payments, cashTransactions, orderCount] = await Promise.all([
       tx.payment.findMany({
         where: {
@@ -2094,9 +2151,14 @@ export class ShiftsService {
       tx.cashTransaction.findMany({ where: shiftRevenue }),
       tx.order.count({
         where: {
-          OR: [
-            { shiftId: shift.id },
-            { revenueRecords: { some: shiftRevenue } },
+          branchId: shift.branchId,
+          AND: [
+            {
+              OR: [
+                { shiftId: shift.id },
+                { revenueRecords: { some: shiftRevenue } },
+              ],
+            },
           ],
         },
       }),

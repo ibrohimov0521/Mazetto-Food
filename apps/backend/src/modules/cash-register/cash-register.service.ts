@@ -18,6 +18,7 @@ import type {
   OpenShiftDto,
 } from "../shifts/dto/shift.dto";
 import { ShiftsService } from "../shifts/shifts.service";
+import { countOrdersForShifts } from "../shifts/shift-order-count";
 
 @Injectable()
 export class CashRegisterService {
@@ -66,26 +67,28 @@ export class CashRegisterService {
         const [cashTransactionTotals, cashSales, shiftOrders] = await Promise.all([
           tx.cashTransaction.groupBy({
             by: ["type"],
-            where: { shiftId: shift.id },
+            where: { shiftId: shift.id, branchId: shift.branchId },
             _sum: { amount: true },
             _count: { _all: true },
           }),
           tx.revenueRecord.aggregate({
             where: {
               shiftId: shift.id,
+              branchId: shift.branchId,
               payment: { method: { code: "CASH" } },
             },
             _sum: { amount: true },
           }),
           tx.order.findMany({
             where: {
+              branchId: shift.branchId,
               OR: [
                 { shiftId: shift.id },
                 {
                   revenueRecords: {
                     some: {
                       shiftId: shift.id,
-                      paymentId: { not: null },
+                      branchId: shift.branchId,
                     },
                   },
                 },
@@ -99,6 +102,12 @@ export class CashRegisterService {
 
         return {
           ...shift,
+          cashTransactions: shift.cashTransactions.filter(
+            (transaction) => transaction.branchId === shift.branchId,
+          ),
+          outgoingCashTransfers: shift.outgoingCashTransfers.filter(
+            (transfer) => transfer.branchId === shift.branchId,
+          ),
           revenueRecords: shiftOrderIds.map((orderId) => ({ orderId })),
           ...this.calculateShiftSummary(
             shift.openingBalance,
@@ -205,7 +214,7 @@ export class CashRegisterService {
     resolveBranchScope(user, shift.branchId);
     this.assertCanViewShift(user, shift.employeeId);
 
-    const where = { shiftId };
+    const where = { shiftId, branchId: shift.branchId };
     const pageQuery: Prisma.CashTransactionFindManyArgs = {
       where,
       include: {
@@ -273,7 +282,22 @@ export class CashRegisterService {
 
     return this.prisma.order.findMany({
       where: {
-        shiftId: shift.id,
+        AND: [
+          {
+            OR: [
+              { shiftId: shift.id },
+              {
+                revenueRecords: {
+                  some: {
+                    shiftId: shift.id,
+                    branchId: shift.branchId,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+        branchId: shift.branchId,
         branch: { tenantId },
         createdAt: { gte: day.start, lt: day.end },
         ...(status ? { status } : {}),
@@ -357,14 +381,20 @@ export class CashRegisterService {
         cashDifference: true,
         salesTotal: true,
         cashTotal: true,
-        _count: { select: { orders: true } },
         branch: { select: { id: true, name: true } },
       },
       orderBy: { openedAt: "desc" },
       skip: this.parseOffset(query.offset),
       take: this.parseLimit(query.limit),
     });
-    return shifts.map(({ _count, ...shift }) => ({ ...shift, orderCount: _count.orders }));
+    const orderCounts = await countOrdersForShifts(
+      this.prisma,
+      shifts.map((shift) => shift.id),
+    );
+    return shifts.map((shift) => ({
+      ...shift,
+      orderCount: orderCounts.get(shift.id) ?? 0,
+    }));
   }
 
   async getShiftHistoryDetail(shiftId: string, user: AuthenticatedUser) {
@@ -385,7 +415,6 @@ export class CashRegisterService {
         cashDifference: true,
         salesTotal: true,
         cashTotal: true,
-        _count: { select: { orders: true } },
         branch: { select: { id: true, name: true } },
         employee: { select: { firstName: true, lastName: true } },
       },
@@ -400,8 +429,11 @@ export class CashRegisterService {
       throw new ForbiddenException("Cannot access another employee shift");
     }
 
-    const { _count, ...history } = shift;
-    return { ...history, orderCount: _count.orders };
+    const orderCounts = await countOrdersForShifts(this.prisma, [shift.id]);
+    return {
+      ...shift,
+      orderCount: orderCounts.get(shift.id) ?? 0,
+    };
   }
 
   async getShiftOrders(
@@ -437,7 +469,14 @@ export class CashRegisterService {
         AND: [{
           OR: [
             { shiftId: shift.id },
-            { revenueRecords: { some: { shiftId: shift.id } } },
+            {
+              revenueRecords: {
+                some: {
+                  shiftId: shift.id,
+                  branchId: shift.branchId,
+                },
+              },
+            },
           ],
         }],
         branchId: shift.branchId,

@@ -288,6 +288,7 @@ test("gateway stop waits for a durable mutation sync before the store closes", a
     authScope,
     payload: {
       commandType: "shift.open",
+      queuedEmployeeId: null,
       method: "POST",
       pathname: "/api/v1/shifts/open",
       targetUrl: "https://api.example.test/api/v1/shifts/open",
@@ -440,6 +441,35 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     assert.equal(store.summary().pendingCommands, 1);
     assert.equal(store.summary().pendingPrintJobs, 2);
     const saleData = (await sale.json()).data;
+    const replay = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/pos/orders`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idempotencyKey: "sale-key-1",
+          type: "DINE_IN",
+          tableId: "table-1",
+          items: [
+            {
+              productId: "product-1",
+              variantId: "variant-1",
+              quantity: 1,
+            },
+          ],
+          payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+        }),
+      },
+    );
+    assert.equal(replay.status, 202);
+    const replayData = (await replay.json()).data;
+    assert.equal(replayData.order.id, saleData.order.id);
+    assert.equal(replayData.order.orderNumber, saleData.order.orderNumber);
+    assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.summary().pendingPrintJobs, 2);
     assert.match(saleData.order.orderNumber, /^POS-\d{8}-\d{6}-[A-F0-9]{8}$/);
     assert.equal(saleData.order.displayOrderNumber, 101);
     const outboxCommand = store.listOutbox()[0];
@@ -529,6 +559,118 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     assert.equal(sent[0]?.idempotencyKey, "sale-key-1");
     assert.match(sent[0]?.body ?? "", /sale-key-1/);
     assert.match(sent[1]?.body ?? "", /"payLater":true/);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline POS mutation is not replayed under a different employee", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const originalAuthorization = desktopJwt("shared-cashier", "branch-1", {
+    employeeId: "employee-1",
+  });
+  const currentAuthorization = desktopJwt("shared-cashier", "branch-1", {
+    employeeId: "employee-2",
+  });
+  store.enqueueMutation({
+    idempotencyKey: "employee-bound-sale",
+    commandType: "pos.order.create",
+    aggregateType: "orders",
+    aggregateId: "local-order-1",
+    actorId: "shared-cashier",
+    branchId: "branch-1",
+    authScope: DesktopStore.mutationScope(originalAuthorization),
+    payload: {
+      queuedEmployeeId: "employee-1",
+      commandType: "pos.order.create",
+      method: "POST",
+      pathname: "/api/v1/pos/orders",
+      targetUrl: "https://api.example.test/api/v1/pos/orders",
+      headers: { "idempotency-key": "employee-bound-sale" },
+      body: JSON.stringify({ idempotencyKey: "employee-bound-sale" }),
+    },
+  });
+  const requests: string[] = [];
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      const pathname = new URL(String(input)).pathname;
+      requests.push(pathname);
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/branches`,
+      { headers: { Authorization: currentAuthorization } },
+    );
+    assert.equal(response.status, 200);
+    await waitFor(() => store.summary().conflictCommands === 1);
+    assert.equal(requests.includes("/api/v1/pos/orders"), false);
+    assert.match(store.listOutbox()[0]?.lastError ?? "", /EMPLOYEE_CONTEXT_CHANGED/);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("legacy offline POS mutation without employee identity is not replayed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("shared-cashier", "branch-1", {
+    employeeId: "employee-1",
+  });
+  store.enqueueMutation({
+    idempotencyKey: "legacy-unbound-sale",
+    commandType: "pos.order.create",
+    aggregateType: "orders",
+    aggregateId: "local-order-legacy",
+    actorId: "shared-cashier",
+    branchId: "branch-1",
+    authScope: DesktopStore.mutationScope(authorization),
+    payload: {
+      commandType: "pos.order.create",
+      method: "POST",
+      pathname: "/api/v1/pos/orders",
+      targetUrl: "https://api.example.test/api/v1/pos/orders",
+      headers: { "idempotency-key": "legacy-unbound-sale" },
+      body: JSON.stringify({ idempotencyKey: "legacy-unbound-sale" }),
+    },
+  });
+  const requests: string[] = [];
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      const pathname = new URL(String(input)).pathname;
+      requests.push(pathname);
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/branches`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(response.status, 200);
+    await waitFor(() => store.summary().conflictCommands === 1);
+    assert.equal(requests.includes("/api/v1/pos/orders"), false);
+    assert.match(store.listOutbox()[0]?.lastError ?? "", /EMPLOYEE_CONTEXT_UNKNOWN/);
   } finally {
     await gateway.stop();
     store.close();
@@ -1136,7 +1278,7 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
     );
     assert.equal(store.summary().pendingCommands, 0);
 
-    const payment = await fetch(`${baseUrl}/payments/process`, {
+    const paymentRequest = {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1145,9 +1287,18 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
         idempotencyKey: "offline-payment-close-1",
         payments: [{ paymentMethodCode: "CASH", amount: "42000" }],
       }),
-    });
+    };
+    const payment = await fetch(`${baseUrl}/payments/process`, paymentRequest);
     assert.equal(payment.status, 202);
     const paymentPayload = await payment.json();
+    const replayPayment = await fetch(
+      `${baseUrl}/payments/process`,
+      paymentRequest,
+    );
+    assert.equal(replayPayment.status, 202, await replayPayment.clone().text());
+    const replayPayload = await replayPayment.json();
+    assert.equal(replayPayload.data.commandId, paymentPayload.data.commandId);
+    assert.equal(store.summary().pendingCommands, 1);
     assert.equal(paymentPayload.data.offlineReceiptQueued, true);
     const receiptJob = store.claimLocalPrintJob(["RECEIPT"]);
     assert.ok(receiptJob);
@@ -1923,6 +2074,7 @@ test("gateway preserves a queued sale across permission refresh without reusing 
     authScope: oldPermissionScope,
     payload: {
       commandType: "pos.order.create",
+      queuedEmployeeId: null,
       method: "POST",
       pathname: "/api/v1/pos/orders",
       targetUrl: "https://api.example.test/api/v1/pos/orders",
@@ -2115,6 +2267,7 @@ test("gateway sends server version conflicts to the conflict inbox", async () =>
     authScope,
     payload: {
       commandType: "kitchen.action",
+      queuedEmployeeId: null,
       method: "PATCH",
       pathname: "/api/v1/kitchen/orders/ticket-1/ready",
       targetUrl:

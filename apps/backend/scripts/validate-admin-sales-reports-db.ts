@@ -227,7 +227,8 @@ async function proveTodayReport(reports: ReportsService, fixture: Fixture): Prom
   assert.equal(report.categorySales[0]?.category.name, "Reports Lavash");
   assert.equal(report.timeSeries.grain, "day");
   assert.equal(report.period.timezone, "Asia/Tashkent");
-  assert.equal(report.refundHandling.supported, false);
+  assert.equal(report.refundHandling.supported, true);
+  assert.equal(money(report.refundHandling.amount), 0);
 }
 
 async function provePresetRanges(reports: ReportsService, fixture: Fixture): Promise<void> {
@@ -265,7 +266,7 @@ async function proveBranchScope(reports: ReportsService, fixture: Fixture): Prom
   assert.equal(money(ownBranch.totalSales), 55000);
   await assert.rejects(
     () => reports.getSalesReport({ preset: ReportPreset.LAST_7_DAYS, branchId: fixture.branchBId }, fixture.adminBranchA),
-    /another branch/i,
+    /Boshqa filialga kirish huquqi yo'q/i,
   );
 }
 

@@ -53,6 +53,7 @@ async function getCurrentCash(
             ...transaction,
             amount: new Prisma.Decimal(transaction.amount),
           })),
+          outgoingCashTransfers: [],
         };
       },
     },
@@ -136,7 +137,7 @@ test("current shift balance does not double count a legacy OPENING ledger row", 
   assert.equal(shift?.currentBalance.toFixed(0), "115000");
 });
 
-test("current shift summary counts direct and paid orders without loading full ledger history", async () => {
+test("current shift summary counts direct and revenue-linked orders without loading full ledger history", async () => {
   const captured: {
     shiftQuery?: Record<string, unknown>;
     cashTransactionQuery?: Record<string, unknown>;
@@ -175,26 +176,28 @@ test("current shift summary counts direct and paid orders without loading full l
   assert.equal("revenueRecords" in include, false);
   assert.deepEqual(captured.cashTransactionQuery, {
     by: ["type"],
-    where: { shiftId: "shift-a" },
+    where: { shiftId: "shift-a", branchId: "branch-a" },
     _sum: { amount: true },
     _count: { _all: true },
   });
   assert.deepEqual(captured.cashSalesQuery, {
     where: {
       shiftId: "shift-a",
+      branchId: "branch-a",
       payment: { method: { code: "CASH" } },
     },
     _sum: { amount: true },
   });
   assert.deepEqual(captured.shiftOrdersQuery, {
     where: {
+      branchId: "branch-a",
       OR: [
         { shiftId: "shift-a" },
         {
           revenueRecords: {
             some: {
               shiftId: "shift-a",
-              paymentId: { not: null },
+              branchId: "branch-a",
             },
           },
         },
@@ -206,6 +209,82 @@ test("current shift summary counts direct and paid orders without loading full l
   assert.deepEqual(captured.transactionOptions, {
     isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
   });
+});
+
+test("current shift summaries ignore ledger rows assigned across branches", async () => {
+  const captured: Record<string, Record<string, unknown>> = {};
+  const db = {
+    shift: {
+      findFirst: async () => ({
+        id: "shift-a",
+        branchId: "branch-a",
+        employeeId: "employee-a",
+        openingBalance: new Prisma.Decimal(0),
+        cashTransactions: [
+          { id: "local", branchId: "branch-a", amount: new Prisma.Decimal(10) },
+          { id: "foreign", branchId: "branch-b", amount: new Prisma.Decimal(900000) },
+        ],
+        outgoingCashTransfers: [
+          { id: "local-transfer", branchId: "branch-a" },
+          { id: "foreign-transfer", branchId: "branch-b" },
+        ],
+      }),
+    },
+    cashTransaction: {
+      groupBy: async (query: Record<string, unknown>) => {
+        captured.cashTransactions = query;
+        return [];
+      },
+    },
+    revenueRecord: {
+      aggregate: async (query: Record<string, unknown>) => {
+        captured.revenueRecords = query;
+        return { _sum: { amount: new Prisma.Decimal(0) } };
+      },
+    },
+    order: {
+      findMany: async (query: Record<string, unknown>) => {
+        captured.orders = query;
+        return [];
+      },
+    },
+  };
+  const service = new CashRegisterService(
+    {
+      ...db,
+      branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+      $transaction: async (operation: (tx: typeof db) => Promise<unknown>) =>
+        operation(db),
+    } as never,
+    {} as never,
+  );
+
+  const shift = await service.getCurrentShift(cashier);
+
+  assert.deepEqual(
+    (shift?.cashTransactions as { id: string }[]).map(({ id }) => id),
+    ["local"],
+  );
+  assert.deepEqual(
+    (shift?.outgoingCashTransfers as { id: string }[]).map(({ id }) => id),
+    ["local-transfer"],
+  );
+  assert.deepEqual(captured.cashTransactions?.where, {
+    shiftId: "shift-a",
+    branchId: "branch-a",
+  });
+  assert.deepEqual(
+    (captured.revenueRecords?.where as Record<string, unknown>).branchId,
+    "branch-a",
+  );
+  const orderWhere = captured.orders?.where as Record<string, unknown>;
+  assert.equal(orderWhere.branchId, "branch-a");
+  assert.deepEqual(
+    ((orderWhere.OR as Record<string, unknown>[])[1]?.revenueRecords as {
+      some: Record<string, unknown>;
+    }).some,
+    { shiftId: "shift-a", branchId: "branch-a" },
+  );
 });
 
 test("cashier can read their own shift order history with requested filters", async () => {
@@ -242,7 +321,11 @@ test("cashier can read their own shift order history with requested filters", as
   assert.deepEqual(where.AND, [{
     OR: [
       { shiftId: "shift-a" },
-      { revenueRecords: { some: { shiftId: "shift-a" } } },
+      {
+        revenueRecords: {
+          some: { shiftId: "shift-a", branchId: "branch-a" },
+        },
+      },
     ],
   }]);
   assert.equal(where.branchId, "branch-a");
@@ -295,11 +378,12 @@ test("cashier shift history only requests their own tenant-scoped shifts", async
   const captured: { shiftQuery?: Record<string, unknown> } = {};
   const service = new CashRegisterService(
     {
+      $queryRaw: async () => [{ shiftId: "shift-a", orderCount: 4 }],
       branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
       shift: {
         findMany: async (query: Record<string, unknown>) => {
           captured.shiftQuery = query;
-          return [{ id: "shift-a", orderCount: 0, _count: { orders: 1 } }];
+          return [{ id: "shift-a", orderCount: 0 }];
         },
       },
     } as never,
@@ -313,8 +397,8 @@ test("cashier shift history only requests their own tenant-scoped shifts", async
   });
   assert.equal(captured.shiftQuery?.take, 25);
   assert.equal(captured.shiftQuery?.skip, 50);
-  assert.deepEqual(captured.shiftQuery?.select && (captured.shiftQuery?.select as Record<string, unknown>)._count, { select: { orders: true } });
-  assert.equal(shifts[0]?.orderCount, 1);
+  assert.equal(captured.shiftQuery?.select && (captured.shiftQuery?.select as Record<string, unknown>)._count, undefined);
+  assert.equal(shifts[0]?.orderCount, 4);
 });
 
 test("shift cash transaction history returns a stable, paginated page and exact total", async () => {
@@ -355,14 +439,20 @@ test("shift cash transaction history returns a stable, paginated page and exact 
     ),
     { items: rows, total: 101 },
   );
-  assert.deepEqual(captured.transactionQuery?.where, { shiftId: "shift-a" });
+  assert.deepEqual(captured.transactionQuery?.where, {
+    shiftId: "shift-a",
+    branchId: "branch-a",
+  });
   assert.deepEqual(captured.transactionQuery?.orderBy, [
     { occurredAt: "desc" },
     { id: "desc" },
   ]);
   assert.equal(captured.transactionQuery?.skip, 50);
   assert.equal(captured.transactionQuery?.take, 100);
-  assert.deepEqual(captured.countWhere, { shiftId: "shift-a" });
+  assert.deepEqual(captured.countWhere, {
+    shiftId: "shift-a",
+    branchId: "branch-a",
+  });
 });
 
 test("cash transaction history keeps the legacy array response without page parameters", async () => {
@@ -434,6 +524,7 @@ test("branch shift viewers can open a historical shift within their tenant", asy
   };
   const service = new CashRegisterService(
     {
+      $queryRaw: async () => [{ shiftId: "shift-old", orderCount: 7 }],
       branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
       shift: {
         findFirst: async (query: Record<string, unknown>) => {
@@ -445,7 +536,6 @@ test("branch shift viewers can open a historical shift within their tenant", asy
             status: "CLOSED",
             shiftNumber: 12,
             orderCount: 0,
-            _count: { orders: 7 },
           };
         },
       },

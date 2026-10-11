@@ -27,9 +27,17 @@ if (!pnpmCli) {
   throw new Error("pnpm CLI path is not available");
 }
 
+const pnpmIsNodeScript = /\.(?:c|m)?js$/i.test(pnpmCli);
+const pnpmExecutable = pnpmIsNodeScript ? process.execPath : pnpmCli;
+const pnpmArgs = [
+  ...(pnpmIsNodeScript ? [pnpmCli] : []),
+  "--filter",
+  "pos-web",
+  "build",
+];
 const result = spawnSync(
-  process.execPath,
-  [pnpmCli, "--filter", "pos-web", "build"],
+  pnpmExecutable,
+  pnpmArgs,
   {
     cwd: workspaceRoot,
     env: {
@@ -37,6 +45,7 @@ const result = spawnSync(
       API_INTERNAL_URL: "http://127.0.0.1:7359",
       NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:7359/api/v1",
     },
+    shell: process.platform === "win32" && /\.(?:cmd|bat)$/i.test(pnpmCli),
     stdio: "inherit",
   },
 );

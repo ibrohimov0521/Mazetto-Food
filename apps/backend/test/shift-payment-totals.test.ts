@@ -82,12 +82,13 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
       findMany: async (args: {
         where: {
           revenueRecords: {
-            some: { shiftId: string; source: string };
+            some: { shiftId: string; branchId: string; source: string };
           };
         };
       }) => {
         assert.deepEqual(args.where.revenueRecords.some, {
           shiftId: "shift-b",
+          branchId: "branch-a",
           source: "ORDER",
         });
         return [];
@@ -101,17 +102,21 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
     },
     order: {
       count: async (args: {
-        where: {
-          OR: [
-            { shiftId: string },
-            { revenueRecords: { some: { shiftId: string } } },
-          ];
-        };
+        where: { branchId: string; AND: unknown[] };
       }) => {
-        assert.deepEqual(args.where.OR, [
-          { shiftId: "shift-b" },
-          { revenueRecords: { some: { shiftId: "shift-b" } } },
-        ]);
+        assert.deepEqual(args.where, {
+          branchId: "branch-a",
+          AND: [{
+            OR: [
+              { shiftId: "shift-b" },
+              {
+                revenueRecords: {
+                  some: { shiftId: "shift-b", branchId: "branch-a" },
+                },
+              },
+            ],
+          }],
+        });
         // The direct shift order is an unpaid DINE_IN order; the other is a
         // legacy/refund-linked order that only has a revenue-record relation.
         return 2;

@@ -1148,6 +1148,141 @@ test("server replay is completed without duplicate paper when local document alr
   assert.equal(completed, 1);
 });
 
+test("server replay does not repeat a locally ambiguous paper print", async () => {
+  let claimed = false;
+  let completed = 0;
+  let dispatching = 0;
+  let printed = 0;
+  let failure: { outcome?: string } | undefined;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      printed += 1;
+    },
+    localQueue: {
+      claim: () => null,
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: () => false,
+      wasAmbiguousLocallyOn: (orderId, type, printerName) =>
+        orderId === "server-order-ambiguous" &&
+        type === "RECEIPT" &&
+        printerName === "Windows POS",
+    },
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-ambiguous-replay",
+          receiptId: "receipt-ambiguous-replay",
+          leaseToken: "lease-ambiguous-replay",
+          receipt: {
+            orderId: "server-order-ambiguous",
+            documentType: "RECEIPT",
+          },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "A-1",
+            items: [{ name: "Lavash", quantity: "1", total: "36000" }],
+          },
+          printer: null,
+        });
+      }
+      if (url.endsWith("/dispatching")) {
+        dispatching += 1;
+        return jsonResponse({});
+      }
+      if (url.endsWith("/complete")) {
+        completed += 1;
+        return jsonResponse({});
+      }
+      if (url.endsWith("/fail")) {
+        failure = JSON.parse(String(init?.body)) as { outcome?: string };
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(printed, 0);
+  assert.equal(dispatching, 1);
+  assert.equal(completed, 0);
+  assert.equal(failure?.outcome, "AMBIGUOUS");
+});
+test("offline replay skips only the server printer target already printed locally", async () => {
+  let completed = 0;
+  let claimed = false;
+  const printedTargets: string[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "POS Receipt", displayName: "POS Receipt", roles: ["RECEIPT"] },
+      {
+        name: "Kitchen Receipt",
+        displayName: "Kitchen Receipt",
+        roles: ["RECEIPT"],
+      },
+    ],
+    printSystem: async (name) => {
+      printedTargets.push(name);
+    },
+    localQueue: {
+      claim: () => null,
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: (_orderId, _type, printerName) =>
+        printerName === "POS Receipt",
+    },
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-multi-printer",
+          receiptId: "receipt-multi-printer",
+          leaseToken: "lease-multi-printer",
+          receipt: { orderId: "server-order-multi-printer" },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "M-2",
+            items: [{ name: "Lavash", quantity: "1", total: "36000" }],
+          },
+          printer: null,
+        });
+      }
+      if (url.endsWith("/dispatching")) return jsonResponse({});
+      if (url.endsWith("/complete")) {
+        completed += 1;
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.deepEqual(printedTargets, ["Kitchen Receipt"]);
+  assert.equal(completed, 1);
+});
+
 test("manual server reprint reaches the printer even when the original was printed locally", async () => {
   let completed = 0;
   let physicalPrints = 0;

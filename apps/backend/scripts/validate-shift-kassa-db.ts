@@ -2,8 +2,10 @@ import {
   CashTransactionType,
   EmployeeStatus,
   OrderSource,
+  OrderType,
   PaymentStatus,
   Prisma,
+  RevenueRecordSource,
   ShiftStatus,
 } from "@prisma/client";
 import * as assert from "node:assert/strict";
@@ -50,7 +52,7 @@ async function main(): Promise<void> {
 
     await assert.rejects(
       () => ordersService.createPosCheckout(posDto(fixture, "without-shift", 1, 12000), fixture.cashier),
-      /Open employee shift/i,
+      /xodim smenasi ochiq bo'lishi shart/i,
     );
 
     const opened = await cashRegisterService.openShift({ openingBalance: 100000 }, fixture.cashier);
@@ -87,8 +89,30 @@ async function main(): Promise<void> {
 
     const retry = await ordersService.createPosCheckout(posDto(fixture, "sale", 2, 30000), fixture.cashier);
     assert.equal(retry.order.id, sale.order.id);
+
+    const legacyOrder = await prisma.order.create({
+      data: {
+        branchId: fixture.branchId,
+        orderNumber: `SHIFT_LEGACY_${fixture.runId}`,
+        source: OrderSource.WEB,
+        type: OrderType.DELIVERY,
+        paymentStatus: PaymentStatus.PAID,
+        total: new Prisma.Decimal(5000),
+      },
+    });
     assert.equal(await prisma.revenueRecord.count({ where: { orderId: sale.order.id, shiftId: opened.id } }), 1);
     assert.equal(await prisma.cashTransaction.count({ where: { orderId: sale.order.id, shiftId: opened.id, type: CashTransactionType.SALE } }), 1);
+
+    await prisma.revenueRecord.create({
+      data: {
+        branchId: fixture.branchId,
+        orderId: legacyOrder.id,
+        shiftId: opened.id,
+        employeeId: fixture.cashier.employeeId ?? null,
+        source: RevenueRecordSource.ORDER,
+        amount: new Prisma.Decimal(5000),
+      },
+    });
 
     await assert.rejects(
       () => cashRegisterService.closeShift(opened.id, { closingBalance: 124000 }, fixture.otherCashier),
@@ -96,7 +120,7 @@ async function main(): Promise<void> {
     );
     await assert.rejects(
       () => cashRegisterService.openShift({ branchId: fixture.otherBranchId, openingBalance: 0 }, fixture.cashier),
-      /another branch/i,
+      /boshqa filialga kirish huquqi yo'q/i,
     );
     assert.equal(
       await prisma.cashTransaction.count({
@@ -107,16 +131,105 @@ async function main(): Promise<void> {
 
     const current = await cashRegisterService.getCurrentShift(fixture.cashier);
     assert.ok(current);
-    assert.equal(current.orderCount, 1);
+    assert.equal(current.orderCount, 2);
     assert.equal(current.cashSales.toFixed(0), "24000");
     assert.equal(current.expectedCash.toFixed(0), "124000");
+    const currentOrders = await cashRegisterService.getShiftOrders(opened.id, {}, fixture.cashier);
+    assert.deepEqual(new Set(currentOrders.map(({ id }) => id)), new Set([sale.order.id, legacyOrder.id]));
 
+    const cashierEmployeeId = fixture.cashier.employeeId;
+    assert.ok(cashierEmployeeId);
+    const foreignOrder = await prisma.order.create({
+      data: {
+        branchId: fixture.otherBranchId,
+        shiftId: opened.id,
+        orderNumber: `SHIFT_FOREIGN_${fixture.runId}`,
+        source: OrderSource.WEB,
+        type: OrderType.DELIVERY,
+        paymentStatus: PaymentStatus.PAID,
+        total: new Prisma.Decimal(500000),
+      },
+    });
+    const cashMethod = await prisma.paymentMethod.findFirstOrThrow({
+      where: { code: "CASH" },
+    });
+    const foreignPayment = await prisma.payment.create({
+      data: {
+        orderId: foreignOrder.id,
+        paymentMethodId: cashMethod.id,
+        status: PaymentStatus.PAID,
+        amount: new Prisma.Decimal(500000),
+        methodCode: "CASH",
+        paidAt: new Date(),
+      },
+    });
+    await prisma.revenueRecord.create({
+      data: {
+        branchId: fixture.otherBranchId,
+        orderId: foreignOrder.id,
+        paymentId: foreignPayment.id,
+        shiftId: opened.id,
+        employeeId: cashierEmployeeId,
+        source: RevenueRecordSource.ORDER,
+        amount: new Prisma.Decimal(500000),
+      },
+    });
+    await prisma.cashTransaction.create({
+      data: {
+        branchId: fixture.otherBranchId,
+        shiftId: opened.id,
+        employeeId: cashierEmployeeId,
+        orderId: foreignOrder.id,
+        paymentId: foreignPayment.id,
+        type: CashTransactionType.EXPENSE,
+        amount: new Prisma.Decimal(700000),
+        reason: "cross-branch regression fixture",
+      },
+    });
+
+    const isolatedCurrent = await cashRegisterService.getCurrentShift(fixture.cashier);
+    assert.equal(isolatedCurrent?.orderCount, 2);
+    assert.equal(isolatedCurrent?.cashSales.toFixed(0), "24000");
+    assert.equal(isolatedCurrent?.expectedCash.toFixed(0), "124000");
+    assert.equal(isolatedCurrent?.currentBalance.toFixed(0), "124000");
+    const currentOrdersAfterForeignRows = await cashRegisterService.getShiftOrders(
+      opened.id,
+      {},
+      fixture.cashier,
+    );
+    assert.deepEqual(
+      new Set(currentOrdersAfterForeignRows.map(({ id }) => id)),
+      new Set([sale.order.id, legacyOrder.id]),
+    );
+    const currentEmployeeOrders = await cashRegisterService.getCurrentShiftOrders(
+      {},
+      fixture.cashier,
+    );
+    assert.ok(
+      !currentEmployeeOrders.some(({ id }) => id === foreignOrder.id),
+      "current cashier order list must not include another branch's order",
+    );
+    const shiftTransactions = await cashRegisterService.getTransactions(
+      opened.id,
+      { limit: "200" },
+      fixture.cashier,
+    );
+    assert.ok(!Array.isArray(shiftTransactions));
+    if (!Array.isArray(shiftTransactions)) {
+      assert.ok(
+        !shiftTransactions.items.some(({ paymentId }) => paymentId === foreignPayment.id),
+      );
+    }
     const closed = await cashRegisterService.closeShift(opened.id, { closingBalance: 125500 }, fixture.cashier);
     assert.equal(closed.status, ShiftStatus.CLOSED);
     assert.equal(closed.expectedCash?.toFixed(0), "124000");
     assert.equal(closed.cashDifference?.toFixed(0), "1500");
-    assert.equal(closed.orderCount, 1);
+    assert.equal(closed.orderCount, 2);
     assert.equal(closed.cashTotal.toFixed(0), "24000");
+    const historyDetail = await cashRegisterService.getShiftHistoryDetail(opened.id, fixture.cashier);
+    assert.equal(historyDetail.orderCount, 2);
+    const ownShift = (await cashRegisterService.listOwnShifts({}, fixture.cashier)).find(({ id }) => id === opened.id);
+    assert.equal(ownShift?.orderCount, 2);
     assert.equal(await prisma.cashTransaction.count({ where: { shiftId: opened.id, type: CashTransactionType.CLOSING_BALANCE } }), 1);
     await assert.rejects(
       () => cashRegisterService.closeShift(opened.id, { closingBalance: 125500 }, fixture.cashier),
@@ -126,7 +239,7 @@ async function main(): Promise<void> {
 
     await assert.rejects(
       () => ordersService.createPosCheckout(posDto(fixture, "after-close", 1, 12000), fixture.cashier),
-      /Open employee shift/i,
+      /xodim smenasi ochiq bo'lishi shart/i,
     );
 
     const reopened = await cashRegisterService.openShift({ openingBalance: 0 }, fixture.cashier);

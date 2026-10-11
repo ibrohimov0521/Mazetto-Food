@@ -17,6 +17,7 @@
  */
 
 import { fetchWithTransientRetry } from "./http-with-transient-retry.mjs";
+import { resolveMediaAssetUrl } from "./smoke-media-asset-url.mjs";
 
 const api = process.env.MAZETTO_API_URL ?? "https://api.mazettofood.uz/api/v1";
 const web = process.env.MAZETTO_WEB_URL ?? "https://mazettofood.uz";
@@ -126,37 +127,68 @@ const checks = [
   {
     name: "customer catalog media assets",
     custom: async () => {
-      const response = await fetchWithTransientRetry(
-        `${api}/customer/menu/products`,
-        {
-          headers: { "User-Agent": "mazetto-release-smoke" },
-        },
-        { timeoutMs: 30000 },
-      );
-      if (!response.ok) return `${response.status}, katalog olinmadi`;
+      const getCatalog = (resource) =>
+        fetchWithTransientRetry(
+          `${api}/customer/menu/${resource}`,
+          {
+            headers: { "User-Agent": "mazetto-release-smoke" },
+          },
+          { timeoutMs: 30000 },
+        );
+      const [productResponse, categoryResponse] = await Promise.all([
+        getCatalog("products"),
+        getCatalog("categories"),
+      ]);
+      if (!productResponse.ok)
+        return `${productResponse.status}, mahsulot katalogi olinmadi`;
+      if (!categoryResponse.ok)
+        return `${categoryResponse.status}, kategoriya katalogi olinmadi`;
 
-      const payload = await response.json();
-      const products = Array.isArray(payload?.data) ? payload.data : [];
-      if (products.length === 0) return "katalog bo'sh yoki noto'g'ri formatda";
+      const [productPayload, categoryPayload] = await Promise.all([
+        productResponse.json(),
+        categoryResponse.json(),
+      ]);
+      const products = Array.isArray(productPayload?.data)
+        ? productPayload.data
+        : [];
+      const categories = Array.isArray(categoryPayload?.data)
+        ? categoryPayload.data
+        : [];
+      if (products.length === 0) return "mahsulot katalogi bo'sh yoki noto'g'ri";
+      if (categories.length === 0) return "kategoriya katalogi bo'sh yoki noto'g'ri";
 
-      const failures = new Array(products.length);
-      let nextProduct = 0;
-      const checkNextProduct = async () => {
-        while (nextProduct < products.length) {
-          const index = nextProduct++;
-          const product = products[index];
+      const assets = [
+        ...categories.map((category) => ({
+          name: `Kategoriya ${category?.name ?? "noma'lum"}`,
+          imageUrl: category?.imageUrl,
+        })),
+        ...products.map((product) => ({
+          name: `Mahsulot ${product?.name ?? "noma'lum"}`,
+          imageUrl: product?.imageUrl,
+        })),
+      ];
+      const failures = new Array(assets.length);
+      let nextAsset = 0;
+      const checkNextAsset = async () => {
+        while (nextAsset < assets.length) {
+          const index = nextAsset++;
+          const asset = assets[index];
           const image =
-            typeof product?.imageUrl === "string"
-              ? product.imageUrl.trim()
+            typeof asset?.imageUrl === "string"
+              ? asset.imageUrl.trim()
               : "";
           if (!image) {
-            failures[index] = `${product?.name ?? "noma'lum"}: imageUrl yo'q`;
+            failures[index] = `${asset.name}: imageUrl yo'q`;
             continue;
           }
 
-          const imageUrl = image.startsWith("http")
-            ? image
-            : `${media}/${image.replace(/^\/+/, "")}`;
+          let imageUrl;
+          try {
+            imageUrl = resolveMediaAssetUrl(image, media);
+          } catch (error) {
+            failures[index] = `${asset.name}: ${error.message ?? "media URL noto'g'ri"}`;
+            continue;
+          }
           try {
             const imageResponse = await fetchWithTransientRetry(
               imageUrl,
@@ -167,25 +199,24 @@ const checks = [
               { timeoutMs: 30000 },
             );
             if (imageResponse.status !== 200) {
-              failures[index] =
-                `${product?.name ?? "noma'lum"}: HTTP ${imageResponse.status}`;
+              failures[index] = `${asset.name}: HTTP ${imageResponse.status}`;
               await imageResponse.body?.cancel();
             }
           } catch (error) {
             const reason = error.cause?.code ?? error.name ?? "network error";
-            failures[index] = `${product?.name ?? "noma'lum"}: ${reason}`;
+            failures[index] = `${asset.name}: ${reason}`;
           }
         }
       };
       await Promise.all(
-        Array.from({ length: Math.min(2, products.length) }, () =>
-          checkNextProduct(),
+        Array.from({ length: Math.min(2, assets.length) }, () =>
+          checkNextAsset(),
         ),
       );
 
       const failedImages = failures.filter(Boolean);
       return failedImages.length
-        ? `${failedImages.length}/${products.length} media xatosi: ${failedImages.slice(0, 3).join("; ")}`
+        ? `${failedImages.length}/${assets.length} media xatosi: ${failedImages.slice(0, 3).join("; ")}`
         : null;
     },
   },

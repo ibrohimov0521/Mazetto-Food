@@ -1,6 +1,6 @@
 # MAZETTO FOOD Release Readiness Checklist
 
-Last updated: 2026-09-11
+Last updated: 2026-10-11
 
 This checklist is for the next controlled production release. It is documentation only; it does not authorize deployment by itself.
 
@@ -124,10 +124,12 @@ curl -I https://media.mazettofood.uz/products/lavash-big.webp
 
 ## Current Known Gaps
 
-- Production media direct URLs are not considered complete until the media volume is populated.
-- Eight product media assets remain unresolved and should keep using fallback behavior until approved assets exist.
-- Click and Payme are not active payment providers.
-- Staff Telegram activation remains a separate phase.
+- Production read-only smoke passed 27/27 on 2026-10-11. Its media check now verifies image URLs returned by both the public category and product APIs; all API-referenced images returned HTTP 200.
+- The local media manifest validates 11 category assets, 74 product assets, and 0 unresolved product assets. A direct production check of all 85 manifest URLs found one 404: `/categories/blyudalar.webp`. The current public category API points `Blyudalar` to `/categories/doner.webp`, so the missing manifest file is not currently referenced. Keep it documented until confirmed removable or deliberately copied.
+- Click and Payme are available only as cashier-selected manual settlement methods when enabled; they are not automated providers. Customer checkout currently supports cash only. The NBU QR SMS has no reliable order identifier, so automatic order matching requires a bank API/export or trusted reconciliation feed.
+- Production Telegram `getWebhookInfo` could not be checked from the current noninteractive server shell because bot credentials were not present. No webhook was changed. Customer/staff bot health and real-user Telegram UX still need a secret-authorized check.
+- Fresh production backup `/mnt/storage/backups/mazetto/postgres/mazetto-20261011-090128252.dump` (539,693 bytes; 703 archive entries) has a `latest-verified.json` record and SHA-256 `782b03a035259bbf45194c783582f6001bd5a80299ac99be360bfc33fb18dbc9`. A full `--exit-on-error` restore passed in a disposable network-disabled PostgreSQL 18 container with no volume (76 public tables); this verifies the backup, not application rollback or a live recovery procedure.
+- Desktop 0.1.116 is not published. Windows workstation installation/update, the new credential save prompt, offline recovery, and physical receipt plus shift-close printer output remain acceptance tests.
 
 ## Step 14 Release Record
 
