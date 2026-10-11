@@ -2,7 +2,7 @@
 import { useLocale, useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OrderProgress } from "@/components/order-progress";
 import {
   orderTypeLabel,
@@ -37,6 +37,7 @@ type CustomerOrder = {
   createdAt: string;
   branch?: { name: string; address?: string | null } | null;
   order: {
+    id: string;
     orderNumber: string;
     displayOrderNumber?: string | null;
     total: string;
@@ -69,6 +70,8 @@ function OrdersDashboard() {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const ordersRef = useRef<CustomerOrder[]>([]);
+  ordersRef.current = orders;
 
   const load = useCallback(async (silent = false) => {
     if (!customer?.accessToken) {
@@ -111,17 +114,63 @@ function OrdersDashboard() {
     }
   }, [customer, refreshCustomer]);
 
+  const refreshOrder = useCallback(async (silent = false, orderId?: string) => {
+    if (!orderId) {
+      await load(silent);
+      return;
+    }
+
+    const existingOrder = ordersRef.current.find((order) => order.order.id === orderId);
+    if (!existingOrder) {
+      await load(silent);
+      return;
+    }
+    if (!customer?.accessToken) return;
+
+    const fetchOrder = async (accessToken: string) => {
+      const updatedOrder = await apiFetch<CustomerOrder>(
+        `/customer/me/orders/${encodeURIComponent(existingOrder.id)}`,
+        { accessToken },
+      );
+      setOrders((current) =>
+        current.map((order) => order.id === updatedOrder.id ? updatedOrder : order),
+      );
+    };
+
+    setError(null);
+    try {
+      await fetchOrder(customer.accessToken);
+    } catch (caught) {
+      if (!(caught instanceof Error && caught.message.includes("Sessiya muddati tugagan"))) {
+        await load(true);
+        return;
+      }
+
+      const refreshed = await refreshCustomer();
+      if (!refreshed) {
+        setError(caught instanceof Error ? caught.message : "Buyurtmalarni yuklab bo'lmadi.");
+        return;
+      }
+
+      try {
+        await fetchOrder(refreshed.accessToken);
+      } catch (retryError) {
+        setError(retryError instanceof Error ? retryError.message : "Buyurtmani yangilab bo'lmadi.");
+      }
+    }
+  }, [customer?.accessToken, load, refreshCustomer]);
+
   useEffect(() => {
     void load();
   }, [load]);
-
-  useOrderUpdates(customer?.accessToken, load);
 
   const activeOrder = useMemo(
     () => orders.find((order) => !["COMPLETED", "CANCELLED"].includes(trackingStatus(order))) ?? null,
     [orders],
   );
   const history = orders.filter((order) => order.id !== activeOrder?.id);
+
+  useOrderUpdates(customer?.accessToken, refreshOrder);
 
   if (!customer?.accessToken) {
     return (

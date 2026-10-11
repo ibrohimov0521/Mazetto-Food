@@ -75,8 +75,11 @@ export function printerStatusLabel(value: string): string {
 export const paymentMethodLabels: Record<string, string> = {
   CASH: "Naqd pul",
   CARD: "Bank kartasi (terminal)",
+  UZCARD: "Uzcard",
+  HUMO: "Humo",
   CLICK: "Click",
   PAYME: "Payme",
+  ONLINE: "Onlayn to'lov",
 };
 
 export function paymentMethodLabel(value: string): string {

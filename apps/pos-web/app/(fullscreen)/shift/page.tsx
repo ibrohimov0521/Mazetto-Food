@@ -19,6 +19,7 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../lib/api";
+import { getIdempotencyIntent } from "../../../lib/idempotency-intent.mjs";
 import { hasPermission } from "../../../lib/auth";
 import {
   CashHandover,
@@ -118,6 +119,16 @@ function ShiftConsole() {
   const [pendingTransfers, setPendingTransfers] = useState<CashTransfer[]>([]);
   const [receivers, setReceivers] = useState<CashReceiver[]>([]);
   const saving = useRef(false);
+  const transferResolutionIntent = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
+  const shiftOpenIntent = useRef<{ fingerprint: string; key: string } | null>(
+    null,
+  );
+  const shiftCloseIntent = useRef<{ fingerprint: string; key: string } | null>(
+    null,
+  );
   const loadRequest = useRef<AbortController | null>(null);
   const expectedCash = Number(
     shift?.expectedCash ?? shift?.currentBalance ?? shift?.openingBalance ?? 0,
@@ -251,11 +262,21 @@ function ShiftConsole() {
     setIsSaving(true);
     setError(null);
     try {
+      const fingerprint = JSON.stringify({ transferId: id, action });
+      transferResolutionIntent.current = getIdempotencyIntent(
+        transferResolutionIntent.current,
+        fingerprint,
+        "cash-transfer-resolution",
+      );
       await apiFetch("/cash-register/transfers/" + id + "/" + action, {
         method: "POST",
+        headers: {
+          "Idempotency-Key": transferResolutionIntent.current.key,
+        },
         body: JSON.stringify({}),
         signal: AbortSignal.timeout(15000),
       });
+      transferResolutionIntent.current = null;
       await loadShift();
       setTransferConfirmation(null);
     } catch (caught) {
@@ -274,14 +295,28 @@ function ShiftConsole() {
     setIsSaving(true);
     setError(null);
     try {
+      const openingBalance = Number(openingCash);
+      const openRequest = {
+        openingBalance,
+        ...(needsBranchChoice ? { branchId: openingBranchId } : {}),
+      };
+      const fingerprint = JSON.stringify({
+        branchId: needsBranchChoice ? openingBranchId : (user?.branchId ?? null),
+        employeeId: user?.employeeId ?? null,
+        openingBalance,
+      });
+      shiftOpenIntent.current = getIdempotencyIntent(
+        shiftOpenIntent.current,
+        fingerprint,
+        "cash-shift-open",
+      );
       const opened = await apiFetch<Shift>("/cash-register/shift/open", {
         method: "POST",
-        body: JSON.stringify({
-          openingBalance: Number(openingCash),
-          ...(needsBranchChoice ? { branchId: openingBranchId } : {}),
-        }),
+        headers: { "Idempotency-Key": shiftOpenIntent.current.key },
+        body: JSON.stringify(openRequest),
         signal: AbortSignal.timeout(15000),
       });
+      shiftOpenIntent.current = null;
       setShift(opened);
       setClosedShift(null);
       setClosedShiftOrders([]);
@@ -306,14 +341,25 @@ function ShiftConsole() {
     setIsSaving(true);
     setError(null);
     try {
+      const fingerprint = JSON.stringify({
+        shiftId: shift.id,
+        closingBalance: closingValue,
+      });
+      shiftCloseIntent.current = getIdempotencyIntent(
+        shiftCloseIntent.current,
+        fingerprint,
+        "cash-shift-close",
+      );
       const closed = await apiFetch<Shift>(
         `/cash-register/shift/${shift.id}/close`,
         {
           method: "POST",
+          headers: { "Idempotency-Key": shiftCloseIntent.current.key },
           body: JSON.stringify({ closingBalance: closingValue }),
           signal: AbortSignal.timeout(15000),
         },
       );
+      shiftCloseIntent.current = null;
       setClosedShift({ ...shift, ...closed });
       setClosedShiftOrders(closingOrders ?? []);
       setShift(null);

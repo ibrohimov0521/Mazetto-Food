@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, Clock3 } from "lucide-react";
 import { apiFetch } from "../../lib/api";
+import { getIdempotencyIntent } from "../../lib/idempotency-intent.mjs";
 import { StaffDialog } from "./staff-shell";
 import styles from "./staff.module.css";
 import { CashTransferDetailButton } from "./cash-transfer-detail";
@@ -81,15 +82,11 @@ export function CashHandover({
     setError("");
     try {
       const fingerprint = `${shiftId}:${receiverShiftId}:${value}`;
-      if (idempotency.current?.fingerprint !== fingerprint) {
-        idempotency.current = {
-          fingerprint,
-          key:
-            typeof crypto !== "undefined" && "randomUUID" in crypto
-              ? crypto.randomUUID()
-              : `cash-transfer-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        };
-      }
+      idempotency.current = getIdempotencyIntent(
+        idempotency.current,
+        fingerprint,
+        "cash-transfer",
+      );
       const idempotencyKey = idempotency.current.key;
       await apiFetch("/cash-register/transfers", {
         method: "POST",

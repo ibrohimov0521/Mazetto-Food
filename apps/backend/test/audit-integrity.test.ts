@@ -164,3 +164,41 @@ test("sozlama va uning audit izi bitta tranzaksiyada yoziladi", async () => {
     "commit",
   ]);
 });
+
+test("tenant konteksti yagona faol restorandan aniqlansa ham audit shu tenantga yoziladi", async () => {
+  let auditTenantId: string | null | undefined;
+  const tx = {
+    setting: {
+      findUnique: async () => null,
+      upsert: async () => ({ key: "customer_delivery_fee", value: "25000" }),
+    },
+    auditLog: {
+      create: async (args: { data: { tenantId: string | null } }) => {
+        auditTenantId = args.data.tenantId;
+        return {};
+      },
+    },
+  };
+  const service = new SettingsService(
+    {
+      restaurantTenant: {
+        findMany: async () => [{ id: "tenant-resolved" }],
+      },
+      $transaction: async (callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+    } as never,
+    { getClient: () => null } as never,
+  );
+
+  await service.updateSetting(
+    "customer_delivery_fee",
+    "25000",
+    {
+      id: "legacy-super-admin",
+      roles: ["SUPER_ADMIN"],
+      permissions: ["SETTING_MANAGE"],
+    },
+  );
+
+  assert.equal(auditTenantId, "tenant-resolved");
+});

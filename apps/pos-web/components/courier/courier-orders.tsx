@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch, SessionExpiredError } from "../../lib/api";
+import { getIdempotencyIntent } from "../../lib/idempotency-intent.mjs";
 import { useStaffRealtime } from "../../lib/use-staff-realtime";
 import { hasPermission } from "../../lib/auth";
 import {
@@ -168,6 +169,10 @@ export function CourierOrdersPage() {
   const request = useRef<AbortController | null>(null);
   const version = useRef(0);
   const actionLock = useRef(false);
+  const transferIdempotency = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
   const canUpdate = hasPermission(user, "COURIER_DELIVERY_UPDATE");
   const availableCash = Math.max(0, Number(courierShift?.currentCash ?? 0));
   const parsedTransferAmount = Number(transferAmount);
@@ -452,8 +457,17 @@ export function CourierOrdersPage() {
     setShiftBusy(true);
     setShiftError("");
     try {
+      const fingerprint = `${courierShift.id}:${transferReceiverId}:${parsedTransferAmount}`;
+      transferIdempotency.current = getIdempotencyIntent(
+        transferIdempotency.current,
+        fingerprint,
+        "courier-cash-transfer",
+      );
       await apiFetch("/cash-register/courier-shift/transfers", {
         method: "POST",
+        headers: {
+          "Idempotency-Key": transferIdempotency.current.key,
+        },
         body: JSON.stringify({
           amount: parsedTransferAmount,
           toShiftId: transferReceiverId,
@@ -461,6 +475,7 @@ export function CourierOrdersPage() {
         }),
         signal: AbortSignal.timeout(15000),
       });
+      transferIdempotency.current = null;
       setTransferAmount("");
       await loadCourierShift();
     } catch (caught) {

@@ -506,6 +506,20 @@ export class DesktopStore {
     return Boolean(row);
   }
 
+  wasPrintTargetAmbiguous(
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ): boolean {
+    const row = this.database
+      .prepare(
+        `SELECT 1 FROM print_job_targets
+         WHERE scope = ? AND job_id = ? AND printer_key = ? AND state = 'ambiguous'`,
+      )
+      .get(scope, jobId, printerName.trim().toLowerCase());
+    return Boolean(row);
+  }
+
   recordPrintTarget(
     scope: "local" | "server",
     jobId: string,
@@ -533,6 +547,19 @@ export class DesktopStore {
         state,
         new Date().toISOString(),
       );
+  }
+
+  clearAmbiguousPrintTarget(
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ): void {
+    this.database
+      .prepare(
+        `DELETE FROM print_job_targets
+         WHERE scope = ? AND job_id = ? AND printer_key = ? AND state = 'ambiguous'`,
+      )
+      .run(scope, jobId, printerName.trim().toLowerCase());
   }
 
   listLocalPrintJobs(limit = 50): LocalPrintQueueItem[] {
@@ -598,6 +625,11 @@ export class DesktopStore {
         this.database.exec("COMMIT");
         return false;
       }
+      this.database
+        .prepare(
+          "DELETE FROM print_job_targets WHERE scope = 'local' AND job_id = ? AND state = 'ambiguous'",
+        )
+        .run(id);
       const attemptRow = this.database
         .prepare(
           "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS attemptNumber " +

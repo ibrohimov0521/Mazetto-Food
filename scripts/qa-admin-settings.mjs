@@ -140,6 +140,24 @@ try {
     await page.goto(`${baseUrl}/admin/settings`, {
       waitUntil: "domcontentloaded",
     });
+    for (const method of [
+      { label: "Naqd pul", pattern: /^Naqd pul$/i },
+      { label: "Bank kartasi (terminal)", pattern: /^Bank kartasi \(terminal\)$/i },
+      { label: "Uzcard", pattern: /^Uzcard$/i },
+      { label: "Humo", pattern: /^Humo$/i },
+      { label: "Click", pattern: /^Click$/i },
+      { label: "Payme", pattern: /^Payme$/i },
+      { label: "Onlayn to'lov", pattern: /^(Onlayn to'lov|ONLINE)$/i },
+    ]) {
+      const methodButton = page.getByRole("button", {
+        name: method.pattern,
+      });
+      await methodButton.waitFor({ state: "visible" });
+      assert.ok(
+        await methodButton.isVisible(),
+        `to'lov usuli ko'rinmadi: ${method.label}`,
+      );
+    }
     await page.getByLabel("Tekin yetkazish radiusi").fill("1500");
     await page.getByRole("button", { name: "Saqlash", exact: true }).click();
     await page
@@ -179,15 +197,81 @@ try {
     });
     await clickMethod.waitFor();
     assert.equal(await clickMethod.getAttribute("aria-pressed"), "true");
-    await clickMethod.click();
-    const disableClickSave = page.waitForResponse(
+
+    await page.getByRole("button", { name: "Payme", exact: true }).click();
+    const enablePaymeSave = page.waitForResponse(
       (response) =>
         response.url().includes("/settings/cashier_payment_methods") &&
         response.request().method() === "PATCH",
     );
     await page.getByRole("button", { name: "Saqlash", exact: true }).click();
+    await enablePaymeSave;
+    assert.equal(savedCashierMethods, "CASH,CLICK,PAYME");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page
+      .getByRole("button", { name: "Payme", exact: true })
+      .waitFor();
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Payme", exact: true })
+        .getAttribute("aria-pressed"),
+      "true",
+    );
+
+    await clickMethod.click();
+    await page.getByRole("button", { name: "Saqlash", exact: true }).click();
+    await page
+      .getByRole("heading", {
+        name: "Kassada qabul qilinadigan to'lovlar — tasdiqlash",
+      })
+      .waitFor();
+    assert.equal(
+      savedCashierMethods,
+      "CASH,CLICK,PAYME",
+      "offline xavf tasdiqlanmaguncha sozlama saqlanmasligi kerak",
+    );
+    assert.ok(
+      await page
+        .getByText(/Internetga ulanmagan Desktop kassa/)
+        .isVisible(),
+      "o'chirilayotgan to'lov usuli uchun offline ogohlantirishi ko'rinishi kerak",
+    );
+    const disableClickSave = page.waitForResponse(
+      (response) =>
+        response.url().includes("/settings/cashier_payment_methods") &&
+        response.request().method() === "PATCH",
+    );
+    await page
+      .getByRole("button", { name: "Tasdiqlayman va saqlayman" })
+      .click();
     await disableClickSave;
+    assert.equal(savedCashierMethods, "CASH,PAYME");
+
+    await page.getByRole("button", { name: "Payme", exact: true }).click();
+    await page.getByRole("button", { name: "Saqlash", exact: true }).click();
+    await page
+      .getByRole("heading", {
+        name: "Kassada qabul qilinadigan to'lovlar — tasdiqlash",
+      })
+      .waitFor();
+    const disablePaymeSave = page.waitForResponse(
+      (response) =>
+        response.url().includes("/settings/cashier_payment_methods") &&
+        response.request().method() === "PATCH",
+    );
+    await page
+      .getByRole("button", { name: "Tasdiqlayman va saqlayman" })
+      .click();
+    await disablePaymeSave;
     assert.equal(savedCashierMethods, "CASH");
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Naqd pul", exact: true })
+        .isDisabled(),
+      true,
+      "oxirgi yoqilgan to'lov usuli o'chirilmasligi kerak",
+    );
 
     assert.ok(
       await page.evaluate(

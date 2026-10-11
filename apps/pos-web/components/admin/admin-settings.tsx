@@ -120,7 +120,7 @@ const SETTING_LABELS: Record<
   },
   cashier_payment_methods: {
     title: "Kassada qabul qilinadigan to'lovlar",
-    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder ulanishi emas. Oflayn kassalar Naqd usulining oxirgi yuklangan sozlamasidan foydalanadi.",
+    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder ulanishi emas. Oflayn kassalar oxirgi yuklangan to'lov usullari ro'yxatidan foydalanadi.",
     group: "cashier-payments",
   },
   customer_delivery_enabled: {
@@ -251,9 +251,9 @@ export function AdminSettings() {
               .map((method) => method.trim().toUpperCase())
               .filter((method) => method && !nextCashierMethods.has(method))
           : [];
-      const disablesOfflineCash = disabledCashierMethods.includes("CASH");
+      const disablesOfflinePaymentMethod = disabledCashierMethods.length > 0;
 
-      if (!row.affectsCustomer && !disablesOfflineCash) {
+      if (!row.affectsCustomer && !disablesOfflinePaymentMethod) {
         void save(row.key, value);
         return;
       }
@@ -264,8 +264,8 @@ export function AdminSettings() {
         title: settingTitle(row.key),
         before: describeValue(row.rule, row.value),
         after: describeValue(row.rule, value),
-        impact: disablesOfflineCash
-          ? "Internetga ulanmagan Desktop kassa oxirgi yuklangan Naqd sozlamasidan foydalanishda davom etishi mumkin. Unda naqd to'lov navbatda qolgan bo'lsa, qayta ulanganda sinxronlash nizosiga tushadi va smenani yopib bo'lmaydi. Avval barcha kassalarni internetga ulang va kutayotgan amallarni sinxronlang. Nizo yuz bersa, Naqd usulini qayta yoqib, Desktop navbatidan amalni qayta yuboring."
+        impact: disablesOfflinePaymentMethod
+          ? `O'chiriladigan usullar: ${disabledCashierMethods.map(paymentMethodLabel).join(", ")}. Internetga ulanmagan Desktop kassa oxirgi yuklangan ro'yxatdan foydalanishda davom etishi mumkin. O'chirishdan oldin barcha kassalarni internetga ulang va kutayotgan amallar sinxronlanganini tekshiring. Aks holda eski usul bilan qilingan offline to'lovlar serverda qabul qilinmasligi mumkin. Nizo yuz bersa, usulni qayta yoqib, Desktop navbatini sinxronlang.`
           : (SETTING_LABELS[row.key]?.impact ??
             "Bu sozlama mijoz saytida darhol qo'llanadi."),
       });
@@ -334,7 +334,7 @@ export function AdminSettings() {
       />
 
       <SettingsGroup
-        description="Bu usullar kassir oynalarida ko'rinadi. Click/Payme va karta tushumini kassir alohida tekshiradi; avtomatik bank tasdig'i yo'q. Naqdni o'chirishdan oldin oflayn Desktop kassalaridagi kutayotgan amallarni sinxronlang."
+        description="Bu usullar kassir oynalarida ko'rinadi. Click/Payme va karta tushumini kassir alohida tekshiradi; avtomatik bank tasdig'i yo'q. To'lov usulini o'chirishdan oldin oflayn Desktop kassalaridagi kutayotgan amallarni sinxronlang."
         drafts={drafts}
         onDraftChange={(key, value) =>
           setDrafts((previous) => ({ ...previous, [key]: value }))

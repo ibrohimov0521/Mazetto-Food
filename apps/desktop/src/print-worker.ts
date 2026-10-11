@@ -50,6 +50,7 @@ type PrintJob = {
   id: string;
   receiptId: string;
   leaseToken: string;
+  allowAmbiguousRetry?: boolean;
   payload?: Record<string, unknown> | null;
   receipt?: {
     receiptNumber?: string;
@@ -74,10 +75,20 @@ export type PrintableReceipt = {
 type LocalPrintQueue = {
   claim: (documentTypes: string[]) => LocalPrintJob | null;
   complete: (id: string, attemptId?: string) => void;
-  fail: (id: string, error: string, ambiguous?: boolean, attemptId?: string) => void;
+  fail: (
+    id: string,
+    error: string,
+    ambiguous?: boolean,
+    attemptId?: string,
+  ) => void;
   markPrinting?: (id: string) => string | boolean | void;
   wasPrinted: (serverOrderId: string, documentType: string) => boolean;
   wasTargetPrinted?: (
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ) => boolean;
+  wasTargetAmbiguous?: (
     scope: "local" | "server",
     jobId: string,
     printerName: string,
@@ -88,6 +99,11 @@ type LocalPrintQueue = {
     printerName: string,
   ) => void;
   markTargetAmbiguous?: (
+    scope: "local" | "server",
+    jobId: string,
+    printerName: string,
+  ) => void;
+  clearTargetAmbiguous?: (
     scope: "local" | "server",
     jobId: string,
     printerName: string,
@@ -108,6 +124,7 @@ export type DesktopPrintWorkerOptions = {
     paperSettings?: WindowsPaperSettings,
   ) => Promise<void>;
   localQueue?: LocalPrintQueue;
+  onError?: (error: unknown) => void;
   fetchImpl?: typeof fetch;
   socketImpl?: (host: string, port: number, payload?: Buffer) => Promise<void>;
   requestTimeoutMs?: number;
@@ -121,6 +138,8 @@ const SERVER_REQUEST_TIMEOUT_MS = 5_000;
 const PRINTER_OPERATION_TIMEOUT_MS = 45_000;
 const SERVER_RETRY_BASE_MS = 1_000;
 const SERVER_RETRY_MAX_MS = 30_000;
+const LOCAL_QUEUE_RETRY_BASE_MS = 1_000;
+const LOCAL_QUEUE_RETRY_MAX_MS = 30_000;
 
 /** Claims each durable job once and dispatches it through a Windows driver or ESC/POS TCP. */
 export class DesktopPrintWorker {
@@ -134,6 +153,7 @@ export class DesktopPrintWorker {
   private readonly socketImpl?: DesktopPrintWorkerOptions["socketImpl"];
   private readonly printSystem?: DesktopPrintWorkerOptions["printSystem"];
   private readonly localQueue: LocalPrintQueue | undefined;
+  private readonly onError: DesktopPrintWorkerOptions["onError"];
   private readonly requestTimeoutMs: number;
   private readonly printTimeoutMs: number;
   private authorization: string | null = null;
@@ -151,6 +171,8 @@ export class DesktopPrintWorker {
   } | null = null;
   private serverRetryAt = 0;
   private serverFailureCount = 0;
+  private localQueueRetryAt = 0;
+  private localQueueFailureCount = 0;
 
   constructor(options: DesktopPrintWorkerOptions) {
     this.apiUrl = options.apiUrl.replace(/\/+$/, "");
@@ -166,6 +188,7 @@ export class DesktopPrintWorker {
     }));
     this.printSystem = options.printSystem;
     this.localQueue = options.localQueue;
+    this.onError = options.onError;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.socketImpl = options.socketImpl;
     this.requestTimeoutMs =
@@ -237,8 +260,19 @@ export class DesktopPrintWorker {
   private async performTick(): Promise<void> {
     for (let index = 0; index < MAX_LOCAL_PRINT_JOBS_PER_TICK; index += 1) {
       if (this.stopping) break;
-      if (!(await this.printNextLocalJob())) {
-        break;
+      if (Date.now() < this.localQueueRetryAt) return;
+      try {
+        if (!(await this.printNextLocalJob())) {
+          this.localQueueFailureCount = 0;
+          this.localQueueRetryAt = 0;
+          break;
+        }
+        this.localQueueFailureCount = 0;
+        this.localQueueRetryAt = 0;
+      } catch (error) {
+        this.deferLocalQueuePolling();
+        this.onError?.(error);
+        return;
       }
     }
     if (this.stopping || !this.authorization) return;
@@ -246,12 +280,18 @@ export class DesktopPrintWorker {
 
     try {
       const readyPrinters = await this.discoverReadyPrinters();
-      const unassignedRoutes = this.systemPrinters.length > 0
-        ? [...new Set(this.systemPrinters.flatMap((printer) => printer.roles))]
-            .filter((role) => ["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"].includes(role))
-        : this.printerHost
-          ? ["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"]
-          : [];
+      const unassignedRoutes =
+        this.systemPrinters.length > 0
+          ? [
+              ...new Set(
+                this.systemPrinters.flatMap((printer) => printer.roles),
+              ),
+            ].filter((role) =>
+              ["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"].includes(role),
+            )
+          : this.printerHost
+            ? ["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND"]
+            : [];
       const acceptsUnassigned = unassignedRoutes.length > 0;
       if (readyPrinters.length === 0 && !acceptsUnassigned) {
         this.resetServerPollingBackoff();
@@ -284,12 +324,14 @@ export class DesktopPrintWorker {
         }
       }
       this.resetServerPollingBackoff();
-    } catch {
+    } catch (error) {
       this.deferServerPolling();
+      this.onError?.(error);
     }
   }
 
   private async printServerJob(job: PrintJob): Promise<boolean> {
+    let printerMayHaveReceived = false;
     try {
       // Job payloadi chek yaratilgan tranzaksiyaning immutable nusxasi.
       // Uni birinchi ishlatish printerdagi ishni keyingi GET so'rovidan
@@ -321,7 +363,9 @@ export class DesktopPrintWorker {
         paperWidthMm === 210 &&
         (host ||
           (this.printerHost &&
-            !this.systemPrinters.some((printer) => printer.roles.includes(route))))
+            !this.systemPrinters.some((printer) =>
+              printer.roles.includes(route),
+            )))
       ) {
         throw new Error(
           "A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning",
@@ -352,10 +396,28 @@ export class DesktopPrintWorker {
         const commands = printable.escpos?.commands ?? [];
         if (commands.length === 0)
           throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
-        await this.send(commands, host, port, paperWidthMm);
+        await this.markServerJobDispatching(job);
+        printerMayHaveReceived = await this.sendServerTcpTarget(
+          job,
+          commands,
+          host,
+          port,
+          paperWidthMm,
+        );
       } else if (systemTargets.length > 0 && this.printSystem) {
-        await this.printSystemTargets("server", job.id, systemTargets, receipt);
-      } else if (this.printerHost && !job.printer && this.systemPrinters.length === 0) {
+        await this.markServerJobDispatching(job);
+        printerMayHaveReceived = await this.printSystemTargets(
+          "server",
+          job.id,
+          systemTargets,
+          receipt,
+          job.allowAmbiguousRetry === true,
+        );
+      } else if (
+        this.printerHost &&
+        !job.printer &&
+        this.systemPrinters.length === 0
+      ) {
         const printable = receipt.escpos?.commands?.length
           ? receipt
           : await this.request<PrintableReceipt>(
@@ -364,7 +426,9 @@ export class DesktopPrintWorker {
         const commands = printable.escpos?.commands ?? [];
         if (commands.length === 0)
           throw new Error("Chek uchun ESC/POS buyruqlari topilmadi");
-        await this.send(
+        await this.markServerJobDispatching(job);
+        printerMayHaveReceived = await this.sendServerTcpTarget(
+          job,
           commands,
           this.printerHost,
           this.printerPort,
@@ -377,6 +441,13 @@ export class DesktopPrintWorker {
       return true;
     } catch (error) {
       const ambiguous = isPrintOutcomeUnknown(error);
+      const printerOutcomeUnknown = ambiguous || printerMayHaveReceived;
+      const failure =
+        printerMayHaveReceived && !ambiguous
+          ? new PrintOutcomeUnknownError(
+              `Printer ishni qabul qilgan bo'lishi mumkin, ammo server tasdig'i saqlanmadi. Dublikat chiqmasligi uchun avtomatik qayta chop etish to'xtatildi. ${message(error)}`,
+            )
+          : error;
       try {
         await this.request(
           `/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`,
@@ -384,8 +455,8 @@ export class DesktopPrintWorker {
             method: "POST",
             body: JSON.stringify({
               leaseToken: job.leaseToken,
-              error: message(error),
-              ...(ambiguous ? { outcome: "AMBIGUOUS" } : {}),
+              error: message(failure),
+              ...(printerOutcomeUnknown ? { outcome: "AMBIGUOUS" } : {}),
             }),
           },
         );
@@ -404,6 +475,15 @@ export class DesktopPrintWorker {
     this.serverFailureCount = Math.min(this.serverFailureCount + 1, 5);
     this.serverRetryAt = Date.now() + delay;
     this.printerDiscoveryCache = null;
+  }
+
+  private deferLocalQueuePolling(): void {
+    const delay = Math.min(
+      LOCAL_QUEUE_RETRY_BASE_MS * 2 ** this.localQueueFailureCount,
+      LOCAL_QUEUE_RETRY_MAX_MS,
+    );
+    this.localQueueFailureCount = Math.min(this.localQueueFailureCount + 1, 5);
+    this.localQueueRetryAt = Date.now() + delay;
   }
 
   private resetServerPollingBackoff(): void {
@@ -509,9 +589,11 @@ export class DesktopPrintWorker {
     jobId: string,
     targets: SystemPrinterTarget[],
     receipt: PrintableReceipt,
-  ): Promise<void> {
+    allowAmbiguousRetry = false,
+  ): Promise<boolean> {
     let nextTargetIndex = 0;
     const failures: Array<{ detail: string; ambiguous: boolean }> = [];
+    let printedAnyTarget = false;
     const dispatch = async () => {
       while (nextTargetIndex < targets.length) {
         const target = targets[nextTargetIndex++];
@@ -519,18 +601,44 @@ export class DesktopPrintWorker {
         if (this.localQueue?.wasTargetPrinted?.(scope, jobId, target.name)) {
           continue;
         }
+        const wasAmbiguousBeforeAttempt =
+          this.localQueue?.wasTargetAmbiguous?.(scope, jobId, target.name) ??
+          false;
+        if (wasAmbiguousBeforeAttempt && !allowAmbiguousRetry) {
+          failures.push({
+            detail: `${target.displayName}: oldingi chop etish natijasi noaniq; qog'oz tekshirilib, operator qayta yuborishi kerak.`,
+            ambiguous: true,
+          });
+          continue;
+        }
 
         try {
+          this.localQueue?.markTargetAmbiguous?.(scope, jobId, target.name);
           await this.printToSystem(
             target,
             receipt,
             normalizeWindowsPaperSettings(target),
           );
-          this.localQueue?.markTargetPrinted?.(scope, jobId, target.name);
+          printedAnyTarget = true;
+          try {
+            this.localQueue?.markTargetPrinted?.(scope, jobId, target.name);
+          } catch (error) {
+            throw new PrintOutcomeUnknownError(
+              `"${target.displayName}" printerida qog'oz chiqqan bo'lishi mumkin, ammo natija saqlanmadi. Qog'ozni tekshirmasdan qayta chop etmang. ${message(error)}`,
+            );
+          }
         } catch (error) {
           const ambiguous = isPrintOutcomeUnknown(error);
-          if (ambiguous) {
-            this.localQueue?.markTargetAmbiguous?.(scope, jobId, target.name);
+          if (!ambiguous && !wasAmbiguousBeforeAttempt) {
+            try {
+              this.localQueue?.clearTargetAmbiguous?.(
+                scope,
+                jobId,
+                target.name,
+              );
+            } catch {
+              // Keeping the marker is safer than silently permitting a duplicate.
+            }
           }
           failures.push({
             detail: target.displayName + ": " + message(error),
@@ -548,12 +656,31 @@ export class DesktopPrintWorker {
 
     if (failures.length > 0) {
       const details = failures.map((failure) => failure.detail).join("; ");
-      if (failures.some((failure) => failure.ambiguous)) {
-        throw new PrintOutcomeUnknownError(details);
+      if (
+        failures.some((failure) => failure.ambiguous) ||
+        (scope === "server" && printedAnyTarget)
+      ) {
+        throw new PrintOutcomeUnknownError(
+          scope === "server" && printedAnyTarget
+            ? `Some printer targets may already have paper output. ${details}`
+            : details,
+        );
       }
       throw new Error(details);
     }
+    return printedAnyTarget;
   }
+
+  private async markServerJobDispatching(job: PrintJob): Promise<void> {
+    await this.request(
+      `/receipts/print-jobs/${encodeURIComponent(job.id)}/dispatching`,
+      {
+        method: "POST",
+        body: JSON.stringify({ leaseToken: job.leaseToken }),
+      },
+    );
+  }
+
   private async completeServerJob(job: PrintJob): Promise<void> {
     await this.request(
       `/receipts/print-jobs/${encodeURIComponent(job.id)}/complete`,
@@ -562,6 +689,51 @@ export class DesktopPrintWorker {
         body: JSON.stringify({ leaseToken: job.leaseToken }),
       },
     );
+  }
+
+  private async sendServerTcpTarget(
+    job: PrintJob,
+    commands: Array<Record<string, unknown>>,
+    host: string,
+    port: number,
+    paperWidthMm: number,
+  ): Promise<boolean> {
+    const targetName = `tcp://${host}:${port}`;
+    if (this.localQueue?.wasTargetPrinted?.("server", job.id, targetName)) {
+      return false;
+    }
+
+    const wasAmbiguousBeforeAttempt =
+      this.localQueue?.wasTargetAmbiguous?.("server", job.id, targetName) ??
+      false;
+    if (wasAmbiguousBeforeAttempt && job.allowAmbiguousRetry !== true) {
+      throw new PrintOutcomeUnknownError(
+        `TCP printer ${host}:${port} oldingi urinishda chekni olgan bo'lishi mumkin; qog'oz tekshirilmaguncha avtomatik qayta chop etilmaydi.`,
+      );
+    }
+
+    this.localQueue?.markTargetAmbiguous?.("server", job.id, targetName);
+    try {
+      await this.send(commands, host, port, paperWidthMm);
+    } catch (error) {
+      if (!isPrintOutcomeUnknown(error) && !wasAmbiguousBeforeAttempt) {
+        try {
+          this.localQueue?.clearTargetAmbiguous?.("server", job.id, targetName);
+        } catch {
+          // Retain the marker if local persistence cannot confirm a safe retry.
+        }
+      }
+      throw error;
+    }
+
+    try {
+      this.localQueue?.markTargetPrinted?.("server", job.id, targetName);
+    } catch (error) {
+      throw new PrintOutcomeUnknownError(
+        `TCP printer chekni qabul qilgan, ammo natijani lokal saqlash muvaffaqiyatsiz: ${message(error)}`,
+      );
+    }
+    return true;
   }
 
   private async printToSystem(
@@ -622,7 +794,9 @@ export class DesktopPrintWorker {
         roles.some((role) => localRoles.has(role)) &&
         this.systemPrinters.some((target) =>
           [target.name, target.displayName].some(
-            (name) => name.trim().toLocaleLowerCase() === (printer.name?.trim().toLocaleLowerCase() ?? ""),
+            (name) =>
+              name.trim().toLocaleLowerCase() ===
+              (printer.name?.trim().toLocaleLowerCase() ?? ""),
           ),
         )
         ? [printer.id]
@@ -722,11 +896,9 @@ export class DesktopPrintWorker {
       const total = String(command.total ?? "").trim();
       if (total)
         lines.push(...wrapEscPosPair(lines.pop() ?? "", total, columns));
-      const note = typeof command.notes === "string" ? command.notes.trim() : "";
-      if (note)
-        lines.push(
-          ...wrapEscPosText("Izoh: " + note, columns, "  "),
-        );
+      const note =
+        typeof command.notes === "string" ? command.notes.trim() : "";
+      if (note) lines.push(...wrapEscPosText("Izoh: " + note, columns, "  "));
       for (const modifier of modifierNames(command.modifiers))
         lines.push(...wrapEscPosText("+ " + modifier, columns, "  "));
       return Buffer.from(lines.join("\n") + "\n", "utf8");

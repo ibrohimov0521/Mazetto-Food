@@ -1,6 +1,6 @@
 # MAZETTO FOOD Production Deployment Audit
 
-Runtime configuration was rechecked against the current source on 2026-10-10.
+Runtime configuration was rechecked against the current source on 2026-10-11.
 This document records the environment variables consumed by the applications
 and the production wiring requirements.
 
@@ -118,13 +118,13 @@ NEXT_PUBLIC_API_BASE_URL=https://api.mazettofood.uz/api/v1
 
 ## CORS Requirements
 
-Backend HTTP CORS is currently not enabled in `apps/backend/src/main.ts`. For production, the API must allow browser requests from:
+Backend HTTP CORS and Socket.IO CORS use the same exact-origin allowlist from `CORS_ORIGINS` (`apps/backend/src/config/cors.config.ts`). If the variable is unset, the source defaults include these production browser origins:
 
 - `https://mazettofood.uz`
 - `https://www.mazettofood.uz`
 - `https://pos.mazettofood.uz`
 
-Current warning: without explicit HTTP CORS, browser API requests from customer-web and pos-web can fail when deployed on separate domains.
+Credentials are enabled and wildcard `*` is rejected. Setting `CORS_ORIGINS` replaces the defaults, so list every deployed browser origin explicitly; do not include a trailing slash. The API hostname is the destination, not a browser page origin.
 
 ## WebSocket Requirements
 
@@ -134,7 +134,7 @@ Socket.IO clients derive the socket URL by removing `/api/v1` from `NEXT_PUBLIC_
 https://api.mazettofood.uz
 ```
 
-Cloudflare and Dokploy routing must support WebSocket upgrades on `https://api.mazettofood.uz`. Current backend websocket origin is `*`, which works broadly but should be restricted before handling sensitive realtime payloads.
+Cloudflare and Dokploy routing must support WebSocket upgrades on `https://api.mazettofood.uz`. The gateway uses the same exact-origin allowlist as HTTP; it does not allow wildcard origins.
 
 ## Database Connection Requirements
 
@@ -174,5 +174,5 @@ Internal only:
 - POS-web API connection uses `NEXT_PUBLIC_API_BASE_URL`.
 - Customer-web order tracking derives Socket.IO origin from `NEXT_PUBLIC_API_BASE_URL`.
 - POS kitchen and waiter screens derive Socket.IO origin from `NEXT_PUBLIC_API_BASE_URL`.
-- Backend CORS is not currently configured for HTTP requests.
-- Backend websocket CORS currently allows all origins.
+- Backend HTTP and websocket CORS both use `CORS_ORIGINS` with the same exact-origin allowlist.
+- Credentialed wildcard origins are rejected; if `CORS_ORIGINS` is set, include all customer-web and POS origins explicitly.

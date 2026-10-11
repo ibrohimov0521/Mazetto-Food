@@ -113,7 +113,9 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (!mainWindow) {
-    void createWindow();
+    void createWindow().catch((error) => {
+      console.error("[desktop] window recreation failed", error);
+    });
   }
 });
 
@@ -191,11 +193,17 @@ async function startDesktop(): Promise<void> {
         store?.wasLocalDocumentPrinted(orderId, documentType) ?? false,
       wasTargetPrinted: (scope, jobId, printerName) =>
         store?.wasPrintTargetPrinted(scope, jobId, printerName) ?? false,
+      wasTargetAmbiguous: (scope, jobId, printerName) =>
+        store?.wasPrintTargetAmbiguous(scope, jobId, printerName) ?? false,
       markTargetPrinted: (scope, jobId, printerName) =>
         store?.recordPrintTarget(scope, jobId, printerName, "printed"),
       markTargetAmbiguous: (scope, jobId, printerName) =>
         store?.recordPrintTarget(scope, jobId, printerName, "ambiguous"),
+      clearTargetAmbiguous: (scope, jobId, printerName) =>
+        store?.clearAmbiguousPrintTarget(scope, jobId, printerName),
     },
+    onError: (error) =>
+      console.error("[desktop] print worker polling failed", error),
   });
   gateway = new DesktopGateway({
     host: "127.0.0.1",
@@ -214,7 +222,11 @@ async function startDesktop(): Promise<void> {
   setupSyncControls();
   setupSupportControls();
   await gateway.start();
-  printTimer = setInterval(() => void printWorker?.tick(), 1_000);
+  printTimer = setInterval(() => {
+    void printWorker?.tick().catch((error) =>
+      console.error("[desktop] print worker tick failed", error),
+    );
+  }, 1_000);
   printTimer.unref();
   setupAutoUpdater();
   const uiUrl = await resolveUiUrl();
@@ -259,7 +271,7 @@ async function createWindow(uiUrl?: string): Promise<void> {
   );
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) {
-      void shell.openExternal(url);
+      openExternalLink(url);
     }
     return { action: "deny" };
   });
@@ -269,7 +281,7 @@ async function createWindow(uiUrl?: string): Promise<void> {
     if (!allowed) {
       event.preventDefault();
       if (target.protocol === "https:") {
-        void shell.openExternal(url);
+        openExternalLink(url);
       }
     }
   });
@@ -284,6 +296,12 @@ async function createWindow(uiUrl?: string): Promise<void> {
     await mainWindow.loadURL(offlineShellUrl(targetUiUrl));
     mainWindow.show();
   }
+}
+
+function openExternalLink(url: string): void {
+  void shell.openExternal(url).catch((error) => {
+    console.error("[desktop] external link failed", error);
+  });
 }
 
 function setupAutoUpdater(): void {

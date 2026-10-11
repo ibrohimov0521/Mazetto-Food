@@ -61,6 +61,7 @@ export async function allocateReceiptNumber(
 ): Promise<string> {
   for (let attempt = 0; attempt < RECEIPT_NUMBER_ATTEMPTS; attempt += 1) {
     const candidate = createReceiptNumber();
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`receipt-number:${candidate}`}))`;
     const existing = await tx.receipt.findUnique({
       where: { receiptNumber: candidate },
       select: { id: true },

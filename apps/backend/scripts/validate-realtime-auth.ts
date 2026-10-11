@@ -8,6 +8,7 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 const gateway = readSource("apps/backend/src/modules/kitchen/kitchen.gateway.ts");
 const customerOrdersPage = readSource("apps/customer-web/app/[locale]/orders/page.tsx");
 const customerOrderUpdates = readSource("apps/customer-web/lib/use-order-updates.ts");
+const orderUpdatePayload = readSource("apps/customer-web/lib/order-update-payload.mjs");
 const waiterPage = readSource("apps/pos-web/app/(fullscreen)/waiter/page.tsx");
 const staffRealtimeHook = readSource("apps/pos-web/lib/use-staff-realtime.ts");
 const adminKitchenMonitor = readSource("apps/pos-web/components/admin/admin-kitchen-monitor.tsx");
@@ -58,7 +59,10 @@ assert.doesNotMatch(realtimePayloadBlock, /\.\.\.payload/);
 
 // Socket handshake sahifadan `lib/use-order-updates.ts` hook ichiga ko`chirildi;
 // token endi sahifadan parametr sifatida uzatiladi.
-assert.match(customerOrdersPage, /useOrderUpdates\(customer\?\.accessToken, load\)/);
+assert.match(customerOrdersPage, /useOrderUpdates\(customer\?\.accessToken, refreshOrder\)/);
+assert.match(orderUpdatePayload, /event\.order\?\.id/);
+assert.match(orderUpdatePayload, /event\.ticket\?\.orderId/);
+assert.match(customerOrderUpdates, /matchesOrderUpdate\(payload, orderIdFilter\)/);
 assert.match(customerOrderUpdates, /auth: \{ token, tokenType: "customer" \}/);
 assert.match(customerOrderUpdates, /if \(!token\) return;/);
 assert.match(customerOrderUpdates, /transports: \["websocket"\]/);

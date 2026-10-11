@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { getIdempotencyIntent } from "../../lib/idempotency-intent.mjs";
 import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission } from "../../lib/auth";
@@ -137,6 +138,10 @@ export function AdminPaymentsPage() {
   const [refundReason, setRefundReason] = useState("");
   const [refundError, setRefundError] = useState("");
   const [isRefunding, setIsRefunding] = useState(false);
+  const refundIdempotencyKey = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!showBranchFilter) {
@@ -194,6 +199,7 @@ export function AdminPaymentsPage() {
   async function openRefund(payment: Payment) {
     const paymentBranchId = payment.order?.branch?.id;
     if (!paymentBranchId) return;
+    refundIdempotencyKey.current = null;
     setRefundTarget(payment);
     setRefundAmount(payment.remainingRefundableAmount ?? payment.amount);
     setRefundReason("");
@@ -215,6 +221,11 @@ export function AdminPaymentsPage() {
     }
   }
 
+  function closeRefund() {
+    refundIdempotencyKey.current = null;
+    setRefundTarget(null);
+  }
+
   async function submitRefund() {
     if (
       !refundTarget ||
@@ -231,16 +242,28 @@ export function AdminPaymentsPage() {
     setIsRefunding(true);
     setRefundError("");
     try {
+      const fingerprint = JSON.stringify({
+        paymentId: refundTarget.id,
+        shiftId: refundShiftId,
+        amount: Number(refundAmount),
+        reason: refundReason.trim(),
+      });
+      refundIdempotencyKey.current = getIdempotencyIntent(
+        refundIdempotencyKey.current,
+        fingerprint,
+        `refund:${refundTarget.id}`,
+      );
+      const idempotencyKey = refundIdempotencyKey.current.key;
       await apiFetch(`/payments/${refundTarget.id}/refund`, {
         method: "POST",
         body: JSON.stringify({
           shiftId: refundShiftId,
           amount: Number(refundAmount),
           reason: refundReason.trim(),
-          idempotencyKey: `refund:${refundTarget.id}:${crypto.randomUUID()}`,
+          idempotencyKey,
         }),
       });
-      setRefundTarget(null);
+      closeRefund();
       setDetail(null);
       showToast(
         "To'lov qaytarildi va qaytarish cheki navbatga qo'yildi.",
@@ -658,7 +681,7 @@ export function AdminPaymentsPage() {
           <>
             <Button
               disabled={isRefunding}
-              onClick={() => setRefundTarget(null)}
+              onClick={closeRefund}
               variant="ghost"
             >
               Bekor qilish
@@ -674,7 +697,7 @@ export function AdminPaymentsPage() {
           </>
         }
         isOpen={refundTarget !== null}
-        onClose={() => setRefundTarget(null)}
+        onClose={closeRefund}
         title="Naqd to'lovni qaytarish"
       >
         {refundTarget ? (

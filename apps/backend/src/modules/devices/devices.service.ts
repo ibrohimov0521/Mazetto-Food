@@ -46,7 +46,7 @@ export class DevicesService {
 
   async createDevice(dto: CreateDeviceDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
-    await assertBranchBelongsToActor(this.prisma, user, branchId);
+    const tenantId = await assertBranchBelongsToActor(this.prisma, user, branchId);
     const name = this.normalizeName(dto.name);
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
@@ -73,7 +73,7 @@ export class DevicesService {
         include: { branch: true },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId,
         userId: user.id,
         action: "DEVICE_CREATED",
         entity: "Device",
@@ -205,7 +205,7 @@ export class DevicesService {
         include: { branch: true },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId: previous.tenantId,
         userId: user.id,
         action: "DEVICE_UPDATED",
         entity: "Device",
@@ -241,7 +241,7 @@ export class DevicesService {
     await this.prisma.$transaction(async (tx) => {
       await tx.device.delete({ where: { id: device.id } });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId: device.tenantId,
         userId: user.id,
         action: "DEVICE_DELETED",
         entity: "Device",
@@ -334,7 +334,7 @@ export class DevicesService {
       throw new NotFoundException("Device not found");
     }
 
-    return device;
+    return { ...device, tenantId: scope.tenantId };
   }
 
   private normalizeName(value: string): string {

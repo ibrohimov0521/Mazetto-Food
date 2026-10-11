@@ -511,7 +511,8 @@ export class CashRegisterService {
   ) {
     const hasOpeningTransaction = transactionTotals.some(
       (group) =>
-        group.type === CashTransactionType.OPENING_BALANCE &&
+        (group.type === CashTransactionType.OPENING ||
+          group.type === CashTransactionType.OPENING_BALANCE) &&
         group._count._all > 0,
     );
     const currentBalance = transactionTotals.reduce((total, group) => {

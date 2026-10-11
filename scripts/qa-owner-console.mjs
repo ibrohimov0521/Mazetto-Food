@@ -18,7 +18,7 @@ const tenant = {
   platformSites: [], domains: [],
 };
 const envelope = (data) => ({ success: true, data });
-const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : { channel: "chrome" }) });
+const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
 
 try {
   for (const viewport of [{ width: 1600, height: 900 }, { width: 768, height: 900 }, { width: 360, height: 800 }]) {

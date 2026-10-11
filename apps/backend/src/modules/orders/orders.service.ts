@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from "@nestjs/common";
@@ -136,6 +137,8 @@ type PosCheckoutOperation = {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventoryService: InventoryService,
@@ -345,6 +348,7 @@ export class OrdersService {
               user,
               branchId,
             );
+            await assertEmployeeInBranch(tx, employeeId, branchId);
             const existingOperation = await tx.paymentOperation.findUnique({
               where: { idempotencyKey },
             });
@@ -375,7 +379,6 @@ export class OrdersService {
               }
             }
 
-            await assertEmployeeInBranch(tx, employeeId, branchId);
             const openShift = await assertOpenCashierShift(
               tx,
               branchId,
@@ -684,17 +687,15 @@ export class OrdersService {
         };
       } catch (error) {
         if (isUniqueConstraintError(error)) {
-          const existingOperation =
-            await this.prisma.paymentOperation.findUnique({
-              where: { idempotencyKey },
-            });
+          const order = await this.resolveExistingPosCheckoutByKey(
+            idempotencyKey,
+            requestHash,
+            user,
+            branchId,
+            employeeId,
+          );
 
-          if (existingOperation) {
-            const order = await this.resolveExistingPosCheckoutByKey(
-              idempotencyKey,
-              requestHash,
-            );
-
+          if (order) {
             return {
               order,
               payment: summarizePosPayment(dto, order.total),
@@ -800,16 +801,23 @@ export class OrdersService {
       return;
     }
 
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: { staffTelegramMessageId: true },
-    });
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { staffTelegramMessageId: true },
+      });
 
-    if (order?.staffTelegramMessageId) {
-      return;
+      if (order?.staffTelegramMessageId) {
+        return;
+      }
+
+      await this.telegramOrderNotificationService.notifyNewOrder(orderId);
+    } catch (error) {
+      this.logger.error(
+        `Background Telegram notification failed for order ${orderId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
     }
-
-    await this.telegramOrderNotificationService.notifyNewOrder(orderId);
   }
 
   async listOrders(query: ListOrdersDto, user: AuthenticatedUser) {
@@ -914,7 +922,7 @@ export class OrdersService {
       });
       await tx.order.deleteMany({ where: { id: { in: uniqueIds } } });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId,
         userId: user.id,
         action: "ORDERS_BULK_DELETED",
         entity: "Order",
@@ -1320,7 +1328,7 @@ export class OrdersService {
                 shiftId: refundShiftId,
                 employeeId,
                 createdById: user.id,
-                tenantId: user.tenantId ?? null,
+                tenantId: await resolveRestaurantTenantId(tx, user),
                 amount: allocation.amount,
                 reason,
                 idempotencyKey: refundKey,
@@ -1931,13 +1939,25 @@ export class OrdersService {
   private async resolveExistingPosCheckoutByKey(
     idempotencyKey: string,
     requestHash: string,
+    user: AuthenticatedUser,
+    branchId: string,
+    employeeId: string,
   ) {
-    const operation = await this.prisma.paymentOperation.findUnique({
-      where: { idempotencyKey },
+    const tenantId = await assertBranchBelongsToActor(
+      this.prisma,
+      user,
+      branchId,
+    );
+    await assertEmployeeInBranch(this.prisma, employeeId, branchId);
+    const operation = await this.prisma.paymentOperation.findFirst({
+      where: {
+        idempotencyKey,
+        order: { branchId, branch: { tenantId } },
+      },
     });
 
     if (!operation) {
-      throw new BadRequestException("POS checkout could not be resolved");
+      return null;
     }
 
     return this.resolveExistingPosCheckout(this.prisma, operation, requestHash);

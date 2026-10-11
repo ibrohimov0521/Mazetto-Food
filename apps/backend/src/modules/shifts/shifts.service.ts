@@ -134,7 +134,7 @@ export class ShiftsService {
             "Faqat ochiq smenadan pul topshiriladi",
           );
         }
-        await assertBranchBelongsToActor(tx, user, source.branchId);
+        const tenantId = await assertBranchBelongsToActor(tx, user, source.branchId);
         const receiver = await tx.shift.findUnique({
           where: { id: dto.toShiftId },
           include: {
@@ -232,7 +232,7 @@ export class ShiftsService {
         });
 
         await writeAuditLog(tx, {
-          tenantId: user.tenantId ?? null,
+          tenantId,
           userId: user.id,
           action: "CASH_HANDOVER_FORCED",
           entity: "Shift",
@@ -645,7 +645,7 @@ export class ShiftsService {
               throw new BadRequestException("Shift is already closed");
             }
 
-            await assertBranchBelongsToActor(tx, user, shift.branchId);
+            const tenantId = await assertBranchBelongsToActor(tx, user, shift.branchId);
 
             const pendingTransfers = await tx.cashTransfer.updateMany({
               where: { fromShiftId: id, status: CashTransferStatus.PENDING },
@@ -699,7 +699,7 @@ export class ShiftsService {
             });
 
             await writeAuditLog(tx, {
-              tenantId: user.tenantId ?? null,
+              tenantId,
               userId: user.id,
               action: "SHIFT_FORCE_CLOSED",
               entity: "Shift",
@@ -1762,7 +1762,9 @@ export class ShiftsService {
     transactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
   ) {
     const hasOpeningTransaction = transactions.some(
-      (transaction) => transaction.type === CashTransactionType.OPENING_BALANCE,
+      (transaction) =>
+        transaction.type === CashTransactionType.OPENING ||
+        transaction.type === CashTransactionType.OPENING_BALANCE,
     );
     const startingBalance = hasOpeningTransaction
       ? new Prisma.Decimal(0)

@@ -22,7 +22,7 @@ const products = [
 ];
 
 await mkdir(outputDir, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ headless: true });
 try {
   for (const viewport of [
     { width: 1600, height: 900 },
@@ -55,6 +55,12 @@ try {
           orderNumber: String(300 + sequence),
           status: "NEW",
           isSupplemental: payload.isSupplemental ?? false,
+          parentOrderId: payload.isSupplemental
+            ? tables[0].orders.find((entry) => !entry.isSupplemental)?.id ?? null
+            : null,
+          supplementNumber: payload.isSupplemental
+            ? tables[0].orders.filter((entry) => entry.isSupplemental).length + 1
+            : null,
           total: "0",
           guestCount: payload.guestCount,
           createdAt: `2026-09-13T08:${20 + sequence * 10}:00.000Z`,
@@ -71,6 +77,12 @@ try {
       fulfill(route, [{ id: "food", name: "Taomlar" }, { id: "drink", name: "Ichimliklar" }]),
     );
     await page.route("**/api/v1/menu/products**", (route) => fulfill(route, products));
+    await page.route("**/api/v1/realtime/events**", (route) =>
+      fulfill(route, { events: [], cursor: null, hasMore: false }),
+    );
+    await page.route("**/api/v1/devices/heartbeat", (route) =>
+      fulfill(route, { accepted: true }),
+    );
     await page.route("**/api/v1/orders/*/items", (route) => {
       const payload = route.request().postDataJSON();
       const orderId = new URL(route.request().url()).pathname.split("/").at(-2);
@@ -149,7 +161,7 @@ try {
         await page.getByRole("group", { name: "Ko'rinish" })
           .getByRole("button", { name: "Buyurtma" }).click();
       }
-      await page.getByRole("button", { name: /Qo'shimcha #302/ }).waitFor();
+      await page.getByRole("button", { name: /Qo'shimcha 1 · #302/ }).waitFor();
       await page.screenshot({ path: path.join(outputDir, `waiter-order-${viewport.width}.png`), fullPage: false });
       await page.getByRole("button", { name: "Stollarga qaytish" }).click();
       assert.ok(await page.getByRole("button", { name: /^2-stol / }).isVisible());

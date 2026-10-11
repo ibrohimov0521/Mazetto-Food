@@ -38,6 +38,100 @@ test("kitchen-only agent leaves receipt jobs for another printer", async () => {
   ]);
 });
 
+test("server printer dispatch marker requires the current active lease", async () => {
+  let attemptWhere: Record<string, unknown> | undefined;
+  let attemptData: Record<string, unknown> | undefined;
+  const job = {
+    id: "job-dispatching",
+    branchId: "branch-1",
+    status: "PROCESSING",
+    leaseToken: "lease-current",
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+  };
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    printJob: { findFirst: async () => job },
+    printAttempt: {
+      updateMany: async (args: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        attemptWhere = args.where;
+        attemptData = args.data;
+        return { count: 1 };
+      },
+    },
+  } as never);
+
+  const result = await service.markPrintJobDispatching(
+    job.id,
+    job.leaseToken,
+    actor,
+  );
+
+  assert.equal(result.outcome, "DISPATCHING");
+  assert.equal(attemptData?.outcome, "DISPATCHING");
+  assert.equal(attemptWhere?.jobId, job.id);
+  assert.equal(attemptWhere?.leaseToken, job.leaseToken);
+  assert.equal(attemptWhere?.outcome, "CLAIMED");
+});
+
+test("expired claimed or dispatching attempts are dead-lettered before another agent can print", async () => {
+  for (const outcome of ["CLAIMED", "DISPATCHING"]) {
+    let jobUpdate: Record<string, unknown> | undefined;
+    let attemptUpdate: Record<string, unknown> | undefined;
+    const leaseToken = `expired-${outcome.toLowerCase()}`;
+    const job = {
+      id: `job-${outcome.toLowerCase()}`,
+      branchId: "branch-1",
+      receiptId: "receipt-1",
+      status: "PROCESSING",
+      payload: { documentType: "RECEIPT" },
+      leaseToken,
+      leaseExpiresAt: new Date(Date.now() - 1_000),
+      attempts: [{ leaseToken, outcome }],
+    };
+    const tx = {
+      printJob: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          jobUpdate = args.data;
+          return { count: 1 };
+        },
+      },
+      printAttempt: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          attemptUpdate = args.data;
+          return { count: 1 };
+        },
+      },
+    };
+    const service = new ReceiptsService({
+      branch: {
+        findUnique: async () => ({ tenantId: "tenant-a" }),
+        findFirst: async () => ({ id: "branch-1" }),
+      },
+      receipt: { findMany: async () => [] },
+      printJob: { findFirst: async () => job },
+      $transaction: async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+    } as never);
+
+    const claimed = await service.claimPrintJob(
+      "branch-1",
+      "another-desktop",
+      actor,
+      ["printer-1"],
+      false,
+      [],
+    );
+
+    assert.equal(claimed, null);
+    assert.equal(jobUpdate?.status, "DEAD_LETTER");
+    assert.equal(jobUpdate?.leaseToken, null);
+    assert.equal(attemptUpdate?.outcome, "AMBIGUOUS");
+  }
+});
+
 test("dead-letter print job manual retryda qayta navbatga tushadi", async () => {
   let updateData: Record<string, unknown> | undefined;
   let auditAction: string | undefined;
@@ -48,6 +142,8 @@ test("dead-letter print job manual retryda qayta navbatga tushadi", async () => 
     status: "DEAD_LETTER",
     attemptCount: 5,
     leaseExpiresAt: null,
+    payload: { documentType: "RECEIPT", orderId: "order-1" },
+    attempts: [{ outcome: "AMBIGUOUS" }],
   };
   const tx = {
     printJob: {
@@ -65,6 +161,7 @@ test("dead-letter print job manual retryda qayta navbatga tushadi", async () => 
   };
   const service = new ReceiptsService({
     branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    receipt: { findMany: async () => [] },
     printJob: {
       findFirst: async () => job,
       findUnique: async () => job,
@@ -78,7 +175,89 @@ test("dead-letter print job manual retryda qayta navbatga tushadi", async () => 
   assert.equal(updateData?.status, "PENDING");
   assert.equal(updateData?.attemptCount, 0);
   assert.equal(updateData?.leaseToken, null);
+  assert.equal(
+    (updateData?.payload as Record<string, unknown>)["__bestteamAllowAmbiguousRetry"],
+    true,
+  );
   assert.equal(auditAction, "PRINT_JOB_RETRIED");
+});
+
+test("oddiy retry eski scalar payloadni o'zgartirmaydi", async () => {
+  let updateData: Record<string, unknown> | undefined;
+  const job = {
+    id: "job-scalar-payload",
+    branchId: "branch-1",
+    receiptId: "receipt-1",
+    status: "DEAD_LETTER",
+    attemptCount: 5,
+    leaseExpiresAt: null,
+    payload: "legacy-payload",
+    attempts: [{ outcome: "FAILED" }],
+  };
+  const tx = {
+    printJob: {
+      updateMany: async (args: { data: Record<string, unknown> }) => {
+        updateData = args.data;
+        return { count: 1 };
+      },
+    },
+    receipt: { update: async () => undefined },
+    auditLog: { create: async () => undefined },
+  };
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    printJob: { findFirst: async () => job, findUnique: async () => job },
+    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+  } as never);
+
+  await service.retryPrintJob(job.id, actor);
+
+  assert.equal(updateData?.payload, "legacy-payload");
+});
+
+test("ambiguous retry marker is consumed by the next server claim", async () => {
+  let updateData: Record<string, unknown> | undefined;
+  const job = {
+    id: "job-ambiguous-retry",
+    branchId: "branch-1",
+    receiptId: "receipt-1",
+    status: "PENDING",
+    payload: {
+      documentType: "RECEIPT",
+      __bestteamAllowAmbiguousRetry: true,
+    },
+  };
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    receipt: { findMany: async () => [] },
+    printJob: {
+      findFirst: async () => job,
+      updateMany: async (args: { data: Record<string, unknown> }) => {
+        updateData = args.data;
+        return { count: 1 };
+      },
+      findUnique: async () => ({ ...job, payload: { documentType: "RECEIPT" } }),
+    },
+    printAttempt: { create: async () => undefined },
+    $transaction: async (callback: (client: Record<string, never>) => Promise<unknown>) =>
+      callback({}),
+  } as never);
+
+  const claimed = await service.claimPrintJob(
+    undefined,
+    "desktop-device-1",
+    actor,
+    [],
+    true,
+    ["RECEIPT"],
+  );
+
+  assert.equal(
+    (updateData?.payload as Record<string, unknown>)["__bestteamAllowAmbiguousRetry"],
+    undefined,
+  );
+  assert.equal((claimed as { allowAmbiguousRetry?: boolean } | null)?.allowAmbiguousRetry, true);
 });
 
 test("faol lease bilan chop etilayotgan ish qo'lda qayta yuborilmaydi", async () => {

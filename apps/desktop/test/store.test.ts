@@ -494,7 +494,10 @@ test("successful local print attempts are durably audited", async () => {
     const attemptId = store.markLocalPrintJobPrinting(job.id);
     assert.equal(typeof attemptId, "string");
     store.completeLocalPrintJob(job.id, attemptId as string);
-    assert.equal(store.wasLocalDocumentPrinted("printed-audit", "RECEIPT"), true);
+    assert.equal(
+      store.wasLocalDocumentPrinted("printed-audit", "RECEIPT"),
+      true,
+    );
   } finally {
     store.close();
   }
@@ -962,6 +965,16 @@ test("printer target receipts persist and ambiguous jobs stop automatic retries"
         reopened.wasPrintTargetPrinted("local", jobId, "Kitchen 1"),
         false,
       );
+      assert.equal(reopened.retryLocalPrintJob(jobId), true);
+      assert.equal(
+        reopened.wasPrintTargetPrinted("local", jobId, "Till A"),
+        true,
+      );
+      assert.equal(
+        reopened.wasPrintTargetAmbiguous("local", jobId, "Kitchen 1"),
+        false,
+      );
+      assert.ok(reopened.claimLocalPrintJob(["RECEIPT"]));
     } finally {
       reopened.close();
     }

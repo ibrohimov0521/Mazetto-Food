@@ -343,3 +343,168 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Follow-up review found the documented legacy `jobs` print-agent omitted printer routing from claim requests, so the backend correctly returned no work. The agent now sends explicit printer/route targets and refuses to claim work without a target. TCP output uncertainty is marked `AMBIGUOUS` rather than retried; if that state cannot be saved because the backend is unreachable, the agent halts polling and stays visibly degraded. Polling API errors no longer silently end the worker loop, and the local health page defaults to loopback.
 - Added seven print-agent runner tests and updated the backend print-agent contract regression to check the extracted runner. Backend suite passed 577/577 after updating the source-contract test; POS, customer, Telegram, Desktop, root retry helper, and print-agent suites passed. The print-agent typecheck/build and repository-wide ESLint passed. The agent is a disabled legacy fallback; MAZETTO Desktop remains the production printing owner. No printer was physically attached for this code audit, so USB/driver and paper-output acceptance is still a separate device test.
 - The server has Node 22 while the project pins pnpm 11, which requires Node 24; therefore the canonical `pnpm run ci` command was not run on the server. GitHub CI on the consolidated audit PR remains the required verification gate. No production deploy has been made for this audit batch.
+
+## Audit continuation: browser QA fixture fidelity (2026-10-11)
+
+- The waiter responsive-flow test used a placeholder staff token but did not isolate the realtime catch-up and device-heartbeat requests. The real API rejected the placeholder session and redirected the test to login, which made product controls appear to disappear. The test now supplies deterministic empty realtime and accepted-heartbeat responses.
+- The supplemental-order fixture also omitted the backend's `parentOrderId` and `supplementNumber` fields. It now models those fields, and the order selector assertion matches the displayed supplemental number.
+- The waiter flow passed at 1600, 768, 360 and 320 px. ESLint for the changed QA script and `git diff --check` passed. These were test-fixture corrections, not waiter-product behavior changes.
+- The current audit branch remains uncommitted and has not been separately deployed. A read-only remote-ref check confirmed that `main` and the `production` tag both point to `e0bfb48bc197cdfdb1ba20f1e9509de2a42986af` before this continuation.
+
+## Audit continuation: generated-number collision handling (2026-10-11)
+
+- Rechecked order/display-order, kitchen-ticket, shift, receipt, and refund-receipt number allocation. POS, table, and customer order creation retry unique conflicts; display order numbers use a transaction advisory lock; kitchen tickets retry unique conflicts; shift opening serializes number allocation per branch.
+- Receipt number allocation was the remaining check-then-insert race: concurrent transactions could both observe a candidate as unused before inserting it. Each candidate now takes a PostgreSQL transaction advisory lock before its uniqueness lookup, so the normal read-committed path serializes identical candidates and retries an already-used candidate. No schema or API change is required.
+- Added regression coverage for lock-before-lookup and retrying an occupied candidate. The backend suite passed 578/578, HTTP retry helper tests passed 3/3, backend typechecks and focused ESLint passed, and `git diff --check` passed.
+- This is part of the current uncommitted audit batch; it has not been pushed or deployed. Physical printer validation and production-only acceptance gates remain separate.
+
+## Audit continuation: customer order realtime scope (2026-10-11)
+
+- The customer orders dashboard filtered realtime events to the first active order. If the same customer had multiple active orders, status changes for the other orders were ignored until polling or focus refresh.
+- The backend already authenticates customer sockets into a customer-specific room and resolves event ownership from the persisted order, not caller-supplied payload scope. The existing gateway regression test verifies customer-room and branch-room routing. The dashboard now listens to that authenticated customer room without the overly narrow single-order filter; the order-detail page remains filtered to its displayed order.
+- Verification passed: customer-web TypeScript, ESLint, 20/20 unit tests, production build, backend gateway scope tests 3/3, and `git diff --check`. The audit batch remains local and unpushed/undeployed.
+
+## Audit continuation: order-tracking browser fixture (2026-10-11)
+
+- The order tracking browser test seeded an access token in local storage, but the current app deliberately strips tokens from browser storage and restores access through `/customer/auth/refresh`. The test did not mock refresh, so it rendered the unauthenticated state and timed out before exercising order tracking.
+- The fixture now models the refresh response and includes the operational order ID returned by the backend. The API mock is scoped to customer endpoints instead of relying on a same-origin `/api/v1` prefix, so the fixture works with the production-built app's configured API base URL.
+- The localized customer routes returned successfully in the built app. The browser flow passed at 320, 390, and 1440 px: eight statuses, delivery/pickup indicators, focus refresh, polling refresh, zero horizontal overflow, and zero browser exceptions. ESLint passed for the script. This is QA reliability work, not a production runtime change.
+
+## Audit continuation: Desktop offline mutation boundaries (2026-10-11)
+
+- Reviewed the Desktop mutation registry, durable outbox, replay path, and restart recovery. Supported writes preserve idempotency keys, serialize per aggregate, rebase versioned edits after server acknowledgement, and recover interrupted `sending` entries on app restart. Conflicts and unsupported writes are not silently applied.
+- Desktop regression suite passed 145/145; TypeScript and ESLint passed. Coverage includes disconnect/reconnect, one-time replay, interrupted-send recovery, stale/cross-branch snapshots, offline cash and shift accounting, order/kitchen/courier queues, conflicts, local print routing, and duplicate-paper safeguards.
+- Offline is reliable for the explicitly supported operations, not full feature parity. Admin/master-data changes, refunds, transfer accept/reject, force-close, and other sensitive or unregistered operations require connectivity by design. Expanding those queues generically could corrupt authorization, money, or inventory state; each operation needs its own offline snapshot and reconciliation rules. A controlled restaurant-workstation offline/restore test and physical printer paper test remain outstanding.
+- No Desktop runtime code change was needed in this audit pass. This report entry and the other current fixes remain local on the audit branch; no push or deploy was made.
+
+## Consolidated verification update (2026-10-11)
+
+- Customer web: typecheck, ESLint, 20/20 tests, production build, and order-tracking browser flow at 320/390/1440 px passed.
+- Desktop: 145/145 tests, typecheck, and ESLint passed. Backend realtime-scope regression passed 3/3. Repository operations validators passed 33/33. Direct repository-wide ESLint passed across `apps/`, `packages/`, and `scripts/`; `git diff --check` passed.
+- The root `pnpm lint` wrapper could not start Turbo because the server is on Node 22 with pnpm 10.28 while the repository pins pnpm 11, and Turbo could not resolve that pinned binary. Running the same ESLint coverage directly passed. GitHub CI on the project's supported toolchain remains the canonical integrated gate.
+- Backend's full suite was rerun after the current audit changes and passed 578/578. Backend app/scripts typechecks, Nest build, and backend ESLint passed. The receipt collision regression and customer realtime-scope regression both pass.
+
+## Audit continuation: printer result persistence failure (2026-10-11)
+
+- A Windows driver could finish printing while SQLite failed to persist that individual printer target as printed. The old path classified the persistence error as an ordinary retryable failure, risking duplicate paper on the next attempt.
+- After a successful driver call, failure to save the per-printer result is now wrapped as `PRINT_OUTCOME_UNKNOWN`; the worker records an ambiguous target when possible and marks the whole job ambiguous even if that secondary write also fails. Operators are told to inspect the paper before manually retrying.
+- Added a regression that simulates a successful print followed by SQLite write failure and verifies one physical submission, ambiguous/dead-letter handling, and no automatic second submission. The full Desktop suite now passes 146/146, including target ambiguity, operator retry, and preserving already-printed targets.
+- A second-order retry path was also fixed: when the server lease expires and the job is claimed again, a persisted ambiguous printer target now fails closed instead of printing again. The server manual-retry action issues a one-use marker only after an ambiguous attempt; the claim consumes it, retries only unresolved ambiguous targets, and still skips printers already confirmed successful. Local explicit retry clears only ambiguous local target markers.
+- Verification for this grouped audit state: backend tests 580/580 plus HTTP retry tests 3/3; Desktop tests 146/146; backend typecheck, ESLint and Nest build; Desktop typecheck, ESLint and distributive build; `git diff --check` passed. The source changes remain uncommitted and are not in published Desktop 0.1.114. No push or deploy has been made for this batch.
+
+## Audit continuation: courier transition coverage and browser QA (2026-10-11)
+
+- The removed `qa-order-status.mjs` depended on the retired in-memory kitchen event emitter, so it was not a valid current regression test. Its meaningful transition checks are now represented by backend unit tests: READY-to-SERVED kitchen completion, READY-to-CANCELLED synchronization, terminal/illegal status rejection, delivery-only and tenant-branch ownership guards, foreign courier ownership, idempotent same-status handling, and delivery-specific status labels.
+- Backend suite now passes 585/585, plus HTTP retry helper 3/3. Backend typecheck, ESLint and Nest build passed; repository-wide ESLint passed.
+- All 15 changed browser QA scripts passed against their intended applications, including admin pages, role matrix, POS, kitchen, waiter, courier, tracking, and owner console. Customer order tracking passed on the production build at 320/390/1440 px; owner console passed at 1600/768/360 px. The first tracking attempt against `next dev` was invalid because its HMR WebSocket was rejected; the production-mode rerun passed.
+- The customer and platform production builds succeeded. Test servers on ports 3115-3119 were stopped after the QA run. No printer was physically attached. This batch remains local; no push or deployment has been made.
+
+## Audit continuation: cash handover QA reliability (2026-10-11)
+
+- `qa-cash-handover.cjs` previously extracted declarations from another test script by source substring offsets and executed them with `new Function`. This was brittle test coupling; the script now uses an explicit fixture module.
+- The QA counter also treated every API POST as a cash transfer, so the legitimate device-heartbeat write falsely failed the “confirmation required” assertion. It now checks transfer-create/accept endpoints specifically, acknowledges the test heartbeat, and fails on unexpected mutations.
+- POS source already opened the confirmation dialog before sending the transfer; no cash handover product bypass was found. The corrected QA passed all 9 role/viewport combinations (Kitchen, Courier, Cashier at 320, 390, 1440 px), and both QA files passed ESLint. POS production build and typecheck passed.
+- Local test server was stopped after use. No push/deploy; physical printer and restaurant-device acceptance remain outstanding.
+
+## Audit continuation: local print queue storage failure (2026-10-11)
+
+- The Desktop timer discarded the worker promise, while local SQLite queue operations (`claim`, attempt recording, and failure persistence) could throw outside the server-poll error boundary. A database lock/corruption during local printing could therefore become an unhandled rejection; after uncertain paper output, failed dead-letter persistence could also leave the worker polling again immediately.
+- Local queue exceptions now stop the current tick, emit a visible Desktop log, and back off local/server polling from 1 to 30 seconds until local storage recovers. The timer also catches any unexpected worker rejection as a final guard.
+- Regressions cover a queue read/claim failure and the harder case where paper may have printed but both target and dead-letter writes fail. They prove one physical submission, no follow-up claim/server poll during backoff, and no escaping worker rejection. Full Desktop suite passed 148/148; Desktop typecheck, ESLint, and build passed.
+- Desktop package remains version 0.1.114, which does not contain these audit fixes. A new version/package is still required before the application can receive this code. No push or deployment was made.
+
+## Workspace regression inventory (2026-10-11)
+
+- All workspace packages that define a test command were rerun: backend 591, HTTP retry helper 3, Desktop 148, customer web 20, POS web 58, print-agent 7, and Telegram bot 5. Total: 832 tests passed, zero failed.
+- Repository ESLint passed again after the audit changes; operations/Docker validators passed 33/33 in this verification. Backend and Desktop typechecks/builds passed; customer, platform, and POS production builds passed; customer and POS typechecks passed. POS tests/typecheck/production build were rerun after the shared retry-intent helper. The root Turbo wrapper remains unavailable on this server's Node 22/pnpm 10 versus the repository's pinned Node 24/pnpm 11; direct package and repository checks were run instead.
+- These are source/test verification results, not a claim of physical-device acceptance. The real Godex/printer USB chain and restaurant workstation offline/restore exercise still require on-device checks. This audit branch remains unpushed and undeployed.
+
+## Audit continuation: customer design browser contract (2026-10-11)
+
+- The design-contract browser QA depended on a live public catalog and expected 74 products and five slides. In an isolated local run, an unavailable/empty upstream catalog made it wait indefinitely; startup also issued the normal unauthenticated customer refresh request, which the generic mutation guard incorrectly treated as a product write.
+- The QA now supplies deterministic read-only category, 74-product, and five-slide fixtures, and answers the expected no-session refresh with 401. All other non-read-only browser requests remain blocked and recorded.
+- Production-mode browser QA passed at 390, 430, 768, and 1440 px: slide image/title/CTA geometry, no horizontal overflow, hero tokens and controls, 74 menu cards, hover stability, sticky navigation, and mobile fixed-nav position. There were zero browser exceptions and zero unexpected mutations. Screenshots were visually inspected at mobile home/menu sizes.
+- Customer-web tests passed 20/20, TypeScript, ESLint for the QA script, production build, and `git diff --check` passed. The local test server was stopped. No push or deployment has been made.
+
+## Audit continuation: legacy opening cash double count (2026-10-11)
+
+- Current shift balances treated `OPENING_BALANCE` as the opening ledger row but overlooked the still-supported legacy `OPENING` enum. If an older shift held both a non-zero `openingBalance` and an `OPENING` row, the cashier balance and transfer availability added the float twice; the cash-register summary had the same issue.
+- Both shift calculations now recognize either opening-ledger type before deciding whether to seed from the legacy `openingBalance` column. Regression tests cover the legacy row in cashier summary and shift cash calculation.
+- Full backend tests passed 588/588 plus HTTP retry tests 3/3; backend TypeScript checks, focused ESLint, and `git diff --check` passed. No schema change, push, or deployment.
+
+## Audit continuation: refund and courier cash-transfer retries (2026-10-11)
+
+- POS refunds, courier-to-cashier transfers, and cashier-to-cashier handovers now share one tested intent-key helper. An unchanged request reuses its key after an uncertain response; a changed fingerprint obtains a new key. Refund fingerprints include payment, shift, amount, and reason; cash transfer fingerprints include source shift, receiver, and amount.
+- Payment-operation replay now revalidates the order branch and active employee before returning a prior result, including the unique-key race fallback. This closes same-tenant cross-branch replay exposure. Regression tests cover direct replay, inactive employee, and race fallback.
+- The backend rejects reusing a refund key with changed content. Backend tests passed 591/591 plus HTTP retry tests 3/3; POS tests passed 58/58. Backend and POS typechecks/builds, repository ESLint, POS focused ESLint, 33/33 operations validators, and `git diff --check` passed. These checks cover retry-key behavior and backend invariants; they do not simulate a real network interruption against a live restaurant account.
+- This remains an in-progress source audit on the server checkout. No push or deployment has been made.
+
+## Audit continuation: settings audit scope and Telegram keyboard routing (2026-10-11)
+
+- Settings already expose independently configurable cashier methods (Cash, Card, Uzcard, Humo, Click, Payme, Online); the backend validates the allowlist, tenant-scopes and caches the values, filters the POS catalog, and rejects disabled methods before recording new payments. Customer checkout intentionally remains cash-only until provider settlement exists. The admin settings browser QA passed at 1600, 768, 360, and 320 px, including Click/Payme enable-disable and the last-active-method guard.
+- Filled in missing Uzbek display labels for Uzcard, Humo, and Online; the settings panel no longer exposes those enum codes to admins.
+- Found that a legacy super-admin without a tenant membership can resolve the only active restaurant for a settings write, but the audit row used the actor's missing `tenantId` and became unscoped. Audit writes now use the already-resolved tenant ID; the regression test verifies the legacy-account path.
+- Telegram's persistent `Buyurtmalarim` and `Profil` keyboard labels were intercepted by old handlers in the auth service. The history label bypassed the dedicated interactive order-history service, hiding order detail/repeat actions. Keyboard actions now route through the ordering service, reuse the shared profile renderer, and show the link-required screen for unlinked accounts. Removed the now-unreachable duplicate category/history/profile implementations. Three service tests cover linked history, profile, and unlinked-account behavior.
+- Validation passed: backend 595/595 and shared HTTP retry 3/3; Desktop 148, customer web 20, POS web 58, print-agent 7, and Telegram bot 5 remained green from the prior full workspace run, for 836 verified tests total. Backend app/scripts typecheck, Nest build, repository-wide ESLint, POS production build, admin-settings browser QA at four viewport widths, and `git diff --check` also passed. These are automated/source checks; they do not replace live Telegram or payment-provider acceptance.
+- The full active branch remains local and unpushed/undeployed. No production service was changed.
+
+## Audit continuation: inventory readiness and customer realtime efficiency (2026-10-11)
+
+- Ingredient and warehouse audit entries now use the resolved restaurant tenant instead of a possibly absent legacy user tenant field. The last active warehouse cannot be archived while recipe-backed products still require inventory; the check and stock guard run under a branch-row lock inside the write transaction.
+- Customer realtime events now recognize nested order IDs and kitchen-ticket IDs. Detail pages no longer miss status changes, and an event for an already-listed order refreshes only that order instead of refetching dashboard, favorites, bonus balance, and the entire history. New-order and reconnect/focus refreshes retain the full-load recovery path.
+- Backend tests passed 599/599 plus HTTP retry 3/3; customer web 22/22; POS 58/58; Desktop 148/148; Telegram bot 5/5; print-agent 7/7. Total 842/842. Backend app/scripts typecheck and build, customer/POS typecheck and production build, repository ESLint, focused lint, and `git diff --check` passed.
+- These remain local source changes. No push or deploy was performed. Live payment-provider verification, physical printer/USB testing, and final restaurant workstation acceptance remain unverified.
+
+## Audit continuation: release-guide and generated-output hygiene (2026-10-11)
+
+- Rechecked the old unique-number warning: cashier/POS orders retry bounded unique conflicts, kitchen ticket creation retries collisions, shift numbers serialize with a branch-scoped advisory transaction lock, and receipts allocate random candidates under an advisory lock. The blanket warning was stale and is closed against current code/tests.
+- Customer auth tokens are already excluded from localStorage; current code uses the refresh-cookie flow and the prior table entry was stale. `print-agent` and `telegram-bot` contain executable polling/monitoring services, not placeholders.
+- `docs/PRODUCTION_DEPLOYMENT.md` incorrectly said HTTP CORS was disabled and WebSocket CORS was wildcard, contradicting current code. It now documents the shared exact-origin allowlist, credentials, and wildcard rejection.
+- Backend typecheck now explicitly uses no-emit mode for both source and scripts. Removed 438 verified transpiled sidecars created during validation; repeat typechecks generated none. Source files and ignored build output were preserved.
+- Two stale operational validators were updated for the targeted customer-order refresh callback and the Telegram service-size guard. The complete set passed 33/33; focused ESLint and `git diff --check` passed.
+- This documentation/config hygiene batch passed backend app/scripts typecheck and repository ESLint. No production configuration was modified and no push/deploy was made.
+
+## Audit continuation: offline cashier payment-method changes (2026-10-11)
+
+- Settings review found that removing a cashier payment method prompted for confirmation only when disabling Cash. An offline Desktop terminal can retain any previously downloaded method list, so disabling Card, Click, Payme, Uzcard, Humo, or Online can also leave queued sales using a method the server now rejects.
+- The confirmation now applies to every removed cashier method, names the affected methods, and instructs operators to reconnect terminals and synchronize queued work first. Backend POS checkout and payment collection already enforce the tenant's current allowlist; no payment provider is activated by these toggles.
+- POS settings browser QA passed at 1600, 768, 360, and 320 px, covering Click/Payme enable-disable, no save before confirmation, and the final-enabled-method guard. POS tests passed 58/58, customer web 22/22, Desktop 150/150, and backend 601/601 (831 tests across those four packages). Backend, Desktop, POS, and customer-web typechecks/builds passed; repository ESLint and `git diff --check` passed.
+- An initial browser attempt against the pre-existing 3001 service showed stale labels; it was not counted as a source verification. The rerun used an isolated server from this checkout on 3010, which was stopped afterward.
+- This source audit remains uncommitted and undeployed. Real NBU settlement, a physical printer, and offline recovery on the restaurant workstation remain operational acceptance checks.
+
+## Audit continuation: Desktop server-printer polling diagnostics (2026-10-11)
+
+- A backend printer-registry or claim failure already triggered exponential backoff, but the server-poll catch discarded the error. The worker could keep recovering silently, leaving operators without a useful diagnostic.
+- Server polling failures now go through the Desktop error logger while preserving the bounded retry backoff. A regression verifies one error is reported and a second immediate tick does not hammer the server.
+- Desktop tests passed 151/151; Desktop typecheck, ESLint, build/preload, and `git diff --check` passed. Alongside the same-turn backend (601), POS (58), and customer-web (22) suites, 832 tests passed across those packages.
+- This is source-only verification. The printer path has not been validated on a live restaurant workstation, and no push or deployment was made.
+
+## Audit continuation: tenant-owned audit records (2026-10-11)
+
+- A review of audit writers found several writes storing `user.tenantId` even though the request had already resolved its tenant from a trusted branch or the single-active-tenant legacy path. This could leave payment/refund, order, branch, device, printer, receipt, shift, or expense audit entries without tenant ownership.
+- Audit entries now use the resolved tenant for payments and cash refunds, order-item refunds and bulk order deletion, branch deletion, device creation/update/deletion, printer deactivation, receipt deletion/retry, forced cash handover/shift close, and expense-category changes.
+- Added a payment retry regression proving a completed Click payment can be safely replayed after Click is disabled without creating another payment. Refund and legacy global-owner bulk-delete tests assert the resolved tenant is written to the audit log.
+- Backend tests passed 605/605; backend application and scripts typechecks, changed-file ESLint, and `git diff --check` passed. Existing same-audit package results remain Desktop 151/151, POS 58/58, and customer web 22/22.
+- This remains source-only work in the server checkout. No commit, push, or deployment was made; physical printer/offline acceptance and live production checks remain separate.
+
+## Audit continuation: background Telegram failure containment (2026-10-11)
+
+- POS order creation dispatched its staff Telegram notification without awaiting or containing a rejection. A Telegram failure combined with a failed dead-letter write could escape as an unhandled rejection after the order had already committed.
+- The background task now logs and contains failures without changing the committed POS order result. A regression covers the notification/dead-letter failure path.
+- Backend tests passed 606/606 plus HTTP retry tests 3/3; backend typechecks, focused ESLint, Nest build, and git diff check passed. No push or deployment was made.
+
+## Production read-only baseline (2026-10-11)
+
+- GET-only production smoke passed 27/27 across API/database health, public catalog, customer-web, POS pages, owner login, media, and unauthenticated access guards. It made no orders or data changes.
+- The production tag is at 77c86eb; audit checkout HEAD e0bfb48 is one commit ahead, with the current audit edits still uncommitted. The smoke proves the existing deployed baseline only, not these local changes.
+
+## Audit continuation: Desktop lifecycle promise handling (2026-10-11)
+
+- macOS window recreation and external-link launching discarded rejected promises. Failures are now logged and contained instead of becoming unhandled rejections.
+
+- Desktop tests passed 151/151; typecheck, ESLint, and build passed after the change.
+
+## Consolidated verification (2026-10-11)
+
+- All selected app workspace test scripts passed in one serial run: backend 606, HTTP retry helper 3, Desktop 151, customer web 22, POS web 58, Telegram 5, and print-agent 7.
+- Repository-wide ESLint passed; operational validators passed 33/33; the read-only production baseline smoke passed 27/27. Production smoke is not evidence for local uncommitted changes.

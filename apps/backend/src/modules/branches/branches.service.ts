@@ -134,7 +134,7 @@ export class BranchesService {
       await tx.branch.deleteMany({ where: { id: { in: uniqueIds }, tenantId } });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, {
-          tenantId: user.tenantId ?? null,
+          tenantId,
           userId: user.id, action: "BRANCH_DELETED", entity: "Branch", entityId: id });
       }
     });

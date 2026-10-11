@@ -36,7 +36,7 @@ const tickets = Array.from({ length: 12 }, (_, index) => ({
 }));
 
 await mkdir(outputDir, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ headless: true });
 
 try {
   for (const viewport of [
@@ -69,7 +69,7 @@ try {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ success: true, data: tickets }),
+        body: JSON.stringify({ success: true, data: { items: tickets, hasMore: false, limit: 250 } }),
       }),
     );
     await page.goto(`${baseUrl}/kitchen`, { waitUntil: "domcontentloaded" });
@@ -131,9 +131,17 @@ try {
           cards.slice(0, 2).map((card) => card.getBoundingClientRect().left),
         );
       if (viewport.width >= 1500) {
+        const lanePositions = await page
+          .locator('section[aria-label="Yangi"] article')
+          .evaluateAll((cards) => [
+            ...new Set(
+              cards.map((card) => card.parentElement?.getBoundingClientRect().left).filter(Number.isFinite),
+            ),
+          ]);
+        assert.equal(lanePositions.length, 2, "Expected two visible lanes");
         assert.notEqual(
-          cardPositions[0],
-          cardPositions[1],
+          lanePositions[0],
+          lanePositions[1],
           "Orders are not in two columns",
         );
       } else {
@@ -149,14 +157,14 @@ try {
       await page.getByRole("button", { name: "Menyuni yig'ish" }).click();
       assert.equal(
         await page
-          .getByRole("complementary", { name: "Ish joylari menyusi" })
+          .locator("#staff-sidebar")
           .isVisible(),
         false,
       );
       await page.getByRole("button", { name: "Menyuni kengaytirish" }).click();
       assert.equal(
         await page
-          .getByRole("complementary", { name: "Ish joylari menyusi" })
+          .locator("#staff-sidebar")
           .isVisible(),
         true,
       );
@@ -165,10 +173,10 @@ try {
     if (viewport.width < 768) {
       await page.getByRole("button", { name: "Menyuni ochish" }).click();
       await page
-        .getByRole("complementary", { name: "Ish joylari menyusi" })
+        .locator("#staff-sidebar")
         .waitFor();
       await page
-        .locator("#staff-panel-menu")
+        .locator("#staff-sidebar")
         .getByRole("button", { name: "Menyuni yopish" })
         .click();
       const card = page.locator('section[aria-label="Yangi"] article').first();
@@ -187,9 +195,9 @@ try {
   }
 
   for (const route of [
-    { path: "/courier", title: "Kuryer" },
-    { path: "/waiter", title: "Ofitsiant" },
-    { path: "/shift", title: "Xodim kassasi" },
+    { path: "/courier", title: "Yetkazib berishlar" },
+    { path: "/waiter", title: "Zal va buyurtmalar" },
+    { path: "/shift", title: "Kassa" },
   ]) {
     for (const viewport of [
       { width: 1280, height: 800 },

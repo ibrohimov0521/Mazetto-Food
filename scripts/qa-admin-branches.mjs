@@ -20,7 +20,7 @@ const branch = {
   _count: { employees: 8, printers: 2, devices: 4, products: 42 },
 };
 
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ headless: true });
 try {
   for (const viewport of [
     { width: 1600, height: 900 },
@@ -54,7 +54,7 @@ try {
     await page.goto(`${baseUrl}/admin/branches`, {
       waitUntil: "domcontentloaded",
     });
-    await page.getByRole("heading", { name: "Filiallar", exact: true }).waitFor();
+    await page.getByRole("heading", { level: 1, name: "Filiallar", exact: true }).waitFor();
     await page.getByRole("button", { name: "Tahrirlash" }).first().click();
     assert.equal(
       await page.getByLabel("Kenglik (latitude)").inputValue(),

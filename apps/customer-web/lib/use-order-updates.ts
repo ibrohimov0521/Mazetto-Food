@@ -3,12 +3,11 @@
 import { useEffect } from "react";
 import { io } from "socket.io-client";
 import { getApiBaseUrl } from "./api";
-
-type OrderUpdatePayload = { orderId?: string };
+import { matchesOrderUpdate, orderUpdateId } from "./order-update-payload.mjs";
 
 export function useOrderUpdates(
   token: string | undefined,
-  reload: (silent?: boolean) => Promise<void>,
+  reload: (silent?: boolean, orderId?: string) => Promise<void>,
   orderIdFilter?: string | null,
 ) {
   useEffect(() => {
@@ -16,11 +15,11 @@ export function useOrderUpdates(
     let stopped = false;
     let running = false;
     let pending = false;
-    const refresh = async () => {
+    const refresh = async (orderId?: string) => {
       if (stopped || document.visibilityState === "hidden") return;
       if (running) { pending = true; return; }
       running = true;
-      try { await reload(true); }
+      try { await reload(true, orderId); }
       finally {
         running = false;
         if (pending && !stopped) { pending = false; void refresh(); }
@@ -30,10 +29,11 @@ export function useOrderUpdates(
       auth: { token, tokenType: "customer" },
       transports: ["websocket"],
     });
-    const onOrderUpdate = (payload?: OrderUpdatePayload) => {
-      if (orderIdFilter !== undefined && payload?.orderId !== orderIdFilter) return;
-      void refresh();
+    const onOrderUpdate = (payload?: unknown) => {
+      if (!matchesOrderUpdate(payload, orderIdFilter)) return;
+      void refresh(orderUpdateId(payload) ?? undefined);
     };
+    const refreshOnResume = () => { void refresh(); };
     for (const event of ["order.created", "order.confirmed", "order.sent_to_kitchen", "order.status_changed"]) {
       socket.on(event, onOrderUpdate);
     }
@@ -51,14 +51,14 @@ export function useOrderUpdates(
     });
     socket.on("disconnect", schedulePoll);
     schedulePoll();
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refreshOnResume);
+    document.addEventListener("visibilitychange", refreshOnResume);
     return () => {
       stopped = true;
       window.clearTimeout(pollTimer);
       socket.disconnect();
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refreshOnResume);
+      document.removeEventListener("visibilitychange", refreshOnResume);
     };
   }, [token, reload, orderIdFilter]);
 }

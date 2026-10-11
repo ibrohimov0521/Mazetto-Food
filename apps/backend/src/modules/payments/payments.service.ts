@@ -250,15 +250,21 @@ export class PaymentsService {
       const execute = async (tx: Prisma.TransactionClient) => {
         const scopedOrder = await tx.order.findFirst({
           where: { id: dto.orderId, branch: { tenantId } },
-          select: { id: true },
+          select: { id: true, branchId: true },
         });
         if (!scopedOrder) throw new NotFoundException("Order not found");
+        resolveBranchScope(user, scopedOrder.branchId);
 
         const existingOperation = await tx.paymentOperation.findUnique({
           where: { idempotencyKey: dto.idempotencyKey },
         });
 
         if (existingOperation) {
+          await this.assertEmployeeInBranch(
+            tx,
+            employeeId,
+            scopedOrder.branchId,
+          );
           return this.resolveExistingOperation(
             tx,
             existingOperation,
@@ -510,7 +516,7 @@ export class PaymentsService {
           }
 
           await writeAuditLog(tx, {
-            tenantId: user.tenantId ?? null,
+            tenantId,
             userId: user.id,
             action: "PAYMENT_OPERATION_COMPLETED",
             entity: "PaymentOperation",
@@ -549,6 +555,8 @@ export class PaymentsService {
           dto.idempotencyKey,
           requestHash,
           tenantId,
+          user,
+          employeeId,
         );
       }
 
@@ -585,6 +593,18 @@ export class PaymentsService {
           if (replay.paymentId !== paymentId) {
             throw new BadRequestException(
               "Idempotency key belongs to another refund",
+            );
+          }
+          const replayAmountMatches =
+            dto.amount === undefined ||
+            new Prisma.Decimal(dto.amount).equals(replay.amount);
+          if (
+            replay.shiftId !== dto.shiftId ||
+            replay.reason !== reason ||
+            !replayAmountMatches
+          ) {
+            throw new BadRequestException(
+              "Idempotency key was already used with a different refund request",
             );
           }
           return replay;
@@ -660,7 +680,7 @@ export class PaymentsService {
           shiftId: lockedShift.id,
           employeeId: lockedShift.employeeId,
           createdById: user.id,
-          tenantId: user.tenantId ?? null,
+          tenantId,
           amount,
           reason,
           idempotencyKey: dto.idempotencyKey,
@@ -833,13 +853,29 @@ export class PaymentsService {
     idempotencyKey: string,
     requestHash: string,
     tenantId: string,
+    user: AuthenticatedUser,
+    employeeId: string,
   ) {
     const operation = await this.prisma.paymentOperation.findFirst({
       where: { idempotencyKey, order: { branch: { tenantId } } },
+      include: { order: { select: { branchId: true } } },
     });
 
     if (!operation) {
       throw new BadRequestException("Payment operation could not be resolved");
+    }
+
+    resolveBranchScope(user, operation.order.branchId);
+    const activeEmployee = await this.prisma.employee.findFirst({
+      where: {
+        id: employeeId,
+        branchId: operation.order.branchId,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (!activeEmployee) {
+      throw new ForbiddenException("Employee is not active in this branch");
     }
 
     if (operation.requestHash !== requestHash) {

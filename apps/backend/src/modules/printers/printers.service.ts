@@ -87,7 +87,7 @@ export class PrintersService {
         include: { branch: true },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId: existing.tenantId,
         userId: user.id,
         action: "PRINTER_DEACTIVATED",
         entity: "Printer",
@@ -116,7 +116,7 @@ export class PrintersService {
   private async assertPrinter(
     id: string,
     user: AuthenticatedUser,
-  ): Promise<{ branchId: string; name: string; metadata: unknown }> {
+  ): Promise<{ branchId: string; name: string; metadata: unknown; tenantId: string }> {
     const scope = await resolveRestaurantScope(this.prisma, user);
     const printer = await this.prisma.printer.findFirst({
       where: {
@@ -128,6 +128,6 @@ export class PrintersService {
       select: { id: true, branchId: true, name: true, metadata: true },
     });
     if (!printer) throw new NotFoundException("Printer not found");
-    return printer;
+    return { ...printer, tenantId: scope.tenantId };
   }
 }

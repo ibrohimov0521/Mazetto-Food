@@ -9,13 +9,77 @@ assert(['localhost', '127.0.0.1', '[::1]'].includes(base.hostname), 'Local previ
 const output = fileURLToPath(new URL('../.qa-screenshots/', import.meta.url));
 await mkdir(output, { recursive: true });
 const result = { checks: [], pageErrors: [], blockedMutations: [] };
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const fixtureImage = '/menu-media/source/products/lavash.webp';
+const fixtureCategory = { id: 'qa-lavash', code: 'LAVASH', name: 'Lavashlar' };
+const fixtureProducts = Array.from({ length: 74 }, (_, index) => {
+  const id = `qa-product-${index + 1}`;
+  const name = `Lavash ${index + 1}`;
+  return {
+    id,
+    categoryId: fixtureCategory.id,
+    name,
+    description: 'QA mahsuloti',
+    imageUrl: fixtureImage,
+    sellingPrice: '36000',
+    preparationTime: 8,
+    isRecommended: index < 4,
+    isCombo: false,
+    variants: [{ id: `${id}-standard`, name: 'Standart', sellingPrice: '36000', isDefault: true }],
+    modifiers: [],
+  };
+});
+const fixtureHome = {
+  heroSlides: ['Mazetto Food', 'Mazetto ta’mi', 'Yangi lavash', 'Issiq va mazali', 'Buyurtma bering'].map((title, index) => ({
+    id: `qa-slide-${index + 1}`,
+    title,
+    subtitle: 'Mazali taomlar har kuni',
+    imageUrl: fixtureImage,
+    ctaLabel: 'Buyurtma berish',
+    targetUrl: '/menu',
+    sortOrder: index,
+    product: {
+      id: fixtureProducts[index].id,
+      name: fixtureProducts[index].name,
+      imageUrl: fixtureImage,
+      sellingPrice: '36000',
+      preparationTime: 8,
+      isCombo: false,
+    },
+  })),
+  promotions: [],
+};
+const browser = await chromium.launch({ headless: true });
 try {
   for (const width of [390, 430, 768, 1440]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
     await context.addInitScript(() => localStorage.setItem('mazetto.customer.splash.seen', '1'));
     await context.route('**/*', async route => {
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) {
+      const request = route.request();
+      const pathname = new URL(request.url()).pathname;
+      if (request.method() === 'POST' && pathname.endsWith('/customer/auth/refresh')) {
+        return route.fulfill({
+          status: 401,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: false, error: { message: 'Unauthorized' } }),
+        });
+      }
+      if (request.method() === 'GET') {
+        const fixture = pathname.endsWith('/customer/menu/categories')
+          ? [fixtureCategory]
+          : pathname.endsWith('/customer/menu/products')
+            ? fixtureProducts
+            : pathname.endsWith('/customer/home')
+              ? fixtureHome
+              : undefined;
+        if (fixture !== undefined) {
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ success: true, data: fixture }),
+          });
+        }
+      }
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
         result.blockedMutations.push(new URL(route.request().url()).pathname);
         return route.abort();
       }
@@ -32,13 +96,12 @@ try {
     const home = await page.evaluate(() => {
       const cta = document.querySelector('.mf-home-order-cta');
       const hero = document.querySelector('.mf-home-hero');
-      const branch = document.querySelector('.mf-home-branch-row');
       return {
         background: getComputedStyle(document.querySelector('.mf-route-content')).backgroundColor,
         mask: getComputedStyle(cta, '::before').maskImage,
         ctaHeight: cta.getBoundingClientRect().height,
         ctaWeight: getComputedStyle(cta).fontWeight,
-        branchBelowHero: branch.getBoundingClientRect().top >= hero.getBoundingClientRect().bottom,
+        heroContainsCta: hero.contains(cta),
         decorationsInert: [...document.querySelectorAll('.mf-botanical-frame')].every(e => e.getAttribute('aria-hidden') === 'true' && getComputedStyle(e).pointerEvents === 'none'),
         overflow: document.documentElement.scrollWidth > window.innerWidth,
       };
@@ -47,7 +110,7 @@ try {
     assert(home.mask.includes('botanical-sprig.svg'));
     assert(home.ctaHeight >= 44 && home.ctaHeight < 60);
     assert(Number(home.ctaWeight) >= 700, 'Base form reset must not override button typography');
-    assert(home.branchBelowHero && home.decorationsInert && !home.overflow);
+    assert(home.heroContainsCta && home.decorationsInert && !home.overflow);
     await page.screenshot({ path: `${output}/design-contract-home-${width}.png` });
     assert.equal(await page.locator('[data-home-slider]').count(), 1, 'One hero, not duplicate oversized banners');
     const featuredTop = await page.locator('.mf-home-products [data-product-card]').first().boundingBox();
