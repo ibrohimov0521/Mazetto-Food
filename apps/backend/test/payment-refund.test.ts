@@ -18,6 +18,7 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
   const calls: string[] = [];
   const auditEntries: Record<string, unknown>[] = [];
   let employeeIsActive = true;
+  let shiftEmployeeId = "employee-1";
   const refunds: {
     id: string;
     amount: Prisma.Decimal;
@@ -90,9 +91,9 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
         employeeIsActive ? { id: "employee-1" } : null,
     },
     shift: {
-      findFirst: async () => ({ id: "shift-1", employeeId: "employee-1" }),
+      findFirst: async () => ({ id: "shift-1", employeeId: shiftEmployeeId }),
       updateMany: async () => ({ count: 1 }),
-      findUnique: async () => ({ id: "shift-1", employeeId: "employee-1" }),
+      findUnique: async () => ({ id: "shift-1", employeeId: shiftEmployeeId }),
     },
     revenueRecord: {
       create: async ({ data }: { data: { amount: Prisma.Decimal } }) => {
@@ -152,6 +153,9 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
     service: new PaymentsService(prisma),
     setEmployeeActive: (active: boolean) => {
       employeeIsActive = active;
+    },
+    setShiftEmployee: (employeeId: string) => {
+      shiftEmployeeId = employeeId;
     },
   };
 }
@@ -247,6 +251,43 @@ test("inactive employees cannot create or replay a cash refund", async () => {
     /Employee is not active in this branch/,
   );
   assert.equal(calls.length, completedWrites);
+});
+
+test("refunds require branch shift access when the selected shift belongs to another cashier", async () => {
+  const { calls, service, setShiftEmployee } = fixture();
+  setShiftEmployee("employee-2");
+  const cashier: AuthenticatedUser = {
+    ...actor,
+    roles: ["CASHIER"],
+    permissions: ["PAYMENT_REFUND"],
+  };
+  const request = {
+    shiftId: "shift-1",
+    amount: 1000,
+    reason: "Mijoz qaytardi",
+    idempotencyKey: "refund-other-shift",
+  };
+
+  await assert.rejects(
+    service.refundPayment("payment-1", request, cashier),
+    /another employee's shift/,
+  );
+  assert.equal(calls.includes("refund"), false);
+
+  const branchManager: AuthenticatedUser = {
+    ...cashier,
+    roles: ["BRANCH_MANAGER"],
+    permissions: ["PAYMENT_REFUND", "SHIFT_VIEW_BRANCH"],
+  };
+  const completed = await service.refundPayment("payment-1", request, branchManager);
+  assert.equal(completed.id, "refund-1");
+  const completedWriteCount = calls.length;
+
+  await assert.rejects(
+    service.refundPayment("payment-1", request, cashier),
+    /another employee's shift/,
+  );
+  assert.equal(calls.length, completedWriteCount);
 });
 
 test("partial cash refunds preserve a refundable balance and then close it exactly", async () => {

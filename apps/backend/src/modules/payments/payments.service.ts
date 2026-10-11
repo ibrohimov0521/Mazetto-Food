@@ -15,6 +15,8 @@ import {
 } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { resolveBranchScope } from "../../common/auth/access-scope";
+import { hasPermission } from "../../common/auth/authorization";
+import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   resolveRestaurantScope,
   resolveRestaurantTenantId,
@@ -614,6 +616,15 @@ export class PaymentsService {
               "Idempotency key was already used with a different refund request",
             );
           }
+          const replayShift = await tx.shift.findFirst({
+            where: {
+              id: replay.shiftId,
+              branchId: scopedPayment.order.branchId,
+            },
+            select: { employeeId: true },
+          });
+          if (!replayShift) throw new NotFoundException("Refund shift not found");
+          this.assertRefundShiftAccess(user, employeeId, replayShift.employeeId);
           return replay;
         }
         const shift = await tx.shift.findFirst({
@@ -626,6 +637,7 @@ export class PaymentsService {
         });
         if (!shift)
           throw new BadRequestException("Refund requires an open branch shift");
+        this.assertRefundShiftAccess(user, employeeId, shift.employeeId);
         await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${scopedPayment.orderId} FOR UPDATE`;
         const shiftLock = await tx.shift.updateMany({
           where: {
@@ -644,6 +656,11 @@ export class PaymentsService {
         });
         if (!lockedShift)
           throw new BadRequestException("Refund requires an open branch shift");
+        this.assertRefundShiftAccess(
+          user,
+          employeeId,
+          lockedShift.employeeId,
+        );
         await tx.$queryRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
 
         const payment = await tx.payment.findFirst({
@@ -743,6 +760,21 @@ export class PaymentsService {
     }
 
     throw new BadRequestException("Refund could not be completed");
+  }
+
+  private assertRefundShiftAccess(
+    user: AuthenticatedUser,
+    employeeId: string,
+    shiftEmployeeId: string,
+  ): void {
+    if (
+      shiftEmployeeId !== employeeId &&
+      !hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH)
+    ) {
+      throw new ForbiddenException(
+        "Cannot refund using another employee's shift",
+      );
+    }
   }
 
   private requirePaymentMethodCode(code: string | undefined): string {

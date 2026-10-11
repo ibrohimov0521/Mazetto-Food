@@ -641,4 +641,12 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - A same-key concurrent retry exposed a second defect: PostgreSQL rejected the losing SERIALIZABLE transaction with SQLSTATE 40001, surfaced by Prisma as a P2010 raw-query error. Refund requests now retry bounded P2034 and PostgreSQL serialization/deadlock errors; the retry sees the committed idempotency record and returns that same refund rather than an internal error or second ledger write.
 - Regression coverage checks P2010/40001 classification and irrelevant raw-query errors. The disposable PostgreSQL 18 validator passes both different-key over-refund protection and identical-key replay, with one refund row and the correct remaining cash.
 - Full `pnpm verify` and `pnpm test` passed across all eight workspace packages, including 33 operational validators. Backend tests passed 627/627 plus HTTP retry tests 3/3. The standalone disposable database received all 59 migrations and was removed after the run.
-- The latest follow-up edits have not yet been pushed to PR #296; its next CI run must include the new same-key integration case. No production service or database was changed.
+- This refund/idempotency batch was committed as c47bed3, pushed to PR #296, and its GitHub verify plus Windows Desktop package checks passed. No production service or database was changed.
+
+## Audit continuation: refund shift ownership (2026-10-11)
+
+- The payment-refund endpoint previously allowed a user with refund permission to post a refund against another cashier's open shift without requiring branch-shift access. The order-item cancellation path already enforced this owner-or-branch-manager rule; idempotent payment-refund replay also bypassed the missing check.
+- New refunds now require the active cashier to own the selected shift, unless the actor has SHIFT_VIEW_BRANCH. The guard is repeated after locking the shift, and completed-refund replay checks the original branch-scoped shift before returning its result.
+- Unit regression verifies cashier rejection without ledger writes, branch-manager success, and denial of the same replay to the cashier. The isolated PostgreSQL validator verifies the same access boundary against a real migrated database and checks the recorded shift balance.
+- Verification passed after this change: full pnpm verify and pnpm test across all eight workspace packages, 33 operational validators, backend 628/628 plus HTTP retry tests 3/3, and the isolated PostgreSQL 18 run after all 59 migrations. The temporary database was removed. Read-only production smoke passed 27/27 against deployed baseline only.
+- This follow-up remains local and has not yet been pushed; no production service or database was changed.

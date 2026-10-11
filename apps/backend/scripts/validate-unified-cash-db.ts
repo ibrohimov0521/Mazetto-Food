@@ -346,6 +346,61 @@ async function main() {
       PaymentStatus.PENDING,
     );
 
+    const otherCashier = await actor("RefundOther", ["CASHIER"]);
+    const otherCashierShift = await shifts.openShift(
+      { openingBalance: 5000 },
+      otherCashier,
+    );
+    const restrictedRefundActor: AuthenticatedUser = {
+      ...refundOperator,
+      permissions: ["PAYMENT_REFUND"],
+    };
+    const crossShiftRequest = {
+      shiftId: otherCashierShift.id,
+      amount: 1000,
+      reason: "QA cross-shift authorization",
+      idempotencyKey: "qa-refund-cross-shift-" + id,
+    };
+    await assert.rejects(
+      () => payments.refundPayment(
+        refundablePayment.id,
+        crossShiftRequest,
+        restrictedRefundActor,
+      ),
+      /another employee's shift/,
+    );
+    assert.equal(
+      await prisma.paymentRefund.count({
+        where: { paymentId: refundablePayment.id },
+      }),
+      1,
+    );
+    const authorizedRefundManager: AuthenticatedUser = {
+      ...branchManager,
+      permissions: ["PAYMENT_REFUND", "SHIFT_VIEW_BRANCH"],
+    };
+    const crossShiftRefund = await payments.refundPayment(
+      refundablePayment.id,
+      crossShiftRequest,
+      authorizedRefundManager,
+    );
+    assert.ok(crossShiftRefund.id);
+    await assert.rejects(
+      () => payments.refundPayment(
+        refundablePayment.id,
+        crossShiftRequest,
+        restrictedRefundActor,
+      ),
+      /another employee's shift/,
+    );
+    assert.equal(
+      await prisma.paymentRefund.count({
+        where: { paymentId: refundablePayment.id },
+      }),
+      2,
+    );
+    assert.equal(await balance(otherCashier), 4000);
+
     const retryOperator = await actor("RefundRetry", ["CASHIER"]);
     const retryShift = await shifts.openShift({ openingBalance: 0 }, retryOperator);
     const retryOrder = await online("TAKEAWAY", 4000);
@@ -440,7 +495,7 @@ async function main() {
     assert.equal(await prisma.cashTransaction.count({
       where: { orderId: diningOrder.id, shiftId: replacementTargetShift.id, employeeId: receiver.employeeId },
     }), 1);
-    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, concurrent refund bounds and idempotent retries, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
+    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, concurrent refund bounds, idempotent retries, cross-shift refund access and replay, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
   } finally { await prisma.onModuleDestroy(); }
 }
 void main();
