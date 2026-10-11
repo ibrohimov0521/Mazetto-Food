@@ -612,3 +612,18 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Browser inspection showed that mobile/tablet kitchen tickets occupied only half the selected status lane, leaving a large blank area and forcing product names to wrap unnecessarily. The ticket lanes now use one full-width column through 1199 px.
 - Added an E2E width assertion for the ticket card. Staff browser QA passed at 320/390/768/1024/1440 px; visually inspected the 320 px kitchen order with all items, note, timer, and actions visible. POS build and 58 POS tests passed; workspace verification remained green.
 - No production service was changed, and no push or deployment was made.
+
+## Audit continuation: tenant-scoped mutations and staff deletion invariants (2026-10-11)
+
+- A write-scope pass found several operations that authorized a tenant-scoped read, then updated or deleted by ID alone. Branch updates, device enrollment/update/deactivate/delete/heartbeat, printer update/deactivate/bulk delete, expense-category update/archive, and receipt print confirmation now retain the authorized tenant and branch predicates in the database write itself.
+- Device, printer, and staff bulk deletion now validate every selected record before mutation and execute the set with its audit rows in one transaction, so a later invalid target cannot leave earlier records partially deleted.
+- Staff removal now protects the final active SUPER_ADMIN across demotion, blocking, termination, single deletion, and bulk deletion. A database row lock serializes destructive changes; membership is recounted inside the transaction after the lock, including the selected bulk targets. If the required system role row is missing, the operation fails closed.
+- Added regression tests for tenant-scoped final writes, atomic bulk device/printer/staff removal, stale SUPER_ADMIN membership during bulk deletion, missing-role fail-closed handling, and receipt print-state writes.
+- Verification after this grouped change: full backend suite 626/626 plus HTTP retry 3/3; full workspace test command passed, including the media URL checks; all eight workspace packages passed typecheck/lint/build; all 33 operational validators passed. The backend RBAC validator was updated to cover the added cache-invalidation call site. git diff --check is clean.
+- No schema migration was added and no production data or service was changed. These source changes are still on the server audit branch. Production deployment remains gated on the separate live-workstation, printer, offline/reconnect, Telegram credential, payment reconciliation, fresh-backup, and CI acceptance requirements above.
+
+## Audit follow-up: staff RBAC database smoke host (2026-10-11)
+
+- The isolated PostgreSQL run applied all 59 migrations and seed successfully, then exposed that the staff RBAC database validator logged in without a registered host. Production authentication correctly rejected that request; this was a stale test fixture, not an application defect.
+- The validator now creates a synthetic verified hostname in its isolated database and supplies it to every login attempt. The database-backed RBAC smoke passed end to end, including role/permission checks, password reset, blocking/reactivation, and last-SUPER_ADMIN protection.
+- The disposable PostgreSQL container was removed automatically after the run. No shared staging or production database was used or changed.

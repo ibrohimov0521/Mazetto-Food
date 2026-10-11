@@ -39,6 +39,17 @@ async function main(): Promise<void> {
       new TenantRequestContextService(prisma),
     );
     const runId = Date.now().toString();
+    const testHostname = "staff-rbac-" + runId + ".example.test";
+    await prisma.tenantDomain.create({
+      data: {
+        hostname: testHostname,
+        tenantId: "tenant_mazetto_food",
+        status: "VERIFIED",
+        verifiedAt: new Date(),
+      },
+    });
+    const login = (dto: { identifier: string; password: string }) =>
+      authService.login(dto, "unknown", testHostname);
     const branch = await createBranch(prisma, `STAFF_GATE_${runId}`, "Staff Gate Branch");
     const otherBranch = await createBranch(prisma, `STAFF_OTHER_${runId}`, "Staff Other Branch");
     const superPassword = `SuperPass-${runId}`;
@@ -53,7 +64,7 @@ async function main(): Promise<void> {
       password: superPassword,
       activate: true,
     });
-    const superLogin = await authService.login({
+    const superLogin = await login({
       identifier: `OWNER-${runId}@EXAMPLE.TEST`,
       password: superPassword,
     });
@@ -112,15 +123,15 @@ async function main(): Promise<void> {
       superUser,
     );
 
-    const adminLogin = await authService.login({
+    const adminLogin = await login({
       identifier: `admin-${runId}@example.test`,
       password: adminPassword,
     });
-    const cashierLogin = await authService.login({
+    const cashierLogin = await login({
       identifier: `+998903${runId.slice(-6)}`,
       password: cashierPassword,
     });
-    const kitchenLogin = await authService.login({
+    const kitchenLogin = await login({
       identifier: `+998904${runId.slice(-6)}`,
       password: kitchenPassword,
     });
@@ -180,10 +191,10 @@ async function main(): Promise<void> {
 
     await staffService.resetPassword(cashier.id, { newPassword: `ResetPass-${runId}` }, superUser);
     await assertRejects(
-      () => authService.login({ identifier: cashier.email ?? "", password: cashierPassword }),
+      () => login({ identifier: cashier.email ?? "", password: cashierPassword }),
       /Invalid credentials/,
     );
-    const resetLogin = await authService.login({
+    const resetLogin = await login({
       identifier: cashier.email ?? "",
       password: `ResetPass-${runId}`,
     });
@@ -198,22 +209,22 @@ async function main(): Promise<void> {
       adminLogin.user,
     );
     await assertRejects(
-      () => authService.login({ identifier: admin.email ?? "", password: adminPassword }),
+      () => login({ identifier: admin.email ?? "", password: adminPassword }),
       /Invalid credentials/,
     );
     assertAdminAccess(
-      (await authService.login({ identifier: admin.email ?? "", password: `AdminNew-${runId}` })).user,
+      (await login({ identifier: admin.email ?? "", password: `AdminNew-${runId}` })).user,
     );
 
     await staffService.updateStatus(kitchen.id, { isActive: false }, superUser);
     await assertRejects(
-      () => authService.login({ identifier: kitchen.email ?? "", password: kitchenPassword }),
+      () => login({ identifier: kitchen.email ?? "", password: kitchenPassword }),
       /Invalid credentials/,
     );
     const reactivatedKitchen = await staffService.updateStatus(kitchen.id, { isActive: true }, superUser);
     assert.equal(reactivatedKitchen.isActive, true);
     assertKitchenAccess(
-      (await authService.login({ identifier: kitchen.email ?? "", password: kitchenPassword })).user,
+      (await login({ identifier: kitchen.email ?? "", password: kitchenPassword })).user,
     );
 
     await assertRejects(

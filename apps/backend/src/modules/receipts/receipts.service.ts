@@ -245,15 +245,19 @@ export class ReceiptsService {
   }
 
   async markPrinted(id: string, user: AuthenticatedUser) {
-    await this.getReceipt(id, user);
-
-    await this.prisma.receipt.update({
-      where: { id },
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
+    const updated = await this.prisma.receipt.updateMany({
+      where: {
+        id,
+        branch: { tenantId },
+        ...(branchId ? { branchId } : {}),
+      },
       data: {
         printed: true,
         printedAt: new Date(),
       },
     });
+    if (updated.count !== 1) throw new NotFoundException("Receipt not found");
 
     return this.getReceipt(id, user);
   }

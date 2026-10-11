@@ -146,7 +146,7 @@ export class BranchesService {
     dto: UpdateBranchDto,
     user: AuthenticatedUser,
   ) {
-    await this.assertBranch(id, user);
+    const tenantId = await this.assertBranch(id, user);
 
     const data = this.branchUpdateData(dto);
 
@@ -155,7 +155,7 @@ export class BranchesService {
     }
 
     return this.prisma.branch.update({
-      where: { id },
+      where: { id, tenantId },
       data,
       include: { workingHours: { orderBy: { dayOfWeek: "asc" } } },
     });

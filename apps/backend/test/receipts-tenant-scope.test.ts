@@ -106,6 +106,31 @@ test("foreign receipt cannot be reprinted by a global actor", async () => {
   });
   assert.equal(transactionStarted, false);
 });
+
+test("mark printed keeps the tenant filter on the database update", async () => {
+  let updateWhere: unknown;
+  let legacyUpdateCalled = false;
+  const service = new ReceiptsService({
+    ...activeTenant,
+    receipt: {
+      updateMany: async (args: { where: unknown }) => {
+        updateWhere = args.where;
+        return { count: 0 };
+      },
+      update: async () => {
+        legacyUpdateCalled = true;
+      },
+    },
+  } as never);
+
+  await assert.rejects(service.markPrinted("receipt-b", owner), /Receipt not found/);
+  assert.deepEqual(updateWhere, {
+    id: "receipt-b",
+    branch: { tenantId: "tenant-a" },
+  });
+  assert.equal(legacyUpdateCalled, false);
+});
+
 test("reprint aborts before queueing if the tenant-scoped receipt update loses its scope", async () => {
   let receiptLookup: unknown;
   let updateWhere: unknown;

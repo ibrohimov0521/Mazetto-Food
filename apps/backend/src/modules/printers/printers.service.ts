@@ -58,7 +58,11 @@ export class PrintersService {
     const existing = await this.assertPrinter(id, user);
     const { metadata, ...data } = dto;
     return this.prisma.printer.update({
-      where: { id },
+      where: {
+        id,
+        branchId: existing.branchId,
+        branch: { tenantId: existing.tenantId },
+      },
       data: {
         ...data,
         ...(metadata
@@ -82,7 +86,11 @@ export class PrintersService {
     const existing = await this.assertPrinter(id, user);
     return this.prisma.$transaction(async (tx) => {
       const printer = await tx.printer.update({
-        where: { id },
+        where: {
+          id,
+          branchId: existing.branchId,
+          branch: { tenantId: existing.tenantId },
+        },
         data: { isActive: false, status: "OFFLINE" },
         include: { branch: true },
       });
@@ -106,10 +114,21 @@ export class PrintersService {
     ];
     if (!uniqueIds.length)
       throw new NotFoundException("Kamida bitta printer tanlanishi kerak");
-    for (const id of uniqueIds) {
-      await this.assertPrinter(id, user);
-      await this.prisma.printer.delete({ where: { id } });
-    }
+    const printers = await Promise.all(
+      uniqueIds.map(async (id) => ({ id, ...(await this.assertPrinter(id, user)) })),
+    );
+    await this.prisma.$transaction(async (tx) => {
+      for (const printer of printers) {
+        const deleted = await tx.printer.deleteMany({
+          where: {
+            id: printer.id,
+            branchId: printer.branchId,
+            branch: { tenantId: printer.tenantId },
+          },
+        });
+        if (deleted.count !== 1) throw new NotFoundException("Printer not found");
+      }
+    });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 

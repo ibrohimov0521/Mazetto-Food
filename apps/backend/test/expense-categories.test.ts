@@ -15,6 +15,7 @@ const actor: AuthenticatedUser = {
 
 test("expense category archive preserves historical expense snapshots", async () => {
   const calls: string[] = [];
+  let updateWhere: Record<string, unknown> | undefined;
   const category = {
     id: "category-1",
     name: "Transport",
@@ -23,7 +24,8 @@ test("expense category archive preserves historical expense snapshots", async ()
   };
   const tx = {
     expenseCategory: {
-      update: async ({ data }: { data: { isActive: boolean } }) => {
+      update: async ({ where, data }: { where: Record<string, unknown>; data: { isActive: boolean } }) => {
+        updateWhere = where;
         calls.push(`category:${data.isActive}`);
         return { ...category, ...data };
       },
@@ -49,6 +51,7 @@ test("expense category archive preserves historical expense snapshots", async ()
   } as unknown as PrismaService;
 
   await new ExpensesService(prisma).archiveCategory("category-1", actor);
+  assert.deepEqual(updateWhere, { id: "category-1", branchId: "branch-1", branch: { tenantId: "tenant-a" } });
   assert.deepEqual(calls, ["category:false", "audit"]);
 });
 

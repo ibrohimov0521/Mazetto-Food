@@ -137,3 +137,95 @@ test("device enrollment only rebinds hardware within the selected tenant", async
   assert.deepEqual(claimFilter?.branch, { tenantId: "tenant-a" });
   assert.deepEqual(unbindFilter?.branch, { tenantId: "tenant-a" });
 });
+
+test("printer writes retain the resolved tenant and branch in their predicates", async () => {
+  const filters: Record<string, unknown>[] = [];
+  const stored = {
+    id: "printer-a",
+    branchId: "branch-a",
+    name: "Kitchen",
+    metadata: {},
+  };
+  const service = new PrintersService({
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    printer: {
+      findFirst: async () => stored,
+      update: async (args: { where: Record<string, unknown> }) => {
+        filters.push(args.where);
+        return { ...stored, branch: { id: "branch-a" } };
+      },
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        printer: {
+          deleteMany: async (args: { where: Record<string, unknown> }) => {
+            filters.push(args.where);
+            return { count: 1 };
+          },
+          update: async (args: { where: Record<string, unknown> }) => {
+            filters.push(args.where);
+            return { ...stored, branch: { id: "branch-a" } };
+          },
+        },
+        auditLog: { create: async () => undefined },
+      }),
+  } as never);
+
+  await service.updatePrinter("printer-a", { name: "Kitchen 2" }, owner);
+  await service.deactivatePrinter("printer-a", owner);
+  await service.deletePrinters(["printer-a"], owner);
+
+  const expectedWhere = {
+    id: "printer-a",
+    branchId: "branch-a",
+    branch: { tenantId: "tenant-a" },
+  };
+  assert.deepEqual(filters, [expectedWhere, expectedWhere, expectedWhere]);
+});
+
+test("device writes retain tenant and branch filters after authorization", async () => {
+  const filters: Record<string, unknown>[] = [];
+  const stored = {
+    id: "device-a",
+    branchId: "branch-a",
+    name: "POS",
+    type: "POS",
+    isActive: true,
+  };
+  const service = new DevicesService({
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    device: {
+      findFirst: async () => stored,
+      update: async (args: { where: Record<string, unknown> }) => {
+        filters.push(args.where);
+        return stored;
+      },
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        device: {
+          update: async (args: { where: Record<string, unknown> }) => {
+            filters.push(args.where);
+            return stored;
+          },
+          deleteMany: async (args: { where: Record<string, unknown> }) => {
+            filters.push(args.where);
+            return { count: 1 };
+          },
+        },
+        auditLog: { create: async () => undefined },
+      }),
+  } as never);
+
+  await service.updateDevice("device-a", { name: "POS 2" }, owner);
+  await service.deleteDevice("device-a", owner);
+  await service.heartbeat("hardware-a", undefined, owner);
+  await service.deleteDevices(["device-a", "device-b"], owner);
+
+  const expectedWhere = {
+    id: "device-a",
+    branchId: "branch-a",
+    branch: { tenantId: "tenant-a" },
+  };
+  assert.deepEqual(filters, [expectedWhere, expectedWhere, expectedWhere, expectedWhere, expectedWhere]);
+});
