@@ -126,6 +126,16 @@ test("current shift balance does not count the opening float twice when its ledg
   assert.equal(shift?.currentBalance.toFixed(0), "115000");
 });
 
+test("current shift balance does not double count a legacy OPENING ledger row", async () => {
+  const shift = await getCurrentCash(100000, [
+    { amount: 100000, type: CashTransactionType.OPENING },
+    { amount: 25000, type: CashTransactionType.SALE },
+    { amount: 10000, type: CashTransactionType.EXPENSE },
+  ]);
+
+  assert.equal(shift?.currentBalance.toFixed(0), "115000");
+});
+
 test("current shift summary counts direct and paid orders without loading full ledger history", async () => {
   const captured: {
     shiftQuery?: Record<string, unknown>;

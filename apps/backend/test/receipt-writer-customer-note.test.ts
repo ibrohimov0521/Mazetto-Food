@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Prisma } from "@prisma/client";
 import {
+  allocateReceiptNumber,
   createReceiptNumber,
   writeReceiptRow,
   type OrderForReceipt,
@@ -13,6 +14,7 @@ async function writeOrderNote(
 ) {
   let receiptContent: Record<string, unknown> | undefined;
   const tx = {
+    $executeRaw: async () => 1,
     receipt: {
       findUnique: async () => null,
       create: async ({
@@ -66,4 +68,31 @@ test("receipt numbers contain a 12-character hexadecimal suffix", () => {
   for (let index = 0; index < 50; index += 1) {
     assert.match(createReceiptNumber(), /^RCPT-\d{8}-[A-F0-9]{12}$/);
   }
+});
+
+test("receipt number candidates are locked before collision checks", async () => {
+  const calls: string[] = [];
+  const lockKeys: string[] = [];
+  let lookupCount = 0;
+  const tx = {
+    $executeRaw: async (_sql: TemplateStringsArray, lockKey: string) => {
+      calls.push("lock");
+      lockKeys.push(lockKey);
+      return 1;
+    },
+    receipt: {
+      findUnique: async ({ where }: { where: { receiptNumber: string } }) => {
+        calls.push("lookup");
+        lookupCount += 1;
+        return lookupCount === 1 ? { id: where.receiptNumber } : null;
+      },
+    },
+  };
+
+  const allocated = await allocateReceiptNumber(tx as never);
+
+  assert.equal(lookupCount, 2);
+  assert.deepEqual(calls, ["lock", "lookup", "lock", "lookup"]);
+  assert.notEqual(lockKeys[0], lockKeys[1]);
+  assert.equal(lockKeys[1], `receipt-number:${allocated}`);
 });

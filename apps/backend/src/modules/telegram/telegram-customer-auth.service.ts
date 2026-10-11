@@ -1,4 +1,3 @@
-import { orderStatusLabel as sharedOrderStatusLabel } from "../../common/utils/order-status-label";
 import {
   BadRequestException,
   Injectable,
@@ -188,16 +187,6 @@ export class TelegramCustomerAuthService {
         return { ok: true, handled: true };
       }
 
-      if (text === "📦 Buyurtmalarim") {
-        await this.sendCustomerOrders(message);
-        return { ok: true, handled: true };
-      }
-
-      if (text === "👤 Profil") {
-        await this.sendCustomerProfile(message);
-        return { ok: true, handled: true };
-      }
-
       if (text === "📍 Filial") {
         await this.telegramCustomerOrderingService.sendBranches(message);
         return { ok: true, handled: true };
@@ -366,141 +355,6 @@ export class TelegramCustomerAuthService {
     callback: TelegramCallbackQuery,
   ): Promise<void> {
     await this.telegramCustomerOrderingService.handleCustomerCallback(callback);
-  }
-
-  private async sendCategoryMenu(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
-    const customer = await this.findLinkedCustomer(message.from?.id);
-
-    if (!customer) {
-      await this.sendStartOrMainMenu(message);
-      return;
-    }
-
-    const categories = await this.prisma.category.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, code: true, name: true },
-    });
-    const sorted = [...categories].sort(
-      (a, b) => (a.code === "SETS" ? -1 : 0) - (b.code === "SETS" ? -1 : 0),
-    );
-
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: "🍽 <b>Menyu bo'limini tanlang</b>",
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          ...sorted.map((category) => [
-            {
-              text: this.categoryButtonLabel(category.code, category.name),
-              callback_data: `${customerCallbackPrefix}:cat:${category.id}`,
-            },
-          ]),
-          [
-            {
-              text: "🏠 Bosh menyu",
-              callback_data: `${customerCallbackPrefix}:home`,
-            },
-          ],
-        ],
-      },
-    });
-  }
-
-  private async sendCustomerOrders(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
-    const customer = await this.findLinkedCustomer(message.from?.id);
-
-    if (!customer) {
-      await this.sendStartOrMainMenu(message);
-      return;
-    }
-
-    const orders = await this.prisma.customerOrder.findMany({
-      where: { customerId: customer.id },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: {
-        branch: { select: { name: true } },
-        order: {
-          select: {
-            orderNumber: true,
-            displayOrderNumber: true,
-            status: true,
-            total: true,
-          },
-        },
-      },
-    });
-
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: orders.length
-        ? [
-            "📦 <b>Buyurtmalaringiz</b>",
-            "",
-            ...orders.map((order) =>
-              [
-                `<b>${this.escapeHtml(order.order.displayOrderNumber ?? order.order.orderNumber)}</b>`,
-                `${this.escapeHtml(order.branch.name)} · ${this.statusLabel(order.order.status, order.type)}`,
-                `Jami: ${this.formatMoney(order.order.total)}`,
-              ].join("\n"),
-            ),
-          ].join("\n\n")
-        : "Hali buyurtmalaringiz yo'q. Menyudan taom tanlab buyurtma berishingiz mumkin.",
-      parse_mode: "HTML",
-    });
-  }
-
-  private async sendCustomerProfile(message: TelegramMessage): Promise<void> {
-    const chatId = this.requiredTelegramId(message.chat?.id, "chat id");
-    const customer = await this.findLinkedCustomer(message.from?.id);
-
-    if (!customer) {
-      await this.sendStartOrMainMenu(message);
-      return;
-    }
-
-    const orderCount = await this.prisma.customerOrder.count({
-      where: { customerId: customer.id },
-    });
-
-    await this.telegramRequest("sendMessage", {
-      chat_id: chatId,
-      text: [
-        "👤 <b>Profil</b>",
-        "",
-        `<b>Ism:</b> ${this.escapeHtml(customer.name)}`,
-        `<b>Telefon:</b> ${this.escapeHtml(customer.phone)}`,
-        `<b>Buyurtmalar:</b> ${orderCount}`,
-        `<b>Bonus:</b> ${this.formatMoney(customer.bonusBalance)}`,
-      ].join("\n"),
-      parse_mode: "HTML",
-    });
-  }
-
-  private async findLinkedCustomer(telegramUserId: number | string | undefined) {
-    if (telegramUserId === undefined || telegramUserId === null) {
-      return null;
-    }
-
-    const tenantId = await resolveSoleActiveTenantId(this.prisma);
-    return this.prisma.customer.findUnique({
-      where: {
-        tenantId_telegramUserId: {
-          tenantId,
-          telegramUserId: String(telegramUserId),
-        },
-      },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        bonusBalance: true,
-      },
-    });
   }
 
   private async sendVerificationCode(
@@ -764,34 +618,6 @@ export class TelegramCustomerAuthService {
     const botUrl = this.customerBotUrl();
 
     return botUrl ? { ...delivery, botUrl } : delivery;
-  }
-
-  private categoryButtonLabel(
-    code: string | null | undefined,
-    name: string,
-  ): string {
-    const icons: Record<string, string> = {
-      BURGER: "🍔",
-      CHICKEN_BURGER: "🍔",
-      CHICKEN_LAVASH: "🍗",
-      DONER: "🥙",
-      DRINKS: "🥤",
-      FAST_FOOD: "🍟",
-      HOT_DOG: "🌭",
-      LAVASH: "🌯",
-      SAUCES: "🥫",
-      SETS: "🔥",
-    };
-
-    return `${icons[code ?? ""] ?? "🍽"} ${name}`;
-  }
-
-  private statusLabel(status: string, type?: string): string {
-    return sharedOrderStatusLabel(status, type);
-  }
-
-  private formatMoney(value: Prisma.Decimal | number | string): string {
-    return `${Number(value).toLocaleString("uz-UZ")} so'm`;
   }
 
   private escapeHtml(value: string): string {

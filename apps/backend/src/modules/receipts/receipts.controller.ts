@@ -53,6 +53,16 @@ export class ReceiptsController {
     );
   }
 
+  @Post("print-jobs/:id/dispatching")
+  @Permissions(PERMISSIONS.RECEIPT_PRINT)
+  markPrintJobDispatching(
+    @Param("id") id: string,
+    @Body() body: CompletePrintJobDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.receiptsService.markPrintJobDispatching(id, body.leaseToken, user);
+  }
+
   @Post("print-jobs/:id/complete")
   @Permissions(PERMISSIONS.RECEIPT_PRINT)
   completePrintJob(@Param("id") id: string, @Body() body: CompletePrintJobDto, @CurrentUser() user: AuthenticatedUser) {

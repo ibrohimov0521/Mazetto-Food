@@ -22,11 +22,17 @@ try {
     let status = "PREPARING";
     let type = "DELIVERY";
     let requests = 0;
-    const order = () => ({ id: "qa-order", status: status === "SERVED" ? "READY" : status, type, createdAt: new Date().toISOString(), branch: { name: "MAZETTO Sergeli" }, order: { orderNumber: "QA1", displayOrderNumber: "WEB103", status, total: "72000", items: [{ id: "item", productName: "Katta lavash", quantity: "2", unitPrice: "36000", totalPrice: "72000" }], payments: [] } });
-    await context.route("**/api/v1/**", async route => {
+    const order = () => ({ id: "qa-order", status: status === "SERVED" ? "READY" : status, type, createdAt: new Date().toISOString(), branch: { name: "MAZETTO Sergeli" }, order: { id: "qa-operational-order", orderNumber: "QA1", displayOrderNumber: "WEB103", status, total: "72000", items: [{ id: "item", productName: "Katta lavash", quantity: "2", unitPrice: "36000", totalPrice: "72000" }], payments: [] } });
+    await context.route("**/customer/**", async route => {
       const path = new URL(route.request().url()).pathname;
       let data = [];
-      if (path.endsWith("/orders/qa-order")) { data = order(); requests++; }
+      if (path.endsWith("/customer/auth/refresh")) {
+        data = {
+          customer: { id: session.id, name: session.name, phone: session.phone, bonusBalance: session.bonusBalance },
+          tokens: { accessToken: session.accessToken, refreshToken: session.refreshToken, tokenType: session.tokenType },
+        };
+      }
+      else if (path.endsWith("/orders/qa-order")) { data = order(); requests++; }
       else if (path.endsWith("/orders")) { data = [order()]; requests++; }
       else if (path.endsWith("/dashboard")) data = { ...session, customer: session, favorites: [], customerOrders: [] };
       await route.fulfill({ json: { success: true, data } });

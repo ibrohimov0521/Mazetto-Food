@@ -4,11 +4,7 @@ const path = require('node:path');
 const { createRequire } = require('node:module');
 const root = path.resolve(__dirname, '..');
 const { chromium } = createRequire(root + '/package.json')('playwright');
-const source = fs.readFileSync(root + '/scripts/qa-staff-workspaces.mjs', 'utf8');
-const start = source.indexOf('const productData =');
-const end = source.indexOf('const browser =');
-assert.ok(start >= 0 && end > start);
-const { fixtures, session } = new Function(source.slice(start, end) + '; return { fixtures, session };')();
+const { createShift, session } = require('./qa-cash-handover-fixtures.cjs');
 const base = process.env.QA_STAFF_URL || 'http://127.0.0.1:3111';
 const out = process.env.QA_OUTPUT || '/tmp/mazetto-phone-cash-qa';
 fs.mkdirSync(out, { recursive: true });
@@ -19,13 +15,13 @@ const results = [];
     for (const width of [320, 390, 1440]) {
       for (const role of ['KITCHEN', 'COURIER', 'CASHIER']) {
         const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
-        const shift = fixtures().shift;
+        const shift = createShift();
         shift.outgoingCashTransfers = [];
         const pending = [{ id: 't-in', amount: '50000', createdAt: new Date().toISOString(), fromShift: { employee: { firstName: 'Test', lastName: 'Xodim' } } }];
         const permissions = ['SHIFT_VIEW_OWN', 'SHIFT_OPEN', 'SHIFT_CLOSE', 'CASH_TRANSACTION_CREATE'];
         if (role === 'CASHIER') permissions.push('POS_USE');
         await context.addInitScript(value => localStorage.setItem('mazetto.auth.session', JSON.stringify(value)), { ...session, user: { ...session.user, roles: [role], permissions } });
-        const reads = [], writes = [], errors = [];
+        const reads = [], transferWrites = [], unexpectedWrites = [], errors = [];
         await context.route('**/*', async route => {
           const request = route.request();
           const url = new URL(request.url());
@@ -40,14 +36,21 @@ const results = [];
               if (api === '/branches') return ok([shift.branch]);
               return ok([]);
             }
-            writes.push({ api, body: request.postDataJSON() });
+            if (api === '/devices/heartbeat') return ok({ accepted: true });
             if (api === '/cash-register/transfers') {
-              const amount = request.postDataJSON().amount;
+              const body = request.postDataJSON();
+              transferWrites.push({ api, body });
+              const amount = body.amount;
               shift.expectedCash = String(Number(shift.expectedCash) - amount);
               shift.outgoingCashTransfers.push({ id: 't-out', amount: String(amount), status: 'PENDING', createdAt: new Date().toISOString() });
               return ok(shift.outgoingCashTransfers.at(-1));
             }
-            if (/\/transfers\/t-in\/(accept|reject)$/.test(api)) { pending.length = 0; return ok({}); }
+            if (/\/transfers\/t-in\/(accept|reject)$/.test(api)) {
+              transferWrites.push({ api, body: request.postDataJSON() });
+              pending.length = 0;
+              return ok({});
+            }
+            unexpectedWrites.push({ api, body: request.postDataJSON() });
             return route.fulfill({ status: 409, json: { success: false, error: { message: 'QA: bu amal taqiqlangan' } } });
           }
           return ['GET', 'HEAD', 'OPTIONS'].includes(request.method()) ? route.continue() : route.abort();
@@ -59,7 +62,7 @@ const results = [];
         assert.equal(reads.includes('/cash-register/transfers/pending'), role === 'CASHIER');
         await page.getByRole('button', { name: 'Barcha naqd', exact: true }).click();
         await page.getByRole('button', { name: 'Topshirish', exact: true }).click();
-        assert.equal(writes.length, 0);
+        assert.equal(transferWrites.length, 0);
         const dialog = page.getByRole('dialog');
         await dialog.waitFor();
         await page.keyboard.press('Escape');
@@ -67,17 +70,18 @@ const results = [];
         await page.getByRole('button', { name: 'Topshirish', exact: true }).click();
         await dialog.getByRole('button', { name: 'Tasdiqlash', exact: true }).click();
         await page.getByText("Kassir tasdig'i kutilmoqda", { exact: true }).waitFor();
-        assert.equal(writes.length, 1);
-        assert.equal(writes[0].body.amount, 460000);
-        assert.equal(writes[0].body.toShiftId, 's-receiver');
+        assert.equal(transferWrites.length, 1);
+        assert.equal(transferWrites[0].body.amount, 460000);
+        assert.equal(transferWrites[0].body.toShiftId, 's-receiver');
         assert.equal(await page.getByRole('button', { name: 'Barcha naqd', exact: true }).isDisabled(), true);
         if (role === 'CASHIER') {
           await page.getByRole('button', { name: 'Qabul qilish', exact: true }).click();
-          assert.equal(writes.length, 1);
+          assert.equal(transferWrites.length, 1);
           await dialog.getByRole('button', { name: 'Tasdiqlash', exact: true }).click();
           await page.waitForTimeout(200);
-          assert.equal(writes.at(-1).api, '/cash-register/transfers/t-in/accept');
+          assert.equal(transferWrites.at(-1).api, '/cash-register/transfers/t-in/accept');
         }
+        assert.deepEqual(unexpectedWrites, []);
         assert.deepEqual(errors, []);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
         await page.screenshot({ path: out + '/cash-' + role + '-' + width + '.png', fullPage: true });

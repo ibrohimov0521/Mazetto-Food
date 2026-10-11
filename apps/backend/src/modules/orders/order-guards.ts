@@ -38,7 +38,7 @@ export async function assertBranchExists(
 }
 
 export async function assertEmployeeInBranch(
-  tx: TransactionClient,
+  tx: TransactionClient | PrismaService,
   employeeId: string,
   branchId: string,
 ): Promise<void> {

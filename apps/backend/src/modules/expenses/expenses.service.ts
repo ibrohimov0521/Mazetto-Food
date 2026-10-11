@@ -120,7 +120,7 @@ export class ExpensesService {
 
   async createCategory(dto: CreateExpenseCategoryDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
-    await assertBranchBelongsToActor(this.prisma, user, branchId);
+    const tenantId = await assertBranchBelongsToActor(this.prisma, user, branchId);
     const name = this.categoryName(dto.name);
     const normalizedName = this.normalizedCategoryName(name);
     const existing = await this.prisma.expenseCategory.findUnique({
@@ -138,7 +138,7 @@ export class ExpensesService {
         data: { id: randomUUID(), branchId, name, normalizedName },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId,
         userId: user.id,
         action: "EXPENSE_CATEGORY_CREATED",
         entity: "ExpenseCategory",
@@ -169,7 +169,7 @@ export class ExpensesService {
         data: { name, normalizedName },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId: category.tenantId,
         userId: user.id,
         action: "EXPENSE_CATEGORY_UPDATED",
         entity: "ExpenseCategory",
@@ -192,7 +192,7 @@ export class ExpensesService {
         data: { isActive: false },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId: category.tenantId,
         userId: user.id,
         action: "EXPENSE_CATEGORY_ARCHIVED",
         entity: "ExpenseCategory",
@@ -224,7 +224,7 @@ export class ExpensesService {
       await tx.expenseCategory.deleteMany({ where });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, {
-          tenantId: user.tenantId ?? null,
+          tenantId: scope.tenantId,
           userId: user.id,
           action: "EXPENSE_CATEGORY_DELETED",
           entity: "ExpenseCategory",
@@ -327,6 +327,6 @@ export class ExpensesService {
     });
     if (!category?.isActive)
       throw new NotFoundException("Active expense category not found");
-    return category;
+    return { ...category, tenantId: scope.tenantId };
   }
 }

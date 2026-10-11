@@ -23,6 +23,7 @@ test("disabled payment methods are rejected before a new POS order is created", 
       findUnique: async () => ({ tenantId: "tenant-a" }),
       findFirst: async () => ({ id: "branch-1" }),
     },
+    employee: { findFirst: async () => ({ id: "employee-1" }) },
     paymentOperation: { findUnique: async () => null },
   };
   const prisma = {
@@ -83,6 +84,7 @@ test("completed POS checkout replay does not republish order side effects", asyn
       findUnique: async () => ({ tenantId: "tenant-a" }),
       findFirst: async () => ({ id: "branch-1" }),
     },
+    employee: { findFirst: async () => ({ id: "employee-1" }) },
     paymentOperation: { findUnique: async () => operation },
     order: { findUnique: async () => order },
   };
@@ -118,6 +120,49 @@ test("completed POS checkout replay does not republish order side effects", asyn
   assert.equal(idempotencyKey, "POS_CHECKOUT:checkout-retry-1");
   assert.deepEqual(emitted, []);
   assert.equal(notificationLookups, 0);
+});
+
+test("inactive employee cannot replay a completed POS checkout", async () => {
+  const user: AuthenticatedUser = {
+    id: "user-1",
+    employeeId: "former-employee",
+    branchId: "branch-1",
+    roles: ["CASHIER"],
+    permissions: ["POS_USE"],
+  };
+  const dto: CreatePosCheckoutDto = {
+    idempotencyKey: "inactive-checkout-replay",
+    cashReceived: 25000,
+    items: [{ productId: "product-1", quantity: 1 }],
+  };
+  let operationReads = 0;
+  const transaction = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    employee: { findFirst: async () => null },
+    paymentOperation: {
+      findUnique: async () => {
+        operationReads += 1;
+        return { id: "existing-operation" };
+      },
+    },
+  };
+  const service = new OrdersService(
+    {
+      $transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+    } as never,
+    {} as never,
+    {} as never,
+  );
+
+  await assert.rejects(
+    service.createPosCheckout(dto, user),
+    /Employee is not active in this branch/,
+  );
+  assert.equal(operationReads, 0);
 });
 
 test("paid POS checkout replay restores a missing receipt and print job", async () => {
@@ -172,10 +217,12 @@ test("paid POS checkout replay restores a missing receipt and print job", async 
   let receiptCreates = 0;
   let printJobCreates = 0;
   const transaction = {
+    $executeRaw: async () => 1,
     branch: {
       findUnique: async () => ({ tenantId: "tenant-a" }),
       findFirst: async () => ({ id: "branch-1" }),
     },
+    employee: { findFirst: async () => ({ id: "employee-1" }) },
     paymentOperation: { findUnique: async () => operation },
     order: { findUnique: async () => order },
     receipt: {
@@ -259,15 +306,22 @@ test("POS checkout replays a committed order after an idempotency collision", as
   );
   let transactionAttempts = 0;
   let operationReads = 0;
+  let operationWhere: unknown;
   let orderReads = 0;
   const prisma = {
     $transaction: async () => {
       transactionAttempts += 1;
       throw uniqueCollision;
     },
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    employee: { findFirst: async () => ({ id: "employee-1" }) },
     paymentOperation: {
-      findUnique: async () => {
+      findFirst: async (args: { where: unknown }) => {
         operationReads += 1;
+        operationWhere = args.where;
         return operation;
       },
     },
@@ -293,9 +347,59 @@ test("POS checkout replays a committed order after an idempotency collision", as
   const result = await service.createPosCheckout(dto, user);
 
   assert.equal(transactionAttempts, 1);
-  assert.equal(operationReads, 2);
+  assert.equal(operationReads, 1);
+  assert.deepEqual(operationWhere, {
+    idempotencyKey,
+    order: { branchId: "branch-1", branch: { tenantId: "tenant-a" } },
+  });
   assert.equal(orderReads, 1);
   assert.equal(result.order.id, order.id);
   assert.equal(idempotencyKey, "POS_CHECKOUT:parallel-terminal-sale");
   assert.deepEqual(emitted, []);
+});
+
+test("inactive employee cannot resolve a POS idempotency collision", async () => {
+  const user: AuthenticatedUser = {
+    id: "user-1",
+    employeeId: "former-employee",
+    branchId: "branch-1",
+    roles: ["CASHIER"],
+    permissions: ["POS_USE"],
+  };
+  const dto: CreatePosCheckoutDto = {
+    idempotencyKey: "inactive-collision-replay",
+    cashReceived: 25000,
+    items: [{ productId: "product-1", quantity: 1 }],
+  };
+  const uniqueCollision = new Prisma.PrismaClientKnownRequestError(
+    "Unique constraint failed",
+    { code: "P2002", clientVersion: Prisma.prismaVersion.client },
+  );
+  let operationReads = 0;
+  const service = new OrdersService(
+    {
+      $transaction: async () => {
+        throw uniqueCollision;
+      },
+      branch: {
+        findUnique: async () => ({ tenantId: "tenant-a" }),
+        findFirst: async () => ({ id: "branch-1" }),
+      },
+      employee: { findFirst: async () => null },
+      paymentOperation: {
+        findFirst: async () => {
+          operationReads += 1;
+          return { id: "existing-operation" };
+        },
+      },
+    } as never,
+    {} as never,
+    {} as never,
+  );
+
+  await assert.rejects(
+    service.createPosCheckout(dto, user),
+    /Employee is not active in this branch/,
+  );
+  assert.equal(operationReads, 0);
 });

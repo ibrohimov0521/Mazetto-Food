@@ -16,12 +16,14 @@ const actor: AuthenticatedUser = {
 
 function fixture(methodCode = "CASH", orderTotal = 74000) {
   const calls: string[] = [];
+  const auditEntries: Record<string, unknown>[] = [];
   const refunds: {
     id: string;
     amount: Prisma.Decimal;
     reason: string;
     createdAt: Date;
     paymentId: string;
+    shiftId: string;
     idempotencyKey: string;
   }[] = [];
   const amount = new Prisma.Decimal(74000);
@@ -43,6 +45,7 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
     },
   };
   const tx = {
+    $executeRaw: async () => 1,
     $queryRaw: async () => {
       calls.push("lock");
       return 1;
@@ -60,6 +63,7 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
           reason: String(data.reason),
           createdAt: new Date(),
           paymentId: String(data.paymentId),
+          shiftId: String(data.shiftId),
           idempotencyKey: String(data.idempotencyKey),
         };
         refunds.push(refund);
@@ -123,7 +127,8 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
       createMany: async () => ({ count: 0 }),
     },
     auditLog: {
-      create: async () => {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        auditEntries.push(data);
         calls.push("audit");
         return {};
       },
@@ -136,11 +141,11 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
     $transaction: async <T>(callback: (client: typeof tx) => Promise<T>) =>
       callback(tx),
   } as unknown as PrismaService;
-  return { calls, service: new PaymentsService(prisma) };
+  return { calls, auditEntries, service: new PaymentsService(prisma) };
 }
 
 test("CASH refund writes one immutable reversal and queues its receipt", async () => {
-  const { calls, service } = fixture();
+  const { calls, auditEntries, service } = fixture();
   const result = await service.refundPayment(
     "payment-1",
     {
@@ -151,6 +156,7 @@ test("CASH refund writes one immutable reversal and queues its receipt", async (
     actor,
   );
 
+  assert.equal(auditEntries[0]?.tenantId, "tenant-a");
   assert.equal(result.id, "refund-1");
   assert.deepEqual(calls, [
     "lock",
@@ -164,6 +170,44 @@ test("CASH refund writes one immutable reversal and queues its receipt", async (
     "audit",
     "order:REFUNDED",
   ]);
+});
+
+test("refund retry replays the same request but rejects changed request data", async () => {
+  const { calls, service } = fixture();
+  const request = {
+    shiftId: "shift-1",
+    amount: 24000,
+    reason: "Bir mahsulot qaytdi",
+    idempotencyKey: "refund-idempotent-retry",
+  };
+  const first = await service.refundPayment("payment-1", request, actor);
+  const writeCount = calls.length;
+
+  const replay = await service.refundPayment("payment-1", request, actor);
+  assert.equal(replay.id, first.id);
+  assert.equal(calls.length, writeCount);
+
+  await assert.rejects(
+    service.refundPayment("payment-1", { ...request, amount: 25000 }, actor),
+    /different refund request/,
+  );
+  await assert.rejects(
+    service.refundPayment(
+      "payment-1",
+      { ...request, reason: "Boshqa sabab" },
+      actor,
+    ),
+    /different refund request/,
+  );
+  await assert.rejects(
+    service.refundPayment(
+      "payment-1",
+      { ...request, shiftId: "shift-2" },
+      actor,
+    ),
+    /different refund request/,
+  );
+  assert.equal(calls.length, writeCount);
 });
 
 test("partial cash refunds preserve a refundable balance and then close it exactly", async () => {

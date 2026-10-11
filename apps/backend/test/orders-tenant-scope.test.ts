@@ -196,3 +196,43 @@ test("forced status scopes the order lookup to the actor tenant", async () => {
   });
   assert.equal(unscopedReads, 0);
 });
+
+test("bulk-delete audit uses the resolved tenant for a legacy global owner", async () => {
+  const audits: Record<string, unknown>[] = [];
+  const transaction = {
+    order: {
+      findMany: async () => [{ id: "order-a" }],
+      deleteMany: async () => ({ count: 1 }),
+    },
+    payment: { findMany: async () => [] },
+    orderEvent: {
+      findMany: async () => [],
+      deleteMany: async () => ({ count: 0 }),
+    },
+    outboxEvent: { deleteMany: async () => ({ count: 0 }) },
+    revenueRecord: { updateMany: async () => ({ count: 0 }) },
+    cashTransferAllocation: { updateMany: async () => ({ count: 0 }) },
+    cashTransaction: { updateMany: async () => ({ count: 0 }) },
+    paymentOperation: { deleteMany: async () => ({ count: 0 }) },
+    auditLog: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        audits.push(data);
+        return {};
+      },
+    },
+  };
+  const service = createService({
+    ...activeTenant(),
+    order: {
+      findMany: async () => [
+        { id: "order-a", branchId: "branch-a", orderNumber: "A-1" },
+      ],
+    },
+    $transaction: async (callback: (tx: object) => Promise<unknown>) =>
+      callback(transaction),
+  });
+
+  await service.permanentlyDeleteOrders(["order-a"], owner);
+
+  assert.equal(audits[0]?.tenantId, "tenant-a");
+});

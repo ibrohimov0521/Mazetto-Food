@@ -7,6 +7,20 @@ const snapshot = {
   checkedAt: "2026-09-14T10:00:00.000Z",
   database: { status: "ok" },
   redis: { status: "ready" },
+  dependencies: {
+    geocoding: { status: "ready" },
+    media: { status: "ready" },
+  },
+  operations: {
+    deadPrintJobs: 0,
+    staleDevices: 0,
+    deviceStaleAfterMinutes: 5,
+  },
+  cors: {
+    source: "environment",
+    originCount: 2,
+    fingerprint: "qa-fingerprint",
+  },
   backup: {
     status: "verified",
     verifiedAt: "2026-09-14T09:00:00.000Z",
@@ -18,7 +32,7 @@ const snapshot = {
   },
 };
 
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ headless: true });
 try {
   for (const viewport of [
     { width: 1600, height: 900 },

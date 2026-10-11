@@ -26,7 +26,7 @@ export function LocaleSwitcher() {
       {(["uz", "ru"] as const).map((option) => (
         <button
           aria-pressed={locale === option}
-          className={`min-w-8 rounded-md px-1.5 py-1 text-[10px] font-black transition-colors ${locale === option ? "bg-[#F5CF00] text-[#07373A]" : "text-white/80 hover:bg-white/10"}`}
+          className={`min-w-9 rounded-md px-2 py-1 text-xs font-black transition-colors ${locale === option ? "bg-[#F5CF00] text-[#07373A]" : "text-white/80 hover:bg-white/10"}`}
           key={option}
           onClick={() => changeLocale(option)}
           type="button"

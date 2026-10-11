@@ -51,7 +51,7 @@ const viewports = [
   { width: 390, height: 844 },
 ];
 
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ headless: true });
 try {
   for (const role of roles) {
     for (const viewport of viewports) {

@@ -13,6 +13,31 @@ import type { ListPrintJobsDto } from "./dto/print-job.dto";
 import { queuePrintJobsForReceipt } from "./receipt-writer";
 import { writeAuditLog } from "../audit/audit-write";
 
+const AMBIGUOUS_RETRY_KEY = "__bestteamAllowAmbiguousRetry";
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasAmbiguousRetryFlag(payload: Prisma.JsonValue): boolean {
+  return isObject(payload) && payload[AMBIGUOUS_RETRY_KEY] === true;
+}
+
+function setAmbiguousRetryFlag(
+  payload: Prisma.JsonValue,
+  enabled: boolean,
+): Prisma.InputJsonValue {
+  if (!isObject(payload)) {
+    return enabled
+      ? { [AMBIGUOUS_RETRY_KEY]: true }
+      : (payload as unknown as Prisma.InputJsonValue);
+  }
+  const next = { ...payload };
+  if (enabled) next[AMBIGUOUS_RETRY_KEY] = true;
+  else delete next[AMBIGUOUS_RETRY_KEY];
+  return next as Prisma.InputJsonValue;
+}
+
 @Injectable()
 export class ReceiptsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -127,7 +152,7 @@ export class ReceiptsService {
         where: { id: { in: uniqueIds }, ...scope },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId,
         userId: user.id,
         action: "RECEIPTS_BULK_DELETED",
         entity: "Receipt",
@@ -320,8 +345,62 @@ export class ReceiptsService {
         ],
       },
       orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
+      include: {
+        attempts: {
+          orderBy: { startedAt: "desc" },
+          take: 1,
+          select: { leaseToken: true, outcome: true },
+        },
+      },
     });
     if (!job) return null;
+    const allowAmbiguousRetry = hasAmbiguousRetryFlag(job.payload);
+    const previousAttempt = job.attempts?.[0];
+    const previousAttemptMayHaveReachedPaper =
+      previousAttempt &&
+      ["CLAIMED", "DISPATCHING", "AMBIGUOUS"].includes(
+        previousAttempt.outcome,
+      );
+    if (
+      job.status === "PROCESSING" &&
+      !allowAmbiguousRetry &&
+      previousAttemptMayHaveReachedPaper
+    ) {
+      const error =
+        "Printer output may have started before the lease expired; inspect the paper before retrying.";
+      await this.prisma.$transaction(async (tx) => {
+        const deadLettered = await tx.printJob.updateMany({
+          where: {
+            id: job.id,
+            branchId: scopedBranchId,
+            status: "PROCESSING",
+            leaseToken: job.leaseToken,
+            leaseExpiresAt: { lte: now },
+          },
+          data: {
+            status: "DEAD_LETTER",
+            lastError: error,
+            nextAttemptAt: now,
+            leaseToken: null,
+            leaseExpiresAt: null,
+          },
+        });
+        if (deadLettered.count !== 1) return;
+        await tx.printAttempt.updateMany({
+          where: {
+            jobId: job.id,
+            leaseToken: previousAttempt.leaseToken,
+            outcome: previousAttempt.outcome,
+          },
+          data: {
+            outcome: "AMBIGUOUS",
+            error,
+            completedAt: now,
+          },
+        });
+      });
+      return null;
+    }
     const leaseToken = randomUUID();
     const claimed = await this.prisma.printJob.updateMany({
       where: {
@@ -332,11 +411,61 @@ export class ReceiptsService {
           ? { nextAttemptAt: { lte: now } }
           : { leaseExpiresAt: { lte: now } }),
       },
-      data: { status: "PROCESSING", leaseToken, leaseExpiresAt: new Date(now.getTime() + 120_000), attemptCount: { increment: 1 }, lastError: null },
+      data: {
+        status: "PROCESSING",
+        leaseToken,
+        leaseExpiresAt: new Date(now.getTime() + 120_000),
+        attemptCount: { increment: 1 },
+        lastError: null,
+        ...(allowAmbiguousRetry
+          ? { payload: setAmbiguousRetryFlag(job.payload, false) }
+          : {}),
+      },
     });
     if (claimed.count !== 1) return null;
     await this.prisma.printAttempt.create({ data: { jobId: job.id, agentId, leaseToken } });
-    return this.prisma.printJob.findUnique({ where: { id: job.id }, include: { receipt: true, printer: true } });
+    const claimedJob = await this.prisma.printJob.findUnique({
+      where: { id: job.id },
+      include: { receipt: true, printer: true },
+    });
+    return claimedJob && allowAmbiguousRetry
+      ? { ...claimedJob, allowAmbiguousRetry: true }
+      : claimedJob;
+  }
+
+  async markPrintJobDispatching(
+    id: string,
+    leaseToken: string,
+    user: AuthenticatedUser,
+  ) {
+    const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const job = await this.prisma.printJob.findFirst({
+      where: { id, branch: { tenantId } },
+    });
+    if (!job) throw new NotFoundException("Print job not found");
+    resolveBranchScope(user, job.branchId);
+
+    const updated = await this.prisma.printAttempt.updateMany({
+      where: {
+        jobId: id,
+        leaseToken,
+        outcome: "CLAIMED",
+        job: {
+          is: {
+            id,
+            branchId: job.branchId,
+            status: "PROCESSING",
+            leaseToken,
+            leaseExpiresAt: { gt: new Date() },
+          },
+        },
+      },
+      data: { outcome: "DISPATCHING" },
+    });
+    if (updated.count !== 1) {
+      throw new BadRequestException("Print lease is no longer valid");
+    }
+    return { id, outcome: "DISPATCHING" };
   }
 
   async completePrintJob(id: string, leaseToken: string, user: AuthenticatedUser) {
@@ -438,6 +567,13 @@ export class ReceiptsService {
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const job = await this.prisma.printJob.findFirst({
       where: { id, branch: { tenantId } },
+      include: {
+        attempts: {
+          orderBy: { startedAt: "desc" },
+          take: 1,
+          select: { outcome: true },
+        },
+      },
     });
     if (!job) throw new NotFoundException("Print job not found");
     resolveBranchScope(user, job.branchId);
@@ -478,6 +614,10 @@ export class ReceiptsService {
           lastError: null,
           printedAt: null,
           submittedAt: null,
+          payload: setAmbiguousRetryFlag(
+            job.payload,
+            job.attempts?.[0]?.outcome === "AMBIGUOUS",
+          ),
         },
       });
       if (retried.count !== 1) {
@@ -488,7 +628,7 @@ export class ReceiptsService {
         data: { printed: false, printedAt: null },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId,
         userId: user.id,
         action: "PRINT_JOB_RETRIED",
         entity: "PrintJob",

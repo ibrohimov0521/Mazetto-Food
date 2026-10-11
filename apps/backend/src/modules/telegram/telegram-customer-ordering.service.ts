@@ -255,6 +255,24 @@ export class TelegramCustomerOrderingService {
     const chatId = requiredTelegramId(message.chat?.id, "chat id");
     const customer = await this.findLinkedCustomer(message.from?.id);
 
+    if (text === "📦 Buyurtmalarim") {
+      if (customer) {
+        await this.orderHistory.sendOrders({ chatId }, customer);
+      } else {
+        await this.screen.sendLinkRequired({ chatId });
+      }
+      return true;
+    }
+
+    if (text === "👤 Profil") {
+      if (customer) {
+        await this.sendCustomerProfile({ chatId }, customer);
+      } else {
+        await this.screen.sendLinkRequired({ chatId });
+      }
+      return true;
+    }
+
     if (!customer) {
       return false;
     }

@@ -4,6 +4,11 @@ Date: 2026-08-29
 
 Starting HEAD: `9003b1458483394a72822dd66b15125642e323f1`
 
+> Historical snapshot only. The finding details and `Fixed: NO` rows below describe
+> the state observed on 2026-08-29; they are not a current backlog. Later fixes,
+> releases, and remaining acceptance gates are tracked in
+> [`MAZETTO_AUDIT_2026-10-10.md`](./MAZETTO_AUDIT_2026-10-10.md).
+
 Production baseline during the original audit was `d3ba37de2e458a473af73d543049f097ce2ebdb4`. Step 14 later deployed the approved local remediation chain through `568b6ac121e953cea6a06c108e9b3f43949849d8` after backup and preflight.
 
 ## Executive Summary
@@ -163,7 +168,7 @@ Recommended fix:
 
 Wrap number creation in bounded retries on unique-conflict errors. For shift numbers, use a branch-scoped counter or transaction-safe locking.
 
-Fixed: NO.
+Re-review (2026-10-11): POS checkout and normal order creation retry bounded unique conflicts; kitchen ticket creation retries collisions; shift numbering takes a branch-scoped transaction advisory lock; receipt IDs are allocated under a per-candidate lock. The blanket finding is stale and closed against current code/tests.
 
 ### AUD-006: Telegram category product listing is capped without pagination
 
@@ -226,7 +231,7 @@ Recommended fix:
 
 Scope websocket updates by relevant order/customer where possible, or filter event payloads before refetching.
 
-Fixed: NO.
+Re-review (2026-10-11): Event IDs are now extracted from top-level, nested order, and kitchen-ticket payloads. Existing orders refresh through the single-order endpoint; new orders and reconnect/focus recovery retain the full refresh. Regression tests cover payload matching. Fixed locally; pending release.
 
 ### AUD-018: Telegram checkout errors can be reported as phone-linking failures
 
@@ -354,7 +359,7 @@ Recommended fix:
 
 Before enabling recipe-based deduction in production, create branch warehouse readiness checks and a clear admin warning.
 
-Fixed: NO.
+Re-review (2026-10-11): Warehouse archival now checks nonzero stock and recipe-backed products in a transaction while locking the branch row. It refuses archiving the last active warehouse when recipes need inventory. Readiness regressions pass. Fixed locally; pending release.
 
 ### AUD-012: Customer tokens are stored in localStorage
 
@@ -374,7 +379,7 @@ Recommended fix:
 
 Move refresh-token persistence to secure, httpOnly, same-site cookies or a backend session flow.
 
-Fixed: NO.
+Fixed: YES. Access/refresh tokens are excluded from localStorage; refresh is cookie-backed. Regression coverage exists in `apps/customer-web/test/customer-session-storage.test.mjs`.
 
 ## P3 Findings
 
@@ -392,7 +397,7 @@ Production impact:
 
 Operator confusion.
 
-Fixed: NO.
+Re-review (2026-10-11): Updated the contradictory deployment notes. HTTP and websocket CORS use one exact-origin allowlist; credentials are enabled and wildcard origins are rejected. Fixed locally; pending release.
 
 ### AUD-014: Obsolete Telegram helper methods remain in auth service
 
@@ -408,7 +413,7 @@ Production impact:
 
 Future maintainers can accidentally reconnect stale behavior.
 
-Fixed: NO.
+Re-review (2026-10-11): Removed the duplicate category/history/profile handlers; the active customer ordering service owns those actions. Fixed locally; pending release.
 
 ### AUD-015: CRLF/LF warnings continue
 
@@ -443,7 +448,7 @@ Production impact:
 
 They should not be deployed as if they are active MAZETTO services.
 
-Fixed: NO.
+Re-review (2026-10-11): Both apps have operational code: print-agent polls/routes print jobs, and telegram-bot checks webhook/backend health and queue status. The placeholder classification was inaccurate and is closed after source review.
 
 ### AUD-017: Media host is hardcoded in Next image config
 
@@ -630,19 +635,30 @@ Whitespace result:
 | AUD-002 | P1 | Customer checkout/payment | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/dto/customer.dto.ts` | Click/Payme/Card visible without provider settlement | Payment expectation mismatch | Yes, deployed | `6a19124`, released `568b6ac` |
 | AUD-003 | P2 | Customer identity | `apps/backend/src/modules/customers/customers.service.ts` | Local phone formats can duplicate customers | Duplicate customer identity | Yes, deployed | `dd8a920`, released `568b6ac` |
 | AUD-004 | P2 | Idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Stale pending attempts block retry | Checkout retry friction | Yes, deployed | `dd8a920`, released `568b6ac` |
-| AUD-005 | P2 | Numbering | Backend order/kitchen/payment/shift services | No retry on unique number collision | Rare failed valid operations | No | n/a |
+| AUD-005 | P2 | Numbering | `apps/backend/src/modules/orders/orders.service.ts`; `apps/backend/src/modules/kitchen/kitchen.service.ts`; `apps/backend/src/modules/shifts/shifts.service.ts`; `apps/backend/src/modules/receipts/receipt-writer.ts` | Number collisions could fail valid creates | Rare failed valid operations | Yes, current safeguards verified | existing |
 | AUD-006 | P2 | Telegram menu | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Product list capped at 8 without pagination | Hidden products in Telegram | Yes, deployed | `568b6ac` |
 | AUD-007 | P2 | Telegram cart | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Identical Telegram items do not merge | Cart clutter and drift from web behavior | Yes, deployed | `568b6ac` |
-| AUD-008 | P2 | Customer web orders | `apps/customer-web/app/orders/page.tsx` | Order status events refetch all history | Scaling/performance noise | No | n/a |
+| AUD-008 | P2 | Customer web orders | `apps/customer-web/app/[locale]/orders/page.tsx`; `apps/customer-web/lib/use-order-updates.ts` | Realtime payload IDs were read from the wrong field and every event reloaded the full dashboard/history | Delayed status display and unnecessary requests | Yes, local only | pending |
 | AUD-009 | P2 | Media | `apps/media/nginx.conf`; media volume | Production volume had no image files | Direct media URLs 404 | Yes for approved assets, deployed | `568b6ac` |
 | AUD-010 | P2 | Deployment scripts | `apps/backend/package.json` | `prisma:migrate` uses `migrate dev` | Operator mistake risk | Yes, deployed | `568b6ac` |
-| AUD-011 | P2 | Inventory/order | `apps/backend/src/modules/orders/orders.service.ts` | Recipe deduction needs active warehouse | Future order failures when recipes enabled | No | n/a |
-| AUD-012 | P2 | Frontend auth | `apps/customer-web/lib/cart.tsx` | Tokens stored in localStorage | XSS token exposure risk | No | n/a |
-| AUD-013 | P3 | Docs | `docs/PRODUCTION_DEPLOYMENT.md` | CORS/WebSocket docs stale | Operator confusion | No | n/a |
-| AUD-014 | P3 | Telegram | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Old helper methods remain | Maintenance drift | No | n/a |
+| AUD-011 | P2 | Inventory/order | `apps/backend/src/modules/inventory/inventory.service.ts`; `apps/backend/src/modules/orders/orders.service.ts` | Last active warehouse could be archived despite recipe-backed products | Future order failures when recipes enabled | Yes, local only | pending |
+| AUD-012 | P2 | Frontend auth | `apps/customer-web/lib/cart.tsx` | Tokens stored in localStorage | XSS token exposure risk | Yes, HttpOnly refresh cookie and token-free local profile | `f320fd3` |
+| AUD-013 | P3 | Docs | `docs/PRODUCTION_DEPLOYMENT.md` | CORS/WebSocket instructions contradicted current source | Operator confusion | Yes, local only | pending |
+| AUD-014 | P3 | Telegram | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Old duplicate category/history/profile handlers remained | Maintenance drift and keyboard routing ambiguity | Yes, local only | pending |
 | AUD-015 | P3 | Git hygiene | repository | LF/CRLF warnings on Windows | Review noise | No | n/a |
-| AUD-016 | P3 | Placeholder apps | `apps/print-agent`; `apps/telegram-bot` | Placeholder services | Deployment confusion | No | n/a |
+| AUD-016 | P3 | Operations apps | `apps/print-agent`; `apps/telegram-bot` | Earlier report mislabeled these executable printer/monitoring agents as placeholders | Deployment confusion | Closed after source re-review | n/a |
 | AUD-017 | P3 | Media config | `apps/customer-web/next.config.ts` | Media remote host hardcoded | Future CDN change friction | No | n/a |
 | AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes, deployed | `73d7407` |
 | AUD-019 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Post-success cart reuse can collide with previous idempotency key | Valid next Telegram checkout can fail | Yes, deployed | `b875f54` |
 | AUD-020 | P2 | Staff Telegram | `apps/backend/src/modules/telegram/telegram-order-notification.service.ts` | Staff callbacks were status-based, not staff-chat scoped, and could skip lifecycle sequencing | Kitchen/order lifecycle drift and staff chat noise | Yes, local only | pending |
+
+## Audit Continuation (2026-10-11)
+
+- Inventory lifecycle review found that a global owner without an explicit tenant membership could write ingredient/warehouse audit rows with a null tenant even while the service had already resolved the sole active tenant. Those write paths now use the resolved tenant ID.
+- Archiving a branch's last active warehouse now locks the branch row, rechecks current state and nonzero stock inside the transaction, and refuses the archive when recipe-backed products still require a warehouse. Archiving remains available when there are no recipe-backed products or another active warehouse remains. Four targeted regressions cover the deny/allow cases and tenant audit scope.
+- Customer realtime status events use both bare `{id}`, nested `{order: {id}}`, and kitchen-ticket payload shapes. Detail subscriptions previously expected only top-level `orderId`, so ordinary backend events were ignored. The subscriber now extracts all supported shapes; order history updates fetch only the changed order when it is already listed, with full reload retained for new orders and reconnect/focus recovery. Payload matching tests cover all shapes.
+- Latest verification: backend tests 599/599 plus HTTP retry 3/3; customer-web 22/22; POS 58/58; Desktop 148/148; Telegram bot 5/5; print-agent 7/7. Total: 842 passed, zero failed. Backend app/scripts typecheck and build, customer/POS typechecks and production builds, repository ESLint, 33/33 operational validators, and `git diff --check` passed.
+- No commit, push, or production deployment was made. Physical printer checks, live NBU/SMS reconciliation, and live payment-provider settlement remain outside automated verification.
+- Re-reviewed older findings: order/POS number creation has bounded P2002 retries, kitchen tickets retry unique collisions, shift numbering is serialized by a branch advisory lock, and receipt IDs are allocated under an advisory lock; localStorage no longer stores customer auth tokens. Updated the outdated production CORS/WebSocket guide against `main.ts`, `cors.config.ts`, and `kitchen.gateway.ts`, and corrected the false placeholder-app finding.
+- The backend typecheck command now explicitly passes `--noEmit` for both application and scripts/tests. Validation produced 438 untracked transpiled `.js` sidecars across backend and frontend; verified each had a matching `.ts` source and was created during this audit, removed only those sidecars, reran typechecks, and confirmed no untracked JS output remained.
+- Two operations validators had drifted: realtime auth still expected the old full-list `load` callback, and the Telegram service ceiling was 8 lines below the current service. The realtime check now verifies the targeted `refreshOrder` callback and nested IDs; the Telegram ceiling is 1,400 with its current 1,358-line baseline documented. The complete validator suite passes 33/33.

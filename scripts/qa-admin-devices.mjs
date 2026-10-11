@@ -32,7 +32,7 @@ const devices = [
   },
 ];
 
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ headless: true });
 try {
   for (const viewport of [
     { width: 1600, height: 900 },

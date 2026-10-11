@@ -38,7 +38,7 @@ const catalog = {
 };
 
 await mkdir(outputDir, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ headless: true });
 try {
   for (const viewport of [
     { width: 1600, height: 900 },
@@ -139,23 +139,23 @@ try {
       await page.getByRole("button", { name: "Menyuni yig'ish" }).click();
       assert.equal(
         await page
-          .getByRole("complementary", { name: "Ish joylari menyusi" })
+          .locator("#staff-sidebar")
           .isVisible(),
         false,
       );
       await page.getByRole("button", { name: "Menyuni kengaytirish" }).click();
       assert.equal(
         await page
-          .getByRole("complementary", { name: "Ish joylari menyusi" })
+          .locator("#staff-sidebar")
           .isVisible(),
         true,
       );
     }
     if (viewport.width === 320) {
       await page.getByRole("button", { name: "Menyuni ochish" }).click();
-      await page.locator("#staff-panel-menu").waitFor();
+      await page.locator("#staff-sidebar").waitFor();
       await page
-        .locator("#staff-panel-menu")
+        .locator("#staff-sidebar")
         .getByRole("button", { name: "Menyuni yopish" })
         .click();
     }
@@ -165,7 +165,7 @@ try {
     });
     if (viewport.width < 768) {
       await page.getByRole("button", { name: "To'lov" }).click();
-      await page.getByRole("dialog", { name: "To'lov va buyurtma" }).waitFor();
+      await page.getByRole("dialog", { name: "Zal buyurtmasi" }).waitFor();
       await page.screenshot({
         path: path.join(outputDir, `pos-checkout-${viewport.width}.png`),
         fullPage: false,

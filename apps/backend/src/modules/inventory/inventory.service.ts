@@ -104,7 +104,7 @@ export class InventoryService {
     dto: UpdateIngredientDto,
     user: AuthenticatedUser,
   ) {
-    await this.assertSingleTenantCatalog();
+    const tenantId = await this.assertSingleTenantCatalog();
     const ingredient = await this.prisma.ingredient.findUnique({ where: { id } });
     if (!ingredient?.isActive) throw new NotFoundException("Active ingredient not found");
     return this.prisma.$transaction(async (tx) => {
@@ -121,7 +121,7 @@ export class InventoryService {
         },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId,
         userId: user.id,
         action: "INGREDIENT_UPDATED",
         entity: "Ingredient",
@@ -132,7 +132,7 @@ export class InventoryService {
   }
 
   async archiveIngredient(id: string, user: AuthenticatedUser) {
-    await this.assertSingleTenantCatalog();
+    const tenantId = await this.assertSingleTenantCatalog();
     const ingredient = await this.prisma.ingredient.findUnique({
       where: { id },
       include: { _count: { select: { recipeItems: true } } },
@@ -147,7 +147,7 @@ export class InventoryService {
         data: { isActive: false },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId,
         userId: user.id,
         action: "INGREDIENT_ARCHIVED",
         entity: "Ingredient",
@@ -158,7 +158,7 @@ export class InventoryService {
   }
 
   async permanentlyDeleteIngredients(ids: string[], user: AuthenticatedUser) {
-    await this.assertSingleTenantCatalog();
+    const tenantId = await this.assertSingleTenantCatalog();
     const uniqueIds = [...new Set(ids.filter(Boolean))];
     if (!uniqueIds.length) throw new BadRequestException("Ingredient IDs are required");
     const rows = await this.prisma.ingredient.findMany({
@@ -172,7 +172,7 @@ export class InventoryService {
       await tx.ingredient.deleteMany({ where: { id: { in: uniqueIds } } });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, {
-          tenantId: user.tenantId ?? null,
+          tenantId,
           userId: user.id, action: "INGREDIENT_DELETED", entity: "Ingredient", entityId: id });
       }
     });
@@ -191,7 +191,7 @@ export class InventoryService {
         data: { name: dto.name.trim() },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId: warehouse.tenantId,
         userId: user.id,
         action: "WAREHOUSE_UPDATED",
         entity: "Warehouse",
@@ -204,19 +204,55 @@ export class InventoryService {
 
   async archiveWarehouse(id: string, user: AuthenticatedUser) {
     const warehouse = await this.requireActiveWarehouse(id, user);
-    const nonZeroStock = await this.prisma.stock.count({
-      where: { warehouseId: id, quantity: { not: 0 } },
-    });
-    if (nonZeroStock > 0) {
-      throw new BadRequestException("Warehouse has stock; transfer or zero it before archive");
-    }
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "branches" WHERE id = ${warehouse.branchId} FOR UPDATE`;
+
+      const currentWarehouse = await tx.warehouse.findFirst({
+        where: { id, branchId: warehouse.branchId, isActive: true },
+        select: { id: true },
+      });
+      if (!currentWarehouse) {
+        throw new NotFoundException("Active warehouse not found");
+      }
+
+      const [nonZeroStock, activeWarehouseCount, recipeVariantCount] =
+        await Promise.all([
+          tx.stock.count({ where: { warehouseId: id, quantity: { not: 0 } } }),
+          tx.warehouse.count({
+            where: { branchId: warehouse.branchId, isActive: true },
+          }),
+          tx.recipe.count({
+            where: {
+              items: { some: {} },
+              variant: {
+                product: {
+                  OR: [
+                    { branchId: warehouse.branchId },
+                    { branchId: null },
+                  ],
+                },
+              },
+            },
+          }),
+        ]);
+
+      if (nonZeroStock > 0) {
+        throw new BadRequestException(
+          "Warehouse has stock; transfer or zero it before archive",
+        );
+      }
+      if (activeWarehouseCount <= 1 && recipeVariantCount > 0) {
+        throw new BadRequestException(
+          "Retseptli mahsulotlar uchun kamida bitta faol ombor kerak",
+        );
+      }
+
       const archived = await tx.warehouse.update({
         where: { id },
         data: { isActive: false },
       });
       await writeAuditLog(tx, {
-        tenantId: user.tenantId ?? null,
+        tenantId: warehouse.tenantId,
         userId: user.id,
         action: "WAREHOUSE_ARCHIVED",
         entity: "Warehouse",
@@ -249,7 +285,7 @@ export class InventoryService {
       });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, {
-          tenantId: user.tenantId ?? null,
+          tenantId,
           userId: user.id, action: "WAREHOUSE_DELETED", entity: "Warehouse", entityId: id });
       }
     });
@@ -610,6 +646,6 @@ export class InventoryService {
     });
     if (!warehouse) throw new NotFoundException("Active warehouse not found");
     resolveBranchScope(user, warehouse.branchId);
-    return warehouse;
+    return { ...warehouse, tenantId };
   }
 }

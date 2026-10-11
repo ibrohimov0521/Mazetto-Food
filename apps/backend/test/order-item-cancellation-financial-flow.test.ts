@@ -22,12 +22,14 @@ const actor: AuthenticatedUser = {
   permissions: ["ORDER_UPDATE", "PAYMENT_REFUND"],
 };
 
-function createHarness(options: {
-  paymentCode?: string;
-  paymentAmount?: number;
-  previousRefundAmount?: number;
-  shiftOpen?: boolean;
-} = {}) {
+function createHarness(
+  options: {
+    paymentCode?: string;
+    paymentAmount?: number;
+    previousRefundAmount?: number;
+    shiftOpen?: boolean;
+  } = {},
+) {
   const events: Record<string, unknown>[] = [];
   const refunds: Record<string, unknown>[] = [];
   const revenues: Record<string, unknown>[] = [];
@@ -94,6 +96,12 @@ function createHarness(options: {
     items: [item, remainingItem],
   };
   const tx = {
+    restaurantTenant: { findFirst: async () => ({ id: "tenant-1" }) },
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-1" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    $executeRaw: async () => 1,
     $queryRaw: async (strings: TemplateStringsArray) =>
       strings.join("").includes('UPDATE "branches"')
         ? [{ branchRevision: 1n }]
@@ -109,10 +117,9 @@ function createHarness(options: {
       }),
     },
     order: {
-      findUnique: async (args: {
-        select?: Record<string, boolean>;
-      }) => {
-        if (args.select?.shiftId) return { id: order.id, shiftId: order.shiftId };
+      findUnique: async (args: { select?: Record<string, boolean> }) => {
+        if (args.select?.shiftId)
+          return { id: order.id, shiftId: order.shiftId };
         if (args.select?.discountTotal) {
           return {
             discountTotal: order.discountTotal,
@@ -212,7 +219,10 @@ function createHarness(options: {
   };
   const prisma = {
     restaurantTenant: { findFirst: async () => ({ id: "tenant-1" }) },
-    branch: { findFirst: async () => ({ id: "branch-1" }) },
+    branch: {
+      findFirst: async () => ({ id: "branch-1" }),
+      findUnique: async () => ({ tenantId: "tenant-1" }),
+    },
     $transaction: async <T>(callback: (client: typeof tx) => Promise<T>) =>
       callback(tx),
   };
@@ -331,7 +341,10 @@ test("exactly paid remaining balance stays paid after item cancellation", async 
 
 test("item cancellation refuses non-cash refunds and closed shifts before mutating the item", async () => {
   const nonCash = createHarness({ paymentCode: "CLICK" });
-  await assert.rejects(cancelItem(nonCash.service), /Naqd to'lovlardan qaytarish/);
+  await assert.rejects(
+    cancelItem(nonCash.service),
+    /Naqd to'lovlardan qaytarish/,
+  );
   assert.equal(nonCash.item.status, OrderItemStatus.ACTIVE);
   assert.equal(nonCash.refunds.length, 0);
   assert.equal(nonCash.cashTransactions.length, 0);
