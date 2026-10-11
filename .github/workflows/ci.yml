@@ -82,6 +82,7 @@ jobs:
     # umuman yurmasa, majburiy check hech qachon kelmaydi va PR bloklanadi.
     needs: windows-desktop-package
     name: verify
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -107,6 +108,9 @@ jobs:
       TURBO_TELEMETRY_DISABLED: "1"
 
     steps:
+      - name: Require Windows desktop package
+        if: needs.windows-desktop-package.result != 'success'
+        run: exit 1
       - name: Checkout
         uses: actions/checkout@v7
 
