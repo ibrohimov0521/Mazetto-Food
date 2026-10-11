@@ -28,15 +28,22 @@ function createService(
     fail: async () => undefined,
   },
 ): TablesService {
+  const database: Record<string, unknown> = {
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    branch: {
+      findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    $queryRawUnsafe: async () => [{ id: "table-1" }],
+    ...prisma,
+  };
+  if (typeof database.$transaction !== "function") {
+    database.$transaction = async (
+      callback: (client: Record<string, unknown>) => unknown,
+    ) => callback(database);
+  }
   return new TablesService(
-    {
-      restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
-      branch: {
-        findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
-        findFirst: async () => ({ id: "branch-1" }),
-      },
-      ...prisma,
-    } as never,
+    database as never,
     { emitOrderCreated: () => undefined } as never,
     idempotency as never,
   );
@@ -127,7 +134,7 @@ test("stol yaratilganda zal, filial va ko'rsatilgan tartib saqlanadi", async () 
   assert.ok(createdData);
   assert.equal(createdData.branchId, "branch-1");
   assert.equal(createdData.hallId, "hall-1");
-  assert.match(String(createdData.code), /^T2-/);
+  assert.match(String(createdData.code), /^T2-[A-F0-9]{12}$/);
   assert.equal(createdData.number, 2);
   assert.equal(createdData.name, "Stol 2");
   assert.equal(createdData.capacity, 6);
@@ -177,6 +184,62 @@ test("bo'sh zal permanent o'chiriladi", async () => {
     branchId: "branch-1",
   });
   assert.deepEqual(result, { deleted: true, count: 1, ids: ["hall-1"] });
+});
+
+test("stolni butunlay o'chirishda order tarixi tekshirilishidan oldin row lock olinadi", async () => {
+  const calls: string[] = [];
+  const service = createService({
+    $queryRawUnsafe: async (query: string) => {
+      assert.match(query, /restaurant_tables.*FOR UPDATE/);
+      calls.push("lock");
+      return [{ id: "table-1" }];
+    },
+    restaurantTable: {
+      findMany: async (args: { select: Record<string, unknown> }) => {
+        if (args.select._count) {
+          calls.push("history");
+          return [
+            { id: "table-1", branchId: "branch-1", _count: { orders: 0 } },
+          ];
+        }
+        calls.push("candidate");
+        return [{ id: "table-1", branchId: "branch-1" }];
+      },
+      deleteMany: async () => {
+        calls.push("delete");
+      },
+    },
+  });
+
+  await service.permanentlyDeleteTables(["table-1"], branchManager);
+  assert.deepEqual(calls, ["candidate", "lock", "history", "delete"]);
+});
+
+test("bo'sh zalni o'chirish stol yaratilishini serializatsiya qiladi", async () => {
+  const calls: string[] = [];
+  const service = createService({
+    $queryRawUnsafe: async (query: string) => {
+      assert.match(query, /FROM "halls".*FOR UPDATE/);
+      calls.push("lock");
+      return [{ id: "hall-1" }];
+    },
+    hall: {
+      findMany: async (args: { select: Record<string, unknown> }) => {
+        if (args.select._count) {
+          calls.push("table-count");
+          return [{ id: "hall-1", _count: { tables: 0 } }];
+        }
+        calls.push("candidate");
+        return [{ id: "hall-1", branchId: "branch-1" }];
+      },
+      deleteMany: async () => {
+        calls.push("delete");
+      },
+    },
+  });
+
+  await service.permanentlyDeleteHalls(["hall-1"], branchManager);
+  assert.deepEqual(calls, ["candidate", "lock", "table-count", "delete"]);
 });
 
 test("ochiq buyurtmali stol arxivlanmaydi", async () => {
@@ -299,10 +362,14 @@ function createMemoryIdempotency() {
   };
 }
 
-function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
+function tableOrderFixture(
+  existingOrders: { id: string; status: string }[],
+  statusAfterLock = "OCCUPIED",
+) {
   let createdData: Record<string, unknown> | undefined;
   let createdOrder: Record<string, unknown> | null = null;
   let createCount = 0;
+  let tableReadCount = 0;
   const writes: string[] = [];
   const idempotency = createMemoryIdempotency();
   const tx = {
@@ -315,12 +382,15 @@ function tableOrderFixture(existingOrders: { id: string; status: string }[]) {
     $queryRaw: async () => [{ sequence: 100 }],
     employee: { findFirst: async () => ({ id: "waiter-1" }) },
     restaurantTable: {
-      findFirst: async () => ({
-        id: "table-1",
-        branchId: "branch-1",
-        isActive: true,
-        status: "OCCUPIED",
-      }),
+      findFirst: async () => {
+        tableReadCount += 1;
+        return {
+          id: "table-1",
+          branchId: "branch-1",
+          isActive: true,
+          status: tableReadCount === 1 ? "AVAILABLE" : statusAfterLock,
+        };
+      },
       update: async () => undefined,
     },
     order: {
@@ -439,6 +509,84 @@ test("idempotency kaliti boshqa mazmundagi buyurtmaga qayta ishlatilmaydi", asyn
     ConflictException,
   );
   assert.equal(fixture.getCreateCount(), 1);
+});
+
+test("stolning bron holati qulfdan keyin qayta tekshiriladi", async () => {
+  const fixture = tableOrderFixture([], "RESERVED");
+
+  await assert.rejects(
+    () =>
+      fixture.service.createOrderForTable(
+        "table-1",
+        { type: "DINE_IN" },
+        waiter,
+      ),
+    /not available for a new order/,
+  );
+  assert.equal(fixture.getCreateCount(), 0);
+});
+
+test("faol buyurtma paydo bo'lgach stolni band bo'lmagan holatga o'tkazib bo'lmaydi", async () => {
+  let locked = false;
+  let updated = false;
+  const service = createService({
+    $queryRawUnsafe: async () => {
+      locked = true;
+      return [{ id: "table-1" }];
+    },
+    restaurantTable: {
+      findFirst: async () => ({ id: "table-1", branchId: "branch-1" }),
+      update: async () => {
+        updated = true;
+      },
+    },
+    order: {
+      findFirst: async () => {
+        assert.equal(locked, true);
+        return { id: "active-order" };
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.updateStatus("table-1", { status: "AVAILABLE" }, branchManager),
+    /faqat Band/,
+  );
+  assert.equal(updated, false);
+});
+
+test("faol buyurtma bilan stolni arxivlash lock ichida qayta tekshiriladi", async () => {
+  let locked = false;
+  let updated = false;
+  const service = createService({
+    $queryRawUnsafe: async () => {
+      locked = true;
+      return [{ id: "table-1" }];
+    },
+    restaurantTable: {
+      findFirst: async () => ({
+        id: "table-1",
+        branchId: "branch-1",
+        hallId: "hall-1",
+      }),
+      update: async () => {
+        updated = true;
+      },
+    },
+    order: {
+      findFirst: async () => {
+        assert.equal(locked, true);
+        return { id: "active-order" };
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => service.updateTable("table-1", { isActive: false }, branchManager),
+    /active order cannot be archived/,
+  );
+  assert.equal(updated, false);
 });
 
 test("stolda yangi draft turganda ikkinchi qo'shimcha order ochilmaydi", async () => {

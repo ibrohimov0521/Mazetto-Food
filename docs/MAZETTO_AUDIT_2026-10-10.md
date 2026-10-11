@@ -599,3 +599,16 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Re-reviewed offline request fingerprinting, employee/branch binding, duplicate payment retry, and per-printer replay/ambiguous-print handling. No further source defect was found in these focused paths.
 - This verifies the current source branch, not production. Production was not deployed, no push was made, and the existing production smoke result is only a read-only baseline. Remaining acceptance gates are Windows safeStorage/login prompt, real printer paper output, restaurant workstation offline/reconnect behavior, Telegram credential-authorized status, and NBU settlement reconciliation.
 - Fresh production baseline: the production tag and main both point to 9d9c3b7; read-only production smoke passed 27/27 at 2026-10-11 10:47 UTC. These checks exercise the deployed baseline, not uncommitted source changes. Before any release, create a new verified database backup; the current evidence file is from 09:01 UTC.
+
+## Audit continuation: table and hall concurrency (2026-10-11)
+
+- A focused race review found hall/table checks happening before concurrent writes could commit. A table could become occupied after a status check, a table order could use a stale pre-lock status, or hall/table deletion could race with new table/order creation.
+- Hall and table row locks now serialize create, archive, status changes, permanent deletes, table-order creation, and the release-after-close check; checks are repeated after locking through tenant/branch-scoped queries. New table codes use a random 48-bit suffix rather than a millisecond timestamp to avoid same-number collisions across halls.
+- Regression coverage verifies lock order, stale state rechecks, guarded archive/status changes, and stable random-code format. Full workspace tests passed (876 total), typecheck/lint/build passed across all 8 packages, and 33/33 operations validators passed.
+- Browser QA passed POS layout with 73 products at 320/1024/1530 px; staff workspaces and role navigation at 320/390/768/1024/1440 px; kitchen/courier/POS/shift flows; and 205-order shift report print/offline scenarios. No production state was changed; no push or deploy was made.
+
+## Audit continuation: narrow-screen kitchen ticket layout (2026-10-11)
+
+- Browser inspection showed that mobile/tablet kitchen tickets occupied only half the selected status lane, leaving a large blank area and forcing product names to wrap unnecessarily. The ticket lanes now use one full-width column through 1199 px.
+- Added an E2E width assertion for the ticket card. Staff browser QA passed at 320/390/768/1024/1440 px; visually inspected the 320 px kitchen order with all items, note, timer, and actions visible. POS build and 58 POS tests passed; workspace verification remained green.
+- No production service was changed, and no push or deployment was made.

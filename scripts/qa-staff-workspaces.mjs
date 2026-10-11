@@ -461,12 +461,25 @@ try {
     ]) {
       await visit(page, path);
       assert.equal(
-        await page
-          .getByRole("heading", { name: title, level: 2 })
-          .count(),
+        await page.getByRole("heading", { name: title, level: 2 }).count(),
         1,
         `${path}: expected one page heading named ${title}`,
       );
+      if (path === "/kitchen" && width < 1200) {
+        const widths = await page
+          .getByRole("article")
+          .first()
+          .evaluate((ticket) => ({
+            lane:
+              ticket.parentElement?.parentElement?.getBoundingClientRect()
+                .width ?? 0,
+            ticket: ticket.getBoundingClientRect().width,
+          }));
+        assert.ok(
+          widths.ticket >= widths.lane - 2,
+          `kitchen ticket should use the full narrow-screen lane: ${JSON.stringify(widths)}`,
+        );
+      }
       const panelNavigation = page.getByRole("navigation", {
         name: "Ruxsat berilgan panellar",
       });

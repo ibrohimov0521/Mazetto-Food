@@ -32,7 +32,11 @@ test("hall, table, and permanent-delete queries are tenant filtered", async () =
         return [];
       },
     },
-  };
+  } as Record<string, unknown>;
+  tenant.$queryRawUnsafe = async () => [{ id: "hall-a" }];
+  tenant.$transaction = async (
+    callback: (client: Record<string, unknown>) => unknown,
+  ) => callback(tenant);
   const service = new TablesService(tenant as never, {} as never, {} as never);
 
   await service.listHalls(undefined, owner);
