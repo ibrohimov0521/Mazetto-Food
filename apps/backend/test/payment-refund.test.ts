@@ -17,6 +17,7 @@ const actor: AuthenticatedUser = {
 function fixture(methodCode = "CASH", orderTotal = 74000) {
   const calls: string[] = [];
   const auditEntries: Record<string, unknown>[] = [];
+  let employeeIsActive = true;
   const refunds: {
     id: string;
     amount: Prisma.Decimal;
@@ -84,6 +85,10 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
       },
       findMany: async () => [payment],
     },
+    employee: {
+      findFirst: async () =>
+        employeeIsActive ? { id: "employee-1" } : null,
+    },
     shift: {
       findFirst: async () => ({ id: "shift-1", employeeId: "employee-1" }),
       updateMany: async () => ({ count: 1 }),
@@ -141,7 +146,14 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
     $transaction: async <T>(callback: (client: typeof tx) => Promise<T>) =>
       callback(tx),
   } as unknown as PrismaService;
-  return { calls, auditEntries, service: new PaymentsService(prisma) };
+  return {
+    calls,
+    auditEntries,
+    service: new PaymentsService(prisma),
+    setEmployeeActive: (active: boolean) => {
+      employeeIsActive = active;
+    },
+  };
 }
 
 test("CASH refund writes one immutable reversal and queues its receipt", async () => {
@@ -208,6 +220,33 @@ test("refund retry replays the same request but rejects changed request data", a
     /different refund request/,
   );
   assert.equal(calls.length, writeCount);
+});
+
+test("inactive employees cannot create or replay a cash refund", async () => {
+  const { calls, service, setEmployeeActive } = fixture();
+  const request = {
+    shiftId: "shift-1",
+    reason: "Mijoz qaytardi",
+    idempotencyKey: "refund-inactive-employee",
+  };
+
+  setEmployeeActive(false);
+  await assert.rejects(
+    service.refundPayment("payment-1", request, actor),
+    /Employee is not active in this branch/,
+  );
+  assert.equal(calls.includes("refund"), false);
+
+  setEmployeeActive(true);
+  await service.refundPayment("payment-1", request, actor);
+  const completedWrites = calls.length;
+
+  setEmployeeActive(false);
+  await assert.rejects(
+    service.refundPayment("payment-1", request, actor),
+    /Employee is not active in this branch/,
+  );
+  assert.equal(calls.length, completedWrites);
 });
 
 test("partial cash refunds preserve a refundable balance and then close it exactly", async () => {

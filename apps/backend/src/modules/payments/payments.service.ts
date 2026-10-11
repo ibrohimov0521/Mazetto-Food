@@ -574,6 +574,7 @@ export class PaymentsService {
         "Authenticated user is not linked to an employee",
       );
     }
+    const employeeId = user.employeeId;
     const reason = dto.reason.trim();
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     return this.prisma.$transaction(
@@ -584,6 +585,11 @@ export class PaymentsService {
         });
         if (!scopedPayment) throw new NotFoundException("Payment not found");
         resolveBranchScope(user, scopedPayment.order.branchId);
+        await this.assertEmployeeInBranch(
+          tx,
+          employeeId,
+          scopedPayment.order.branchId,
+        );
 
         const replay = await tx.paymentRefund.findUnique({
           where: { idempotencyKey: dto.idempotencyKey },

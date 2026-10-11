@@ -627,3 +627,10 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - The isolated PostgreSQL run applied all 59 migrations and seed successfully, then exposed that the staff RBAC database validator logged in without a registered host. Production authentication correctly rejected that request; this was a stale test fixture, not an application defect.
 - The validator now creates a synthetic verified hostname in its isolated database and supplies it to every login attempt. The database-backed RBAC smoke passed end to end, including role/permission checks, password reset, blocking/reactivation, and last-SUPER_ADMIN protection.
 - The disposable PostgreSQL container was removed automatically after the run. No shared staging or production database was used or changed.
+
+## Audit continuation: refund employee status enforcement (2026-10-11)
+
+- A cross-check of payment and refund authorization found that new payments and payment replays verify the cashier is still an active employee in the order branch, while cash refunds only checked that the session contained an employee ID. A stale or otherwise inactive employee session could therefore reach the refund transaction.
+- Cash refund creation and idempotent replay now perform the same active-employee/branch check before reading a prior refund result or writing a new refund. Regression coverage verifies inactive employees are rejected both before the first refund and when replaying a completed refund, without extra ledger writes.
+- Verification passed: `pnpm verify` and `pnpm test` completed successfully across all eight workspace packages, including 33 operational validators; backend tests passed 627/627 plus HTTP retry tests 3/3. The focused ESLint, backend application/scripts typechecks, and Nest production build also passed. The read-only production smoke separately passed 27/27 against the currently deployed baseline, which does not include this source change.
+- This source-only continuation has not been pushed, merged, or deployed. No production service or database has been changed.
