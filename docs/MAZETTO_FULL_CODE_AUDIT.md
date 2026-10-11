@@ -684,3 +684,9 @@ Whitespace result:
 - Ushbu tuzatishdan keyin qayta tekshiruv: workspace typecheck/lint 14/14, build 7/7, validator 33/33 va barcha workspace/root testlar muvaffaqiyatli. O'zgarishlar hali push/deploy qilinmagan.
 - Follow-up audit found that checkout retry cleanup still used the former two-minute creation-age threshold, overriding the configured TTL. Stale detection now uses only the persisted expiry; a regression test proves old-but-unexpired attempts remain valid.
 - Follow-up audit found that the shift-close print warning used panel-wide cache presence instead of the exact shift-order response and user scope. It now marks the report stale only when that report page came from cache; focused tests pass, and workspace verification/tests pass after both fixes.
+
+## Audit continuation: checkout integration fixture and full release acceptance (2026-10-11)
+
+- PR #296 commit `367bea0` passed the Windows desktop package, while CI verify found the DB-backed stale-checkout fixture had an old `createdAt` but a future `expiresAt`. The fixture now uses an expired `expiresAt`; the production TTL behavior was correct and unchanged.
+- After the fixture correction, full `pnpm release:acceptance` passed, including typecheck/lint/build, backend and Desktop tests, 33 operational validators, media validation, 59 PostgreSQL migrations, seed, and database-backed order-to-cash-to-stock-to-print E2E.
+- The E2E used a temporary PostgreSQL 18 container without a volume; it was stopped and removed. No production database or service was touched. The fixture correction and audit note await the next grouped PR push.
