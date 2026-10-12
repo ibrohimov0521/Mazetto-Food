@@ -848,7 +848,7 @@ export function CourierOrdersPage() {
               {error}
             </div>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={!!busyOrderId}

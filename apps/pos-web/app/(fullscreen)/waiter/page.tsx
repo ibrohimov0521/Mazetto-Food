@@ -1084,7 +1084,7 @@ function WaiterFloor() {
               {actionError}
             </p>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={busy}
@@ -1145,7 +1145,7 @@ function WaiterFloor() {
               {actionError}
             </p>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={busy}
@@ -1157,6 +1157,7 @@ function WaiterFloor() {
             <button
               className={styles.primary}
               disabled={busy || !canSendToKitchen(currentOrder)}
+              data-keyboard-primary
               onClick={() => void changeOrderStatus("kitchen")}
               type="button"
             >
@@ -1187,7 +1188,7 @@ function WaiterFloor() {
               {actionError}
             </p>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={busy}
@@ -1199,6 +1200,7 @@ function WaiterFloor() {
             <button
               className={styles.secondary}
               disabled={busy || !canRequestPayment(currentOrder)}
+              data-keyboard-primary
               onClick={() => void changeOrderStatus("payment")}
               type="button"
             >

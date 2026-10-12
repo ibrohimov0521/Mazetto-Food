@@ -153,3 +153,51 @@ test("production startup migrates the print queue and restores old unprinted rec
     /if \(!existingJob\) await queuePrintJobsForReceipt\(tx, receipt\)/,
   );
 });
+test("receipt queues retain jobs for active offline printers too", async () => {
+  const jobs: { printerId: string | null }[] = [];
+  let printerFilter: Record<string, unknown> | undefined;
+  const printers = [
+    {
+      id: "front-online",
+      type: "THERMAL",
+      status: "ONLINE",
+      isActive: true,
+      metadata: { printRoles: ["RECEIPT"] },
+    },
+    {
+      id: "front-offline",
+      type: "THERMAL",
+      status: "OFFLINE",
+      isActive: true,
+      metadata: { printRoles: ["RECEIPT"] },
+    },
+  ];
+  const tx = {
+    printer: {
+      findMany: async (args: { where: Record<string, unknown> }) => {
+        printerFilter = args.where;
+        return printers;
+      },
+    },
+    printJob: {
+      create: async ({ data }: { data: { printerId: string | null } }) =>
+        jobs.push(data),
+      createMany: async ({
+        data,
+      }: {
+        data: { printerId: string | null }[];
+      }) => jobs.push(...data),
+    },
+  };
+  await queuePrintJobsForReceipt(tx as never, {
+    id: "multi-printer-receipt",
+    branchId: "branch-1",
+    content: { documentType: "RECEIPT" },
+  });
+
+  assert.deepEqual(printerFilter, { branchId: "branch-1", isActive: true });
+  assert.deepEqual(
+    jobs.map((job) => job.printerId).sort(),
+    ["front-offline", "front-online"],
+  );
+});

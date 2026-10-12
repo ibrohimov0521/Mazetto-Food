@@ -379,6 +379,7 @@ export class CashRegisterService {
       where: { employeeId, branch: { tenantId } },
       select: {
         id: true,
+        branchId: true,
         shiftNumber: true,
         status: true,
         openedAt: true,
@@ -399,9 +400,41 @@ export class CashRegisterService {
       this.prisma,
       shifts.map((shift) => shift.id),
     );
+    const openShifts = shifts.filter(
+      (shift) => shift.status === ShiftStatus.OPEN,
+    );
+    const cashTransactionTotals = openShifts.length
+      ? await this.prisma.cashTransaction.groupBy({
+          by: ["shiftId", "type"],
+          where: {
+            OR: openShifts.map((shift) => ({
+              shiftId: shift.id,
+              branchId: shift.branchId,
+            })),
+          },
+          _sum: { amount: true },
+          _count: { _all: true },
+        })
+      : [];
+    const totalsByShift = new Map<string, typeof cashTransactionTotals>();
+    for (const total of cashTransactionTotals) {
+      const totals = totalsByShift.get(total.shiftId) ?? [];
+      totals.push(total);
+      totalsByShift.set(total.shiftId, totals);
+    }
+
     return shifts.map((shift) => ({
       ...shift,
       orderCount: orderCounts.get(shift.id) ?? 0,
+      currentCash:
+        shift.status === ShiftStatus.OPEN
+          ? this.calculateShiftSummary(
+              shift.openingBalance,
+              totalsByShift.get(shift.id) ?? [],
+              null,
+              orderCounts.get(shift.id) ?? 0,
+            ).currentBalance
+          : null,
     }));
   }
 
@@ -629,9 +662,7 @@ export class CashRegisterService {
   ): void {
     if (
       shiftEmployeeId === user.employeeId ||
-      user.roles.some((role) =>
-        ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role),
-      )
+      hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH)
     ) {
       return;
     }

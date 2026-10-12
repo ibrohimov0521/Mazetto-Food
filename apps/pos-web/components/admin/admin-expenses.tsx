@@ -6,6 +6,11 @@ import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission } from "../../lib/auth";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
+import {
+  tashkentCalendarDate,
+  tashkentDateEndUtc,
+  tashkentDateStartUtc,
+} from "../../lib/tashkent-date-range.mjs";
 import { useAuth } from "../auth/auth-provider";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
@@ -90,7 +95,7 @@ type ExpenseErrors = Partial<Record<keyof ExpenseForm, string>>;
 const pageSize = 50;
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return tashkentCalendarDate();
 }
 
 const emptyForm = (): ExpenseForm => ({
@@ -184,8 +189,8 @@ export function AdminExpensesPage() {
       });
       if (category) params.set("category", category);
       if (branchId) params.set("branchId", branchId);
-      if (from) params.set("from", `${from}T00:00:00.000Z`);
-      if (to) params.set("to", `${to}T23:59:59.999Z`);
+      if (from) params.set("from", tashkentDateStartUtc(from));
+      if (to) params.set("to", tashkentDateEndUtc(to));
       return apiFetch<Expense[]>(`/expenses?${params.toString()}`);
     },
     [branchId, category, offset, from, to, rangeError],

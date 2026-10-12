@@ -17,6 +17,7 @@ export async function allocateDisplayOrderNumber(
   tx: TransactionClient,
   source: OrderSource,
   now = new Date(),
+  startingSequence = 101,
 ): Promise<DisplayOrderNumber> {
   const displayDateText = formatTashkentDate(now);
   const displayOrderDate = new Date(`${displayDateText}T00:00:00.000Z`);
@@ -24,12 +25,15 @@ export async function allocateDisplayOrderNumber(
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`order-display:${source}:${displayDateText}`}))`;
 
   const rows = await tx.$queryRaw<SequenceRow[]>`
-    SELECT COALESCE(MAX("displayOrderSequence"), 100) AS "sequence"
+    SELECT COALESCE(MAX("displayOrderSequence"), ${startingSequence - 1}) AS "sequence"
     FROM "orders"
     WHERE "source" = CAST(${source} AS "OrderSource")
       AND "displayOrderDate" = ${displayOrderDate}
   `;
-  const currentSequence = Number(rows[0]?.sequence ?? 100);
+  const currentSequence = Math.max(
+    startingSequence - 1,
+    Number(rows[0]?.sequence ?? startingSequence - 1),
+  );
   const displayOrderSequence = currentSequence + 1;
 
   return {
@@ -37,12 +41,6 @@ export async function allocateDisplayOrderNumber(
     displayOrderSequence,
     displayOrderNumber: `${displayPrefix(source)}${displayOrderSequence}`,
   };
-}
-
-export function displayOrderNumber(
-  order: { displayOrderNumber?: string | null; orderNumber: string },
-): string {
-  return order.displayOrderNumber ?? order.orderNumber;
 }
 
 function displayPrefix(source: OrderSource): string {

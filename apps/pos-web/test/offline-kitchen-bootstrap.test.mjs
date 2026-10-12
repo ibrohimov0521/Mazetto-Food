@@ -63,6 +63,7 @@ const snapshot = () => ({
   schemaVersion: 2,
   branchId: "branch-a",
   generatedAt: "2026-10-01T08:02:00.000Z",
+  kitchenPosOrdersEnabled: false,
   kitchenQueue: { items: [ticket], hasMore: false, limit: 250 },
 });
 
@@ -71,7 +72,25 @@ test("restores a bounded kitchen queue for its authenticated branch", () => {
     items: [ticket],
     hasMore: false,
     limit: 250,
+    kitchenPosOrdersEnabled: false,
   });
+});
+
+test("restores POS kitchen visibility from the cached setting", () => {
+  assert.equal(
+    readOfflineKitchenSnapshot(
+      { ...snapshot(), kitchenPosOrdersEnabled: true },
+      "branch-a",
+    )?.kitchenPosOrdersEnabled,
+    true,
+  );
+  assert.equal(
+    readOfflineKitchenSnapshot(
+      { ...snapshot(), kitchenPosOrdersEnabled: "yes" },
+      "branch-a",
+    ),
+    null,
+  );
 });
 
 test("rejects cross-branch, unsupported and incomplete kitchen snapshots", () => {

@@ -133,6 +133,13 @@ async function main(): Promise<void> {
       fixture,
       webOrder.customerOrder.id,
     );
+    await provePosDineInPayLaterSettlement(
+      prisma,
+      services.ordersService,
+      services.paymentsService,
+      services.kitchenService,
+      fixture,
+    );
 
     const deliveryOrder = await createDeliveryWebOrder(services.orderEngine, fixture);
     await proveOrderGraph(prisma, deliveryOrder.customerOrder.id, {
@@ -331,7 +338,14 @@ function createServices(prisma: PrismaService) {
 
   const paymentsService = new PaymentsService(prisma);
 
-  return { customersService, orderEngine, ordersService, paymentsService, telegramOrdering };
+  return {
+    customersService,
+    kitchenService,
+    orderEngine,
+    ordersService,
+    paymentsService,
+    telegramOrdering,
+  };
 }
 
 async function createFixture(prisma: PrismaService) {
@@ -472,6 +486,15 @@ async function createFixture(prisma: PrismaService) {
       metadata: { printRoles: ["RECEIPT", "CANCELLATION", "REFUND"] },
     },
   });
+  const kitchenPrinter = await prisma.printer.create({
+    data: {
+      branchId: branch.id,
+      name: "STEP 8 virtual kitchen printer",
+      type: "KITCHEN",
+      status: "ONLINE",
+      metadata: { printRoles: ["KITCHEN"] },
+    },
+  });
   await prisma.paymentMethod.create({
     data: {
       branchId: branch.id,
@@ -575,6 +598,7 @@ async function createFixture(prisma: PrismaService) {
     modifier,
     employee,
     printer,
+    kitchenPrinter,
     otherCustomer,
     runId,
     set,
@@ -655,6 +679,177 @@ async function findCatalogProduct(
       bundleItems: true,
     },
   });
+}
+
+async function provePosDineInPayLaterSettlement(
+  prisma: PrismaService,
+  ordersService: OrdersService,
+  paymentsService: PaymentsService,
+  kitchenService: KitchenService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  const actor = {
+    id: fixture.staffUser.id,
+    employeeId: fixture.employee.id,
+    branchId: fixture.branch.id,
+    roles: ["CASHIER", "KITCHEN"],
+    permissions: [
+      "PAYMENT_CREATE",
+      "RECEIPT_PRINT",
+      "KITCHEN_VIEW",
+      "KITCHEN_ACCEPT",
+      "KITCHEN_STATUS_UPDATE",
+    ],
+  };
+  const checkout = await ordersService.createPosCheckout(
+    {
+      idempotencyKey: `step8-pos-dine-in-pay-later-${fixture.runId}`,
+      type: "DINE_IN",
+      payLater: true,
+      items: [
+        {
+          productId: fixture.lavash.id,
+          variantId: fixture.lavash.variants[0]!.id,
+          quantity: 1,
+        },
+      ],
+    },
+    actor,
+  );
+  const orderId = checkout.order.id;
+  assert.equal(checkout.payment.method, "PENDING");
+  assert.equal(checkout.order.paymentStatus, "PENDING");
+  assert.equal(await prisma.payment.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.revenueRecord.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.cashTransaction.count({ where: { orderId } }), 0);
+  assert.equal(
+    await prisma.receipt.count({ where: { orderId, documentType: "RECEIPT" } }),
+    0,
+    "unpaid dine-in must not create a customer receipt",
+  );
+  const kitchenReceipt = await prisma.receipt.findFirstOrThrow({
+    where: { orderId, documentType: "KITCHEN" },
+  });
+  assert.equal(
+    await prisma.kitchenTicket.count({ where: { orderId } }),
+    1,
+    "unpaid dine-in must go to the kitchen",
+  );
+  assert.equal(
+    await prisma.printJob.count({
+      where: { receiptId: kitchenReceipt.id, printerId: fixture.kitchenPrinter.id },
+    }),
+    1,
+    "kitchen ticket must print only to the kitchen printer",
+  );
+  assert.equal(
+    await prisma.printJob.count({
+      where: { receiptId: kitchenReceipt.id, printerId: fixture.printer.id },
+    }),
+    0,
+  );
+
+  const ticket = await prisma.kitchenTicket.findFirstOrThrow({
+    where: { orderId },
+    select: { id: true },
+  });
+  await kitchenService.acceptTicket(ticket.id, actor);
+  await kitchenService.startTicket(ticket.id, actor);
+  await kitchenService.readyTicket(ticket.id, actor);
+  await kitchenService.completeTicket(ticket.id, actor);
+
+  const handedOffOrder = await prisma.order.findUniqueOrThrow({
+    where: { id: orderId },
+  });
+  assert.equal(handedOffOrder.status, "COMPLETED");
+  assert.equal(handedOffOrder.paymentStatus, "PENDING");
+  assert.equal(await prisma.payment.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.revenueRecord.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.cashTransaction.count({ where: { orderId } }), 0);
+  assert.equal(
+    await prisma.receipt.count({ where: { orderId, documentType: "RECEIPT" } }),
+    0,
+    "kitchen handoff must not create a customer payment receipt",
+  );
+
+  const cashierQueue = await ordersService.listOrders(
+    {
+      paymentStatus: "PENDING",
+      excludeStatus: "CANCELLED",
+      excludeType: "DELIVERY",
+      limit: 200,
+      offset: 0,
+    } as never,
+    actor,
+  );
+  assert.ok(
+    cashierQueue.some((order) => order.id === orderId),
+    "completed unpaid dine-in must remain in the cashier payment queue",
+  );
+
+  const settled = await paymentsService.processOrderPayment(
+    {
+      orderId,
+      shiftId: fixture.shift.id,
+      idempotencyKey: `step8-pos-dine-in-payment-${fixture.runId}`,
+      payments: [
+        {
+          paymentMethodCode: "CASH",
+          amount: checkout.order.total.toNumber(),
+        },
+      ],
+    },
+    actor,
+  );
+  assert.equal(settled.operation?.status, "COMPLETED");
+  assert.equal(settled.order?.paymentStatus, "PAID");
+  assert.equal(
+    (await ordersService.listOrders(
+      {
+        paymentStatus: "PENDING",
+        excludeStatus: "CANCELLED",
+        excludeType: "DELIVERY",
+        limit: 200,
+        offset: 0,
+      } as never,
+      actor,
+    )).some((order) => order.id === orderId),
+    false,
+    "cashier queue must remove the order after payment",
+  );
+  assert.equal(
+    await prisma.payment.count({ where: { orderId, status: "SUCCESS" } }),
+    1,
+  );
+  assert.equal(
+    await prisma.revenueRecord.count({
+      where: { orderId, shiftId: fixture.shift.id },
+    }),
+    1,
+    "payment must enter shift revenue after acceptance",
+  );
+  assert.equal(
+    await prisma.cashTransaction.count({
+      where: { orderId, shiftId: fixture.shift.id, type: "SALE" },
+    }),
+    1,
+    "cash must enter the drawer after acceptance",
+  );
+  const customerReceipt = await prisma.receipt.findFirstOrThrow({
+    where: { orderId, documentType: "RECEIPT" },
+  });
+  assert.equal(
+    await prisma.printJob.count({
+      where: { receiptId: customerReceipt.id, printerId: fixture.printer.id },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.printJob.count({
+      where: { receiptId: customerReceipt.id, printerId: fixture.kitchenPrinter.id },
+    }),
+    0,
+  );
 }
 
 async function proveOrderCashStockPrint(

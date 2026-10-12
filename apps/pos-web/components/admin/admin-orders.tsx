@@ -255,11 +255,6 @@ export function nextOrderStatuses(current: OrderStatus): OrderStatus[] {
   return orderStatusFlow[current] ?? [];
 }
 
-/** CANCELLED uchun sabab MAJBURIY — u buyurtma tarixiga yoziladi. */
-function statusNeedsReason(status: OrderStatus | null): boolean {
-  return status === "CANCELLED";
-}
-
 export function AdminOrdersPage() {
   const { user, session } = useAuth();
   const showBranchFilter = canSwitchBranch(user);
@@ -310,7 +305,6 @@ export function AdminOrdersPage() {
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<OrderStatus>("CANCELLED");
   const [bulkReason, setBulkReason] = useState("");
-  const [bulkReasonError, setBulkReasonError] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkOrderStatusResult | null>(
@@ -529,19 +523,6 @@ export function AdminOrdersPage() {
   async function bulkUpdateSelected(): Promise<void> {
     const reason = bulkReason.trim();
 
-    /*
-     * Sabab bekor qilishda MAJBURIY: u `orderStatusHistory.reason` ga
-     * yoziladi va keyin "nega bekor qilingan" savoliga yagona javob
-     * bo'lib qoladi. Ilgari bu yerga inglizcha qat'iy matn
-     * ("Admin bulk action: ...") yozilardi — tarix o'zbekcha panelda
-     * inglizcha to'lib ketardi va hech qanday ma'lumot bermasdi.
-     */
-    if (statusNeedsReason(bulkStatus) && !reason) {
-      setBulkReasonError("Bekor qilish sababini yozing.");
-      return;
-    }
-
-    setBulkReasonError("");
     setBulkBusy(true);
     setSaveError("");
     setBulkResult(null);
@@ -556,7 +537,9 @@ export function AdminOrdersPage() {
             status: bulkStatus,
             reason:
               reason ||
-              `Ommaviy amal: ${orderStatusLabels[bulkStatus]} (admin ro'yxati)`,
+              (bulkStatus === "CANCELLED"
+                ? "Buyurtma bekor qilindi"
+                : `Ommaviy amal: ${orderStatusLabels[bulkStatus]} (admin ro'yxati)`),
             confirm: true,
             force: true,
           }),
@@ -939,7 +922,6 @@ export function AdminOrdersPage() {
               <Button
                 disabled={bulkBusy || !bulkStatusOptions.length}
                 onClick={() => {
-                  setBulkReasonError("");
                   setBulkConfirmOpen(true);
                 }}
                 variant={bulkStatus === "CANCELLED" ? "danger" : "primary"}
@@ -1007,17 +989,14 @@ export function AdminOrdersPage() {
       >
         <div className="grid gap-3">
           <FormField
-            error={bulkReasonError}
-            hint="Sabab har bir buyurtmaning holat tarixiga yoziladi."
+            hint="Ixtiyoriy. Kiritilsa har bir buyurtma tarixida saqlanadi."
             label="Sabab"
-            required={statusNeedsReason(bulkStatus)}
           >
             {(props) => (
               <Textarea
                 {...props}
                 onChange={(event) => {
                   setBulkReason(event.target.value);
-                  setBulkReasonError("");
                 }}
                 placeholder="Masalan: mijoz telefon orqali bekor qildi"
                 value={bulkReason}
@@ -1148,7 +1127,6 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [realtimeUpdatedAt, setRealtimeUpdatedAt] = useState<Date | null>(null);
   const [statusReason, setStatusReason] = useState("");
-  const [statusReasonError, setStatusReasonError] = useState("");
   const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null);
   const [isChanging, setIsChanging] = useState(false);
   const pendingActionKey = useRef<{ fingerprint: string; key: string } | null>(
@@ -1215,18 +1193,12 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
           ? "cancel"
           : null;
 
-    if (statusNeedsReason(pendingStatus) && !reason) {
-      setStatusReasonError("Bekor qilish sababini yozing.");
-      return;
-    }
-
     if (action && actionVersion === undefined) {
       showToast("Buyurtma versiyasi topilmadi. Qayta yuklang.", "danger");
       await load();
       return;
     }
 
-    setStatusReasonError("");
     setIsChanging(true);
 
     try {
@@ -1460,7 +1432,6 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
                       <Button
                         key={status}
                         onClick={() => {
-                          setStatusReasonError("");
                           setPendingStatus(status);
                         }}
                         variant={status === "CANCELLED" ? "danger" : "ghost"}
@@ -1627,11 +1598,7 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
       </div>
 
       <Modal
-        description={
-          statusNeedsReason(pendingStatus)
-            ? "Bekor qilish qaytarilmaydi. Sabab majburiy va buyurtma tarixida qoladi."
-            : "Sabab ixtiyoriy, lekin u buyurtma tarixida qoladi."
-        }
+        description="Bekor qilish qaytarilmaydi. Izoh ixtiyoriy, kiritilsa buyurtma tarixida qoladi."
         dismissOnBackdrop={false}
         footer={
           <>
@@ -1661,16 +1628,14 @@ export function AdminOrderDetail({ orderId }: { orderId: string }) {
         }
       >
         <FormField
-          error={statusReasonError}
+          hint="Ixtiyoriy. Kiritilsa buyurtma tarixida saqlanadi."
           label="Sabab"
-          required={statusNeedsReason(pendingStatus)}
         >
           {(props) => (
             <Textarea
               {...props}
               onChange={(event) => {
                 setStatusReason(event.target.value);
-                setStatusReasonError("");
               }}
               placeholder="Masalan: mijoz bekor qildi"
               value={statusReason}

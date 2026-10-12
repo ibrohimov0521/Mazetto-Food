@@ -14,6 +14,10 @@ import {
   type OrderStatus,
   type PaymentStatus,
 } from "../../lib/order-display";
+import {
+  tashkentDateEndUtc,
+  tashkentDateStartUtc,
+} from "../../lib/tashkent-date-range.mjs";
 import { useAuth } from "../auth/auth-provider";
 import { hasPermission } from "../../lib/auth";
 import { Badge } from "../admin-ui/badge";
@@ -226,8 +230,8 @@ export function AdminReceiptsPage() {
       if (branchId) params.set("branchId", branchId);
       /* Serverdagi filtr — sahifalash bilan mos keladi. */
       if (printed) params.set("printed", printed === "PRINTED" ? "true" : "false");
-      if (from) params.set("from", `${from}T00:00:00.000Z`);
-      if (to) params.set("to", `${to}T23:59:59.999Z`);
+      if (from) params.set("from", tashkentDateStartUtc(from));
+      if (to) params.set("to", tashkentDateEndUtc(to));
       return apiFetch<Receipt[]>(`/receipts?${params.toString()}`);
     },
     [branchId, offset, printed, from, to, rangeError],

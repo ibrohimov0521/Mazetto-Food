@@ -890,35 +890,8 @@ function setupAuthControls(): void {
         );
       }
 
-      const heartbeat = await fetch(`${UPSTREAM_API_URL}/devices/heartbeat`, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          Authorization: `${payload.data.tokens.tokenType ?? "Bearer"} ${payload.data.tokens.accessToken}`,
-          "x-mazetto-device-id": store?.deviceId() ?? "",
-          ...(deviceAuthToken
-            ? { "x-mazetto-device-token": deviceAuthToken }
-            : {}),
-        },
-        body: JSON.stringify({ softwareVersion: app.getVersion() }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!heartbeat.ok) {
-        const heartbeatPayload = (await heartbeat.json().catch(() => null)) as {
-          error?: DesktopApiError;
-        } | null;
-        throw new Error(
-          formatDesktopApiError(
-            heartbeatPayload?.error,
-            heartbeat.status,
-            "Qurilma tasdiqlanmagan yoki ushbu foydalanuvchiga ruxsat berilmagan",
-          ),
-        );
-      }
-
-      // Native login local gatewayni chetlab o'tishi mumkin. Printer worker ham
-      // shu sessiya bilan server navbatini olishi uchun tokenni bevosita beramiz.
+      // Login session must reach the renderer so an unapproved desktop can be
+      // enrolled there. The renderer checks heartbeat and routes to enrollment.
       printWorker?.setAuthorization(
         `${payload.data.tokens.tokenType ?? "Bearer"} ${payload.data.tokens.accessToken}`,
       );
@@ -1017,6 +990,7 @@ function normalizeSystemPrinterTargets(value: unknown): SystemPrinterTarget[] {
     "CANCELLATION",
     "REFUND",
     "BAR",
+    "SHIFT_REPORT",
   ]);
   return value.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];

@@ -27,6 +27,28 @@ const chimePattern: ChimeNote[] = [
 
 const peakGain = 0.55;
 const repeatMs = 9000;
+const soundPreferenceKey = "mazetto.kitchen.sound.enabled";
+
+export const kitchenSoundPreferenceEvent = "mazetto:kitchen-sound-preference";
+export const kitchenOrdersAcknowledgedEvent = "mazetto:kitchen-orders-acknowledged";
+
+export function readKitchenSoundPreference(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(soundPreferenceKey) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function saveKitchenSoundPreference(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(soundPreferenceKey, enabled ? "1" : "0");
+  } catch {
+    // Keep the current-session preference even when storage is unavailable.
+  }
+  window.dispatchEvent(new Event(kitchenSoundPreferenceEvent));
+}
 
 function createAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;

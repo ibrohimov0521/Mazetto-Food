@@ -52,6 +52,15 @@ const settings = [
     },
     fallback: "CASH",
   },
+  {
+    key: "order_display_number_start",
+    value: "101",
+    isStored: false,
+    isPublic: false,
+    affectsCustomer: false,
+    rule: { kind: "int", min: 1, max: 1000000, fallback: 101 },
+    fallback: "101",
+  },
 ];
 
 const browser = await chromium.launch({ headless: true });
@@ -158,6 +167,12 @@ try {
         `to'lov usuli ko'rinmadi: ${method.label}`,
       );
     }
+    assert.equal(
+      await page
+        .getByLabel("Buyurtma raqamining boshlanishi")
+        .inputValue(),
+      "101",
+    );
     await page.getByLabel("Tekin yetkazish radiusi").fill("1500");
     await page.getByRole("button", { name: "Saqlash", exact: true }).click();
     await page
@@ -231,10 +246,11 @@ try {
       "CASH,CLICK,PAYME",
       "offline xavf tasdiqlanmaguncha sozlama saqlanmasligi kerak",
     );
-    assert.ok(
-      await page
-        .getByText(/Internetga ulanmagan Desktop kassa/)
-        .isVisible(),
+    const confirmationDialog = page.getByRole("dialog");
+    assert.ok(await confirmationDialog.isVisible());
+    assert.match(
+      await confirmationDialog.innerText(),
+      /Oflayn Desktop kassa/,
       "o'chirilayotgan to'lov usuli uchun offline ogohlantirishi ko'rinishi kerak",
     );
     const disableClickSave = page.waitForResponse(
@@ -272,6 +288,28 @@ try {
       true,
       "oxirgi yoqilgan to'lov usuli o'chirilmasligi kerak",
     );
+
+    cashierMethods = "UNKNOWN";
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const cashMethod = page.getByRole("button", {
+      name: "Naqd pul",
+      exact: true,
+    });
+    await cashMethod.waitFor();
+    assert.equal(
+      await cashMethod.getAttribute("aria-pressed"),
+      "false",
+      "noma'lum saqlangan qiymat to'lov usulini o'zidan-o'zi yoqmasligi kerak",
+    );
+    await cashMethod.click();
+    const repairCashSetting = page.waitForResponse(
+      (response) =>
+        response.url().includes("/settings/cashier_payment_methods") &&
+        response.request().method() === "PATCH",
+    );
+    await page.getByRole("button", { name: "Saqlash", exact: true }).click();
+    await repairCashSetting;
+    assert.equal(savedCashierMethods, "CASH");
 
     assert.ok(
       await page.evaluate(

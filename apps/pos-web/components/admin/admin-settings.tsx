@@ -70,7 +70,12 @@ type SettingRow = {
  */
 const SETTING_LABELS: Record<
   string,
-  { title: string; hint: string; impact?: string; group?: "cashier-payments" }
+  {
+    title: string;
+    hint: string;
+    impact?: string;
+    group?: "cashier-payments" | "kitchen-orders" | "order-numbering";
+  }
 > = {
   customer_code_ttl_minutes: {
     title: "Tasdiqlash kodi muddati",
@@ -122,6 +127,16 @@ const SETTING_LABELS: Record<
     title: "Kassada qabul qilinadigan to'lovlar",
     hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder tasdig'i emas. Oflayn kassada faqat naqd pul ishlaydi; naqd usul o'chirilsa, oflayn savdo vaqtincha to'xtaydi.",
     group: "cashier-payments",
+  },
+  kitchen_pos_orders_enabled: {
+    title: "Kassa buyurtmalarini oshxonada ko'rsatish",
+    hint: "O'chirilsa, POS buyurtmasi oshxona navbatida ko'rinmaydi; oshxona cheki printerga baribir yuboriladi. Sayt va Telegram buyurtmalari ko'rinishda qoladi.",
+    group: "kitchen-orders",
+  },
+  order_display_number_start: {
+    title: "Buyurtma raqamining boshlanishi",
+    hint: "Har bir buyurtma manbasi va Toshkent kunidagi boshlang'ich raqam. Shu kuni kattaroq raqam ishlatilgan bo'lsa, dublikat bo'lmasligi uchun navbat davom etadi.",
+    group: "order-numbering",
   },
   customer_delivery_enabled: {
     title: "Yetkazib berish",
@@ -244,12 +259,21 @@ export function AdminSettings() {
       const nextCashierMethods = new Set(
         value.split(",").map((method) => method.trim().toUpperCase()),
       );
+      const cashierPaymentOptions =
+        row.key === "cashier_payment_methods" && row.rule.kind === "csv-enum"
+          ? row.rule.values
+          : [];
       const disabledCashierMethods =
         row.key === "cashier_payment_methods" && row.rule.kind === "csv-enum"
           ? row.value
               .split(",")
               .map((method) => method.trim().toUpperCase())
-              .filter((method) => method && !nextCashierMethods.has(method))
+              .filter(
+                (method) =>
+                  method &&
+                  cashierPaymentOptions.includes(method) &&
+                  !nextCashierMethods.has(method),
+              )
           : [];
       const disablesOfflinePaymentMethod = disabledCashierMethods.length > 0;
 
@@ -265,7 +289,7 @@ export function AdminSettings() {
         before: describeValue(row.rule, row.value),
         after: describeValue(row.rule, value),
         impact: disablesOfflinePaymentMethod
-          ? `O'chiriladigan usullar: ${disabledCashierMethods.map(paymentMethodLabel).join(", ")}. Oflayn Desktop kassa faqat naqd pulni ko'rsatadi; naqd usul o'chirilsa, yangi oflayn savdo to'xtaydi. Saqlashdan oldin kutayotgan Desktop amallarini internet orqali sinxronlang. Oldin yaratilgan navbatdagi amal o'chirilgan usulga bog'liq bo'lsa, usulni qayta yoqib, navbatni sinxronlash kerak bo'ladi.`
+          ? `O'chiriladigan usullar: ${disabledCashierMethods.map(paymentMethodLabel).join(", ")}. Oflayn Desktop kassa faqat oxirgi sinxronlangan katalogda naqd yoqilgan bo'lsa naqd savdoni navbatga oladi. Boshqa qurilmadan o'zgartirilgan sozlama offline terminalga internet qaytgach yetib boradi. Saqlashdan oldin kutayotgan Desktop amallarini internet orqali sinxronlang. Oldin yaratilgan navbatdagi amal o'chirilgan usulga bog'liq bo'lsa, usulni qayta yoqib, navbatni sinxronlash kerak bo'ladi.`
           : (SETTING_LABELS[row.key]?.impact ??
             "Bu sozlama mijoz saytida darhol qo'llanadi."),
       });
@@ -279,10 +303,18 @@ export function AdminSettings() {
       cashierPayments: rows.filter(
         (row) => SETTING_LABELS[row.key]?.group === "cashier-payments",
       ),
+      kitchenOrders: rows.filter(
+        (row) => SETTING_LABELS[row.key]?.group === "kitchen-orders",
+      ),
+      orderNumbers: rows.filter(
+        (row) => SETTING_LABELS[row.key]?.group === "order-numbering",
+      ),
       internal: rows.filter(
         (row) =>
           !row.affectsCustomer &&
-          SETTING_LABELS[row.key]?.group !== "cashier-payments",
+          !["cashier-payments", "kitchen-orders", "order-numbering"].includes(
+            SETTING_LABELS[row.key]?.group ?? "",
+          ),
       ),
     }),
     [rows],
@@ -334,7 +366,7 @@ export function AdminSettings() {
       />
 
       <SettingsGroup
-        description="Internet bor paytda kassir yoqilgan usullardan tanlaydi; Click/Payme va karta tushumini alohida tekshiradi, avtomatik bank tasdig'i yo'q. Oflayn kassa faqat naqd pulni ko'rsatadi. To'lov usulini o'chirishdan oldin Desktop navbatidagi kutayotgan amallarni sinxronlang."
+        description="Internet bor paytda kassir yoqilgan usullardan tanlaydi; Click/Payme va karta tushumini alohida tekshiradi, avtomatik bank tasdig'i yo'q. Oflayn kassa oxirgi sinxronlangan sozlamada ruxsat etilgan naqd savdoni qo'llaydi; boshqa qurilmadagi o'zgarish internet qaytgach olinadi. To'lov usulini o'chirishdan oldin Desktop navbatidagi kutayotgan amallarni sinxronlang."
         drafts={drafts}
         onDraftChange={(key, value) =>
           setDrafts((previous) => ({ ...previous, [key]: value }))
@@ -343,6 +375,30 @@ export function AdminSettings() {
         rows={groups.cashierPayments}
         savingKey={savingKey}
         title="Kassa to'lovlari"
+      />
+
+      <SettingsGroup
+        description="Yangi raqamlar o'zgarishdan keyin beriladi. Shu Toshkent kunida mavjud bo'lgan kattaroq raqamlar takrorlanmaydi. Desktop oflayn holatda oxirgi sinxronlangan boshlang'ich raqamdan foydalanadi."
+        drafts={drafts}
+        onDraftChange={(key, value) =>
+          setDrafts((previous) => ({ ...previous, [key]: value }))
+        }
+        onSave={requestSave}
+        rows={groups.orderNumbers}
+        savingKey={savingKey}
+        title="Buyurtma raqamlari"
+      />
+
+      <SettingsGroup
+        description="Faqat oshxona monitoridagi ro'yxatni boshqaradi. Chek printerga yuborilishi va kassadagi moliyaviy hisobga ta'sir qilmaydi."
+        drafts={drafts}
+        onDraftChange={(key, value) =>
+          setDrafts((previous) => ({ ...previous, [key]: value }))
+        }
+        onSave={requestSave}
+        rows={groups.kitchenOrders}
+        savingKey={savingKey}
+        title="Oshxona buyurtmalari"
       />
 
       <SettingsGroup
@@ -488,8 +544,13 @@ function SettingControl({
   }
 
   if (row.rule.kind === "csv-enum") {
-    const selected = new Set(draft.split(",").filter(Boolean));
     const allowed = row.rule.values;
+    const selected = new Set(
+      draft
+        .split(",")
+        .map((option) => option.trim().toUpperCase())
+        .filter((option) => allowed.includes(option)),
+    );
     const isOnlySelection = selected.size === 1;
 
     return (

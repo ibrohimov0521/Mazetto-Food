@@ -621,6 +621,7 @@ export class DesktopPrintWorker {
         documentType: job.documentType,
         content,
       };
+      assertPrintableReceipt(receipt);
       await this.printSystemTargets("local", job.id, targets, receipt);
     } catch (error) {
       this.localQueue.fail(
@@ -1189,6 +1190,31 @@ function assertPrintableReceipt(receipt: PrintableReceipt): void {
     throw new Error("Chek mazmuni topilmadi; chop etish navbatda qoldirildi");
   }
   const documentType = receiptRoute(receipt);
+  if (documentType === "SHIFT_REPORT") {
+    const shift =
+      content.shift &&
+      typeof content.shift === "object" &&
+      !Array.isArray(content.shift)
+        ? (content.shift as Record<string, unknown>)
+        : null;
+    const orders = content.orders;
+    if (
+      !shift ||
+      typeof shift.id !== "string" ||
+      !shift.id ||
+      !Array.isArray(orders) ||
+      orders.some(
+        (order) =>
+          !order ||
+          typeof order !== "object" ||
+          Array.isArray(order) ||
+          !Array.isArray((order as Record<string, unknown>).items),
+      )
+    ) {
+      throw new Error("Smena hisoboti to'liq emas; bo'sh sahifa chop etilmadi");
+    }
+    return;
+  }
   const hasOrder =
     typeof content.orderNumber === "string" ||
     typeof content.displayOrderNumber === "string";

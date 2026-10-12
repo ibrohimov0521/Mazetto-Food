@@ -141,6 +141,10 @@ export class CustomerOrderEngineService {
         dto.branchId,
         deliveryLocation,
       );
+      const orderDisplayNumberStart = await this.settings.getInt(
+        "order_display_number_start",
+        customer.tenantId,
+      );
 
       const correlationId = randomUUID();
       const createOrder = () =>
@@ -150,6 +154,8 @@ export class CustomerOrderEngineService {
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
               orderSource,
+              undefined,
+              orderDisplayNumberStart,
             );
             const order = await tx.order.create({
               data: {

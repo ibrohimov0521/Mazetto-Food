@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { OrderType, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { kitchenRoutedItems } from "../menu/product-printer-routing";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -103,7 +104,7 @@ export async function queuePrintJobsForReceipt(
       }
     : (receipt.content ?? {});
   const printers = await tx.printer.findMany({
-    where: { branchId: receipt.branchId, isActive: true, status: "ONLINE" },
+    where: { branchId: receipt.branchId, isActive: true },
     select: { id: true, type: true, metadata: true },
   });
   const targets = printers.filter((printer) => routeMatches(printer, route));
@@ -134,9 +135,11 @@ export async function writeReceiptRow(
   options: {
     documentType?: ReceiptPrintRoute;
     cancellationReason?: string | null;
+    items?: OrderForReceipt["items"];
   } = {},
 ): Promise<void> {
   const documentType = options.documentType ?? "RECEIPT";
+  const items = options.items ?? order.items;
   const receiptNumber = await allocateReceiptNumber(tx);
   const receipt = await tx.receipt.create({
     data: {
@@ -165,7 +168,7 @@ export async function writeReceiptRow(
         address: order.deliveryAddress,
         orderNotes:
           typeof order.notes === "string" ? order.notes.trim() || null : null,
-        items: order.items.map((item) => ({
+        items: items.map((item) => ({
           name: item.productName,
           variant: item.variantName,
           quantity: formatQuantity(item.quantity),
@@ -245,7 +248,10 @@ export async function ensureKitchenReceipt(
     where: { id: orderId },
     include: {
       branch: true,
-      items: true,
+      items: {
+        where: { status: "ACTIVE" },
+        include: { product: { select: { printerRouting: true } } },
+      },
       payments: { include: { method: true } },
       receipts: true,
     },
@@ -256,7 +262,9 @@ export async function ensureKitchenReceipt(
   ) {
     return;
   }
-  await writeReceiptRow(tx, order, { documentType: "KITCHEN" });
+  const items = kitchenRoutedItems(order.items);
+  if (items.length === 0) return;
+  await writeReceiptRow(tx, order, { documentType: "KITCHEN", items });
 }
 
 export async function ensureRefundReceipt(

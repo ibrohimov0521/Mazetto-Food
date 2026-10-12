@@ -75,6 +75,7 @@ const printRoles = [
   { value: "CANCELLATION", label: "Bekor qilish" },
   { value: "REFUND", label: "Pul qaytarish" },
   { value: "BAR", label: "Bar" },
+  { value: "SHIFT_REPORT", label: "Smena hisoboti" },
 ];
 
 const receiptTabs: Array<{ key: ReceiptKind; label: string }> = [

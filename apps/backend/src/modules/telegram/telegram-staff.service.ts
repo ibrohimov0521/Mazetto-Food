@@ -10,6 +10,9 @@ import { KitchenService } from "../kitchen/kitchen.service";
 import { TablesService } from "../tables/tables.service";
 import { CashRegisterService } from "../cash-register/cash-register.service";
 import { TelegramCustomerScreenService } from "./telegram-customer-screen.service";
+import { isWithinTashkent } from "../customers/tashkent-bounds";
+import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
+import { resolveReportRange } from "../reports/report-range";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
@@ -646,10 +649,26 @@ export class TelegramStaffService implements OnModuleInit {
       await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), { text: "Sizda boshqaruv ko'rsatkichlariga ruxsat yo'q." });
       return;
     }
-    const branchId = staff.user.isGlobalScope ? undefined : staff.user.branchId ?? undefined;
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      staff.user,
+    );
+    const { from, to } = resolveReportRange({});
     const [orders, employees] = await Promise.all([
-      this.prisma.order.count({ where: { ...(branchId ? { branchId } : {}), createdAt: { gte: this.todayStart() } } }),
-      this.prisma.employee.count({ where: { ...(branchId ? { branchId } : {}), status: "ACTIVE" } }),
+      this.prisma.order.count({
+        where: {
+          branch: { tenantId },
+          ...(branchId ? { branchId } : {}),
+          createdAt: { gte: from, lte: to },
+        },
+      }),
+      this.prisma.employee.count({
+        where: {
+          branch: { tenantId },
+          ...(branchId ? { branchId } : {}),
+          status: "ACTIVE",
+        },
+      }),
     ]);
     await this.screen.renderWithToken(this.botToken, this.screenTarget(chatId, messageId), {
       text: `<b>📊 Boshqaruv</b>\n\nBugungi buyurtmalar: <b>${orders}</b>\nFaol xodimlar: <b>${employees}</b>\nRollar: ${this.escapeHtml(staff.user.roles.join(", "))}`,
@@ -657,11 +676,6 @@ export class TelegramStaffService implements OnModuleInit {
     });
   }
 
-  private todayStart(): Date {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    return start;
-  }
 
   private staffPanelHint(roles: string[]): string {
     const actions = [
@@ -845,14 +859,29 @@ export class TelegramStaffService implements OnModuleInit {
   }
 
   private locationLink(value: unknown): string | null {
-    if (!value || typeof value !== "object" || !("latitude" in value) || !("longitude" in value)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
-    const location = value as { latitude: unknown; longitude: unknown };
-    const latitude = Number(location.latitude);
-    const longitude = Number(location.longitude);
-    return Number.isFinite(latitude) && Number.isFinite(longitude)
-      ? `https://maps.google.com/?q=${latitude},${longitude}`
+
+    const location = value as Record<string, unknown>;
+    const rawLatitude = location.latitude;
+    const rawLongitude = location.longitude;
+    if (
+      (typeof rawLatitude !== "number" &&
+        (typeof rawLatitude !== "string" || !rawLatitude.trim())) ||
+      (typeof rawLongitude !== "number" &&
+        (typeof rawLongitude !== "string" || !rawLongitude.trim()))
+    ) {
+      return null;
+    }
+
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
+    return isWithinTashkent(latitude, longitude)
+      ? "https://www.google.com/maps/search/?api=1&query=" +
+          latitude +
+          "," +
+          longitude
       : null;
   }
 

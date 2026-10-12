@@ -7,7 +7,11 @@ import { PrismaService } from "../../prisma/prisma.service";
 export class TenantMembershipAuthService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async resolve(userId: string, tenantId: string, membershipId?: string): Promise<AuthenticatedUser | null> {
+  async resolve(
+    userId: string,
+    tenantId: string,
+    membershipId?: string,
+  ): Promise<AuthenticatedUser | null> {
     const membership = await this.prisma.tenantMembership.findFirst({
       where: {
         userId,
@@ -64,7 +68,11 @@ export class TenantMembershipAuthService {
       return null;
     }
 
-    const roles = membership.roles.filter(({ role }) => !role.code.startsWith("PLATFORM_"));
+    const roles = membership.roles.filter(
+      ({ role }) => !role.code.startsWith("PLATFORM_"),
+    );
+    if (roles.length === 0) return null;
+
     const employee =
       membership.user.employee?.status === "ACTIVE" &&
       membership.user.employee.branchId === membership.branchId &&
@@ -72,7 +80,10 @@ export class TenantMembershipAuthService {
         ? membership.user.employee
         : null;
 
-    if (roles.some(({ role }) => role.isBranchScoped) && (!membership.branchId || !employee)) {
+    if (
+      roles.some(({ role }) => role.isBranchScoped) &&
+      (!membership.branchId || !employee)
+    ) {
       return null;
     }
 

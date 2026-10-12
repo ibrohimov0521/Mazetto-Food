@@ -76,7 +76,6 @@ export function printableReceiptHtml(
   logoDataUrl?: string | null,
 ): string {
   const paper = normalizeWindowsPaperSettings(paperInput);
-  const profile = normalizeReceiptPrintProfile(profileInput);
   const content = receipt.content ?? {};
   const dateTime = String(content.dateTime ?? "")
     .replace(/\s*Toshkent vaqti\s*/gi, " ")
@@ -84,6 +83,10 @@ export function printableReceiptHtml(
   const documentType = String(
     content.documentType ?? receipt.documentType ?? "RECEIPT",
   );
+  if (documentType === "SHIFT_REPORT") {
+    return printableShiftReportHtml(content, paper);
+  }
+  const profile = normalizeReceiptPrintProfile(profileInput);
   const kind: ReceiptKind =
     documentType === "KITCHEN"
       ? "KITCHEN"
@@ -264,6 +267,187 @@ export function printableReceiptHtml(
     ${footerContent ? `<div class="footer">${footerContent}</div>` : ""}
   </body>
 </html>`;
+}
+
+function printableShiftReportHtml(
+  content: Record<string, unknown>,
+  paper: WindowsPaperSettings,
+): string {
+  const asRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const shift = asRecord(content.shift);
+  const branch = asRecord(shift.branch);
+  const employee = asRecord(shift.employee);
+  const orders = Array.isArray(content.orders)
+    ? content.orders.map(asRecord)
+    : [];
+  const text = (value: unknown) => escapeHtml(String(value ?? ""));
+  const money = (value: unknown): string => {
+    if (
+      value == null ||
+      (typeof value === "string" && !value.trim()) ||
+      (typeof value !== "string" && typeof value !== "number")
+    ) {
+      return "Ma'lumot yo'q";
+    }
+    const amount = Number(value);
+    return Number.isFinite(amount)
+      ? new Intl.NumberFormat("uz-UZ", { maximumFractionDigits: 2 }).format(
+          amount,
+        ) + " so'm"
+      : "Ma'lumot yo'q";
+  };
+  const date = (value: unknown): string => {
+    if (value == null || !String(value).trim()) return "-";
+    const parsed = new Date(String(value));
+    if (!Number.isFinite(parsed.getTime())) return "-";
+    return new Intl.DateTimeFormat("uz-UZ", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Tashkent",
+    }).format(parsed);
+  };
+  const total = (rows: Record<string, unknown>[]): string => {
+    let cents = 0;
+    for (const row of rows) {
+      if (row.total == null || String(row.total).trim() === "") {
+        return "Ma'lumot yo'q";
+      }
+      const amount = Number(row.total);
+      if (!Number.isFinite(amount)) return "Ma'lumot yo'q";
+      const rowCents = Math.round(amount * 100);
+      if (!Number.isSafeInteger(rowCents)) return "Ma'lumot yo'q";
+      cents += rowCents;
+      if (!Number.isSafeInteger(cents)) return "Ma'lumot yo'q";
+    }
+    return money(cents / 100);
+  };
+  const definitions = [
+    {
+      label: "Topshirilgan / yakunlangan",
+      matches: (order: Record<string, unknown>) =>
+        order.status === "COMPLETED" || order.status === "SERVED",
+    },
+    {
+      label: "Bekor qilingan",
+      matches: (order: Record<string, unknown>) => order.status === "CANCELLED",
+    },
+    {
+      label: "Jarayonda",
+      matches: (order: Record<string, unknown>) =>
+        order.status !== "COMPLETED" &&
+        order.status !== "SERVED" &&
+        order.status !== "CANCELLED",
+    },
+  ];
+  const groups = definitions
+    .map(({ label, matches }) => {
+      const rows = orders.filter(matches);
+      const body = rows
+        .map((order) => {
+          const items = Array.isArray(order.items)
+            ? order.items.map(asRecord)
+            : [];
+          const itemText = items
+            .map(
+              (item) =>
+                text(item.quantity ?? 1) +
+                " x " +
+                text(item.productName ?? "Mahsulot") +
+                (item.status === "CANCELLED" ? " (bekor qilingan)" : ""),
+            )
+            .join(", ");
+          return (
+            "<tr><td><b>#" +
+            text(order.displayOrderNumber ?? order.orderNumber) +
+            "</b><small>" +
+            text(date(order.createdAt)) +
+            "</small><div>" +
+            (itemText || "Mahsulot yo'q") +
+            "</div></td><td>" +
+            text(money(order.total)) +
+            "</td></tr>"
+          );
+        })
+        .join("");
+      return (
+        "<section><h2>" +
+        text(label) +
+        ": " +
+        rows.length +
+        "</h2><table><thead><tr><th>Buyurtma / tarkibi</th><th>Summa</th></tr></thead><tbody>" +
+        (body || '<tr><td colspan="2">Buyurtma yo\'q</td></tr>') +
+        '</tbody></table><p class="subtotal">' +
+        text(label) +
+        " jami: <b>" +
+        text(total(rows)) +
+        "</b></p></section>"
+      );
+    })
+    .join("");
+  const employeeName = [employee.firstName, employee.lastName]
+    .filter((value) => typeof value === "string" && value.trim())
+    .join(" ");
+  const meta = [
+    ["Filial", branch.name ?? "-"],
+    ["Kassir", employeeName || "-"],
+    ["Ochildi", date(shift.openedAt)],
+    ["Yopildi", date(shift.closedAt)],
+    ["Kutilgan naqd", money(shift.expectedCash)],
+    ["Haqiqiy naqd", money(shift.closingBalance)],
+    ["Farq", money(shift.cashDifference)],
+    ["Smena savdo tushumi", money(shift.salesTotal)],
+  ];
+  const pageStyle =
+    paper.paperFormat === "LABEL"
+      ? "@page{size:" +
+        paper.paperWidthMm +
+        "mm " +
+        (paper.paperHeightMm ?? 80) +
+        "mm;margin:0}"
+      : paper.paperFormat === "A4"
+        ? "@page{size:A4;margin:5mm}"
+        : "@page{margin:3mm}";
+  const width =
+    paper.paperFormat === "A4"
+      ? "194mm"
+      : Math.max(
+          20,
+          paper.paperWidthMm - (paper.paperFormat === "LABEL" ? 4 : 6),
+        ) + "mm";
+  const offlineNotice = shift.pendingSync
+    ? "<p><b>Oflayn nusxa: server tasdig'i kutilmoqda.</b></p>"
+    : "";
+  const metaRows = meta
+    .map(
+      ([key, value]) =>
+        "<div><dt>" + text(key) + "</dt><dd>" + text(value) + "</dd></div>",
+    )
+    .join("");
+  return (
+    '<!doctype html><html lang="uz"><head><meta charset="utf-8"><title>Smena hisoboti</title><style>' +
+    pageStyle +
+    "*{box-sizing:border-box}body{width:" +
+    width +
+    ";max-width:100%;margin:0 auto;color:#000;background:#fff;font:10px/1.25 Arial,sans-serif;overflow-wrap:anywhere}h1{font-size:15px;margin:0 0 5px;text-align:center}h2{font-size:11px;margin:9px 0 3px;break-after:avoid}dl{margin:0 0 5px}dl div{display:flex;justify-content:space-between;gap:5px}dt,dd{margin:0}dd{text-align:right}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:2px 0;border-bottom:1px dashed #777;text-align:left;vertical-align:top}th:last-child,td:last-child{width:27%;text-align:right;padding-left:4px}tr{break-inside:avoid}small{display:block}.subtotal{text-align:right;margin:2px 0 5px}footer{border-top:2px solid #000;margin-top:7px;padding-top:4px;text-align:right;break-inside:avoid}</style></head><body><h1>Smena #" +
+    text(shift.shiftNumber) +
+    " hisoboti</h1>" +
+    offlineNotice +
+    "<dl>" +
+    metaRows +
+    "</dl>" +
+    groups +
+    "<footer><b>Buyurtmalar soni: " +
+    orders.length +
+    "</b><br>Buyurtmalar summasi (bekor qilinganlar bilan): <b>" +
+    text(total(orders)) +
+    "</b></footer></body></html>"
+  );
 }
 
 function escapeHtml(value: string): string {

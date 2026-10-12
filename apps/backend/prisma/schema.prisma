@@ -996,7 +996,7 @@ model Product {
   isRecommended   Boolean               @default(false)
   isCombo         Boolean               @default(false)
   sortOrder       Int                   @default(0)
-  printerRouting  ProductPrinterRouting @default(NONE)
+  printerRouting  ProductPrinterRouting @default(KITCHEN)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 

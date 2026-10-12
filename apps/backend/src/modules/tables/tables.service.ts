@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   OrderSource,
@@ -28,6 +29,7 @@ import {
 } from "../../common/idempotency/idempotency-key";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
+import { SettingsService } from "../settings/settings.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
 import {
   createOrderNumber as createBusinessOrderNumber,
@@ -56,6 +58,7 @@ export class TablesService {
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
     private readonly idempotency: IdempotencyService,
+    @Optional() private readonly settings?: SettingsService,
   ) {}
 
   async listHalls(branchId: string | undefined, user: AuthenticatedUser) {
@@ -540,6 +543,12 @@ export class TablesService {
   ) {
     const waiterId = this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const orderDisplayNumberStart = this.settings
+      ? await this.settings.getInt(
+          "order_display_number_start",
+          scope.tenantId,
+        )
+      : 101;
     const idempotencyKey = context?.idempotencyKey
       ? normalizeIdempotencyKey(context.idempotencyKey)
       : undefined;
@@ -688,6 +697,8 @@ export class TablesService {
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
               OrderSource.POS,
+              undefined,
+              orderDisplayNumberStart,
             );
             const order = await tx.order.create({
               data: {

@@ -17,6 +17,7 @@ const actor: AuthenticatedUser = {
 function fixture(methodCode = "CASH", orderTotal = 74000) {
   const calls: string[] = [];
   const auditEntries: Record<string, unknown>[] = [];
+  const refundEmployeeIds: string[] = [];
   let employeeIsActive = true;
   let shiftEmployeeId = "employee-1";
   const refunds: {
@@ -59,6 +60,7 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
         ) ?? null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         calls.push("refund");
+        refundEmployeeIds.push("refund:" + String(data.employeeId));
         const refund = {
           id: `refund-${refunds.length + 1}`,
           amount: data.amount as Prisma.Decimal,
@@ -96,13 +98,15 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
       findUnique: async () => ({ id: "shift-1", employeeId: shiftEmployeeId }),
     },
     revenueRecord: {
-      create: async ({ data }: { data: { amount: Prisma.Decimal } }) => {
-        calls.push(`revenue:${data.amount.toFixed(2)}`);
+      create: async ({ data }: { data: { amount: Prisma.Decimal; employeeId: string } }) => {
+        refundEmployeeIds.push("revenue:" + data.employeeId);
+        calls.push("revenue:" + data.amount.toFixed(2));
         return data;
       },
     },
     cashTransaction: {
-      create: async () => {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        refundEmployeeIds.push("cash:" + String(data.employeeId));
         calls.push("cash:REFUND");
         return {};
       },
@@ -150,6 +154,7 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
   return {
     calls,
     auditEntries,
+    refundEmployeeIds,
     service: new PaymentsService(prisma),
     setEmployeeActive: (active: boolean) => {
       employeeIsActive = active;
@@ -254,7 +259,7 @@ test("inactive employees cannot create or replay a cash refund", async () => {
 });
 
 test("refunds require branch shift access when the selected shift belongs to another cashier", async () => {
-  const { calls, service, setShiftEmployee } = fixture();
+  const { calls, service, setShiftEmployee, refundEmployeeIds } = fixture();
   setShiftEmployee("employee-2");
   const cashier: AuthenticatedUser = {
     ...actor,
@@ -281,6 +286,7 @@ test("refunds require branch shift access when the selected shift belongs to ano
   };
   const completed = await service.refundPayment("payment-1", request, branchManager);
   assert.equal(completed.id, "refund-1");
+  assert.deepEqual(refundEmployeeIds, ["refund:employee-1", "revenue:employee-1", "cash:employee-1"]);
   const completedWriteCount = calls.length;
 
   await assert.rejects(

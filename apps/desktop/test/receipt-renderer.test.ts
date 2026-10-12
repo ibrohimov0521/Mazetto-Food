@@ -544,3 +544,87 @@ test("version-two receipt settings migrate with default footer enabled", () => {
   assert.equal(migrated.schemaVersion, 4);
   assert.equal(migrated.documents.RECEIPT.defaultFooterEnabled, true);
 });
+
+test("shift report renders grouped order details, totals, escaping and printer paper size", () => {
+  const html = printableReceiptHtml(
+    {
+      documentType: "SHIFT_REPORT",
+      content: {
+        documentType: "SHIFT_REPORT",
+        shift: {
+          id: "shift-1",
+          shiftNumber: 13,
+          openedAt: "2026-10-09 09:00",
+          closedAt: "2026-10-09 18:00",
+          expectedCash: "30000",
+          closingBalance: "30000",
+          cashDifference: "0",
+          salesTotal: "17000",
+          branch: { id: "branch-1", name: "<Sergeli>" },
+          employee: { firstName: "Ali", lastName: "Valiyev" },
+        },
+        orders: [
+          {
+            id: "order-1",
+            displayOrderNumber: "M-1",
+            status: "SERVED",
+            total: "17000",
+            items: [{ productName: "Lavash & choy", quantity: "2" }],
+          },
+          {
+            id: "order-2",
+            orderNumber: "M-2",
+            status: "CANCELLED",
+            total: "5000",
+            items: [{ productName: "Burger", quantity: "1", status: "CANCELLED" }],
+          },
+        ],
+      },
+    },
+    { paperFormat: "LABEL", paperWidthMm: 90, paperHeightMm: 80 },
+  );
+
+  assert.match(html, /@page\{size:90mm 80mm;margin:0\}/);
+  assert.match(html, /Topshirilgan \/ yakunlangan: 1/);
+  assert.match(html, /Bekor qilingan: 1/);
+  assert.match(html, /Lavash &amp; choy/);
+  assert.match(html, /&lt;Sergeli&gt;/);
+  assert.match(html, /Buyurtmalar soni: 2/);
+  assert.match(html, /Buyurtmalar summasi \(bekor qilinganlar bilan\):/);
+  assert.doesNotMatch(html, /<Sergeli>/);
+});
+
+test("shift report keeps missing money distinct from zero and uses Tashkent time", () => {
+  const html = printableReceiptHtml({
+    documentType: "SHIFT_REPORT",
+    content: {
+      documentType: "SHIFT_REPORT",
+      shift: {
+        id: "shift-2",
+        shiftNumber: 14,
+        openedAt: "2026-10-09T14:30:00.000Z",
+        expectedCash: null,
+        closingBalance: "",
+        cashDifference: null,
+        salesTotal: null,
+        branch: { id: "branch-1", name: "Sergeli" },
+      },
+      orders: [
+        {
+          id: "order-3",
+          orderNumber: "M-3",
+          status: "SERVED",
+          createdAt: "2026-10-09T14:30:00.000Z",
+          total: null,
+          items: [],
+        },
+      ],
+    },
+  });
+
+  assert.match(html, /Kutilgan naqd<\/dt><dd>Ma&#039;lumot yo&#039;q/);
+  assert.match(html, /Haqiqiy naqd<\/dt><dd>Ma&#039;lumot yo&#039;q/);
+  assert.match(html, /09\/10\/2026/);
+  assert.match(html, /19:30/);
+  assert.match(html, /Topshirilgan \/ yakunlangan jami: <b>Ma&#039;lumot yo&#039;q/);
+});

@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
-const require = createRequire(new URL("../apps/backend/package.json", import.meta.url));
+const require = createRequire(
+  new URL("../apps/backend/package.json", import.meta.url),
+);
 const { Client } = require("pg");
 const adminUrl = new URL(
   process.env.MAZETTO_E2E_ADMIN_DATABASE_URL ??
+    process.env.DATABASE_URL ??
     "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
 );
 assert.ok(
@@ -39,7 +42,18 @@ function run(args) {
 }
 
 const admin = new Client({ connectionString: adminUrl.toString() });
-await admin.connect();
+try {
+  await admin.connect();
+} catch (error) {
+  const code = error && typeof error === "object" ? error.code : undefined;
+  if (code === "ECONNREFUSED" || code === "ETIMEDOUT") {
+    throw new Error(
+      `Isolated E2E could not reach local PostgreSQL at ${adminUrl.hostname}:${adminUrl.port || "5432"}. Start the test database or set MAZETTO_E2E_ADMIN_DATABASE_URL to its loopback connection.`,
+      { cause: error },
+    );
+  }
+  throw error;
+}
 try {
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   run(["--filter", "backend", "prisma:generate"]);

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../components/auth/auth-provider";
 import { getPrimaryRedirect } from "../../lib/auth";
 import { useRouter } from "next/navigation";
@@ -24,9 +24,12 @@ function sameLoginIdentifier(left: string, right: string): boolean {
 export default function LoginPage() {
   const { isReady, login, session } = useAuth();
   const router = useRouter();
+  const initialSessionHandled = useRef(false);
 
   useEffect(() => {
-    if (isReady && session) {
+    if (!isReady || initialSessionHandled.current) return;
+    initialSessionHandled.current = true;
+    if (session) {
       router.replace(getPrimaryRedirect(session.user));
     }
   }, [isReady, router, session]);

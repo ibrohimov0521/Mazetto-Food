@@ -93,6 +93,7 @@ export type JwtContext = {
   branchId: string;
   employeeId?: string;
   isGlobalScope: boolean;
+  permissions: string[];
 };
 
 export type LocalPrintJob = {
@@ -2164,6 +2165,7 @@ export function readJwtContext(authorization: string): JwtContext | null {
       branchId?: unknown;
       employeeId?: unknown;
       isGlobalScope?: unknown;
+      permissions?: unknown;
     };
     const userId =
       typeof parsed.id === "string"
@@ -2184,6 +2186,7 @@ export function readJwtContext(authorization: string): JwtContext | null {
         ? { employeeId: parsed.employeeId }
         : {}),
       isGlobalScope: parsed.isGlobalScope === true,
+      permissions: normalizeIdentityClaims(parsed.permissions),
     };
   } catch {
     return null;

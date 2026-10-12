@@ -38,7 +38,11 @@ import { writeAuditLog } from "../audit/audit-write";
 const cacheKey = (tenantId: string) => `settings:${tenantId}:all`;
 const CACHE_TTL_SECONDS = 60;
 // A cashier payment-method kill switch must not depend on Redis invalidation.
-const IMMEDIATE_SETTING_KEYS = new Set<SettingKey>(["cashier_payment_methods"]);
+const IMMEDIATE_SETTING_KEYS = new Set<SettingKey>([
+  "cashier_payment_methods",
+  "kitchen_pos_orders_enabled",
+  "order_display_number_start",
+]);
 type SettingReadClient = Pick<Prisma.TransactionClient, "setting">;
 
 @Injectable()
@@ -52,12 +56,20 @@ export class SettingsService {
 
   // --- Tipli o'qish ------------------------------------------------------
 
-  async getInt(key: SettingKey, tenantId: string): Promise<number> {
-    return parseIntSetting(key, await this.readRaw(key, tenantId));
+  async getInt(
+    key: SettingKey,
+    tenantId: string,
+    client?: SettingReadClient,
+  ): Promise<number> {
+    return parseIntSetting(key, await this.readRaw(key, tenantId, client));
   }
 
-  async getBool(key: SettingKey, tenantId: string): Promise<boolean> {
-    return parseBoolSetting(key, await this.readRaw(key, tenantId));
+  async getBool(
+    key: SettingKey,
+    tenantId: string,
+    client?: SettingReadClient,
+  ): Promise<boolean> {
+    return parseBoolSetting(key, await this.readRaw(key, tenantId, client));
   }
 
   async getCsv(

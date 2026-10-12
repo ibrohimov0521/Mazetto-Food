@@ -857,3 +857,175 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Full `pnpm release:acceptance` passed after supplying its dedicated local PostgreSQL admin URL. The disposable PostgreSQL 18 database applied all 59 migrations, seeded, and passed the database-backed order-to-cash-to-stock-to-print E2E. The container was stopped and port 5432 was confirmed closed afterward.
 - No production data or schema was changed; no commit, push, merge, or deployment was performed. Remaining hardware, Windows offline/reconnect, real-account Telegram, NBU reconciliation, and tenant A/B staging checks remain external release gates.
 - Full `pnpm test` passed across all six test-bearing workspace packages and the 11 root smoke tests. Read-only production smoke passed 27/27, confirming live production health only; it does not verify the unreleased worktree.
+
+## Audit continuation: Telegram courier map validation and grouped release state (2026-10-12)
+
+- Telegram courier detail now emits a Google Maps link only for non-empty, finite coordinates inside the configured Tashkent delivery zone; malformed and out-of-zone historical values no longer become misleading links such as 0,0.
+- Regression coverage includes valid numeric strings, null and blank values, non-finite values, origin coordinates, outside-zone coordinates, and arrays.
+- PR #296 head a887c90 is pushed and its Windows installer plus required verify checks passed. The PR has no Prisma migrations; release production still points to 9d9c3b7.
+- Read-only production smoke passed 27/27. A fresh pre-release database dump was created at /mnt/storage/backups/mazetto/postgres/mazetto-20261012-093631596.dump (538,289 bytes; 703 entries; SHA-256 8671a672ee9e05d0846b2f04ff9ca81d4b2e660f81fd250b5976f40325e882f3); archive readability was verified with pg_restore --list. The new dump has not had a restore drill.
+- This additional fix is local and uncommitted. No application or production data was changed; PR merge/deploy remains pending release authorization.
+
+## Audit continuation: stalled desktop test and full workspace gate (2026-10-12)
+
+- An orphaned Desktop gateway test had remained blocked for over 24 hours because its mock HTTP response body was not consumed before waiting for `server.close()`; keep-alive left the test server open. The isolated test process used only a disposable SQLite file and was stopped.
+- The gateway test now consumes and asserts the response body, and closes the mock connection. Focused gateway tests passed 48/48; the full Desktop package test script passed 167/167.
+- Backend tests passed 666/666 and shared transient HTTP retry tests 3/3.
+- Full `pnpm verify` passed across 8 workspaces: 14 typecheck/lint tasks, 7 production builds, and 33/33 operational validators. The initial attempt failed before tasks started because the non-interactive SSH PATH omitted pnpm; rerunning with the project toolchain path succeeded.
+- No push, merge, production write, migration, or deployment was performed for this batch. The Telegram map fix and test updates remain local; manual review of every tracked file is still incomplete, and hardware/bank/real-account acceptance items remain open.
+## Audit continuation: cashier order history cancellation UX (2026-10-12)
+
+- Item cancellation reason text could survive the cashier returning from one item's dialog and opening another; the reason field now resets both when opening a new cancellation and when choosing "Ortga".
+- Added a mocked Playwright regression covering that sequence at 375px and 1280px; both passed with no page errors or horizontal overflow. No live API or production order was touched.
+- POS web tests passed 72/72, lint and typecheck passed, and its isolated production build completed with 53 routes. The admin payment-settings UI QA also passed at 1600, 768, 360, and 320px after correcting a stale test selector.
+- No push, merge, production write, migration, or deployment was performed. Manual file-by-file review and the previously recorded hardware, bank, real-account and tenant-staging gates remain open.
+## Audit continuation: printer fan-out with offline configured printers (2026-10-12)
+
+- Receipt job creation filtered active printers to status ONLINE. With multiple printers on one route, this could omit a temporarily offline but active printer when another printer was online, so that device would never receive its copy after recovery.
+- Queue creation now targets every active route-matched printer; offline targets retain their own pending durable jobs and inactive printers remain excluded. A regression verifies the online and offline printer IDs both receive assigned jobs.
+- Printer queue/recovery tests passed 20/20; the full backend test suite passed 667/667 plus 3/3 HTTP retry tests. Backend lint and typecheck passed.
+- POS web tests passed 72/72, lint/typecheck and isolated production build passed; cashier-history Playwright QA passed at 375px and 1280px. Admin payment-settings QA passed at 1600, 768, 360, and 320px.
+- No production printer, order, database, push, merge, or deployment was changed. Physical multi-printer output, Windows driver/USB behavior, offline recovery, and the remaining repository audit are still open.
+
+## Audit continuation: offline POS catalog branch guard (2026-10-12)
+
+- Offline POS checkout could build its local receipt snapshot from a catalog cached for another branch. The branch mismatch previously fell back to generic item labels but still queued an order and local print jobs. The gateway now rejects wrong-branch POS/realtime-bootstrap caches before queueing; no order or printer job is created.
+- When a matching branch catalog is available, products, selected variants, prices, modifiers, and quantities are validated before a local receipt snapshot is created. Existing outbox-only behavior is preserved when no local catalog exists; no local print job is generated without a snapshot.
+- pnpm test passed across six workspace test packages plus 11 root smoke tests; gateway 48/48 and Desktop 167/167. pnpm verify passed 14 lint/typecheck tasks, 7 builds, and 33 validators.
+- pnpm release:acceptance passed, including all 59 migrations and the database-backed order-to-cash-to-stock-to-print E2E in a temporary loopback-only PostgreSQL 18 container with no volume; the container was stopped and confirmed removed.
+- No push, merge, production write, migration, or deployment was performed.
+- A separate timestamp difference remains: local offline paper uses the device's order-created time, while the server receipt snapshot uses server receipt-creation time after replay. The server must not trust a client timestamp without a secure provenance design; decide whether reprints should show original sale time or their own print time before changing that behavior.
+- Physical printer output, Windows offline/reconnect, real-account Telegram, NBU reconciliation, tenant A/B staging, live application rollback rehearsal, and manual repository review remain open.
+
+## Audit continuation: restore rehearsal and cash refund review (2026-10-12)
+
+- The 2026-10-12 production backup was restored with exit-on-error in an isolated PostgreSQL 18 container; all 59 migrations deployed twice without pending work. Branch, employee, order, payment, and receipt counts matched the source restore and an independent rollback restore (2/7/21/17/38).
+- The temporary database container was removed and its loopback port closed. This validates the backup and migration replay, not live application rollback.
+- Production read-only smoke passed 27/27. Cashier item-refund logic was reviewed: it locks the order/payment rows, requires an open matching shift and refund permission, and blocks non-cash refunds from being paid out of the till.
+- Physical printer output, Windows offline/reconnect, real-account Telegram, NBU reconciliation, tenant A/B staging, application rollback rehearsal, and manual repository review remain open.
+
+## Audit continuation: shift-report amount parity and dependency review (2026-10-12)
+
+- A follow-up comparison found the browser shift report formatted blank/whitespace monetary values as `0 so'm`, while Desktop correctly reported them as unavailable. The browser formatter now rejects null, blank, whitespace-only, non-numeric, and unsupported values while preserving a genuine numeric zero; regression coverage added.
+- POS tests passed 74/74; POS lint and typecheck passed. The full workspace `pnpm test` and `pnpm verify` passed, including 14 lint/typecheck tasks, 7 builds, and 33 operational validators.
+- `pnpm audit --prod` reports no known vulnerabilities. Full `pnpm audit` reports `sprintf-js@1.1.3` through Electron Builder's optional development-only dependency chain. The package-registry audit metadata and the reviewed GitHub advisory disagree about whether a fixed release exists; the advisory currently lists no patched version. No forced override was applied. Track upstream and re-check before packaging a Desktop release.
+- This remains an uncommitted grouped audit change. No push, merge, migration, production write, or deployment was performed. Physical printer, Windows workstation offline/reconnect, authorized Telegram UX, NBU reconciliation, tenant A/B staging, live application rollback rehearsal, and manual review of all repository files remain open.
+
+
+## Audit continuation: offline POS replay identity and response stability (2026-10-12)
+
+- The offline POS gateway could accept a stable idempotency key from the HTTP header while the backend requires the key in the checkout body. Header/body disagreement also made the local queue key differ from the body key. Offline checkout now requires a non-empty body key of at most 160 characters and rejects a conflicting header; regression cases cover header-only and mismatched keys.
+- A wider Desktop test run exposed that replaying the same queued POS order could regenerate its visible local order number from the current second. Queued responses now reuse the number already persisted in the offline order snapshot, keeping the order and receipt identity stable across retries.
+- Gateway tests passed 50/50 and the complete Desktop package passed 172/172 after the fix. The first broad run failed on the order-number instability; the rerun passed after the correction.
+- These changes have not yet passed a fresh full-workspace test/verify/release-acceptance cycle. They remain uncommitted and unreleased. No production write, migration, push, merge, or deployment occurred.
+- Manual review of all tracked files and external acceptance (physical/Windows printer, restaurant offline reconnect, real Telegram UX, NBU reconciliation, tenant A/B staging and live application rollback) remain outstanding.
+
+
+## Grouped verification follow-up (2026-10-12)
+
+- The full workspace test run passed 977 tests: backend 667, shared HTTP retry 3, Desktop 172, POS 74, customer web 38, Telegram 5, print agent 7, and root smoke 11.
+- Fresh pnpm verify passed 14 lint/typecheck tasks, 7 builds, and 33/33 operational validators.
+- The first release-acceptance attempt stopped because its disposable E2E expected a local PostgreSQL service at port 5432. It was rerun with a volume-free PostgreSQL 18 container bound to a temporary loopback port. All release-acceptance stages, migrations, seed, and DB-backed customer order-to-cash-to-stock-to-print E2E passed. The container was removed and port 5432 is closed.
+- This verifies the current grouped worktree, not every tracked file in the repository and not real Windows hardware or live external-provider flows. No push, merge, production migration/write, or deployment was done.
+
+
+## Audit continuation: offline cashier tender gate (2026-10-12)
+
+- The Desktop gateway previously allowed a cash sale to enter the offline queue even when the last cached POS catalog showed CASH disabled (or had no payment-method snapshot). The backend could reject the sale on reconnect after local print jobs had already been produced. Paid offline POS orders now fail closed unless the cached catalog explicitly marks CASH active. Regression coverage also confirms that unpaid dine-in orders remain queueable without tender methods and produce only a kitchen print job.
+- The admin confirmation now explains that an offline terminal cannot receive payment-setting changes from another device until it reconnects. This is an inherent offline limitation, not a globally immediate kill switch; pending offline work should be synced before disabling its tender.
+- Desktop gateway tests passed 52/52 after the change. The immediately following full-workspace test, verify, and release-acceptance runs all passed. Production read-only smoke passed 27/27 against the deployed baseline; the current worktree remains undeployed.
+
+
+## Audit continuation: offline existing-order cash tender gate (2026-10-12)
+
+- The offline cashier could previously accept cash for an existing online order using a fresh order and shift cache without checking whether the last synchronized `/payments/methods` response still enabled CASH. It now requires a fresh (maximum 12-hour) cashier tender snapshot and an enabled CASH entry before writing the payment mutation or local receipt job.
+- Missing, stale, malformed, and CASH-disabled snapshots fail closed with clear cashier-facing errors. Regression tests confirm no outbox command or receipt job is created in those cases; unpaid dine-in remains unaffected.
+- Desktop gateway tests passed 52/52; full Desktop tests passed 174 TAP outcomes. The fresh workspace `pnpm test` passed, `pnpm verify` passed 14 lint/typecheck tasks, 7 builds, and 33 validators, and `pnpm release:acceptance` applied all 59 migrations, seeded, and passed the database-backed order-to-cash-to-stock-to-print E2E in a volume-free temporary PostgreSQL 18 container. The container and its loopback port were verified removed afterward.
+- Read-only production smoke passed 27/27 against the currently deployed baseline. No production write, migration, push, merge, or deployment was performed for this audit group.
+- Physical printer output, Windows Desktop offline/reconnect behavior, real-account Telegram UX, NBU reconciliation feed, tenant A/B staging, and live application rollback remain external acceptance gates. Manual review of all tracked files remains incomplete; no claim of a line-by-line review of the entire repository is made.
+
+
+## Audit continuation: shift-report printer authorization (2026-10-12)
+
+- Review found the Desktop local shift-report route checked login and branch but not shift permissions. It now requires `SHIFT_CLOSE`, `SHIFT_VIEW_OWN`, or `SHIFT_VIEW_BRANCH`; own-shift permissions are additionally bound to the authenticated employee ID carried in the narrow print payload. Unauthorized and another-employee requests are rejected before enqueue.
+- The gateway regression covers missing permission, same-branch foreign employee, authorized own-shift printing, branch mismatch, and duplicate idempotent requests. The UI report models now preserve the shift employee ID needed by the local check.
+- The latest-code `pnpm test` passed across the workspace; `pnpm verify` passed 14 lint/typecheck tasks, 7 builds, and 33 validators; `pnpm release:acceptance` passed all 59 migrations, seed, and isolated order-to-cash-to-stock-to-print E2E. Read-only production smoke remains 27/27 against the deployed baseline.
+- No production write, migration, push, merge, or deployment was performed. Physical printer output and Windows offline/reconnect, real-account Telegram, NBU transaction matching, tenant A/B staging, and live application rollback still require external acceptance. Full tracked-file manual review remains incomplete.
+
+## Audit continuation: cashier payment-method override and recovery (2026-10-12)
+
+- PostgreSQL places NULL values first for descending nullable `branchId`; several payment-method queries had relied on `branchId DESC` to prefer a branch row. An inactive branch override could be filtered out before deduplication, causing the active global method to reappear.
+- A shared explicit resolver now governs POS catalog, Desktop bootstrap, cashier payment-method listing, and existing-order settlement. Branch records win regardless of SQL result order; a disabled branch override blocks the corresponding global method, even if a client sends a stale global payment-method ID.
+- Malformed or explicitly empty stored cashier allowlists no longer silently restore CASH. The admin control discards unknown stored codes while editing so the setting remains repairable.
+- Backend tests passed 674/674 plus 3 shared HTTP retry tests; POS tests passed 74/74. Backend and POS lint/typecheck passed. Admin settings browser QA passed at 1600, 768, 360, and 320 px, covering cashier toggles, offline confirmation, and repair of an invalid saved value.
+- Fresh workspace `pnpm verify` passed after this change group: 14 lint/typecheck tasks, 7 builds, and 33 validators. Full `pnpm release:acceptance` passed backend and Desktop tests, all validators, media checks, 59 migrations, seed, and the database-backed order-to-cash-to-stock-to-print E2E with an explicit isolated-admin URL.
+- The first release acceptance attempt found that isolated E2E ignored the configured `DATABASE_URL` and defaulted to localhost:5432. The script now prefers the explicit isolated-admin URL, then `DATABASE_URL`, then its safe local default, and reports a clear connection hint. After that harness edit, the isolated E2E passed using `DATABASE_URL` and the local development PostgreSQL at 5433; formatting and all 33 validators passed. The temporary test database was confirmed dropped. Production was not touched.
+- The existing 27/27 production smoke is a read-only check of the deployed baseline and was not rerun for this unreleased change group. No push, merge, production write, or deployment occurred.
+- Manual review of every tracked file and external acceptance (physical printer, Windows offline/reconnect, live Telegram, NBU reconciliation, tenant A/B staging, and application rollback) remain open.
+
+## Audit continuation: tenant staff authentication (2026-10-12)
+
+- A trusted active membership with no active non-platform role could resolve to a successful login with no permissions. Tenant membership resolution now rejects empty and platform-only role sets.
+- Added regression tests for an active cashier membership, missing/platform-only roles, inactive tenant/user, and branch-scoped membership without an active same-tenant employee.
+- Focused tests passed 4/4; full backend tests passed 678/678 plus shared HTTP retry tests 3/3; backend typecheck and lint passed. Read-only production counts found no active membership without an active restaurant role and all three active employee-linked accounts had a same-branch tenant membership. This does not verify password correctness or reproduce the reported Desktop login on the user's workstation.
+- No production write, migration, push, merge, or deployment was performed. Full tracked-file manual review and external hardware/provider acceptance remain incomplete.
+
+## Audit continuation: desktop login and device enrollment (2026-10-12)
+
+- Desktop native login previously treated a failed device heartbeat as failed authentication. An unapproved workstation therefore could not establish a renderer session and could not use the existing enrollment screen. Authentication now completes independently; the device-aware post-login redirect opens enrollment, while device-authorized work remains gated.
+- Existing sessions keep the prior offline-friendly role redirect; the initial-session effect runs once and cannot override the device-aware destination of a fresh login.
+- Regression coverage added. Desktop tests passed 175/175 and POS tests passed 74/74; both apps passed lint and typecheck. `pnpm verify` passed 14/14 lint/typecheck tasks, 7/7 builds, and 33/33 validators. `pnpm release:acceptance` passed with 59 migrations and the local database-backed order-to-cash-to-stock-to-print E2E; its temporary database was confirmed removed.
+- The fix is not deployed. A real workstation/user login and device enrollment is still required after the grouped release; no production writes or deployment were performed. Manual review of all tracked files and physical printer, live Telegram, NBU settlement, tenant A/B staging, and rollback acceptance remain outstanding.
+
+## Desktop login enrollment redirect correction (2026-10-12)
+
+- Follow-up review found that any failed device heartbeat or local gateway exception could be mistaken for an unregistered workstation. The redirect now opens enrollment only after an explicit heartbeat `404` while the local Desktop gateway is online. The enrollment screen distinguishes an unregistered device from network, gateway, and other server failures, provides retry for unknown status, and treats a successful code exchange as success without depending on a follow-up heartbeat.
+- The focused regression test passed. Full `pnpm test` passed; `pnpm verify` passed all 14 lint/typecheck tasks, 7 builds, and 33 validators; isolated `pnpm release:acceptance` passed all 59 migrations, seed, and database-backed order-to-cash-to-stock-to-print E2E. The temporary test database count was confirmed at zero.
+- No production change was made. Real Windows login/enrollment remains a required acceptance test; manual review of every tracked repository file remains incomplete.
+
+## Desktop credential storage source review (2026-10-12)
+
+- Saved credentials are written only after successful login and explicit user confirmation, capped at ten entries, and encrypted through Electron `safeStorage`. The renderer receives saved identifiers only; it cannot read saved passwords through the exposed credential-list IPC. Session and device tokens use the same protected store, and the primary BrowserWindow keeps context isolation, sandboxing, and disabled Node integration.
+- No source-level defect was confirmed in this slice. Actual Windows DPAPI storage, profile restore, and removal behavior still require runtime acceptance on the restaurant workstation; no password or live credential was read during this review.
+
+## Repository hygiene scan (2026-10-12)
+
+- The tracked-file inventory contains no `.next`, `dist`, `build`, `node_modules`, coverage, log, database dump, SQLite runtime store, or real `.env` files. Only the expected `.env.example` templates are tracked; `.gitignore` excludes the corresponding local/generated artifacts.
+- Existing untracked `.orig` source copies and `scripts/qa-cashier-history.mjs` were preserved and left visible in Git status. Their authorship/use is uncertain, so they were not deleted or hidden with a new ignore rule.
+
+## Audit continuation: open cashier shift cash summary (2026-10-12)
+
+- The cashier's own shift-history endpoint returned only the persisted `expectedCash`, which is normally unset until shift close. The history UI displayed that missing value as `0 so'm`, incorrectly suggesting the open till was empty. Branch-level shift history already computed `currentCash`, so behavior differed by role.
+- The own-shift list now calculates current cash for open shifts from branch-scoped cash-ledger aggregates using the same opening-float/refund/expense rules as the current-shift summary. Closed shifts keep their persisted expected/closing totals. The history labels now distinguish open till cash and opening float from closed-shift expected and final cash; missing values no longer become zero.
+- Cash-register shift-history regression tests passed 14/14. Backend and POS typechecks passed. The cashier-history browser QA passed at 375px and 1280px with no runtime errors or horizontal overflow. After this change, full `pnpm test`, `pnpm verify` (14 lint/typecheck tasks, 7 builds, 33 validators), and isolated `pnpm release:acceptance` all passed. The DB-backed order-to-cash-to-stock-to-print E2E applied all 59 migrations and completed successfully in a disposable PostgreSQL container; the container was removed on exit. `git diff --check` is clean. No push, merge, production write, migration, or deployment was performed.
+
+## Audit continuation: receipt controls and operational print paths (2026-10-12)
+
+- Reviewed receipt-profile normalization, legacy schema migration, editor controls, local persistence, and renderer output. Customer receipt logo, organization name, and title are independently configurable; the default customer receipt hides the MAZETTO FOOD logo/name, while kitchen, cancellation, and refund documents retain independent settings. Legacy default branding is migrated once without overriding explicit choices or other document types. Settings are stored on each Desktop terminal because printers are terminal-specific; they are not tenant-wide synchronized settings.
+- Reviewed cashier tender switches and server enforcement: the UI prevents disabling the last method, strips unknown stored codes to allow repair, and explains offline staleness. The server uses the current tenant allowlist and explicit branch override precedence; a disabled branch payment method cannot fall through to a global method. No additional defect was confirmed in this review slice.
+- Reviewed shift-close report pagination, the narrow branch-bound print payload, Desktop authorization (permission, branch, and own-employee checks), printer queue fallback, and the 205-order browser/Desktop QA. Active offline printers retain queued receipt jobs so reconnection can deliver them; inactive printers are excluded.
+- Reviewed staff Telegram map presentation: invalid/empty/out-of-delivery-bounds coordinates do not produce a dead map link; valid coordinates use the explicit Google Maps search URL. No additional source defect was confirmed in these slices.
+- This is a scoped source review, not evidence of a physical print test or live Telegram delivery. Windows offline/reconnect behavior, real printer selection and paper output, live Telegram group behavior, NBU SMS/payment reconciliation, tenant A/B staging, application rollback, and manual review of all tracked repository files remain open. No push, merge, production write, migration, or deployment was performed.
+
+## Audit continuation: cashier tender and shift ledger review (2026-10-12)
+
+- Traced POS checkout and later payment collection through payment rows, revenue records, cash transactions, shift-close totals, and refund receipt creation. POS revenue is recorded by tender, while only CASH contributes to the physical cash drawer; online/terminal tenders do not inflate counted cash. Refunds reduce the drawer through a separate refund ledger entry, and item cancellations allocate cash refunds only while the source shift is open and the actor has refund permission.
+- Click/Payme and other configured tender codes remain manual cashier recording, not provider-confirmed settlement. Automatic provider callbacks/reconciliation and non-cash refunds remain disabled/external gates; the settings toggle alone must not be interpreted as a verified bank settlement.
+- No additional defect was confirmed in this scoped review. Existing cashier-history browser QA passed at 375px and 1280px. `pnpm audit --prod` reported no known vulnerabilities. Dependency removal was not attempted because static usage uncertainty is not sufficient evidence.
+- Full manual review of every tracked repository file, actual bank/provider behavior, physical printer output, live Telegram delivery, Windows offline/reconnect, tenant A/B staging, and rollback rehearsal remain outstanding. No push, merge, production write, migration, or deployment was performed.
+
+## Audit continuation: order status override and paid cancellation (2026-10-12)
+
+- Review found that the legacy status endpoint trusted client-supplied `force: true` for lifecycle bypasses even though `ORDER_SEND_KITCHEN` is assigned to cashier/waiter workflows. It could reopen terminal orders or skip kitchen confirmation without an admin capability. The server now requires `ADMIN_ACCESS` only when force would actually bypass those rules; ordinary cashier/kitchen transitions continue to work.
+- A second financial gap allowed the generic whole-order cancellation path to mark an order cancelled and restore eligible stock without creating a refund. Cancellation now checks the net collected balance (successful payments minus recorded refunds) under the order transaction lock and rejects cancellation while any collected amount remains. The cashier must refund/adjust payment first; provider-mediated non-cash refunds remain an external/manual gate.
+- Added regression coverage for the paid-order guard and for a non-admin attempting to force a completed order. Focused order-event/tenant tests passed 19/19; the backend suite passed 681/681 plus HTTP retry tests 3/3. Backend lint/typecheck passed, full workspace verification passed 14/14 lint/typecheck tasks, 7/7 builds, and 33/33 validators. Isolated release acceptance passed all 59 migrations and the DB-backed order-to-cash-to-stock-to-print E2E; disposable database container and port were verified removed/closed.
+- No push, merge, production write, migration, or deployment was performed. External bank/provider refund acceptance, customer media/API production acceptance, physical printer/Windows offline tests, live Telegram, tenant A/B staging, rollback rehearsal, and full manual review of every tracked file remain open.
+## Audit continuation: Tashkent-day consistency and Telegram tenant scope (2026-10-12)
+
+- The grouped date audit found that the cashier dashboard and Telegram management summary still used the backend process timezone for "today". That could omit Tashkent-local activity from 00:00ºw^~)Þw04:59 and, for a global restaurant admin, let Telegram counts span tenants.
+- The dashboard now reuses the report range resolver. The Telegram summary resolves the authenticated tenant and optional branch, and applies both inclusive Tashkent-day bounds to order counts and tenant/branch scope to employee counts.
+- The expense form's default date and report form's initial date/year now use the Asia/Tashkent calendar. Existing expense, payment, receipt, and shift filters continue to convert selected calendar days into exact UTC instants.
+- Added regression checks for date rollover, the 24-hour Tashkent dashboard range, and tenant-isolated Telegram query filters. Backend tests passed 685/685 plus HTTP retry 3/3; POS tests passed 78/78. Full workspace verify passed 14/14 lint/typecheck tasks, 7/7 builds, and 33/33 validators. Diff whitespace check passed.
+- Isolated release acceptance passed after these changes: all 59 migrations, seed, media validation, and database-backed order-to-cash-to-stock-to-print E2E. Its loopback-only PostgreSQL container and port were removed afterward.
+- No production write, migration, push, merge, or deploy occurred. Production therefore still runs the earlier deployed baseline; its prior read-only smoke result is not evidence for this unshipped source.
+- Audit remains incomplete at repository-wide manual line review and external acceptance: physical printer paper output, Windows offline/reconnect, live Telegram UX, NBU QR/SMS reconciliation, tenant A/B staging, and production rollback rehearsal.

@@ -1,6 +1,8 @@
+import "reflect-metadata";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
+import { TelegramStaffService } from "../src/modules/telegram/telegram-staff.service";
 
 test("staff order notification uses an explicit map button without a link preview", async () => {
   const previousToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -86,5 +88,35 @@ test("staff order notification uses an explicit map button without a link previe
     else process.env.TELEGRAM_BOT_TOKEN = previousToken;
     if (previousChatId === undefined) delete process.env.TELEGRAM_STAFF_CHAT_ID;
     else process.env.TELEGRAM_STAFF_CHAT_ID = previousChatId;
+  }
+});
+
+test("courier map links require non-empty coordinates inside the delivery zone", () => {
+  const service = new TelegramStaffService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const presentation = service as unknown as {
+    locationLink: (value: unknown) => string | null;
+  };
+
+  assert.equal(
+    presentation.locationLink({ latitude: "41.2154", longitude: "69.1548" }),
+    "https://www.google.com/maps/search/?api=1&query=41.2154,69.1548",
+  );
+
+  for (const invalid of [
+    { latitude: null, longitude: 69.2 },
+    { latitude: " ", longitude: "69.2" },
+    { latitude: 0, longitude: 0 },
+    { latitude: 41.5, longitude: 69.2 },
+    { latitude: "NaN", longitude: "69.2" },
+    [],
+  ]) {
+    assert.equal(presentation.locationLink(invalid), null);
   }
 });

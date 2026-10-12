@@ -1275,7 +1275,7 @@ function PosTerminal() {
             <span>Buyurtma summasi</span>
             <strong>{money(success.order.total)}</strong>
           </div>
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             {success.payLater && !success.offlineQueued && success.order.id ? (
               <button
                 className={styles.button}
@@ -1393,7 +1393,7 @@ function PosTerminal() {
               })}
             </fieldset>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               onClick={() => setSelectedProduct(null)}

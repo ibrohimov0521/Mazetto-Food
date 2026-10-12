@@ -2,6 +2,7 @@ import { syncKitchenTickets } from "../kitchen/kitchen-status-sync";
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -91,8 +92,11 @@ import {
   assertTableInBranch,
   createModifierSnapshot,
   recalculateOrderTotals,
-  resolveBranchPaymentMethod,
 } from "./order-guards";
+import {
+  resolveBranchPaymentMethod,
+  resolveEffectiveBranchPaymentMethods,
+} from "../payments/payment-method-resolution";
 import {
   ORDER_EVENTS,
   orderStateForLegacyStatus,
@@ -103,6 +107,7 @@ import { TelegramOrderNotificationService } from "../telegram/telegram-order-not
 import {
   planCashRefunds,
   recordCashRefund,
+  sumNetCollectedPayments,
   type RefundablePayment,
 } from "../payments/refund-ledger";
 
@@ -268,33 +273,45 @@ export class OrdersService {
      * Ilgari bu yerda `[{ code: "CASH" }]` qattiq yozilgan edi va kassa
      * ekrani shuning uchun faqat naqdni bilardi — karta bilan keladigan
      * mijozga xizmat ko'rsatib bo'lmasdi. Filialga xos usul umumiysidan
-     * ustun (`orderBy: branchId desc`), shu sababli bir xil kod ikki
-     * marta chiqmasligi uchun kod bo'yicha filtrlanadi.
+     * ustun. Natijalar kod bo'yicha aniq birlashtirilib, DB NULL tartibiga
+     * tayanilmaydi.
      */
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const orderDisplayNumberStart = this.settings
+      ? await this.settings.getInt("order_display_number_start", tenantId)
+      : 101;
     const enabledPaymentMethods =
       await this.enabledCashierPaymentMethods(tenantId);
     const branchPaymentMethods = await this.prisma.paymentMethod.findMany({
-      where: { isActive: true, OR: [{ branchId }, { branchId: null }] },
-      orderBy: [{ branchId: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, code: true, name: true, sortOrder: true },
+      where: { OR: [{ branchId }, { branchId: null }] },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        branchId: true,
+        code: true,
+        name: true,
+        sortOrder: true,
+        isActive: true,
+      },
     });
-    const seenMethodCodes = new Set<string>();
-    const paymentMethods = branchPaymentMethods
+    const paymentMethods = resolveEffectiveBranchPaymentMethods(
+      branchPaymentMethods,
+      branchId,
+    )
       .filter((method) => {
+        const code = method.code.trim().toUpperCase();
         if (
-          !isCashierPaymentMethodCode(method.code) ||
-          !enabledPaymentMethods.has(method.code)
+          !method.isActive ||
+          !isCashierPaymentMethodCode(code) ||
+          !enabledPaymentMethods.has(code)
         ) {
           return false;
         }
-        if (seenMethodCodes.has(method.code)) return false;
-        seenMethodCodes.add(method.code);
         return true;
       })
       .sort((left, right) => left.sortOrder - right.sortOrder)
       .map((method) => ({
-        code: method.code,
+        code: method.code.trim().toUpperCase(),
         name: method.name,
         active: true,
       }));
@@ -319,6 +336,7 @@ export class OrdersService {
 
     return {
       branchId,
+      orderDisplayNumberStart,
       categories,
       products,
       paymentMethods,
@@ -395,9 +413,17 @@ export class OrdersService {
               await assertTableInBranch(tx, dto.tableId, branchId);
             }
 
+            const orderDisplayNumberStart = this.settings
+              ? await this.settings.getInt(
+                  "order_display_number_start",
+                  tenantId,
+                )
+              : 101;
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
               OrderSource.POS,
+              undefined,
+              orderDisplayNumberStart,
             );
             const offlineSequence = dto.offlineDisplayOrderSequence;
             const offlineNumberAvailable = Number.isInteger(offlineSequence)
@@ -411,7 +437,8 @@ export class OrdersService {
                 }))
               : false;
             const persistedDisplayOrder =
-              offlineNumberAvailable && offlineSequence! >= 101
+              offlineNumberAvailable &&
+              offlineSequence! >= orderDisplayNumberStart
                 ? {
                     ...displayOrder,
                     displayOrderSequence: Math.max(
@@ -735,8 +762,11 @@ export class OrdersService {
 
     const order = await withUniqueConstraintRetry(() =>
       this.prisma.$transaction(async (tx) => {
-        await assertBranchBelongsToActor(tx, user, branchId);
+        const tenantId = await assertBranchBelongsToActor(tx, user, branchId);
         await assertEmployeeInBranch(tx, employeeId, branchId);
+        const orderDisplayNumberStart = this.settings
+          ? await this.settings.getInt("order_display_number_start", tenantId)
+          : 101;
 
         if (dto.type === OrderType.DINE_IN && !dto.tableId) {
           throw new BadRequestException("Table is required for dine-in orders");
@@ -749,6 +779,8 @@ export class OrdersService {
         const displayOrder = await allocateDisplayOrderNumber(
           tx,
           OrderSource.POS,
+          undefined,
+          orderDisplayNumberStart,
         );
         const order = await tx.order.create({
           data: {
@@ -1478,6 +1510,24 @@ export class OrdersService {
           throw new NotFoundException("Order not found");
         }
 
+        const skipsLifecycleRules =
+          (order.status === OrderStatus.COMPLETED ||
+            order.status === OrderStatus.CANCELLED) &&
+          nextStatus !== order.status;
+        const skipsKitchenConfirmation =
+          order.status === OrderStatus.NEW &&
+          nextStatus !== OrderStatus.CANCELLED &&
+          nextStatus !== OrderStatus.CONFIRMED;
+        if (
+          force &&
+          (!employeeId || skipsLifecycleRules || skipsKitchenConfirmation) &&
+          !hasPermission(user, PERMISSIONS.ADMIN_ACCESS)
+        ) {
+          throw new ForbiddenException(
+            "Buyurtma holati qoidalarini chetlab o'tish uchun admin ruxsati kerak",
+          );
+        }
+
         if (!force) {
           await assertEmployeeInBranch(tx, employeeId!, order.branchId);
         }
@@ -1613,6 +1663,30 @@ export class OrdersService {
         }
 
         if (nextStatus === OrderStatus.CANCELLED) {
+          const collectedPayments = await tx.payment.findMany({
+            where: {
+              orderId,
+              status: {
+                in: [
+                  PaymentStatus.SUCCESS,
+                  PaymentStatus.PAID,
+                  PaymentStatus.PARTIALLY_REFUNDED,
+                ],
+              },
+            },
+            select: {
+              amount: true,
+              status: true,
+              refunds: { select: { amount: true } },
+            },
+          });
+          if (
+            sumNetCollectedPayments(collectedPayments).greaterThan(0)
+          ) {
+            throw new BadRequestException(
+              "Buyurtmada qaytarilmagan to'lov bor. Avval tegishli to'lovni qaytaring, keyin buyurtmani bekor qiling.",
+            );
+          }
           await restoreUnstartedOrderStock(tx, this.inventoryService, {
             orderId,
             actorId: user.id,
@@ -1664,7 +1738,11 @@ export class OrdersService {
             toStatus: nextStatus,
             changedByUserId: user.id,
             changedByEmployeeId: employeeId,
-            reason: dto.reason ?? `POS status requested: ${dto.status}`,
+            reason:
+              dto.reason?.trim() ||
+              (nextStatus === OrderStatus.CANCELLED
+                ? "Buyurtma bekor qilindi"
+                : `POS status requested: ${dto.status}`),
           },
         });
 

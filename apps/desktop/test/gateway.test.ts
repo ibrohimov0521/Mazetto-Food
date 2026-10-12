@@ -7,6 +7,42 @@ import test from "node:test";
 import { DesktopGateway } from "../src/gateway.js";
 import { DesktopPrintWorker } from "../src/print-worker.js";
 import { DesktopStore } from "../src/store.js";
+function cachePosCatalog(
+  store: DesktopStore,
+  authorization: string,
+  sellingPrice: number,
+  products: Array<Record<string, unknown>> = [
+    {
+      id: "product-1",
+      name: "Lavash",
+      sellingPrice,
+      printerRouting: "KITCHEN",
+      variants: [],
+      modifiers: [],
+    },
+  ],
+): void {
+  const url = "https://api.example.test/api/v1/pos/catalog";
+  const authScope = DesktopStore.authScope(authorization);
+  store.putCachedResponse({
+    cacheKey: DesktopStore.cacheKey(url, authScope),
+    requestUrl: url,
+    authScope,
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      data: {
+        branchId: "branch-1",
+        paymentMethods: [{ code: "CASH", name: "Naqd", active: true }],
+        products,
+        tables: [{ id: "table-1", name: "1-stol", isActive: true }],
+      },
+    }),
+    cachedAt: new Date().toISOString(),
+  });
+}
+
 
 test("gateway serves the last successful JSON snapshot when upstream is offline", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
@@ -21,7 +57,10 @@ test("gateway serves the last successful JSON snapshot when upstream is offline"
     receivedDeviceToken = _request.headers["x-mazetto-device-token"] as
       | string
       | undefined;
-    response.writeHead(200, { "Content-Type": "application/json" });
+    response.writeHead(200, {
+      "Content-Type": "application/json",
+      Connection: "close",
+    });
     response.end('{"success":true,"data":[{"id":"branch-1"}]}');
   });
   upstream.listen(0, "127.0.0.1");
@@ -45,6 +84,10 @@ test("gateway serves the last successful JSON snapshot when upstream is offline"
     });
     assert.equal(first.status, 200);
     assert.equal(first.headers.get("x-mazetto-desktop"), "online");
+    assert.deepEqual(await first.json(), {
+      success: true,
+      data: [{ id: "branch-1" }],
+    });
     assert.equal(receivedDeviceId, store.deviceId());
     assert.equal(receivedDeviceToken, "device-secret");
     assert.equal(store.summary().cachedResponses, 1);
@@ -115,7 +158,7 @@ test("gateway serves cached reads and marks itself offline on an upstream 503", 
   }
 });
 
-test("gateway queues an upstream-unavailable cash sale only with a stable idempotency key", async () => {
+test("gateway refuses an offline sale when its branch catalog is not cached", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const gateway = new DesktopGateway({
@@ -147,10 +190,10 @@ test("gateway queues an upstream-unavailable cash sale only with a stable idempo
       }),
     });
 
-    assert.equal(response.status, 202);
-    assert.equal(response.headers.get("x-mazetto-desktop"), "offline-queued");
-    assert.equal(store.summary().pendingCommands, 1);
-    assert.equal(store.listOutbox()[0]?.idempotencyKey, "http-outage-sale-1");
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error.code, "OFFLINE_POS_ORDER_UNSAFE");
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.summary().pendingPrintJobs, 0);
     assert.equal(gateway.status().mode, "offline");
   } finally {
     await gateway.stop();
@@ -356,6 +399,8 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
       branch: { id: "branch-1", name: "Sergeli filiali" },
       catalog: {
         branchId: "branch-1",
+        orderDisplayNumberStart: 1,
+        paymentMethods: [{ code: "CASH", name: "Naqd", active: true }],
         products: [
           {
             id: "product-1",
@@ -471,7 +516,7 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     assert.equal(store.summary().pendingCommands, 1);
     assert.equal(store.summary().pendingPrintJobs, 2);
     assert.match(saleData.order.orderNumber, /^POS-\d{8}-\d{6}-[A-F0-9]{8}$/);
-    assert.equal(saleData.order.displayOrderNumber, 101);
+    assert.equal(saleData.order.displayOrderNumber, 1);
     const outboxCommand = store.listOutbox()[0];
     assert.ok(outboxCommand);
     const queuedPayload = JSON.parse(
@@ -505,7 +550,7 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
           type: "DINE_IN",
           tableId: "table-1",
           payLater: true,
-          offlineEstimatedTotal: 30_000,
+          offlineEstimatedTotal: 20_000,
           items: [{ productId: "product-1", quantity: 1 }],
         }),
       },
@@ -513,7 +558,7 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     assert.equal(hallOrder.status, 202);
     const hallData = (await hallOrder.json()).data;
     assert.equal(hallData.order.paymentStatus, "PENDING");
-    assert.equal(hallData.order.total, "30000");
+    assert.equal(hallData.order.total, "20000");
     assert.deepEqual(hallData.payment.methods, []);
     assert.equal(store.summary().pendingCommands, 2);
     assert.equal(store.summary().pendingPrintJobs, 3);
@@ -682,7 +727,7 @@ test("legacy offline POS mutation without employee identity is not replayed", as
   }
 });
 
-test("offline POS order does not use a catalog cached for another branch", async () => {
+test("offline POS order rejects a catalog cached for another branch", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-branch-cache", "branch-1");
@@ -740,29 +785,313 @@ test("offline POS order does not use a catalog cached for another branch", async
       }),
     });
 
-    assert.equal(sale.status, 202);
-    await sale.json();
+    assert.equal(sale.status, 409);
+    const result = await sale.json();
+    assert.equal(result.error.code, "OFFLINE_POS_ORDER_UNSAFE");
+    assert.match(result.error.message, /boshqa filialniki/);
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.summary().pendingPrintJobs, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline POS respects the cached cashier payment setting without blocking unpaid dine-in", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-payment-setting-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-cash-disabled", "branch-1");
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 60_000,
+    fetchImpl: async (input) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/pos/catalog")) {
+        return jsonResponse({
+          success: true,
+          data: {
+            branchId: "branch-1",
+            paymentMethods: [{ code: "CLICK", name: "Click", active: true }],
+            products: [{ id: "product-1", name: "Lavash", sellingPrice: 10_000, variants: [], modifiers: [] }],
+            tables: [],
+          },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const baseUrl = "http://127.0.0.1:" + port + "/api/v1";
+    const headers = { Authorization: authorization, "Content-Type": "application/json" };
+    assert.equal((await fetch(baseUrl + "/pos/catalog", { headers })).status, 200);
+    online = false;
+
+    const paidSale = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        idempotencyKey: "cash-disabled-offline-sale",
+        items: [{ productId: "product-1", quantity: 1 }],
+        payments: [{ paymentMethodCode: "CASH", amount: 10_000 }],
+      }),
+    });
+    assert.equal(paidSale.status, 409);
+    assert.match((await paidSale.json()).error.message, /naqd to'lov yoqilmagan/);
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.summary().pendingPrintJobs, 0);
+
+    const unpaidDineIn = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        idempotencyKey: "cash-disabled-unpaid-dine-in",
+        type: "DINE_IN",
+        payLater: true,
+        items: [{ productId: "product-1", quantity: 1 }],
+      }),
+    });
+    assert.equal(unpaidDineIn.status, 202);
+    const data = (await unpaidDineIn.json()).data;
+    assert.equal(data.order.paymentStatus, "PENDING");
+    assert.equal(data.order.total, "10000");
+    assert.deepEqual(data.payment.methods, []);
+    assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.summary().pendingPrintJobs, 1);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline POS rejects invalid modifier selections and cash totals before queuing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-pos-rules-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-offline-rules", "branch-1");
+  let online = true;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 60_000,
+    fetchImpl: async (input) => {
+      if (!online) throw new Error("offline");
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/pos/catalog")) {
+        return jsonResponse({
+          success: true,
+          data: {
+            branchId: "branch-1",
+            paymentMethods: [{ code: "CASH", name: "Naqd", active: true }],
+            products: [
+              {
+                id: "product-1",
+                name: "Lavash",
+                sellingPrice: 10_000,
+                variants: [],
+                modifiers: [
+                  {
+                    isRequired: true,
+                    minSelect: 1,
+                    maxSelect: 1,
+                    modifier: {
+                      id: "modifier-1",
+                      name: "Pishloq",
+                      price: 2_000,
+                    },
+                  },
+                ],
+              },
+            ],
+            tables: [{ id: "table-1", name: "1-stol" }],
+          },
+        });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    await waitFor(() => gateway.status().mode === "online");
+    const baseUrl = `http://127.0.0.1:${port}/api/v1`;
+    const headers = { Authorization: authorization };
+    const cachedCatalog = await fetch(baseUrl + "/pos/catalog", { headers });
+    assert.equal(cachedCatalog.status, 200);
+    online = false;
+
+    const validItem = {
+      productId: "product-1",
+      quantity: 1,
+      modifiers: [{ modifierId: "modifier-1", quantity: 1 }],
+    };
+    const invalidOrders = [
+      {
+        idempotencyKey: "missing-required-modifier",
+        items: [{ productId: "product-1", quantity: 1 }],
+        payments: [{ paymentMethodCode: "CASH", amount: 10_000 }],
+      },
+      {
+        idempotencyKey: "fractional-modifier-quantity",
+        items: [{
+          productId: "product-1",
+          quantity: 1,
+          modifiers: [{ modifierId: "modifier-1", quantity: 1.5 }],
+        }],
+        payments: [{ paymentMethodCode: "CASH", amount: 13_000 }],
+      },
+      {
+        idempotencyKey: "duplicate-modifier",
+        items: [{
+          productId: "product-1",
+          quantity: 1,
+          modifiers: [
+            { modifierId: "modifier-1", quantity: 1 },
+            { modifierId: "modifier-1", quantity: 1 },
+          ],
+        }],
+        payments: [{ paymentMethodCode: "CASH", amount: 14_000 }],
+      },
+      {
+        idempotencyKey: "cash-total-mismatch",
+        items: [validItem],
+        payments: [{ paymentMethodCode: "CASH", amount: 11_999 }],
+      },
+      {
+        idempotencyKey: "quantity-over-limit",
+        items: [validItem, { productId: "product-1", quantity: 100 }],
+        payments: [{ paymentMethodCode: "CASH", amount: 1_212_000 }],
+      },
+      {
+        idempotencyKey: "invalid-delivery",
+        type: "DELIVERY",
+        items: [validItem],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      },
+      {
+        idempotencyKey: "unknown-table",
+        type: "DINE_IN",
+        tableId: "table-other-branch",
+        items: [validItem],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      },
+      {
+        idempotencyKey: "dine-in-estimate-mismatch",
+        type: "DINE_IN",
+        tableId: "table-1",
+        payLater: true,
+        offlineEstimatedTotal: 13_000,
+        items: [validItem],
+      },
+    ];
+
+    for (const order of invalidOrders) {
+      const response = await fetch(baseUrl + "/pos/orders", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(order),
+      });
+      assert.equal(response.status, 409, order.idempotencyKey);
+      assert.equal(
+        (await response.json()).error.code,
+        "OFFLINE_POS_ORDER_UNSAFE",
+        order.idempotencyKey,
+      );
+      assert.equal(store.summary().pendingCommands, 0, order.idempotencyKey);
+      assert.equal(store.summary().pendingPrintJobs, 0, order.idempotencyKey);
+    }
+
+    const headerOnlyKey = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "header-only-key",
+      },
+      body: JSON.stringify({
+        items: [validItem],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      }),
+    });
+    assert.equal(headerOnlyKey.status, 409);
+    assert.equal((await headerOnlyKey.json()).error.code, "OFFLINE_POS_ORDER_UNSAFE");
+
+    const mismatchedKeys = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "header-key",
+      },
+      body: JSON.stringify({
+        idempotencyKey: "body-key",
+        items: [validItem],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      }),
+    });
+    assert.equal(mismatchedKeys.status, 409);
+    assert.equal((await mismatchedKeys.json()).error.code, "OFFLINE_POS_ORDER_UNSAFE");
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.summary().pendingPrintJobs, 0);
+
+    const accepted = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: "valid-offline-sale",
+        items: [validItem],
+        payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+      }),
+    });
+    assert.equal(accepted.status, 202);
+    assert.equal(store.summary().pendingCommands, 1);
+    assert.equal(store.summary().pendingPrintJobs, 2);
     const command = store.listOutbox()[0];
     assert.ok(command);
-    const payload = JSON.parse(
+    const queued = JSON.parse(
       store.getOutboxCommand(command.id)?.payloadJson ?? "{}",
     ) as {
       offlineOrderSnapshot?: {
-        items?: Array<{ productName?: string; variantName?: string | null }>;
+        total?: string;
+        items?: Array<{ totalPrice?: string }>;
       };
     };
+    assert.equal(queued.offlineOrderSnapshot?.total, "12000");
     assert.equal(
-      payload.offlineOrderSnapshot?.items?.[0]?.productName,
-      "Mahsulot",
+      queued.offlineOrderSnapshot?.items?.[0]?.totalPrice,
+      "12000.00",
     );
-    assert.notEqual(
-      payload.offlineOrderSnapshot?.items?.[0]?.productName,
-      "Boshqa filial mahsuloti",
-    );
-    assert.notEqual(
-      payload.offlineOrderSnapshot?.items?.[0]?.variantName,
-      "Chet filial varianti",
-    );
+
+    const unpaidTableOrder = await fetch(baseUrl + "/pos/orders", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: "valid-offline-dine-in",
+        type: "DINE_IN",
+        tableId: "table-1",
+        payLater: true,
+        items: [validItem],
+      }),
+    });
+    assert.equal(unpaidTableOrder.status, 202);
+    const unpaidData = (await unpaidTableOrder.json()).data;
+    assert.equal(unpaidData.order.paymentStatus, "PENDING");
+    assert.equal(unpaidData.order.total, "12000");
+    assert.deepEqual(unpaidData.payment.methods, []);
+    assert.equal(store.summary().pendingCommands, 2);
+    assert.equal(store.summary().pendingPrintJobs, 3);
   } finally {
     await gateway.stop();
     store.close();
@@ -774,6 +1103,7 @@ test("gateway bounds slow upstream requests and queues the POS sale", async () =
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-timeout", "branch-1");
+  cachePosCatalog(store, authorization, 25_000);
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: 0,
@@ -813,6 +1143,7 @@ test("gateway bounds slow upstream requests and queues the POS sale", async () =
         },
         body: JSON.stringify({
           idempotencyKey: "bounded-timeout-sale",
+          items: [{ productId: "product-1", quantity: 1 }],
           payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
         }),
       },
@@ -897,6 +1228,9 @@ test("gateway queues only cash payments while offline", async () => {
     employeeId: "employee-offline-payment",
     status: "OPEN",
   });
+  cache("https://api.example.test/api/v1/payments/methods", [
+    { code: "CASH", name: "Naqd" },
+  ]);
   cache("https://api.example.test/api/v1/orders/order-1", {
     id: "order-1",
     branchId: "branch-1",
@@ -987,6 +1321,55 @@ test("gateway queues only cash payments while offline", async () => {
         modifiers: [],
       },
     ]);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline cash payment fails closed without cached cashier tender settings", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-offline-tender-cache-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-offline-no-tender-cache", "branch-1", {
+    employeeId: "employee-offline-no-tender-cache",
+  });
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async () => {
+      throw new Error("offline");
+    },
+  });
+
+  try {
+    const port = await gateway.start();
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/v1/payments/process`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderId: "order-1",
+          shiftId: "shift-1",
+          idempotencyKey: "offline-payment-without-tender-cache",
+          payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
+        }),
+      },
+    );
+
+    assert.equal(response.status, 409);
+    assert.match(
+      (await response.json()).error.message,
+      /to'lov sozlamalari qurilmada saqlanmagan/,
+    );
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.claimLocalPrintJob(["RECEIPT"]), null);
   } finally {
     await gateway.stop();
     store.close();
@@ -1141,6 +1524,12 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
           },
         });
       }
+      if (url.endsWith("/payments/methods")) {
+        return jsonResponse({
+          success: true,
+          data: [{ code: "CASH", name: "Naqd" }],
+        });
+      }
       if (url.includes("/orders?")) {
         return jsonResponse({
           success: true,
@@ -1207,6 +1596,10 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
       (await fetch(`${baseUrl}${ordersPath}`, { headers })).status,
       200,
     );
+    assert.equal(
+      (await fetch(`${baseUrl}/payments/methods`, { headers })).status,
+      200,
+    );
 
     const otherCashierAuthorization = desktopJwt(
       "cashier-other-employee",
@@ -1232,6 +1625,14 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
       ).status,
       200,
     );
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/payments/methods`, {
+          headers: otherCashierHeaders,
+        })
+      ).status,
+      200,
+    );
 
     const cacheScope = DesktopStore.authScope(authorization);
     const cachedShift = store.getLatestCachedResponse(
@@ -1242,8 +1643,13 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
       cacheScope,
       "/api/v1/orders",
     );
+    const cachedPaymentMethods = store.getLatestCachedResponse(
+      cacheScope,
+      "/api/v1/payments/methods",
+    );
     assert.ok(cachedShift);
     assert.ok(cachedOrders);
+    assert.ok(cachedPaymentMethods);
     const staleAt = new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString();
 
     online = false;
@@ -1262,6 +1668,23 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
     assert.match(
       (await staleShiftPayment.json()).error.message,
       /keshi eskirgan/,
+    );
+    const staleShiftCashOut = await fetch(
+      `${baseUrl}/cash-register/shift/shift-offline-1/transactions`,
+      {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "offline-cash-stale-shift",
+        },
+        body: JSON.stringify({ type: "EXPENSE", amount: 100 }),
+      },
+    );
+    assert.equal(staleShiftCashOut.status, 409);
+    assert.match(
+      (await staleShiftCashOut.json()).error.message,
+      /Kassa smenasi keshi eskirgan/,
     );
     store.putCachedResponse({
       ...cachedShift,
@@ -1286,6 +1709,56 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
     );
     store.putCachedResponse({
       ...cachedOrders,
+      cachedAt: new Date().toISOString(),
+    });
+
+    store.putCachedResponse({ ...cachedPaymentMethods, cachedAt: staleAt });
+    const stalePaymentMethodsPayment = await fetch(
+      `${baseUrl}/payments/process`,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: "order-offline-1",
+          shiftId: "shift-offline-1",
+          idempotencyKey: "offline-payment-stale-method-settings",
+          payments: [{ paymentMethodCode: "CASH", amount: "42000" }],
+        }),
+      },
+    );
+    assert.equal(stalePaymentMethodsPayment.status, 409);
+    assert.match(
+      (await stalePaymentMethodsPayment.json()).error.message,
+      /to'lov sozlamalari keshi eskirgan/,
+    );
+
+    const disabledPaymentMethods = {
+      ...cachedPaymentMethods,
+      body: JSON.stringify({
+        success: true,
+        data: [{ code: "CLICK", name: "Click" }],
+      }),
+      cachedAt: new Date().toISOString(),
+    };
+    store.putCachedResponse(disabledPaymentMethods);
+    const disabledCashPayment = await fetch(`${baseUrl}/payments/process`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: "order-offline-1",
+        shiftId: "shift-offline-1",
+        idempotencyKey: "offline-payment-disabled-cash-method",
+        payments: [{ paymentMethodCode: "CASH", amount: "42000" }],
+      }),
+    });
+    assert.equal(disabledCashPayment.status, 409);
+    assert.match(
+      (await disabledCashPayment.json()).error.message,
+      /Naqd to'lov usuli .* o'chirilgan/,
+    );
+    assert.equal(store.summary().pendingCommands, 0);
+    store.putCachedResponse({
+      ...cachedPaymentMethods,
       cachedAt: new Date().toISOString(),
     });
 
@@ -1463,6 +1936,27 @@ test("gateway flushes queued mutations from the reconnect health probe", async (
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-2", "branch-1");
+  const cacheScope = DesktopStore.authScope(authorization);
+  const catalogUrl = "https://api.example.test/api/v1/pos/catalog";
+  store.putCachedResponse({
+    cacheKey: DesktopStore.cacheKey(catalogUrl, cacheScope),
+    requestUrl: catalogUrl,
+    authScope: cacheScope,
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      data: {
+        branchId: "branch-1",
+        paymentMethods: [{ code: "CASH", name: "Naqd", active: true }],
+        products: [
+          { id: "product-1", name: "Lavash", sellingPrice: 15_000, variants: [], modifiers: [] },
+        ],
+        tables: [],
+      },
+    }),
+    cachedAt: new Date().toISOString(),
+  });
   const sent: string[] = [];
   let online = false;
   const gateway = new DesktopGateway({
@@ -1498,6 +1992,7 @@ test("gateway flushes queued mutations from the reconnect health probe", async (
         },
         body: JSON.stringify({
           idempotencyKey: "sale-key-probe",
+          items: [{ productId: "product-1", quantity: 1 }],
           payments: [{ paymentMethodCode: "CASH", amount: 15_000 }],
         }),
       },
@@ -1607,6 +2102,7 @@ test("gateway fast-fails to local cache and outbox while offline, then replays o
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-fast-offline", "branch-1");
+  cachePosCatalog(store, authorization, 25_000);
   let online = true;
   let orderRequests = 0;
   const gateway = new DesktopGateway({
@@ -1650,6 +2146,7 @@ test("gateway fast-fails to local cache and outbox while offline, then replays o
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({
         idempotencyKey: "fast-offline-sale",
+        items: [{ productId: "product-1", quantity: 1 }],
         payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
       }),
     });
@@ -1701,6 +2198,9 @@ test("independent offline terminals replay each cash sale once", async () => {
   });
 
   const authorization = desktopJwt("cashier-multi-terminal", "branch-1");
+  for (const { store } of terminals) {
+    cachePosCatalog(store, authorization, 25_000);
+  }
   assert.notEqual(
     terminals[0]?.store.deviceId(),
     terminals[1]?.store.deviceId(),
@@ -1768,6 +2268,24 @@ test("offline sale and print jobs survive restart before one-time replay", async
   const storePath = join(directory, "test.sqlite");
   let store = new DesktopStore(storePath);
   const authorization = desktopJwt("cashier-offline-e2e", "branch-1");
+  cachePosCatalog(store, authorization, 25_000, [
+    {
+      id: "product-1",
+      name: "Lavash",
+      sellingPrice: 25_000,
+      printerRouting: "KITCHEN",
+      variants: [],
+      modifiers: [],
+    },
+    {
+      id: "product-2",
+      name: "Coca Cola",
+      sellingPrice: 5_000,
+      printerRouting: "RECEIPT",
+      variants: [],
+      modifiers: [],
+    },
+  ]);
   let online = false;
   let replayedSales = 0;
   const createGateway = (activeStore: DesktopStore) =>
@@ -1830,8 +2348,11 @@ test("offline sale and print jobs survive restart before one-time replay", async
         body: JSON.stringify({
           idempotencyKey: "offline-e2e-sale",
           type: "TAKEAWAY",
-          items: [{ productId: "product-1", quantity: 1 }],
-          payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
+          items: [
+            { productId: "product-1", quantity: 1 },
+            { productId: "product-2", quantity: 1 },
+          ],
+          payments: [{ paymentMethodCode: "CASH", amount: 30_000 }],
         }),
       },
     );
@@ -1872,10 +2393,21 @@ test("offline sale and print jobs survive restart before one-time replay", async
     const salesReceipt = printed.find(
       (entry) => entry.documentType === "RECEIPT",
     )?.content;
-    assert.equal(salesReceipt?.total, "25000.00");
+    assert.equal(salesReceipt?.total, "30000.00");
+    assert.deepEqual(
+      (salesReceipt?.items as Array<{ name: string }>).map((item) => item.name),
+      ["Lavash", "Coca Cola"],
+    );
     assert.deepEqual(salesReceipt?.payments, [
-      { method: "CASH", amount: "25000.00" },
+      { method: "CASH", amount: "30000.00" },
     ]);
+    const kitchenReceipt = printed.find(
+      (entry) => entry.documentType === "KITCHEN",
+    )?.content;
+    assert.deepEqual(
+      (kitchenReceipt?.items as Array<{ name: string }>).map((item) => item.name),
+      ["Lavash"],
+    );
     online = true;
     await waitFor(() => gateway.status().mode === "online", 2_500);
     const reconnectedRead = await fetch(
@@ -1964,6 +2496,7 @@ test("queued mutations wait for refreshed auth after replay receives 401", async
   );
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-expired-replay", "branch-1");
+  cachePosCatalog(store, authorization, 12_000);
   const refreshedAuthorization = desktopJwt(
     "cashier-expired-replay",
     "branch-1",
@@ -2012,6 +2545,8 @@ test("queued mutations wait for refreshed auth after replay receives 401", async
         "Idempotency-Key": "expired-auth-offline-sale",
       },
       body: JSON.stringify({
+        idempotencyKey: "expired-auth-offline-sale",
+        items: [{ productId: "product-1", quantity: 1 }],
         payments: [{ paymentMethodCode: "CASH", amount: 12_000 }],
       }),
     });
@@ -2061,6 +2596,7 @@ test("expired replay racing a session refresh resumes with the newest token", as
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-auth-race-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-auth-race", "branch-1");
+  cachePosCatalog(store, authorization, 8_000);
   const refreshedAuthorization = desktopJwt("cashier-auth-race", "branch-1", {
     iat: 2,
   });
@@ -2112,6 +2648,8 @@ test("expired replay racing a session refresh resumes with the newest token", as
         "Idempotency-Key": "auth-race-offline-sale",
       },
       body: JSON.stringify({
+        idempotencyKey: "auth-race-offline-sale",
+        items: [{ productId: "product-1", quantity: 1 }],
         payments: [{ paymentMethodCode: "CASH", amount: 8_000 }],
       }),
     });
@@ -2289,6 +2827,7 @@ test("gateway exposes and manages the desktop outbox", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-3", "branch-1");
+  cachePosCatalog(store, authorization, 11_000);
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: 0,
@@ -2311,6 +2850,7 @@ test("gateway exposes and manages the desktop outbox", async () => {
         },
         body: JSON.stringify({
           idempotencyKey: "sale-key-outbox",
+          items: [{ productId: "product-1", quantity: 1 }],
           payments: [{ paymentMethodCode: "CASH", amount: 11_000 }],
         }),
       },
@@ -2615,6 +3155,7 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-dependency", "branch-1");
+  cachePosCatalog(store, authorization, 25_000);
   const sent: string[] = [];
   let online = false;
   const gateway = new DesktopGateway({
@@ -2663,6 +3204,7 @@ test("gateway resolves local aggregate IDs before replaying dependents", async (
         },
         body: JSON.stringify({
           idempotencyKey: "dependency-sale",
+          items: [{ productId: "product-1", quantity: 1 }],
           payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
         }),
       },
@@ -2724,6 +3266,7 @@ test("conflicted offline order creation blocks only its dependent commands", asy
   );
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-dependency-conflict", "branch-1");
+  cachePosCatalog(store, authorization, 10_000);
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: 0,
@@ -2747,6 +3290,7 @@ test("conflicted offline order creation blocks only its dependent commands", asy
           },
           body: JSON.stringify({
             idempotencyKey,
+            items: [{ productId: "product-1", quantity: 1 }],
             payments: [{ paymentMethodCode: "CASH", amount: 10_000 }],
           }),
         },
@@ -2927,6 +3471,7 @@ test("gateway projects pending POS orders into cached order reads and compensate
   const directory = await mkdtemp(join(tmpdir(), "mazetto-gateway-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
   const authorization = desktopJwt("cashier-projection", "branch-1");
+  cachePosCatalog(store, authorization, 25_000);
   let online = true;
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
@@ -2938,6 +3483,20 @@ test("gateway projects pending POS orders into cached order reads and compensate
       const url = String(input);
       if (url.endsWith("/health")) {
         return jsonResponse({ success: true, data: { ok: true } });
+      }
+      if (
+        (init?.method ?? "GET") === "GET" &&
+        url.endsWith("/kitchen/orders")
+      ) {
+        return jsonResponse({
+          success: true,
+          data: {
+            items: [],
+            hasMore: false,
+            limit: 80,
+            kitchenPosOrdersEnabled: false,
+          },
+        });
       }
       if ((init?.method ?? "GET") === "GET" && url.endsWith("/orders")) {
         return jsonResponse([]);
@@ -2956,6 +3515,11 @@ test("gateway projects pending POS orders into cached order reads and compensate
     );
     assert.equal(initial.status, 200);
     assert.deepEqual(await initial.json(), []);
+    const initialKitchen = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/kitchen/orders`,
+      { headers: { Authorization: authorization } },
+    );
+    assert.equal(initialKitchen.status, 200);
 
     online = false;
     const sale = await fetch(
@@ -2993,6 +3557,43 @@ test("gateway projects pending POS orders into cached order reads and compensate
     assert.equal(projectedOrders.length, 1);
     assert.equal(projectedOrders[0]?.pendingSync, true);
     assert.equal(projectedOrders[0]?.commandId, salePayload.data.commandId);
+
+    const hiddenKitchen = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/kitchen/orders`,
+      { headers: { Authorization: authorization } },
+    );
+    const hiddenKitchenBody = (await hiddenKitchen.json()) as {
+      data: { items: unknown[] };
+    };
+    assert.equal(hiddenKitchenBody.data.items.length, 0);
+
+    const kitchenUrl = "https://api.example.test/api/v1/kitchen/orders";
+    const authScope = DesktopStore.authScope(authorization);
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(kitchenUrl, authScope),
+      requestUrl: kitchenUrl,
+      authScope,
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        data: {
+          items: [],
+          hasMore: false,
+          limit: 80,
+          kitchenPosOrdersEnabled: true,
+        },
+      }),
+      cachedAt: new Date().toISOString(),
+    });
+    const enabledKitchen = await fetch(
+      `http://127.0.0.1:${gatewayPort}/api/v1/kitchen/orders`,
+      { headers: { Authorization: authorization } },
+    );
+    const enabledKitchenBody = (await enabledKitchen.json()) as {
+      data: { items: Array<Record<string, unknown>> };
+    };
+    assert.equal(enabledKitchenBody.data.items.length, 1);
 
     store.markMutationAcknowledged(salePayload.data.commandId);
     const compensated = await fetch(
@@ -3061,11 +3662,20 @@ test("gateway queues waiter table orders offline and replays the local order cha
   const product = {
     id: "product-1",
     name: "Lavash",
+    printerRouting: "KITCHEN",
     sellingPrice: "12000.00",
     variants: [{ id: "variant-1", name: "Katta", sellingPrice: "15000.00" }],
     modifiers: [
       { modifier: { id: "extra-cheese", name: "Pishloq", price: "2000.00" } },
     ],
+  };
+  const drink = {
+    id: "product-2",
+    name: "Coca Cola",
+    printerRouting: "RECEIPT",
+    sellingPrice: "5000.00",
+    variants: [],
+    modifiers: [],
   };
   const sent: Array<{ url: string; body: string; key: string | null }> = [];
   let online = true;
@@ -3092,7 +3702,7 @@ test("gateway queues waiter table orders offline and replays the local order cha
             schemaVersion: 2,
             generatedAt: new Date().toISOString(),
             branchId: "branch-1",
-            menu: { categories: [], products: [product] },
+            menu: { categories: [], products: [product, drink] },
             tables: [table],
           },
         });
@@ -3213,10 +3823,35 @@ test("gateway queues waiter table orders offline and replays the local order cha
     assert.equal(addedData.item.productName, "Lavash");
     assert.equal(addedData.item.totalPrice, "34000.00");
 
+    const addedDrink = await fetch(
+      "http://127.0.0.1:" + port + "/api/v1/orders/" + openedData.id + "/items",
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "waiter-drink-key",
+        },
+        body: JSON.stringify({
+          productId: "product-2",
+          quantity: 1,
+          expectedVersion: 1,
+        }),
+      },
+    );
+    assert.equal(addedDrink.status, 202);
+    const addedDrinkData = (await addedDrink.json()).data as {
+      id: string;
+      item: { productName: string; totalPrice: string };
+    };
+    assert.equal(addedDrinkData.item.productName, "Coca Cola");
+    assert.equal(addedDrinkData.item.totalPrice, "5000.00");
+
     const projected = await readDetail();
-    assert.equal(projected.orders[0]?.version, 1);
-    assert.equal(projected.orders[0]?.total, "34000.00");
+    assert.equal(projected.orders[0]?.version, 2);
+    assert.equal(projected.orders[0]?.total, "39000.00");
     assert.equal(projected.orders[0]?.items[0]?.id, addedData.id);
+    assert.equal(projected.orders[0]?.items[1]?.id, addedDrinkData.id);
     const kitchen = await fetch(
       "http://127.0.0.1:" + port + "/api/v1/kitchen/orders",
       { headers: { Authorization: authorization } },
@@ -3236,13 +3871,17 @@ test("gateway queues waiter table orders offline and replays the local order cha
     assert.equal(ticketItems[0]?.variantName, "Katta");
     assert.equal(ticketItems[0]?.quantity, "2");
     assert.equal(kitchenOrder.id, openedData.id);
+    assert.equal(
+      (kitchenOrder.items as Array<Record<string, unknown>>).length,
+      2,
+    );
     assert.equal(kitchenOrder.source, "POS");
     assert.equal(kitchenOrder.type, "DINE_IN");
     assert.equal(
       (kitchenOrder.table as Record<string, unknown> | undefined)?.name,
       "1-stol",
     );
-    assert.equal(store.summary().pendingCommands, 2);
+    assert.equal(store.summary().pendingCommands, 3);
 
     online = true;
     await waitFor(() => gateway.status().mode === "online");
@@ -3254,7 +3893,7 @@ test("gateway queues waiter table orders offline and replays the local order cha
     );
     assert.equal(trigger.status, 200);
     await waitFor(() => store.summary().pendingCommands === 0, 3_000);
-    assert.equal(sent.length, 2);
+    assert.equal(sent.length, 3);
     assert.equal(
       sent[0]?.url,
       "https://api.example.test/api/v1/tables/table-1/orders",
@@ -3266,6 +3905,12 @@ test("gateway queues waiter table orders offline and replays the local order cha
     );
     assert.equal(sent[1]?.key, "waiter-item-key");
     assert.equal(JSON.parse(sent[1]?.body ?? "{}").expectedVersion, 0);
+    assert.equal(
+      sent[2]?.url,
+      "https://api.example.test/api/v1/orders/server-order-1/items",
+    );
+    assert.equal(sent[2]?.key, "waiter-drink-key");
+    assert.equal(JSON.parse(sent[2]?.body ?? "{}").expectedVersion, 1);
   } finally {
     await gateway.stop();
     store.close();
@@ -4436,6 +5081,21 @@ test("offline cash transactions update the shift balance and survive acknowledge
     const opened = (await openResponse.json()) as { data: { id: string } };
     assert.match(opened.data.id, /^local-/);
 
+    const overspendOpeningFloat = await fetch(
+      `${shiftUrl}/${opened.data.id}/transactions`,
+      {
+        method: "POST",
+        headers: { ...headers, "Idempotency-Key": "cash-offline-overdraw-open" },
+        body: JSON.stringify({ type: "EXPENSE", amount: 25_001 }),
+      },
+    );
+    assert.equal(overspendOpeningFloat.status, 409);
+    assert.match(
+      (await overspendOpeningFloat.json()).error.message,
+      /Joriy qoldiq: 25000\.00 so'm/,
+    );
+    assert.equal(store.summary().pendingCommands, 1);
+
     const expenseRequest = {
       method: "POST",
       headers: { ...headers, "Idempotency-Key": "cash-offline-expense" },
@@ -4460,6 +5120,21 @@ test("offline cash transactions update the shift balance and survive acknowledge
         .commandId,
       queuedExpense.data.commandId,
     );
+
+    const overspendAfterQueuedExpense = await fetch(
+      `${shiftUrl}/${opened.data.id}/transactions`,
+      {
+        method: "POST",
+        headers: { ...headers, "Idempotency-Key": "cash-offline-overdraw-after-expense" },
+        body: JSON.stringify({ type: "WITHDRAW", amount: 21_251 }),
+      },
+    );
+    assert.equal(overspendAfterQueuedExpense.status, 409);
+    assert.match(
+      (await overspendAfterQueuedExpense.json()).error.message,
+      /Joriy qoldiq: 21250\.00 so'm/,
+    );
+    assert.equal(store.summary().pendingCommands, 2);
 
     const incomeResponse = await fetch(
       `${shiftUrl}/${opened.data.id}/transactions`,
@@ -5456,6 +6131,117 @@ test("legacy queued order cancellation is conflicted instead of replayed", async
     assert.equal(refresh.status, 200);
     await waitFor(() => store.summary().conflictCommands === 1);
     assert.equal(cancellationRequests, 0);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("gateway queues branch-scoped shift reports once for configured local printers", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-shift-report-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  store.setSetting(
+    "system_printers",
+    JSON.stringify([
+      { name: "Report printer", roles: ["SHIFT_REPORT"] },
+    ]),
+  );
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    probeIntervalMs: 60_000,
+    fetchImpl: async () => jsonResponse({ success: true, data: null }),
+  });
+  const authorization = desktopJwt("cashier-report", "branch-1", {
+    employeeId: "employee-1",
+    permissions: ["SHIFT_CLOSE"],
+  });
+  const payload = {
+    documentType: "SHIFT_REPORT",
+    requestId: "report-request-1",
+    branchId: "branch-1",
+    shift: {
+      id: "shift-1",
+      shiftNumber: 5,
+      employeeId: "employee-1",
+      branch: { id: "branch-1", name: "Sergeli" },
+    },
+    orders: [
+      {
+        id: "order-1",
+        status: "SERVED",
+        total: "17000",
+        items: [{ productName: "Lavash", quantity: "1" }],
+      },
+    ],
+  };
+
+  try {
+    const port = await gateway.start();
+    const url = "http://127.0.0.1:" + port + "/api/v1/desktop/prints/shift-report";
+    const send = (token: string, body: unknown) =>
+      fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    const noPermission = await send(
+      desktopJwt("cashier-without-shift-permission", "branch-1", {
+        employeeId: "employee-1",
+      }),
+      { ...payload, requestId: "report-request-no-permission" },
+    );
+    assert.equal(noPermission.status, 403);
+    assert.equal(store.summary().pendingPrintJobs, 0);
+
+    const anotherEmployee = await send(
+      desktopJwt("cashier-another-employee", "branch-1", {
+        employeeId: "employee-2",
+        permissions: ["SHIFT_CLOSE"],
+      }),
+      { ...payload, requestId: "report-request-another-employee" },
+    );
+    assert.equal(anotherEmployee.status, 403);
+    assert.equal(store.summary().pendingPrintJobs, 0);
+
+    const first = await send(authorization, payload);
+    assert.equal(first.status, 202);
+    assert.deepEqual((await first.json()).data, {
+      queued: true,
+      printerConfigured: true,
+    });
+    const duplicate = await send(authorization, payload);
+    assert.equal(duplicate.status, 202);
+    assert.equal(store.summary().pendingPrintJobs, 1);
+
+    const otherBranch = await send(
+      desktopJwt("cashier-other-branch", "branch-2"),
+      { ...payload, requestId: "report-request-2" },
+    );
+    assert.equal(otherBranch.status, 403);
+    assert.equal(store.summary().pendingPrintJobs, 1);
+
+    const queued = store.claimLocalPrintJob(["SHIFT_REPORT"]);
+    assert.ok(queued);
+    assert.equal(queued.branchId, "branch-1");
+    assert.equal(queued.documentType, "SHIFT_REPORT");
+
+    store.setSetting("system_printers", "[]");
+    const unconfigured = await send(
+      authorization,
+      { ...payload, requestId: "report-request-3" },
+    );
+    assert.equal(unconfigured.status, 200);
+    assert.deepEqual((await unconfigured.json()).data, {
+      queued: false,
+      printerConfigured: false,
+    });
   } finally {
     await gateway.stop();
     store.close();

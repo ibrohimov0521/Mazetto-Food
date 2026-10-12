@@ -75,7 +75,7 @@ export class CreatePosCheckoutDto {
   /** Display sequence printed by the desktop while it is disconnected. */
   @IsOptional()
   @IsInt()
-  @Min(101)
+  @Min(1)
   offlineDisplayOrderSequence?: number;
 
   @IsArray()

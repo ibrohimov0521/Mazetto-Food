@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { OrderSource } from "@prisma/client";
 import test from "node:test";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { decodeBranchRevisionCursor } from "../src/modules/realtime/realtime.service";
@@ -15,6 +16,7 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
   let transactionOptions: unknown;
   let productSelect: Record<string, unknown> | undefined;
   let categoryWhere: Record<string, unknown> | undefined;
+  let paymentMethodWhere: Record<string, unknown> | undefined;
   const reads = {
     categories: 0,
     products: 0,
@@ -31,14 +33,29 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
       code: "CASH",
       name: "Naqd filial",
       sortOrder: 1,
+      isActive: true,
     },
     {
       branchId: null,
       code: "CASH",
       name: "Naqd umumiy",
       sortOrder: 2,
+      isActive: true,
     },
-    { branchId: null, code: "CARD", name: "Karta", sortOrder: 3 },
+    {
+      branchId: "branch-a",
+      code: "CARD",
+      name: "Filial karta",
+      sortOrder: 3,
+      isActive: false,
+    },
+    {
+      branchId: null,
+      code: "CARD",
+      name: "Karta",
+      sortOrder: 4,
+      isActive: true,
+    },
   ];
   const tables = [
     {
@@ -94,8 +111,9 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
             },
           },
           paymentMethod: {
-            findMany: async () => {
+            findMany: async (args: { where: Record<string, unknown> }) => {
               reads.paymentMethods += 1;
+              paymentMethodWhere = args.where;
               return configuredPaymentMethods;
             },
           },
@@ -140,6 +158,7 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
     } as never,
     {
       getCsv: async () => ["CASH", "CARD"],
+      getInt: async () => 101,
     } as never,
   );
 
@@ -174,8 +193,11 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
   ]);
   assert.deepEqual(snapshot.catalog.paymentMethods, [
     { code: "CASH", name: "Naqd filial", active: true },
-    { code: "CARD", name: "Karta", active: true },
   ]);
+  assert.equal(snapshot.catalog.orderDisplayNumberStart, 101);
+  assert.deepEqual(paymentMethodWhere, {
+    OR: [{ branchId: "branch-a" }, { branchId: null }],
+  });
   assert.deepEqual(snapshot.catalog.tables, tables);
   assert.deepEqual(snapshot.tables, tables);
   assert.deepEqual(snapshot.halls, [
@@ -317,27 +339,35 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
       items: [],
     },
   };
-  const service = new RealtimeBootstrapService({
-    $transaction: async (
-      callback: (transaction: object) => Promise<unknown>,
-      options: unknown,
-    ) => {
-      transactionOptions = options;
-      return callback({
-        restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
-        branch: {
-          findFirst: async (args: { select: Record<string, boolean> }) =>
-            "realtimeRevision" in args.select ? branch : { id: "branch-a" },
-        },
-        kitchenTicket: {
-          findMany: async (args: Record<string, unknown>) => {
-            kitchenQuery = args;
-            return [ticket];
+  let kitchenPosOrdersEnabled = false;
+  const service = new RealtimeBootstrapService(
+    {
+      $transaction: async (
+        callback: (transaction: object) => Promise<unknown>,
+        options: unknown,
+      ) => {
+        transactionOptions = options;
+        return callback({
+          restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+          branch: {
+            findFirst: async (args: { select: Record<string, boolean> }) =>
+              "realtimeRevision" in args.select ? branch : { id: "branch-a" },
           },
-        },
-      });
-    },
-  } as never);
+          kitchenTicket: {
+            findMany: async (args: Record<string, unknown>) => {
+              kitchenQuery = args;
+              return [ticket];
+            },
+          },
+        });
+      },
+    } as never,
+    {
+      getCsv: async () => ["CASH"],
+      getInt: async () => 101,
+      getBool: async () => kitchenPosOrdersEnabled,
+    } as never,
+  );
   const cook = {
     ...owner,
     id: "cook-a",
@@ -356,11 +386,13 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
     hasMore: false,
     limit: 250,
   });
+  assert.equal(snapshot.kitchenPosOrdersEnabled, false);
   assert.equal(kitchenQuery?.take, 251);
   const where = kitchenQuery?.where as {
-    order: { branchId: string };
+    order: { branchId: string; source?: unknown };
   };
   assert.equal(where.order.branchId, "branch-a");
+  assert.deepEqual(where.order.source, { not: OrderSource.POS });
   const select = kitchenQuery?.select as {
     order: { select: Record<string, unknown> };
   };
@@ -374,6 +406,13 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
   });
   assert.equal("customerName" in select.order.select, false);
   assert.equal("customerPhone" in select.order.select, false);
+  kitchenPosOrdersEnabled = true;
+  const enabledSnapshot = await service.create("branch-a", cook, "kitchen");
+  assert.equal(enabledSnapshot.kitchenPosOrdersEnabled, true);
+  assert.equal(
+    "source" in (kitchenQuery?.where as { order: Record<string, unknown> }).order,
+    false,
+  );
   assert.equal(
     (transactionOptions as { isolationLevel: string }).isolationLevel,
     "RepeatableRead",

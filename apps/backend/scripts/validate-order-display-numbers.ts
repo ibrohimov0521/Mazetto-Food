@@ -30,7 +30,11 @@ async function main() {
       });
       const testDate = new Date("2099-01-15T09:00:00.000Z");
 
-      const web101 = await allocateDisplayOrderNumber(tx, OrderSource.WEB, testDate);
+      const web101 = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.WEB,
+        testDate,
+      );
       assert.equal(web101.displayOrderNumber, "WEB101");
       await tx.order.create({
         data: {
@@ -42,14 +46,49 @@ async function main() {
         },
       });
 
-      const web102 = await allocateDisplayOrderNumber(tx, OrderSource.WEB, testDate);
+      const web102 = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.WEB,
+        testDate,
+      );
       assert.equal(web102.displayOrderNumber, "WEB102");
 
-      const tg101 = await allocateDisplayOrderNumber(tx, OrderSource.TELEGRAM, testDate);
+      const tg101 = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.TELEGRAM,
+        testDate,
+      );
       assert.equal(tg101.displayOrderNumber, "TG101");
 
-      const pos101 = await allocateDisplayOrderNumber(tx, OrderSource.POS, testDate);
+      const pos101 = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.POS,
+        testDate,
+      );
       assert.equal(pos101.displayOrderNumber, "101");
+
+      const customStartDate = new Date("2099-01-16T09:00:00.000Z");
+      const tg1 = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.TELEGRAM,
+        customStartDate,
+        1,
+      );
+      assert.equal(tg1.displayOrderNumber, "TG1");
+      const tg2 = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.TELEGRAM,
+        customStartDate,
+        500,
+      );
+      assert.equal(tg2.displayOrderNumber, "TG500");
+      const pos1 = await allocateDisplayOrderNumber(
+        tx,
+        OrderSource.POS,
+        customStartDate,
+        1,
+      );
+      assert.equal(pos1.displayOrderNumber, "1");
 
       throw rollback;
     });

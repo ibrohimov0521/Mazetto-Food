@@ -305,6 +305,21 @@ export function StaffDialog({
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     dialog?.showModal();
+    const input = dialog?.querySelector<HTMLElement>(
+      'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])',
+    );
+    const primary = dialog?.querySelector<HTMLButtonElement>(
+      "button[data-keyboard-primary]",
+    );
+    const actions = dialog?.querySelectorAll<HTMLElement>(
+      '[data-keyboard-actions] button:not(:disabled):not([data-keyboard-dialog-close])',
+    );
+    const fallback = actions?.[actions.length - 1];
+    const initial =
+      input ??
+      (primary ? (primary.disabled ? null : primary) : fallback) ??
+      dialog;
+    initial?.focus();
     return () => {
       dialog?.close();
       document.body.style.overflow = overflow;
@@ -318,6 +333,7 @@ export function StaffDialog({
         .filter(Boolean)
         .join(" ")}
       aria-labelledby="staff-dialog-title"
+      tabIndex={-1}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onClose();
@@ -340,6 +356,7 @@ export function StaffDialog({
           className={styles.iconButton}
           aria-label="Yopish"
           title="Yopish"
+          data-keyboard-dialog-close
           onClick={onClose}
           disabled={busy}
           type="button"

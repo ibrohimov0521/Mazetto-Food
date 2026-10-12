@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { useApiResource } from "../../lib/use-api-resource";
 import { reportQueryParams, type ReportQuery } from "../../lib/report-query";
+import { tashkentCalendarDate } from "../../lib/tashkent-date-range.mjs";
 import { formatMoney } from "../../lib/order-display";
 import { downloadCsv } from "../../lib/csv";
 import { hasPermission } from "../../lib/auth";
@@ -151,7 +152,7 @@ function formatCount(value: string | number): string {
 
 const yearOptions = Array.from(
   { length: 5 },
-  (_, index) => new Date().getFullYear() - index,
+  (_, index) => Number(tashkentCalendarDate().slice(0, 4)) - index,
 );
 
 const sourceLabels: Record<"WEB" | "TELEGRAM" | "POS", string> = {
@@ -221,7 +222,7 @@ const reportPresets: TabItem[] = [
 ];
 
 function toDateInput(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return tashkentCalendarDate(date);
 }
 
 function customRangeError(from: string, to: string): string {
@@ -267,7 +268,9 @@ export function AdminReportsPage() {
   const [branchId, setBranchId] = useState("");
   const [source, setSource] = useState("");
   const [preset, setPreset] = useState("today");
-  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [year, setYear] = useState(() =>
+    tashkentCalendarDate().slice(0, 4),
+  );
   const [from, setFrom] = useState(() => toDateInput(new Date()));
   const [to, setTo] = useState(() => toDateInput(new Date()));
 

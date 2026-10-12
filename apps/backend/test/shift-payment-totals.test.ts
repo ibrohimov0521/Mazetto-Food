@@ -67,6 +67,12 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
   let closeData: Record<string, unknown> | undefined;
   const tx = {
     $queryRawUnsafe: async () => [],
+    restaurantTenant: {
+      findFirst: async () => ({ id: "tenant-a" }),
+    },
+    branch: {
+      findFirst: async () => ({ id: "branch-a" }),
+    },
     shift: {
       findUnique: async () => ({ ...shiftState }),
       updateMany: async ({ data }: { data: Record<string, unknown> }) => {
@@ -151,4 +157,66 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
   assert.equal((closeData.salesTotal as Prisma.Decimal).toFixed(0), "0");
   assert.equal(closeData.orderCount, 2);
   assert.equal((closeData.cashDifference as Prisma.Decimal).toFixed(0), "0");
+});
+
+test("shift close rejects a branch outside the actor tenant before writes", async () => {
+  let shiftCloseWrites = 0;
+  let cashTransactionWrites = 0;
+  const shift = {
+    id: "foreign-shift",
+    branchId: "branch-b",
+    employeeId: "employee-b",
+    status: "OPEN",
+    openingBalance: new Prisma.Decimal(0),
+  };
+  const tx = {
+    $queryRawUnsafe: async () => [],
+    restaurantTenant: {
+      findFirst: async () => ({ id: "tenant-a" }),
+    },
+    branch: {
+      findFirst: async () => null,
+    },
+    shift: {
+      findUnique: async () => shift,
+      updateMany: async () => {
+        shiftCloseWrites += 1;
+        return { count: 1 };
+      },
+    },
+    employee: {
+      findFirst: async () => ({ id: "employee-a" }),
+    },
+    cashTransaction: {
+      create: async () => {
+        cashTransactionWrites += 1;
+        return { id: "closing-row" };
+      },
+    },
+  };
+  const service = new ShiftsService({
+    $transaction: async <T>(callback: (database: typeof tx) => Promise<T>) =>
+      callback(tx),
+  } as never);
+
+  await assert.rejects(
+    () =>
+      service.closeShift(
+        "foreign-shift",
+        { closingBalance: 0 },
+        {
+          id: "restaurant-admin-a",
+          employeeId: "employee-a",
+          tenantId: "tenant-a",
+          membershipId: "membership-a",
+          isGlobalScope: true,
+          roles: ["SUPER_ADMIN"],
+          permissions: ["SHIFT_CLOSE"],
+        },
+      ),
+    /Branch not found/,
+  );
+
+  assert.equal(shiftCloseWrites, 0);
+  assert.equal(cashTransactionWrites, 0);
 });

@@ -20,16 +20,18 @@ import { formatMoney, orderStatusLabels } from "../../../../lib/order-display";
 type ShiftRow = {
   id: string;
   shiftNumber: number;
+  employeeId?: string | null;
   status: "OPEN" | "CLOSED";
   openedAt: string;
   closedAt?: string | null;
   openingBalance: string;
   closingBalance?: string | null;
   expectedCash?: string | null;
+  currentCash?: string | null;
   cashDifference?: string | null;
   orderCount?: number;
   branch?: { id: string; name: string };
-  employee?: { firstName: string; lastName?: string | null };
+  employee?: { id?: string; firstName: string; lastName?: string | null };
 };
 
 type OrderRow = {
@@ -252,9 +254,16 @@ export default function CashierHistoryPage() {
       orderRequest.current = controller;
       if (!shiftId) {
         setOrders([]);
+        setSelectedOrderId("");
         setHasMore(false);
         setLoadingOrders(false);
         return;
+      }
+      if (!append) {
+        setOrders([]);
+        setSelectedOrderId("");
+        setOffset(nextOffset);
+        setHasMore(false);
       }
       setLoadingOrders(true);
       setError("");
@@ -359,8 +368,7 @@ export default function CashierHistoryPage() {
     if (
       !orderDetail ||
       shift?.status !== "OPEN" ||
-      !cancelTarget ||
-      !cancelReason.trim()
+      !cancelTarget
     )
       return;
     const itemId = cancelTarget.itemId;
@@ -378,7 +386,7 @@ export default function CashierHistoryPage() {
             shiftId: shift.id,
             expectedVersion: orderDetail.version,
             reasonCode: "CASHIER_ITEM_CANCELLED",
-            reason: cancelReason.trim(),
+            ...(cancelReason.trim() ? { reason: cancelReason.trim() } : {}),
           }),
         },
       );
@@ -530,13 +538,27 @@ export default function CashierHistoryPage() {
               <strong>{shift.orderCount ?? sortedOrders.length}</strong>
             </div>
             <div className={styles.stat}>
-              <span>Kutilgan naqd</span>
-              <strong>{formatMoney(shift.expectedCash ?? 0)}</strong>
+              <span>
+                {shift.status === "OPEN" ? "Kassadagi naqd" : "Kutilgan naqd"}
+              </span>
+              <strong>
+                {formatMoney(
+                  shift.status === "OPEN"
+                    ? shift.currentCash
+                    : shift.expectedCash,
+                )}
+              </strong>
             </div>
             <div className={styles.stat}>
-              <span>Yakuniy naqd</span>
+              <span>
+                {shift.status === "OPEN" ? "Boshlang'ich naqd" : "Yakuniy naqd"}
+              </span>
               <strong>
-                {formatMoney(shift.closingBalance ?? shift.expectedCash ?? 0)}
+                {formatMoney(
+                  shift.status === "OPEN"
+                    ? shift.openingBalance
+                    : shift.closingBalance,
+                )}
               </strong>
             </div>
           </section>
@@ -689,14 +711,15 @@ export default function CashierHistoryPage() {
                             Boolean(cancellingItemId) ||
                             refundBlocked
                           }
-                          onClick={() =>
+                          onClick={() => {
+                            setCancelReason("");
                             setCancelTarget({
                               itemId: item.id,
                               productName: item.productName,
                               amount: item.totalPrice,
                               idempotencyKey: crypto.randomUUID(),
-                            })
-                          }
+                            });
+                          }}
                           title={
                             !isOnline
                               ? "Bekor qilish uchun internet kerak"
@@ -796,7 +819,7 @@ export default function CashierHistoryPage() {
                 (receipt) =>
                   !receipt.documentType || receipt.documentType === "RECEIPT",
               ).length ? (
-                <div className={styles.dialogActions}>
+                <div className={styles.dialogActions} data-keyboard-actions>
                   {orderDetail.receipts
                     .filter(
                       (receipt) =>
@@ -847,7 +870,7 @@ export default function CashierHistoryPage() {
             qaytarishi sozlanmagan bo'lsa amal rad etiladi.
           </p>
           <label className={styles.field}>
-            <span>Bekor qilish sababi</span>
+            <span>Bekor qilish sababi (ixtiyoriy)</span>
             <textarea
               className={styles.input}
               maxLength={500}
@@ -866,11 +889,14 @@ export default function CashierHistoryPage() {
               rows={3}
             />
           </label>
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.secondary}
               disabled={Boolean(cancellingItemId)}
-              onClick={() => setCancelTarget(null)}
+              onClick={() => {
+                setCancelTarget(null);
+                setCancelReason("");
+              }}
               type="button"
             >
               Ortga
@@ -880,7 +906,7 @@ export default function CashierHistoryPage() {
               disabled={
                 !isOnline ||
                 Boolean(cancellingItemId) ||
-                cancelReason.trim().length < 3
+                (cancelReason.trim().length > 0 && cancelReason.trim().length < 3)
               }
               onClick={() => void cancelItem()}
               type="button"

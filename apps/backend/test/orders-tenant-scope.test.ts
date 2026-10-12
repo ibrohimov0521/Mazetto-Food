@@ -7,7 +7,7 @@ const owner: AuthenticatedUser = {
   id: "owner-a",
   isGlobalScope: true,
   roles: ["SUPER_ADMIN"],
-  permissions: [],
+  permissions: ["*"],
 };
 
 function createService(prisma: object): OrdersService {
@@ -195,6 +195,52 @@ test("forced status scopes the order lookup to the actor tenant", async () => {
     branch: { tenantId: "tenant-a" },
   });
   assert.equal(unscopedReads, 0);
+});
+
+test("non-admin kitchen staff cannot force a completed order through status API", async () => {
+  let statusUpdates = 0;
+  const cashier: AuthenticatedUser = {
+    id: "cashier-a",
+    tenantId: "tenant-a",
+    membershipId: "membership-a",
+    employeeId: "employee-a",
+    branchId: "branch-a",
+    roles: ["CASHIER"],
+    permissions: ["ORDER_SEND_KITCHEN"],
+  };
+  const transaction = {
+    restaurantTenant: {
+      findFirst: async () => ({ id: "tenant-a" }),
+    },
+    branch: { findFirst: async () => ({ id: "branch-a" }) },
+    $queryRaw: async () => [],
+    order: {
+      findFirst: async () => ({
+        id: "order-a",
+        branchId: "branch-a",
+        status: "COMPLETED",
+        orderState: "COMPLETED",
+        version: 4,
+      }),
+      update: async () => {
+        statusUpdates += 1;
+      },
+    },
+  };
+  const service = createService({
+    $transaction: async (callback: (tx: object) => Promise<unknown>) =>
+      callback(transaction),
+  });
+
+  await assert.rejects(
+    service.updateStatus(
+      "order-a",
+      { status: "SERVED", force: true } as never,
+      cashier,
+    ),
+    /admin ruxsati/i,
+  );
+  assert.equal(statusUpdates, 0);
 });
 
 test("bulk-delete audit uses the resolved tenant for a legacy global owner", async () => {

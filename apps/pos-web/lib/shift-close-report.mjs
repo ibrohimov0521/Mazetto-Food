@@ -29,9 +29,19 @@ export function groupShiftOrders(orders) {
 const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 })[c]);
-const money = (value) => value == null || !Number.isFinite(Number(value))
-  ? "Ma'lumot yo'q"
-  : new Intl.NumberFormat("uz-UZ", { maximumFractionDigits: 2 }).format(Number(value)) + " so'm";
+const money = (value) => {
+  if (
+    value == null ||
+    (typeof value === "string" && !value.trim()) ||
+    (typeof value !== "string" && typeof value !== "number")
+  ) {
+    return "Ma'lumot yo'q";
+  }
+  const amount = Number(value);
+  return !Number.isFinite(amount)
+    ? "Ma'lumot yo'q"
+    : new Intl.NumberFormat("uz-UZ", { maximumFractionDigits: 2 }).format(amount) + " so'm";
+};
 const date = (value) => {
   if (!value || !Number.isFinite(new Date(value).getTime())) return "-";
   return new Date(value).toLocaleString("uz-UZ", {
@@ -79,6 +89,55 @@ export function shiftReportHtml(shift, orders) {
   ${sections}<footer><b>Buyurtmalar soni: ${orders.length}</b><br>
   Buyurtmalar summasi (bekor qilinganlar bilan): <b>${escape(money(sumAmounts(orders.map((order) => order.total))))}</b>
   <p>Buyurtma summasi va smena tushumi alohida hisoblanadi.</p></footer></body></html>`;
+}
+
+export function createShiftReportPrintPayload(shift, orders, requestId) {
+  const branchId = shift?.branch?.id;
+  if (
+    !shift?.id ||
+    typeof branchId !== "string" ||
+    !branchId ||
+    !Array.isArray(orders) ||
+    orders.length > 10000
+  ) {
+    throw new Error("Smena hisoboti ma'lumoti noto'g'ri.");
+  }
+
+  return {
+    documentType: "SHIFT_REPORT",
+    requestId: String(requestId ?? "").slice(0, 100),
+    branchId,
+    shift: {
+      id: shift.id,
+      shiftNumber: shift.shiftNumber,
+      employeeId: shift.employeeId ?? shift.employee?.id ?? null,
+      openedAt: shift.openedAt ?? null,
+      closedAt: shift.closedAt ?? null,
+      pendingSync: Boolean(shift.pendingSync),
+      expectedCash: shift.expectedCash ?? null,
+      closingBalance: shift.closingBalance ?? null,
+      cashDifference: shift.cashDifference ?? null,
+      salesTotal: shift.salesTotal ?? null,
+      branch: { id: branchId, name: shift.branch.name ?? "" },
+      employee: {
+        firstName: shift.employee?.firstName ?? "",
+        lastName: shift.employee?.lastName ?? "",
+      },
+    },
+    orders: orders.map((order) => ({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      displayOrderNumber: order.displayOrderNumber ?? null,
+      status: order.status,
+      createdAt: order.createdAt ?? null,
+      total: order.total,
+      items: (order.items ?? []).map((item) => ({
+        productName: item.productName,
+        quantity: item.quantity,
+        status: item.status ?? null,
+      })),
+    })),
+  };
 }
 
 export async function readAllShiftOrders(shiftId, fetchPage) {

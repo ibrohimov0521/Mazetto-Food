@@ -4,11 +4,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   KitchenTicketStatus,
   OrderItemStatus,
   OrderState,
+  OrderSource,
   OrderStatus,
   OrderType,
   PaymentStatus,
@@ -21,6 +23,8 @@ import {
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { kitchenRoutedItems } from "../menu/product-printer-routing";
+import { SettingsService } from "../settings/settings.service";
 import {
   MAX_ACTIVE_KITCHEN_TICKETS,
   trimKitchenQueue,
@@ -105,6 +109,7 @@ export class KitchenService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: KitchenGateway,
+    @Optional() private readonly settings?: SettingsService,
   ) {}
 
   async listOrders(user: AuthenticatedUser) {
@@ -114,12 +119,18 @@ export class KitchenService {
   async listOrdersWithOverflow(user: AuthenticatedUser) {
     this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
 
     const where = {
       order: {
         ...(scope.branchId
           ? { branchId: scope.branchId }
           : { branch: { tenantId: scope.tenantId } }),
+        ...(!showPosOrders ? { source: { not: OrderSource.POS } } : {}),
         status: {
           notIn: [
             OrderStatus.SERVED,
@@ -143,7 +154,10 @@ export class KitchenService {
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
       take: MAX_ACTIVE_KITCHEN_TICKETS + 1,
     });
-    return trimKitchenQueue(tickets);
+    return {
+      ...trimKitchenQueue(tickets),
+      kitchenPosOrdersEnabled: showPosOrders,
+    };
   }
 
   async listHistory(
@@ -159,6 +173,11 @@ export class KitchenService {
     user: AuthenticatedUser,
   ) {
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
     const range = kitchenHistoryRange(query.from, query.to);
     const status = this.toKitchenTicketStatus(query.status);
     const search = query.search?.trim();
@@ -170,6 +189,7 @@ export class KitchenService {
           ...(scope.branchId
             ? { branchId: scope.branchId }
             : { branch: { tenantId: scope.tenantId } }),
+          ...(!showPosOrders ? { source: { not: OrderSource.POS } } : {}),
           createdAt: { gte: range.start, lt: range.end },
           ...(search
             ? {
@@ -265,6 +285,8 @@ export class KitchenService {
         "Oshxona chiptasi uchun kamida bitta faol mahsulot kerak",
       );
     }
+    const kitchenItems = kitchenRoutedItems(order.items);
+    if (kitchenItems.length === 0) return null;
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
@@ -276,14 +298,14 @@ export class KitchenService {
             isSupplement: order.isSupplemental,
             sourceOrderVersion: order.version,
             items: {
-              create: order.items.map((item) => ({
+              create: kitchenItems.map((item) => ({
                 orderItemId: item.id,
                 productName: item.productName,
                 variantName: item.variantName,
                 quantity: item.quantity,
                 notes: item.notes,
                 modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
-                stationRouting: item.product?.printerRouting ?? "NONE",
+                stationRouting: item.product?.printerRouting ?? "KITCHEN",
                 printerIdSnapshot: item.product?.printer?.id ?? null,
                 printerNameSnapshot: item.product?.printer?.name ?? null,
                 printerTypeSnapshot: item.product?.printer?.type ?? null,

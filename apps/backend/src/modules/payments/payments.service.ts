@@ -25,6 +25,10 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
 import { isCashierPaymentMethodCode } from "../settings/setting-rules";
+import {
+  resolveBranchPaymentMethod,
+  resolveEffectiveBranchPaymentMethods,
+} from "./payment-method-resolution";
 import { ensureOrderReceipt } from "../receipts/receipt-writer";
 import { writeAuditLog } from "../audit/audit-write";
 import {
@@ -81,25 +85,26 @@ export class PaymentsService {
     }
     const enabledCodes = await this.enabledCashierPaymentMethods(tenantId);
     const rows = await this.prisma.paymentMethod.findMany({
-      where: { isActive: true, OR: [{ branchId }, { branchId: null }] },
-      orderBy: [{ branchId: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
-      select: { code: true, name: true, sortOrder: true },
+      where: { OR: [{ branchId }, { branchId: null }] },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        branchId: true,
+        code: true,
+        name: true,
+        sortOrder: true,
+        isActive: true,
+      },
     });
-    const seen = new Set<string>();
-    return rows
+    return resolveEffectiveBranchPaymentMethods(rows, branchId)
       .filter((method) => {
-        if (
-          !enabledCodes.has(method.code) ||
-          !isOperationalPaymentMethod(method.code) ||
-          seen.has(method.code)
-        ) {
+        const code = method.code.trim().toUpperCase();
+        if (!enabledCodes.has(code) || !isOperationalPaymentMethod(code)) {
           return false;
         }
-        seen.add(method.code);
         return true;
       })
       .sort((left, right) => left.sortOrder - right.sortOrder)
-      .map(({ code, name }) => ({ code, name }));
+      .map(({ code, name }) => ({ code: code.trim().toUpperCase(), name }));
   }
 
   /**
@@ -360,7 +365,10 @@ export class PaymentsService {
         const now = new Date();
         const createdPayments: {
           payment: Prisma.PaymentGetPayload<Record<string, never>>;
-          method: Prisma.PaymentMethodGetPayload<Record<string, never>>;
+          method: Pick<
+            Prisma.PaymentMethodGetPayload<Record<string, never>>,
+            "id" | "code" | "name"
+          >;
         }[] = [];
 
         for (const [index, tender] of tenders.entries()) {
@@ -720,7 +728,7 @@ export class PaymentsService {
             payment: payment as RefundablePayment,
             branchId: payment.order.branchId,
             shiftId: lockedShift.id,
-            employeeId: lockedShift.employeeId,
+            employeeId,
             createdById: user.id,
             tenantId,
             amount,
@@ -810,29 +818,25 @@ export class PaymentsService {
     branchId: string,
     tender: PaymentTenderDto | NormalizedPaymentTender,
   ) {
-    const method = tender.paymentMethodId
-      ? await tx.paymentMethod.findFirst({
-          where: {
-            id: tender.paymentMethodId,
-            isActive: true,
-            OR: [{ branchId }, { branchId: null }],
-          },
-          orderBy: { branchId: "desc" },
-        })
-      : await tx.paymentMethod.findFirst({
-          where: {
-            code: this.requirePaymentMethodCode(tender.paymentMethodCode),
-            isActive: true,
-            OR: [{ branchId }, { branchId: null }],
-          },
-          orderBy: { branchId: "desc" },
-        });
+    let code: string;
 
-    if (!method) {
-      throw new NotFoundException("Active payment method not found");
+    if (tender.paymentMethodId) {
+      const requestedMethod = await tx.paymentMethod.findFirst({
+        where: {
+          id: tender.paymentMethodId,
+          OR: [{ branchId }, { branchId: null }],
+        },
+        select: { code: true },
+      });
+      if (!requestedMethod) {
+        throw new NotFoundException("Active payment method not found");
+      }
+      code = requestedMethod.code;
+    } else {
+      code = this.requirePaymentMethodCode(tender.paymentMethodCode);
     }
 
-    return method;
+    return resolveBranchPaymentMethod(tx, branchId, code);
   }
 
   private isSuccessfulPayment(status: PaymentStatus): boolean {

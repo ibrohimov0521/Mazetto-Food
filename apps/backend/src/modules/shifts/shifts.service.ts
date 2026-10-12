@@ -14,6 +14,8 @@ import {
   ShiftStatus,
   ShiftType,
 } from "@prisma/client";
+import { hasPermission } from "../../common/auth/authorization";
+import { PERMISSIONS } from "../../common/auth/permissions";
 import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import { IdempotencyService } from "../../common/idempotency/idempotency.service";
 import {
@@ -556,6 +558,7 @@ export class ShiftsService {
               throw new BadRequestException("Shift is already closed");
             }
 
+            await assertBranchBelongsToActor(tx, user, shift.branchId);
             await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
             this.assertCanOperateShift(user, shift.employeeId);
 
@@ -937,6 +940,26 @@ export class ShiftsService {
         );
       }
 
+      const amount = new Prisma.Decimal(dto.amount);
+      if (
+        dto.type === CashTransactionType.EXPENSE ||
+        dto.type === CashTransactionType.WITHDRAW
+      ) {
+        const cashTransactions = await tx.cashTransaction.findMany({
+          where: { shiftId, branchId: shift.branchId },
+          select: { amount: true, type: true },
+        });
+        const currentCash = this.calculateCashBalance(
+          shift.openingBalance,
+          cashTransactions,
+        );
+        if (amount.greaterThan(currentCash)) {
+          throw new BadRequestException(
+            `Kassada yetarli naqd pul yo'q. Joriy qoldiq: ${currentCash.toFixed(2)} so'm.`,
+          );
+        }
+      }
+
       return tx.cashTransaction.create({
         data: {
           branchId: shift.branchId,
@@ -945,7 +968,7 @@ export class ShiftsService {
           orderId: dto.orderId ?? null,
           paymentId: dto.paymentId ?? null,
           type: dto.type,
-          amount: new Prisma.Decimal(dto.amount),
+          amount,
           reason: dto.reason ?? null,
           createdById: user.id,
         },
@@ -1311,7 +1334,7 @@ export class ShiftsService {
     }
 
     await assertBranchBelongsToActor(this.prisma, user, transfer.branchId);
-    this.assertCanInspectShift(user, transfer.fromShift.employeeId);
+    await this.assertCanInspectCashTransfer(user, transfer);
     return transfer;
   }
 
@@ -2027,18 +2050,41 @@ export class ShiftsService {
     return labels[type] ?? type;
   }
 
-  private assertCanInspectShift(
+  private async assertCanInspectCashTransfer(
     user: AuthenticatedUser,
-    shiftEmployeeId: string,
-  ): void {
+    transfer: {
+      branchId: string;
+      fromShift: { employeeId: string };
+      toShift: { employeeId: string } | null;
+      toShiftId: string | null;
+      status: CashTransferStatus;
+    },
+  ): Promise<void> {
     if (
-      user.employeeId === shiftEmployeeId ||
-      user.roles.some((role) =>
-        ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role),
-      )
+      user.employeeId === transfer.fromShift.employeeId ||
+      user.employeeId === transfer.toShift?.employeeId ||
+      hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH)
     ) {
       return;
     }
+
+    if (
+      transfer.status === CashTransferStatus.PENDING &&
+      !transfer.toShiftId &&
+      user.employeeId
+    ) {
+      this.assertCashReceiver(user);
+      const receiverShift = await this.prisma.shift.findFirst({
+        where: {
+          employeeId: user.employeeId,
+          branchId: transfer.branchId,
+          status: ShiftStatus.OPEN,
+        },
+        select: { id: true },
+      });
+      if (receiverShift) return;
+    }
+
     throw new ForbiddenException("Boshqa xodim smenasini ko'rish mumkin emas");
   }
 
@@ -2292,9 +2338,7 @@ export class ShiftsService {
   }
 
   private canManageBranchShift(user: AuthenticatedUser): boolean {
-    return user.roles.some((role) =>
-      ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role),
-    );
+    return hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH);
   }
 
   private isRetryableTransactionConflict(error: unknown): boolean {

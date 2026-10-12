@@ -114,3 +114,56 @@ test("shift list aggregates only open-shift cash transactions", async () => {
     }],
   });
 });
+
+const branchManager: AuthenticatedUser = {
+  id: "manager-user",
+  tenantId: "tenant-a",
+  membershipId: "membership-a",
+  employeeId: "employee-a",
+  branchId: "branch-a",
+  isGlobalScope: false,
+  roles: ["BRANCH_MANAGER"],
+  permissions: ["SHIFT_VIEW_OWN"],
+};
+
+function cashTransferDetailService() {
+  return new ShiftsService({
+    restaurantTenant: {
+      findFirst: async () => ({ id: "tenant-a" }),
+    },
+    branch: {
+      findFirst: async () => ({ id: "branch-a" }),
+    },
+    cashTransfer: {
+      findFirst: async () => ({
+        id: "transfer-a",
+        branchId: "branch-a",
+        fromShift: { employeeId: "employee-b" },
+      }),
+    },
+  } as never);
+}
+
+test("role name alone cannot read another employee's cash transfer", async () => {
+  const service = cashTransferDetailService();
+
+  await assert.rejects(
+    service.getCashTransferDetail("transfer-a", branchManager),
+    /Boshqa xodim smenasini ko'rish mumkin emas/,
+  );
+});
+
+test("SHIFT_VIEW_BRANCH allows reading another employee's cash transfer", async () => {
+  const service = cashTransferDetailService();
+  const managerWithBranchRead = {
+    ...branchManager,
+    permissions: ["SHIFT_VIEW_OWN", "SHIFT_VIEW_BRANCH"],
+  };
+
+  const transfer = await service.getCashTransferDetail(
+    "transfer-a",
+    managerWithBranchRead,
+  );
+
+  assert.equal(transfer.id, "transfer-a");
+});

@@ -81,6 +81,27 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | AUD-162 | P3 | Customer web is not installable/offline | Decided online-only: browsing may use its short in-memory cache, but checkout blocks offline submission with a visible reason and never queues an order locally |
 | AUD-163 | P3 | Courier flow has status/assignment but no routing optimization/proof-of-delivery | Add only after core accounting/printing gates; define photo/signature/privacy retention first |
 
+### Gate H - restaurant order workflow controls (2026-10-13 request)
+
+These six requirements are implemented in the current audit branch; they remain
+release candidates until the browser/UI acceptance and applicable printer tests
+below are complete. Report each ID separately in the release summary.
+
+| ID | Priority | Requirement | Acceptance test / remaining gate |
+| --- | --- | --- | --- |
+| AUD-164 | P2 | Show order types in Uzbek, not internal English enum names | Verify Zal, Olib ketish, and Yetkazib berish in staff history, kitchen history, Desktop/offline receipts, and Telegram; no raw `DINE_IN` in user-facing output |
+| AUD-165 | P1 | Let an operator enable/disable cashier POS orders in Kitchen; online orders remain managed there, while POS orders still print kitchen tickets | Toggle in System Settings; verify Kitchen list and alerts online/offline, and verify kitchen print remains unchanged |
+| AUD-166 | P1 | Handoff recipient and cancellation note must be optional | Submit handoff and cancel with both fields blank from every supported UI/API path; verify status, audit/history text, and permissions remain correct |
+| AUD-167 | P2 | Configure the first displayed order number in System Settings | Test start at 1 and 101, concurrent creation, web/Telegram/Desktop offline paths, restart, and lowering the value without reusing prior numbers |
+| AUD-168 | P1 | Route products independently to kitchen, customer receipt only, or no printer | Confirm default route, product editor persistence, mixed-order receipt contents, kitchen suppression, Desktop offline parity, and actual printer output; separate bar station remains out of scope |
+| AUD-169 | P2 | Provide predictable keyboard operation for primary actions | Verify Enter confirms only the intended primary action, Escape closes dismissible dialogs, focus order is usable, and text entry/IME/buttons are not hijacked across login, POS, payment, and dialogs |
+
+Current evidence: automated backend/POS/Desktop tests, typecheck/lint, isolated
+database order-to-cash-to-print E2E, migration checksums, and repository
+validators pass on the audit branch. Browser acceptance for these six flows and
+physical mixed-printer acceptance remain pending; production migration/deploy
+must follow the controlled release gate and verified-backup procedure.
+
 ## Definition of done for every item
 
 1. Business behavior and permissions are written before implementation.

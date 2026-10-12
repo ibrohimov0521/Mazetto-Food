@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -207,6 +208,10 @@ export class CreateProductDto {
   sortOrder?: number;
 
   @IsOptional()
+  @IsIn(["KITCHEN", "BAR", "RECEIPT", "NONE"])
+  printerRouting?: "KITCHEN" | "BAR" | "RECEIPT" | "NONE";
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ProductVariantDto)
@@ -266,6 +271,10 @@ export class UpdateProductDto {
   @IsNumber()
   @Min(0)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsIn(["KITCHEN", "BAR", "RECEIPT", "NONE"])
+  printerRouting?: "KITCHEN" | "BAR" | "RECEIPT" | "NONE";
 
   @IsOptional()
   @IsArray()

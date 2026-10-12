@@ -562,7 +562,7 @@ export class TelegramOrderNotificationService {
     const type = order.customerOrder?.type ?? order.type;
 
     if (type !== "DELIVERY") {
-      return [`<b>Manzil:</b> ${this.escapeHtml(order.deliveryAddress ?? "Olib ketish")}`];
+      return [];
     }
 
     const lines = [
@@ -1099,6 +1099,9 @@ export class TelegramOrderNotificationService {
   }
 
   private orderTypeLabel(type: string): string {
+    if (type === "DINE_IN") {
+      return "Zal";
+    }
     if (type === "DELIVERY") {
       return "Yetkazib berish";
     }

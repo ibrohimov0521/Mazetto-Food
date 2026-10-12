@@ -52,6 +52,7 @@ type Shift = {
   outgoingCashTransfers?: OutgoingTransfer[];
   id: string;
   shiftNumber: number;
+  employeeId?: string | null;
   status: "OPEN" | "CLOSED";
   openingBalance: string;
   closingBalance?: string | null;
@@ -64,7 +65,7 @@ type Shift = {
   openedAt: string;
   closedAt?: string | null;
   branch: { id: string; name: string; address?: string | null };
-  employee: { firstName: string; lastName?: string | null };
+  employee: { id?: string; firstName: string; lastName?: string | null };
   cashTransactions?: {
     id: string;
     type: string;
@@ -715,7 +716,7 @@ function ShiftConsole() {
               {error}
             </p>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={isSaving}
