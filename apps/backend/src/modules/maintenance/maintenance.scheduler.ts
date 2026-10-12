@@ -154,7 +154,12 @@ export class MaintenanceScheduler {
       }
 
       const { count } = await this.prisma.customerOrderAttempt.deleteMany({
-        where: { id: { in: stale.map((row) => row.id) } },
+        where: {
+          id: { in: stale.map((row) => row.id) },
+          status: CustomerOrderAttemptStatus.PENDING,
+          customerOrderId: null,
+          expiresAt: { lt: now },
+        },
       });
       return count;
     });

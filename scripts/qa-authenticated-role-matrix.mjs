@@ -79,7 +79,12 @@ try {
         route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ success: true, data: [] }),
+          body: JSON.stringify({
+            success: true,
+            data: new URL(route.request().url()).pathname.endsWith("/kitchen/orders")
+              ? { items: [], hasMore: false, limit: 250 }
+              : [],
+          }),
         }),
       );
       const page = await context.newPage();

@@ -829,3 +829,31 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - No push or deployment was made; the local code remains one grouped audit batch.
 - NODE_OPTIONS=--trace-deprecation traced one non-blocking query-queue warning to Prisma's PostgreSQL adapter; the disposable E2E still passed. Track before a pg@9/adapter upgrade.
 - Staff UI scenario QA passed: 73 product cards at 320/1024/1530px; Kitchen, Courier, POS, and Shift at 320/390/768/1024/1440px; no overflow or runtime errors. Mocked kitchen, courier, cashier retry/payment, shift-open/close, and read-only role workflows all passed.
+
+## Audit continuation: idempotency release guard and grouped verification (2026-10-12)
+
+- Checkout error cleanup now deletes only a still-pending attempt that has no linked customer order. If the database committed an order but the request failed while returning the response, cleanup can no longer erase its idempotency record and permit a duplicate retry. The focused regression passed 4/4.
+- The workspace pins the vulnerable `@angular-devkit/core` transitive version to the patched 19.2.24 release; the lockfile was refreshed without a major upgrade.
+- `pnpm test`, `pnpm verify` (14 typecheck/lint tasks, 7 builds, 33 validators), and full `pnpm release:acceptance` passed. Acceptance used a temporary, volume-free PostgreSQL 18 container; all 59 migrations, seed, and database-backed order-to-cash-to-stock-to-print E2E passed. The container and temporary database were removed.
+- Read-only production smoke passed 27/27. `pnpm audit --prod` found no known vulnerabilities. Full `pnpm audit` still reports one moderate development-toolchain advisory: `sprintf-js@1.1.3` via Electron Builder. The GitHub advisory currently lists no patched release, and npm still publishes 1.1.3 as latest; no nonexistent override was added ([GHSA-hp3w-g68c-fv3c](https://github.com/advisories/ghsa-hp3w-g68c-fv3c), [npm package versions](https://www.npmjs.com/package/sprintf-js?activeTab=versions)).
+- Both branch and worktree `git diff --check` passed. Existing `.orig` backup files were preserved; no ambiguous files or dependencies were removed.
+- This remains a grouped, unreleased audit. It does not claim every line of every tracked file has received manual review. Hardware printer output, installed Windows Desktop offline/reconnect, authorized Telegram lifecycle, NBU reconciliation evidence, tenant A/B staging across all flows, backup/restore rehearsal, and remaining repository review are still open. No commit, push, merge, migration, production write, or deployment occurred.
+
+## Audit continuation: production Telegram webhook read-only check (2026-10-12)
+
+- Both production customer and staff bot `getWebhookInfo` calls returned HTTP 200, configured host `api.mazettofood.uz`, zero pending updates, and no last error. No token was printed and no webhook or message was changed.
+- This verifies webhook control-plane health only. Real Telegram account navigation/order UX and group notification behavior still require a user-facing smoke.
+
+## Audit inventory refresh (2026-10-12)
+
+- Current `git ls-files` count is 1,277 tracked files; pathspecs `apps/*/src/**`, `apps/*/app/**`, `apps/*/components/**`, `apps/*/test/**`, and `apps/*/tests/**` return 655 files. This supersedes the earlier 1,259/535 inventory figures; counts describe repository scope, not a manual line-by-line review.
+
+## Audit continuation: race-safe checkout cleanup and grouped gate (2026-10-12)
+
+- Both checkout retry cleanup and the scheduled stale-attempt worker now compare status, linked order, and expiry in the delete itself. A retry that loses the cleanup race re-reads the idempotency row and returns the already-created order instead of creating a duplicate.
+- Regression coverage includes guarded request-failure cleanup, stale-attempt compare-and-delete, scheduler rechecks, and replay after a concurrent checkout completion.
+- The authenticated role-matrix fixture now returns the kitchen queue's actual response shape; all 14 desktop/mobile role-route combinations passed.
+- Backend tests passed 665/665, transient HTTP retry tests 3/3, and Desktop tests 167/167. Full `pnpm verify` passed: 14 typecheck/lint tasks, 7 builds, and 33 validators.
+- Full `pnpm release:acceptance` passed after supplying its dedicated local PostgreSQL admin URL. The disposable PostgreSQL 18 database applied all 59 migrations, seeded, and passed the database-backed order-to-cash-to-stock-to-print E2E. The container was stopped and port 5432 was confirmed closed afterward.
+- No production data or schema was changed; no commit, push, merge, or deployment was performed. Remaining hardware, Windows offline/reconnect, real-account Telegram, NBU reconciliation, and tenant A/B staging checks remain external release gates.
+- Full `pnpm test` passed across all six test-bearing workspace packages and the 11 root smoke tests. Read-only production smoke passed 27/27, confirming live production health only; it does not verify the unreleased worktree.

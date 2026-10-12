@@ -464,10 +464,11 @@ export class CustomerOrderEngineService {
       }
 
       if (this.isStalePendingAttempt(existing)) {
-        await this.prisma.customerOrderAttempt.delete({
-          where: { id: existing.id },
-        });
-        return null;
+        if (await this.deleteStaleCustomerOrderAttempt(existing.id)) {
+          return null;
+        }
+
+        continue;
       }
 
       if (existing.expiresAt.getTime() <= Date.now()) {
@@ -494,10 +495,33 @@ export class CustomerOrderEngineService {
       stale.requestHash === requestHash &&
       this.isStalePendingAttempt(stale)
     ) {
-      await this.prisma.customerOrderAttempt.delete({
-        where: { id: stale.id },
+      if (await this.deleteStaleCustomerOrderAttempt(stale.id)) {
+        return null;
+      }
+
+      const current = await this.prisma.customerOrderAttempt.findUnique({
+        where: {
+          customerId_idempotencyKey: {
+            customerId,
+            idempotencyKey,
+          },
+        },
+        select: this.customerOrderAttemptSelect(),
       });
-      return null;
+
+      if (!current) {
+        return null;
+      }
+
+      if (current.requestHash !== requestHash) {
+        throw new ConflictException(
+          "Idempotency key was already used with a different checkout request",
+        );
+      }
+
+      if (current.customerOrderId) {
+        return current;
+      }
     }
 
     throw new ConflictException(
@@ -513,9 +537,30 @@ export class CustomerOrderEngineService {
     );
   }
 
+  private async deleteStaleCustomerOrderAttempt(
+    attemptId: string,
+  ): Promise<boolean> {
+    const result = await this.prisma.customerOrderAttempt.deleteMany({
+      where: {
+        id: attemptId,
+        status: CustomerOrderAttemptStatus.PENDING,
+        customerOrderId: null,
+        expiresAt: { lte: new Date() },
+      },
+    });
+
+    return result.count > 0;
+  }
+
   private async releaseCustomerOrderAttempt(attemptId: string): Promise<void> {
     await this.prisma.customerOrderAttempt
-      .delete({ where: { id: attemptId } })
+      .deleteMany({
+        where: {
+          id: attemptId,
+          status: CustomerOrderAttemptStatus.PENDING,
+          customerOrderId: null,
+        },
+      })
       .catch(() => undefined);
   }
 

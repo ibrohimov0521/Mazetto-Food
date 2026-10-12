@@ -176,3 +176,8 @@ Remaining after Step 14:
 
 - Human Telegram UX smoke for the newly deployed single-message navigation and quick-add merge should be done manually from a real Telegram account without creating an unnecessary extra production order.
 - Eight authentic media assets remain unresolved.
+
+## Read-only Telegram webhook verification (2026-10-12)
+
+- Both production customer and staff bot `getWebhookInfo` calls succeeded: `api.mazettofood.uz`, 0 pending updates, and no last error. Tokens were not printed; no webhook or message was changed.
+- This supersedes the earlier current-gap note that credentials were unavailable. Real-account Telegram UX and order-notification smoke remain pending.

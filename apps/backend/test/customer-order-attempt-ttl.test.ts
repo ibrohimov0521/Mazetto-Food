@@ -37,7 +37,7 @@ test("customer checkout uses the tenant-configured incomplete-attempt TTL", asyn
             expiresAt: data.expiresAt,
           };
         },
-        delete: async () => ({ id: "attempt-a" }),
+        deleteMany: async () => ({ count: 1 }),
       },
       $transaction: async () => {
         throw stopBeforeOrderWrites;
@@ -128,4 +128,142 @@ test("stale checkout cleanup follows each attempt's configured expiry", async ()
   assert.deepEqual(query.where.customerOrderId, null);
   assert.ok(query.where.expiresAt);
   assert.equal("createdAt" in query.where, false);
+});
+
+test("checkout failure releases only an unlinked pending attempt", async () => {
+  let deleteWhere: unknown;
+  const service = new CustomerOrderEngineService(
+    {
+      customerOrderAttempt: {
+        deleteMany: async (query: { where: unknown }) => {
+          deleteWhere = query.where;
+          return { count: 1 };
+        },
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const release = service as unknown as {
+    releaseCustomerOrderAttempt: (id: string) => Promise<void>;
+  };
+
+  await release.releaseCustomerOrderAttempt("attempt-a");
+
+  assert.deepEqual(deleteWhere, {
+    id: "attempt-a",
+    status: "PENDING",
+    customerOrderId: null,
+  });
+});
+
+test("stale attempt deletion uses a compare-and-delete guard", async () => {
+  let deleteWhere: Record<string, unknown> | undefined;
+  const service = new CustomerOrderEngineService(
+    {
+      customerOrderAttempt: {
+        deleteMany: async ({ where }: { where: Record<string, unknown> }) => {
+          deleteWhere = where;
+          return { count: 0 };
+        },
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const cleanup = service as unknown as {
+    deleteStaleCustomerOrderAttempt: (id: string) => Promise<boolean>;
+  };
+
+  assert.equal(
+    await cleanup.deleteStaleCustomerOrderAttempt("attempt-a"),
+    false,
+  );
+  assert.equal(deleteWhere?.id, "attempt-a");
+  assert.equal(deleteWhere?.status, "PENDING");
+  assert.equal(deleteWhere?.customerOrderId, null);
+  assert.ok(
+    (deleteWhere?.expiresAt as { lte?: unknown } | undefined)?.lte instanceof
+      Date,
+  );
+});
+
+test("stale cleanup rechecks status and order link when deleting", async () => {
+  const queries: { where: Record<string, unknown> }[] = [];
+  let deletion: { where: Record<string, unknown> } | undefined;
+  const scheduler = new MaintenanceScheduler({
+    customerOrderAttempt: {
+      findMany: async (args: { where: Record<string, unknown> }) => {
+        queries.push(args);
+        return [{ id: "attempt-a" }];
+      },
+      deleteMany: async (args: { where: Record<string, unknown> }) => {
+        deletion = args;
+        return { count: 0 };
+      },
+    },
+  } as never);
+
+  await scheduler.cleanupStaleOrderAttempts();
+
+  const query = queries[0]!;
+  assert.equal(query.where.status, "PENDING");
+  assert.equal(query.where.customerOrderId, null);
+  assert.ok(query.where.expiresAt);
+  assert.deepEqual(deletion?.where, {
+    id: { in: ["attempt-a"] },
+    status: "PENDING",
+    customerOrderId: null,
+    expiresAt: query.where.expiresAt,
+  });
+});
+
+test("retry reuses an order completed during stale-attempt cleanup", async () => {
+  const expiredAttempt = {
+    id: "attempt-a",
+    status: "PENDING",
+    requestHash: "request-hash",
+    customerOrderId: null,
+    createdAt: new Date(Date.now() - 60 * 60 * 1000),
+    expiresAt: new Date(Date.now() - 1),
+  };
+  const completedAttempt = {
+    ...expiredAttempt,
+    status: "COMPLETED",
+    customerOrderId: "customer-order-a",
+  };
+  let reads = 0;
+  const service = new CustomerOrderEngineService(
+    {
+      customerOrderAttempt: {
+        findUnique: async () =>
+          reads++ === 0 ? expiredAttempt : completedAttempt,
+        deleteMany: async () => ({ count: 0 }),
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const waiter = service as unknown as {
+    waitForCustomerOrderAttempt: (
+      customerId: string,
+      idempotencyKey: string,
+      requestHash: string,
+    ) => Promise<{ customerOrderId: string | null } | null>;
+  };
+
+  const result = await waiter.waitForCustomerOrderAttempt(
+    "customer-a",
+    "checkout-key-a",
+    "request-hash",
+  );
+
+  assert.equal(reads, 2);
+  assert.equal(result?.customerOrderId, "customer-order-a");
 });
